@@ -15,7 +15,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # PREALLOCATE attribute (and also for the history/greppability, that it was
 # such).
 
-$CLICKHOUSE_CLIENT -nm -q "
+$CLICKHOUSE_CLIENT -m -q "
     DROP TABLE IF EXISTS data_01509;
     DROP DICTIONARY IF EXISTS dict_01509;
     CREATE TABLE data_01509

@@ -1,3 +1,4 @@
+#include <IO/copyData.h>
 #include <gtest/gtest.h>
 
 #include <filesystem>
@@ -5,7 +6,6 @@
 
 
 #include <algorithm>
-#include <numeric>
 #include <thread>
 
 #include <Core/ServerUUID.h>
@@ -42,6 +42,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/scope_guard.h>
 
+using namespace std::chrono_literals;
 namespace fs = std::filesystem;
 using namespace DB;
 
@@ -50,6 +51,18 @@ static constexpr auto TEST_LOG_LEVEL = "debug";
 namespace DB::ErrorCodes
 {
     extern const int FILECACHE_ACCESS_DENIED;
+}
+namespace DB::FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+    extern const FileCacheSettingsUInt64 max_size;
+    extern const FileCacheSettingsUInt64 max_elements;
+    extern const FileCacheSettingsUInt64 max_file_segment_size;
+    extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsString cache_policy;
+    extern const FileCacheSettingsDouble slru_size_ratio;
+    extern const FileCacheSettingsUInt64 load_metadata_threads;
+    extern const FileCacheSettingsBool load_metadata_asynchronously;
 }
 
 void printRanges(const auto & segments)
@@ -246,11 +259,12 @@ void download(FileSegment & file_segment)
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
 
-    ASSERT_TRUE(file_segment.reserve(file_segment.range().size(), 1000));
+    std::string failure_reason;
+    ASSERT_TRUE(file_segment.reserve(file_segment.range().size(), 1000, failure_reason));
     download(cache_base_path, file_segment);
     ASSERT_EQ(file_segment.state(), State::DOWNLOADING);
 
-    file_segment.complete();
+    file_segment.complete(false);
     ASSERT_EQ(file_segment.state(), State::DOWNLOADED);
 }
 
@@ -258,8 +272,9 @@ void assertDownloadFails(FileSegment & file_segment)
 {
     ASSERT_EQ(file_segment.getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment.getDownloadedSize(), 0);
-    ASSERT_FALSE(file_segment.reserve(file_segment.range().size(), 1000));
-    file_segment.complete();
+    std::string failure_reason;
+    ASSERT_FALSE(file_segment.reserve(file_segment.range().size(), 1000, failure_reason));
+    file_segment.complete(false);
 }
 
 void download(const HolderPtr & holder)
@@ -354,19 +369,21 @@ TEST_F(FileCacheTest, LRUPolicy)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
-    settings.base_path = cache_base_path;
-    settings.max_size = 30;
-    settings.max_elements = 5;
-    settings.boundary_alignment = 1;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
     const size_t file_size = INT_MAX; // the value doesn't really matter because boundary_alignment == 1.
+
 
     const auto user = FileCache::getCommonUser();
     {
         std::cerr << "Step 1\n";
         auto cache = DB::FileCache("1", settings);
         cache.initialize();
-        auto key = DB::FileCache::createKeyForPath("key1");
+        auto key = DB::FileCacheKey::fromPath("key1");
 
         auto get_or_set = [&](size_t offset, size_t size)
         {
@@ -730,7 +747,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         auto cache2 = DB::FileCache("2", settings);
         cache2.initialize();
-        auto key = DB::FileCache::createKeyForPath("key1");
+        auto key = DB::FileCacheKey::fromPath("key1");
 
         /// Get [2, 29]
         assertEqual(
@@ -744,12 +761,12 @@ TEST_F(FileCacheTest, LRUPolicy)
         /// Test max file segment size
 
         auto settings2 = settings;
-        settings2.max_file_segment_size = 10;
-        settings2.base_path = caches_dir / "cache2";
-        fs::create_directories(settings2.base_path);
+        settings2[FileCacheSetting::max_file_segment_size] = 10;
+        settings2[FileCacheSetting::path] = caches_dir / "cache2";
+        fs::create_directories(settings2[FileCacheSetting::path].value);
         auto cache2 = DB::FileCache("3", settings2);
         cache2.initialize();
-        auto key = DB::FileCache::createKeyForPath("key1");
+        auto key = DB::FileCacheKey::fromPath("key1");
 
         /// Get [0, 24]
         assertEqual(
@@ -764,7 +781,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         auto cache = FileCache("4", settings);
         cache.initialize();
-        const auto key = FileCache::createKeyForPath("key10");
+        const auto key = FileCacheKey::fromPath("key10");
         const auto key_path = cache.getKeyPath(key, user);
 
         cache.removeAllReleasable(user.user_id);
@@ -788,7 +805,7 @@ TEST_F(FileCacheTest, LRUPolicy)
 
         auto cache = DB::FileCache("5", settings);
         cache.initialize();
-        const auto key = FileCache::createKeyForPath("key10");
+        const auto key = FileCacheKey::fromPath("key10");
         const auto key_path = cache.getKeyPath(key, user);
 
         cache.removeAllReleasable(user.user_id);
@@ -811,10 +828,11 @@ TEST_F(FileCacheTest, writeBuffer)
 {
     ServerUUID::setRandomForUnitTests();
     FileCacheSettings settings;
-    settings.max_size = 100;
-    settings.max_elements = 5;
-    settings.max_file_segment_size = 5;
-    settings.base_path = cache_base_path;
+    settings[FileCacheSetting::max_size] = 100;
+    settings[FileCacheSetting::max_elements] = 5;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
     FileCache cache("6", settings);
     cache.initialize();
@@ -823,10 +841,10 @@ TEST_F(FileCacheTest, writeBuffer)
     auto write_to_cache = [&, this](const String & key, const Strings & data, bool flush, ReadBufferPtr * out_read_buffer = nullptr)
     {
         CreateFileSegmentSettings segment_settings;
-        segment_settings.kind = FileSegmentKind::Temporary;
+        segment_settings.kind = FileSegmentKind::Ephemeral;
         segment_settings.unbounded = true;
 
-        auto cache_key = FileCache::createKeyForPath(key);
+        auto cache_key = FileCacheKey::fromPath(key);
         auto holder = cache.set(cache_key, 0, 3, segment_settings, user);
         /// The same is done in TemporaryDataOnDisk::createStreamToCacheFile.
         std::filesystem::create_directories(cache.getKeyPath(cache_key, user));
@@ -927,7 +945,7 @@ static Block generateBlock(size_t size = 0)
     return block;
 }
 
-static size_t readAllTemporaryData(TemporaryFileStream & stream)
+static size_t readAllTemporaryData(NativeReader & stream)
 {
     Block block;
     size_t read_rows = 0;
@@ -940,29 +958,32 @@ static size_t readAllTemporaryData(TemporaryFileStream & stream)
 }
 
 TEST_F(FileCacheTest, temporaryData)
+try
 {
     ServerUUID::setRandomForUnitTests();
     DB::FileCacheSettings settings;
-    settings.max_size = 10_KiB;
-    settings.max_file_segment_size = 1_KiB;
-    settings.base_path = cache_base_path;
+    settings[FileCacheSetting::max_size] = 10_KiB;
+    settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
     DB::FileCache file_cache("7", settings);
     file_cache.initialize();
 
     const auto user = FileCache::getCommonUser();
-    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(nullptr, &file_cache, TemporaryDataOnDiskSettings{});
+    auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
-    auto some_data_holder = file_cache.getOrSet(FileCache::createKeyForPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
+    auto some_data_holder = file_cache.getOrSet(FileCacheKey::fromPath("some_data"), 0, 5_KiB, 5_KiB, CreateFileSegmentSettings{}, 0, user);
 
     {
         ASSERT_EQ(some_data_holder->size(), 5);
+        std::string failure_reason;
         for (auto & segment : *some_data_holder)
         {
             ASSERT_TRUE(segment->getOrSetDownloader() == DB::FileSegment::getCallerId());
-            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000));
+            ASSERT_TRUE(segment->reserve(segment->range().size(), 1000, failure_reason));
             download(*segment);
-            segment->complete();
+            segment->complete(false);
         }
     }
 
@@ -973,12 +994,17 @@ TEST_F(FileCacheTest, temporaryData)
 
     size_t size_used_with_temporary_data;
     size_t segments_used_with_temporary_data;
+
+
     {
-        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
+        ASSERT_TRUE(stream);
+        /// Do nothing with stream, just create it and destroy.
+    }
 
-        auto & stream = tmp_data->createStream(generateBlock());
-
-        ASSERT_GT(stream.write(generateBlock(100)), 0);
+    {
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
+        ASSERT_GT(stream->write(generateBlock(100)), 0);
 
         ASSERT_GT(file_cache.getUsedCacheSize(), 0);
         ASSERT_GT(file_cache.getFileSegmentsNum(), 0);
@@ -986,22 +1012,22 @@ TEST_F(FileCacheTest, temporaryData)
         size_t used_size_before_attempt = file_cache.getUsedCacheSize();
         /// data can't be evicted because it is still held by `some_data_holder`
         ASSERT_THROW({
-            stream.write(generateBlock(2000));
-            stream.flush();
+            stream->write(generateBlock(2000));
+            stream.finishWriting();
         }, DB::Exception);
+
+        ASSERT_THROW(stream.finishWriting(), DB::Exception);
 
         ASSERT_EQ(file_cache.getUsedCacheSize(), used_size_before_attempt);
     }
 
     {
         size_t before_used_size = file_cache.getUsedCacheSize();
-        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
-
-        auto write_buf_stream = tmp_data->createRawStream();
+        auto write_buf_stream = std::make_unique<TemporaryDataBuffer>(tmp_data_scope.get());
 
         write_buf_stream->write("1234567890", 10);
         write_buf_stream->write("abcde", 5);
-        auto read_buf = dynamic_cast<IReadableWriteBuffer *>(write_buf_stream.get())->tryGetReadBuffer();
+        auto read_buf = write_buf_stream->read();
 
         ASSERT_GT(file_cache.getUsedCacheSize(), before_used_size + 10);
 
@@ -1014,22 +1040,22 @@ TEST_F(FileCacheTest, temporaryData)
     }
 
     {
-        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
-        auto & stream = tmp_data->createStream(generateBlock());
+        TemporaryBlockStreamHolder stream(generateBlock(), tmp_data_scope.get());
 
-        ASSERT_GT(stream.write(generateBlock(100)), 0);
+        ASSERT_GT(stream->write(generateBlock(100)), 0);
 
         some_data_holder.reset();
 
-        stream.write(generateBlock(2000));
+        stream->write(generateBlock(2000));
 
-        auto stat = stream.finishWriting();
+        stream.finishWriting();
 
-        ASSERT_TRUE(fs::exists(stream.getPath()));
-        ASSERT_GT(fs::file_size(stream.getPath()), 100);
+        String file_path = stream.getHolder()->describeFilePath().substr(strlen("fscache://"));
 
-        ASSERT_EQ(stat.num_rows, 2100);
-        ASSERT_EQ(readAllTemporaryData(stream), 2100);
+        ASSERT_TRUE(fs::exists(file_path)) << "File " << file_path << " should exist";
+        ASSERT_GT(fs::file_size(file_path), 100) << "File " << file_path << " should be larger than 100 bytes";
+
+        ASSERT_EQ(readAllTemporaryData(*stream.getReadStream()), 2100);
 
         size_used_with_temporary_data = file_cache.getUsedCacheSize();
         segments_used_with_temporary_data = file_cache.getFileSegmentsNum();
@@ -1044,6 +1070,11 @@ TEST_F(FileCacheTest, temporaryData)
     /// Some segments reserved by `some_data_holder` was eviced by temporary data
     ASSERT_LE(file_cache.getUsedCacheSize(), size_used_before_temporary_data);
     ASSERT_LE(file_cache.getFileSegmentsNum(), segments_used_before_temporary_data);
+}
+catch (...)
+{
+    std::cerr << getCurrentExceptionMessage(true) << std::endl;
+    throw;
 }
 
 TEST_F(FileCacheTest, CachedReadBuffer)
@@ -1068,11 +1099,12 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
-    settings.base_path = cache_base_path;
-    settings.max_file_segment_size = 5;
-    settings.max_size = 30;
-    settings.max_elements = 10;
-    settings.boundary_alignment = 1;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_file_segment_size] = 5;
+    settings[FileCacheSetting::max_size] = 30;
+    settings[FileCacheSetting::max_elements] = 10;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
@@ -1092,7 +1124,8 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
     auto cache = std::make_shared<DB::FileCache>("8", settings);
     cache->initialize();
-    auto key = cache->createKeyForPath(file_path);
+
+    auto key = DB::FileCacheKey::fromPath(file_path);
     const auto user = FileCache::getCommonUser();
 
     {
@@ -1129,25 +1162,30 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
     /// Temporary data stored in cache
     {
         DB::FileCacheSettings settings;
-        settings.max_size = 10_KiB;
-        settings.max_file_segment_size = 1_KiB;
-        settings.base_path = cache_base_path;
+        settings[FileCacheSetting::max_size] = 10_KiB;
+        settings[FileCacheSetting::max_file_segment_size] = 1_KiB;
+        settings[FileCacheSetting::path] = cache_base_path;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
         DB::FileCache file_cache("cache", settings);
         file_cache.initialize();
 
-        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/nullptr, &file_cache, /*settings=*/TemporaryDataOnDiskSettings{});
-
-        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(&file_cache, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        auto & stream = tmp_data->createStream(block);
-        stream.write(block);
-        stream.finishWriting();
+        TemporaryBlockStreamHolder stream(block, tmp_data_scope.get());
 
-        /// We allocate buffer of size min(getSize(), DBMS_DEFAULT_BUFFER_SIZE)
+        stream->write(block);
+        auto stat = stream.finishWriting();
+
+        /// We allocate buffer of size min(stat.compressed_size, DBMS_DEFAULT_BUFFER_SIZE)
         /// We do care about buffer size because realistic external group by could generate 10^5 temporary files
-        ASSERT_EQ(stream.getSize(), 62);
+        ASSERT_EQ(stat.compressed_size, 62);
+
+        auto reader = stream.getReadStream();
+        auto * read_buf = reader.getHolder();
+        const auto & internal_buffer = static_cast<TemporaryDataReadBuffer *>(read_buf)->compressed_buf.getHolder()->internalBuffer();
+        ASSERT_EQ(internal_buffer.size(), 62);
     }
 
     /// Temporary data stored on disk
@@ -1158,16 +1196,14 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
         disk = createDisk("temporary_data_read_buffer_size_test_dir");
         VolumePtr volume = std::make_shared<SingleDiskVolume>("volume", disk);
 
-        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(/*volume=*/volume, /*cache=*/nullptr, /*settings=*/TemporaryDataOnDiskSettings{});
-
-        auto tmp_data = std::make_unique<TemporaryDataOnDisk>(tmp_data_scope);
+        auto tmp_data_scope = std::make_shared<TemporaryDataOnDiskScope>(volume, TemporaryDataOnDiskSettings{});
 
         auto block = generateBlock(/*size=*/3);
-        auto & stream = tmp_data->createStream(block);
-        stream.write(block);
-        stream.finishWriting();
+        TemporaryBlockStreamHolder stream(block, tmp_data_scope.get());
+        stream->write(block);
+        auto stat = stream.finishWriting();
 
-        ASSERT_EQ(stream.getSize(), 62);
+        ASSERT_EQ(stat.compressed_size, 62);
     }
 }
 
@@ -1191,13 +1227,14 @@ TEST_F(FileCacheTest, SLRUPolicy)
     DB::CurrentThread::QueryScope query_scope_holder(query_context);
 
     DB::FileCacheSettings settings;
-    settings.base_path = cache_base_path;
-    settings.max_size = 40;
-    settings.max_elements = 6;
-    settings.boundary_alignment = 1;
+    settings[FileCacheSetting::path] = cache_base_path;
+    settings[FileCacheSetting::max_size] = 40;
+    settings[FileCacheSetting::max_elements] = 6;
+    settings[FileCacheSetting::boundary_alignment] = 1;
+    settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
-    settings.cache_policy = "SLRU";
-    settings.slru_size_ratio = 0.5;
+    settings[FileCacheSetting::cache_policy] = "SLRU";
+    settings[FileCacheSetting::slru_size_ratio] = 0.5;
 
     const size_t file_size = -1; // the value doesn't really matter because boundary_alignment == 1.
     size_t file_cache_name = 0;
@@ -1206,7 +1243,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
     {
         auto cache = DB::FileCache(std::to_string(++file_cache_name), settings);
         cache.initialize();
-        auto key = FileCache::createKeyForPath("key1");
+        auto key = FileCacheKey::fromPath("key1");
 
         auto add_range = [&](size_t offset, size_t size)
         {
@@ -1300,13 +1337,14 @@ TEST_F(FileCacheTest, SLRUPolicy)
         };
 
         DB::FileCacheSettings settings2;
-        settings2.base_path = cache_base_path2;
-        settings2.max_file_segment_size = 5;
-        settings2.max_size = 30;
-        settings2.max_elements = 6;
-        settings2.boundary_alignment = 1;
-        settings2.cache_policy = "SLRU";
-        settings2.slru_size_ratio = 0.5;
+        settings2[FileCacheSetting::path] = cache_base_path2;
+        settings2[FileCacheSetting::max_file_segment_size] = 5;
+        settings2[FileCacheSetting::max_size] = 30;
+        settings2[FileCacheSetting::max_elements] = 6;
+        settings2[FileCacheSetting::boundary_alignment] = 1;
+        settings2[FileCacheSetting::cache_policy] = "SLRU";
+        settings2[FileCacheSetting::slru_size_ratio] = 0.5;
+        settings[FileCacheSetting::load_metadata_asynchronously] = false;
 
         auto cache = std::make_shared<DB::FileCache>("slru_2", settings2);
         cache->initialize();
@@ -1328,7 +1366,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
         std::string data1(15, '*');
         auto file1 = write_file("test1", data1);
-        auto key1 = cache->createKeyForPath(file1);
+        auto key1 = DB::FileCacheKey::fromPath(file1);
 
         read_and_check(file1, key1, data1);
 
@@ -1344,7 +1382,7 @@ TEST_F(FileCacheTest, SLRUPolicy)
 
         std::string data2(10, '*');
         auto file2 = write_file("test2", data2);
-        auto key2 = cache->createKeyForPath(file2);
+        auto key2 = DB::FileCacheKey::fromPath(file2);
 
         read_and_check(file2, key2, data2);
 

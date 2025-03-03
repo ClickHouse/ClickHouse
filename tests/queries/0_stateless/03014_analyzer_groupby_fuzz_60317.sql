@@ -6,7 +6,7 @@ SELECT
 FROM system.one
 GROUP BY
     _CAST(30, 'Nullable(UInt8)')
-SETTINGS allow_experimental_analyzer = 1;
+SETTINGS enable_analyzer = 1;
 
 -- WITH CUBE (note that result is different with the analyzer (analyzer is correct including all combinations)
 SELECT
@@ -24,4 +24,4 @@ GROUP BY
     _CAST(30, 'Nullable(UInt8)')
 WITH CUBE
 WITH TOTALS
-SETTINGS allow_experimental_analyzer = 1;
+SETTINGS enable_analyzer = 1;

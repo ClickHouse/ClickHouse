@@ -11,10 +11,7 @@ namespace DB
 class ClickHouseVersion
 {
 public:
-    /// NOLINTBEGIN(google-explicit-constructor)
-    ClickHouseVersion(const String & version);
-    ClickHouseVersion(const char * version);
-    /// NOLINTEND(google-explicit-constructor)
+    explicit ClickHouseVersion(std::string_view version);
 
     String toString() const;
 
@@ -38,6 +35,9 @@ namespace SettingsChangesHistory
     using SettingsChanges = std::vector<SettingChange>;
 }
 
-const std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges> & getSettingsChangesHistory();
+using VersionToSettingsChangesMap = std::map<ClickHouseVersion, SettingsChangesHistory::SettingsChanges>;
+
+const VersionToSettingsChangesMap & getSettingsChangesHistory();
+const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory();
 
 }

@@ -1,6 +1,10 @@
+import logging
+
 import pytest
+
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from minio.deleteobjects import DeleteObject
 
 cluster = ClickHouseCluster(__file__)
 
@@ -48,6 +52,25 @@ def start_cluster():
 
     finally:
         cluster.shutdown()
+
+
+def remove_minio_objects(minio, path: str):
+    retry_count = 3
+    remaining_files = map(
+        lambda x: DeleteObject(x.object_name),
+        minio.list_objects(cluster.minio_bucket, path, recursive=True),
+    )
+    while len(list(remaining_files)) > 0 and retry_count > 0:
+        errors = minio.remove_objects(cluster.minio_bucket, remaining_files)
+        for error in errors:
+            logging.error(f"error occurred when deleting minio object: {error}")
+
+        remaining_files = map(
+            lambda x: DeleteObject(x.object_name),
+            minio.list_objects(cluster.minio_bucket, path, recursive=True),
+        )
+        retry_count -= 1
+    assert len(list(remaining_files)) == 0, remaining_files
 
 
 def test_merge_tree_disk_setting(start_cluster):
@@ -129,8 +152,7 @@ def test_merge_tree_disk_setting(start_cluster):
     node1.query(f"DROP TABLE {TABLE_NAME} SYNC")
     node1.query(f"DROP TABLE {TABLE_NAME}_2 SYNC")
 
-    for obj in list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)):
-        minio.remove_object(cluster.minio_bucket, obj.object_name)
+    remove_minio_objects(minio, "data/")
 
 
 def test_merge_tree_custom_disk_setting(start_cluster):
@@ -191,8 +213,7 @@ def test_merge_tree_custom_disk_setting(start_cluster):
 
     # Check that data for a disk with a different path was created on the different path
 
-    for obj in list(minio.list_objects(cluster.minio_bucket, "data2/", recursive=True)):
-        minio.remove_object(cluster.minio_bucket, obj.object_name)
+    remove_minio_objects(minio, "data2/")
 
     node1.query(
         f"""
@@ -219,8 +240,8 @@ def test_merge_tree_custom_disk_setting(start_cluster):
     count2 = len(list2)
 
     if count1 != count2:
-        print("list1: ", list1)
-        print("list2: ", list2)
+        logging.info(f"list1: {list1}")
+        logging.info(f"list2: {list2}")
 
     assert count1 == count2
     assert (
@@ -314,12 +335,7 @@ def test_merge_tree_nested_custom_disk_setting(start_cluster):
     node = cluster.instances["node1"]
 
     minio = cluster.minio_client
-    for obj in list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)):
-        minio.remove_object(cluster.minio_bucket, obj.object_name)
-    assert (
-        len(list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True)))
-        == 0
-    )
+    remove_minio_objects(minio, "data/")
 
     node.query(
         f"""
@@ -373,7 +389,63 @@ def test_merge_tree_setting_override(start_cluster):
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
         ORDER BY tuple()
-        SETTINGS disk = 'kek', storage_policy = 's3';
+        SETTINGS disk = 's3', storage_policy = 's3';
+    """
+        )
+    )
+
+    assert (
+        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
+        in node.query_and_get_error(
+            f"""
+        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS storage_policy = 's3';
+        ALTER TABLE {TABLE_NAME} MODIFY SETTING disk = 's3';
+    """
+        )
+    )
+
+    assert (
+        "MergeTree settings `storage_policy` and `disk` cannot be specified at the same time"
+        in node.query_and_get_error(
+            f"""
+        DROP TABLE IF EXISTS {TABLE_NAME} SYNC;
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS disk = 's3';
+        ALTER TABLE {TABLE_NAME} MODIFY SETTING storage_policy = 's3';
+    """
+        )
+    )
+
+    assert (
+        "New storage policy `local` shall contain volumes of the old storage policy `s3`"
+        in node.query_and_get_error(
+            f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple()
+        SETTINGS storage_policy = 's3';
+        ALTER TABLE {TABLE_NAME} MODIFY SETTING storage_policy = 'local';
+    """
+        )
+    )
+
+    # Using default policy so storage_policy and disk are not set at the same time
+    assert (
+        "New storage policy `__disk_local` shall contain disks of the old storage policy `hybrid`"
+        in node.query_and_get_error(
+            f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME} (a Int32)
+        ENGINE = MergeTree()
+        ORDER BY tuple();
+        ALTER TABLE {TABLE_NAME} MODIFY SETTING disk = 'disk_local';
     """
         )
     )
@@ -383,7 +455,8 @@ def test_merge_tree_setting_override(start_cluster):
         DROP TABLE IF EXISTS {TABLE_NAME};
         CREATE TABLE {TABLE_NAME} (a Int32)
         ENGINE = MergeTree()
-        ORDER BY tuple();
+        ORDER BY tuple()
+        SETTINGS storage_policy = 'kek';
     """
     )
 

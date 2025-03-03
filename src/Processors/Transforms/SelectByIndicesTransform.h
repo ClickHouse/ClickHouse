@@ -26,8 +26,12 @@ public:
     void transform(Chunk & chunk) override
     {
         size_t num_rows = chunk.getNumRows();
-        auto select_final_indices_info = chunk.getChunkInfos().extract<ChunkSelectFinalIndices>();
 
+        auto select_all_rows_info = chunk.getChunkInfos().extract<ChunkSelectFinalAllRows>();
+        if (select_all_rows_info)
+            return;
+
+        auto select_final_indices_info = chunk.getChunkInfos().extract<ChunkSelectFinalIndices>();
         if (!select_final_indices_info || !select_final_indices_info->select_final_indices)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Chunk passed to SelectByIndicesTransform without indices column");
 

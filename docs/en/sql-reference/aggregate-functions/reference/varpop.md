@@ -1,12 +1,17 @@
 ---
 title: "varPop"
-slug: "/en/sql-reference/aggregate-functions/reference/varPop"
+slug: /en/sql-reference/aggregate-functions/reference/varPop
 sidebar_position: 210
+description: "Calculates the population variance."
 ---
 
-## varPop
+## varPop {#varpop}
 
-Calculates the population variance.
+Calculates the population variance:
+
+$$
+\frac{\Sigma{(x - \bar{x})^2}}{n}
+$$
 
 **Syntax**
 

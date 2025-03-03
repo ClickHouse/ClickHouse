@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-ordinary-database
+# Tags: no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage
+# no-fasttest: The test is slow (too many small blocks)
+# no-azure-blob-storage: The test uploads many parts to Azure (5k+), and it runs in parallel with other tests.
+#     As a result, they may interfere, and some queries won't be able to finish in 30 seconds timeout leading to a test failure.
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -25,7 +28,7 @@ function insert_data
         $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$TXN_SETTINGS"
         SETTINGS="$SETTINGS&session_check=1"
         BEGIN="begin transaction;"
-        COMMIT=$(echo -ne "\n\ncommit")
+        COMMIT=$(echo -ne "\n\n\ncommit")
     fi
 
     # max_block_size=10000, so external table will contain smaller blocks that will be squashed on insert-select (more chances to catch a bug on query cancellation)
@@ -41,7 +44,7 @@ function insert_data
     else
         # client will send 1000-rows blocks, server will squash them into 110000-rows blocks (more chances to catch a bug on query cancellation)
         $CLICKHOUSE_CLIENT --stacktrace --query_id="$ID" --throw_on_unsupported_query_inside_transaction=0 --implicit_transaction="$IMPLICIT" \
-            --max_block_size=1000 --max_insert_block_size=1000 --multiquery -q \
+            --max_block_size=1000 --max_insert_block_size=1000 -q \
             "${BEGIN}insert into dedup_test settings max_insert_block_size=110000, min_insert_block_size_rows=110000 format TSV$COMMIT" < $DATA_FILE \
             | grep -Fv "Transaction is not in RUNNING state"
     fi

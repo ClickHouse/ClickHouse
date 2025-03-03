@@ -1,12 +1,12 @@
 ---
-slug: /en/sql-reference/functions/conditional-functions
+slug: /sql-reference/functions/conditional-functions
 sidebar_position: 40
 sidebar_label: Conditional
 ---
 
 # Conditional Functions
 
-## if
+## if {#if}
 
 Performs conditional branching.
 
@@ -47,9 +47,9 @@ Result:
 └────────────┘
 ```
 
-## multiIf
+## multiIf {#multiif}
 
-Allows to write the [CASE](../../sql-reference/operators/index.md#operator_case) operator more compactly in the query.
+Allows to write the [CASE](../../sql-reference/operators/index.md#conditional-expression) operator more compactly in the query.
 
 **Syntax**
 
@@ -100,7 +100,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴─────────────────┘
 ```
 
-## Using Conditional Results Directly
+## Using Conditional Results Directly {#using-conditional-results-directly}
 
 Conditionals always result to `0`, `1` or `NULL`. So you can use conditional results directly like this:
 
@@ -117,7 +117,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-## NULL Values in Conditionals
+## NULL Values in Conditionals {#null-values-in-conditionals}
 
 When `NULL` values are involved in conditionals, the result will also be `NULL`.
 
@@ -153,7 +153,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-## greatest
+## greatest {#greatest}
 
 Returns the greatest across a list of values.  All of the list members must be of comparable types.
 
@@ -191,10 +191,10 @@ SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 ```
 
 :::note
-The type returned is a DateTime64 as the DataTime32 must be promoted to 64 bit for the comparison.
+The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
 :::
 
-## least
+## least {#least}
 
 Returns the least across a list of values.  All of the list members must be of comparable types.
 
@@ -232,10 +232,10 @@ SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 ```
 
 :::note
-The type returned is a DateTime64 as the DataTime32 must be promoted to 64 bit for the comparison.
+The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
 :::
 
-## clamp
+## clamp {#clamp}
 
 Constrain the return value between A and B.
 

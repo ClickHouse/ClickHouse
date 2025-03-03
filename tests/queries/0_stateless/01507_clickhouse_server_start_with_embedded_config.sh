@@ -34,7 +34,7 @@ done
 
 # Check access rights
 
-$CLICKHOUSE_CLIENT -n --query "
+$CLICKHOUSE_CLIENT --query "
     DROP DATABASE IF EXISTS test;
     CREATE DATABASE test;
     USE test;

@@ -3,8 +3,8 @@
 #include <Storages/IStorage.h>
 #include <Storages/IStorageCluster.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
-#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/getStructureOfRemoteTable.h>
+#include <Columns/IColumn.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SimpleIncrement.h>
 #include <Client/ConnectionPool.h>
@@ -17,6 +17,7 @@
 namespace DB
 {
 
+struct DistributedSettings;
 struct Settings;
 class Context;
 
@@ -61,21 +62,8 @@ public:
         const DistributedSettings & distributed_settings_,
         LoadingStrictnessLevel mode,
         ClusterPtr owned_cluster_ = {},
-        ASTPtr remote_table_function_ptr_ = {});
-
-    StorageDistributed(
-        const StorageID & id_,
-        const ColumnsDescription & columns_,
-        const ConstraintsDescription & constraints_,
-        ASTPtr remote_table_function_ptr_,
-        const String & cluster_name_,
-        ContextPtr context_,
-        const ASTPtr & sharding_key_,
-        const String & storage_policy_name_,
-        const String & relative_data_path_,
-        const DistributedSettings & distributed_settings_,
-        LoadingStrictnessLevel mode,
-        ClusterPtr owned_cluster_ = {});
+        ASTPtr remote_table_function_ptr_ = {},
+        bool is_remote_function_ = false);
 
     ~StorageDistributed() override;
 
@@ -230,7 +218,7 @@ private:
     size_t getRandomShardIndex(const Cluster::ShardsInfo & shards);
     std::string getClusterName() const { return cluster_name.empty() ? "<remote>" : cluster_name; }
 
-    const DistributedSettings & getDistributedSettingsRef() const { return distributed_settings; }
+    const DistributedSettings & getDistributedSettingsRef() const { return *distributed_settings; }
 
     void delayInsertOrThrowIfNeeded() const;
 
@@ -272,7 +260,7 @@ private:
     /// Other volumes will be ignored. It's needed to allow using the same multi-volume policy both for Distributed and other engines.
     VolumePtr data_volume;
 
-    DistributedSettings distributed_settings;
+    std::unique_ptr<DistributedSettings> distributed_settings;
 
     struct ClusterNodeData
     {
@@ -287,6 +275,8 @@ private:
     // For random shard index generation
     mutable std::mutex rng_mutex;
     pcg64 rng;
+
+    bool is_remote_function;
 };
 
 }

@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 SELECT *, ngramMinHash(*) AS minhash, mortonEncode(untuple(ngramMinHash(*))) AS z
 FROM (SELECT toString(number) FROM numbers(10))
@@ -38,4 +38,3 @@ ORDER BY tuple();
 INSERT INTO seq VALUES (0), (6), (7);
 
 WITH (Select min(number), max(number) from seq) as range Select * from numbers(range.1, range.2);
-

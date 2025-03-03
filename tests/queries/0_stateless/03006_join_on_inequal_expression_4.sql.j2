@@ -15,7 +15,7 @@ CREATE TABLE t2 (
 INSERT INTO t1 (key, a) VALUES (1, 10), (2, 15), (3, 20);
 INSERT INTO t2 (key, a) VALUES (1, 5), (2, 10), (4, 25);
 
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 SET allow_experimental_join_condition=1;
 SET join_algorithm='hash';
 -- { echoOn }

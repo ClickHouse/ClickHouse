@@ -47,6 +47,8 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
     if i > 0 and random.random() < 1 / 3:
         client_options.append("use_query_cache=1")
+        client_options.append("query_cache_nondeterministic_function_handling='ignore'")
+        client_options.append("query_cache_system_table_handling='ignore'")
 
     if i % 5 == 1:
         client_options.append("memory_tracker_fault_probability=0.001")
@@ -73,10 +75,10 @@ def get_options(i: int, upgrade_check: bool) -> str:
     # TODO: After release 24.3 use ignore_drop_queries_probability for both
     #       stress test and upgrade check
     if not upgrade_check:
-        client_options.append("ignore_drop_queries_probability=0.5")
+        client_options.append("ignore_drop_queries_probability=0.2")
 
     if random.random() < 0.2:
-        client_options.append("allow_experimental_parallel_reading_from_replicas=1")
+        client_options.append("enable_parallel_replicas=1")
         client_options.append("max_parallel_replicas=3")
         client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
         client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
@@ -139,7 +141,8 @@ def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None
 def make_query_command(query: str) -> str:
     return (
         f'clickhouse client -q "{query}" --max_untracked_memory=1Gi '
-        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000"
+        "--memory_profiler_step=1Gi --max_memory_usage_for_user=0 --max_memory_usage_in_client=1000000000 "
+        "--enable-progress-table-toggle=0"
     )
 
 
@@ -269,23 +272,6 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     return True
 
 
-def is_ubsan_build() -> bool:
-    try:
-        query = (
-            'clickhouse client -q "SELECT value FROM system.build_options '
-            "WHERE name = 'CXX_FLAGS'\" "
-        )
-        output = (
-            check_output(query, shell=True, stderr=STDOUT, timeout=30)
-            .decode("utf-8")
-            .strip()
-        )
-        return "-fsanitize=undefined" in output
-    except Exception as e:
-        logging.info("Failed to get build flags: %s", str(e))
-        return False
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="ClickHouse script for running stresstest"
@@ -313,10 +299,6 @@ def main():
         raise argparse.ArgumentTypeError(
             "--drop-databases only used in hung check (--hung-check)"
         )
-
-    # FIXME Hung check with ubsan is temporarily disabled due to
-    # https://github.com/ClickHouse/ClickHouse/issues/45372
-    suppress_hung_check = is_ubsan_build()
 
     func_pipes = []
     func_pipes = run_func_test(
@@ -382,7 +364,7 @@ def main():
             res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600)
             if tee.stdin is not None:
                 tee.stdin.close()
-        if res != 0 and have_long_running_queries and not suppress_hung_check:
+        if res != 0 and have_long_running_queries:
             logging.info("Hung check failed with exit code %d", res)
         else:
             hung_check_status = "No queries hung\tOK\t\\N\t\n"

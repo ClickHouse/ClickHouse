@@ -1,3 +1,4 @@
+#include <exception>
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/StorageMergeTree.h>
 #include <Interpreters/PartLog.h>
@@ -19,6 +20,11 @@ namespace ErrorCodes
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool insert_deduplicate;
+    extern const SettingsUInt64 max_insert_delayed_streams_for_parallel_write;
+}
 
 struct MergeTreeSink::DelayedChunk
 {
@@ -34,7 +40,20 @@ struct MergeTreeSink::DelayedChunk
 };
 
 
-MergeTreeSink::~MergeTreeSink() = default;
+MergeTreeSink::~MergeTreeSink()
+{
+    if (!delayed_chunk)
+        return;
+
+    chassert(isCancelled() || std::uncaught_exceptions());
+
+    for (auto & partition : delayed_chunk->partitions)
+    {
+        partition.temp_part.cancel();
+    }
+
+    delayed_chunk.reset();
+}
 
 MergeTreeSink::MergeTreeSink(
     StorageMergeTree & storage_,
@@ -59,11 +78,9 @@ void MergeTreeSink::onStart()
 
 void MergeTreeSink::onFinish()
 {
-    finishDelayedChunk();
-}
+    chassert(!isCancelled());
 
-void MergeTreeSink::onCancel()
-{
+    finishDelayedChunk();
 }
 
 void MergeTreeSink::consume(Chunk & chunk)
@@ -81,7 +98,7 @@ void MergeTreeSink::consume(Chunk & chunk)
     DelayedPartitions partitions;
 
     const Settings & settings = context->getSettingsRef();
-    size_t streams = 0;
+    size_t total_streams = 0;
     bool support_parallel_write = false;
 
     auto token_info = chunk.getChunkInfos().get<DeduplicationToken::TokenInfo>();
@@ -132,24 +149,26 @@ void MergeTreeSink::consume(Chunk & chunk)
 
         size_t max_insert_delayed_streams_for_parallel_write;
 
-        if (settings.max_insert_delayed_streams_for_parallel_write.changed)
-            max_insert_delayed_streams_for_parallel_write = settings.max_insert_delayed_streams_for_parallel_write;
+        if (settings[Setting::max_insert_delayed_streams_for_parallel_write].changed)
+            max_insert_delayed_streams_for_parallel_write = settings[Setting::max_insert_delayed_streams_for_parallel_write];
         else if (support_parallel_write)
             max_insert_delayed_streams_for_parallel_write = DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE;
         else
             max_insert_delayed_streams_for_parallel_write = 0;
 
         /// In case of too much columns/parts in block, flush explicitly.
-        streams += temp_part.streams.size();
+        size_t current_streams = 0;
+        for (const auto & stream : temp_part.streams)
+            current_streams += stream.stream->getNumberOfOpenStreams();
 
-        if (streams > max_insert_delayed_streams_for_parallel_write)
+        if (total_streams + current_streams > max_insert_delayed_streams_for_parallel_write)
         {
             finishDelayedChunk();
             delayed_chunk = std::make_unique<MergeTreeSink::DelayedChunk>();
             delayed_chunk->partitions = std::move(partitions);
             finishDelayedChunk();
 
-            streams = 0;
+            total_streams = 0;
             support_parallel_write = false;
             partitions = DelayedPartitions{};
         }
@@ -161,6 +180,8 @@ void MergeTreeSink::consume(Chunk & chunk)
             .block_dedup_token = block_dedup_token,
             .part_counters = std::move(part_counters),
         });
+
+        total_streams += current_streams;
     }
 
     if (need_to_define_dedup_token)
@@ -201,9 +222,9 @@ void MergeTreeSink::finishDelayedChunk()
 
             auto * deduplication_log = storage.getDeduplicationLog();
 
-            if (settings.insert_deduplicate && deduplication_log)
+            if (settings[Setting::insert_deduplicate] && deduplication_log)
             {
-                const String block_id = part->getZeroLevelPartBlockID(partition.block_dedup_token);
+                const String block_id = part->getNewPartBlockID(partition.block_dedup_token);
                 auto res = deduplication_log->addPart(block_id, part->info);
                 if (!res.second)
                 {
@@ -213,13 +234,25 @@ void MergeTreeSink::finishDelayedChunk()
                 }
             }
 
-            added = storage.renameTempPartAndAdd(part, transaction, lock);
+            /// FIXME: renames for MergeTree should be done under the same lock
+            /// to avoid removing extra covered parts after merge.
+            ///
+            /// Image the following:
+            /// - T1: all_2_2_0 is in renameParts()
+            /// - T2: merge assigned for [all_1_1_0, all_3_3_0]
+            /// - T1: renameParts() finished, part had been added as Active
+            /// - T2: merge finished, covered parts removed, and it will include all_2_2_0!
+            ///
+            /// Hence, for now rename_in_transaction is false.
+            added = storage.renameTempPartAndAdd(part, transaction, lock, /*rename_in_transaction=*/ false);
             transaction.commit(&lock);
         }
 
         /// Part can be deduplicated, so increment counters and add to part log only if it's really added
         if (added)
         {
+            partition.temp_part.prewarmCaches();
+
             auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
             PartLog::addNewPart(storage.getContext(), PartLog::PartLogEntry(part, partition.elapsed_ns, counters_snapshot));
             StorageMergeTree::incrementInsertedPartsProfileEvent(part->getType());

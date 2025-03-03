@@ -235,8 +235,12 @@ public:
     /// additional mutation command (MATERIALIZE_TTL) will be returned.
     MutationCommands getMutationCommands(StorageInMemoryMetadata metadata, bool materialize_ttl, ContextPtr context, bool with_alters=false) const;
 
-    /// Check if commands have any full-text index
+    /// Check if commands have any full-text index or a (legacy) inverted index
     static bool hasFullTextIndex(const StorageInMemoryMetadata & metadata);
+    static bool hasLegacyInvertedIndex(const StorageInMemoryMetadata & metadata);
+
+    /// Check if commands have any vector similarity index
+    static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
 };
 
 }

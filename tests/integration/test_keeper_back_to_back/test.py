@@ -1,10 +1,12 @@
-import pytest
-from helpers.cluster import ClickHouseCluster
+import os
 import random
 import string
-import os
 import time
 from multiprocessing.dummy import Pool
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -23,8 +25,13 @@ def get_genuine_zk():
 
 def get_fake_zk():
     print("node", cluster.get_instance_ip("node"))
+    kazoo_retry = {
+        "max_tries": 10,
+    }
     _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip("node") + ":9181", timeout=30.0
+        hosts=cluster.get_instance_ip("node") + ":9181",
+        timeout=30.0,
+        connection_retry=kazoo_retry,
     )
 
     def reset_last_zxid_listener(state):
@@ -362,7 +369,7 @@ def test_multitransactions(started_cluster):
             assert results[0] == "/test_multitransactions/freddy"
             assert results[2].startswith("/test_multitransactions/smith0") is True
 
-        from kazoo.exceptions import RolledBackError, NoNodeError
+        from kazoo.exceptions import NoNodeError, RolledBackError
 
         for i, zk in enumerate([genuine_zk, fake_zk]):
             print("Processing ZK", i)

@@ -1,13 +1,14 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <Columns/ColumnAggregateFunction.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Common/AlignedBuffer.h>
 
 namespace DB
 {
+
+class ColumnAggregateFunction;
 
 /** Merges several sorted inputs to one.
   * During this for each group of consecutive identical values of the primary key (the columns by which the data is sorted),
@@ -29,6 +30,8 @@ public:
     void initialize(Inputs inputs) override;
     void consume(Input & input, size_t source_num) override;
     Status merge() override;
+
+    MergedStats getMergedStats() const override { return merged_data.getMergedStats(); }
 
     /// Stores information for aggregation of SimpleAggregateFunction columns
     struct SimpleAggregateDescription

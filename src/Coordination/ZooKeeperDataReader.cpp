@@ -9,6 +9,8 @@
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromFile.h>
 #include <Coordination/KeeperCommon.h>
+#include <Coordination/KeeperStorage_fwd.h>
+#include <Coordination/KeeperStorage.h>
 
 
 namespace DB
@@ -31,7 +33,8 @@ int64_t getZxidFromName(const std::string & filename)
 
 void deserializeSnapshotMagic(ReadBuffer & in)
 {
-    int32_t magic_header, version;
+    int32_t magic_header;
+    int32_t version;
     int64_t dbid;
     Coordination::read(magic_header, in);
     Coordination::read(version, in);
@@ -93,7 +96,7 @@ void deserializeACLMap(Storage & storage, ReadBuffer & in)
 }
 
 template<typename Storage>
-int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log)
+int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     int64_t max_zxid = 0;
     std::string path;
@@ -108,33 +111,33 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
         Coordination::read(node.acl_id, in);
 
         /// Deserialize stat
-        Coordination::read(node.czxid, in);
-        Coordination::read(node.mzxid, in);
+        Coordination::read(node.stats.czxid, in);
+        Coordination::read(node.stats.mzxid, in);
         /// For some reason ZXID specified in filename can be smaller
         /// then actual zxid from nodes. In this case we will use zxid from nodes.
-        max_zxid = std::max(max_zxid, node.mzxid);
+        max_zxid = std::max(max_zxid, node.stats.mzxid);
 
         int64_t ctime;
         Coordination::read(ctime, in);
-        node.setCtime(ctime);
-        Coordination::read(node.mtime, in);
-        Coordination::read(node.version, in);
-        Coordination::read(node.cversion, in);
-        Coordination::read(node.aversion, in);
+        node.stats.setCtime(ctime);
+        Coordination::read(node.stats.mtime, in);
+        Coordination::read(node.stats.version, in);
+        Coordination::read(node.stats.cversion, in);
+        Coordination::read(node.stats.aversion, in);
         int64_t ephemeral_owner;
         Coordination::read(ephemeral_owner, in);
         if (ephemeral_owner != 0)
-            node.setEphemeralOwner(ephemeral_owner);
-        Coordination::read(node.pzxid, in);
+            node.stats.setEphemeralOwner(ephemeral_owner);
+        Coordination::read(node.stats.pzxid, in);
         if (!path.empty())
         {
             if (ephemeral_owner == 0)
-                node.setSeqNum(node.cversion);
+                node.stats.setSeqNum(node.stats.cversion);
 
             storage.container.insertOrReplace(path, node);
 
             if (ephemeral_owner != 0)
-                storage.ephemerals[ephemeral_owner].insert(path);
+                storage.committed_ephemerals[ephemeral_owner].insert(path);
 
             storage.acl_map.addUsage(node.acl_id);
         }
@@ -149,7 +152,13 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
         if (itr.key != "/")
         {
             auto parent_path = parentNodePath(itr.key);
-            storage.container.updateValue(parent_path, [my_path = itr.key] (typename Storage::Node & value) { value.addChild(getBaseNodeName(my_path)); value.increaseNumChildren(); });
+            storage.container.updateValue(
+                parent_path,
+                [my_path = itr.key](typename Storage::Node & value)
+                {
+                    value.addChild(getBaseNodeName(my_path));
+                    value.stats.increaseNumChildren();
+                });
         }
     }
 
@@ -157,7 +166,7 @@ int64_t deserializeStorageData(Storage & storage, ReadBuffer & in, LoggerPtr log
 }
 
 template<typename Storage>
-void deserializeKeeperStorageFromSnapshot(Storage & storage, const std::string & snapshot_path, LoggerPtr log)
+void deserializeKeeperStorageFromSnapshot(Storage & storage, const std::string & snapshot_path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     LOG_INFO(log, "Deserializing storage snapshot {}", snapshot_path);
     int64_t zxid = getZxidFromName(snapshot_path);
@@ -221,7 +230,8 @@ void deserializeKeeperStorageFromSnapshotsDir(Storage & storage, const std::stri
 
 void deserializeLogMagic(ReadBuffer & in)
 {
-    int32_t magic_header, version;
+    int32_t magic_header;
+    int32_t version;
     int64_t dbid;
     Coordination::read(magic_header, in);
     Coordination::read(version, in);
@@ -487,7 +497,7 @@ bool hasErrorsInMultiRequest(Coordination::ZooKeeperRequestPtr request)
 }
 
 template<typename Storage>
-bool deserializeTxn(Storage & storage, ReadBuffer & in, LoggerPtr /*log*/)
+bool deserializeTxn(Storage & storage, ReadBuffer & in, LoggerPtr /*log*/) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     int64_t checksum;
     Coordination::read(checksum, in);
@@ -568,7 +578,7 @@ void deserializeLogAndApplyToStorage(Storage & storage, const std::string & log_
 }
 
 template<typename Storage>
-void deserializeLogsAndApplyToStorage(Storage & storage, const std::string & path, LoggerPtr log)
+void deserializeLogsAndApplyToStorage(Storage & storage, const std::string & path, LoggerPtr log) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
     std::map<int64_t, std::string> existing_logs;
     for (const auto & p : fs::directory_iterator(path))

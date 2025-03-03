@@ -1,10 +1,13 @@
-import pytest
 import logging
+
+import pytest
+
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
-from helpers.test_tools import assert_eq_with_retry
-from helpers.wait_for_helpers import wait_for_delete_inactive_parts
-from helpers.wait_for_helpers import wait_for_delete_empty_parts
+from helpers.test_tools import TSV, assert_eq_with_retry
+from helpers.wait_for_helpers import (
+    wait_for_delete_empty_parts,
+    wait_for_delete_inactive_parts,
+)
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -369,6 +372,11 @@ def test_drop_detached_parts(drop_detached_parts_table):
 
 
 def test_system_detached_parts(drop_detached_parts_table):
+    q("drop table if exists sdp_0 sync")
+    q("drop table if exists sdp_1 sync")
+    q("drop table if exists sdp_2 sync")
+    q("drop table if exists sdp_3 sync")
+
     q(
         "create table sdp_0 (n int, x int) engine=MergeTree order by n SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )
@@ -489,12 +497,13 @@ def test_system_detached_parts(drop_detached_parts_table):
             q("alter table sdp_{} attach partition id '{}'".format(i, p))
 
     assert (
-        q("select n, x, count() from merge('default', 'sdp_') group by n, x")
+        q("select n, x::int AS x, count() from merge('default', '^sdp_') group by n, x")
         == "0\t0\t4\n1\t1\t4\n"
     )
 
 
 def test_detached_part_dir_exists(started_cluster):
+    q("drop table if exists detached_part_dir_exists sync")
     q(
         "create table detached_part_dir_exists (n int) engine=MergeTree order by n "
         "SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, old_parts_lifetime=0"
@@ -548,6 +557,7 @@ def test_detached_part_dir_exists(started_cluster):
 
 
 def test_make_clone_in_detached(started_cluster):
+    q("drop table if exists clone_in_detached sync")
     q(
         "create table clone_in_detached (n int, m String) engine=ReplicatedMergeTree('/clone_in_detached', '1') order by n SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1"
     )

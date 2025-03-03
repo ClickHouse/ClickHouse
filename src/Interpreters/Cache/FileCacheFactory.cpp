@@ -1,5 +1,6 @@
 #include "FileCacheFactory.h"
 #include "FileCache.h"
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -7,6 +8,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
 }
 
 FileCacheFactory::FileCacheData::FileCacheData(
@@ -25,10 +31,10 @@ FileCacheSettings FileCacheFactory::FileCacheData::getSettings() const
     return settings;
 }
 
-void FileCacheFactory::FileCacheData::setSettings(const FileCacheSettings & new_settings)
+void FileCacheFactory::FileCacheData::setSettings(FileCacheSettings && new_settings)
 {
     std::lock_guard lock(settings_mutex);
-    settings = new_settings;
+    settings = std::move(new_settings);
 }
 
 FileCacheFactory & FileCacheFactory::instance()
@@ -43,6 +49,16 @@ FileCacheFactory::CacheByName FileCacheFactory::getAll()
     return caches_by_name;
 }
 
+FileCachePtr FileCacheFactory::get(const std::string & cache_name)
+{
+    std::lock_guard lock(mutex);
+
+    auto it = caches_by_name.find(cache_name);
+    if (it == caches_by_name.end())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no cache by name `{}`", cache_name);
+    return it->second->cache;
+}
+
 FileCachePtr FileCacheFactory::getOrCreate(
     const std::string & cache_name,
     const FileCacheSettings & file_cache_settings,
@@ -52,7 +68,7 @@ FileCachePtr FileCacheFactory::getOrCreate(
 
     auto it = std::find_if(caches_by_name.begin(), caches_by_name.end(), [&](const auto & cache_by_name)
     {
-        return cache_by_name.second->getSettings().base_path == file_cache_settings.base_path;
+        return cache_by_name.second->getSettings()[FileCacheSetting::path].value == file_cache_settings[FileCacheSetting::path].value;
     });
 
     if (it == caches_by_name.end())
@@ -98,7 +114,7 @@ FileCachePtr FileCacheFactory::create(
 
     it = std::find_if(caches_by_name.begin(), caches_by_name.end(), [&](const auto & cache_by_name)
     {
-        return cache_by_name.second->getSettings().base_path == file_cache_settings.base_path;
+        return cache_by_name.second->getSettings()[FileCacheSetting::path].value == file_cache_settings[FileCacheSetting::path].value;
     });
 
     if (it == caches_by_name.end())
@@ -175,12 +191,24 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
         {
             /// Settings changes could be partially applied in case of exception,
             /// make sure cache_info->settings show correct state of applied settings.
-            cache_info->setSettings(old_settings);
+            cache_info->setSettings(std::move(old_settings));
             tryLogCurrentException(__PRETTY_FUNCTION__);
             throw;
         }
 
-        cache_info->setSettings(old_settings);
+        cache_info->setSettings(std::move(old_settings));
+    }
+}
+
+void FileCacheFactory::remove(FileCachePtr cache)
+{
+    std::lock_guard lock(mutex);
+    for (auto it = caches_by_name.begin(); it != caches_by_name.end();)
+    {
+        if (it->second->cache == cache)
+            it = caches_by_name.erase(it);
+        else
+            ++it;
     }
 }
 
@@ -190,4 +218,20 @@ void FileCacheFactory::clear()
     caches_by_name.clear();
 }
 
+void FileCacheFactory::loadDefaultCaches(const Poco::Util::AbstractConfiguration & config)
+{
+    Poco::Util::AbstractConfiguration::Keys cache_names;
+    config.keys(FILECACHE_DEFAULT_CONFIG_PATH, cache_names);
+    auto * log = &Poco::Logger::get("FileCacheFactory");
+    LOG_DEBUG(log, "Will load {} caches from default cache config", cache_names.size());
+    for (const auto & name : cache_names)
+    {
+        FileCacheSettings settings;
+        const auto & config_path = fmt::format("{}.{}", FILECACHE_DEFAULT_CONFIG_PATH, name);
+        settings.loadFromConfig(config, config_path);
+        auto cache = getOrCreate(name, settings, config_path);
+        cache->initialize();
+        LOG_DEBUG(log, "Loaded cache `{}` from default cache config", name);
+    }
+}
 }

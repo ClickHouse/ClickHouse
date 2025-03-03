@@ -1,18 +1,23 @@
 ---
-slug: /en/operations/system-tables/query_thread_log
+description: "System table containing information about threads that execute queries, for example, thread name, thread start time, duration of query processing."
+slug: /operations/system-tables/query_thread_log
+title: "system.query_thread_log"
+keywords: ["system table", "query_thread_log"]
 ---
-# query_thread_log
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+<SystemTableCloud/>
 
 Contains information about threads that execute queries, for example, thread name, thread start time, duration of query processing.
 
 To start logging:
 
-1.  Configure parameters in the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) section.
-2.  Set [log_query_threads](../../operations/settings/settings.md#log-query-threads) to 1.
+1.  Configure parameters in the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) section.
+2.  Set [log_query_threads](operations/settings/settings#log_query_threads) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_thread_log](/operations/server-configuration-parameters/settings#query_thread_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
 
-ClickHouse does not delete data from the table automatically. See [Introduction](../../operations/system-tables/index.md#system-tables-introduction) for more details.
+ClickHouse does not delete data from the table automatically. See [Introduction](/operations/system-tables/overview#system-tables-introduction) for more details.
 
 You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_thread_log` table.
 
@@ -49,7 +54,7 @@ Columns:
 - `interface` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Interface that the query was initiated from. Possible values:
     - 1 — TCP.
     - 2 — HTTP.
-- `os_user` ([String](../../sql-reference/data-types/string.md)) — OS’s username who runs [clickhouse-client](../../interfaces/cli.md).
+- `os_user` ([String](../../sql-reference/data-types/string.md)) — OS's username who runs [clickhouse-client](../../interfaces/cli.md).
 - `client_hostname` ([String](../../sql-reference/data-types/string.md)) — Hostname of the client machine where the [clickhouse-client](../../interfaces/cli.md) or another TCP client is run.
 - `client_name` ([String](../../sql-reference/data-types/string.md)) — The [clickhouse-client](../../interfaces/cli.md) or another TCP client name.
 - `client_revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — Revision of the [clickhouse-client](../../interfaces/cli.md) or another TCP client.
@@ -61,9 +66,9 @@ Columns:
     - 1 — `GET` method was used.
     - 2 — `POST` method was used.
 - `http_user_agent` ([String](../../sql-reference/data-types/string.md)) — The `UserAgent` header passed in the HTTP request.
-- `quota_key` ([String](../../sql-reference/data-types/string.md)) — The “quota key” specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
+- `quota_key` ([String](../../sql-reference/data-types/string.md)) — The "quota key" specified in the [quotas](../../operations/quotas.md) setting (see `keyed`).
 - `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ClickHouse revision.
-- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events).
+- `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents that measure different metrics for this thread. The description of them could be found in the table [system.events](/operations/system-tables/events).
 
 **Example**
 
@@ -117,5 +122,5 @@ ProfileEvents:        {'Query':1,'SelectQuery':1,'ReadCompressedBytes':36,'Compr
 
 **See Also**
 
-- [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — Description of the `query_log` system table which contains common information about queries execution.
-- [system.query_views_log](../../operations/system-tables/query_views_log.md#system_tables-query_views_log) — This table contains information about each view executed during a query.
+- [system.query_log](/operations/system-tables/query_log) — Description of the `query_log` system table which contains common information about queries execution.
+- [system.query_views_log](/operations/system-tables/query_views_log) — This table contains information about each view executed during a query.

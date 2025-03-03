@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 
 import logging
-import pytest
 import os
+import random
+import string
+
 import minio
+import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_s3_mock
 from helpers.test_tools import assert_eq_with_retry
+
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 
 @pytest.fixture(scope="module")
@@ -16,33 +21,60 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node",
-            main_configs=[
-                "configs/storage_conf.xml",
-            ],
+            main_configs=[],
             user_configs=[
                 "configs/setting.xml",
                 "configs/s3_retries.xml",
             ],
             with_minio=True,
+            stay_alive=True,
         )
         cluster.add_instance(
             "node_with_inf_s3_retries",
-            main_configs=[
-                "configs/storage_conf.xml",
-            ],
+            main_configs=[],
             user_configs=[
                 "configs/setting.xml",
                 "configs/inf_s3_retries.xml",
             ],
             with_minio=True,
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "node_with_query_log_on_s3",
+            main_configs=[
+                "configs/storage_conf.xml",
+                "configs/query_log_conf.xml",
+            ],
+            user_configs=[
+                "configs/setting.xml",
+                "configs/no_s3_retries.xml",
+            ],
+            with_minio=True,
+            stay_alive=True,
         )
         logging.info("Starting cluster...")
         cluster.start()
+
+        start_s3_mock(cluster, "broken_s3", "8083")
+
+        for _, node in cluster.instances.items():
+            node.stop_clickhouse()
+            node.copy_file_to_container(
+                os.path.join(CONFIG_DIR, "storage_conf.xml"),
+                "/etc/clickhouse-server/config.d/storage_conf.xml",
+            )
+            node.start_clickhouse()
+
         logging.info("Cluster started")
 
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def randomize_query_id(query_id, random_suffix_length=10):
+    letters = string.ascii_letters + string.digits
+    return f"{query_id}_{''.join(random.choice(letters) for _ in range(random_suffix_length))}"
 
 
 @pytest.fixture(scope="module")
@@ -61,6 +93,7 @@ def test_upload_after_check_works(cluster, broken_s3):
 
     node.query(
         """
+        DROP TABLE IF EXISTS s3_upload_after_check_works;
         CREATE TABLE s3_upload_after_check_works (
             id Int64,
             data String
@@ -127,7 +160,9 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression
 
     broken_s3.setup_at_create_multi_part_upload()
 
-    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_FAIL_CREATE_MPU_{compression}"
+    insert_query_id = randomize_query_id(
+        f"INSERT_INTO_TABLE_FUNCTION_FAIL_CREATE_MPU_{compression}"
+    )
     error = node.query_and_get_error(
         f"""
         INSERT INTO
@@ -169,7 +204,9 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_at_part_upload(count=1, after=2)
 
-    insert_query_id = f"INSERT_INTO_TABLE_FUNCTION_FAIL_UPLOAD_PART_{compression}"
+    insert_query_id = randomize_query_id(
+        f"INSERT_INTO_TABLE_FUNCTION_FAIL_UPLOAD_PART_{compression}"
+    )
     error = node.query_and_get_error(
         f"""
         INSERT INTO
@@ -197,7 +234,10 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
     )
     assert create_multipart == 1
     assert upload_parts >= 2
-    assert s3_errors >= 2
+    # the first error is the injected error
+    # the second is `void DB::WriteBufferFromS3::tryToAbortMultipartUpload(): Code: 499. DB::Exception: The specified multipart upload does not exist.`
+    # due to `broken_s3.setup_fake_multpartuploads()`
+    assert s3_errors == 2
 
 
 @pytest.mark.parametrize(
@@ -221,7 +261,7 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
     broken_s3.setup_fake_multpartuploads()
     broken_s3.setup_at_part_upload(count=3, after=2, action=action)
 
-    insert_query_id = f"INSERT_INTO_TABLE_{action}_RETRIED"
+    insert_query_id = randomize_query_id(f"INSERT_INTO_TABLE_{action}_RETRIED")
     node.query(
         f"""
         INSERT INTO
@@ -250,7 +290,7 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
     assert s3_errors == 3
 
     broken_s3.setup_at_part_upload(count=1000, after=2, action=action)
-    insert_query_id = f"INSERT_INTO_TABLE_{action}_RETRIED_1"
+    insert_query_id = randomize_query_id(f"INSERT_INTO_TABLE_{action}_RETRIED_1")
     error = node.query_and_get_error(
         f"""
             INSERT INTO
@@ -285,7 +325,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         action="broken_pipe",
     )
 
-    insert_query_id = f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD"
+    insert_query_id = randomize_query_id(f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD")
     node.query(
         f"""
         INSERT INTO
@@ -319,7 +359,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         after=2,
         action="broken_pipe",
     )
-    insert_query_id = f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD_1"
+    insert_query_id = randomize_query_id(f"TEST_WHEN_S3_BROKEN_PIPE_AT_UPLOAD_1")
     error = node.query_and_get_error(
         f"""
                INSERT INTO
@@ -361,7 +401,7 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
         action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = (
+    insert_query_id = randomize_query_id(
         f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_UPLOAD_{send_something}"
     )
     node.query(
@@ -398,7 +438,7 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
         action="connection_reset_by_peer",
         action_args=["1"] if send_something else ["0"],
     )
-    insert_query_id = (
+    insert_query_id = randomize_query_id(
         f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_UPLOAD_{send_something}_1"
     )
     error = node.query_and_get_error(
@@ -443,7 +483,7 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = (
+    insert_query_id = randomize_query_id(
         f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_MULTIPARTUPLOAD_{send_something}"
     )
     node.query(
@@ -481,7 +521,7 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         action_args=["1"] if send_something else ["0"],
     )
 
-    insert_query_id = (
+    insert_query_id = randomize_query_id(
         f"TEST_WHEN_S3_CONNECTION_RESET_BY_PEER_AT_MULTIPARTUPLOAD_{send_something}_1"
     )
     error = node.query_and_get_error(
@@ -521,7 +561,7 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         action="connection_refused",
     )
 
-    insert_query_id = f"TEST_QUERY_IS_CANCELED_WITH_INF_RETRIES"
+    insert_query_id = randomize_query_id(f"TEST_QUERY_IS_CANCELED_WITH_INF_RETRIES")
     request = node.get_query_request(
         f"""
         INSERT INTO
@@ -579,7 +619,7 @@ def test_adaptive_timeouts(cluster, broken_s3, node_name):
         count=1000000,
     )
 
-    insert_query_id = f"TEST_ADAPTIVE_TIMEOUTS_{node_name}"
+    insert_query_id = randomize_query_id(f"TEST_ADAPTIVE_TIMEOUTS_{node_name}")
     node.query(
         f"""
             INSERT INTO
@@ -631,6 +671,7 @@ def test_no_key_found_disk(cluster, broken_s3):
 
     node.query(
         """
+        DROP TABLE IF EXISTS no_key_found_disk;
         CREATE TABLE no_key_found_disk (
             id Int64
         ) ENGINE=MergeTree()
@@ -689,3 +730,162 @@ def test_no_key_found_disk(cluster, broken_s3):
         "DB::Exception: The specified key does not exist. This error happened for S3 disk."
         in error
     )
+
+    s3_disk_no_key_errors_metric_value = int(
+        node.query(
+            """
+            SELECT value
+            FROM system.metrics
+            WHERE metric = 'DiskS3NoSuchKeyErrors'
+            """
+        ).strip()
+    )
+
+    assert s3_disk_no_key_errors_metric_value > 0
+
+
+def test_node_with_query_log_on_s3(cluster, broken_s3):
+    node = cluster.instances["node_with_query_log_on_s3"]
+
+    node.query(
+        """
+        SYSTEM FLUSH LOGS
+        """
+    )
+
+    node.query(
+        """
+        DROP VIEW IF EXISTS log_sink_mv
+        """
+    )
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS log_sink
+        """
+    )
+
+    node.query(
+        """
+        CREATE TABLE log_sink
+            ENGINE = MergeTree()
+            ORDER BY ()
+            EMPTY AS
+            SELECT *
+            FROM system.query_log
+        """
+    )
+
+    node.query(
+        """
+        CREATE MATERIALIZED VIEW log_sink_mv TO log_sink AS
+            SELECT *
+            FROM system.query_log
+        """
+    )
+
+    node.query(
+        """
+        SELECT 1111
+        """
+    )
+
+    node.query(
+        """
+        SYSTEM FLUSH LOGS
+        """
+    )
+
+    node.query(
+        """
+        SELECT 2222
+        """
+    )
+
+    broken_s3.setup_at_object_upload(count=100, after=0)
+
+    node.query(
+        """
+        SYSTEM FLUSH LOGS
+        """
+    )
+
+    count_from_query_log = node.query(
+        """
+        SELECT count() from system.query_log WHERE query like 'SELECT 2222%' AND type = 'QueryFinish'
+        """
+    )
+
+    assert count_from_query_log == "0\n"
+
+
+def test_exception_in_onFinish(cluster, broken_s3):
+    node = cluster.instances["node_with_query_log_on_s3"]
+
+    node.query(
+        """
+        DROP VIEW IF EXISTS source_sink_mv
+        """
+    )
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS source_sink
+        """
+    )
+
+    node.query(
+        """
+        DROP TABLE IF EXISTS source
+        """
+    )
+
+    node.query(
+        """
+        CREATE TABLE source (i Int64)
+            ENGINE = MergeTree()
+            ORDER BY ()
+            SETTINGS storage_policy='broken_s3'
+        """
+    )
+
+    node.query(
+        """
+        CREATE TABLE source_sink
+            ENGINE = MergeTree()
+            ORDER BY ()
+            EMPTY AS
+            SELECT *
+            FROM source
+        """
+    )
+
+    node.query(
+        """
+        CREATE MATERIALIZED VIEW source_sink_mv TO source_sink AS
+            SELECT *
+            FROM source
+        """
+    )
+
+    node.query(
+        """
+        INSERT INTO source SETTINGS materialized_views_ignore_errors=1 VALUES (1)
+        """
+    )
+
+    broken_s3.setup_at_object_upload(count=100, after=0)
+
+    node.query_and_get_error(
+        """
+        INSERT INTO source SETTINGS materialized_views_ignore_errors=1 VALUES (2)
+        """
+    )
+
+    count_from_query_log = node.query(
+        """
+        SELECT count() from source
+        """
+    )
+
+    assert count_from_query_log == "1\n"

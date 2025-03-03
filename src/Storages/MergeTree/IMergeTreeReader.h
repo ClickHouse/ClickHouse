@@ -17,7 +17,8 @@ class IMergeTreeReader : private boost::noncopyable
 public:
     using ValueSizeMap = std::map<std::string, double>;
     using VirtualFields = std::unordered_map<String, Field>;
-    using DeserializeBinaryBulkStateMap = std::map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
+    using DeserializeBinaryBulkStateMap = std::unordered_map<std::string, ISerialization::DeserializeBinaryBulkStatePtr>;
+    using FileStreams = std::map<std::string, std::unique_ptr<MergeTreeReaderStream>>;
 
     IMergeTreeReader(
         MergeTreeDataPartInfoForReaderPtr data_part_info_for_read_,
@@ -66,12 +67,6 @@ public:
     virtual void prefetchBeginOfRange(Priority) {}
 
 protected:
-    /// Returns actual column name in part, which can differ from table metadata.
-    String getColumnNameInPart(const NameAndTypePair & required_column) const;
-    /// Returns actual column name and type in part, which can differ from table metadata.
-    NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
-    /// Returns actual serialization in part, which can differ from table metadata.
-    SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;
 
@@ -80,14 +75,18 @@ protected:
 
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
-    /// Stores states for IDataType::deserializeBinaryBulk
+    /// Stores states for IDataType::deserializeBinaryBulk for regular columns.
     DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map;
+    /// The same as above, but for subcolumns.
+    DeserializeBinaryBulkStateMap deserialize_binary_bulk_state_map_for_subcolumns;
 
-    /// Actual column names and types of columns in part,
-    /// which may differ from table metadata.
+   /// Actual columns description in part.
+    const ColumnsDescription & part_columns;
+    /// Actual column names and types of columns in part, which may differ from table metadata.
     NamesAndTypes columns_to_read;
     /// Actual serialization of columns in part.
     Serializations serializations;
+    SerializationByName serializations_of_full_columns;
 
     UncompressedCache * const uncompressed_cache;
     MarkCache * const mark_cache;
@@ -97,13 +96,19 @@ protected:
     const StorageSnapshotPtr storage_snapshot;
     const MarkRanges all_mark_ranges;
 
-    /// Position and level (of nesting).
-    using ColumnNameLevel = std::optional<std::pair<String, size_t>>;
+    /// Column, serialization and level (of nesting) of column
+    /// which is used for reading offsets for missing nested column.
+    struct ColumnForOffsets
+    {
+        NameAndTypePair column;
+        SerializationPtr serialization;
+        size_t level = 0;
+    };
 
     /// In case of part of the nested column does not exist, offsets should be
     /// read, but only the offsets for the current column, that is why it
     /// returns pair of size_t, not just one.
-    ColumnNameLevel findColumnForOffsets(const NameAndTypePair & column) const;
+    std::optional<ColumnForOffsets> findColumnForOffsets(const NameAndTypePair & column) const;
 
     NameSet partially_read_columns;
 
@@ -111,11 +116,18 @@ protected:
     AlterConversionsPtr alter_conversions;
 
 private:
-    /// Columns that are requested to read.
-    NamesAndTypesList requested_columns;
+    /// Returns actual column name in part, which can differ from table metadata.
+    String getColumnNameInPart(const NameAndTypePair & required_column) const;
+    /// Returns actual column name and type in part, which can differ from table metadata.
+    NameAndTypePair getColumnInPart(const NameAndTypePair & required_column) const;
+    /// Returns actual serialization in part, which can differ from table metadata.
+    SerializationPtr getSerializationInPart(const NameAndTypePair & required_column) const;
 
-    /// Actual columns description in part.
-    const ColumnsDescription & part_columns;
+    /// Columns that are requested to read.
+    NamesAndTypesList original_requested_columns;
+
+    /// The same as above but with converted Arrays to subcolumns of Nested.
+    NamesAndTypesList requested_columns;
 
     /// Fields of virtual columns that were filled in previous stages.
     VirtualFields virtual_fields;

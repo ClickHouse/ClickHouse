@@ -1,5 +1,5 @@
 -- https://github.com/ClickHouse/ClickHouse/issues/14739
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 drop table if exists test_subquery;
 

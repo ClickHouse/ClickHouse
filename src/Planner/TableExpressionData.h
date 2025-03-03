@@ -73,7 +73,7 @@ public:
     }
 
     /// Add alias column
-    void addAliasColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier, ActionsDAGPtr actions_dag, bool is_selected_column = true)
+    void addAliasColumn(const NameAndTypePair & column, const ColumnIdentifier & column_identifier, ActionsDAG actions_dag, bool is_selected_column = true)
     {
         alias_column_expressions.emplace(column.name, std::move(actions_dag));
         addColumnImpl(column, column_identifier, is_selected_column);
@@ -94,7 +94,7 @@ public:
     }
 
     /// Get ALIAS columns names mapped to expressions
-    const std::unordered_map<std::string, ActionsDAGPtr> & getAliasColumnExpressions() const
+    std::unordered_map<std::string, ActionsDAG> & getAliasColumnExpressions()
     {
         return alias_column_expressions;
     }
@@ -211,32 +211,32 @@ public:
         is_merge_tree = is_merge_tree_value;
     }
 
-    const ActionsDAGPtr & getPrewhereFilterActions() const
+    const std::optional<ActionsDAG> & getPrewhereFilterActions() const
     {
         return prewhere_filter_actions;
     }
 
-    void setRowLevelFilterActions(ActionsDAGPtr row_level_filter_actions_value)
+    void setRowLevelFilterActions(ActionsDAG row_level_filter_actions_value)
     {
         row_level_filter_actions = std::move(row_level_filter_actions_value);
     }
 
-    const ActionsDAGPtr & getRowLevelFilterActions() const
+    const std::optional<ActionsDAG> & getRowLevelFilterActions() const
     {
         return row_level_filter_actions;
     }
 
-    void setPrewhereFilterActions(ActionsDAGPtr prewhere_filter_actions_value)
+    void setPrewhereFilterActions(ActionsDAG prewhere_filter_actions_value)
     {
         prewhere_filter_actions = std::move(prewhere_filter_actions_value);
     }
 
-    const ActionsDAGPtr & getFilterActions() const
+    const std::optional<ActionsDAG> & getFilterActions() const
     {
         return filter_actions;
     }
 
-    void setFilterActions(ActionsDAGPtr filter_actions_value)
+    void setFilterActions(ActionsDAG filter_actions_value)
     {
         filter_actions = std::move(filter_actions_value);
     }
@@ -277,7 +277,7 @@ private:
     NameSet selected_column_names_set;
 
     /// Expression to calculate ALIAS columns
-    std::unordered_map<std::string, ActionsDAGPtr> alias_column_expressions;
+    std::unordered_map<std::string, ActionsDAG> alias_column_expressions;
 
     /// Valid for table, table function, array join, query, union nodes
     ColumnNameToColumn column_name_to_column;
@@ -289,16 +289,16 @@ private:
     ColumnIdentifierToColumnName column_identifier_to_column_name;
 
     /// Valid for table, table function
-    ActionsDAGPtr filter_actions;
+    std::optional<ActionsDAG> filter_actions;
 
     /// Valid for table, table function
     PrewhereInfoPtr prewhere_info;
 
     /// Valid for table, table function
-    ActionsDAGPtr prewhere_filter_actions;
+    std::optional<ActionsDAG> prewhere_filter_actions;
 
     /// Valid for table, table function
-    ActionsDAGPtr row_level_filter_actions;
+    std::optional<ActionsDAG> row_level_filter_actions;
 
     /// Is storage remote
     bool is_remote = false;

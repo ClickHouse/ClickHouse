@@ -2,8 +2,6 @@
 # Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# reset --log_comment
-CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -19,7 +17,7 @@ function test()
     $CH_CLIENT -q "insert into test select number, 'str_' || toString(number) from numbers(50000, 100000)"
 
     $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
-    $CH_CLIENT -nm -q "system start merges test; optimize table test final"
+    $CH_CLIENT -m -q "system start merges test; optimize table test final"
     $CH_CLIENT -q "select count(), dynamicType(d) from test group by dynamicType(d) order by count(), dynamicType(d)"
     $CH_CLIENT -q "drop table test"
 }

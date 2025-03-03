@@ -26,6 +26,8 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Core/Settings.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
@@ -35,6 +37,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
+}
+
+namespace Setting
+{
+    extern const SettingsBool use_concurrency_control;
 }
 
 namespace
@@ -99,6 +106,8 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
     return result_context;
 }
 
+}
+
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
     auto nodes = extractAllTableReferences(query_tree);
@@ -123,7 +132,7 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }
 
-QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
+static QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     const SelectQueryOptions & select_query_options,
     const ContextPtr & context,
     const StoragePtr & storage)
@@ -147,7 +156,6 @@ QueryTreeNodePtr buildQueryTreeAndRunPasses(const ASTPtr & query,
     return query_tree;
 }
 
-}
 
 InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     const ASTPtr & query_,
@@ -199,7 +207,7 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
     return interpreter.getSampleBlock();
 }
 
-Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
+std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(const QueryTreeNodePtr & query_tree,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
 {
@@ -207,13 +215,26 @@ Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & qu
     select_query_options_copy.only_analyze = true;
     InterpreterSelectQueryAnalyzer interpreter(query_tree, context, select_query_options_copy);
 
-    return interpreter.getSampleBlock();
+    return interpreter.getSampleBlockAndPlannerContext();
+}
+
+Block InterpreterSelectQueryAnalyzer::getSampleBlock(const QueryTreeNodePtr & query_tree,
+    const ContextPtr & context,
+    const SelectQueryOptions & select_query_options)
+{
+    return getSampleBlockAndPlannerContext(query_tree, context, select_query_options).first;
 }
 
 Block InterpreterSelectQueryAnalyzer::getSampleBlock()
 {
     planner.buildQueryPlanIfNeeded();
-    return planner.getQueryPlan().getCurrentDataStream().header;
+    return planner.getQueryPlan().getCurrentHeader();
+}
+
+std::pair<Block, PlannerContextPtr> InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext()
+{
+    planner.buildQueryPlanIfNeeded();
+    return {planner.getQueryPlan().getCurrentHeader(), planner.getPlannerContext()};
 }
 
 BlockIO InterpreterSelectQueryAnalyzer::execute()
@@ -246,8 +267,10 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
 
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(context);
-    auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(context);
+    QueryPlanOptimizationSettings optimization_settings(context);
+    BuildQueryPipelineSettings build_pipeline_settings(context);
+
+    query_plan.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
     return std::move(*query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings));
 }

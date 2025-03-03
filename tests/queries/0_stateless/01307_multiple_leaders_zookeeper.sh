@@ -12,8 +12,8 @@ DATA_SIZE=200
 
 SEQ=$(seq 0 $(($NUM_REPLICAS - 1)))
 
-for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT -n --query "DROP TABLE IF EXISTS r$REPLICA"; done
-for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT -n --query "CREATE TABLE r$REPLICA (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r$REPLICA') ORDER BY x SETTINGS min_bytes_for_wide_part = '10M';"; done
+for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS r$REPLICA"; done
+for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT --query "CREATE TABLE r$REPLICA (x UInt64) ENGINE = ReplicatedMergeTree('/test/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/table', 'r$REPLICA') ORDER BY x SETTINGS min_bytes_for_wide_part = '10M';"; done
 
 function thread()
 {
@@ -30,6 +30,6 @@ done
 
 wait
 
-for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT -n --query "SYSTEM SYNC REPLICA r$REPLICA"; done
-for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT -n --query "SELECT count(), sum(x) FROM r$REPLICA"; done
-for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT -n --query "DROP TABLE r$REPLICA"; done
+for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA r$REPLICA"; done
+for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT --query "SELECT count(), sum(x) FROM r$REPLICA"; done
+for REPLICA in $SEQ; do $CLICKHOUSE_CLIENT --query "DROP TABLE r$REPLICA"; done

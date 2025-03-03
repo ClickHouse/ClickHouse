@@ -1,4 +1,6 @@
+#include <Columns/ColumnVector.h>
 #include <DataTypes/Serializations/SerializationIPv4andIPv6.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
@@ -18,7 +20,7 @@ void SerializationIP<IPv>::deserializeText(DB::IColumn & column, DB::ReadBuffer 
     assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
 
     if (whole && !istr.eof())
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, {TypeName<IPv>.data(), TypeName<IPv>.size()});
 }
 
 template <typename IPv>
@@ -79,7 +81,7 @@ void SerializationIP<IPv>::deserializeTextJSON(DB::IColumn & column, DB::ReadBuf
         assertChar('"', istr);
     assert_cast<ColumnVector<IPv> &>(column).getData().push_back(x);
     if (*istr.position() != '"')
-        throwUnexpectedDataAfterParsedValue(column, istr, settings, TypeName<IPv>.data());
+        throwUnexpectedDataAfterParsedValue(column, istr, settings, {TypeName<IPv>.data(), TypeName<IPv>.size()});
     istr.ignore();
 }
 
@@ -125,7 +127,7 @@ bool SerializationIP<IPv>::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadB
 template <typename IPv>
 void SerializationIP<IPv>::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    IPv x = field.get<IPv>();
+    IPv x = field.safeGet<IPv>();
     if constexpr (std::is_same_v<IPv, IPv6>)
         writeBinary(x, ostr);
     else

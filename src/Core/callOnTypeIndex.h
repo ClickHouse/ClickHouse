@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <Core/Types.h>
+#include <DataTypes/DataTypeInterval.h>
 
 
 namespace DB
@@ -62,6 +63,7 @@ static bool callOnBasicType(TypeIndex number, F && f)
     {
         switch (number)
         {
+            case TypeIndex::BFloat16:     return f(TypePair<T, BFloat16>());
             case TypeIndex::Float32:      return f(TypePair<T, Float32>());
             case TypeIndex::Float64:      return f(TypePair<T, Float64>());
             default:
@@ -77,6 +79,77 @@ static bool callOnBasicType(TypeIndex number, F && f)
             case TypeIndex::Date32:       return f(TypePair<T, Int32>());
             case TypeIndex::DateTime:     return f(TypePair<T, UInt32>());
             case TypeIndex::DateTime64:   return f(TypePair<T, DateTime64>());
+            default:
+                break;
+        }
+    }
+
+    return false;
+}
+
+
+template <typename T, bool _int, bool _float, bool _decimal, bool _datetime, typename F>
+static bool callOnBasicTypeSecondArg(TypeIndex number, F && f)
+{
+    if constexpr (_int)
+    {
+        switch (number)
+        {
+            case TypeIndex::UInt8:        return f(TypePair<UInt8, T>());
+            case TypeIndex::UInt16:       return f(TypePair<UInt16, T>());
+            case TypeIndex::UInt32:       return f(TypePair<UInt32, T>());
+            case TypeIndex::UInt64:       return f(TypePair<UInt64, T>());
+            case TypeIndex::UInt128:      return f(TypePair<UInt128, T>());
+            case TypeIndex::UInt256:      return f(TypePair<UInt256, T>());
+
+            case TypeIndex::Int8:         return f(TypePair<Int8, T>());
+            case TypeIndex::Int16:        return f(TypePair<Int16, T>());
+            case TypeIndex::Int32:        return f(TypePair<Int32, T>());
+            case TypeIndex::Int64:        return f(TypePair<Int64, T>());
+            case TypeIndex::Int128:       return f(TypePair<Int128, T>());
+            case TypeIndex::Int256:       return f(TypePair<Int256, T>());
+
+            case TypeIndex::Enum8:        return f(TypePair<Int8, T>());
+            case TypeIndex::Enum16:       return f(TypePair<Int16, T>());
+
+            default:
+                break;
+        }
+    }
+
+    if constexpr (_decimal)
+    {
+        switch (number)
+        {
+            case TypeIndex::Decimal32:    return f(TypePair<Decimal32, T>());
+            case TypeIndex::Decimal64:    return f(TypePair<Decimal64, T>());
+            case TypeIndex::Decimal128:   return f(TypePair<Decimal128, T>());
+            case TypeIndex::Decimal256:   return f(TypePair<Decimal256, T>());
+            default:
+                break;
+        }
+    }
+
+    if constexpr (_float)
+    {
+        switch (number)
+        {
+            case TypeIndex::BFloat16:     return f(TypePair<BFloat16, T>());
+            case TypeIndex::Float32:      return f(TypePair<Float32, T>());
+            case TypeIndex::Float64:      return f(TypePair<Float64, T>());
+            default:
+                break;
+        }
+    }
+
+    if constexpr (_datetime)
+    {
+        switch (number)
+        {
+            case TypeIndex::Date:         return f(TypePair<UInt16, T>());
+            case TypeIndex::Date32:       return f(TypePair<Int32, T>());
+            case TypeIndex::DateTime:     return f(TypePair<UInt32, T>());
+            case TypeIndex::DateTime64:   return f(TypePair<DateTime64, T>());
             default:
                 break;
         }
@@ -132,6 +205,7 @@ static inline bool callOnBasicTypes(TypeIndex type_num1, TypeIndex type_num2, F 
     {
         switch (type_num1)
         {
+            case TypeIndex::BFloat16: return callOnBasicType<BFloat16, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Float32: return callOnBasicType<Float32, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             case TypeIndex::Float64: return callOnBasicType<Float64, _int, _float, _decimal, _datetime>(type_num2, std::forward<F>(f));
             default:
@@ -189,6 +263,7 @@ static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... ar
         case TypeIndex::Int128:         return f(TypePair<DataTypeNumber<Int128>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Int256:         return f(TypePair<DataTypeNumber<Int256>, T>(), std::forward<ExtraArgs>(args)...);
 
+        case TypeIndex::BFloat16:        return f(TypePair<DataTypeNumber<BFloat16>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Float32:        return f(TypePair<DataTypeNumber<Float32>, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::Float64:        return f(TypePair<DataTypeNumber<Float64>, T>(), std::forward<ExtraArgs>(args)...);
 
@@ -211,6 +286,8 @@ static bool callOnIndexAndDataType(TypeIndex number, F && f, ExtraArgs && ... ar
         case TypeIndex::UUID:           return f(TypePair<DataTypeUUID, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::IPv4:           return f(TypePair<DataTypeIPv4, T>(), std::forward<ExtraArgs>(args)...);
         case TypeIndex::IPv6:           return f(TypePair<DataTypeIPv6, T>(), std::forward<ExtraArgs>(args)...);
+
+        case TypeIndex::Interval:       return f(TypePair<DataTypeInterval, T>(), std::forward<ExtraArgs>(args)...);
 
         default:
             break;

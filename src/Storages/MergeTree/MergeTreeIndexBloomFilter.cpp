@@ -7,7 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
 #include <DataTypes/DataTypeArray.h>
@@ -18,6 +18,8 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/Set.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
@@ -83,6 +85,14 @@ MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
 bool MergeTreeIndexGranuleBloomFilter::empty() const
 {
     return !total_rows;
+}
+
+size_t MergeTreeIndexGranuleBloomFilter::memoryUsageBytes() const
+{
+    size_t sum = 0;
+    for (const auto & bloom_filter : bloom_filters)
+        sum += bloom_filter->memoryUsageBytes();
+    return sum;
 }
 
 void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
@@ -185,23 +195,15 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
                                                         hash_functions);
                            });
     }
-    else
-    {
-        return std::any_of(hashes.begin(),
-                           hashes.end(),
-                           [&](const auto& hash_row)
-                           {
-                               return hashMatchesFilter(bloom_filter,
-                                                        hash_row,
-                                                        hash_functions);
-                           });
-    }
+
+    return std::any_of(
+        hashes.begin(), hashes.end(), [&](const auto & hash_row) { return hashMatchesFilter(bloom_filter, hash_row, hash_functions); });
 }
 
 }
 
 MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const ActionsDAGPtr & filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_)
+    const ActionsDAG * filter_actions_dag, ContextPtr context_, const Block & header_, size_t hash_functions_)
     : WithContext(context_), header(header_), hash_functions(hash_functions_)
 {
     if (!filter_actions_dag)
@@ -348,19 +350,19 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
         {
             if (const_value.getType() == Field::Types::UInt64)
             {
-                out.function = const_value.get<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.safeGet<UInt64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
 
             if (const_value.getType() == Field::Types::Int64)
             {
-                out.function = const_value.get<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.safeGet<Int64>() ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
 
             if (const_value.getType() == Field::Types::Float64)
             {
-                out.function = const_value.get<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
+                out.function = const_value.safeGet<Float64>() != 0.0 ? RPNElement::ALWAYS_TRUE : RPNElement::ALWAYS_FALSE;
                 return true;
             }
         }
@@ -371,67 +373,78 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
 
 bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
 {
-    bool maybe_useful = false;
+    if (!node.isFunction())
+        return false;
 
-    if (node.isFunction())
+    const auto function = node.toFunctionNode();
+    auto arguments_size = function.getArgumentsSize();
+    auto function_name = function.getFunctionName();
+
+    if (parent == nullptr)
     {
-        const auto function = node.toFunctionNode();
-        auto arguments_size = function.getArgumentsSize();
-        auto function_name = function.getFunctionName();
-
+        /// Recurse a little bit for indexOf().
         for (size_t i = 0; i < arguments_size; ++i)
         {
             auto argument = function.getArgumentAt(i);
             if (traverseFunction(argument, out, &node))
-                maybe_useful = true;
-        }
-
-        if (arguments_size != 2)
-            return false;
-
-        auto lhs_argument = function.getArgumentAt(0);
-        auto rhs_argument = function.getArgumentAt(1);
-
-        if (functionIsInOrGlobalInOperator(function_name))
-        {
-            if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
-            {
-                if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
-                {
-                    if (prepared_set->hasExplicitSetElements())
-                    {
-                        const auto prepared_info = getPreparedSetInfo(prepared_set);
-                        if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
-                            maybe_useful = true;
-                    }
-                }
-            }
-        }
-        else if (function_name == "equals" ||
-                 function_name == "notEquals" ||
-                 function_name == "has" ||
-                 function_name == "mapContains" ||
-                 function_name == "indexOf" ||
-                 function_name == "hasAny" ||
-                 function_name == "hasAll")
-        {
-            Field const_value;
-            DataTypePtr const_type;
-
-            if (rhs_argument.tryGetConstant(const_value, const_type))
-            {
-                if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
-                    maybe_useful = true;
-            }
-            else if (lhs_argument.tryGetConstant(const_value, const_type))
-            {
-                if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
-                    maybe_useful = true;
-            }
+                return true;
         }
     }
 
-    return maybe_useful;
+    if (arguments_size != 2)
+        return false;
+
+    /// indexOf() should be inside comparison function, e.g. greater(indexOf(key, 42), 0).
+    /// Other conditions should be at top level, e.g. equals(key, 42), not equals(equals(key, 42), 1).
+    if ((function_name == "indexOf") != (parent != nullptr))
+        return false;
+
+    auto lhs_argument = function.getArgumentAt(0);
+    auto rhs_argument = function.getArgumentAt(1);
+
+    if (functionIsInOrGlobalInOperator(function_name))
+    {
+        if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
+        {
+            if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
+            {
+                if (prepared_set->hasExplicitSetElements())
+                {
+                    const auto prepared_info = getPreparedSetInfo(prepared_set);
+                    if (traverseTreeIn(function_name, lhs_argument, prepared_set, prepared_info.type, prepared_info.column, out))
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    if (function_name == "equals" ||
+        function_name == "notEquals" ||
+        function_name == "has" ||
+        function_name == "mapContains" ||
+        function_name == "indexOf" ||
+        function_name == "hasAny" ||
+        function_name == "hasAll")
+    {
+        Field const_value;
+        DataTypePtr const_type;
+
+        if (rhs_argument.tryGetConstant(const_value, const_type))
+        {
+            if (traverseTreeEquals(function_name, lhs_argument, const_type, const_value, out, parent))
+                return true;
+        }
+        else if (lhs_argument.tryGetConstant(const_value, const_type) && (function_name == "equals" || function_name == "notEquals"))
+        {
+            if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
+                return true;
+        }
+
+        return false;
+    }
+
+    return false;
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
@@ -582,9 +595,8 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
     {
         return true;
     }
-    else if (function_name == "equals" /// notEquals is not applicable
-        || function_name == "greater" || function_name == "greaterOrEquals"
-        || function_name == "less" || function_name == "lessOrEquals")
+    if (function_name == "equals" /// notEquals is not applicable
+        || function_name == "greater" || function_name == "greaterOrEquals" || function_name == "less" || function_name == "lessOrEquals")
     {
         size_t function_arguments_size = function.getArgumentsSize();
         if (function_arguments_size != 2)
@@ -613,24 +625,25 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
         }
 
         Field zero(0);
-        bool constant_equal_zero = applyVisitor(FieldVisitorAccurateEquals(), constant_value, zero);
+        bool constant_equal_zero = accurateEquals(constant_value, zero);
 
         if (function_name == "equals" && !constant_equal_zero)
         {
             /// indexOf(...) = c, c != 0
             return true;
         }
-        else if (function_name == "notEquals" && constant_equal_zero)
+        if (function_name == "notEquals" && constant_equal_zero)
         {
             /// indexOf(...) != c, c = 0
             return true;
         }
-        else if (function_name == (reversed ? "less" : "greater") && !applyVisitor(FieldVisitorAccurateLess(), constant_value, zero))
+        if (function_name == (reversed ? "less" : "greater") && !accurateLess(constant_value, zero))
         {
             /// indexOf(...) > c, c >= 0
             return true;
         }
-        else if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals") && applyVisitor(FieldVisitorAccurateLess(), zero, constant_value))
+        if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals")
+            && accurateLess(zero, constant_value))
         {
             /// indexOf(...) >= c, c > 0
             return true;
@@ -692,7 +705,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 const bool is_nullable = actual_type->isNullable();
                 auto mutable_column = actual_type->createColumn();
 
-                for (const auto & f : value_field.get<Array>())
+                for (const auto & f : value_field.safeGet<Array>())
                 {
                     if ((f.isNull() && !is_nullable) || f.isDecimal(f.getType())) /// NOLINT(readability-static-accessed-through-instance)
                         return false;
@@ -763,7 +776,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         if (which.isTuple() && key_node_function_name == "tuple")
         {
-            const Tuple & tuple = value_field.get<const Tuple &>();
+            const Tuple & tuple = value_field.safeGet<Tuple>();
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             if (tuple.size() != key_node_function_arguments_size)
@@ -897,7 +910,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator(con
     return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(filter_actions_dag, context, index.sample_block, hash_functions);
 }
@@ -952,7 +965,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach)
     {
         const auto & argument = index.arguments[0];
 
-        if (!attach && (argument.getType() != Field::Types::Float64 || argument.get<Float64>() < 0 || argument.get<Float64>() > 1))
+        if (!attach && (argument.getType() != Field::Types::Float64 || argument.safeGet<Float64>() < 0 || argument.safeGet<Float64>() > 1))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The BloomFilter false positive must be a double number between 0 and 1.");
     }
 }

@@ -234,16 +234,19 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 ### Синтаксис {#show-grants-syntax}
 
 ``` sql
-SHOW GRANTS [FOR user]
+SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
 ```
 
 Если пользователь не задан, запрос возвращает привилегии текущего пользователя.
 
+`WITH IMPLICIT` добавляет неявные привилегии (например `GRANT SELECT ON system.one`).
+
+`FINAL` объединяет все текущие привилегии с привилегиями всех ролей пользователя (с наследованием).
 
 
 ## SHOW CREATE USER {#show-create-user-statement}
 
-Выводит параметры, использованные при [создании пользователя](create/user.md#create-user-statement).
+Выводит параметры, использованные при [создании пользователя](/sql-reference/statements/create/user).
 
 `SHOW CREATE USER` не возвращает пароль пользователя.
 
@@ -255,7 +258,7 @@ SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
 
-Выводит параметры, использованные при [создании роли](create/role.md#create-role-statement).
+Выводит параметры, использованные при [создании роли](/sql-reference/statements/create/role).
 
 ### Синтаксис {#show-create-role-syntax}
 

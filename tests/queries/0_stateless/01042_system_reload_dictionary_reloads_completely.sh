@@ -8,7 +8,19 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e -o pipefail
 
-$CLICKHOUSE_CLIENT --multiquery <<EOF
+# Wait when the dictionary will update the value for 13 on its own:
+function wait_for_dict_upate()
+{
+    for ((i = 0; i < 100; ++i)); do
+        if [ "$(${CLICKHOUSE_CLIENT} --query "SELECT dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(13))")" != -1 ]; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    return 1
+}
+
+$CLICKHOUSE_CLIENT <<EOF
 CREATE TABLE ${CLICKHOUSE_DATABASE}.table(x Int64, y Int64, insert_time DateTime) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO ${CLICKHOUSE_DATABASE}.table VALUES (12, 102, now());
 
@@ -19,7 +31,7 @@ CREATE DICTIONARY ${CLICKHOUSE_DATABASE}.dict
   insert_time DateTime
 )
 PRIMARY KEY x
-SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table' DB '${CLICKHOUSE_DATABASE}' UPDATE_FIELD 'insert_time'))
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT tcpPort() USER 'default' TABLE 'table' DB '${CLICKHOUSE_DATABASE}' UPDATE_FIELD 'insert_time' UPDATE_LAG 60))
 LAYOUT(FLAT())
 LIFETIME(1);
 EOF
@@ -29,11 +41,10 @@ $CLICKHOUSE_CLIENT --query "SELECT '12 -> ', dictGetInt64('${CLICKHOUSE_DATABASE
 $CLICKHOUSE_CLIENT --query "INSERT INTO ${CLICKHOUSE_DATABASE}.table VALUES (13, 103, now())"
 $CLICKHOUSE_CLIENT --query "INSERT INTO ${CLICKHOUSE_DATABASE}.table VALUES (14, 104, now() - INTERVAL 1 DAY)"
 
-# Wait when the dictionary will update the value for 13 on its own:
-while [ "$(${CLICKHOUSE_CLIENT} --query "SELECT dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(13))")" = -1 ]
-do
-    sleep 0.5
-done
+if ! wait_for_dict_upate; then
+    echo "Dictionary had not been reloaded" >&2
+    exit 1
+fi
 
 $CLICKHOUSE_CLIENT --query "SELECT '13 -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(13))"
 

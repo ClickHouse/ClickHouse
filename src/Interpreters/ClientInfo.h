@@ -1,16 +1,14 @@
 #pragma once
 
-#include <Core/UUID.h>
-#include <Poco/Net/SocketAddress.h>
 #include <base/types.h>
-#include <Common/OpenTelemetryTraceContext.h>
-#include <Common/VersionNumber.h>
-#include <boost/algorithm/string/trim.hpp>
+#include <Common/OpenTelemetryTracingContext.h>
 
+#include <time.h>
 
 namespace Poco::Net
 {
     class HTTPRequest;
+    class SocketAddress;
 }
 
 namespace DB
@@ -38,6 +36,7 @@ public:
         POSTGRESQL = 5,
         LOCAL = 6,
         TCP_INTERSERVER = 7,
+        PROMETHEUS = 8,
     };
 
     enum class HTTPMethod : uint8_t
@@ -55,17 +54,19 @@ public:
         SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
     };
 
+    ClientInfo();
+
     QueryKind query_kind = QueryKind::NO_QUERY;
 
     /// Current values are not serialized, because it is passed separately.
     String current_user;
     String current_query_id;
-    Poco::Net::SocketAddress current_address;
+    std::shared_ptr<Poco::Net::SocketAddress> current_address;
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
     String initial_query_id;
-    Poco::Net::SocketAddress initial_address;
+    std::shared_ptr<Poco::Net::SocketAddress> initial_address;
     time_t initial_query_start_time{};
     Decimal64 initial_query_start_time_microseconds{};
 
@@ -85,7 +86,11 @@ public:
     UInt64 client_version_major = 0;
     UInt64 client_version_minor = 0;
     UInt64 client_version_patch = 0;
-    unsigned client_tcp_protocol_version = 0;
+    UInt32 client_tcp_protocol_version = 0;
+
+    /// Numbers are starting from 1. Zero means unset.
+    UInt32 script_query_number = 0;
+    UInt32 script_line_number = 0;
 
     /// In case of distributed query, client info for query is actually a client info of client.
     /// In order to get a version of server-initiator, use connection_ values.
@@ -93,7 +98,7 @@ public:
     UInt64 connection_client_version_major = 0;
     UInt64 connection_client_version_minor = 0;
     UInt64 connection_client_version_patch = 0;
-    unsigned connection_tcp_protocol_version = 0;
+    UInt32 connection_tcp_protocol_version = 0;
 
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;
@@ -104,19 +109,16 @@ public:
     /// For mysql and postgresql
     UInt64 connection_id = 0;
 
+    /// For interserver in case initial query transport was authenticated via JWT.
+    String jwt;
+
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
     /// The element can be trusted only if you trust the corresponding proxy.
     /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
     String forwarded_for;
-    String getLastForwardedFor() const
-    {
-        if (forwarded_for.empty())
-            return {};
-        String last = forwarded_for.substr(forwarded_for.find_last_of(',') + 1);
-        boost::trim(last);
-        return last;
-    }
+    std::optional<Poco::Net::SocketAddress> getLastForwardedFor() const;
+    String getLastForwardedForHost() const;
 
     /// Common
     String quota_key;
@@ -158,12 +160,11 @@ public:
     bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
 
     String getVersionStr() const;
-    VersionNumber getVersionNumber() const;
 
 private:
     void fillOSUserHostNameAndVersionInfo();
 };
 
 String toString(ClientInfo::Interface interface);
-
+String toString(ClientInfo::HTTPMethod method);
 }

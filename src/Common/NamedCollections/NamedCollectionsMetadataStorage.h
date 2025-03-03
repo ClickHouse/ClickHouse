@@ -3,7 +3,6 @@
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTDropNamedCollectionQuery.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Core/BackgroundSchedulePool.h>
 
 namespace DB
 {
@@ -35,7 +34,9 @@ public:
 private:
     class INamedCollectionsStorage;
     class LocalStorage;
+    class LocalStorageEncrypted;
     class ZooKeeperStorage;
+    class ZooKeeperStorageEncrypted;
 
     std::shared_ptr<INamedCollectionsStorage> storage;
 

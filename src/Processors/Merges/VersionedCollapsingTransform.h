@@ -3,6 +3,10 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 
+namespace ProfileEvents
+{
+    extern const Event VersionedCollapsingSortedMilliseconds;
+}
 
 namespace DB
 {
@@ -33,6 +37,11 @@ public:
     }
 
     String getName() const override { return "VersionedCollapsingTransform"; }
+
+    void onFinish() override
+    {
+        logMergedStats(ProfileEvents::VersionedCollapsingSortedMilliseconds, "Versioned collapsed sorted", getLogger("VersionedCollapsingTransform"));
+    }
 };
 
 }

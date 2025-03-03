@@ -76,13 +76,13 @@ std::string Binary::toString(int indent) const
 
 UUID Binary::uuid() const
 {
-	if (_subtype == 0x04 && _buffer.size() == 16)
+	if ((_subtype == 0x04 || _subtype == 0x03) && _buffer.size() == 16)
 	{
 		UUID uuid;
 		uuid.copyFrom((const char*) _buffer.begin());
 		return uuid;
 	}
-	throw BadCastException("Invalid subtype");
+	throw BadCastException("Invalid subtype: " + std::to_string(_subtype) + ", size: " + std::to_string(_buffer.size()));
 }
 
 

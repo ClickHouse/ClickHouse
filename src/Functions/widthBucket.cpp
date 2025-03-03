@@ -99,7 +99,7 @@ class FunctionWidthBucket : public IFunction
         {
             return 0;
         }
-        else if (operand >= high)
+        if (operand >= high)
         {
             return count + 1;
         }
@@ -130,21 +130,21 @@ class FunctionWidthBucket : public IFunction
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
 
-        std::vector<ColumnPtr> casted_columns;
-        casted_columns.reserve(3);
+        std::vector<ColumnPtr> cast_columns;
+        cast_columns.reserve(3);
         for (const auto argument_index : collections::range(0, 3))
         {
-            casted_columns.push_back(castColumn(arguments[argument_index], common_type));
+            cast_columns.push_back(castColumn(arguments[argument_index], common_type));
         }
 
-        const auto * operands_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[0].get()));
-        const auto * lows_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[1].get()));
-        const auto * highs_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(casted_columns[2].get()));
+        const auto * operands_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(cast_columns[0].get()));
+        const auto * lows_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(cast_columns[1].get()));
+        const auto * highs_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<Float64>>(cast_columns[2].get()));
         const auto * counts_vec = getDataIfNotNull(checkAndGetColumn<ColumnVector<TCountType>>(arguments[3].column.get()));
 
-        const auto * operands_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[0].get());
-        const auto * lows_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[1].get());
-        const auto * highs_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(casted_columns[2].get());
+        const auto * operands_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(cast_columns[0].get());
+        const auto * lows_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(cast_columns[1].get());
+        const auto * highs_col_const = checkAndGetColumnConst<ColumnVector<Float64>>(cast_columns[2].get());
         const auto * counts_col_const = checkAndGetColumnConst<ColumnVector<TCountType>>(arguments[3].column.get());
 
         throwIfInvalid<Float64>(0, operands_col_const, operands_vec, input_rows_count);
@@ -166,12 +166,12 @@ class FunctionWidthBucket : public IFunction
         result_column->reserve(1);
         auto & result_data = result_column->getData();
 
-        for (const auto row_index : collections::range(0, input_rows_count))
+        for (size_t row = 0; row < input_rows_count; ++row)
         {
-            const auto operand = getValue<Float64>(operands_col_const, operands_vec, row_index);
-            const auto low = getValue<Float64>(lows_col_const, lows_vec, row_index);
-            const auto high = getValue<Float64>(highs_col_const, highs_vec, row_index);
-            const auto count = getValue<TCountType>(counts_col_const, counts_vec, row_index);
+            const auto operand = getValue<Float64>(operands_col_const, operands_vec, row);
+            const auto low = getValue<Float64>(lows_col_const, lows_vec, row);
+            const auto high = getValue<Float64>(highs_col_const, highs_vec, row);
+            const auto count = getValue<TCountType>(counts_col_const, counts_vec, row);
             result_data.push_back(calculate<ResultType>(operand, low, high, count));
         }
 
@@ -284,7 +284,7 @@ Result:
         .examples{
             {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)", ""},
         },
-        .categories{"Mathematical"},
+        .category{"Mathematical"},
     });
 
     factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::Case::Insensitive);

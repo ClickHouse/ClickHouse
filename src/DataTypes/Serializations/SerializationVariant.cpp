@@ -43,6 +43,16 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
 {
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> variant_states;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateVariant>();
+        new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
+        new_state->variant_states.reserve(variant_states.size());
+        for (const auto & variant_state : variant_states)
+            new_state->variant_states.push_back(variant_state ? variant_state->clone() : nullptr);
+        return new_state;
+    }
 };
 
 void SerializationVariant::enumerateStreams(
@@ -218,7 +228,8 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     size_t limit,
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state,
-    std::unordered_map<String, size_t> & variants_statistics) const
+    std::unordered_map<String, size_t> & variants_statistics,
+    size_t & total_size_of_variants) const
 {
     const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
     if (const size_t size = col.size(); limit == 0 || offset + limit > size)
@@ -265,12 +276,13 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         /// We can use the same offset/limit as for whole Variant column
         variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->variant_states[non_empty_global_discr]);
         variants_statistics[variant_names[non_empty_global_discr]] += limit;
+        total_size_of_variants += limit;
         settings.path.pop_back();
         settings.path.pop_back();
         return;
     }
     /// If column has only NULLs, just serialize NULL discriminators.
-    else if (col.hasOnlyNulls())
+    if (col.hasOnlyNulls())
     {
         /// In compact mode write single NULL_DISCRIMINATOR.
         if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::COMPACT)
@@ -315,7 +327,9 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         {
             addVariantElementToPath(settings.path, i);
             variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), 0, 0, settings, variant_state->variant_states[i]);
-            variants_statistics[variant_names[i]] += col.getVariantByGlobalDiscriminator(i).size();
+            size_t variant_size = col.getVariantByGlobalDiscriminator(i).size();
+            variants_statistics[variant_names[i]] += variant_size;
+            total_size_of_variants += variant_size;
             settings.path.pop_back();
         }
         settings.path.pop_back();
@@ -386,6 +400,7 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
                 settings,
                 variant_state->variant_states[i]);
             variants_statistics[variant_names[i]] += variant_offsets_and_limits[i].second;
+            total_size_of_variants += variant_offsets_and_limits[i].second;
             settings.path.pop_back();
         }
     }
@@ -400,7 +415,8 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreams(
     DB::ISerialization::SerializeBinaryBulkStatePtr & state) const
 {
     std::unordered_map<String, size_t> tmp_statistics;
-    serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics);
+    size_t tmp_size;
+    serializeBinaryBulkWithMultipleStreamsAndUpdateVariantStatistics(column, offset, limit, settings, state, tmp_statistics, tmp_size);
 }
 
 void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
@@ -853,7 +869,7 @@ bool SerializationVariant::tryDeserializeImpl(
             column_variant.getOffsets().push_back(prev_size);
             return true;
         }
-        else if (variant_column.size() > prev_size)
+        if (variant_column.size() > prev_size)
         {
             variant_column.popBack(1);
         }
@@ -1066,6 +1082,16 @@ void SerializationVariant::serializeTextJSON(const IColumn & column, size_t row_
         SerializationNullable::serializeNullJSON(ostr);
     else
         variants[global_discr]->serializeTextJSON(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings);
+}
+
+void SerializationVariant::serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const
+{
+    const ColumnVariant & col = assert_cast<const ColumnVariant &>(column);
+    auto global_discr = col.globalDiscriminatorAt(row_num);
+    if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+        SerializationNullable::serializeNullJSON(ostr);
+    else
+        variants[global_discr]->serializeTextJSONPretty(col.getVariantByGlobalDiscriminator(global_discr), col.offsetAt(row_num), ostr, settings, indent);
 }
 
 bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const

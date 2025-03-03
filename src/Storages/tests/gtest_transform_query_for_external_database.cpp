@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Storages/MemorySettings.h>
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/parseQuery.h>
@@ -7,6 +8,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -74,6 +76,7 @@ private:
                 {"a", std::make_shared<DataTypeUInt8>()},
                 {"b", std::make_shared<DataTypeDate>()},
                 {"foo", std::make_shared<DataTypeString>()},
+                {"is_value", DataTypeFactory::instance().get("Bool")},
             }),
         TableWithColumnNamesAndTypes(
             createDBAndTable("table2"),
@@ -103,7 +106,7 @@ private:
                 context,
                 table_name,
                 std::make_shared<StorageMemory>(
-                    StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}));
+                    StorageID(db_name, table_name), ColumnsDescription{tab.columns}, ConstraintsDescription{}, String{}, MemorySettings{}), {});
         }
         DatabaseCatalog::instance().attachDatabase(database->getDatabaseName(), database);
 
@@ -296,8 +299,9 @@ TEST(TransformQueryForExternalDatabase, Issue7245)
     const State & state = State::instance();
 
     check(state, 1, {"apply_id", "apply_type", "apply_status", "create_time"},
-          "SELECT apply_id FROM test.table WHERE apply_type = 2 AND create_time > addDays(toDateTime('2019-01-01 01:02:03'),-7) AND apply_status IN (3,4)",
-          R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > '2018-12-25 01:02:03') AND ("apply_status" IN (3, 4)))");
+          "SELECT apply_id FROM test.table WHERE apply_type = 2 AND create_time > addDays(toDateTime('2019-01-01 01:02:03', 'UTC'),-7) AND apply_status IN (3,4)",
+          R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > '2018-12-25 01:02:03') AND ("apply_status" IN (3, 4)))",
+          R"(SELECT "apply_id", "apply_type", "apply_status", "create_time" FROM "test"."table" WHERE ("apply_type" = 2) AND ("create_time" > 1545699723) AND ("apply_status" IN (3, 4)))");
 }
 
 TEST(TransformQueryForExternalDatabase, Aliases)
@@ -390,8 +394,9 @@ TEST(TransformQueryForExternalDatabase, ToDate)
     const State & state = State::instance();
 
     check(state, 1, {"a", "b", "foo"},
-        "SELECT foo FROM table WHERE a=10 AND b=toDate('2019-10-05')",
-        R"(SELECT "a", "b", "foo" FROM "test"."table" WHERE ("a" = 10) AND ("b" = '2019-10-05'))");
+        "SELECT foo FROM table WHERE a=10 AND b=toDate('2019-10-05', 'UTC')",
+        R"(SELECT "a", "b", "foo" FROM "test"."table" WHERE ("a" = 10) AND ("b" = '2019-10-05'))",
+        R"(SELECT "a", "b", "foo" FROM "test"."table" WHERE ("a" = 10) AND ("b" = 18174))");
 }
 
 TEST(TransformQueryForExternalDatabase, Analyzer)
@@ -411,6 +416,15 @@ TEST(TransformQueryForExternalDatabase, Analyzer)
         R"(SELECT "column" FROM "test"."table")");
 
     check(state, 1, {"column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo"},
-        "SELECT * FROM table WHERE (column) IN (1)",
+        "SELECT * EXCEPT (is_value) FROM table WHERE (column) IN (1)",
         R"(SELECT "column", "apply_id", "apply_type", "apply_status", "create_time", "field", "value", "a", "b", "foo" FROM "test"."table" WHERE "column" IN (1))");
+
+    check(state, 1, {"is_value"},
+        "SELECT is_value FROM table WHERE is_value = true",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = true)",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = 1)");
+
+    check(state, 1, {"is_value"},
+        "SELECT is_value FROM table WHERE is_value = 1",
+        R"(SELECT "is_value" FROM "test"."table" WHERE "is_value" = 1)");
 }

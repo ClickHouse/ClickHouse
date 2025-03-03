@@ -3,7 +3,10 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterWide.h>
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/NestedUtils.h>
+#include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
 
 
@@ -15,6 +18,11 @@ namespace ErrorCodes
     extern const int NO_FILE_IN_DATA_PART;
     extern const int BAD_SIZE_OF_FILE_IN_DATA_PART;
     extern const int LOGICAL_ERROR;
+}
+
+namespace MergeTreeSetting
+{
+    extern MergeTreeSettingsBool enable_index_granularity_compression;
 }
 
 MergeTreeDataPartWide::MergeTreeDataPartWide(
@@ -34,6 +42,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
     const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
@@ -47,10 +56,12 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
         storage_snapshot,
         uncompressed_cache,
         mark_cache,
+        deserialization_prefixes_cache,
         mark_ranges,
         reader_settings,
         avg_value_size_hints,
-        profile_callback);
+        profile_callback,
+        CLOCK_MONOTONIC_COARSE);
 }
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
@@ -68,21 +79,21 @@ MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
     const String & marks_file_extension_,
     const CompressionCodecPtr & default_codec_,
     const MergeTreeWriterSettings & writer_settings,
-    const MergeTreeIndexGranularity & computed_index_granularity)
+    MergeTreeIndexGranularityPtr computed_index_granularity)
 {
     return std::make_unique<MergeTreeDataPartWriterWide>(
         data_part_name_, logger_name_, serializations_, data_part_storage_,
         index_granularity_info_, storage_settings_, columns_list,
         metadata_snapshot, virtual_columns, indices_to_recalc, stats_to_recalc_,
         marks_file_extension_,
-        default_codec_, writer_settings, computed_index_granularity);
+        default_codec_, writer_settings, std::move(computed_index_granularity));
 }
 
 
 /// Takes into account the fact that several columns can e.g. share their .size substreams.
 /// When calculating totals these should be counted only once.
 ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
-    const NameAndTypePair & column, std::unordered_set<String> * processed_substreams) const
+    const NameAndTypePair & column, std::unordered_set<String> * processed_substreams, std::optional<Block> columns_sample) const
 {
     ColumnSize size;
     if (checksums.empty())
@@ -108,35 +119,39 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
         auto mrk_checksum = checksums.files.find(*stream_name + getMarksFileExtension());
         if (mrk_checksum != checksums.files.end())
             size.marks += mrk_checksum->second.file_size;
-    });
+    }, column.type, columns_sample && columns_sample->has(column.name) ? columns_sample->getByName(column.name).column : getColumnSample(column));
 
     return size;
 }
 
 void MergeTreeDataPartWide::loadIndexGranularityImpl(
-    MergeTreeIndexGranularity & index_granularity_, MergeTreeIndexGranularityInfo & index_granularity_info_,
-    const IDataPartStorage & data_part_storage_, const std::string & any_column_file_name)
+    MergeTreeIndexGranularityPtr & index_granularity_ptr,
+    MergeTreeIndexGranularityInfo & index_granularity_info_,
+    const IDataPartStorage & data_part_storage_,
+    const std::string & any_column_file_name,
+    const MergeTreeSettings & storage_settings)
 {
     index_granularity_info_.changeGranularityIfRequired(data_part_storage_);
 
     /// We can use any column, it doesn't matter
     std::string marks_file_path = index_granularity_info_.getMarksFilePath(any_column_file_name);
-    if (!data_part_storage_.exists(marks_file_path))
+    if (!data_part_storage_.existsFile(marks_file_path))
         throw Exception(
             ErrorCodes::NO_FILE_IN_DATA_PART, "Marks file '{}' doesn't exist",
             std::string(fs::path(data_part_storage_.getFullPath()) / marks_file_path));
 
     size_t marks_file_size = data_part_storage_.getFileSize(marks_file_path);
+    size_t fixed_granularity = index_granularity_info_.fixed_index_granularity;
 
     if (!index_granularity_info_.mark_type.adaptive && !index_granularity_info_.mark_type.compressed)
     {
         /// The most easy way - no need to read the file, everything is known from its size.
         size_t marks_count = marks_file_size / index_granularity_info_.getMarkSizeInBytes();
-        index_granularity_.resizeWithFixedGranularity(marks_count, index_granularity_info_.fixed_index_granularity); /// all the same
+        index_granularity_ptr = std::make_shared<MergeTreeIndexGranularityConstant>(fixed_granularity, fixed_granularity, marks_count, false);
     }
     else
     {
-        auto marks_file = data_part_storage_.readFile(marks_file_path, ReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
+        auto marks_file = data_part_storage_.readFile(marks_file_path, getReadSettings().adjustBufferSize(marks_file_size), marks_file_size, std::nullopt);
 
         std::unique_ptr<ReadBuffer> marks_reader;
         if (!index_granularity_info_.mark_type.compressed)
@@ -145,6 +160,7 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
             marks_reader = std::make_unique<CompressedReadBufferFromFile>(std::move(marks_file));
 
         size_t marks_count = 0;
+
         while (!marks_reader->eof())
         {
             MarkInCompressedFile mark;
@@ -157,15 +173,20 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
             if (index_granularity_info_.mark_type.adaptive)
             {
                 readBinaryLittleEndian(granularity, *marks_reader);
-                index_granularity_.appendMark(granularity);
+                index_granularity_ptr->appendMark(granularity);
             }
         }
 
         if (!index_granularity_info_.mark_type.adaptive)
-            index_granularity_.resizeWithFixedGranularity(marks_count, index_granularity_info_.fixed_index_granularity); /// all the same
+        {
+            index_granularity_ptr = std::make_shared<MergeTreeIndexGranularityConstant>(fixed_granularity, fixed_granularity, marks_count, false);
+        }
+        else if (storage_settings[MergeTreeSetting::enable_index_granularity_compression])
+        {
+            if (auto new_granularity_ptr = index_granularity_ptr->optimize())
+                index_granularity_ptr = std::move(new_granularity_ptr);
+        }
     }
-
-    index_granularity_.setInitialized();
 }
 
 void MergeTreeDataPartWide::loadIndexGranularity()
@@ -179,13 +200,83 @@ void MergeTreeDataPartWide::loadIndexGranularity()
             "There are no files for column {} in part {}",
             columns.front().name, getDataPartStorage().getFullPath());
 
-    loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename);
+    loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename, *storage.getSettings());
 }
 
+void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCache * mark_cache) const
+{
+    if (column_names.empty() || !mark_cache)
+        return;
+
+    std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
+
+    auto context = storage.getContext();
+    auto read_settings = context->getReadSettings();
+    auto * load_marks_threadpool = read_settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+
+    LOG_TEST(getLogger("MergeTreeDataPartWide"), "Loading marks into mark cache for columns {} of part {}", toString(column_names), name);
+
+    for (const auto & column_name : column_names)
+    {
+        auto serialization = tryGetSerialization(column_name);
+        if (!serialization)
+            continue;
+
+        serialization->enumerateStreams([&](const auto & subpath)
+        {
+            auto stream_name = getStreamNameForColumn(column_name, subpath, checksums);
+            if (!stream_name)
+                return;
+
+            loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
+                info_for_read,
+                mark_cache,
+                index_granularity_info.getMarksFilePath(*stream_name),
+                index_granularity->getMarksCount(),
+                index_granularity_info,
+                /*save_marks_in_cache=*/ true,
+                read_settings,
+                load_marks_threadpool,
+                /*num_columns_in_mark=*/ 1));
+
+            loaders.back()->startAsyncLoad();
+        });
+    }
+
+    for (auto & loader : loaders)
+        loader->loadMarks();
+}
+
+void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
+{
+    if (!mark_cache)
+        return;
+
+    const auto & serializations = getSerializations();
+    for (const auto & [column_name, serialization] : serializations)
+    {
+        serialization->enumerateStreams([&](const auto & subpath)
+        {
+            auto stream_name = getStreamNameForColumn(column_name, subpath, checksums);
+            if (!stream_name)
+                return;
+
+            auto mark_path = index_granularity_info.getMarksFilePath(*stream_name);
+            auto key = MarkCache::hash(fs::path(getRelativePathOfActivePart()) / mark_path);
+            mark_cache->remove(key);
+        });
+    }
+}
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
 {
     return getDataPartStorage().isStoredOnRemoteDisk();
+}
+
+bool MergeTreeDataPartWide::isStoredOnReadonlyDisk() const
+{
+    return getDataPartStorage().isReadonly();
 }
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDiskWithZeroCopySupport() const
@@ -195,7 +286,14 @@ bool MergeTreeDataPartWide::isStoredOnRemoteDiskWithZeroCopySupport() const
 
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
 {
-    removeIfNeeded();
+    try
+    {
+        removeIfNeeded();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
 }
 
 void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
@@ -321,12 +419,12 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
     return filename;
 }
 
-void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
+void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size, std::optional<Block> columns_sample) const
 {
     std::unordered_set<String> processed_substreams;
     for (const auto & column : columns)
     {
-        ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
+        ColumnSize size = getColumnSizeImpl(column, &processed_substreams, columns_sample);
         each_columns_size[column.name] = size;
         total_size.add(size);
 

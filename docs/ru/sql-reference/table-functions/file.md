@@ -81,6 +81,7 @@ SELECT * FROM file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 U
 Обрабатываться будут те и только те файлы, которые существуют в файловой системе и удовлетворяют всему шаблону пути.
 
 -   `*` — заменяет любое количество любых символов кроме `/`, включая отсутствие символов.
+-   `**` — Заменяет любое количество любых символов, включая `/`, то есть осуществляет рекурсивный поиск по вложенным директориям.
 -   `?` — заменяет ровно один любой символ.
 -   `{some_string,another_string,yet_another_one}` — заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`. Эти строки также могут содержать символ `/`.
 -   `{N..M}` — заменяет любое число в интервале от `N` до `M` включительно (может содержать ведущие нули).
@@ -131,4 +132,4 @@ SELECT count(*) FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String,
 **Смотрите также**
 
 -   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
--   [Переименование файлов после обработки](/docs/ru/operations/settings/settings.md#rename_files_after_processing)
+-   [Переименование файлов после обработки](/ru/operations/settings/settings.md#rename_files_after_processing)

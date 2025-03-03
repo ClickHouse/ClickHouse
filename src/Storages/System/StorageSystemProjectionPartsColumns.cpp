@@ -131,13 +131,10 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         for (const auto & column : part->getColumns())
         {
             ++column_position;
-            size_t src_index = 0, res_index = 0;
+            size_t src_index = 0;
+            size_t res_index = 0;
             if (columns_mask[src_index++])
-            {
-                WriteBufferFromOwnString out;
-                parent_part->partition.serializeText(*info.data, out, format_settings);
-                columns[res_index++]->insert(out.str());
-            }
+                columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])

@@ -1,13 +1,22 @@
 ## sudo -H pip install PyMySQL
+from contextlib import contextmanager
+import logging
+import socket
+import time
 import warnings
+
 import pymysql.cursors
 import pytest
+
 from helpers.cluster import ClickHouseCluster
-import time
-import logging
+from helpers.port_forward import PortForward
 
 DICTS = ["configs/dictionaries/mysql_dict1.xml", "configs/dictionaries/mysql_dict2.xml"]
-CONFIG_FILES = ["configs/remote_servers.xml", "configs/named_collections.xml"]
+CONFIG_FILES = [
+    "configs/remote_servers.xml",
+    "configs/named_collections.xml",
+    "configs/bg_reconnect.xml",
+]
 USER_CONFIGS = ["configs/users.xml"]
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(
@@ -434,3 +443,103 @@ def execute_mysql_query(connection, query):
 def create_mysql_table(conn, table_name):
     with conn.cursor() as cursor:
         cursor.execute(create_table_mysql_template.format(table_name))
+
+
+def test_background_dictionary_reconnect(started_cluster):
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    execute_mysql_query(mysql_connection, "DROP TABLE IF EXISTS test.dict;")
+    execute_mysql_query(
+        mysql_connection,
+        "CREATE TABLE test.dict (id Integer, value Text);",
+    )
+    execute_mysql_query(
+        mysql_connection, "INSERT INTO test.dict VALUES (1, 'Value_1');"
+    )
+
+    port_forward = PortForward()
+    port = port_forward.start((started_cluster.mysql8_ip, started_cluster.mysql8_port))
+
+    @contextmanager
+    def port_forward_manager():
+        try:
+            yield
+        finally:
+            port_forward.stop(True)
+
+    with port_forward_manager():
+
+        query = instance.query
+        query(
+            f"""
+        DROP DICTIONARY IF EXISTS dict;
+        CREATE DICTIONARY dict
+        (
+            id UInt64,
+            value String
+        )
+        PRIMARY KEY id
+        LAYOUT(DIRECT())
+        SOURCE(MYSQL(
+            USER 'root'
+            PASSWORD 'clickhouse'
+            DB 'test'
+            QUERY $doc$SELECT * FROM test.dict;$doc$
+            BACKGROUND_RECONNECT 'true'
+            REPLICA(HOST '{socket.gethostbyname(socket.gethostname())}' PORT {port} PRIORITY 1)))
+        """
+        )
+
+        result = query("SELECT value FROM dict WHERE id = 1")
+        assert result == "Value_1\n"
+
+        class MySQL_Instance:
+            pass
+
+        mysql_instance = MySQL_Instance()
+        mysql_instance.ip_address = started_cluster.mysql8_ip
+
+        query("TRUNCATE TABLE IF EXISTS system.text_log")
+
+        # Break connection to mysql server
+        port_forward.stop(force=True)
+
+        # Exhaust possible connection pool and initiate reconnection attempts
+        for _ in range(5):
+            try:
+                result = query("SELECT value FROM dict WHERE id = 1")
+            except Exception as e:
+                pass
+
+        time.sleep(5)
+
+        # Restore connection to mysql server
+        port_forward.start((started_cluster.mysql8_ip, started_cluster.mysql8_port), port)
+
+        time.sleep(5)
+
+        query("SYSTEM FLUSH LOGS")
+        assert (
+            int(
+                query(
+                    "SELECT count() FROM system.text_log WHERE message like 'Failed to connect to MySQL %: mysqlxx::ConnectionFailed'"
+                )
+            )
+            > 0
+        )
+        assert (
+            int(
+                query(
+                    "SELECT count() FROM system.text_log WHERE message like 'Reestablishing connection to % has succeeded.'"
+                )
+            )
+            > 0
+        )
+        assert (
+            int(
+                query(
+                    "SELECT count() FROM system.text_log WHERE message like '%Reestablishing connection to % has failed: mysqlxx::ConnectionFailed: Can\\'t connect to MySQL server on %'"
+                )
+            )
+            > 0
+        )

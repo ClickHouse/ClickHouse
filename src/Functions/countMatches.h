@@ -43,6 +43,11 @@ public:
         return std::make_shared<DataTypeUInt64>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeUInt64>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const IColumn * col_pattern = arguments[1].column.get();
@@ -61,7 +66,7 @@ public:
             uint64_t matches_count = countMatches(str, re, matches);
             return result_type->createColumnConst(input_rows_count, matches_count);
         }
-        else if (const ColumnString * col_haystack_string = checkAndGetColumn<ColumnString>(col_haystack))
+        if (const ColumnString * col_haystack_string = checkAndGetColumn<ColumnString>(col_haystack))
         {
             auto col_res = ColumnUInt64::create();
 
@@ -85,7 +90,7 @@ public:
 
             return col_res;
         }
-        else if (const ColumnFixedString * col_haystack_fixedstring = checkAndGetColumn<ColumnFixedString>(col_haystack))
+        if (const ColumnFixedString * col_haystack_fixedstring = checkAndGetColumn<ColumnFixedString>(col_haystack))
         {
             auto col_res = ColumnUInt64::create();
 
@@ -100,8 +105,7 @@ public:
 
             return col_res;
         }
-        else
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Could not cast haystack argument to String or FixedString");
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Could not cast haystack argument to String or FixedString");
     }
 
     static uint64_t countMatches(std::string_view src, const OptimizedRegularExpression & re, OptimizedRegularExpression::MatchVec & matches)

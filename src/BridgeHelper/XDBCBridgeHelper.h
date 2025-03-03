@@ -11,6 +11,7 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/BridgeProtocolVersion.h>
 #include <Common/ShellCommand.h>
+#include <Common/ShellCommandsHolder.h>
 #include <IO/ConnectionTimeouts.h>
 #include <base/range.h>
 #include <BridgeHelper/IBridgeHelper.h>
@@ -99,7 +100,8 @@ protected:
         {
             auto buf = BuilderRWBufferFromHTTP(getPingURI())
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
-                           .withTimeouts(getHTTPTimeouts())
+                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
+                           .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
             return checkString(PING_OK_ANSWER, *buf);
@@ -143,7 +145,7 @@ protected:
 
     void startBridge(std::unique_ptr<ShellCommand> cmd) const override
     {
-        getContext()->addBridgeCommand(std::move(cmd));
+       ShellCommandsHolder::instance().addCommand(std::move(cmd));
     }
 
 
@@ -163,11 +165,6 @@ private:
     std::optional<bool> is_schema_allowed;
 
     Poco::Net::HTTPBasicCredentials credentials{};
-
-    ConnectionTimeouts getHTTPTimeouts()
-    {
-        return ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings().keep_alive_timeout);
-    }
 
 protected:
     using URLParams = std::vector<std::pair<std::string, std::string>>;
@@ -205,7 +202,8 @@ protected:
             auto buf = BuilderRWBufferFromHTTP(uri)
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-                           .withTimeouts(getHTTPTimeouts())
+                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
+                           .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
             bool res = false;
@@ -231,7 +229,8 @@ protected:
             auto buf = BuilderRWBufferFromHTTP(uri)
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
-                           .withTimeouts(getHTTPTimeouts())
+                           .withTimeouts(ConnectionTimeouts::getHTTPTimeouts(getContext()->getSettingsRef(), getContext()->getServerSettings()))
+                           .withSettings(getContext()->getReadSettings())
                            .create(credentials);
 
             std::string character;
@@ -239,8 +238,9 @@ protected:
             if (character.length() > 1)
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Failed to parse quoting style from '{}' for service {}",
                     character, BridgeHelperMixin::serviceAlias());
-            else if (character.empty())
-                quote_style = IdentifierQuotingStyle::None;
+
+            if (character.empty())
+                quote_style = IdentifierQuotingStyle::Backticks;
             else if (character[0] == '`')
                 quote_style = IdentifierQuotingStyle::Backticks;
             else if (character[0] == '"')

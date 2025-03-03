@@ -117,7 +117,7 @@ public:
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires relative accuracy parameter with Float64 type", getName());
 
-            relative_accuracy = relative_accuracy_field.get<Float64>();
+            relative_accuracy = relative_accuracy_field.safeGet<Float64>();
 
             if (relative_accuracy <= 0 || relative_accuracy >= 1 || isNaN(relative_accuracy))
                 throw Exception(
@@ -147,9 +147,9 @@ public:
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} requires accuracy parameter with integer type", getName());
 
             if (accuracy_field.getType() == Field::Types::Int64)
-                accuracy = accuracy_field.get<Int64>();
+                accuracy = accuracy_field.safeGet<Int64>();
             else
-                accuracy = accuracy_field.get<UInt64>();
+                accuracy = accuracy_field.safeGet<UInt64>();
 
             if (accuracy <= 0)
                 throw Exception(
@@ -311,6 +311,9 @@ struct NameQuantilesExactInclusive { static constexpr auto name = "quantilesExac
 
 struct NameQuantileExactWeighted { static constexpr auto name = "quantileExactWeighted"; };
 struct NameQuantilesExactWeighted { static constexpr auto name = "quantilesExactWeighted"; };
+
+struct NameQuantileExactWeightedInterpolated { static constexpr auto name = "quantileExactWeightedInterpolated"; };
+struct NameQuantilesExactWeightedInterpolated { static constexpr auto name = "quantilesExactWeightedInterpolated"; };
 
 struct NameQuantileInterpolatedWeighted { static constexpr auto name = "quantileInterpolatedWeighted"; };
 struct NameQuantilesInterpolatedWeighted { static constexpr auto name = "quantilesInterpolatedWeighted"; };

@@ -1,6 +1,8 @@
 import contextlib
 import os
-import urllib.request, urllib.parse, urllib.error
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from helpers.cluster import ClickHouseCluster
 
@@ -15,9 +17,10 @@ class SimpleCluster:
         cluster.start()
 
     def add_instance(self, name, config_dir):
-        script_path = os.path.dirname(os.path.realpath(__file__))
         return self.cluster.add_instance(
-            name, main_configs=[os.path.join(script_path, config_dir, "config.xml")]
+            name,
+            main_configs=[os.path.join(config_dir, "config.xml")],
+            user_configs=["users.d/users.yaml"],
         )
 
 
@@ -92,6 +95,29 @@ def test_dynamic_query_handler():
         assert (
             "also works"
             == res_custom_ct.headers["X-Test-Http-Response-Headers-Even-Multiple"]
+        )
+
+        assert (
+            cluster.instance.http_request(
+                "test_dynamic_handler_auth_with_password?query=select+currentUser()"
+            )
+            .content.strip()
+            .decode()
+            == "with_password"
+        )
+        assert (
+            cluster.instance.http_request(
+                "test_dynamic_handler_auth_with_password_fail?query=select+currentUser()"
+            ).status_code
+            == 403
+        )
+        assert (
+            cluster.instance.http_request(
+                "test_dynamic_handler_auth_without_password?query=select+currentUser()"
+            )
+            .content.strip()
+            .decode()
+            == "without_password"
         )
 
 
@@ -174,6 +200,27 @@ def test_predefined_query_handler():
             headers={"XXX": "xxx"},
         )
         assert b"max_threads\t1\n" == res1.content
+
+        assert (
+            cluster.instance.http_request("test_predefined_handler_auth_with_password")
+            .content.strip()
+            .decode()
+            == "with_password"
+        )
+        assert (
+            cluster.instance.http_request(
+                "test_predefined_handler_auth_with_password_fail"
+            ).status_code
+            == 403
+        )
+        assert (
+            cluster.instance.http_request(
+                "test_predefined_handler_auth_without_password"
+            )
+            .content.strip()
+            .decode()
+            == "without_password"
+        )
 
 
 def test_fixed_static_handler():

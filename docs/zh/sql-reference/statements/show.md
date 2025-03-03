@@ -110,7 +110,7 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 ### 语法 {#show-grants-syntax}
 
 ``` sql
-SHOW GRANTS [FOR user]
+SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
 ```
 
 如果未指定用户，输出当前用户的权限
@@ -129,7 +129,7 @@ SHOW CREATE USER [name | CURRENT_USER]
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
 
-显示 [role creation](../../sql-reference/statements/create.md#create-role-statement) 中用到的参数。
+显示 [role creation](/sql-reference/statements/create/role) 中用到的参数。
 
 ### 语法 {#show-create-role-syntax}
 

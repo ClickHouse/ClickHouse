@@ -21,7 +21,7 @@ public:
     bool fileExists(const String & file_name) override;
     UInt64 getFileSize(const String & file_name) override;
 
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) override;
 
     void copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
                         DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) override;
@@ -49,10 +49,11 @@ public:
     void copyFile(const String & destination, const String & source, size_t size) override;
 
     void removeFile(const String & file_name) override;
-    void removeFiles(const Strings & file_names) override;
+    void removeEmptyDirectories() override;
 
 private:
     std::unique_ptr<ReadBuffer> readFile(const String & file_name, size_t expected_file_size) override;
+    void removeEmptyDirectoriesImpl(const std::filesystem::path & current_dir);
 
     const DiskPtr disk;
     const std::filesystem::path root_path;

@@ -85,7 +85,7 @@ export -f recreate_lazy_func4;
 export -f test_func;
 
 
-${CLICKHOUSE_CLIENT} -n -q "
+${CLICKHOUSE_CLIENT} -q "
     DROP DATABASE IF EXISTS $CURR_DATABASE;
     CREATE DATABASE $CURR_DATABASE ENGINE = Lazy(1);
 "

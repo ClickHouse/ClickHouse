@@ -1,0 +1,2 @@
+SELECT [[10, 2, 13, 15][toNullable(toLowCardinality(1))]][materialize(toLowCardinality(1))];
+SELECT '-- system.settings_profiles' GROUP BY [[[[[[[[[[10, toNullable(10)][1], [materialize(toLowCardinality(10)), 2][materialize(toLowCardinality(1))]][1]][materialize(materialize(1))], [10, 2, 1][1]][1]][1], 1][toLowCardinality(1)]][1], 1][1], 10][1], [[10, toLowCardinality(2)][toNullable(toLowCardinality(1))]][materialize(toLowCardinality(1))]][1], [[[[10, 2][1]][1]][1], [10, 2][materialize(1)], [[[2][1]][materialize(1)], 2, 1][1], [2, 10, toNullable(1)][1]] WITH CUBE;

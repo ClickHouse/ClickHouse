@@ -1,11 +1,13 @@
 #pragma once
 
+#include <optional>
+
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseReplicatedSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/QueryFlags.h>
 
 
 namespace DB
@@ -16,6 +18,14 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
+
+struct ReplicaInfo
+{
+    bool is_active;
+    std::optional<UInt32> replication_lag;
+    UInt64 recovery_time;
+};
+using ReplicasInfo = std::vector<ReplicaInfo>;
 
 class DatabaseReplicated : public DatabaseAtomic
 {
@@ -77,14 +87,14 @@ public:
 
     void shutdown() override;
 
-    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const override;
+    std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr &) const override;
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;
 
     bool shouldReplicateQuery(const ContextPtr & query_context, const ASTPtr & query_ptr) const override;
 
     static void dropReplica(DatabaseReplicated * database, const String & database_zookeeper_path, const String & shard, const String & replica, bool throw_if_noop);
 
-    std::vector<UInt8> tryGetAreReplicasActive(const ClusterPtr & cluster_) const;
+    ReplicasInfo tryGetReplicasInfo(const ClusterPtr & cluster_) const;
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
@@ -141,6 +151,9 @@ private:
     void waitDatabaseStarted() const override;
     void stopLoading() override;
 
+    static BlockIO
+    getQueryStatus(const String & node_path, const String & replicas_path, ContextPtr context, const Strings & hosts_to_wait);
+
     String zookeeper_path;
     String shard_name;
     String replica_name;
@@ -155,7 +168,7 @@ private:
     std::atomic_bool is_recovering = false;
     std::atomic_bool ddl_worker_initialized = false;
     std::unique_ptr<DatabaseReplicatedDDLWorker> ddl_worker;
-    std::mutex ddl_worker_mutex;
+    mutable std::mutex ddl_worker_mutex;
     UInt32 max_log_ptr_at_creation = 0;
 
     /// Usually operation with metadata are single-threaded because of the way replication works,

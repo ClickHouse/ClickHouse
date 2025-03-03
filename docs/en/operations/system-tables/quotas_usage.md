@@ -1,7 +1,12 @@
 ---
-slug: /en/operations/system-tables/quotas_usage
+description: "System table containing formation about quota usage by all users."
+slug: /operations/system-tables/quotas_usage
+title: "system.quotas_usage"
+keywords: ["system table", "quotas_usage", "quota"]
 ---
-# quotas_usage
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+<SystemTableCloud/>
 
 Quota usage by all users.
 

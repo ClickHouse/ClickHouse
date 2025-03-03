@@ -9,11 +9,11 @@
 #include <Core/Block.h>
 #include <arrow/table.h>
 #include <Formats/FormatSettings.h>
+#include <Core/BlockMissingValues.h>
 
 namespace DB
 {
 
-class Block;
 class Chunk;
 
 class ArrowColumnToCHColumn
@@ -34,7 +34,8 @@ public:
     static Block arrowSchemaToCHHeader(
         const arrow::Schema & schema,
         const std::string & format_name,
-        bool skip_columns_with_unsupported_types = false);
+        bool skip_columns_with_unsupported_types = false,
+        bool allow_inferring_nullable_columns = true);
 
     struct DictionaryInfo
     {

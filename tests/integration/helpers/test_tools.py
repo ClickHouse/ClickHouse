@@ -1,6 +1,6 @@
 import difflib
-import time
 import logging
+import time
 from io import IOBase
 
 
@@ -153,7 +153,7 @@ def exec_query_with_retry(
             res = instance.query(query, timeout=timeout, settings=settings)
             if not silent:
                 logging.debug(f"Result of {query} on {cnt} try is {res}")
-            break
+            return res
         except Exception as ex:
             exception = ex
             if not silent:
@@ -182,3 +182,19 @@ def csv_compare(result, expected):
             mismatch.append("+[%d]=%s" % (i, csv_result.lines[i]))
 
     return "\n".join(mismatch)
+
+
+def wait_condition(func, condition, max_attempts=10, delay=0.1):
+    attempts = 0
+    result = None
+    while attempts < max_attempts:
+        result = func()
+        if condition(result):
+            return result
+        attempts += 1
+        if attempts < max_attempts:
+            time.sleep(delay)
+
+    raise Exception(
+        f"Function did not satisfy condition after {max_attempts} attempts. Last result:\n{result}"
+    )

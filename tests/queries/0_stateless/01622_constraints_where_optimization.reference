@@ -11,7 +11,7 @@ QUERY id: 0
     TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT count()
 FROM t_constraints_where
 WHERE 0
@@ -25,7 +25,7 @@ QUERY id: 0
     TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT count()
 FROM t_constraints_where
 WHERE 0
@@ -39,7 +39,7 @@ QUERY id: 0
     TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
   WHERE
     CONSTANT id: 4, constant_value: UInt64_0, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT count()
 FROM t_constraints_where
 WHERE b < 8
@@ -57,7 +57,7 @@ QUERY id: 0
         LIST id: 5, nodes: 2
           COLUMN id: 6, column_name: b, result_type: UInt32, source_id: 3
           CONSTANT id: 7, constant_value: UInt64_8, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT count()
 FROM t_constraints_where
 PREWHERE (b > 20) OR (b < 8)
@@ -75,7 +75,7 @@ QUERY id: 0
         LIST id: 5, nodes: 2
           COLUMN id: 6, column_name: b, result_type: UInt32, source_id: 3
           CONSTANT id: 7, constant_value: UInt64_8, constant_value_type: UInt8
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1
 SELECT count()
 FROM t_constraints_where
 QUERY id: 0
@@ -86,4 +86,4 @@ QUERY id: 0
       FUNCTION id: 2, function_name: count, function_type: aggregate, result_type: UInt64
   JOIN TREE
     TABLE id: 3, alias: __table1, table_name: default.t_constraints_where
-  SETTINGS allow_experimental_analyzer=1
+  SETTINGS enable_analyzer=1

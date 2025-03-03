@@ -27,6 +27,8 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -96,6 +98,7 @@ jobs:
       build_name: package_aarch64
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      runner_type: builder-aarch64
   BuilderDebAsan:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -133,6 +136,7 @@ jobs:
       build_name: binary_darwin_aarch64
       data: ${{ needs.RunConfig.outputs.data }}
       checkout_depth: 0
+      runner_type: builder-aarch64
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
@@ -208,17 +212,6 @@ jobs:
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
-############################ FUNCTIONAl STATEFUL TESTS #######################################
-##############################################################################################
-  FunctionalStatefulTestDebug:
-    needs: [RunConfig, BuilderDebDebug]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (debug)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-##############################################################################################
 ######################################### STRESS TESTS #######################################
 ##############################################################################################
   StressTestTsan:
@@ -227,18 +220,26 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (tsan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
 #############################################################################################
-  IntegrationTestsRelease:
-    needs: [RunConfig, BuilderDebRelease]
+  IntegrationTestsAsanOldAnalyzer:
+    needs: [RunConfig, BuilderDebAsan]
     if: ${{ !failure() && !cancelled() }}
     uses: ./.github/workflows/reusable_test.yml
     with:
-      test_name: Integration tests (release)
-      runner_type: stress-tester
+      test_name: Integration tests (asan, old analyzer)
+      runner_type: func-tester
+      data: ${{ needs.RunConfig.outputs.data }}
+  IntegrationTestsTsan:
+    needs: [RunConfig, BuilderDebTsan]
+    if: ${{ !failure() && !cancelled() }}
+    uses: ./.github/workflows/reusable_test.yml
+    with:
+      test_name: Integration tests (tsan)
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FinishCheck:
     if: ${{ !cancelled() }}
@@ -246,9 +247,9 @@ jobs:
       - RunConfig
       - Builds_Report
       - FunctionalStatelessTestAsan
-      - FunctionalStatefulTestDebug
       - StressTestTsan
-      - IntegrationTestsRelease
+      - IntegrationTestsTsan
+      - IntegrationTestsAsanOldAnalyzer
       - CompatibilityCheckX86
       - CompatibilityCheckAarch64
     runs-on: [self-hosted, style-checker]
@@ -260,13 +261,18 @@ jobs:
       - name: Finish label
         if: ${{ !failure() }}
         run: |
+          export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
+          cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
           cd "$GITHUB_WORKSPACE/tests/ci"
           # update mergeable check
-          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          python3 merge_pr.py --set-ci-status
           # update overall ci report
           python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
           python3 merge_pr.py
       - name: Check Workflow results
+        if: ${{ !cancelled() }}
         run: |
           export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
           cat > "$WORKFLOW_RESULT_FILE" << 'EOF'

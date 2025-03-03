@@ -1,11 +1,21 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/anylast
+slug: /sql-reference/aggregate-functions/reference/anylast
 sidebar_position: 105
+title: "anyLast"
+description: "Selects the last encountered value of a column."
 ---
 
 # anyLast
 
-Selects the last value encountered, ignoring any `NULL` values by default. The result is just as indeterminate as for the [any](../../../sql-reference/aggregate-functions/reference/any.md) function.
+Selects the last encountered value of a column.
+
+:::warning
+As a query can be executed in arbitrary order, the result of this function is non-deterministic.
+If you need an arbitrary but deterministic result, use functions [`min`](../reference/min.md) or [`max`](../reference/max.md).
+:::
+
+By default, the function never returns NULL, i.e. ignores NULL values in the input column.
+However, if the function is used with the `RESPECT NULLS` modifier, it returns the first value reads no matter if NULL or not.
 
 **Syntax**
 
@@ -13,12 +23,15 @@ Selects the last value encountered, ignoring any `NULL` values by default. The r
 anyLast(column) [RESPECT NULLS]
 ```
 
-**Parameters**
-- `column`: The column name. 
+Alias `anyLast(column)` (without `RESPECT NULLS`)
+- [`last_value`](../reference/last_value.md).
 
-:::note
-Supports the `RESPECT NULLS` modifier after the function name. Using this modifier will ensure the function selects the first value passed, regardless of whether it is `NULL` or not.
-:::
+Aliases for `anyLast(column) RESPECT NULLS`
+- `anyLastRespectNulls`, `anyLast_respect_nulls`
+- `lastValueRespectNulls`, `last_value_respect_nulls`
+
+**Parameters**
+- `column`: The column name.
 
 **Returned value**
 
@@ -29,15 +42,15 @@ Supports the `RESPECT NULLS` modifier after the function name. Using this modifi
 Query:
 
 ```sql
-CREATE TABLE any_last_nulls (city Nullable(String)) ENGINE=Log;
+CREATE TABLE tab (city Nullable(String)) ENGINE=Memory;
 
-INSERT INTO any_last_nulls (city) VALUES ('Amsterdam'),(NULL),('New York'),('Tokyo'),('Valencia'),(NULL);
+INSERT INTO tab (city) VALUES ('Amsterdam'),(NULL),('New York'),('Tokyo'),('Valencia'),(NULL);
 
-SELECT anyLast(city) FROM any_last_nulls;
+SELECT anyLast(city), anyLastRespectNulls(city) FROM tab;
 ```
 
 ```response
-┌─anyLast(city)─┐
-│ Valencia      │
-└───────────────┘
+┌─anyLast(city)─┬─anyLastRespectNulls(city)─┐
+│ Valencia      │ ᴺᵁᴸᴸ                      │
+└───────────────┴───────────────────────────┘
 ```

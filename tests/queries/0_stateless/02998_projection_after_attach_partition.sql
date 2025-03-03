@@ -25,10 +25,10 @@ INSERT INTO visits_order SELECT 2, 'yet_another_user2', number*3 from numbers(1,
 
 ALTER TABLE visits_order_dst ATTACH PARTITION ID '2' FROM visits_order;
 
-SET allow_experimental_analyzer=0;
+SET enable_analyzer=0;
 
 EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';
 
-SET allow_experimental_analyzer=1;
+SET enable_analyzer=1;
 
 EXPLAIN SELECT * FROM visits_order_dst WHERE user_name='another_user2';

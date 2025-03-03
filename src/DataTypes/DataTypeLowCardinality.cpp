@@ -75,23 +75,23 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
 
     if (which.isString())
         return creator(static_cast<ColumnString *>(nullptr));
-    else if (which.isFixedString())
+    if (which.isFixedString())
         return creator(static_cast<ColumnFixedString *>(nullptr));
-    else if (which.isDate())
+    if (which.isDate())
         return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
-    else if (which.isDate32())
+    if (which.isDate32())
         return creator(static_cast<ColumnVector<Int32> *>(nullptr));
-    else if (which.isDateTime())
+    if (which.isDateTime())
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
-    else if (which.isUUID())
+    if (which.isUUID())
         return creator(static_cast<ColumnVector<UUID> *>(nullptr));
-    else if (which.isIPv4())
+    if (which.isIPv4())
         return creator(static_cast<ColumnVector<IPv4> *>(nullptr));
-    else if (which.isIPv6())
+    if (which.isIPv6())
         return creator(static_cast<ColumnVector<IPv6> *>(nullptr));
-    else if (which.isInterval())
+    if (which.isInterval())
         return creator(static_cast<DataTypeInterval::ColumnType *>(nullptr));
-    else if (which.isInt() || which.isUInt() || which.isFloat())
+    if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
         TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));

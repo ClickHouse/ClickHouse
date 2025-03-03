@@ -13,4 +13,4 @@ CREATE TABLE foo2_dist (`Id` UInt32, `Val` String) ENGINE = Distributed(test_sha
 CREATE TABLE merge1 AS foo ENGINE = Merge(currentDatabase(), '^(foo|foo2_dist)$');
 
 EXPLAIN PIPELINE graph = 1, compact = 1 SELECT * FROM merge1 FORMAT Null;
-EXPLAIN PIPELINE graph = 1, compact = 1 SELECT * FROM merge1 FORMAT Null SETTINGS allow_experimental_analyzer=1;
+EXPLAIN PIPELINE graph = 1, compact = 1 SELECT * FROM merge1 FORMAT Null SETTINGS enable_analyzer=1;

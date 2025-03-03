@@ -45,16 +45,7 @@ JSONEachRowRowInputFormat::JSONEachRowRowInputFormat(
     , format_settings(format_settings_)
 {
     const auto & header = getPort().getHeader();
-    name_map = header.getNamesToIndexesMap();
-    if (format_settings_.json.case_insensitive_column_matching)
-    {
-        for (auto & it : name_map)
-        {
-            StringRef key = it.first;
-            String lower_case_key = transformFieldNameToLowerCase(key);
-            lower_case_name_map[lower_case_key] = key;
-        }
-    }
+    name_map = getNamesToIndexesMap(header);
     if (format_settings_.import_nested_json)
     {
         for (size_t i = 0; i != header.columns(); ++i)
@@ -81,24 +72,21 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(StringRef name, size_t key_
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
     if (prev_positions.size() > key_index
-        && prev_positions[key_index] != Block::NameMap::const_iterator{}
+        && prev_positions[key_index] != BlockNameMap::const_iterator{}
         && name == prev_positions[key_index]->first)
     {
         return prev_positions[key_index]->second;
     }
-    else
-    {
-        const auto it = name_map.find(name);
-        if (it != name_map.end())
-        {
-            if (key_index < prev_positions.size())
-                prev_positions[key_index] = it;
 
-            return it->second;
-        }
-        else
-            return UNKNOWN_FIELD;
+    const auto it = name_map.find(name);
+    if (it != name_map.end())
+    {
+        if (key_index < prev_positions.size())
+            prev_positions[key_index] = it;
+
+        return it->second;
     }
+    return UNKNOWN_FIELD;
 }
 
 /** Read the field name and convert it to column name
@@ -133,7 +121,7 @@ void JSONEachRowRowInputFormat::skipUnknownField(StringRef name_ref)
     if (!format_settings.skip_unknown_fields)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown field found while parsing JSONEachRow format: {}", name_ref.toString());
 
-    skipJSONField(*in, name_ref, format_settings.json);
+    skipJSONField(*in, std::string_view(name_ref.data, name_ref.size), format_settings.json);
 }
 
 void JSONEachRowRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -154,7 +142,7 @@ inline bool JSONEachRowRowInputFormat::advanceToNextKey(size_t key_index)
 
     if (in->eof())
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Unexpected end of stream while parsing JSONEachRow format");
-    else if (*in->position() == '}')
+    if (*in->position() == '}')
     {
         ++in->position();
         return false;
@@ -180,15 +168,7 @@ void JSONEachRowRowInputFormat::readJSONObject(MutableColumns & columns)
             skipUnknownField(name_ref);
             continue;
         }
-        size_t column_index = 0;
-        if (format_settings.json.case_insensitive_column_matching)
-        {
-            String lower_case_name = transformFieldNameToLowerCase(name_ref);
-            StringRef field_name_ref = lower_case_name_map[lower_case_name];
-            column_index = columnIndex(field_name_ref, key_index);
-        }
-        else
-            column_index = columnIndex(name_ref, key_index);
+        const size_t column_index = columnIndex(name_ref, key_index);
 
         if (unlikely(ssize_t(column_index) < 0))
         {
@@ -255,8 +235,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
             const auto & type = header.getByPosition(i).type;
             if (format_settings.force_null_for_omitted_fields && !isNullableOrLowCardinalityNullable(type))
                 throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot insert NULL value into a column `{}` of type '{}'", columnName(i), type->getName());
-            else
-                type->insertDefaultInto(*columns[i]);
+            type->insertDefaultInto(*columns[i]);
         }
 
 

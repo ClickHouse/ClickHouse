@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- no-fasttest: Timeout for the first query (CANNOT_DETECT_FORMAT) is too slow: https://github.com/ClickHouse/ClickHouse/issues/67939
+
 drop table if exists test_table_url_syntax
 ;
 create table test_table_url_syntax (id UInt32) ENGINE = URL('')

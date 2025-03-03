@@ -1,5 +1,6 @@
 #include "HierarchyDictionariesUtils.h"
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 
 
@@ -50,7 +51,7 @@ namespace
         std::optional<UInt64> null_value;
 
         if (!hierarchical_attribute.null_value.isNull())
-            null_value = hierarchical_attribute.null_value.get<UInt64>();
+            null_value = hierarchical_attribute.null_value.safeGet<UInt64>();
 
         ColumnPtr key_to_request_column = ColumnVector<UInt64>::create();
         auto * key_to_request_column_typed = static_cast<ColumnVector<UInt64> *>(key_to_request_column->assumeMutable().get());
@@ -149,12 +150,10 @@ ColumnPtr getKeysDescendantsArray(
         auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
         return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
     }
-    else
-    {
-        detail::GetDescendantsAtSpecificLevelStrategy strategy { .level = level };
-        auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
-        return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
-    }
+
+    detail::GetDescendantsAtSpecificLevelStrategy strategy{.level = level};
+    auto elements_and_offsets = detail::getDescendants(requested_keys, parent_to_child_index, strategy, valid_keys);
+    return detail::convertElementsAndOffsetsIntoArray(std::move(elements_and_offsets));
 }
 
 ColumnPtr getKeysHierarchyDefaultImplementation(
@@ -190,7 +189,7 @@ ColumnPtr getKeysHierarchyDefaultImplementation(
     std::optional<UInt64> null_value;
 
     if (!hierarchical_attribute.null_value.isNull())
-        null_value = hierarchical_attribute.null_value.get<UInt64>();
+        null_value = hierarchical_attribute.null_value.safeGet<UInt64>();
 
     auto get_parent_key_func = [&](auto & key)
     {
@@ -252,7 +251,7 @@ ColumnUInt8::Ptr getKeysIsInHierarchyDefaultImplementation(
     std::optional<UInt64> null_value;
 
     if (!hierarchical_attribute.null_value.isNull())
-        null_value = hierarchical_attribute.null_value.get<UInt64>();
+        null_value = hierarchical_attribute.null_value.safeGet<UInt64>();
 
     auto get_parent_key_func = [&](auto & key)
     {

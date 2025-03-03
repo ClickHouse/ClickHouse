@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-# Tag no-parallel: create user
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+TEST_ROLE="${CLICKHOUSE_DATABASE}_role"
+TEST_USER="${CLICKHOUSE_DATABASE}_user"
+TEST_POLICY="${CLICKHOUSE_DATABASE}_policy"
 
 $CLICKHOUSE_CLIENT --query "drop table if exists test_table"
 $CLICKHOUSE_CLIENT --query "CREATE TABLE test_table
@@ -37,26 +38,26 @@ arrayJoin(['AWD','ZZZ']) as team,
 arrayJoin([3183,3106,0,3130,3108,3126,3109,3107,3182,3180,3129,3128,3125,3266]) as a
 FROM numbers(600);"
 
-$CLICKHOUSE_CLIENT --query "DROP ROLE IF exists AWD;"
-$CLICKHOUSE_CLIENT --query "create role AWD;"
-$CLICKHOUSE_CLIENT --query "REVOKE ALL ON *.* FROM AWD;"
+$CLICKHOUSE_CLIENT --query "DROP ROLE IF EXISTS ${TEST_ROLE};"
+$CLICKHOUSE_CLIENT --query "create role ${TEST_ROLE};"
+$CLICKHOUSE_CLIENT --query "REVOKE ALL ON *.* FROM ${TEST_ROLE};"
 
-$CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS AWD_user;"
-$CLICKHOUSE_CLIENT --query "CREATE USER AWD_user IDENTIFIED WITH plaintext_password BY 'AWD_pwd' DEFAULT ROLE AWD;"
+$CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS ${TEST_USER};"
+$CLICKHOUSE_CLIENT --query "CREATE USER ${TEST_USER} IDENTIFIED WITH plaintext_password BY 'AWD_pwd' DEFAULT ROLE ${TEST_ROLE};"
 
-$CLICKHOUSE_CLIENT --query "GRANT SELECT ON test_table TO AWD;"
+$CLICKHOUSE_CLIENT --query "GRANT SELECT ON test_table TO ${TEST_ROLE};"
 
-$CLICKHOUSE_CLIENT --query "DROP ROW POLICY IF EXISTS ttt_bu_test_table_AWD ON test_table;"
-$CLICKHOUSE_CLIENT --query "CREATE ROW POLICY ttt_bu_test_table_AWD ON test_table FOR SELECT USING team = 'AWD' TO AWD;"
+$CLICKHOUSE_CLIENT --query "DROP ROW POLICY IF EXISTS ${TEST_POLICY} ON test_table;"
+$CLICKHOUSE_CLIENT --query "CREATE ROW POLICY ${TEST_POLICY} ON test_table FOR SELECT USING team = 'AWD' TO ${TEST_ROLE};"
 
-$CLICKHOUSE_CLIENT  --user=AWD_user --password=AWD_pwd  --query "
+$CLICKHOUSE_CLIENT  --user=${TEST_USER} --password=AWD_pwd  --query "
 SELECT count() AS count
  FROM test_table
 WHERE
  t_date = '2021-07-15' AND c = 'aur' AND a=3130;
 "
 
-$CLICKHOUSE_CLIENT  --user=AWD_user --password=AWD_pwd  --query "
+$CLICKHOUSE_CLIENT  --user=${TEST_USER} --password=AWD_pwd  --query "
 SELECT
     team,
     a,
@@ -70,8 +71,12 @@ GROUP BY
     t_date;
 "
 
-$CLICKHOUSE_CLIENT  --user=AWD_user --password=AWD_pwd  --query "
+$CLICKHOUSE_CLIENT  --user=${TEST_USER} --password=AWD_pwd  --query "
 SELECT count() AS count
 FROM test_table
 WHERE (t_date = '2021-07-15') AND (c = 'aur') AND (a = 313)
 "
+
+$CLICKHOUSE_CLIENT --query "DROP ROLE IF EXISTS ${TEST_ROLE};"
+$CLICKHOUSE_CLIENT --query "DROP USER IF EXISTS ${TEST_USER};"
+$CLICKHOUSE_CLIENT --query "DROP ROW POLICY IF EXISTS ${TEST_POLICY} ON test_table;"

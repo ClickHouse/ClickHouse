@@ -52,6 +52,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -103,14 +108,11 @@ private:
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
 
         if (!src_data_concrete)
-        {
             return false;
-        }
 
         for (size_t row = 0; row < rows; ++row)
-        {
             out_vec[row * size_per_row + column_idx] = static_cast<char>(src_data_concrete->getInt(row));
-        }
+
         return true;
     }
 };

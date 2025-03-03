@@ -5,12 +5,13 @@
 #include <Common/IFactoryWithAliases.h>
 #include <Common/FunctionDocumentation.h>
 #include <Functions/IFunction.h>
-#include <Functions/IFunctionAdaptors.h>
 
 #include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
+
+#include <boost/noncopyable.hpp>
 
 
 namespace DB

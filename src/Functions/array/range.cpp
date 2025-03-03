@@ -1,6 +1,7 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -18,6 +19,10 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsUInt64 function_range_max_elements_in_block;
+}
 
 namespace ErrorCodes
 {
@@ -41,7 +46,7 @@ public:
 
     const size_t max_elements;
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionRange>(std::move(context_)); }
-    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef().function_range_max_elements_in_block) {}
+    explicit FunctionRange(ContextPtr context) : max_elements(context->getSettingsRef()[Setting::function_range_max_elements_in_block]) { }
 
 private:
     String getName() const override { return name; }
@@ -128,8 +133,7 @@ private:
 
             return ColumnArray::create(std::move(data_col), std::move(offsets_col));
         }
-        else
-            return nullptr;
+        return nullptr;
     }
 
     template <typename T>

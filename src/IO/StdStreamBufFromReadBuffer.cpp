@@ -1,3 +1,4 @@
+#include <Common/Exception.h>
 #include <IO/StdStreamBufFromReadBuffer.h>
 #include <IO/SeekableReadBuffer.h>
 
@@ -54,12 +55,11 @@ std::streampos StdStreamBufFromReadBuffer::seekoff(std::streamoff off, std::ios_
 {
     if (dir == std::ios_base::beg)
         return seekpos(off, which);
-    else if (dir == std::ios_base::cur)
+    if (dir == std::ios_base::cur)
         return seekpos(getCurrentPosition() + off, which);
-    else if (dir == std::ios_base::end)
+    if (dir == std::ios_base::end)
         return seekpos(size + off, which);
-    else
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong seek's base {}", static_cast<int>(dir));
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong seek's base {}", static_cast<int>(dir));
 }
 
 std::streampos StdStreamBufFromReadBuffer::seekpos(std::streampos pos, std::ios_base::openmode which)
@@ -94,8 +94,7 @@ std::streampos StdStreamBufFromReadBuffer::getCurrentPosition() const
 {
     if (seekable_read_buffer)
         return seekable_read_buffer->getPosition();
-    else
-        return read_buffer->count();
+    return read_buffer->count();
 }
 
 std::streamsize StdStreamBufFromReadBuffer::xsputn(const char*, std::streamsize)

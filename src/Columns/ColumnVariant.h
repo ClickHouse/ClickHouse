@@ -2,10 +2,12 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
+#include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
 {
+struct FormatSettings;
 
 /**
  * Column for storing Variant(...) type values.
@@ -171,6 +173,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
     bool isNullAt(size_t n) const override;
@@ -196,13 +199,15 @@ public:
 
     /// Methods for insertion from another Variant but with known mapping between global discriminators.
     void insertFrom(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
-    void insertRangeFrom(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
+    /// Don't insert data into variant with skip_discriminator global discriminator, it will be processed separately.
+    void insertRangeFrom(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping, Discriminator skip_discriminator);
     void insertManyFrom(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> & global_discriminators_mapping);
 
     /// Methods for insertion into a specific variant.
     void insertIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t n);
     void insertRangeIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t start, size_t length);
     void insertManyIntoVariantFrom(Discriminator global_discr, const IColumn & src_, size_t position, size_t length);
+    void deserializeBinaryIntoVariant(Discriminator global_discr, const SerializationPtr & serialization, ReadBuffer & buf, const FormatSettings & format_settings);
 
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
@@ -237,15 +242,22 @@ public:
                            size_t limit, int nan_direction_hint, IColumn::Permutation & res, EqualRanges & equal_ranges) const override;
 
     void reserve(size_t n) override;
+    size_t capacity() const override;
+    void prepareForSquashing(const Columns & source_columns) override;
     void ensureOwnership() override;
     size_t byteSize() const override;
     size_t byteSizeAt(size_t n) const override;
     size_t allocatedBytes() const override;
     void protect() override;
-    void forEachSubcolumn(MutableColumnCallback callback) override;
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    ColumnCheckpointPtr getCheckpoint() const override;
+    void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
+    void rollback(const ColumnCheckpoint & checkpoint) override;
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     bool structureEquals(const IColumn & rhs) const override;
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
     UInt64 getNumberOfDefaultRows() const override;
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override;
@@ -263,6 +275,7 @@ public:
     ColumnPtr & getVariantPtrByGlobalDiscriminator(size_t discr) { return variants[global_to_local_discriminators.at(discr)]; }
 
     const NestedColumns & getVariants() const { return variants; }
+    NestedColumns & getVariants() { return variants; }
 
     const IColumn & getLocalDiscriminatorsColumn() const { return *local_discriminators; }
     IColumn & getLocalDiscriminatorsColumn() { return *local_discriminators; }
@@ -302,9 +315,17 @@ public:
         return true;
     }
 
+    std::vector<Discriminator> getLocalToGlobalDiscriminatorsMapping() const { return local_to_global_discriminators; }
+
     /// Check if we have only 1 non-empty variant and no NULL values,
     /// and if so, return the discriminator of this non-empty column.
     std::optional<Discriminator> getLocalDiscriminatorOfOneNoneEmptyVariantNoNulls() const;
+    std::optional<Discriminator> getGlobalDiscriminatorOfOneNoneEmptyVariantNoNulls() const;
+
+    /// Check if we have only 1 non-empty variant,
+    /// and if so, return the discriminator of this non-empty column.
+    std::optional<Discriminator> getGlobalDiscriminatorOfOneNoneEmptyVariant() const;
+
 
     /// Apply null map to a Variant column.
     /// Replace corresponding discriminators with NULL_DISCRIMINATOR
@@ -318,11 +339,12 @@ public:
     void extend(const std::vector<Discriminator> & old_to_new_global_discriminators, std::vector<std::pair<MutableColumnPtr, Discriminator>> && new_variants_and_discriminators);
 
     bool hasDynamicStructure() const override;
+    bool dynamicStructureEquals(const IColumn & rhs) const override;
     void takeDynamicStructureFromSourceColumns(const Columns & source_columns) override;
 
 private:
     void insertFromImpl(const IColumn & src_, size_t n, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
-    void insertRangeFromImpl(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
+    void insertRangeFromImpl(const IColumn & src_, size_t start, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping, const Discriminator * skip_discriminator);
     void insertManyFromImpl(const IColumn & src_, size_t position, size_t length, const std::vector<ColumnVariant::Discriminator> * global_discriminators_mapping);
 
     void initIdentityGlobalToLocalDiscriminatorsMapping();

@@ -10,6 +10,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ListNode.h>
+#include <Analyzer/FunctionNode.h>
 
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -26,16 +27,24 @@ namespace ErrorCodes
 namespace
 {
 
-class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitor<CollectSourceColumnsVisitor>
+class CollectSourceColumnsVisitor : public InDepthQueryTreeVisitorWithContext<CollectSourceColumnsVisitor>
 {
 public:
     explicit CollectSourceColumnsVisitor(PlannerContextPtr & planner_context_, bool keep_alias_columns_ = true)
-        : planner_context(planner_context_)
+        : InDepthQueryTreeVisitorWithContext(planner_context_->getQueryContext())
+        , planner_context(planner_context_)
         , keep_alias_columns(keep_alias_columns_)
-    {}
-
-    void visitImpl(QueryTreeNodePtr & node)
     {
+    }
+
+    void enterImpl(QueryTreeNodePtr & node)
+    {
+        if (isIndexHintFunction(node))
+        {
+            is_inside_index_hint_function = true;
+            return;
+        }
+
         auto * column_node = node->as<ColumnNode>();
         if (!column_node)
             return;
@@ -43,10 +52,16 @@ public:
         if (column_node->getColumnName() == "__grouping_set")
             return;
 
+        /// A special case for the "indexHint" function. We don't need its arguments for execution if column's source table is MergeTree.
+        /// Instead, we prepare an ActionsDAG for its arguments and store it inside a function (see ActionsDAG::buildFilterActionsDAG).
+        /// So this optimization allows not to read arguments of "indexHint" (if not needed in other contexts) but only to use index analysis for them.
+        if (is_inside_index_hint_function && isColumnSourceMergeTree(*column_node))
+            return;
+
         auto column_source_node = column_node->getColumnSource();
         auto column_source_node_type = column_source_node->getNodeType();
 
-        if (column_source_node_type == QueryTreeNodeType::LAMBDA)
+        if (column_source_node_type == QueryTreeNodeType::LAMBDA || column_source_node_type == QueryTreeNodeType::INTERPOLATE)
             return;
 
         /// JOIN using expression
@@ -88,17 +103,19 @@ public:
 
                 auto column_identifier = planner_context->getGlobalPlannerContext()->createColumnIdentifier(node);
 
-                ActionsDAGPtr alias_column_actions_dag = std::make_shared<ActionsDAG>();
+                ActionsDAG alias_column_actions_dag;
                 PlannerActionsVisitor actions_visitor(planner_context, false);
-                auto outputs = actions_visitor.visit(*alias_column_actions_dag, column_node->getExpression());
+                auto outputs = actions_visitor.visit(alias_column_actions_dag, column_node->getExpression());
                 if (outputs.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
                 const auto & column_name = column_node->getColumnName();
-                const auto & alias_node = alias_column_actions_dag->addAlias(*outputs[0], column_name);
-                alias_column_actions_dag->addOrReplaceInOutputs(alias_node);
-                table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, alias_column_actions_dag, select_added_columns);
+                const auto & alias_node = alias_column_actions_dag.addAlias(*outputs[0], column_name);
+                alias_column_actions_dag.addOrReplaceInOutputs(alias_node);
+                table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, std::move(alias_column_actions_dag), select_added_columns);
             }
+            else
+                table_expression_data.markSelectedColumn(column_node->getColumn().name);
 
             return;
         }
@@ -126,6 +143,15 @@ public:
         table_expression_data.addColumn(column_node->getColumn(), column_identifier, select_added_columns);
     }
 
+    void leaveImpl(QueryTreeNodePtr & node)
+    {
+        if (isIndexHintFunction(node))
+        {
+            is_inside_index_hint_function = false;
+            return;
+        }
+    }
+
     static bool isAliasColumn(const QueryTreeNodePtr & node)
     {
         const auto * column_node = node->as<ColumnNode>();
@@ -135,6 +161,7 @@ public:
         if (!column_source)
             return false;
         return column_source->getNodeType() != QueryTreeNodeType::JOIN &&
+               column_source->getNodeType() != QueryTreeNodeType::CROSS_JOIN &&
                column_source->getNodeType() != QueryTreeNodeType::ARRAY_JOIN;
     }
 
@@ -144,6 +171,17 @@ public:
         return !(child_node_type == QueryTreeNodeType::QUERY ||
                  child_node_type == QueryTreeNodeType::UNION ||
                  isAliasColumn(parent_node));
+    }
+
+    static bool isIndexHintFunction(const QueryTreeNodePtr & node)
+    {
+        return node->as<FunctionNode>() && node->as<FunctionNode>()->getFunctionName() == "indexHint";
+    }
+
+    static bool isColumnSourceMergeTree(const ColumnNode & node)
+    {
+        const auto * source_table = node.getColumnSource()->as<TableNode>();
+        return source_table && source_table->getStorage()->isMergeTree();
     }
 
     void setKeepAliasColumns(bool keep_alias_columns_)
@@ -166,6 +204,9 @@ private:
     /// Column `b` is selected explicitly by user, but not `a` (that is also read though).
     /// Distinguishing such columns is important for checking access rights for ALIAS columns.
     bool select_added_columns = true;
+
+    /// True if we are traversing arguments of function "indexHint".
+    bool is_inside_index_hint_function = false;
 };
 
 class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
@@ -335,22 +376,22 @@ void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr
         collect_source_columns_visitor.setKeepAliasColumns(false);
         collect_source_columns_visitor.visit(query_node_typed.getPrewhere());
 
-        auto prewhere_actions_dag = std::make_shared<ActionsDAG>();
+        ActionsDAG prewhere_actions_dag;
 
         QueryTreeNodePtr query_tree_node = query_node_typed.getPrewhere();
 
         PlannerActionsVisitor visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
-        auto expression_nodes = visitor.visit(*prewhere_actions_dag, query_tree_node);
+        auto expression_nodes = visitor.visit(prewhere_actions_dag, query_tree_node);
         if (expression_nodes.size() != 1)
             throw Exception(ErrorCodes::ILLEGAL_PREWHERE,
                 "Invalid PREWHERE. Expected single boolean expression. In query {}",
                 query_node->formatASTForErrorMessage());
 
-        prewhere_actions_dag->getOutputs().push_back(expression_nodes.back());
+        prewhere_actions_dag.getOutputs().push_back(expression_nodes.back());
 
-        for (const auto & prewhere_input_node : prewhere_actions_dag->getInputs())
+        for (const auto & prewhere_input_node : prewhere_actions_dag.getInputs())
             if (required_column_names_without_prewhere.contains(prewhere_input_node->result_name))
-                prewhere_actions_dag->getOutputs().push_back(prewhere_input_node);
+                prewhere_actions_dag.getOutputs().push_back(prewhere_input_node);
 
         table_expression_data.setPrewhereFilterActions(std::move(prewhere_actions_dag));
     }

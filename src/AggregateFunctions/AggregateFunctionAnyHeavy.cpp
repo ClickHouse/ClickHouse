@@ -68,7 +68,10 @@ public:
         if (data().isEqualTo(to.data()))
             counter += to.counter;
         else if (!data().has() || counter < to.counter)
+        {
             data().set(to.data(), arena);
+            counter = to.counter - counter;
+        }
         else
             counter -= to.counter;
     }
@@ -91,7 +94,7 @@ public:
         readBinaryLittleEndian(counter, buf);
     }
 
-    void insertResultInto(IColumn & to) const { data().insertResultInto(to); }
+    void insertResultInto(IColumn & to, const DataTypePtr & type) const { data().insertResultInto(to, type); }
 };
 
 
@@ -142,7 +145,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        data(place).insertResultInto(to);
+        data(place).insertResultInto(to, result_type);
     }
 };
 

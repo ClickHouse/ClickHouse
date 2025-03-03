@@ -49,18 +49,17 @@ namespace ErrorCodes
 
 static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions(const ActionsDAG & actions_dag, ShortCircuitFunctionEvaluation short_circuit_function_evaluation);
 
-ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
-    : project_inputs(project_inputs_)
+ExpressionActions::ExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+    : actions_dag(std::move(actions_dag_))
+    , project_inputs(project_inputs_)
     , settings(settings_)
 {
-    actions_dag = actions_dag_->clone();
-
     /// It's important to determine lazy executed nodes before compiling expressions.
-    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(*actions_dag, settings.short_circuit_function_evaluation);
+    std::unordered_set<const ActionsDAG::Node *> lazy_executed_nodes = processShortCircuitFunctions(actions_dag, settings.short_circuit_function_evaluation);
 
 #if USE_EMBEDDED_COMPILER
     if (settings.can_compile_expressions && settings.compile_expressions == CompileExpressions::yes)
-        actions_dag->compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
+        actions_dag.compileExpressions(settings.min_count_to_compile_expression, lazy_executed_nodes);
 #endif
 
     linearizeActions(lazy_executed_nodes);
@@ -68,12 +67,32 @@ ExpressionActions::ExpressionActions(ActionsDAGPtr actions_dag_, const Expressio
     if (settings.max_temporary_columns && num_columns > settings.max_temporary_columns)
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
                         "Too many temporary columns: {}. Maximum: {}",
-                        actions_dag->dumpNames(), settings.max_temporary_columns);
+                        actions_dag.dumpNames(), settings.max_temporary_columns);
 }
 
 ExpressionActionsPtr ExpressionActions::clone() const
 {
-    return std::make_shared<ExpressionActions>(*this);
+    auto copy = std::make_shared<ExpressionActions>(ExpressionActions());
+
+    std::unordered_map<const Node *, Node *> copy_map;
+    copy->actions_dag = actions_dag.clone(copy_map);
+    copy->actions = actions;
+    for (auto & action : copy->actions)
+        action.node = copy_map[action.node];
+
+    for (const auto * input : copy->actions_dag.getInputs())
+        copy->input_positions.emplace(input->result_name, input_positions.at(input->result_name));
+
+    copy->num_columns = num_columns;
+
+    copy->required_columns = required_columns;
+    copy->result_positions = result_positions;
+    copy->sample_block = sample_block;
+
+    copy->project_inputs = project_inputs;
+    copy->settings = settings;
+
+    return copy;
 }
 
 namespace
@@ -195,10 +214,6 @@ static void setLazyExecutionInfo(
             }
 
             lazy_execution_info.short_circuit_ancestors_info[parent].insert(indexes.begin(), indexes.end());
-            /// After checking arguments_with_disabled_lazy_execution, if there is no relation with parent,
-            /// disable the current node.
-            if (indexes.empty())
-                lazy_execution_info.can_be_lazy_executed = false;
         }
         else
             /// If lazy execution is disabled for one of parents, we should disable it for current node.
@@ -341,8 +356,8 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     };
 
     const auto & nodes = getNodes();
-    const auto & outputs = actions_dag->getOutputs();
-    const auto & inputs = actions_dag->getInputs();
+    const auto & outputs = actions_dag.getOutputs();
+    const auto & inputs = actions_dag.getInputs();
 
     auto reverse_info = getActionsDAGReverseInfo(nodes, outputs);
     std::vector<Data> data;
@@ -984,7 +999,8 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
         if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
+    steps.push_back(std::make_unique<ExpressionActionsChainSteps::ExpressionActionsStep>(
+        std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1028,6 +1044,18 @@ void ExpressionActionsChain::finalize()
     }
 }
 
+ExpressionActionsChainSteps::ExpressionActionsStep * ExpressionActionsChain::getLastExpressionStep(bool allow_empty)
+{
+    if (steps.empty())
+    {
+        if (allow_empty)
+            return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
+    }
+
+    return typeid_cast<ExpressionActionsChainSteps::ExpressionActionsStep *>(steps.back().get());
+}
+
 std::string ExpressionActionsChain::dumpChain() const
 {
     WriteBufferFromOwnString ss;
@@ -1044,16 +1072,16 @@ std::string ExpressionActionsChain::dumpChain() const
     return ss.str();
 }
 
-ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_join_, ColumnsWithTypeAndName required_columns_)
+ExpressionActionsChainSteps::ArrayJoinStep::ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_)
     : Step({})
-    , array_join(std::move(array_join_))
+    , array_join_columns(array_join_columns_.begin(), array_join_columns_.end())
     , result_columns(std::move(required_columns_))
 {
     for (auto & column : result_columns)
     {
         required_columns.emplace_back(NameAndTypePair(column.name, column.type));
 
-        if (array_join->columns.contains(column.name))
+        if (array_join_columns.contains(column.name))
         {
             const auto & array = getArrayJoinDataType(column.type);
             column.type = array->getNestedType();
@@ -1063,19 +1091,19 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(ArrayJoinActionPtr array_jo
     }
 }
 
-void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_output_)
+void ExpressionActionsChainSteps::ArrayJoinStep::finalize(const NameSet & required_output_)
 {
     NamesAndTypesList new_required_columns;
     ColumnsWithTypeAndName new_result_columns;
 
     for (const auto & column : result_columns)
     {
-        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join_columns.contains(column.name) || required_output_.contains(column.name))
             new_result_columns.emplace_back(column);
     }
     for (const auto & column : required_columns)
     {
-        if (array_join->columns.contains(column.name) || required_output_.contains(column.name))
+        if (array_join_columns.contains(column.name) || required_output_.contains(column.name))
             new_required_columns.emplace_back(column);
     }
 
@@ -1083,7 +1111,7 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
     std::swap(result_columns, new_result_columns);
 }
 
-ExpressionActionsChain::JoinStep::JoinStep(
+ExpressionActionsChainSteps::JoinStep::JoinStep(
     std::shared_ptr<TableJoin> analyzed_join_,
     JoinPtr join_,
     const ColumnsWithTypeAndName & required_columns_)
@@ -1098,7 +1126,7 @@ ExpressionActionsChain::JoinStep::JoinStep(
     analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, true);
 }
 
-void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
+void ExpressionActionsChainSteps::JoinStep::finalize(const NameSet & required_output_)
 {
     /// We need to update required and result columns by removing unused ones.
     NamesAndTypesList new_required_columns;
@@ -1133,12 +1161,12 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     std::swap(result_columns, new_result_columns);
 }
 
-ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions()
+ActionsAndProjectInputsFlagPtr & ExpressionActionsChainSteps::Step::actions()
 {
     return typeid_cast<ExpressionActionsStep &>(*this).actions_and_flags;
 }
 
-const ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions() const
+const ActionsAndProjectInputsFlagPtr & ExpressionActionsChainSteps::Step::actions() const
 {
     return typeid_cast<const ExpressionActionsStep &>(*this).actions_and_flags;
 }

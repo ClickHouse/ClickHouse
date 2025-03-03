@@ -4,7 +4,9 @@
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
@@ -53,7 +55,7 @@ public:
     void onFinish() override;
 
 private:
-    void onCancel() override;
+    void onCancel() noexcept override;
 
     IColumn::Selector createSelector(const Block & source_block) const;
 

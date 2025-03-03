@@ -10,12 +10,14 @@
 
 #if USE_RAPIDJSON
 
-#include "rapidjson/document.h"
-#include "rapidjson/writer.h"
-#include "rapidjson/stringbuffer.h"
-#include "rapidjson/filewritestream.h"
-#include "rapidjson/prettywriter.h"
-#include "rapidjson/filereadstream.h"
+/// Prevent stack overflow:
+#define RAPIDJSON_PARSE_DEFAULT_FLAGS (kParseIterativeFlag)
+
+#include <rapidjson/document.h>
+#include <rapidjson/writer.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/filereadstream.h>
+#include <rapidjson/error/en.h>
 
 
 namespace DB
@@ -31,17 +33,17 @@ namespace ErrorCodes
 
 namespace
 {
-    // select jsonMergePatch('{"a":1}','{"name": "joey"}','{"name": "tom"}','{"name": "zoey"}');
+    // select JSONMergePatch('{"a":1}','{"name": "joey"}','{"name": "tom"}','{"name": "zoey"}');
     //           ||
     //           \/
     // ┌───────────────────────┐
     // │ {"a":1,"name":"zoey"} │
     // └───────────────────────┘
-    class FunctionjsonMergePatch : public IFunction
+    class FunctionJSONMergePatch : public IFunction
     {
     public:
-        static constexpr auto name = "jsonMergePatch";
-        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionjsonMergePatch>(); }
+        static constexpr auto name = "JSONMergePatch";
+        static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionJSONMergePatch>(); }
 
         String getName() const override { return name; }
         bool isVariadic() const override { return true; }
@@ -98,7 +100,11 @@ namespace
                 const char * json = str_ref.data;
 
                 document.Parse(json);
-                if (document.HasParseError() || !document.IsObject())
+
+                if (document.HasParseError())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge: {}", rapidjson::GetParseError_En(document.GetParseError()));
+
+                if (!document.IsObject())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong JSON string to merge. Expected JSON object");
             };
 
@@ -162,10 +168,12 @@ namespace
 
 }
 
-REGISTER_FUNCTION(jsonMergePatch)
+REGISTER_FUNCTION(JSONMergePatch)
 {
-    factory.registerFunction<FunctionjsonMergePatch>(FunctionDocumentation{
+    factory.registerFunction<FunctionJSONMergePatch>(FunctionDocumentation{
         .description="Returns the merged JSON object string, which is formed by merging multiple JSON objects."});
+
+    factory.registerAlias("jsonMergePatch", "JSONMergePatch");
 }
 
 }

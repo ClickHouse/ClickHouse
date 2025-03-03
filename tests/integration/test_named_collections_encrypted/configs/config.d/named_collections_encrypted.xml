@@ -1,0 +1,12 @@
+<clickhouse>
+  <named_collections_storage>
+    <type>local_encrypted</type>
+    <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+  </named_collections_storage>
+
+  <named_collections>
+    <collection1>
+      <key1>value1</key1>
+    </collection1>
+  </named_collections>
+</clickhouse>

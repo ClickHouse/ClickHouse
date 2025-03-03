@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1, optimize_injective_functions_inside_uniq = 1;
+SET enable_analyzer = 1, optimize_injective_functions_inside_uniq = 1;
 
 -- Simple test
 EXPLAIN QUERY TREE SELECT uniqCombined(tuple('')) FROM numbers(1);

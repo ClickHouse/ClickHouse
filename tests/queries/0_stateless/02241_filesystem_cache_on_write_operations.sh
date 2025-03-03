@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
+# no-flaky-check: Too slow
 
 # set -x
 
@@ -16,7 +17,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
 
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM DROP FILESYSTEM CACHE"
 
-    $CLICKHOUSE_CLIENT --echo -n --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
+    $CLICKHOUSE_CLIENT --echo --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
     (
         SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
@@ -37,7 +38,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100)"
 
-    $CLICKHOUSE_CLIENT --echo -n --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
+    $CLICKHOUSE_CLIENT --echo --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
     (
         SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
@@ -70,7 +71,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
 
     $CLICKHOUSE_CLIENT --echo --enable_filesystem_cache_on_write_operations=1 --query "INSERT INTO test_02241 SELECT number, toString(number) FROM numbers(100, 200)"
 
-    $CLICKHOUSE_CLIENT --echo -n --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
+    $CLICKHOUSE_CLIENT --echo --query "SELECT file_segment_range_begin, file_segment_range_end, size, state
     FROM
     (
         SELECT file_segment_range_begin, file_segment_range_end, size, state, local_path
@@ -109,7 +110,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
 
     $CLICKHOUSE_CLIENT --echo --query "SYSTEM FLUSH LOGS"
 
-    $CLICKHOUSE_CLIENT -n --query "SELECT
+    $CLICKHOUSE_CLIENT --query "SELECT
         query, ProfileEvents['RemoteFSReadBytes'] > 0 as remote_fs_read
     FROM
         system.query_log

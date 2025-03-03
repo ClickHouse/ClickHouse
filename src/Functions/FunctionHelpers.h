@@ -1,16 +1,12 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/callOnTypeIndex.h>
-
 
 namespace DB
 {
@@ -168,6 +164,11 @@ checkAndGetNestedArrayOffset(const IColumn ** columns, size_t num_arguments);
 /// Return ColumnNullable of src, with null map as OR-ed null maps of args columns.
 /// Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
 ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count);
+
+/** Return ColumnNullable of src, with input null map
+  * Or ColumnConst(ColumnNullable) if the result is always NULL or if the result is constant and always not NULL.
+  */
+ColumnPtr wrapInNullable(const ColumnPtr & src, const ColumnPtr & null_map);
 
 struct NullPresence
 {

@@ -1,16 +1,18 @@
 ---
-slug: /en/sql-reference/functions/geo/polygons
+slug: /sql-reference/functions/geo/polygons
 sidebar_label: Polygons
 title: "Functions for Working with Polygons"
 ---
 
-## WKT
+## WKT {#wkt}
 
-Returns a WKT (Well Known Text) geometric object from various [Geo Data Types](../../data-types/geo.md). Supported WKT objects are: 
+Returns a WKT (Well Known Text) geometric object from various [Geo Data Types](../../data-types/geo.md). Supported WKT objects are:
 
 - POINT
 - POLYGON
 - MULTIPOLYGON
+- LINESTRING
+- MULTILINESTRING
 
 **Syntax**
 
@@ -26,12 +28,16 @@ WKT(geo_data)
 - [Ring](../../data-types/geo.md#ring)
 - [Polygon](../../data-types/geo.md#polygon)
 - [MultiPolygon](../../data-types/geo.md#multipolygon)
+- [LineString](../../data-types/geo.md#linestring)
+- [MultiLineString](../../data-types/geo.md#multilinestring)
 
 **Returned value**
 
 - WKT geometric object `POINT` is returned for a Point.
 - WKT geometric object `POLYGON` is returned for a Polygon
-- WKT geometric object `MULTIPOLYGON` is returned for a MultiPolygon. 
+- WKT geometric object `MULTIPOLYGON` is returned for a MultiPolygon.
+- WKT geometric object `LINESTRING` is returned for a LineString.
+- WKT geometric object `MULTILINESTRING` is returned for a MultiLineString.
 
 **Examples**
 
@@ -65,11 +71,11 @@ SELECT wkt([[[(0., 0.), (10., 0.), (10., 10.), (0., 10.)], [(4., 4.), (5., 4.), 
 MULTIPOLYGON(((0 0,10 0,10 10,0 10,0 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))
 ```
 
-## readWKTMultiPolygon
+## readWKTMultiPolygon {#readwktmultipolygon}
 
 Converts a WKT (Well Known Text) MultiPolygon into a MultiPolygon type.
 
-### Example
+### Example {#example}
 
 ``` sql
 SELECT
@@ -82,19 +88,19 @@ SELECT
 | MultiPolygon | [[[(2,0),(10,0),(10,10),(0,10),(2,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]] |
 
 
-### Input parameters
+### Input parameters {#input-parameters}
 
-String starting with `MULTIPOLYGON` 
+String starting with `MULTIPOLYGON`
 
-### Returned value
+### Returned value {#returned-value}
 
 MultiPolygon
 
-## readWKTPolygon
+## readWKTPolygon {#readwktpolygon}
 
 Converts a WKT (Well Known Text) MultiPolygon into a Polygon type.
 
-### Example
+### Example {#example-1}
 
 ``` sql
 SELECT
@@ -106,33 +112,33 @@ FORMAT Markdown
 |:-|:-|
 | Polygon | [[(2,0),(10,0),(10,10),(0,10),(2,0)]] |
 
-### Input parameters
+### Input parameters {#input-parameters-1}
 
 String starting with `POLYGON`
 
-### Returned value
+### Returned value {#returned-value-1}
 
 Polygon
 
-## readWKTPoint
+## readWKTPoint {#readwktpoint}
 
 The `readWKTPoint` function in ClickHouse parses a Well-Known Text (WKT) representation of a Point geometry and returns a point in the internal ClickHouse format.
 
-### Syntax
+### Syntax {#syntax}
 
 ```sql
 readWKTPoint(wkt_string)
 ```
 
-### Arguments
+### Arguments {#arguments}
 
 - `wkt_string`: The input WKT string representing a Point geometry.
 
-### Returned value
+### Returned value {#returned-value-2}
 
 The function returns a ClickHouse internal representation of the Point geometry.
 
-### Example
+### Example {#example-2}
 
 ```sql
 SELECT readWKTPoint('POINT (1.2 3.4)');
@@ -142,25 +148,25 @@ SELECT readWKTPoint('POINT (1.2 3.4)');
 (1.2,3.4)
 ```
 
-## readWKTLineString
+## readWKTLineString {#readwktlinestring}
 
 Parses a Well-Known Text (WKT) representation of a LineString geometry and returns it in the internal ClickHouse format.
 
-### Syntax
+### Syntax {#syntax-1}
 
 ```sql
 readWKTLineString(wkt_string)
 ```
 
-### Arguments
+### Arguments {#arguments-1}
 
 - `wkt_string`: The input WKT string representing a LineString geometry.
 
-### Returned value
+### Returned value {#returned-value-3}
 
 The function returns a ClickHouse internal representation of the linestring geometry.
 
-### Example
+### Example {#example-3}
 
 ```sql
 SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');
@@ -170,25 +176,53 @@ SELECT readWKTLineString('LINESTRING (1 1, 2 2, 3 3, 1 1)');
 [(1,1),(2,2),(3,3),(1,1)]
 ```
 
-## readWKTRing
+## readWKTMultiLineString {#readwktmultilinestring}
+
+Parses a Well-Known Text (WKT) representation of a MultiLineString geometry and returns it in the internal ClickHouse format.
+
+### Syntax {#syntax-2}
+
+```sql
+readWKTMultiLineString(wkt_string)
+```
+
+### Arguments {#arguments-2}
+
+- `wkt_string`: The input WKT string representing a MultiLineString geometry.
+
+### Returned value {#returned-value-4}
+
+The function returns a ClickHouse internal representation of the multilinestring geometry.
+
+### Example {#example-4}
+
+```sql
+SELECT readWKTMultiLineString('MULTILINESTRING ((1 1, 2 2, 3 3), (4 4, 5 5, 6 6))');
+```
+
+```response
+[[(1,1),(2,2),(3,3)],[(4,4),(5,5),(6,6)]]
+```
+
+## readWKTRing {#readwktring}
 
 Parses a Well-Known Text (WKT) representation of a Polygon geometry and returns a ring (closed linestring) in the internal ClickHouse format.
 
-### Syntax
+### Syntax {#syntax-3}
 
 ```sql
 readWKTRing(wkt_string)
 ```
 
-### Arguments
+### Arguments {#arguments-3}
 
 - `wkt_string`: The input WKT string representing a Polygon geometry.
 
-### Returned value
+### Returned value {#returned-value-5}
 
 The function returns a ClickHouse internal representation of the ring (closed linestring) geometry.
 
-### Example
+### Example {#example-5}
 
 ```sql
 SELECT readWKTRing('POLYGON ((1 1, 2 2, 3 3, 1 1))');
@@ -198,11 +232,11 @@ SELECT readWKTRing('POLYGON ((1 1, 2 2, 3 3, 1 1))');
 [(1,1),(2,2),(3,3),(1,1)]
 ```
 
-## polygonsWithinSpherical
+## polygonsWithinSpherical {#polygonswithinspherical}
 
 Returns true or false depending on whether or not one polygon lies completely inside another polygon. Reference https://www.boost.org/doc/libs/1_62_0/libs/geometry/doc/html/geometry/reference/algorithms/within/within_2.html
 
-### Example
+### Example {#example-6}
 
 ``` sql
 select polygonsWithinSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]);
@@ -211,17 +245,17 @@ select polygonsWithinSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879
 0
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-2}
 
-### Returned value
+### Returned value {#returned-value-6}
 
 UInt8, 0 for false, 1 for true
 
-## polygonsDistanceSpherical
+## polygonsDistanceSpherical {#polygonsdistancespherical}
 
-Calculates the minimal distance between two points where one point belongs to the first polygon and the second to another polygon. Spherical means that coordinates are interpreted as coordinates on a pure and ideal sphere, which is not true for the Earth. Using this type of coordinate system speeds up execution, but of course is not precise. 
+Calculates the minimal distance between two points where one point belongs to the first polygon and the second to another polygon. Spherical means that coordinates are interpreted as coordinates on a pure and ideal sphere, which is not true for the Earth. Using this type of coordinate system speeds up execution, but of course is not precise.
 
-### Example
+### Example {#example-7}
 
 ``` sql
 SELECT polygonsDistanceSpherical([[[(0, 0), (0, 0.1), (0.1, 0.1), (0.1, 0)]]], [[[(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)]]])
@@ -230,19 +264,19 @@ SELECT polygonsDistanceSpherical([[[(0, 0), (0, 0.1), (0.1, 0.1), (0.1, 0)]]], [
 0.24372872211133834
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-3}
 
 Two polygons
 
-### Returned value
+### Returned value {#returned-value-7}
 
 Float64
 
-## polygonsDistanceCartesian
+## polygonsDistanceCartesian {#polygonsdistancecartesian}
 
 Calculates distance between two polygons
 
-### Example
+### Example {#example-8}
 
 ``` sql
 SELECT polygonsDistanceCartesian([[[(0, 0), (0, 0.1), (0.1, 0.1), (0.1, 0)]]], [[[(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)]]])
@@ -251,19 +285,19 @@ SELECT polygonsDistanceCartesian([[[(0, 0), (0, 0.1), (0.1, 0.1), (0.1, 0)]]], [
 14.000714267493642
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-4}
 
 Two polygons
 
-### Returned value
+### Returned value {#returned-value-8}
 
 Float64
 
-## polygonsEqualsCartesian
+## polygonsEqualsCartesian {#polygonsequalscartesian}
 
 Returns true if two polygons are equal
 
-### Example
+### Example {#example-9}
 
 ``` sql
 SELECT polygonsEqualsCartesian([[[(1., 1.), (1., 4.), (4., 4.), (4., 1.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
@@ -272,19 +306,19 @@ SELECT polygonsEqualsCartesian([[[(1., 1.), (1., 4.), (4., 4.), (4., 1.)]]], [[[
 1
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-5}
 
 Two polygons
 
-### Returned value
+### Returned value {#returned-value-9}
 
 UInt8, 0 for false, 1 for true
 
-## polygonsSymDifferenceSpherical
+## polygonsSymDifferenceSpherical {#polygonssymdifferencespherical}
 
 Calculates the spatial set theoretic symmetric difference (XOR) between two polygons
 
-### Example
+### Example {#example-10}
 
 ``` sql
 SELECT wkt(arraySort(polygonsSymDifferenceSpherical([[(50., 50.), (50., -50.), (-50., -50.), (-50., 50.), (50., 50.)], [(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)], [(-10., -10.), (-10., -40.), (-40., -40.), (-40., -10.), (-10., -10.)]], [[(-20., -20.), (-20., 20.), (20., 20.), (20., -20.), (-20., -20.)]])));
@@ -293,19 +327,19 @@ SELECT wkt(arraySort(polygonsSymDifferenceSpherical([[(50., 50.), (50., -50.), (
 MULTIPOLYGON(((-20 -10.3067,-10 -10,-10 -20.8791,-20 -20,-20 -10.3067)),((10 20.8791,20 20,20 10.3067,10 10,10 20.8791)),((50 50,50 -50,-50 -50,-50 50,50 50),(20 10.3067,40 10,40 40,10 40,10 20.8791,-20 20,-20 -10.3067,-40 -10,-40 -40,-10 -40,-10 -20.8791,20 -20,20 10.3067)))
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-6}
 
 Polygons
 
-### Returned value
+### Returned value {#returned-value-10}
 
 MultiPolygon
 
-## polygonsSymDifferenceCartesian
+## polygonsSymDifferenceCartesian {#polygonssymdifferencecartesian}
 
 The same as `polygonsSymDifferenceSpherical`, but the coordinates are in the Cartesian coordinate system; which is more close to the model of the real Earth.
 
-### Example
+### Example {#example-11}
 
 ``` sql
 SELECT wkt(polygonsSymDifferenceCartesian([[[(0, 0), (0, 3), (1, 2.9), (2, 2.6), (2.6, 2), (2.9, 1), (3, 0), (0, 0)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]]))
@@ -314,19 +348,19 @@ SELECT wkt(polygonsSymDifferenceCartesian([[[(0, 0), (0, 3), (1, 2.9), (2, 2.6),
 MULTIPOLYGON(((1 2.9,1 1,2.9 1,3 0,0 0,0 3,1 2.9)),((1 2.9,1 4,4 4,4 1,2.9 1,2.6 2,2 2.6,1 2.9)))
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-7}
 
 Polygons
 
-### Returned value
+### Returned value {#returned-value-11}
 
 MultiPolygon
 
-## polygonsIntersectionSpherical
+## polygonsIntersectionSpherical {#polygonsintersectionspherical}
 
 Calculates the intersection (AND) between polygons, coordinates are spherical.
 
-### Example
+### Example {#example-12}
 
 ``` sql
 SELECT wkt(arrayMap(a -> arrayMap(b -> arrayMap(c -> (round(c.1, 6), round(c.2, 6)), b), a), polygonsIntersectionSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]])))
@@ -335,19 +369,19 @@ SELECT wkt(arrayMap(a -> arrayMap(b -> arrayMap(c -> (round(c.1, 6), round(c.2, 
 MULTIPOLYGON(((4.3666 50.8434,4.36024 50.8436,4.34956 50.8536,4.35268 50.8567,4.36794 50.8525,4.3666 50.8434)))
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-8}
 
 Polygons
 
-### Returned value
+### Returned value {#returned-value-12}
 
 MultiPolygon
 
-## polygonsWithinCartesian
+## polygonsWithinCartesian {#polygonswithincartesian}
 
 Returns true if the second polygon is within the first polygon.
 
-### Example
+### Example {#example-13}
 
 ``` sql
 SELECT polygonsWithinCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
@@ -356,21 +390,21 @@ SELECT polygonsWithinCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[
 1
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-9}
 
 Two polygons
 
-### Returned value
+### Returned value {#returned-value-13}
 
 UInt8, 0 for false, 1 for true
 
-## polygonConvexHullCartesian
+## polygonConvexHullCartesian {#polygonconvexhullcartesian}
 
 Calculates a convex hull. [Reference](https://www.boost.org/doc/libs/1_61_0/libs/geometry/doc/html/geometry/reference/algorithms/convex_hull.html)
 
 Coordinates are in Cartesian coordinate system.
 
-### Example
+### Example {#example-14}
 
 ``` sql
 SELECT wkt(polygonConvexHullCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.), (2., 3.)]]]))
@@ -379,19 +413,19 @@ SELECT wkt(polygonConvexHullCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.),
 POLYGON((0 0,0 5,5 5,5 0,0 0))
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-10}
 
 MultiPolygon
 
-### Returned value
+### Returned value {#returned-value-14}
 
 Polygon
 
-## polygonAreaSpherical
+## polygonAreaSpherical {#polygonareaspherical}
 
 Calculates the surface area of a polygon.
 
-### Example
+### Example {#example-15}
 
 ``` sql
 SELECT round(polygonAreaSpherical([[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]), 14)
@@ -400,19 +434,19 @@ SELECT round(polygonAreaSpherical([[[(4.346693, 50.858306), (4.367945, 50.852455
 9.387704e-8
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-11}
 
 Polygon
 
-### Returned value
+### Returned value {#returned-value-15}
 
 Float
 
-## polygonsUnionSpherical
+## polygonsUnionSpherical {#polygonsunionspherical}
 
 Calculates a union (OR).
 
-### Example
+### Example {#example-16}
 
 ``` sql
 SELECT wkt(polygonsUnionSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]))
@@ -421,19 +455,19 @@ SELECT wkt(polygonsUnionSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535
 MULTIPOLYGON(((4.36661 50.8434,4.36623 50.8408,4.34496 50.8333,4.33807 50.8487,4.34669 50.8583,4.35268 50.8567,4.36136 50.8652,4.36131 50.8651,4.39045 50.8565,4.38303 50.8429,4.36661 50.8434)))
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-12}
 
 Polygons
 
-### Returned value
+### Returned value {#returned-value-16}
 
 MultiPolygon
 
-## polygonPerimeterSpherical
+## polygonPerimeterSpherical {#polygonperimeterspherical}
 
 Calculates the perimeter of the polygon.
 
-### Example
+### Example {#example-17}
 
 This is the polygon representing Zimbabwe:
 
@@ -449,15 +483,15 @@ SELECT round(polygonPerimeterSpherical([(30.010654, -15.646227), (30.050238, -15
 0.45539
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-13}
 
-### Returned value
+### Returned value {#returned-value-17}
 
-## polygonsIntersectionCartesian
+## polygonsIntersectionCartesian {#polygonsintersectioncartesian}
 
 Calculates the intersection of polygons.
 
-### Example
+### Example {#example-18}
 
 ``` sql
 SELECT wkt(polygonsIntersectionCartesian([[[(0., 0.), (0., 3.), (1., 2.9), (2., 2.6), (2.6, 2.), (2.9, 1.), (3., 0.), (0., 0.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]]))
@@ -466,19 +500,19 @@ SELECT wkt(polygonsIntersectionCartesian([[[(0., 0.), (0., 3.), (1., 2.9), (2., 
 MULTIPOLYGON(((1 2.9,2 2.6,2.6 2,2.9 1,1 1,1 2.9)))
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-14}
 
 Polygons
 
-### Returned value
+### Returned value {#returned-value-18}
 
 MultiPolygon
 
-## polygonAreaCartesian
+## polygonAreaCartesian {#polygonareacartesian}
 
 Calculates the area of a polygon
 
-### Example
+### Example {#example-19}
 
 ``` sql
 SELECT polygonAreaCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
@@ -487,19 +521,19 @@ SELECT polygonAreaCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
 25
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-15}
 
 Polygon
 
-### Returned value
+### Returned value {#returned-value-19}
 
 Float64
 
-## polygonPerimeterCartesian
+## polygonPerimeterCartesian {#polygonperimetercartesian}
 
 Calculates the perimeter of a polygon.
 
-### Example
+### Example {#example-20}
 
 ``` sql
 SELECT polygonPerimeterCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
@@ -508,19 +542,19 @@ SELECT polygonPerimeterCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
 15
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-16}
 
 Polygon
 
-### Returned value
+### Returned value {#returned-value-20}
 
 Float64
 
-## polygonsUnionCartesian
+## polygonsUnionCartesian {#polygonsunioncartesian}
 
 Calculates the union of polygons.
 
-### Example
+### Example {#example-21}
 
 ``` sql
 SELECT wkt(polygonsUnionCartesian([[[(0., 0.), (0., 3.), (1., 2.9), (2., 2.6), (2.6, 2.), (2.9, 1), (3., 0.), (0., 0.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]]))
@@ -529,11 +563,11 @@ SELECT wkt(polygonsUnionCartesian([[[(0., 0.), (0., 3.), (1., 2.9), (2., 2.6), (
 MULTIPOLYGON(((1 2.9,1 4,4 4,4 1,2.9 1,3 0,0 0,0 3,1 2.9)))
 ```
 
-### Input parameters
+### Input parameters {#input-parameters-17}
 
 Polygons
 
-### Returned value
+### Returned value {#returned-value-21}
 
 MultiPolygon
 

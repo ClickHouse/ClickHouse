@@ -101,6 +101,11 @@ UInt64 BloomFilter::isEmpty() const
     return true;
 }
 
+size_t BloomFilter::memoryUsageBytes() const
+{
+    return filter.capacity() * sizeof(UnderType);
+}
+
 bool operator== (const BloomFilter & a, const BloomFilter & b)
 {
     for (size_t i = 0; i < a.words; ++i)
@@ -127,8 +132,7 @@ DataTypePtr BloomFilter::getPrimitiveType(const DataTypePtr & data_type)
     {
         if (!typeid_cast<const DataTypeArray *>(array_type->getNestedType().get()))
             return getPrimitiveType(array_type->getNestedType());
-        else
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type {} of bloom filter index.", data_type->getName());
     }
 
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(data_type.get()))

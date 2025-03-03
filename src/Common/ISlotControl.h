@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <limits>
 #include <memory>
 #include <base/types.h>
@@ -72,5 +73,45 @@ public:
     // If not all `max` slots were successfully allocated, a "subscription" for later allocation is created
     [[nodiscard]] virtual SlotAllocationPtr allocate(SlotCount min, SlotCount max) = 0;
 };
+
+/// Allocation that grants all the slots immediately on creation
+class GrantedAllocation : public ISlotAllocation
+{
+public:
+    explicit GrantedAllocation(SlotCount granted_)
+        : granted(granted_)
+        , allocated(granted_)
+    {}
+
+    [[nodiscard]] AcquiredSlotPtr tryAcquire() override
+    {
+        SlotCount value = granted.load();
+        while (value)
+        {
+            if (granted.compare_exchange_strong(value, value - 1))
+                return std::make_shared<IAcquiredSlot>();
+        }
+        return {};
+    }
+
+    SlotCount grantedCount() const override
+    {
+        return granted.load();
+    }
+
+    SlotCount allocatedCount() const override
+    {
+        return allocated;
+    }
+
+private:
+    std::atomic<SlotCount> granted; // allocated, but not yet acquired
+    const SlotCount allocated;
+};
+
+[[nodiscard]] inline SlotAllocationPtr grantSlots(SlotCount count)
+{
+    return SlotAllocationPtr(new GrantedAllocation(count));
+}
 
 }

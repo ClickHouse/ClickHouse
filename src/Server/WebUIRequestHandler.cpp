@@ -7,6 +7,7 @@
 
 #include <Core/ServerSettings.h>
 #include <IO/HTTPCommon.h>
+#include <IO/Operators.h>
 #include <Interpreters/Context.h>
 #include <Common/re2.h>
 
@@ -20,33 +21,28 @@ INCBIN(resource_dashboard_html, SOURCE_DIR "/programs/server/dashboard.html");
 INCBIN(resource_uplot_js, SOURCE_DIR "/programs/server/js/uplot.js");
 INCBIN(resource_lz_string_js, SOURCE_DIR "/programs/server/js/lz-string.js");
 INCBIN(resource_binary_html, SOURCE_DIR "/programs/server/binary.html");
+INCBIN(resource_merges_html, SOURCE_DIR "/programs/server/merges.html");
 
 
 namespace DB
 {
 
-PlayWebUIRequestHandler::PlayWebUIRequestHandler(IServer & server_) : server(server_) {}
-DashboardWebUIRequestHandler::DashboardWebUIRequestHandler(IServer & server_) : server(server_) {}
-BinaryWebUIRequestHandler::BinaryWebUIRequestHandler(IServer & server_) : server(server_) {}
-JavaScriptWebUIRequestHandler::JavaScriptWebUIRequestHandler(IServer & server_) : server(server_) {}
-
-static void handle(const IServer & server, HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
+static void handle(HTTPServerRequest & request, HTTPServerResponse & response, std::string_view html)
 {
-    auto keep_alive_timeout = server.context()->getServerSettings().keep_alive_timeout.totalSeconds();
-
     response.setContentType("text/html; charset=UTF-8");
     if (request.getVersion() == HTTPServerRequest::HTTP_1_1)
         response.setChunkedTransferEncoding(true);
 
-    setResponseDefaultHeaders(response, keep_alive_timeout);
+    setResponseDefaultHeaders(response);
     response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_OK);
-    WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD, keep_alive_timeout).write(html.data(), html.size());
-
+    auto wb = WriteBufferFromHTTPServerResponse(response, request.getMethod() == HTTPRequest::HTTP_HEAD);
+    wb.write(html.data(), html.size());
+    wb.finalize();
 }
 
 void PlayWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(server, request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_play_htmlData), gresource_play_htmlSize});
 }
 
 void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
@@ -64,23 +60,28 @@ void DashboardWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HT
     static re2::RE2 lz_string_url = R"(https://[^\s"'`]+lz-string[^\s"'`]*\.js)";
     RE2::Replace(&html, lz_string_url, "/js/lz-string.js");
 
-    handle(server, request, response, html);
+    handle(request, response, html);
 }
 
 void BinaryWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    handle(server, request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
+}
+
+void MergesWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
+{
+    handle(request, response, {reinterpret_cast<const char *>(gresource_merges_htmlData), gresource_merges_htmlSize});
 }
 
 void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
     if (request.getURI() == "/js/uplot.js")
     {
-        handle(server, request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize});
+        handle(request, response, {reinterpret_cast<const char *>(gresource_uplot_jsData), gresource_uplot_jsSize});
     }
     else if (request.getURI() == "/js/lz-string.js")
     {
-        handle(server, request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize});
+        handle(request, response, {reinterpret_cast<const char *>(gresource_lz_string_jsData), gresource_lz_string_jsSize});
     }
     else
     {
@@ -88,7 +89,7 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
         *response.send() << "Not found.\n";
     }
 
-    handle(server, request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
+    handle(request, response, {reinterpret_cast<const char *>(gresource_binary_htmlData), gresource_binary_htmlSize});
 }
 
 }

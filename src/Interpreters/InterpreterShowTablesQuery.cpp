@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/formatAST.h>
@@ -81,7 +82,7 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
         return rewritten_query.str();
     }
-    else if (query.cluster)
+    if (query.cluster)
     {
         WriteBufferFromOwnString rewritten_query;
         rewritten_query << "SELECT * FROM system.clusters";

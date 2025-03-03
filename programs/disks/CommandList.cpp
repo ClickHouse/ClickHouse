@@ -3,14 +3,14 @@
 #include "DisksApp.h"
 #include "DisksClient.h"
 #include "ICommand.h"
-
+#include <Common/logger_useful.h>
 namespace DB
 {
 
 class CommandList final : public ICommand
 {
 public:
-    explicit CommandList() : ICommand()
+    explicit CommandList() : ICommand("CommandList")
     {
         command_name = "list";
         description = "List files at path[s]";
@@ -23,13 +23,19 @@ public:
     {
         bool recursive = options.count("recursive");
         bool show_hidden = options.count("all");
-        auto disk = client.getCurrentDiskWithPath();
+        const auto & disk = client.getCurrentDiskWithPath();
         String path = getValueFromCommandLineOptionsWithDefault<String>(options, "path", ".");
 
         if (recursive)
+        {
+            LOG_INFO(log, "Listing directory '{}' recursively at disk '{}'", path, disk.getDisk()->getName());
             listRecursive(disk, path, show_hidden);
+        }
         else
+        {
+            LOG_INFO(log, "Listing directory '{}' at disk '{}'", path, disk.getDisk()->getName());
             list(disk, path, show_hidden);
+        }
     }
 
 private:
@@ -72,13 +78,9 @@ private:
             auto path = [&]() -> String
             {
                 if (relative_path.ends_with("/"))
-                {
                     return relative_path + file_name;
-                }
-                else
-                {
-                    return relative_path + "/" + file_name;
-                }
+
+                return relative_path + "/" + file_name;
             }();
             if (disk.isDirectory(path))
             {

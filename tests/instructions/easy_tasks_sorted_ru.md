@@ -97,10 +97,6 @@ Upd: сделали по-другому: теперь всё безопасно.
 
 Возвращает инкрементальное число для повторно встречающихся значений key.
 
-## Агрегатная функция groupConcat.
-
-`groupConcat(x, ',')` - собрать из переданных значений x строку, разделённую запятыми.
-
 ## Функции DATE_ADD, DATE_SUB как синонимы для совместимости с SQL.
 
 https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-add
@@ -141,7 +137,7 @@ position с конца строки.
 
 ## Возможность использовать ALIAS столбцы при INSERT.
 
-https://clickhouse.com/docs/en/query_language/create/#create-table
+https://clickhouse.com/docs/query_language/create/#create-table
 
 `INSERT INTO table (column1, column2, ...)`
 
@@ -183,7 +179,7 @@ world │ 123 │
 
 ## Работоспособность внешних данных на время сессии.
 
-https://clickhouse.com/docs/en/operations/table_engines/external_data/
+https://clickhouse.com/docs/operations/table_engines/external_data/
 
 Не работает, если открыть clickhouse-client в интерактивном режиме и делать несколько запросов.
 

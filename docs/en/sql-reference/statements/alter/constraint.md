@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/alter/constraint
+slug: /sql-reference/statements/alter/constraint
 sidebar_position: 43
 sidebar_label: CONSTRAINT
 ---
@@ -21,4 +21,4 @@ Queries will add or remove metadata about constraints from table, so they are pr
 Constraint check **will not be executed** on existing data if it was added.
 :::
 
-All changes on replicated tables are broadcasted to ZooKeeper and will be applied on other replicas as well.
+All changes on replicated tables are broadcast to ZooKeeper and will be applied on other replicas as well.

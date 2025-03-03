@@ -6,6 +6,7 @@
 
 #include <Compression/CompressionFactory.h>
 
+#include <Compression/ICompressionCodec.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -262,10 +263,8 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
             result->arguments = codecs_descriptions;
             return result;
         }
-        else
-        {
-            return ast;
-        }
+
+        return ast;
     }
 
     throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", queryToString(ast));

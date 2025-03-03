@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Core/BlockNameMap.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFactory.h>
 
 namespace DB
 {
@@ -26,6 +26,7 @@ class FormatWithNamesAndTypesReader;
 ///    will be compared types from header.
 /// It's important that firstly this class reads/skips names and only
 /// then reads/skips types. So you can this invariant.
+template <typename FormatReaderImpl>
 class RowInputFormatWithNamesAndTypes : public RowInputFormatWithDiagnosticInfo
 {
 protected:
@@ -41,13 +42,15 @@ protected:
         bool with_names_,
         bool with_types_,
         const FormatSettings & format_settings_,
-        std::unique_ptr<FormatWithNamesAndTypesReader> format_reader_,
-        bool try_detect_header_ = false);
+        std::unique_ptr<FormatReaderImpl> format_reader_,
+        bool try_detect_header_,
+        bool allow_variable_number_of_columns_);
 
     void resetParser() override;
     bool isGarbageAfterField(size_t index, ReadBuffer::Position pos) override;
     void setReadBuffer(ReadBuffer & in_) override;
     void readPrefix() override;
+    bool supportsCustomSerializations() const override { return true; }
 
     const FormatSettings format_settings;
     DataTypes data_types;
@@ -63,15 +66,18 @@ private:
 
     void tryDetectHeader(std::vector<String> & column_names, std::vector<String> & type_names);
 
-    bool is_binary;
+protected:
     bool with_names;
     bool with_types;
-    bool try_detect_header;
-    bool is_header_detected = false;
 
-protected:
-    std::unique_ptr<FormatWithNamesAndTypesReader> format_reader;
-    Block::NameMap column_indexes_by_names;
+    std::unique_ptr<FormatReaderImpl> format_reader;
+    BlockNameMap column_indexes_by_names;
+
+private:
+    bool is_binary;
+    bool try_detect_header;
+    bool allow_variable_number_of_columns;
+    bool is_header_detected = false;
 };
 
 /// Base class for parsing data in input formats with -WithNames and -WithNamesAndTypes suffixes.
@@ -133,8 +139,6 @@ public:
 
     /// Check if we are at the end of row, not between fields.
     virtual bool checkForEndOfRow() { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method checkForEndOfRow is not implemented"); }
-
-    virtual bool allowVariableNumberOfColumns() const { return false; }
 
     const FormatSettings & getFormatSettings() const { return format_settings; }
 
@@ -201,4 +205,3 @@ private:
 };
 
 }
-

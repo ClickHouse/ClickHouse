@@ -73,6 +73,8 @@ public:
         return permanently_detached_tables;
     }
 
+    static void setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr context, bool replicated);
+
 protected:
     virtual void commitAlterTable(
         const StorageID & table_id,
@@ -93,7 +95,7 @@ protected:
 private:
     void convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const QualifiedTableName & qualified_name, const String & file_name);
     void restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name);
-    String getConvertToReplicatedFlagPath(const String & name, StoragePolicyPtr storage_policy, bool tableStarted);
+    String getConvertToReplicatedFlagPath(const String & name, bool tableStarted);
 };
 
 }

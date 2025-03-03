@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/parseAddress.h>
 
 #include <Interpreters/Context.h>
@@ -15,7 +16,6 @@
 
 #include <Storages/StorageRedis.h>
 #include <TableFunctions/ITableFunction.h>
-#include <Storages/ExternalDataSourceConfiguration.h>
 
 
 namespace DB

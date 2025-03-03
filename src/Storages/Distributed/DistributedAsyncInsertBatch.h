@@ -46,7 +46,6 @@ private:
 
     bool split_batch_on_failure = true;
     bool fsync = false;
-    bool dir_fsync = false;
 };
 
 }

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
+import os
+
 import pytest
-from helpers.cluster import ClickHouseCluster, is_arm
-import helpers.keeper_utils as keeper_utils
 from minio.deleteobjects import DeleteObject
 
-import os
+import helpers.keeper_utils as keeper_utils
+from helpers.cluster import ClickHouseCluster, is_arm
 
 if is_arm():
     pytestmark = pytest.mark.skip
@@ -17,7 +18,6 @@ node_logs = cluster.add_instance(
     main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
     with_minio=True,
-    with_hdfs=True,
 )
 
 node_snapshot = cluster.add_instance(
@@ -25,10 +25,7 @@ node_snapshot = cluster.add_instance(
     main_configs=["configs/enable_keeper_snapshot.xml"],
     stay_alive=True,
     with_minio=True,
-    with_hdfs=True,
 )
-
-from kazoo.client import KazooClient, KazooState
 
 
 @pytest.fixture(scope="module")
@@ -42,11 +39,7 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return keeper_utils.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def stop_zk(zk):
@@ -96,7 +89,11 @@ def setup_storage(cluster, node, storage_config, cleanup_disks):
         storage_config,
     )
     node.start_clickhouse()
-    keeper_utils.wait_until_connected(cluster, node)
+    # complete readiness checks that the sessions can be established,
+    # but it creates sesssion for this, which will create one more record in log,
+    # but this test is very strict on number of entries in the log,
+    # so let's avoid this extra check and rely on retry policy
+    keeper_utils.wait_until_connected(cluster, node, wait_complete_readiness=False)
 
 
 def setup_local_storage(cluster, node):
@@ -134,12 +131,6 @@ def get_local_snapshots(node):
     return get_local_files("/var/lib/clickhouse/coordination/snapshots", node)
 
 
-def test_supported_disk_types(started_cluster):
-    node_logs.stop_clickhouse()
-    node_logs.start_clickhouse()
-    node_logs.contains_in_log("Disk type 'hdfs' is not supported for Keeper")
-
-
 def test_logs_with_disks(started_cluster):
     setup_local_storage(started_cluster, node_logs)
 
@@ -148,6 +139,11 @@ def test_logs_with_disks(started_cluster):
         node_zk.create("/test")
         for _ in range(30):
             node_zk.create("/test/somenode", b"somedata", sequence=True)
+
+        node_logs.wait_for_log_line(
+            "Removed changelog changelog_25_27.bin because of compaction",
+            look_behind_lines=1000,
+        )
 
         stop_zk(node_zk)
 
@@ -160,6 +156,11 @@ def test_logs_with_disks(started_cluster):
             "<latest_log_storage_disk>log_local<\\/latest_log_storage_disk>"
             "<snapshot_storage_disk>snapshot_local<\\/snapshot_storage_disk>",
             cleanup_disks=False,
+        )
+
+        node_logs.wait_for_log_line(
+            "KeeperLogStore: Continue to write into changelog_34_36.bin",
+            look_behind_lines=2000,
         )
 
         # all but the latest log should be on S3

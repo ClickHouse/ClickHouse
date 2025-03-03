@@ -39,14 +39,12 @@ public:
 
     void setLevel(const std::string & name, int level);
 
-    static void disableLogging();
-
 private:
     void logSplit(const Poco::Message & msg);
     void tryLogSplit(const Poco::Message & msg);
 
     using ChannelPtr = Poco::AutoPtr<Poco::Channel>;
-    /// Handler and its pointer casted to extended interface
+    /// Handler and its pointer cast to extended interface
     using ExtendedChannelPtrPair = std::pair<ChannelPtr, ExtendedLogChannel *>;
     std::map<std::string, ExtendedChannelPtrPair> channels;
 

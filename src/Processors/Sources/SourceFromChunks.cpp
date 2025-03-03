@@ -22,8 +22,7 @@ Chunk SourceFromChunks::generate()
         it++;
         return chunk;
     }
-    else
-        return {};
+    return {};
 }
 
 }

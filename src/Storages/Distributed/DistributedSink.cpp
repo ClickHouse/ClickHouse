@@ -1,5 +1,6 @@
 #include <Storages/Distributed/DistributedSink.h>
 #include <Storages/Distributed/DistributedAsyncInsertDirectoryQueue.h>
+#include <Storages/Distributed/DistributedSettings.h>
 #include <Storages/Distributed/Defines.h>
 #include <Storages/StorageDistributed.h>
 #include <Disks/StoragePolicy.h>
@@ -11,6 +12,7 @@
 
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ConnectionTimeouts.h>
@@ -27,12 +29,13 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
-#include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
 #include <Common/createHardLink.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Core/Settings.h>
+
+#include <base/range.h>
 
 #include <filesystem>
 
@@ -54,6 +57,32 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool allow_experimental_codecs;
+    extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsMilliseconds distributed_background_insert_sleep_time_ms;
+    extern const SettingsBool distributed_insert_skip_read_only_replicas;
+    extern const SettingsBool enable_deflate_qpl_codec;
+    extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsBool insert_allow_materialized_columns;
+    extern const SettingsBool insert_distributed_one_random_shard;
+    extern const SettingsUInt64 insert_shard_id;
+    extern const SettingsUInt64 max_distributed_connections;
+    extern const SettingsUInt64 max_distributed_depth;
+    extern const SettingsUInt64 max_network_bandwidth;
+    extern const SettingsUInt64 max_network_bytes;
+    extern const SettingsString network_compression_method;
+    extern const SettingsInt64 network_zstd_compression_level;
+    extern const SettingsBool prefer_localhost_replica;
+    extern const SettingsBool use_compact_format_in_distributed_parts_names;
+}
+
+namespace DistributedSetting
+{
+    extern const DistributedSettingsBool fsync_after_insert;
+    extern const DistributedSettingsBool fsync_directories;
+}
 
 namespace ErrorCodes
 {
@@ -122,16 +151,16 @@ DistributedSink::DistributedSink(
     , query_string(queryToString(query_ast))
     , cluster(cluster_)
     , insert_sync(insert_sync_)
-    , allow_materialized(context->getSettingsRef().insert_allow_materialized_columns)
+    , allow_materialized(context->getSettingsRef()[Setting::insert_allow_materialized_columns])
     , insert_timeout(insert_timeout_)
     , columns_to_send(columns_to_send_.begin(), columns_to_send_.end())
     , log(getLogger("DistributedSink"))
 {
     const auto & settings = context->getSettingsRef();
-    if (settings.max_distributed_depth && context->getClientInfo().distributed_depth >= settings.max_distributed_depth)
+    if (settings[Setting::max_distributed_depth] && context->getClientInfo().distributed_depth >= settings[Setting::max_distributed_depth])
         throw Exception(ErrorCodes::TOO_LARGE_DISTRIBUTED_DEPTH, "Maximum distributed depth exceeded");
     context->increaseDistributedDepth();
-    random_shard_insert = settings.insert_distributed_one_random_shard && !storage.has_sharding_key;
+    random_shard_insert = settings[Setting::insert_distributed_one_random_shard] && !storage.has_sharding_key;
 }
 
 
@@ -235,13 +264,13 @@ void DistributedSink::initWritingJobs(const Block & first_block, size_t start, s
         auto & shard_jobs = per_shard_jobs[shard_index];
 
         /// If hasInternalReplication, than prefer local replica (if !prefer_localhost_replica)
-        if (!shard_info.hasInternalReplication() || !shard_info.isLocal() || !settings.prefer_localhost_replica)
+        if (!shard_info.hasInternalReplication() || !shard_info.isLocal() || !settings[Setting::prefer_localhost_replica])
         {
             const auto & replicas = addresses_with_failovers[shard_index];
 
             for (size_t replica_index : collections::range(0, replicas.size()))
             {
-                if (!replicas[replica_index].is_local || !settings.prefer_localhost_replica)
+                if (!replicas[replica_index].is_local || !settings[Setting::prefer_localhost_replica])
                 {
                     shard_jobs.replicas_jobs.emplace_back(shard_index, replica_index, false, first_block);
                     ++remote_jobs_count;
@@ -252,7 +281,7 @@ void DistributedSink::initWritingJobs(const Block & first_block, size_t start, s
             }
         }
 
-        if (shard_info.isLocal() && settings.prefer_localhost_replica)
+        if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
         {
             shard_jobs.replicas_jobs.emplace_back(shard_index, 0, true, first_block);
             ++local_jobs_count;
@@ -303,15 +332,9 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (isCancelled())
             throw Exception(ErrorCodes::ABORTED, "Writing job was cancelled");
 
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
+        ThreadGroupSwitcher switcher(thread_group, "DistrOutStrProc");
 
-        if (thread_group)
-            CurrentThread::attachToGroupIfDetached(thread_group);
-        setThreadName("DistrOutStrProc");
+        OpenTelemetry::SpanHolder span(__PRETTY_FUNCTION__);
 
         ++job.blocks_started;
 
@@ -347,7 +370,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         }
 
         const Block & shard_block = (num_shards > 1) ? job.current_shard_block : current_block;
-        const Settings & settings = context->getSettingsRef();
+        const Settings settings = context->getSettingsCopy();
 
         size_t rows = shard_block.rows();
 
@@ -362,7 +385,7 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
         if (rows == 0)
             return;
 
-        if (!job.is_local_job || !settings.prefer_localhost_replica)
+        if (!job.is_local_job || !settings[Setting::prefer_localhost_replica])
         {
             if (!job.executor)
             {
@@ -377,7 +400,8 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /// NOTE: INSERT will also take into account max_replica_delay_for_distributed_queries
                     /// (anyway fallback_to_stale_replicas_for_distributed_queries=true by default)
                     auto results = shard_info.pool->getManyCheckedForInsert(timeouts, settings, PoolMode::GET_ONE, storage.remote_storage.getQualifiedName());
-                    job.connection_entry = std::move(results.front().entry);
+                    auto result = shard_info.pool->getValidTryResult(results, settings[Setting::distributed_insert_skip_read_only_replicas]);
+                    job.connection_entry = std::move(result.entry);
                 }
                 else
                 {
@@ -459,10 +483,10 @@ void DistributedSink::writeSync(const Block & block)
     size_t start = 0;
     size_t end = shards_info.size();
 
-    if (settings.insert_shard_id)
+    if (settings[Setting::insert_shard_id])
     {
-        start = settings.insert_shard_id - 1;
-        end = settings.insert_shard_id;
+        start = settings[Setting::insert_shard_id] - 1;
+        end = settings[Setting::insert_shard_id];
     }
 
     if (!pool)
@@ -471,17 +495,17 @@ void DistributedSink::writeSync(const Block & block)
         initWritingJobs(block_to_send, start, end);
 
         size_t jobs_count = random_shard_insert ? 1 : (remote_jobs_count + local_jobs_count);
-        size_t max_threads = std::min<size_t>(settings.max_distributed_connections, jobs_count);
+        size_t max_threads = std::min<size_t>(settings[Setting::max_distributed_connections], jobs_count);
         pool.emplace(
             CurrentMetrics::DistributedInsertThreads,
             CurrentMetrics::DistributedInsertThreadsActive,
             CurrentMetrics::DistributedInsertThreadsScheduled,
             max_threads, max_threads, jobs_count);
 
-        if (!throttler && (settings.max_network_bandwidth || settings.max_network_bytes))
+        if (!throttler && (settings[Setting::max_network_bandwidth] || settings[Setting::max_network_bytes]))
         {
-            throttler = std::make_shared<Throttler>(settings.max_network_bandwidth, settings.max_network_bytes,
-                                                    "Network bandwidth limit for a query exceeded.");
+            throttler = std::make_shared<Throttler>(
+                settings[Setting::max_network_bandwidth], settings[Setting::max_network_bytes], "Network bandwidth limit for a query exceeded.");
         }
 
         watch.restart();
@@ -570,12 +594,7 @@ void DistributedSink::onFinish()
                     {
                         pool->scheduleOrThrowOnError([&job, thread_group = CurrentThread::getGroup()]()
                         {
-                            SCOPE_EXIT_SAFE(
-                                if (thread_group)
-                                    CurrentThread::detachFromGroupIfNotDetached();
-                            );
-                            if (thread_group)
-                                CurrentThread::attachToGroupIfDetached(thread_group);
+                            ThreadGroupSwitcher switcher(thread_group, "");
 
                             job.executor->finish();
                         });
@@ -603,7 +622,7 @@ void DistributedSink::onFinish()
     }
 }
 
-void DistributedSink::onCancel()
+void DistributedSink::onCancel() noexcept
 {
     std::lock_guard lock(execution_mutex);
     if (pool && !pool->finished())
@@ -614,14 +633,26 @@ void DistributedSink::onCancel()
         }
         catch (...)
         {
-            tryLogCurrentException(storage.log);
+            tryLogCurrentException(storage.log, "Error occurs on cancellation.");
         }
     }
 
     for (auto & shard_jobs : per_shard_jobs)
+    {
         for (JobReplica & job : shard_jobs.replicas_jobs)
-            if (job.executor)
-                job.executor->cancel();
+        {
+            try
+            {
+                if (job.executor)
+                    job.executor->cancel();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(storage.log, "Error occurs on cancellation.");
+            }
+        }
+    }
+
 }
 
 
@@ -643,31 +674,31 @@ Blocks DistributedSink::splitBlock(const Block & block)
     /// Split block to num_shard smaller block, using 'selector'.
 
     const size_t num_shards = cluster->getShardsInfo().size();
-    Blocks splitted_blocks(num_shards);
+    Blocks split_blocks(num_shards);
 
     for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-        splitted_blocks[shard_idx] = block.cloneEmpty();
+        split_blocks[shard_idx] = block.cloneEmpty();
 
     size_t columns_in_block = block.columns();
     for (size_t col_idx_in_block = 0; col_idx_in_block < columns_in_block; ++col_idx_in_block)
     {
-        MutableColumns splitted_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
+        MutableColumns split_columns = block.getByPosition(col_idx_in_block).column->scatter(num_shards, selector);
         for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-            splitted_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(splitted_columns[shard_idx]);
+            split_blocks[shard_idx].getByPosition(col_idx_in_block).column = std::move(split_columns[shard_idx]);
     }
 
-    return splitted_blocks;
+    return split_blocks;
 }
 
 
 void DistributedSink::writeSplitAsync(const Block & block)
 {
-    Blocks splitted_blocks = splitBlock(block);
-    const size_t num_shards = splitted_blocks.size();
+    Blocks split_blocks = splitBlock(block);
+    const size_t num_shards = split_blocks.size();
 
     for (size_t shard_idx = 0; shard_idx < num_shards; ++shard_idx)
-        if (splitted_blocks[shard_idx].rows())
-            writeAsyncImpl(splitted_blocks[shard_idx], shard_idx);
+        if (split_blocks[shard_idx].rows())
+            writeAsyncImpl(split_blocks[shard_idx], shard_idx);
 
     ++inserted_blocks;
 }
@@ -681,14 +712,13 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
 
     if (shard_info.hasInternalReplication())
     {
-        if (shard_info.isLocal() && settings.prefer_localhost_replica)
+        if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
             /// Prefer insert into current instance directly
             writeToLocal(shard_info, block_to_send, shard_info.getLocalNodeCount());
         else
         {
             const auto & path = shard_info.insertPathForInternalReplication(
-                settings.prefer_localhost_replica,
-                settings.use_compact_format_in_distributed_parts_names);
+                settings[Setting::prefer_localhost_replica], settings[Setting::use_compact_format_in_distributed_parts_names]);
             if (path.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory name for async inserts is empty");
             writeToShard(shard_info, block_to_send, {path});
@@ -696,13 +726,13 @@ void DistributedSink::writeAsyncImpl(const Block & block, size_t shard_id)
     }
     else
     {
-        if (shard_info.isLocal() && settings.prefer_localhost_replica)
+        if (shard_info.isLocal() && settings[Setting::prefer_localhost_replica])
             writeToLocal(shard_info, block_to_send, shard_info.getLocalNodeCount());
 
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
-            if (!address.is_local || !settings.prefer_localhost_replica)
-                dir_names.push_back(address.toFullString(settings.use_compact_format_in_distributed_parts_names));
+            if (!address.is_local || !settings[Setting::prefer_localhost_replica])
+                dir_names.push_back(address.toFullString(settings[Setting::use_compact_format_in_distributed_parts_names]));
 
         if (!dir_names.empty())
             writeToShard(shard_info, block_to_send, dir_names);
@@ -753,16 +783,22 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
     const auto & settings = context->getSettingsRef();
     const auto & distributed_settings = storage.getDistributedSettingsRef();
 
-    bool fsync = distributed_settings.fsync_after_insert;
-    bool dir_fsync = distributed_settings.fsync_directories;
+    bool fsync = distributed_settings[DistributedSetting::fsync_after_insert];
+    bool dir_fsync = distributed_settings[DistributedSetting::fsync_directories];
 
-    std::string compression_method = Poco::toUpper(settings.network_compression_method.toString());
+    std::string compression_method = Poco::toUpper(settings[Setting::network_compression_method].toString());
     std::optional<int> compression_level;
 
     if (compression_method == "ZSTD")
-        compression_level = settings.network_zstd_compression_level;
+        compression_level = settings[Setting::network_zstd_compression_level];
 
-    CompressionCodecFactory::instance().validateCodec(compression_method, compression_level, !settings.allow_suspicious_codecs, settings.allow_experimental_codecs, settings.enable_deflate_qpl_codec, settings.enable_zstd_qat_codec);
+    CompressionCodecFactory::instance().validateCodec(
+        compression_method,
+        compression_level,
+        !settings[Setting::allow_suspicious_codecs],
+        settings[Setting::allow_experimental_codecs],
+        settings[Setting::enable_deflate_qpl_codec],
+        settings[Setting::enable_zstd_qat_codec]);
     CompressionCodecPtr compression_codec = CompressionCodecFactory::instance().get(compression_method, compression_level);
 
     /// tmp directory is used to ensure atomicity of transactions
@@ -785,7 +821,7 @@ void DistributedSink::writeToShard(const Cluster::ShardInfo & shard_info, const 
         return guard;
     };
 
-    auto sleep_ms = context->getSettingsRef().distributed_background_insert_sleep_time_ms.totalMilliseconds();
+    auto sleep_ms = context->getSettingsRef()[Setting::distributed_background_insert_sleep_time_ms].totalMilliseconds();
     size_t file_size;
 
     auto it = dir_names.begin();

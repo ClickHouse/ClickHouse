@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <Columns/ColumnDynamic.h>
 
 namespace DB
@@ -11,22 +12,32 @@ class SerializationDynamicElement;
 class SerializationDynamic : public ISerialization
 {
 public:
-    explicit SerializationDynamic(size_t max_dynamic_types_) : max_dynamic_types(max_dynamic_types_)
+    explicit SerializationDynamic(size_t max_dynamic_types_ = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES) : max_dynamic_types(max_dynamic_types_)
     {
     }
 
-    struct DynamicStructureSerializationVersion
+    struct DynamicSerializationVersion
     {
         enum Value
         {
-            VariantTypeName = 1,
+            /// V1 serialization:
+            /// - DynamicStructure stream:
+            ///     <max_dynamic_types parameter>
+            ///     <actual number of dynamic types>
+            ///     <list of dynamic types (list of variants in nested Variant column without SharedVariant)>
+            ///     <statistics with number of values for each dynamic type> (only in MergeTree serialization)
+            ///     <statistics with number of values for some types in SharedVariant> (only in MergeTree serialization)
+            /// - DynamicData stream: contains the data of nested Variant column.
+            V1 = 1,
+            /// V2 serialization: the same as V1 but without max_dynamic_types parameter in DynamicStructure stream.
+            V2 = 2,
         };
 
         Value value;
 
         static void checkVersion(UInt64 version);
 
-        explicit DynamicStructureSerializationVersion(UInt64 version);
+        explicit DynamicSerializationVersion(UInt64 version);
     };
 
     void enumerateStreams(
@@ -59,6 +70,14 @@ public:
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state) const override;
 
+    void serializeBinaryBulkWithMultipleStreamsAndCountTotalSizeOfVariants(
+        const IColumn & column,
+        size_t offset,
+        size_t limit,
+        SerializeBinaryBulkSettings & settings,
+        SerializeBinaryBulkStatePtr & state,
+        size_t & total_size_of_variants) const;
+
     void deserializeBinaryBulkWithMultipleStreams(
         ColumnPtr & column,
         size_t limit,
@@ -89,6 +108,7 @@ public:
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
+    void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t indent) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
@@ -103,11 +123,20 @@ private:
 
     struct DeserializeBinaryBulkStateDynamicStructure : public ISerialization::DeserializeBinaryBulkState
     {
-        DynamicStructureSerializationVersion structure_version;
+        DynamicSerializationVersion structure_version;
         DataTypePtr variant_type;
-        ColumnDynamic::Statistics statistics = {.source = ColumnDynamic::Statistics::Source::READ, .data = {}};
+        size_t num_dynamic_types;
+        ColumnDynamic::StatisticsPtr statistics;
 
-        explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_) : structure_version(structure_version_) {}
+        explicit DeserializeBinaryBulkStateDynamicStructure(UInt64 structure_version_)
+            : structure_version(structure_version_)
+        {
+        }
+
+        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(*this);
+        }
     };
 
     size_t max_dynamic_types;

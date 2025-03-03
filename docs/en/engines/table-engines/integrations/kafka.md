@@ -1,10 +1,18 @@
 ---
-slug: /en/engines/table-engines/integrations/kafka
+slug: /engines/table-engines/integrations/kafka
 sidebar_position: 110
 sidebar_label: Kafka
+title: "Kafka"
+description: "The Kafka engine works with Apache Kafka and lets you publish or subscribe to data flows, organize fault-tolerant storage, and process streams as they become available."
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+
 # Kafka
+
+:::note
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
+:::
 
 This engine works with [Apache Kafka](http://kafka.apache.org/).
 
@@ -52,15 +60,15 @@ Required parameters:
 
 Optional parameters:
 
-- `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap’n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
+- `kafka_schema` — Parameter that must be used if the format requires a schema definition. For example, [Cap'n Proto](https://capnproto.org/) requires the path to the schema file and the name of the root `schema.capnp:Message` object.
 - `kafka_num_consumers` — The number of consumers per table. Specify more consumers if the throughput of one consumer is insufficient. The total number of consumers should not exceed the number of partitions in the topic, since only one consumer can be assigned per partition, and must not be greater than the number of physical cores on the server where ClickHouse is deployed. Default: `1`.
 - `kafka_max_block_size` — The maximum batch size (in messages) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `kafka_skip_broken_messages` — Kafka message parser tolerance to schema-incompatible messages per block. If `kafka_skip_broken_messages = N` then the engine skips *N* Kafka messages that cannot be parsed (a message equals a row of data). Default: `0`.
 - `kafka_commit_every_batch` — Commit every consumed and handled batch instead of a single commit after writing a whole block. Default: `0`.
 - `kafka_client_id` — Client identifier. Empty by default.
 - `kafka_poll_timeout_ms` — Timeout for single poll from Kafka. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
-- `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
-- `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
+- `kafka_poll_max_batch_size` — Maximum amount of messages to be polled in a single Kafka poll. Default: [max_block_size](/docs/operations/settings/settings#max_block_size).
+- `kafka_flush_interval_ms` — Timeout for flushing data from Kafka. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
 - `kafka_thread_per_consumer` — Provide independent thread for each consumer. When enabled, every consumer flush the data independently, in parallel (otherwise — rows from several consumers squashed to form one block). Default: `0`.
 - `kafka_handle_error_mode` — How to handle errors for Kafka engine. Possible values: default (the exception will be thrown if we fail to parse a message), stream (the exception message and raw message will be saved in virtual columns `_error` and `_raw_message`).
 - `kafka_commit_on_select` —  Commit messages when select query is made. Default: `false`.
@@ -112,7 +120,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 </details>
 
 :::info
-The Kafka table engine doesn't support columns with [default value](../../../sql-reference/statements/create/table.md#default_value). If you need columns with default value, you can add them at materialized view level (see below).
+The Kafka table engine doesn't support columns with [default value](/sql-reference/statements/create/table#default_values). If you need columns with default value, you can add them at materialized view level (see below).
 :::
 
 ## Description {#description}
@@ -151,7 +159,7 @@ Example:
 
   SELECT level, sum(total) FROM daily GROUP BY level;
 ```
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn’t formed within [stream_flush_interval_ms](../../../operations/settings/settings.md/#stream-flush-interval-ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 To stop receiving topic data or to change the conversion logic, detach the materialized view:
 
@@ -249,7 +257,47 @@ Kafka engine supports all [formats](../../../interfaces/formats.md) supported in
 The number of rows in one Kafka message depends on whether the format is row-based or block-based:
 
 - For row-based formats the number of rows in one Kafka message can be controlled by setting `kafka_max_rows_per_message`.
-- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
+- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/operations/settings/settings#max_block_size).
+
+## Engine to store committed offsets in ClickHouse Keeper {#engine-to-store-committed-offsets-in-clickhouse-keeper}
+
+<ExperimentalBadge/>
+
+If `allow_experimental_kafka_offsets_storage_in_keeper` is enabled, then two more settings can be specified to the Kafka table engine:
+ - `kafka_keeper_path` specifies the path to the table in ClickHouse Keeper
+ - `kafka_replica_name` specifies the replica name in ClickHouse Keeper
+
+Either both of the settings must be specified or neither of them. When both of them are specified, then a new, experimental Kafka engine will be used. The new engine doesn't depend on storing the committed offsets in Kafka, but stores them in ClickHouse Keeper. It still tries to commit the offsets to Kafka, but it only depends on those offsets when the table is created. In any other circumstances (table is restarted, or recovered after some error) the offsets stored in ClickHouse Keeper will be used as an offset to continue consuming messages from. Apart from the committed offset, it also stores how many messages were consumed in the last batch, so if the insert fails, the same amount of messages will be consumed, thus enabling deduplication if necessary.
+
+Example:
+
+``` sql
+CREATE TABLE experimental_kafka (key UInt64, value UInt64)
+ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
+SETTINGS
+  kafka_keeper_path = '/clickhouse/{database}/experimental_kafka',
+  kafka_replica_name = 'r1'
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+```
+
+Or to utilize the `uuid` and `replica` macros similarly to ReplicatedMergeTree:
+
+``` sql
+CREATE TABLE experimental_kafka (key UInt64, value UInt64)
+ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
+SETTINGS
+  kafka_keeper_path = '/clickhouse/{database}/{uuid}',
+  kafka_replica_name = '{replica}'
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+```
+
+### Known limitations {#known-limitations}
+
+As the new engine is experimental, it is not production ready yet. There are few known limitations of the implementation:
+ - The biggest limitation is the engine doesn't support direct reading. Reading from the engine using materialized views and writing to the engine work, but direct reading doesn't. As a result, all direct `SELECT` queries will fail.
+ - Rapidly dropping and recreating the table or specifying the same ClickHouse Keeper path to different engines might cause issues. As best practice you can use the `{uuid}` in `kafka_keeper_path` to avoid clashing paths.
+ - To make repeatable reads, messages cannot be consumed from multiple partitions on a single thread. On the other hand, the Kafka consumers have to be polled regularly to keep them alive. As a result of these two objectives, we decided to only allow creating multiple consumers if `kafka_thread_per_consumer` is enabled, otherwise it is too complicated to avoid issues regarding polling consumers regularly.
+ - Consumers created by the new storage engine do not show up in [`system.kafka_consumers`](../../../operations/system-tables/kafka_consumers.md) table.
 
 **See Also**
 

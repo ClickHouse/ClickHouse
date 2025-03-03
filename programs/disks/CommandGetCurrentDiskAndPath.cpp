@@ -10,7 +10,7 @@ namespace DB
 class CommandGetCurrentDiskAndPath final : public ICommand
 {
 public:
-    explicit CommandGetCurrentDiskAndPath() : ICommand()
+    explicit CommandGetCurrentDiskAndPath() : ICommand("CommandGetCurrentDiskAndPath")
     {
         command_name = "current_disk_with_path";
         description = "Prints current disk and path (which coincide with the prompt)";
@@ -18,7 +18,7 @@ public:
 
     void executeImpl(const CommandLineOptions &, DisksClient & client) override
     {
-        auto disk = client.getCurrentDiskWithPath();
+        const auto & disk = client.getCurrentDiskWithPath();
         std::cout << "Disk: " << disk.getDisk()->getName() << "\nPath: " << disk.getCurrentPath() << std::endl;
     }
 };

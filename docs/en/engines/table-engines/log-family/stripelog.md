@@ -1,14 +1,14 @@
 ---
-slug: /en/engines/table-engines/log-family/stripelog
+slug: /engines/table-engines/log-family/stripelog
 toc_priority: 32
 toc_title: StripeLog
 ---
 
-# Stripelog
+# StripeLog
 
 This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](../../../engines/table-engines/log-family/index.md) article.
 
-Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows).
+Use this engine in scenarios when you need to write many tables with a small amount of data (less than 1 million rows). For example, this table can be used to store incoming data batches for transformation where atomic processing of them is required. 100k instances of this table type are viable for a ClickHouse server. This table engine should be preferred over [Log](./log.md) when a high number of tables are required. This is at the expense of read efficiency.
 
 ## Creating a Table {#table_engines-stripelog-creating-a-table}
 
@@ -21,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = StripeLog
 ```
 
-See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 ## Writing the Data {#table_engines-stripelog-writing-the-data}
 

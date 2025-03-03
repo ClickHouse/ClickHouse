@@ -1,1 +1,1 @@
-CREATE VIEW default.my_view\n(\n    `Id` UInt32,\n    `Object.Key` Array(UInt16),\n    `Object.Value` Array(String)\n)\nAS SELECT * REPLACE arrayMap(x -> (x + 1), `Object.Key`) AS `Object.Key`\nFROM default.my_table
+CREATE VIEW default.my_view\n(\n    `Id` UInt32,\n    `Object.Key` Array(UInt16),\n    `Object.Value` Array(String)\n)\nAS SELECT * REPLACE (arrayMap(x -> (x + 1), `Object.Key`) AS `Object.Key`)\nFROM default.my_table

@@ -20,7 +20,7 @@ simpleLinearRegression(x, y)
 
 **返回值**
 
-符合`y = a*x + b`的常量 `(a, b)` 。
+符合`y = k*x + b`的常量 `(k, b)` 。
 
 **示例**
 

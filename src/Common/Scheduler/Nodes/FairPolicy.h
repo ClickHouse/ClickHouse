@@ -28,7 +28,7 @@ namespace ErrorCodes
  * of a child is set to vruntime of "start" of the last request. This guarantees immediate processing
  * of at least single request of newly activated children and thus best isolation and scheduling latency.
  */
-class FairPolicy : public ISchedulerNode
+class FairPolicy final : public ISchedulerNode
 {
     /// Scheduling state of a child
     struct Item
@@ -48,11 +48,28 @@ public:
         : ISchedulerNode(event_queue_, config, config_prefix)
     {}
 
+    FairPolicy(EventQueue * event_queue_, const SchedulerNodeInfo & info_)
+        : ISchedulerNode(event_queue_, info_)
+    {}
+
+    ~FairPolicy() override
+    {
+        // We need to clear `parent` in all children to avoid dangling references
+        while (!children.empty())
+            removeChild(children.begin()->second.get());
+    }
+
+    const String & getTypeName() const override
+    {
+        static String type_name("fair");
+        return type_name;
+    }
+
     bool equals(ISchedulerNode * other) override
     {
         if (!ISchedulerNode::equals(other))
             return false;
-        if (auto * o = dynamic_cast<FairPolicy *>(other))
+        if (auto * _ = dynamic_cast<FairPolicy *>(other))
             return true;
         return false;
     }
@@ -128,8 +145,7 @@ public:
     {
         if (auto iter = children.find(child_name); iter != children.end())
             return iter->second.get();
-        else
-            return nullptr;
+        return nullptr;
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
@@ -188,8 +204,7 @@ public:
 
             if (request)
             {
-                dequeued_requests++;
-                dequeued_cost += request->cost;
+                incrementDequeued(request->cost);
                 return {request, heap_size > 0};
             }
         }

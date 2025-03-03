@@ -60,6 +60,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         assert(!arguments.empty());
@@ -181,16 +186,16 @@ REGISTER_FUNCTION(ConcatWithSeparator)
 Returns the concatenation strings separated by string separator. Syntax: concatWithSeparator(sep, expr1, expr2, expr3...)
         )",
         .examples{{"concatWithSeparator", "SELECT concatWithSeparator('a', '1', '2', '3')", ""}},
-        .categories{"String"}});
+        .category{"Strings"}});
 
     factory.registerFunction<FunctionConcatWithSeparatorAssumeInjective>(FunctionDocumentation{
         .description = R"(
 Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
-The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+The function is named "injective" if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
         )",
         .examples{{"concatWithSeparatorAssumeInjective", "SELECT concatWithSeparatorAssumeInjective('a', '1', '2', '3')", ""}},
-        .categories{"String"}});
+        .category{"String"}});
 
     /// Compatibility with Spark and MySQL:
     factory.registerAlias("concat_ws", "concatWithSeparator", FunctionFactory::Case::Insensitive);

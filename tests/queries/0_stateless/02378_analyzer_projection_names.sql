@@ -1,4 +1,4 @@
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET single_join_prefer_left_table = 0;
 
 DROP TABLE IF EXISTS test_table;
@@ -188,6 +188,10 @@ DESCRIBE (SELECT arrayMap(x -> x + (test_table.id AS first) + (test_table.id AS 
 SELECT '--';
 
 DESCRIBE (SELECT arrayMap(x -> test_table.* EXCEPT value, [1,2,3]) FROM test_table);
+
+SELECT '--';
+
+DESCRIBE (SELECT arrayMap(x -> tt.* EXCEPT value, [1,2,3]) FROM test_table as tt);
 
 SELECT '--';
 

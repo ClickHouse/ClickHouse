@@ -3,7 +3,7 @@
 CREATE TABLE landing (n Int64) engine=MergeTree order by n;
 CREATE TABLE target  (n Int64) engine=MergeTree order by n;
 CREATE MATERIALIZED VIEW landing_to_target TO target AS
-    SELECT n + throwIf(n == 3333)
+    SELECT n + throwIf(n == 3333) AS n
     FROM landing;
 
 INSERT INTO landing SELECT * FROM numbers(10000); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }

@@ -1,16 +1,17 @@
-#include <Databases/IDatabase.h>
+#include <Access/ContextAccess.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
-#include <Access/ContextAccess.h>
-#include <Storages/System/StorageSystemDatabases.h>
-#include <Storages/SelectQueryInfo.h>
-#include <Storages/VirtualColumnUtils.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Common/logger_useful.h>
 #include <Parsers/formatAST.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/System/StorageSystemDatabases.h>
+#include <Storages/VirtualColumnUtils.h>
+#include <Common/logger_useful.h>
 
 
 namespace DB
@@ -71,6 +72,14 @@ static String getEngineFull(const ContextPtr & ctx, const DatabasePtr & database
         engine_full = engine_full.substr(strlen(extra_head));
 
     return engine_full;
+}
+
+Block StorageSystemDatabases::getFilterSampleBlock() const
+{
+    return {
+        { {}, std::make_shared<DataTypeString>(), "engine" },
+        { {}, std::make_shared<DataTypeUUID>(), "uuid" },
+    };
 }
 
 static ColumnPtr getFilteredDatabases(const Databases & databases, const ActionsDAG::Node * predicate, ContextPtr context)

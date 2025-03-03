@@ -75,4 +75,4 @@ FROM
 /* WHERE (v_date >= '2022-05-08') AND (v_date <= '2022-06-07') placing condition has same effect */
 GROUP BY vDate
 ORDER BY vDate ASC
-SETTINGS allow_experimental_analyzer = 1; -- the query times out if allow_experimental_analyzer = 0
+SETTINGS enable_analyzer = 1; -- the query times out if enable_analyzer = 0

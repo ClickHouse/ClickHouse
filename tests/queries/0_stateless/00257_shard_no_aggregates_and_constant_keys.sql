@@ -1,6 +1,6 @@
 -- Tags: shard
 
-set allow_experimental_analyzer = 1;
+set enable_analyzer = 1;
 set enable_positional_arguments = 0;
 
 select 40 as z from (select * from system.numbers limit 3) group by z;

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>ClickHouse Merges Visualizer</title>
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        html, body {
+            height: 100%;
+            overflow: auto;
+            margin: 0;
+            background: #F8F8F8;
+            font-size: 16pt;
+        }
+        body {
+            font-family: Liberation Sans, DejaVu Sans, sans-serif, Noto Color Emoji, Apple Color Emoji, Segoe UI Emoji;
+            padding: 1rem;
+        }
+
+        input, textarea {
+            border: 3px solid #EEE;
+            font-size: 16pt;
+            padding: 0.25rem;
+        }
+
+        #url {
+            width: 80%;
+        }
+        #user, #password {
+            width: 10%;
+        }
+        #query {
+            width: 100%;
+            height: 3rem;
+        }
+
+        input[type="button"] {
+            background: #FED;
+            width: 2rem;
+            height: 2rem;
+        }
+        input[type="button"]:hover {
+            background: #F88;
+            cursor: pointer;
+        }
+
+        #slower {
+            margin-left: 1rem;
+        }
+
+        #speed {
+            background: #DDD;
+        }
+
+        #time, #stats {
+            padding-left: 1rem;
+            font-family: monospace;
+        }
+
+        #stats {
+            white-space: pre-wrap;
+        }
+
+        #canvas {
+            margin-top: 0.25rem;
+            font-size: 10pt;
+        }
+
+        .table, .partition {
+            padding: 0.5rem;
+            border: 3px solid #EEE;
+            background: white;
+            overflow: hidden;
+        }
+
+        .partition {
+            float: left;
+        }
+
+        .table_title, .partition_title {
+            text-align: center;
+        }
+
+        .part {
+            display: inline-block;
+            padding: 0;
+            margin: 0.1rem;
+            border: 1px solid black;
+            background: #FED;
+            overflow: hidden;
+            position: relative; /* This enables the positioning context for the child elements. */
+        }
+
+        .part_title {
+            text-align: center;
+        }
+
+        .part:hover {
+            overflow: visible;
+        }
+
+        .part:hover .part_title {
+            z-index: 1;
+            position: absolute;
+            background: yellow;
+        }
+    </style>
+</head>
+<body>
+<div class="inputs">
+    <form id="params">
+        <div id="connection-params">
+            <input spellcheck="false" id="url" type="text" value="" placeholder="URL" /><input spellcheck="false" id="user" type="text" value="" placeholder="user" /><input spellcheck="false" id="password" type="password" placeholder="password" value="" />
+            <input id="hidden-submit" type="submit" hidden="true"/>
+        </div>
+        <textarea spellcheck="false" data-gramm="false" id="query">SELECT * FROM system.part_log ORDER BY event_date, event_time, event_time_microseconds</textarea>
+        <input id="play" type="button" value="▶">
+        <input id="slower" type="button" value="⏪"><span id="speed">10x</span><input id="faster" type="button" value="⏩"></input>
+        <span id="time">0000-00-00 00:00:00</span>
+        <span id="stats"></span>
+    </form>
+</div>
+<div id="canvas">
+</div>
+<script>
+
+let add_http_cors_header = (location.protocol != 'file:');
+
+if (!document.getElementById('url').value) {
+    document.getElementById('url').value = location.protocol != 'file:' ? location.origin : 'http://localhost:8123/';
+}
+
+if (!document.getElementById('user').value) {
+    let user = 'default';
+
+    const current_url = new URL(window.location);
+    /// Substitute user name if it's specified in the query string
+    const user_from_url = current_url.searchParams.get('user');
+    if (user_from_url) {
+        user = user_from_url;
+    }
+    document.getElementById('user').value = user;
+}
+
+
+function formatValue(v) {
+    if (v >= 1000000000000) { return (v / 1000000000000).toFixed(2) + 'T'; }
+    if (v >= 1000000000) { return (v / 1000000000).toFixed(2) + 'G'; }
+    if (v >= 1000000) { return (v / 1000000).toFixed(2) + 'M'; }
+    if (v >= 1000) { return (v / 1000).toFixed(2) + 'K'; }
+    return v;
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+let canvas = document.getElementById('canvas');
+let time = document.getElementById('time');
+let stats = document.getElementById('stats');
+
+let num_parts = 0;
+let inserted_rows = 0;
+let inserted_bytes = 0;
+let inserted_parts = 0;
+let merged_rows = 0;
+let merged_bytes = 0;
+let merged_parts = 0;
+let currently_active_parts = {};
+
+let speed = 100;
+
+let prev_time = null;
+async function update(data) {
+    curr_time = new Date(data.event_time_microseconds + 'Z');
+    time_diff = prev_time ? curr_time - prev_time : 0;
+    prev_time = curr_time;
+
+    if (speed <= 1000) {
+        await sleep(time_diff / speed);
+    }
+
+    time.innerText = data.event_time;
+
+    const table_id = `table-${data.table_uuid}`;
+    let table = document.getElementById(table_id);
+    if (!table) {
+        table = document.createElement('div');
+        table.id = table_id;
+        table.className = 'table';
+        let table_title = document.createElement('div');
+        table_title.className = 'table_title';
+        table_title.innerText = `${data.database}.${data.table}`;
+        table.appendChild(table_title);
+        canvas.appendChild(table);
+    }
+
+    const partition_id = `partition-${data.table_uuid}-${data.partition_id}`;
+    let partition = document.getElementById(partition_id);
+    if (!partition) {
+        partition = document.createElement('div');
+        partition.id = partition_id;
+        partition.className = 'partition';
+        let partition_title = document.createElement('div');
+        partition_title.className = 'partition_title';
+        partition_title.innerText = `${data.partition_id}`;
+        partition.appendChild(partition_title);
+        table.appendChild(partition);
+    }
+
+    const part_id = `part-${data.table_uuid}-${data.part_name}`;
+
+    const matches = data.part_name.match(/[\w-]+_(\d+)_(\d+)_(\d+)(?:_(\d+))?/);
+    const min_block_id = +matches[1];
+    const max_block_id = +matches[2];
+    const level = +matches[3];
+
+    if (data.event_type == 'NewPart' || data.event_type == 'DownloadPart' || data.event_type == 'MergeParts' || data.event_type == 'MutatePart') {
+        if (!(data.table_uuid in currently_active_parts)) {
+            currently_active_parts[data.table_uuid] = {};
+        }
+
+        if (!(data.part_name in currently_active_parts[data.table_uuid])) {
+            currently_active_parts[data.table_uuid][data.part_name] = 1;
+            ++num_parts;
+
+            if (level == 0) {
+                ++inserted_parts;
+                inserted_rows += +data.rows;
+                inserted_bytes += +data.size_in_bytes;
+            } else {
+                playClick(Math.min(1, data.size_in_bytes / 10e9));
+                ++merged_parts;
+                merged_rows += +data.rows;
+                merged_bytes += +data.size_in_bytes;
+            }
+
+            part = document.createElement('div');
+            part.id = part_id;
+            part['data-name'] = data.part_name;
+            part['data-min-block-id'] = min_block_id;
+            part['data-max-block-id'] = max_block_id;
+            part['data-level'] = level;
+            part.className = 'part';
+            part_title = document.createElement('div');
+            part_title.className = 'part_title';
+            part_title.innerText = `${data.part_name}, ${formatValue(data.size_in_bytes)}`;
+            part.appendChild(part_title);
+
+            const size = Math.sqrt(data.size_in_bytes);
+
+            part.style.width = Math.round(size / 500) + 'px';
+            part.style.height = Math.round(size / 1000) + 'px';
+            part.style.line_height = part.style.height;
+
+            let inserted = false;
+            for (const child of partition.childNodes) {
+                const child_min_block_id = +child['data-min-block-id'];
+                const child_max_block_id = +child['data-max-block-id'];
+                const child_level = +child['data-level'];
+
+                if (!inserted && child_min_block_id >= min_block_id) {
+                    partition.insertBefore(part, child);
+                    inserted = true;
+                }
+                /// Covered parts.
+                if (level > child_level && min_block_id <= child_min_block_id && max_block_id >= child_max_block_id) {
+                    delete currently_active_parts[data.table_uuid][child['data-name']];
+                    --num_parts;
+                    partition.removeChild(child);
+                }
+                if (child_min_block_id > max_block_id) {
+                    break;
+                }
+            }
+            if (!inserted) {
+                partition.appendChild(part);
+            }
+        }
+
+        for (const old_part_name of data.merged_from) {
+            if (old_part_name in currently_active_parts[data.table_uuid]) {
+                delete currently_active_parts[data.table_uuid][old_part_name];
+                --num_parts;
+                const old_part = document.getElementById(`part-${data.table_uuid}-${old_part_name}`);
+                if (old_part) {
+                    partition.removeChild(old_part);
+                }
+            }
+        }
+    }
+    if (data.event_type == 'RemovePart') {
+        if ((data.table_uuid in currently_active_parts) && (data.part_name in currently_active_parts[data.table_uuid])) {
+            delete currently_active_parts[data.table_uuid][data.part_name];
+            --num_parts;
+            const old_part = document.getElementById(part_id);
+            if (old_part) {
+                partition.removeChild(old_part);
+            }
+        }
+    }
+
+    stats.innerText = `${num_parts} parts.
+Inserted ${inserted_parts} parts, ${inserted_rows} rows, ${formatValue(inserted_bytes)}.
+Merged into ${merged_parts} parts, ${merged_rows} rows, ${formatValue(merged_bytes)}. Write aplification: ${((inserted_bytes + merged_bytes) / inserted_bytes).toFixed(2)}`;
+}
+
+let loading = false;
+let stopping = false;
+
+async function load() {
+    canvas.innerHTML = '';
+    num_parts = 0;
+    inserted_rows = 0;
+    inserted_bytes = 0;
+    inserted_parts = 0;
+    merged_rows = 0;
+    merged_bytes = 0;
+    merged_parts = 0;
+    currently_active_parts = {};
+    prev_time = null;
+
+    const host = document.getElementById('url').value;
+    const user = document.getElementById('user').value;
+    const password = document.getElementById('password').value;
+
+    let url = `${host}?default_format=JSONEachRow&enable_http_compression=1`
+
+    if (add_http_cors_header) {
+        // For debug purposes, you may set add_http_cors_header from the browser console
+        url += '&add_http_cors_header=1';
+    }
+
+    if (user) {
+        url += `&user=${encodeURIComponent(user)}`;
+    }
+    if (password) {
+        url += `&password=${encodeURIComponent(password)}`;
+    }
+
+    const query = document.getElementById('query').value;
+
+    let response, reply, error;
+    try {
+        loading = true;
+        document.getElementById('play').value = '⏹';
+
+        response = await fetch(url, { method: "POST", body: query });
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        let buffer = '';
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (stopping) {
+                stopped = true;
+                break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+
+            let lines = buffer.split('\n');
+
+            for (line of lines.slice(0, -1)) {
+                if (stopping) {
+                    stopped = true;
+                    break;
+                }
+                const data = JSON.parse(line);
+                await update(data);
+            };
+
+            buffer = lines[lines.length - 1];
+        }
+    } catch (e) {
+        console.log(e);
+        error = e.toString();
+    }
+
+    loading = false;
+    stopping = false;
+    document.getElementById('play').value = '▶';
+}
+
+function stop() {
+    stopping = true;
+}
+
+document.getElementById('play').addEventListener('click', _ => {
+    if (loading) {
+        stop();
+    } else if (stopping) {
+    } else {
+        load();
+    }
+});
+
+function updateSpeed() {
+    document.getElementById('speed').innerText = speed <= 1000 ? `${speed}x` : `max`;
+}
+updateSpeed();
+
+document.getElementById('slower').addEventListener('click', _ => {
+    if (speed > 1) {
+        speed = Math.max(speed / 10, 1);
+        updateSpeed();
+    }
+});
+
+document.getElementById('faster').addEventListener('click', _ => {
+    if (speed <= 1000) {
+        speed = Math.min(speed * 10, 10000);
+        updateSpeed();
+    }
+});
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+let source = null;
+
+function playClick(volume) {
+    if (source) {
+        source.disconnect(audioCtx.destination);
+    }
+    source = audioCtx.createBufferSource();
+    const myArrayBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate / 1000, audioCtx.sampleRate);
+    const nowBuffering = myArrayBuffer.getChannelData(0);
+    for (let i = 0; i < myArrayBuffer.length; ++i) {
+        nowBuffering[i] = volume * (Math.random() * 2 - 1);
+    }
+    source.buffer = myArrayBuffer;
+    source.connect(audioCtx.destination);
+    source.start();
+}
+
+</script>
+</body>
+</html>

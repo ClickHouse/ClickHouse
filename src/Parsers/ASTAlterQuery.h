@@ -82,6 +82,8 @@ public:
 
         MODIFY_COMMENT,
         MODIFY_SQL_SECURITY,
+
+        UNLOCK_SNAPSHOT,
     };
 
     Type type = NO_TYPE;
@@ -226,7 +228,7 @@ public:
     static void setFormatAlterCommandsWithParentheses(bool value) { format_alter_commands_with_parentheses = value; }
 
 protected:
-    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     void forEachPointerToChild(std::function<void(void**)> f) override;
 
@@ -251,6 +253,8 @@ public:
 
     bool isFreezeAlter() const;
 
+    bool isUnlockSnapshot() const;
+
     bool isAttachAlter() const;
 
     bool isFetchAlter() const;
@@ -273,7 +277,7 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::Alter; }
 
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 
     bool isOneCommandTypeOnly(const ASTAlterCommand::Type & type) const;
 

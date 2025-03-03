@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -266,6 +267,10 @@ public:
 
     void triggerReloadDisksTask(const Strings & new_added_disks);
 
+    void stopReplicatedDDLQueries();
+    void startReplicatedDDLQueries();
+    bool canPerformReplicatedDDLQueries() const;
+
 private:
     // The global instance of database catalog. unique_ptr is to allow
     // deferred initialization. Thought I'd use std::optional, but I can't
@@ -354,28 +359,15 @@ private:
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
-    static constexpr time_t default_drop_delay_sec = 8 * 60;
-    time_t drop_delay_sec = default_drop_delay_sec;
     std::condition_variable wait_table_finally_dropped;
-
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> cleanup_task;
-    static constexpr time_t default_unused_dir_hide_timeout_sec = 60 * 60;              /// 1 hour
-    time_t unused_dir_hide_timeout_sec = default_unused_dir_hide_timeout_sec;
-    static constexpr time_t default_unused_dir_rm_timeout_sec = 30 * 24 * 60 * 60;      /// 30 days
-    time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
-    static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
-    time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
-
-    static constexpr time_t default_drop_error_cooldown_sec = 5;
-    time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
-
-    static constexpr size_t default_drop_table_concurrency = 10;
-    size_t drop_table_concurrency = default_drop_table_concurrency;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
     std::mutex reload_disks_mutex;
     std::set<String> disks_to_reload;
     static constexpr time_t DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC = 5;
+
+    std::atomic<bool> replicated_ddl_queries_enabled = false;
 };
 
 

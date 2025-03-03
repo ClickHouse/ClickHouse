@@ -79,9 +79,13 @@ public:
         explicit SubcolumnCreator(const ColumnPtr & offsets_) : offsets(offsets_) {}
 
         DataTypePtr create(const DataTypePtr & prev) const override;
-        SerializationPtr create(const SerializationPtr & prev) const override;
+        SerializationPtr create(const SerializationPtr & prev, const DataTypePtr &) const override;
         ColumnPtr create(const ColumnPtr & prev) const override;
     };
+
+private:
+    template <typename ReturnType>
+    ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const;
 };
 
 }

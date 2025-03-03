@@ -146,7 +146,30 @@ SELECT dictGet('dict', 'B', 2);
 
 ## Пример использования именованных соединений с базой данных PostgreSQL
 
-Описание параметров смотрите [postgresql](../sql-reference/table-functions/postgresql.md).
+Описание параметров смотрите [postgresql](../sql-reference/table-functions/postgresql.md). Дополнительно есть алиасы: 
+- `username` для `user`
+- `db` для `database`.
+
+Параметр `addresses_expr` используется в коллекции вместо `host:port`. Параметр опционален, потому что есть так же другие: `host`, `hostname`, `port`. Следующий псевдокод показывает приоритет:
+
+```sql
+CASE 
+    WHEN collection['addresses_expr'] != '' THEN collection['addresses_expr']
+    WHEN collection['host'] != ''           THEN collection['host'] || ':' || if(collection['port'] != '', collection['port'], '5432')
+    WHEN collection['hostname'] != ''       THEN collection['hostname'] || ':' || if(collection['port'] != '', collection['port'], '5432')
+END
+```
+
+Пример создания:
+```sql
+CREATE NAMED COLLECTION mypg AS
+user = 'pguser',
+password = 'jw8s0F4',
+host = '127.0.0.1',
+port = 5432,
+database = 'test',
+schema = 'test_schema'
+```
 
 Пример конфигурации:
 ```xml
@@ -198,6 +221,10 @@ SELECT * FROM mypgtable;
 │ 3 │
 └───┘
 ```
+
+:::note
+PostgreSQL копирует данные из named collection при создании таблицы. Изменения в коллекции не влияют на существующие таблицы.
+:::
 
 ### Пример использования именованных соединений базой данных с движком PostgreSQL
 

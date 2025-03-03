@@ -9,16 +9,16 @@
 
 #include <boost/noncopyable.hpp>
 
+#include <base/MemorySanitizer.h>
 #include <Core/Defines.h>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/MemorySanitizer.h>
 
-#include <IO/WriteBuffer.h>
-#include <IO/WriteHelpers.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/VarInt.h>
+#include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
@@ -67,19 +67,6 @@ struct HashTableNoState
 };
 
 
-/// These functions can be overloaded for custom types.
-namespace ZeroTraits
-{
-
-template <typename T>
-bool check(const T x) { return x == T{}; }
-
-template <typename T>
-void set(T & x) { x = T{}; }
-
-}
-
-
 /** Numbers are compared bitwise.
   * Complex types are compared by operator== as usual (this is important if there are gaps).
   *
@@ -87,15 +74,29 @@ void set(T & x) { x = T{}; }
   * Otherwise the invariants in hash table probing do not met when NaNs are present.
   */
 template <typename T>
-inline bool bitEquals(T && a, T && b)
+inline bool bitEquals(T a, T b)
 {
-    using RealT = std::decay_t<T>;
-
-    if constexpr (std::is_floating_point_v<RealT>)
-        /// Note that memcmp with constant size is compiler builtin.
-        return 0 == memcmp(&a, &b, sizeof(RealT)); /// NOLINT
+    if constexpr (is_floating_point<T>)
+        /// Note that memcmp with constant size is a compiler builtin.
+        return 0 == memcmp(&a, &b, sizeof(T)); /// NOLINT
     else
         return a == b;
+}
+
+
+/// These functions can be overloaded for custom types.
+namespace ZeroTraits
+{
+
+template <typename T>
+bool check(const T x)
+{
+    return bitEquals(x, T{});
+}
+
+template <typename T>
+void set(T & x) { x = T{}; }
+
 }
 
 
@@ -171,7 +172,7 @@ struct HashTableCell
     const value_type & getValue() const { return key; }
 
     /// Get the key (internally).
-    static const Key & getKey(const value_type & value) { return value; }
+    static const Key & getKey(const value_type & value) { return value; }  /// NOLINT(bugprone-return-const-ref-from-parameter)
 
     /// Are the keys at the cells equal?
     bool keyEquals(const Key & key_) const { return bitEquals(key, key_); }
@@ -208,12 +209,6 @@ struct HashTableCell
     /// Deserialization, in binary and text form.
     void read(DB::ReadBuffer & rb)        { DB::readBinaryLittleEndian(key, rb); }
     void readText(DB::ReadBuffer & rb)    { DB::readDoubleQuoted(key, rb); }
-
-    /// When cell pointer is moved during erase, reinsert or resize operations
-
-    static constexpr bool need_to_notify_cell_during_move = false;
-
-    static void move(HashTableCell * /* old_location */, HashTableCell * /* new_location */) {}
 
 };
 
@@ -370,7 +365,7 @@ struct ZeroValueStorage<true, Cell>
 {
 private:
     bool has_zero = false;
-    std::aligned_storage_t<sizeof(Cell), alignof(Cell)> zero_value_storage; /// Storage of element with zero key.
+    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }
@@ -406,32 +401,6 @@ struct ZeroValueStorage<false, Cell>
 
     Cell * zeroValue()             { return nullptr; }
     const Cell * zeroValue() const { return nullptr; }
-};
-
-
-template <bool enable, typename Allocator, typename Cell>
-struct AllocatorBufferDeleter;
-
-template <typename Allocator, typename Cell>
-struct AllocatorBufferDeleter<false, Allocator, Cell>
-{
-    AllocatorBufferDeleter(Allocator &, size_t) {}
-
-    void operator()(Cell *) const {}
-
-};
-
-template <typename Allocator, typename Cell>
-struct AllocatorBufferDeleter<true, Allocator, Cell>
-{
-    AllocatorBufferDeleter(Allocator & allocator_, size_t size_)
-        : allocator(allocator_)
-        , size(size_) {}
-
-    void operator()(Cell * buffer) const { allocator.free(buffer, size); }
-
-    Allocator & allocator;
-    size_t size;
 };
 
 
@@ -566,21 +535,7 @@ protected:
         /// Expand the space.
 
         size_t old_buffer_size = getBufferSizeInBytes();
-
-        /** If cell required to be notified during move we need to temporary keep old buffer
-         * because realloc does not quarantee for reallocated buffer to have same base address
-         */
-        using Deleter = AllocatorBufferDeleter<Cell::need_to_notify_cell_during_move, Allocator, Cell>;
-        Deleter buffer_deleter(*this, old_buffer_size);
-        std::unique_ptr<Cell, Deleter> old_buffer(buf, buffer_deleter);
-
-        if constexpr (Cell::need_to_notify_cell_during_move)
-        {
-            buf = reinterpret_cast<Cell *>(Allocator::alloc(allocCheckOverflow(new_grower.bufSize())));
-            memcpy(reinterpret_cast<void *>(buf), reinterpret_cast<const void *>(old_buffer.get()), old_buffer_size);
-        }
-        else
-            buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
+        buf = reinterpret_cast<Cell *>(Allocator::realloc(buf, old_buffer_size, allocCheckOverflow(new_grower.bufSize())));
 
         grower = new_grower;
 
@@ -591,12 +546,7 @@ protected:
         size_t i = 0;
         for (; i < old_size; ++i)
             if (!buf[i].isZero(*this))
-            {
-                size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
-
-                if constexpr (Cell::need_to_notify_cell_during_move)
-                    Cell::move(&(old_buffer.get())[i], &buf[updated_place_value]);
-            }
+                reinsert(buf[i], buf[i].getHash(*this));
 
         /** There is also a special case:
           *    if the element was to be at the end of the old buffer,                  [        x]
@@ -608,13 +558,7 @@ protected:
           */
         size_t new_size = grower.bufSize();
         for (; i < new_size && !buf[i].isZero(*this); ++i)
-        {
-            size_t updated_place_value = reinsert(buf[i], buf[i].getHash(*this));
-
-            if constexpr (Cell::need_to_notify_cell_during_move)
-                if (&buf[i] != &buf[updated_place_value])
-                    Cell::move(&buf[i], &buf[updated_place_value]);
-        }
+            reinsert(buf[i], buf[i].getHash(*this));
 
 #ifdef DBMS_HASH_MAP_DEBUG_RESIZES
         watch.stop();
@@ -628,28 +572,25 @@ protected:
     /** Paste into the new buffer the value that was in the old buffer.
       * Used when increasing the buffer size.
       */
-    size_t reinsert(Cell & x, size_t hash_value)
+    void reinsert(Cell & x, size_t hash_value)
     {
         size_t place_value = grower.place(hash_value);
 
         /// If the element is in its place.
         if (&x == &buf[place_value])
-            return place_value;
+            return;
 
         /// Compute a new location, taking into account the collision resolution chain.
         place_value = findCell(Cell::getKey(x.getValue()), hash_value, place_value);
 
         /// If the item remains in its place in the old collision resolution chain.
         if (!buf[place_value].isZero(*this))
-            return place_value;
+            return;
 
         /// Copy to a new location and zero the old one.
         x.setHash(hash_value);
         memcpy(static_cast<void*>(&buf[place_value]), &x, sizeof(x)); /// NOLINT(bugprone-undefined-memory-manipulation)
         x.setZero();
-
-        /// Then the elements that previously were in collision with this can move to the old place.
-        return place_value;
     }
 
 
@@ -657,16 +598,11 @@ protected:
     {
         if (!std::is_trivially_destructible_v<Cell>)
         {
-            for (iterator it = begin(), it_end = end(); it != it_end; ++it)
+            for (iterator it = begin(), it_end = end(); it != it_end;)
             {
-                it.ptr->~Cell();
-                /// In case of poison_in_dtor=1 it will be poisoned,
-                /// but it maybe used later, during iteration.
-                ///
-                /// NOTE, that technically this is UB [1], but OK for now.
-                ///
-                ///   [1]: https://github.com/google/sanitizers/issues/854#issuecomment-329661378
-                __msan_unpoison(it.ptr, sizeof(*it.ptr));
+                auto ptr = it.ptr;
+                ++it;
+                ptr->~Cell();
             }
 
             /// Everything had been destroyed in the loop above, reset the flag
@@ -1049,14 +985,7 @@ public:
     }
 
     /// Reinsert node pointed to by iterator
-    void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value)
-    {
-        size_t place_value = reinsert(*it.getPtr(), hash_value);
-
-        if constexpr (Cell::need_to_notify_cell_during_move)
-            if (it.getPtr() != &buf[place_value])
-                Cell::move(it.getPtr(), &buf[place_value]);
-    }
+    void ALWAYS_INLINE reinsert(iterator & it, size_t hash_value) { reinsert(*it.getPtr(), hash_value); }
 
     template <typename KeyHolder>
     void ALWAYS_INLINE prefetch(KeyHolder && key_holder) const
@@ -1166,10 +1095,8 @@ public:
                 this->clearHasZero();
                 return true;
             }
-            else
-            {
-                return false;
-            }
+
+            return false;
         }
 
         size_t erased_key_position = findCell(x, hash_value, grower.place(hash_value));
@@ -1241,9 +1168,6 @@ public:
 
             /// Move the element to the freed place
             memcpy(static_cast<void *>(&buf[erased_key_position]), static_cast<void *>(&buf[next_position]), sizeof(Cell));
-
-            if constexpr (Cell::need_to_notify_cell_during_move)
-                Cell::move(&buf[next_position], &buf[erased_key_position]);
 
             /// Now we have another freed place
             erased_key_position = next_position;

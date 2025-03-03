@@ -3,6 +3,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Core/UUID.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
@@ -263,6 +264,11 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
     {
         const IColumn * column = arguments[0].column.get();
@@ -291,6 +297,7 @@ public:
             tryExecuteUIntOrInt<Int256>(column, res_column) ||
             tryExecuteString(column, res_column) ||
             tryExecuteFixedString(column, res_column) ||
+            tryExecuteFloat<BFloat16>(column, res_column) ||
             tryExecuteFloat<Float32>(column, res_column) ||
             tryExecuteFloat<Float64>(column, res_column) ||
             tryExecuteDecimal<Decimal32>(column, res_column) ||
@@ -344,10 +351,8 @@ public:
             col_res = std::move(col_str);
             return true;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
     bool tryExecuteString(const IColumn *col, ColumnPtr &col_res) const
@@ -389,10 +394,8 @@ public:
             col_res = std::move(col_str);
             return true;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
     template <typename T>
@@ -405,10 +408,8 @@ public:
             Impl::executeFloatAndDecimal(in_vec, col_res, sizeof(T));
             return true;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
     static bool tryExecuteFixedString(const IColumn * col, ColumnPtr & col_res)
@@ -451,10 +452,8 @@ public:
             col_res = std::move(col_str);
             return true;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
     template <typename T>
@@ -467,10 +466,8 @@ public:
             Impl::executeFloatAndDecimal(in_vec, col_res, sizeof(T));
             return true;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
     bool tryExecuteUUID(const IColumn * col, ColumnPtr & col_res) const
@@ -515,10 +512,8 @@ public:
             col_res = std::move(col_str);
             return true;
         }
-        else
-        {
-            return false;
-        }
+
+        return false;
     }
 
     bool tryExecuteIPv6(const IColumn * col, ColumnPtr & col_res) const
@@ -630,9 +625,14 @@ public:
         return std::make_shared<DataTypeString>();
     }
 
+    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
+    {
+        return std::make_shared<DataTypeString>();
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & column = arguments[0].column;
 
@@ -646,11 +646,10 @@ public:
             const ColumnString::Chars & in_vec = col->getChars();
             const ColumnString::Offsets & in_offsets = col->getOffsets();
 
-            size_t size = in_offsets.size();
-            out_offsets.resize(size);
+            out_offsets.resize(input_rows_count);
 
             size_t max_out_len = 0;
-            for (size_t i = 0; i < in_offsets.size(); ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 const size_t len = in_offsets[i] - (i == 0 ? 0 : in_offsets[i - 1])
                     - /* trailing zero symbol that is always added in ColumnString and that is ignored while decoding */ 1;
@@ -662,7 +661,7 @@ public:
             char * pos = begin;
             size_t prev_offset = 0;
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t new_offset = in_offsets[i];
 
@@ -681,7 +680,7 @@ public:
 
             return col_res;
         }
-        else if (const ColumnFixedString * col_fix_string = checkAndGetColumn<ColumnFixedString>(column.get()))
+        if (const ColumnFixedString * col_fix_string = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = ColumnString::create();
 
@@ -691,20 +690,21 @@ public:
             const ColumnString::Chars & in_vec = col_fix_string->getChars();
             const size_t n = col_fix_string->getN();
 
-            size_t size = col_fix_string->size();
-            out_offsets.resize(size);
-            out_vec.resize(((n + word_size - 1) / word_size + /* trailing zero symbol that is always added by Impl::decode */ 1) * size);
+            out_offsets.resize(input_rows_count);
+            out_vec.resize(
+                ((n + word_size - 1) / word_size + /* trailing zero symbol that is always added by Impl::decode */ 1) * input_rows_count);
 
             char * begin = reinterpret_cast<char *>(out_vec.data());
             char * pos = begin;
             size_t prev_offset = 0;
 
-            for (size_t i = 0; i < size; ++i)
+            for (size_t i = 0; i < input_rows_count; ++i)
             {
                 size_t new_offset = prev_offset + n;
 
                 /// here we don't subtract 1 from `new_offset` because in ColumnFixedString strings are stored without trailing zero byte
-                Impl::decode(reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
+                Impl::decode(
+                    reinterpret_cast<const char *>(&in_vec[prev_offset]), reinterpret_cast<const char *>(&in_vec[new_offset]), pos);
 
                 out_offsets[i] = pos - begin;
 
@@ -718,11 +718,9 @@ public:
 
             return col_res;
         }
-        else
-        {
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}",
-                            arguments[0].column->getName(), getName());
-        }
+
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", arguments[0].column->getName(), getName());
     }
 };
 

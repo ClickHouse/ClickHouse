@@ -1,7 +1,14 @@
 ---
-slug: /en/operations/system-tables/zookeeper_connection
+description: "System table which exists only if ZooKeeper is configured. Shows current connections to ZooKeeper (including auxiliary ZooKeepers)."
+slug: /operations/system-tables/zookeeper_connection
+title: "system.zookeeper_connection"
+keywords: ["system table", "zookeeper_connection"]
 ---
-#zookeeper_connection
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# zookeeper_connection
+
+<SystemTableCloud/>
 
 This table does not exist if ZooKeeper is not configured. The 'system.zookeeper_connection' table shows current connections to ZooKeeper (including auxiliary ZooKeepers). Each row shows information about one connection.
 

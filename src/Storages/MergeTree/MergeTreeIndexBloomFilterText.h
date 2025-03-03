@@ -25,6 +25,8 @@ struct MergeTreeIndexGranuleBloomFilterText final : public IMergeTreeIndexGranul
 
     bool empty() const override { return !has_elems; }
 
+    size_t memoryUsageBytes() const override;
+
     const String index_name;
     const BloomFilterParameters params;
 
@@ -62,7 +64,7 @@ class MergeTreeConditionBloomFilterText final : public IMergeTreeIndexCondition
 {
 public:
     MergeTreeConditionBloomFilterText(
-            const ActionsDAGPtr & filter_actions_dag,
+            const ActionsDAG * filter_actions_dag,
             ContextPtr context,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
@@ -163,7 +165,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const ActionsDAGPtr & filter_dag, ContextPtr context) const override;
+            const ActionsDAG * filter_dag, ContextPtr context) const override;
 
     BloomFilterParameters params;
     /// Function for selecting next token.

@@ -1,0 +1,19 @@
+1
+Row 1:
+──────
+name:               fields
+type:               Map(String, Tuple(
+    null_value Enum8('NULL_VALUE' = 0),
+    number_value Float64,
+    string_value String,
+    bool_value UInt8,
+    list_value_values Array(Tuple(
+        null_value Enum8('NULL_VALUE' = 0),
+        number_value Float64,
+        string_value String,
+        bool_value UInt8))))
+default_type:       
+default_expression: 
+comment:            
+codec_expression:   
+ttl_expression:     

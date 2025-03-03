@@ -73,7 +73,7 @@ public:
     /// Returns dictionary hash which is SipHash is applied to each row of nested column.
     virtual UInt128 getHash() const = 0;
 
-    const char * getFamilyName() const override { return "ColumnUnique"; }
+    const char * getFamilyName() const override { return "Unique"; }
     TypeIndex getDataType() const override { return getNestedColumn()->getDataType(); }
 
     void insert(const Field &) override
@@ -197,7 +197,7 @@ public:
      * @see DB::ReverseIndex
      * @see DB::ColumnUnique
      *
-     * The most common example uses https://clickhouse.com/docs/en/sql-reference/data-types/lowcardinality/ columns.
+     * The most common example uses https://clickhouse.com/docs/sql-reference/data-types/lowcardinality/ columns.
      * Consider data type @e LC(String). The inner type here is @e String which is more or less a contiguous memory
      * region, so it can be easily represented as a @e StringRef. So we pass that ref to this function and get its
      * index in the dictionary, which can be used to operate with the indices column.

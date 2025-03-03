@@ -8,6 +8,7 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/thread_local_rng.h>
 
 #include <Core/Settings.h>
@@ -49,9 +50,21 @@
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
+#include <base/range.h>
+
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsBool external_table_functions_use_nulls;
+    extern const SettingsUInt64 glob_expansion_max_elements;
+    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const SettingsUInt64 postgresql_connection_pool_retries;
+    extern const SettingsUInt64 postgresql_connection_pool_size;
+    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
+}
 
 namespace ErrorCodes
 {
@@ -98,7 +111,7 @@ ColumnsDescription StoragePostgreSQL::getTableStructureFromData(
     const String & schema,
     const ContextPtr & context_)
 {
-    const bool use_nulls = context_->getSettingsRef().external_table_functions_use_nulls;
+    const bool use_nulls = context_->getSettingsRef()[Setting::external_table_functions_use_nulls];
     auto connection_holder = pool_->get();
     auto columns_info = fetchPostgreSQLTableStructure(
             connection_holder->get(), table, schema, use_nulls).physical_columns;
@@ -125,7 +138,7 @@ public:
         String remote_table_schema_,
         String remote_table_name_,
         postgres::ConnectionHolderPtr connection_)
-        : SourceStepWithFilter(DataStream{.header = std::move(sample_block)}, column_names_, query_info_, storage_snapshot_, context_)
+        : SourceStepWithFilter(std::move(sample_block), column_names_, query_info_, storage_snapshot_, context_)
         , logger(getLogger("ReadFromPostgreSQL"))
         , max_block_size(max_block_size_)
         , remote_table_schema(remote_table_schema_)
@@ -156,7 +169,7 @@ public:
             transform_query_limit);
         LOG_TRACE(logger, "Query: {}", query);
 
-        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputStream().header, max_block_size)));
+        pipeline.init(Pipe(std::make_shared<PostgreSQLSource<>>(std::move(connection), query, getOutputHeader(), max_block_size)));
     }
 
     LoggerPtr logger;
@@ -246,7 +259,8 @@ public:
         }
 
         const auto columns = block.getColumns();
-        const size_t num_rows = block.rows(), num_cols = block.columns();
+        const size_t num_rows = block.rows();
+        const size_t num_cols = block.columns();
         const auto data_types = block.getDataTypes();
 
         /// std::optional lets libpqxx to know if value is NULL
@@ -294,7 +308,7 @@ public:
     {
         const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
         const auto & nested = array_type->getNestedType();
-        const auto & array = array_field.get<Array>();
+        const auto & array = array_field.safeGet<Array>();
 
         if (!isArray(nested))
         {
@@ -312,7 +326,7 @@ public:
 
             if (!isArray(nested_array_type->getNestedType()))
             {
-                parseArrayContent(iter->get<Array>(), nested, ostr);
+                parseArrayContent(iter->safeGet<Array>(), nested, ostr);
             }
             else
             {
@@ -340,19 +354,13 @@ public:
         if (nested_type->isNullable())
             nested_type = static_cast<const DataTypeNullable *>(nested_type.get())->getNestedType();
 
-        /// UUIDs inside arrays are expected to be unquoted in PostgreSQL.
-        const bool quoted = !isUUID(nested_type);
-
         writeChar('{', ostr);
         for (size_t i = 0, size = array_field.size(); i < size; ++i)
         {
             if (i != 0)
                 writeChar(',', ostr);
 
-            if (quoted)
-                serialization->serializeTextQuoted(nested_column, i, ostr, settings);
-            else
-                serialization->serializeText(nested_column, i, ostr, settings);
+            serialization->serializeText(nested_column, i, ostr, settings);
         }
         writeChar('}', ostr);
     }
@@ -540,7 +548,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     }
     else
     {
-        size_t max_addresses = context_->getSettingsRef().glob_expansion_max_elements;
+        size_t max_addresses = context_->getSettingsRef()[Setting::glob_expansion_max_elements];
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(
             configuration.addresses_expr, max_addresses, 5432);
     }
@@ -579,7 +587,7 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
 
         configuration.addresses_expr = checkAndGetLiteralArgument<String>(engine_args[0], "host:port");
-        size_t max_addresses = context->getSettingsRef().glob_expansion_max_elements;
+        size_t max_addresses = context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
         configuration.addresses = parseRemoteDescriptionForExternalDatabase(configuration.addresses_expr, max_addresses, 5432);
         if (configuration.addresses.size() == 1)
@@ -610,12 +618,13 @@ void registerStoragePostgreSQL(StorageFactory & factory)
     {
         auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
         const auto & settings = args.getContext()->getSettingsRef();
-        auto pool = std::make_shared<postgres::PoolWithFailover>(configuration,
-            settings.postgresql_connection_pool_size,
-            settings.postgresql_connection_pool_wait_timeout,
-            settings.postgresql_connection_pool_retries,
-            settings.postgresql_connection_pool_auto_close_connection,
-            settings.postgresql_connection_attempt_timeout);
+        auto pool = std::make_shared<postgres::PoolWithFailover>(
+            configuration,
+            settings[Setting::postgresql_connection_pool_size],
+            settings[Setting::postgresql_connection_pool_wait_timeout],
+            settings[Setting::postgresql_connection_pool_retries],
+            settings[Setting::postgresql_connection_pool_auto_close_connection],
+            settings[Setting::postgresql_connection_attempt_timeout]);
 
         return std::make_shared<StoragePostgreSQL>(
             args.table_id,

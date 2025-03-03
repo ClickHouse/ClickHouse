@@ -11,7 +11,7 @@
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationInfoTuple.h>
-#include <DataTypes/Serializations/SerializationVariantElement.h>
+#include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/NestedUtils.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTNameTypePair.h>
@@ -133,6 +133,14 @@ std::string DataTypeTuple::doGetPrettyName(size_t indent) const
     return s.str();
 }
 
+DataTypePtr DataTypeTuple::getNormalizedType() const
+{
+    DataTypes normalized_elems;
+    normalized_elems.reserve(elems.size());
+    for (const auto & elem : elems)
+        normalized_elems.emplace_back(elem->getNormalizedType());
+    return std::make_shared<DataTypeTuple>(normalized_elems);
+}
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
@@ -192,17 +200,12 @@ MutableColumnPtr DataTypeTuple::createColumn() const
 
 MutableColumnPtr DataTypeTuple::createColumn(const ISerialization & serialization) const
 {
-    /// If we read Tuple as Variant subcolumn, it may be wrapped to SerializationVariantElement.
-    /// Here we don't need it, so we drop this wrapper.
-    const auto * current_serialization = &serialization;
-    while (const auto * serialization_variant_element = typeid_cast<const SerializationVariantElement *>(current_serialization))
-        current_serialization = serialization_variant_element->getNested().get();
-
-    /// If we read subcolumn of nested Tuple, it may be wrapped to SerializationNamed
+    /// If we read subcolumn of nested Tuple or this Tuple is a subcolumn, it may be wrapped to SerializationWrapper
     /// several times to allow to reconstruct the substream path name.
     /// Here we don't need substream path name, so we drop first several wrapper serializations.
-    while (const auto * serialization_named = typeid_cast<const SerializationNamed *>(current_serialization))
-        current_serialization = serialization_named->getNested().get();
+    const auto * current_serialization = &serialization;
+    while (const auto * serialization_wrapper = dynamic_cast<const SerializationWrapper *>(current_serialization))
+        current_serialization = serialization_wrapper->getNested().get();
 
     const auto * serialization_tuple = typeid_cast<const SerializationTuple *>(current_serialization);
     if (!serialization_tuple)
@@ -364,7 +367,7 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     for (const auto & elem : elems)
         infos.push_back(elem->createSerializationInfo(settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
 SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const
@@ -384,7 +387,7 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
     }
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, SerializationInfo::Settings{});
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
 void DataTypeTuple::forEachChild(const ChildCallback & callback) const
@@ -420,10 +423,9 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     if (names.empty())
         return std::make_shared<DataTypeTuple>(nested_types);
-    else if (names.size() != nested_types.size())
+    if (names.size() != nested_types.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
-    else
-        return std::make_shared<DataTypeTuple>(nested_types, names);
+    return std::make_shared<DataTypeTuple>(nested_types, names);
 }
 
 

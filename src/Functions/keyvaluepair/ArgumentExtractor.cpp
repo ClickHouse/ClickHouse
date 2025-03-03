@@ -86,7 +86,7 @@ ArgumentExtractor::CharArgument ArgumentExtractor::extractSingleCharacter(const 
     {
         return {};
     }
-    else if (view.size() == 1u)
+    if (view.size() == 1u)
     {
         return view.front();
     }

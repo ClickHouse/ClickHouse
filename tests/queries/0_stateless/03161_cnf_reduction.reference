@@ -2,7 +2,7 @@
 SELECT id
 FROM `03161_table`
 WHERE f
-SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, allow_experimental_analyzer = 1
+SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, enable_analyzer = 1
 
 -- Expected result with analyzer:
 1
@@ -11,7 +11,7 @@ SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, allow_experim
 SELECT id
 FROM `03161_table`
 WHERE f
-SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, allow_experimental_analyzer = 0
+SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, enable_analyzer = 0
 
 -- Expected result w/o analyzer:
 1

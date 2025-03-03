@@ -1,9 +1,10 @@
+import re
+import uuid
+
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
-import uuid
-import re
-
 
 cluster = ClickHouseCluster(__file__)
 
@@ -71,7 +72,7 @@ def wait_backup(backup_id):
         sleep_time=5,
     )
 
-    backup_duration = int(
+    backup_duration = float(
         node.query(
             f"SELECT end_time - start_time FROM system.backups WHERE id='{backup_id}'"
         )
@@ -135,7 +136,7 @@ def wait_restore(restore_id):
         sleep_time=5,
     )
 
-    restore_duration = int(
+    restore_duration = float(
         node.query(
             f"SELECT end_time - start_time FROM system.backups WHERE id='{restore_id}'"
         )

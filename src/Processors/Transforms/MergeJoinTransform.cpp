@@ -19,6 +19,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>
+#include <Processors/Port.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 
 
@@ -394,7 +395,7 @@ void FullMergeJoinCursor::setChunk(Chunk && chunk)
     convertToFullIfSparse(chunk);
 
     current_chunk = std::move(chunk);
-    cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), desc);
+    cursor = SortCursorImpl(sample_block, current_chunk.getColumns(), current_chunk.getNumRows(), desc);
 }
 
 bool FullMergeJoinCursor::fullyCompleted() const
@@ -511,6 +512,16 @@ void MergeJoinAlgorithm::logElapsed(double seconds)
         stat.max_blocks_loaded);
 }
 
+IMergingAlgorithm::MergedStats MergeJoinAlgorithm::getMergedStats() const
+{
+    return
+    {
+        .bytes = stat.num_bytes[0] + stat.num_bytes[1],
+        .rows = stat.num_rows[0] + stat.num_rows[1],
+        .blocks = stat.num_blocks[0] + stat.num_blocks[1],
+    };
+}
+
 static void prepareChunk(Chunk & chunk)
 {
     if (!chunk)
@@ -547,6 +558,7 @@ void MergeJoinAlgorithm::consume(Input & input, size_t source_num)
     {
         stat.num_blocks[source_num] += 1;
         stat.num_rows[source_num] += input.chunk.getNumRows();
+        stat.num_bytes[source_num] += input.chunk.allocatedBytes();
     }
 
     prepareChunk(input.chunk);
@@ -635,14 +647,13 @@ void dispatchKind(JoinKind kind, Args && ... args)
 {
     if (Impl<JoinKind::Inner>::enabled && kind == JoinKind::Inner)
         return Impl<JoinKind::Inner>::join(std::forward<Args>(args)...);
-    else if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
+    if (Impl<JoinKind::Left>::enabled && kind == JoinKind::Left)
         return Impl<JoinKind::Left>::join(std::forward<Args>(args)...);
-    else if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
+    if (Impl<JoinKind::Right>::enabled && kind == JoinKind::Right)
         return Impl<JoinKind::Right>::join(std::forward<Args>(args)...);
-    else if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
+    if (Impl<JoinKind::Full>::enabled && kind == JoinKind::Full)
         return Impl<JoinKind::Full>::join(std::forward<Args>(args)...);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Unsupported join kind: \"{}\"", kind);
 }
 
 MutableColumns MergeJoinAlgorithm::getEmptyResultColumns() const
@@ -1092,7 +1103,7 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
 
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TODO: implement ASOF equality join");
         }
-        else if (cmp < 0)
+        if (cmp < 0)
         {
             if (asof_join_state.hasMatch(left_cursor, asof_inequality))
             {
@@ -1105,10 +1116,9 @@ MergeJoinAlgorithm::Status MergeJoinAlgorithm::asofJoin()
                 left_cursor->next();
                 continue;
             }
-            else
-            {
-                asof_join_state.reset();
-            }
+
+            asof_join_state.reset();
+
 
             /// no matches for rows in left table, just pass them through
             size_t num = nextDistinct(*left_cursor);
@@ -1271,7 +1281,7 @@ MergeJoinTransform::MergeJoinTransform(
 
 void MergeJoinTransform::onFinish()
 {
-    algorithm.logElapsed(total_stopwatch.elapsedSeconds());
+    algorithm.logElapsed(static_cast<double>(merging_elapsed_ns) / 1000000000ULL);
 }
 
 }

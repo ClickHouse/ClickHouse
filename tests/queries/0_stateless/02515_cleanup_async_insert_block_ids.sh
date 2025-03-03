@@ -8,7 +8,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Check that if the background cleanup thread works correctly.
 CLICKHOUSE_TEST_ZOOKEEPER_PREFIX="${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/${CLICKHOUSE_DATABASE}"
 
-$CLICKHOUSE_CLIENT -n --query "
+$CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_async_insert_cleanup SYNC;
     CREATE TABLE t_async_insert_cleanup (
         KeyID UInt32
@@ -27,7 +27,7 @@ old_answer=$($CLICKHOUSE_CLIENT --query "SELECT count(*) FROM system.zookeeper W
 for i in {1..300}; do
     answer=$($CLICKHOUSE_CLIENT --query "SELECT count(*) FROM system.zookeeper WHERE path like '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_async_insert_cleanup/async_blocks%' settings allow_unrestricted_reads_from_keeper = 'true'")
     if [ $answer == '10' ]; then
-        $CLICKHOUSE_CLIENT -n --query "DROP TABLE t_async_insert_cleanup SYNC;"
+        $CLICKHOUSE_CLIENT --query "DROP TABLE t_async_insert_cleanup SYNC;"
         exit 0
     fi
     sleep 1
@@ -36,4 +36,4 @@ done
 $CLICKHOUSE_CLIENT --query "SELECT count(*) FROM t_async_insert_cleanup"
 echo $old_answer
 $CLICKHOUSE_CLIENT --query "SELECT count(*) FROM system.zookeeper WHERE path like '/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/t_async_insert_cleanup/async_blocks%' settings allow_unrestricted_reads_from_keeper = 'true'"
-$CLICKHOUSE_CLIENT -n --query "DROP TABLE t_async_insert_cleanup SYNC;"
+$CLICKHOUSE_CLIENT --query "DROP TABLE t_async_insert_cleanup SYNC;"

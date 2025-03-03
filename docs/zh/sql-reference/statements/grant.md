@@ -8,7 +8,7 @@ sidebar_label: 授权操作
 -   给ClickHouse的用户或角色赋予 [权限](#grant-privileges)
 -   将角色分配给用户或其他角色
 
-取消权限，使用 [REVOKE](../../sql-reference/statements/revoke.md)语句。查看已授权的权限请使用 [SHOW GRANTS](../../sql-reference/statements/show.md#show-grants-statement)。
+取消权限，使用 [REVOKE](../../sql-reference/statements/revoke.md)语句。查看已授权的权限请使用 [SHOW GRANTS](/sql-reference/statements/show#show-grants)。
 
 ## 授权操作语法 {#grant-privigele-syntax}
 
@@ -170,14 +170,23 @@ GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
     -   `addressToSymbol`
     -   `demangle`
 -   [SOURCES](#grant-sources)
+    -   `AZURE`
     -   `FILE`
-    -   `URL`
-    -   `REMOTE`
-    -   `YSQL`
-    -   `ODBC`
-    -   `JDBC`
     -   `HDFS`
+    -   `HIVE`
+    -   `JDBC`
+    -   `KAFKA`
+    -   `MONGO`
+    -   `MYSQL`
+    -   `NATS`
+    -   `ODBC`
+    -   `POSTGRES`
+    -   `RABBITMQ`
+    -   `REDIS`
+    -   `REMOTE`
     -   `S3`
+    -   `SQLITE`
+    -   `URL`
 -   [dictGet](#grant-dictget)
 
 如何对待该层级的示例：
@@ -428,14 +437,23 @@ GRANT INSERT(x,y) ON db.table TO john
 允许在 [table engines](../../engines/table-engines/index.md) 和 [table functions](../../sql-reference/table-functions/index.md#table-functions)中使用外部数据源。
 
 -   `SOURCES`. 级别: `GROUP`
+    -   `AZURE`. 级别: `GLOBAL`
     -   `FILE`. 级别: `GLOBAL`
-    -   `URL`. 级别: `GLOBAL`
-    -   `REMOTE`. 级别: `GLOBAL`
-    -   `YSQL`. 级别: `GLOBAL`
-    -   `ODBC`. 级别: `GLOBAL`
-    -   `JDBC`. 级别: `GLOBAL`
     -   `HDFS`. 级别: `GLOBAL`
+    -   `HIVE`. 级别: `GLOBAL`
+    -   `JDBC`. 级别: `GLOBAL`
+    -   `KAFKA`. 级别: `GLOBAL`
+    -   `MONGO`. 级别: `GLOBAL`
+    -   `MYSQL`. 级别: `GLOBAL`
+    -   `NATS`. 级别: `GLOBAL`
+    -   `ODBC`. 级别: `GLOBAL`
+    -   `POSTGRES`. 级别: `GLOBAL`
+    -   `RABBITMQ`. 级别: `GLOBAL`
+    -   `REDIS`. 级别: `GLOBAL`
+    -   `REMOTE`. 级别: `GLOBAL`
     -   `S3`. 级别: `GLOBAL`
+    -   `SQLITE`. 级别: `GLOBAL`
+    -   `URL`. 级别: `GLOBAL`
 
 `SOURCES` 权限允许使用所有数据源。当然也可以单独对每个数据源进行授权。要使用数据源时，还需要额外的权限。
 
@@ -448,7 +466,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 -   `dictGet`. 别名: `dictHas`, `dictGetHierarchy`, `dictIsIn`
 
-允许用户执行 [dictGet](../../sql-reference/functions/ext-dict-functions.md#dictget), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictisin) 等函数.
+允许用户执行 [dictGet](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictisin) 等函数.
 
 权限级别: `DICTIONARY`.
 

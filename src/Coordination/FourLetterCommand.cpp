@@ -2,6 +2,7 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>
@@ -11,9 +12,10 @@
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
-#include "Coordination/KeeperFeatureFlags.h"
+#include "Common/ZooKeeper/KeeperFeatureFlags.h"
 #include <Coordination/Keeper4LWInfo.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <boost/algorithm/string.hpp>
 
@@ -236,17 +238,15 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             allow_list.push_back(ALLOW_LIST_ALL);
             return;
         }
+
+        if (commands.contains(IFourLetterCommand::toCode(token)))
+        {
+            allow_list.push_back(IFourLetterCommand::toCode(token));
+        }
         else
         {
-            if (commands.contains(IFourLetterCommand::toCode(token)))
-            {
-                allow_list.push_back(IFourLetterCommand::toCode(token));
-            }
-            else
-            {
-                auto log = getLogger("FourLetterCommandFactory");
-                LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
-            }
+            auto log = getLogger("FourLetterCommandFactory");
+            LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
         }
     }
 }
@@ -259,7 +259,9 @@ String RuokCommand::run()
 namespace
 {
 
-void print(IFourLetterCommand::StringBuffer & buf, const String & key, const String & value)
+using StringBuffer = DB::WriteBufferFromOwnString;
+
+void print(StringBuffer & buf, const String & key, const String & value)
 {
     writeText("zk_", buf);
     writeText(key, buf);
@@ -268,7 +270,7 @@ void print(IFourLetterCommand::StringBuffer & buf, const String & key, const Str
     writeText('\n', buf);
 }
 
-void print(IFourLetterCommand::StringBuffer & buf, const String & key, uint64_t value)
+void print(StringBuffer & buf, const String & key, uint64_t value)
 {
     print(buf, key, toString(value));
 }
@@ -301,11 +303,13 @@ String MonitorCommand::run()
 
     print(ret, "server_state", keeper_info.getRole());
 
-    print(ret, "znode_count", state_machine.getNodesCount());
-    print(ret, "watch_count", state_machine.getTotalWatchesCount());
-    print(ret, "ephemerals_count", state_machine.getTotalEphemeralNodesCount());
-    print(ret, "approximate_data_size", state_machine.getApproximateDataSize());
-    print(ret, "key_arena_size", state_machine.getKeyArenaSize());
+    const auto & storage_stats = state_machine.getStorageStats();
+
+    print(ret, "znode_count", storage_stats.nodes_count.load(std::memory_order_relaxed));
+    print(ret, "watch_count", storage_stats.total_watches_count.load(std::memory_order_relaxed));
+    print(ret, "ephemerals_count", storage_stats.total_emphemeral_nodes_count.load(std::memory_order_relaxed));
+    print(ret, "approximate_data_size", storage_stats.approximate_data_size.load(std::memory_order_relaxed));
+    print(ret, "key_arena_size", 0);
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotSize());
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
@@ -387,6 +391,7 @@ String ServerStatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
+    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -398,9 +403,9 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(keeper_info.last_zxid));
+    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(keeper_info.total_nodes_count));
+    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
     return buf.str();
 }
@@ -416,6 +421,7 @@ String StatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
+    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -431,9 +437,9 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(keeper_info.last_zxid));
+    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(keeper_info.total_nodes_count));
+    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
 
     return buf.str();
 }
@@ -530,8 +536,7 @@ String IsReadOnlyCommand::run()
 {
     if (keeper_dispatcher.isObserver())
         return "ro";
-    else
-        return "rw";
+    return "rw";
 }
 
 String RecoveryCommand::run()

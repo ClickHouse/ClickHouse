@@ -1,7 +1,10 @@
 #include <Common/SignalHandlers.h>
 #include <Common/config_version.h>
 #include <Common/getHashOfLoadedBinary.h>
+#include <Common/GWPAsan.h>
+#include <Common/ShellCommandsHolder.h>
 #include <Common/CurrentThread.h>
+#include <Common/SymbolIndex.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/SentryWriter.h>
 #include <base/sleep.h>
@@ -13,17 +16,26 @@
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
+#include <Poco/Environment.h>
+
+#include <thread>
 
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
 extern const int CANNOT_SET_SIGNAL_HANDLER;
 extern const int CANNOT_SEND_SIGNAL;
 }
+
 }
+
+extern const char * GIT_HASH;
+
+static const std::vector<StackTrace::FramePointers> empty_stack;
 
 using namespace DB;
 
@@ -46,7 +58,7 @@ void writeSignalIDtoSignalPipe(int sig)
     auto & signal_pipe = HandledSignals::instance().signal_pipe;
     WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
     writeBinary(sig, out);
-    out.next();
+    out.finalize();
 
     errno = saved_errno;
 }
@@ -63,6 +75,20 @@ void terminateRequestedSignalHandler(int sig, siginfo_t *, void *)
     writeSignalIDtoSignalPipe(sig);
 }
 
+void childSignalHandler(int sig, siginfo_t * info, void *)
+{
+    DENY_ALLOCATIONS_IN_SCOPE;
+    auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
+    char buf[signal_pipe_buf_size];
+    auto & signal_pipe = HandledSignals::instance().signal_pipe;
+    WriteBufferFromFileDescriptor out(signal_pipe.fds_rw[1], signal_pipe_buf_size, buf);
+    writeBinary(sig, out);
+    writeBinary(info->si_pid, out);
+
+    out.finalize();
+    errno = saved_errno;
+}
 
 void signalHandler(int sig, siginfo_t * info, void * context)
 {
@@ -89,11 +115,10 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::thread_frame_pointers : std::vector<StackTrace::FramePointers>{}, out);
+    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
-
-    out.next();
+    out.finalize();
 
     if (sig != SIGTSTP) /// This signal is used for debugging.
     {
@@ -147,7 +172,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writeBinary(static_cast<int>(SignalListener::StdTerminate), out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writeBinary(log_message, out);
-    out.next();
+    out.finalize();
 
     abort();
 }
@@ -156,7 +181,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
 template <typename T>
 struct ValueHolder
 {
-    ValueHolder(T value_) : value(value_)
+    explicit ValueHolder(T value_) : value(value_)
     {}
 
     T value;
@@ -188,8 +213,7 @@ static DISABLE_SANITIZER_INSTRUMENTATION void sanitizerDeathCallback()
     ValueHolder<UInt32> thread_id{static_cast<UInt32>(getThreadId())};
     writeBinary(thread_id.value, out);
     writePODBinary(current_thread, out);
-
-    out.next();
+    out.finalize();
 
     /// The time that is usually enough for separate thread to print info into log.
     sleepForSeconds(20);
@@ -247,8 +271,29 @@ void blockSignals(const std::vector<int> & signals)
 }
 
 
+SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_)
+    : daemon(daemon_), log(log_)
+{
+}
+
 void SignalListener::run()
 {
+    if (daemon)
+    {
+        build_id = [this]{ return daemon->build_id; };
+    }
+    else
+    {
+        /// This is the case of clickhouse-client and clickhouse-local.
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+        /// This operation is heavy (0.5 sec under TSan) - we don't do it in constructor to not slow-down clickhouse-client,
+        /// Do it lazily to not slow-down the termination of clickhouse-client.
+        build_id = []{ return SymbolIndex::instance().getBuildIDHex(); };
+#else
+        build_id = [] { return String("<unknown>"); };
+#endif
+    }
+
     static_assert(PIPE_BUF >= 512);
     static_assert(signal_pipe_buf_size <= PIPE_BUF, "Only write of PIPE_BUF to pipe is atomic and the minimal known PIPE_BUF across supported platforms is 512");
     char buf[signal_pipe_buf_size];
@@ -270,7 +315,7 @@ void SignalListener::run()
             LOG_INFO(log, "Stop SignalListener thread");
             break;
         }
-        else if (sig == SIGHUP)
+        if (sig == SIGHUP)
         {
             LOG_DEBUG(log, "Received signal to close logs.");
             BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
@@ -286,12 +331,16 @@ void SignalListener::run()
 
             onTerminate(message, thread_num);
         }
-        else if (sig == SIGINT ||
-                 sig == SIGQUIT ||
-                 sig == SIGTERM)
+        else if (sig == SIGINT || sig == SIGQUIT || sig == SIGTERM)
         {
             if (daemon)
                 daemon->handleSignal(sig);
+        }
+        else if (sig == SIGCHLD)
+        {
+            pid_t child_pid = 0;
+            readBinary(child_pid, in);
+            ShellCommandsHolder::instance().removeCommand(child_pid);
         }
         else
         {
@@ -318,7 +367,8 @@ void SignalListener::run()
             /// Example: segfault while symbolizing stack trace.
             try
             {
-                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); }).detach();
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_frame_pointers, thread_num, thread_ptr); })
+                    .detach();
             }
             catch (...)
             {
@@ -334,7 +384,7 @@ void SignalListener::onTerminate(std::string_view message, UInt32 thread_num) co
     size_t pos = message.find('\n');
 
     LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) {}",
-              VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", daemon ? daemon->git_hash : "", thread_num, message.substr(0, pos));
+              VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, thread_num, message.substr(0, pos));
 
     /// Print trace from std::terminate exception line-by-line to make it easy for grep.
     while (pos != std::string_view::npos)
@@ -367,8 +417,8 @@ try
     /// in case of double fault.
 
     LOG_FATAL(log, "########## Short fault info ############");
-    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) Received signal {}",
-              VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", daemon ? daemon->git_hash : "",
+    LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}, architecture: {}) (from thread {}) Received signal {}",
+              VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH, Poco::Environment::osArchitecture(),
               thread_num, sig);
 
     std::string signal_description = "Unknown signal";
@@ -434,13 +484,13 @@ try
     if (query_id.empty())
     {
         LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) (no query) Received signal {} ({})",
-                  VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", daemon ? daemon->git_hash : "",
+                  VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH,
                   thread_num, signal_description, sig);
     }
     else
     {
         LOG_FATAL(log, "(version {}{}, build id: {}, git hash: {}) (from thread {}) (query_id: {}) (query: {}) Received signal {} ({})",
-                  VERSION_STRING, VERSION_OFFICIAL, daemon ? daemon->build_id : "", daemon ? daemon->git_hash : "",
+                  VERSION_STRING, VERSION_OFFICIAL, build_id(), GIT_HASH,
                   thread_num, query_id, query, signal_description, sig);
     }
 
@@ -477,7 +527,6 @@ try
             }
         }
     );
-
 
 #if defined(OS_LINUX)
     /// Write information about binary checksum. It can be difficult to calculate, so do it only after printing stack trace.
@@ -629,7 +678,8 @@ void HandledSignals::setupTerminateHandler()
 void HandledSignals::setupCommonDeadlySignalHandlers()
 {
     /// SIGTSTP is added for debugging purposes. To output a stack trace of any running thread at anytime.
-    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGPIPE, SIGTSTP, SIGTRAP}, signalHandler, true);
+    /// NOTE: that it is also used by clickhouse-test wrapper
+    addSignalHandler({SIGABRT, SIGSEGV, SIGILL, SIGBUS, SIGSYS, SIGFPE, SIGTSTP, SIGTRAP}, signalHandler, true);
 
 #if defined(SANITIZER)
     __sanitizer_set_death_callback(sanitizerDeathCallback);

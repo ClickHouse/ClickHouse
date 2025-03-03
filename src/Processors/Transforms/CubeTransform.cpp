@@ -7,7 +7,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_COLUMNS;
 }
 
 CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_, bool use_nulls_)
@@ -15,7 +15,7 @@ CubeTransform::CubeTransform(Block header, AggregatingTransformParamsPtr params_
     , aggregates_mask(getAggregatesMask(params->getHeader(), params->params.aggregates))
 {
     if (keys.size() >= 8 * sizeof(mask))
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many keys are used for CubeTransform.");
+        throw Exception(ErrorCodes::TOO_MANY_COLUMNS, "Too many keys ({}) are used for CubeTransform, the maximum is {}.", keys.size(), 8 * sizeof(mask) - 1);
 }
 
 Chunk CubeTransform::generate()

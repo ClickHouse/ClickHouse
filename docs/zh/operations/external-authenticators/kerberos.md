@@ -23,30 +23,30 @@ slug: /zh/operations/external-authenticators/kerberos
 
 示例 (进入 `config.xml`):
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos />
-</yandex>
+</clickhouse>
 ```
 
 主体规范:
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos>
         <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
     </kerberos>
-</yandex>
+</clickhouse>
 ```
 
 按领域过滤:
 ```xml
-<yandex>
+<clickhouse>
     <!- ... -->
     <kerberos>
         <realm>EXAMPLE.COM</realm>
     </kerberos>
-</yandex>
+</clickhouse>
 ```
 
 !!! warning "注意"
@@ -74,7 +74,7 @@ Kerberos主体名称格式通常遵循以下模式:
 
 示例 (进入 `users.xml`):
 ```
-<yandex>
+<clickhouse>
     <!- ... -->
     <users>
         <!- ... -->
@@ -85,7 +85,7 @@ Kerberos主体名称格式通常遵循以下模式:
             </kerberos>
         </my_user>
     </users>
-</yandex>
+</clickhouse>
 ```
 
 !!! warning "警告"
@@ -97,7 +97,7 @@ Kerberos主体名称格式通常遵循以下模式:
 请注意, 现在, 一旦用户 `my_user` 使用 `kerberos`, 必须在主 `config.xml` 文件中启用 Kerberos，如前所述.
 
 ### 使用 SQL 启用 Kerberos {#enabling-kerberos-using-sql}
-在 ClickHouse 中启用 [SQL 驱动的访问控制和帐户管理](https://clickhouse.com/docs/en/operations/access-rights/#access-control)后, 也可以使用 SQL 语句创建由 Kerberos 识别的用户.
+在 ClickHouse 中启用 [SQL 驱动的访问控制和帐户管理](/operations/access-rights)后, 也可以使用 SQL 语句创建由 Kerberos 识别的用户.
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'

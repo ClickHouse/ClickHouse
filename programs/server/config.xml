@@ -70,12 +70,15 @@
         You can specify log format(for now, JSON only). In that case, the console log will be printed
         in specified format like JSON.
         For example, as below:
+
         {"date_time":"1650918987.180175","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
+        {"date_time_utc":"2024-11-06T09:06:09Z","thread_name":"#1","thread_id":"254545","level":"Trace","query_id":"","logger_name":"BaseDaemon","message":"Received signal 2","source_file":"../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()","source_line":"192"}
         To enable JSON logging support, please uncomment the entire <formatting> tag below.
 
         a) You can modify key names by changing values under tag values inside <names> tag.
         For example, to change DATE_TIME to MY_DATE_TIME, you can do like:
             <date_time>MY_DATE_TIME</date_time>
+            <date_time_utc>MY_UTC_DATE_TIME</date_time_utc>
         b) You can stop unwanted log properties to appear in logs. To do so, you can simply comment out (recommended)
         that property from this file.
         For example, if you do not want your log to print query_id, you can comment out only <query_id> tag.
@@ -86,6 +89,7 @@
             <type>json</type>
             <names>
                 <date_time>date_time</date_time>
+                <date_time_utc>date_time_utc</date_time_utc>
                 <thread_name>thread_name</thread_name>
                 <thread_id>thread_id</thread_id>
                 <level>level</level>
@@ -137,7 +141,7 @@
 
     <!-- Port for HTTP API. See also 'https_port' for secure connections.
          This interface is also used by ODBC and JDBC drivers (DataGrip, Dbeaver, ...)
-         and by most of web interfaces (embedded UI, Grafana, Redash, ...).
+         and by most of the web interfaces (embedded UI, Grafana, Redash, ...).
       -->
     <http_port>8123</http_port>
 
@@ -149,6 +153,21 @@
          See also 'tcp_port_secure' for secure connections.
     -->
     <tcp_port>9000</tcp_port>
+
+    <!-- Chunked capabilities for native protocol by server.
+         Can be enabled separately for send and receive channels.
+         Supported modes:
+         - chunked - server requires from client to have chunked enabled;
+         - chunked_optional - server supports both chunked and notchunked protocol;
+         - notchunked - server requires from client notchunked protocol (current default);
+         - notchunked_optional - server supports both chunked and notchunked protocol.
+     -->
+    <!--
+    <proto_caps>
+        <send>notchunked_optional</send>
+        <recv>notchunked_optional</recv>
+    </proto_caps>
+    -->
 
     <!-- Compatibility with MySQL protocol.
          ClickHouse will pretend to be MySQL for applications connecting to this port.
@@ -204,6 +223,20 @@
     <interserver_http_host>example.clickhouse.com</interserver_http_host>
     -->
 
+    <!-- Port for the SSH server which allows to connect and execute
+         queries in an interactive fashion using the embedded client over the PTY.
+    -->
+    <!-- <tcp_ssh_port>9022</tcp_ssh_port> -->
+
+    <ssh_server>
+        <!-- The public part of the host key will be written to the known_hosts file
+             on the SSH client side on the first connect.
+        -->
+        <!-- <host_rsa_key>path_to_the_ssh_key</host_rsa_key> -->
+        <!-- <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key> -->
+        <!-- <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key> -->
+    </ssh_server>
+
     <!-- You can specify credentials for authenthication between replicas.
          This is required when interserver_https_port is accessible from untrusted networks,
          and also recommended to avoid SSRF attacks from possibly compromised services in your network.
@@ -248,7 +281,7 @@
 
     <!-- <listen_backlog>4096</listen_backlog> -->
 
-    <max_connections>4096</max_connections>
+    <!-- <max_connections>4096</max_connections> -->
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
     <keep_alive_timeout>10</keep_alive_timeout>
@@ -283,7 +316,9 @@
         <verbose_logs>false</verbose_logs>
     </grpc>
 
-    <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
+    <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71
+         Note: ClickHouse Cloud https://clickhouse.com/cloud always has secure connections configured.
+    -->
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
@@ -322,9 +357,9 @@
         </client>
     </openSSL>
 
-    <!-- Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123 -->
+    <!-- Default root page on http[s] server. -->
     <!--
-    <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
+    <http_server_default_response><![CDATA[Greetings from ClickHouse!]]></http_server_default_response>
     -->
 
     <!-- The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries.
@@ -512,8 +547,7 @@
     </storage_configuration>
     -->
 
-
-    <!-- Path to temporary data for processing hard queries. -->
+    <!-- Path to temporary data for processing heavy queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
@@ -529,7 +563,9 @@
     <!-- Work factor for bcrypt_password authentication type-->
     <bcrypt_workfactor>12</bcrypt_workfactor>
 
-    <!-- Complexity requirements for user passwords. -->
+    <!-- Complexity requirements for user passwords.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud is always configured for strong passwords.
+      -->
     <!-- <password_complexity>
         <rule>
             <pattern>.{12}</pattern>
@@ -844,6 +880,7 @@
 
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.com/docs/en/operations/table_engines/distributed/
+         Note: ClickHouse Cloud https://clickhouse.com/cloud has the cluster preconfigured and dynamically scalable.
       -->
     <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
@@ -925,6 +962,8 @@
          Optional. If you don't use replicated tables, you could omit that.
 
          See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/
+
+         Note: ClickHouse Cloud https://clickhouse.com/cloud has ClickHouse Keeper automatically configured for every service.
       -->
 
     <!--
@@ -1106,6 +1145,7 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
+        <symbolize>true</symbolize>
     </trace_log>
 
     <!-- Query thread log. Has information about all threads participated in query execution.
@@ -1130,8 +1170,7 @@
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_views_log>
 
-    <!-- Uncomment if use part log.
-         Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).-->
+    <!-- Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads). -->
     <part_log>
         <database>system</database>
         <table>part_log</table>
@@ -1143,9 +1182,9 @@
         <flush_on_crash>false</flush_on_crash>
     </part_log>
 
-    <!-- Uncomment to write text log into table.
-         Text log contains all information from usual server log but stores it in structured and efficient way.
+    <!-- Text log contains all information from usual server log but stores it in structured and efficient way.
          The level of the messages that goes to the table can be limited (<level>), if not specified all messages will go to the table.
+    -->
     <text_log>
         <database>system</database>
         <table>text_log</table>
@@ -1154,9 +1193,8 @@
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
-        <level></level>
+        <level>trace</level>
     </text_log>
-    -->
 
     <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval. -->
     <metric_log>
@@ -1170,6 +1208,18 @@
         <flush_on_crash>false</flush_on_crash>
     </metric_log>
 
+    <!-- Latency log contains rows with current values of latency buckets collected with "collect_interval_milliseconds" interval. -->
+    <latency_log>
+        <database>system</database>
+        <table>latency_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </latency_log>
+
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
     <error_log>
         <database>system</database>
@@ -1181,6 +1231,19 @@
         <collect_interval_milliseconds>1000</collect_interval_milliseconds>
         <flush_on_crash>false</flush_on_crash>
     </error_log>
+
+    <!-- Query metric log contains rows Contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
+    every "collect_interval_milliseconds" interval-->
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <flush_on_crash>false</flush_on_crash>
+    </query_metric_log>
 
     <!--
         Asynchronous metric log contains values of metrics from
@@ -1198,6 +1261,8 @@
 
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.
+
+        NOTE: this table does not use standard schema with event_date and event_time!
     -->
     <opentelemetry_span_log>
         <!--
@@ -1266,6 +1331,7 @@
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </processors_profile_log>
 
     <!-- Log of asynchronous inserts. It allows to check status
@@ -1312,6 +1378,31 @@
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </blob_storage_log>
 
+    <!-- Configure system.dashboards for dashboard.html.
+
+         Could have any query parameters, for which there will be an input on the page.
+         For instance an example from comments have the following:
+         - seconds
+         - rounding
+
+         NOTE: All default dashboards will be overwritten if it was set here. -->
+    <!-- Here is an example without merge() function, to make it work with readonly user -->
+    <!--
+    <dashboards>
+        <dashboard>
+            <dashboard>Overview</dashboard>
+            <title>Queries/second</title>
+            <query>
+                SELECT toStartOfInterval(event_time, INTERVAL {rounding:UInt32} SECOND)::INT AS t, avg(ProfileEvent_Query)
+                FROM system.metric_log
+                WHERE event_date >= toDate(now() - {seconds:UInt32}) AND event_time >= now() - {seconds:UInt32}
+                GROUP BY t
+                ORDER BY t WITH FILL STEP {rounding:UInt32}
+            </query>
+        </dashboard>
+    </dashboards>
+    -->
+
     <!-- <top_level_domains_path>/var/lib/clickhouse/top_level_domains/</top_level_domains_path> -->
     <!-- Custom TLD lists.
          Format: <name>/path/to/file</name>
@@ -1348,8 +1439,13 @@
      If not specified they will be stored locally. -->
     <!-- <user_defined_zookeeper_path>/clickhouse/user_defined</user_defined_zookeeper_path> -->
 
+    <!-- Path in ZooKeeper to store workload and resource created by the command CREATE WORKLOAD and CREATE REESOURCE.
+     If not specified they will be stored locally. -->
+    <!-- <workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path> -->
+
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud has a stronger compression by default.
       -->
     <!--
     <compression>
@@ -1370,7 +1466,10 @@
          obtain an encryption key at startup if such a command is
          defined, or encryption codecs will be disabled otherwise. The
          command is executed through /bin/sh and is expected to write
-         a Base64-encoded key to the stdout. -->
+         a Base64-encoded key to the stdout.
+
+         Note: ClickHouse Cloud https://clickhouse.com/cloud supports encryption with customer-managed keys.
+    -->
     <encryption_codecs>
         <!-- aes_128_gcm_siv -->
             <!-- Example of getting hex key from env -->
@@ -1395,10 +1494,14 @@
     </encryption_codecs>
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
-         Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
+         Works only if ZooKeeper is enabled. Comment it if such functionality isn't required.
+         Note: ClickHouse Cloud https://clickhouse.com/cloud always runs DDL queries on cluster.
+    -->
     <distributed_ddl>
         <!-- Path in ZooKeeper to queue with DDL queries -->
         <path>/clickhouse/task_queue/ddl</path>
+        <!-- Path in ZooKeeper to store running DDL hosts -->
+        <replicas_path>/clickhouse/task_queue/replicas</replicas_path>
 
         <!-- Settings from this profile will be used to execute DDL queries -->
         <!-- <profile>default</profile> -->
@@ -1429,6 +1532,7 @@
     <!--
     <merge_workload>merges_and_mutations</merge_workload>
     <mutation_workload>merges_and_mutations</mutation_workload>
+    <throw_on_unknown_workload>true</throw_on_unknown_workload>
     -->
 
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
@@ -1438,7 +1542,9 @@
     </merge_tree>
     -->
 
-    <!-- Settings to fine-tune ReplicatedMergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
+    <!-- Settings to fine-tune ReplicatedMergeTree tables. See documentation in source code, in MergeTreeSettings.h
+         Note: ClickHouse Cloud https://clickhouse.com/cloud has a SharedMergeTree engine that does not require fine-tuning.
+    -->
     <!--
     <replicated_merge_tree>
         <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
@@ -1657,6 +1763,7 @@
         -->
     <!-- </kafka> -->
 
+    <!-- Note: ClickHouse Cloud https://clickhouse.com/cloud provides automatic backups to object storage. -->
     <backups>
         <allowed_path>backups</allowed_path>
 

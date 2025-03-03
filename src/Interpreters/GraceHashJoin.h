@@ -5,6 +5,7 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
@@ -84,8 +85,14 @@ public:
     /// Must be called after all @joinBlock calls.
     IBlocksStreamPtr getDelayedBlocks() override;
     bool hasDelayedBlocks() const override { return true; }
+    bool rightTableCanBeReranged() const override;
+    void tryRerangeRightTableData() override;
+
+    void onBuildPhaseFinish() override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
+
+    void forceSpill() { force_spill = true; }
 
 private:
     void initBuckets();
@@ -128,12 +135,11 @@ private:
     Block output_sample_block;
     bool any_take_last_row;
     const size_t max_num_buckets;
-    size_t max_block_size;
 
     Names left_key_names;
     Names right_key_names;
 
-    TemporaryDataOnDiskPtr tmp_data;
+    TemporaryDataOnDiskScopePtr tmp_data;
 
     Buckets buckets;
     mutable SharedMutex rehash_mutex;
@@ -145,6 +151,7 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
+    std::atomic<bool> force_spill = false;
 };
 
 }

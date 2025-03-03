@@ -192,8 +192,10 @@ bool ParserKQLMVExpand::parserMVExpand(KQLMVExpand & kql_mv_expand, Pos & pos, E
 bool ParserKQLMVExpand::genQuery(KQLMVExpand & kql_mv_expand, ASTPtr & select_node, uint32_t max_depth, uint32_t max_backtracks)
 {
     String expand_str;
-    String cast_type_column_remove, cast_type_column_rename;
-    String cast_type_column_restore, cast_type_column_restore_name;
+    String cast_type_column_remove;
+    String cast_type_column_rename;
+    String cast_type_column_restore;
+    String cast_type_column_restore_name;
     String row_count_str;
     String extra_columns;
     String input = "dummy_input";

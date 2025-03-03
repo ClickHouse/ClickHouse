@@ -24,6 +24,8 @@ jobs:
           clear-repository: true # to ensure correct digests
           fetch-depth: 0 # to get version
           filter: tree:0
+      - name: Debug Info
+        uses: ./.github/actions/debug
       - name: Labels check
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
@@ -95,6 +97,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       # always rebuild on release branches to be able to publish from any commit
       force: true
+      runner_type: builder-aarch64
   BuilderDebAsan:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -130,6 +133,7 @@ jobs:
     with:
       build_name: package_debug
       data: ${{ needs.RunConfig.outputs.data }}
+      force: true
   BuilderBinDarwin:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -150,6 +154,7 @@ jobs:
       data: ${{ needs.RunConfig.outputs.data }}
       # always rebuild on release branches to be able to publish from any commit
       force: true
+      runner_type: builder-aarch64
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
@@ -304,65 +309,6 @@ jobs:
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
-############################ FUNCTIONAl STATEFUL TESTS #######################################
-##############################################################################################
-  FunctionalStatefulTestRelease:
-    needs: [RunConfig, BuilderDebRelease]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (release)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestAarch64:
-    needs: [RunConfig, BuilderDebAarch64]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (aarch64)
-      runner_type: func-tester-aarch64
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestAsan:
-    needs: [RunConfig, BuilderDebAsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (asan)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestTsan:
-    needs: [RunConfig, BuilderDebTsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (tsan)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestMsan:
-    needs: [RunConfig, BuilderDebMsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (msan)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestUBsan:
-    needs: [RunConfig, BuilderDebUBsan]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (ubsan)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-  FunctionalStatefulTestDebug:
-    needs: [RunConfig, BuilderDebDebug]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (debug)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-##############################################################################################
 ######################################### STRESS TESTS #######################################
 ##############################################################################################
   StressTestAsan:
@@ -371,7 +317,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (asan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestTsan:
     needs: [RunConfig, BuilderDebTsan]
@@ -379,7 +325,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (tsan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestMsan:
     needs: [RunConfig, BuilderDebMsan]
@@ -387,7 +333,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (msan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestUBsan:
     needs: [RunConfig, BuilderDebUBsan]
@@ -395,7 +341,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (ubsan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   StressTestDebug:
     needs: [RunConfig, BuilderDebDebug]
@@ -403,7 +349,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Stress test (debug)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 #############################################################################################
 ############################# INTEGRATION TESTS #############################################
@@ -414,7 +360,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (asan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsAnalyzerAsan:
     needs: [RunConfig, BuilderDebAsan]
@@ -422,7 +368,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (asan, old analyzer)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsTsan:
     needs: [RunConfig, BuilderDebTsan]
@@ -430,7 +376,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (tsan)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   IntegrationTestsRelease:
     needs: [RunConfig, BuilderDebRelease]
@@ -438,7 +384,7 @@ jobs:
     uses: ./.github/workflows/reusable_test.yml
     with:
       test_name: Integration tests (release)
-      runner_type: stress-tester
+      runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
   FinishCheck:
     if: ${{ !cancelled() }}
@@ -455,13 +401,6 @@ jobs:
       - FunctionalStatelessTestTsan
       - FunctionalStatelessTestMsan
       - FunctionalStatelessTestUBsan
-      - FunctionalStatefulTestDebug
-      - FunctionalStatefulTestRelease
-      - FunctionalStatefulTestAarch64
-      - FunctionalStatefulTestAsan
-      - FunctionalStatefulTestTsan
-      - FunctionalStatefulTestMsan
-      - FunctionalStatefulTestUBsan
       - StressTestDebug
       - StressTestAsan
       - StressTestTsan
@@ -481,16 +420,13 @@ jobs:
       - name: Finish label
         if: ${{ !failure() }}
         run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          # update mergeable check
-          python3 merge_pr.py --set-ci-status --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
           # update overall ci report
-          python3 finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          python3 ./tests/ci/finish_check.py --wf-status ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
       - name: Check Workflow results
+        if: ${{ !cancelled() }}
         run: |
           export WORKFLOW_RESULT_FILE="/tmp/workflow_results.json"
           cat > "$WORKFLOW_RESULT_FILE" << 'EOF'
           ${{ toJson(needs) }}
           EOF
-
           python3 ./tests/ci/ci_buddy.py --check-wf-status

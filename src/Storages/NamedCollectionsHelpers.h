@@ -26,9 +26,13 @@ MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(
 /// Dictionaries have collection name as name argument of dict configuration and other arguments are overrides.
 MutableNamedCollectionPtr tryGetNamedCollectionWithOverrides(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, ContextPtr context);
 
+/// Parses the ast as a key-value pair.
+/// Throws an exception if the key cannot be parsed as a string literal.
+/// If the value cannot be parsed as a literal or interpreted as a constant expression,
+/// falls back to the AST value.
+std::pair<std::string, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context);
+
 /// Parses asts as key value pairs and returns a map of them.
-/// If key or value cannot be parsed as literal or interpreted
-/// as constant expression throws an exception.
 std::map<String, Field> getParamsMapFromAST(ASTs asts, ContextPtr context);
 
 HTTPHeaderEntries getHeadersFromNamedCollection(const NamedCollection & collection);
@@ -133,7 +137,7 @@ void validateNamedCollection(
         {
              throw Exception(
                  ErrorCodes::BAD_ARGUMENTS,
-                 "Unexpected key {} in named collection. Required keys: {}, optional keys: {}",
+                 "Unexpected key `{}` in named collection. Required keys: {}, optional keys: {}",
                  backQuoteIfNeed(key), fmt::join(required_keys, ", "), fmt::join(optional_keys, ", "));
         }
     }

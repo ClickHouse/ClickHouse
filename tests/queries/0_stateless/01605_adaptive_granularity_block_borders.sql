@@ -1,4 +1,4 @@
--- Tags: no-random-merge-tree-settings, no-tsan, no-debug, no-object-storage
+-- Tags: long, no-random-merge-tree-settings, no-random-settings, no-tsan, no-debug, no-object-storage, no-distributed-cache
 -- no-tsan: too slow
 -- no-object-storage: for remote tables we use thread pool even when reading with one stream, so memory consumption is higher
 
@@ -16,7 +16,7 @@ CREATE TABLE adaptive_table(
     value String
 ) ENGINE MergeTree()
 ORDER BY key
-SETTINGS index_granularity_bytes=1048576,
+SETTINGS index_granularity_bytes = 1048576,
 min_bytes_for_wide_part = 0,
 min_rows_for_wide_part = 0,
 enable_vertical_merge_algorithm = 0;

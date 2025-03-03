@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/window-functions/rank
+slug: /sql-reference/window-functions/rank
 sidebar_label: rank
 sidebar_position: 6
 ---
@@ -9,13 +9,13 @@ sidebar_position: 6
 Ranks the current row within its partition with gaps. In other words, if the value of any row it encounters is equal to the value of a previous row then it will receive the same rank as that previous row.
 The rank of the next row is then equal to the rank of the previous row plus a gap equal to the number of times the previous rank was given.
 
-The [dense_rank](./dense_rank.md) function provides the same behaviour but without gaps in ranking. 
+The [dense_rank](./dense_rank.md) function provides the same behaviour but without gaps in ranking.
 
 **Syntax**
 
 ```sql
-rank (column_name)
-  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
         [ROWS or RANGE expression_to_bound_rows_withing_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([[PARTITION BY grouping_column] [ORDER BY sorting_column])
@@ -54,7 +54,7 @@ INSERT INTO salaries FORMAT Values
 ```
 
 ```sql
-SELECT player, salary, 
+SELECT player, salary,
        rank() OVER (ORDER BY salary DESC) AS rank
 FROM salaries;
 ```

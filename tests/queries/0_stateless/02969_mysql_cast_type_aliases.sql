@@ -1,7 +1,7 @@
 -- See https://dev.mysql.com/doc/refman/8.0/en/cast-functions.html#function_cast
 -- Tests are in order of the type appearance in the docs
 
-SET allow_experimental_object_type = 1;
+SET allow_experimental_json_type = 1;
 
 SELECT '-- Uppercase tests';
 -- Not supported as it is translated to FixedString without arguments

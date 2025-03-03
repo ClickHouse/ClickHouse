@@ -18,13 +18,11 @@ public:
         ContextPtr context,
         const std::string & blob_path = "");
 
+    ~StorageObjectStorageSink() override;
+
     String getName() const override { return "StorageObjectStorageSink"; }
 
     void consume(Chunk & chunk) override;
-
-    void onCancel() override;
-
-    void onException(std::exception_ptr exception) override;
 
     void onFinish() override;
 
@@ -32,8 +30,6 @@ private:
     const Block sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
     OutputFormatPtr writer;
-    bool cancelled = false;
-    std::mutex cancel_mutex;
 
     void finalizeBuffers();
     void releaseBuffers();

@@ -2,9 +2,9 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageLogSettings.h>
 
+#include <Columns/IColumn.h>
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
-#include <Common/typeid_cast.h>
+#include <Common/assert_cast.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -49,6 +49,12 @@
 
 namespace DB
 {
+namespace Setting
+{
+    extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsUInt64 max_compress_block_size;
+    extern const SettingsSeconds max_execution_time;
+}
 
 namespace ErrorCodes
 {
@@ -60,6 +66,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int CANNOT_RESTORE_TABLE;
     extern const int NOT_IMPLEMENTED;
+    extern const int ILLEGAL_COLUMN;
 }
 
 /// NOTE: The lock `StorageLog::rwlock` is NOT kept locked while reading,
@@ -128,7 +135,7 @@ private:
 
             if (limited_by_file_size)
             {
-                limited.emplace(*plain, file_size - offset, /* trow_exception */ false, /* exact_limit */ std::optional<size_t>());
+                limited.emplace(*plain, LimitReadBuffer::Settings{.read_no_more = file_size - offset});
                 compressed.emplace(*limited);
             }
             else
@@ -562,6 +569,23 @@ namespace
     /// So for Array data type, first stream is array sizes; and number of array sizes is the number of arrays.
     /// Thus we assume we can always get the real number of rows from the first column.
     constexpr size_t INDEX_WITH_REAL_ROW_COUNT = 0;
+
+    void checkSupportedDataTypes(const ColumnsDescription & columns, const String & storage_name)
+    {
+        for (const auto & column : columns.getAll())
+        {
+            auto callback = [&](const IDataType & type)
+            {
+                /// Variant type requires writing prefix in the discriminators stream. In Log engine
+                /// we write prefix before each insert but read it only once before reading the whole file.
+                /// To support such cases we need to reimplement serialization/deserialization in the Log engine.
+                if (isVariant(type))
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Engine {} doesn't support Variant data type", storage_name);
+            };
+            callback(*column.type);
+            column.type->forEachChild(callback);
+        }
+    }
 }
 
 
@@ -585,8 +609,9 @@ StorageLog::StorageLog(
     , use_marks_file(engine_name == "Log")
     , marks_file_path(table_path + DBMS_STORAGE_LOG_MARKS_FILE_NAME)
     , file_checker(disk, table_path + "sizes.json")
-    , max_compress_block_size(context_->getSettingsRef().max_compress_block_size)
+    , max_compress_block_size(context_->getSettingsRef()[Setting::max_compress_block_size])
 {
+    checkSupportedDataTypes(columns_, getName());
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
     storage_metadata.setConstraints(constraints_);
@@ -677,7 +702,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         return;
 
     size_t num_marks = 0;
-    if (disk->exists(marks_file_path))
+    if (disk->existsFile(marks_file_path))
     {
         size_t file_size = disk->getFileSize(marks_file_path);
         if (file_size % (num_data_files * sizeof(Mark)) != 0)
@@ -688,7 +713,7 @@ void StorageLog::loadMarks(const WriteLock & lock /* already locked exclusively 
         for (auto & data_file : data_files)
             data_file.marks.resize(num_marks);
 
-        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, ReadSettings().adjustBufferSize(32768));
+        std::unique_ptr<ReadBuffer> marks_rb = disk->readFile(marks_file_path, getReadSettings().adjustBufferSize(32768));
         for (size_t i = 0; i != num_marks; ++i)
         {
             for (auto & data_file : data_files)
@@ -788,9 +813,9 @@ void StorageLog::rename(const String & new_path_to_table_data, const StorageID &
 static std::chrono::seconds getLockTimeout(ContextPtr context)
 {
     const Settings & settings = context->getSettingsRef();
-    Int64 lock_timeout = settings.lock_acquire_timeout.totalSeconds();
-    if (settings.max_execution_time.totalSeconds() != 0 && settings.max_execution_time.totalSeconds() < lock_timeout)
-        lock_timeout = settings.max_execution_time.totalSeconds();
+    Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
+    if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
+        lock_timeout = settings[Setting::max_execution_time].totalSeconds();
     return std::chrono::seconds{lock_timeout};
 }
 
@@ -997,7 +1022,9 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     disk->createDirectories(temp_dir);
 
     const auto & read_settings = backup_entries_collector.getReadSettings();
-    bool copy_encrypted = !backup_entries_collector.getBackupSettings().decrypt_files_from_encrypted_disks;
+    const auto & backup_settings = backup_entries_collector.getBackupSettings();
+    bool copy_encrypted = !backup_settings.decrypt_files_from_encrypted_disks;
+    bool allow_checksums_from_remote_paths = backup_settings.allow_checksums_from_remote_paths;
 
     /// *.bin
     for (const auto & data_file : data_files)
@@ -1007,7 +1034,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String hardlink_file_path = temp_dir / data_file_name;
         disk->createHardLink(data_file.path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path));
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(data_file.path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / data_file_name, std::move(backup_entry));
     }
@@ -1020,7 +1047,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
         String hardlink_file_path = temp_dir / marks_file_name;
         disk->createHardLink(marks_file_path, hardlink_file_path);
         BackupEntryPtr backup_entry = std::make_unique<BackupEntryFromAppendOnlyFile>(
-            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path));
+            disk, hardlink_file_path, copy_encrypted, file_checker.getFileSize(marks_file_path), allow_checksums_from_remote_paths);
         backup_entry = wrapBackupEntryWith(std::move(backup_entry), temp_dir_owner);
         backup_entries_collector.addBackupEntry(data_path_in_backup_fs / marks_file_name, std::move(backup_entry));
     }
@@ -1148,7 +1175,8 @@ void StorageLog::restoreDataImpl(const BackupPtr & backup, const String & data_p
 void registerStorageLog(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
-        .supports_settings = true
+        .supports_settings = true,
+        .has_builtin_setting_fn = StorageLogSettings::hasBuiltin,
     };
 
     auto create_fn = [](const StorageFactory::Arguments & args)

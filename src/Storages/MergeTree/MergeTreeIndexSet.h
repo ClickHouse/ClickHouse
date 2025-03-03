@@ -31,6 +31,8 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
     size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }
 
+    size_t memoryUsageBytes() const override { return block.bytes() + (set_hyperrectangle.capacity() * sizeof(Range)); }
+
     ~MergeTreeIndexGranuleSet() override = default;
 
     const String index_name;
@@ -84,7 +86,7 @@ class MergeTreeIndexConditionSet final : public IMergeTreeIndexCondition
 public:
     MergeTreeIndexConditionSet(
         size_t max_rows_,
-        const ActionsDAGPtr & filter_dag,
+        const ActionsDAG * filter_dag,
         ContextPtr context,
         const IndexDescription & index_description);
 
@@ -95,16 +97,16 @@ public:
     ~MergeTreeIndexConditionSet() override = default;
 private:
     const ActionsDAG::Node & traverseDAG(const ActionsDAG::Node & node,
-        ActionsDAGPtr & result_dag,
+        ActionsDAG & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
     const ActionsDAG::Node * atomFromDAG(const ActionsDAG::Node & node,
-        ActionsDAGPtr & result_dag,
+        ActionsDAG & result_dag,
         const ContextPtr & context) const;
 
     const ActionsDAG::Node * operatorFromDAG(const ActionsDAG::Node & node,
-        ActionsDAGPtr & result_dag,
+        ActionsDAG & result_dag,
         const ContextPtr & context,
         std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
 
@@ -143,7 +145,7 @@ public:
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const ActionsDAGPtr & filter_actions_dag, ContextPtr context) const override;
+            const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
 
     size_t max_rows = 0;
 };

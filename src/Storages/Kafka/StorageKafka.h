@@ -1,12 +1,12 @@
 #pragma once
 
-#include <Common/ThreadPool_fwd.h>
-#include <Common/Macros.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
-#include <Storages/Kafka/KafkaSettings.h>
+#include <Common/Macros.h>
 #include <Common/SettingsChanges.h>
+#include <Common/ThreadPool_fwd.h>
 
 #include <Poco/Semaphore.h>
 
@@ -19,11 +19,13 @@
 namespace DB
 {
 
+struct KafkaSettings;
 class ReadFromStorageKafka;
 class StorageSystemKafkaConsumers;
 class ThreadStatus;
 
-struct StorageKafkaInterceptors;
+template <typename TStorageKafka>
+struct KafkaInterceptors;
 
 using KafkaConsumerPtr = std::shared_ptr<KafkaConsumer>;
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
@@ -33,7 +35,8 @@ using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
   */
 class StorageKafka final : public IStorage, WithContext
 {
-    friend struct StorageKafkaInterceptors;
+    using KafkaInterceptors = KafkaInterceptors<StorageKafka>;
+    friend KafkaInterceptors;
 
 public:
     StorageKafka(
@@ -78,7 +81,7 @@ public:
 
     const auto & getFormatName() const { return format_name; }
 
-    StreamingHandleErrorMode getStreamingHandleErrorMode() const { return kafka_settings->kafka_handle_error_mode; }
+    StreamingHandleErrorMode getStreamingHandleErrorMode() const;
 
     struct SafeConsumers
     {
@@ -118,9 +121,9 @@ private:
     // Stream thread
     struct TaskContext
     {
-        BackgroundSchedulePool::TaskHolder holder;
+        BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
+        explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
         {
         }
     };
@@ -133,7 +136,6 @@ private:
     std::mutex thread_statuses_mutex;
     std::list<std::shared_ptr<ThreadStatus>> thread_statuses;
 
-    SettingsChanges createSettingsAdjustments();
     /// Creates KafkaConsumer object without real consumer (cppkafka::Consumer)
     KafkaConsumerPtr createKafkaConsumer(size_t consumer_number);
     /// Returns full consumer related configuration, also the configuration
@@ -148,33 +150,15 @@ private:
 
     std::atomic<bool> shutdown_called = false;
 
-    // Load Kafka global configuration
-    // https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md#global-configuration-properties
-    void updateGlobalConfiguration(cppkafka::Configuration & kafka_config);
-    // Load Kafka properties from consumer configuration
-    // NOTE: librdkafka allow to set a consumer property to a producer and vice versa,
-    //       but a warning will be generated e.g:
-    //       "Configuration property session.timeout.ms is a consumer property and
-    //        will be ignored by this producer instance"
-    void updateConsumerConfiguration(cppkafka::Configuration & kafka_config);
-    // Load Kafka properties from producer configuration
-    void updateProducerConfiguration(cppkafka::Configuration & kafka_config);
-
     void threadFunc(size_t idx);
 
     size_t getPollMaxBatchSize() const;
     size_t getMaxBlockSize() const;
     size_t getPollTimeoutMillisecond() const;
 
-    static Names parseTopics(String topic_list);
-    static String getDefaultClientId(const StorageID & table_id_);
-
     bool streamToViews();
-    bool checkDependencies(const StorageID & table_id);
 
     void cleanConsumers();
-
-    static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };
 
 }

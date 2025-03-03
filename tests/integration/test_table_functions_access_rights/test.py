@@ -1,4 +1,5 @@
 import pytest
+
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
@@ -45,7 +46,7 @@ def test_merge():
     )
 
     instance.query("GRANT CREATE TEMPORARY TABLE ON *.* TO A")
-    assert "no tables in database matches" in instance.query_and_get_error(
+    assert "no tables in the database matches" in instance.query_and_get_error(
         select_query, user="A"
     )
 

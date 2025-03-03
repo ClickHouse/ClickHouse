@@ -1,10 +1,15 @@
 ---
-slug: /en/operations/system-tables/server_settings
+description: "System table containing formation about global settings for the server, which are specified in `config.xml`."
+slug: /operations/system-tables/server_settings
+title: "system.server_settings"
+keywords: ["system table", "server_settings"]
 ---
-# server_settings
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
-Contains information about global settings for the server, which were specified in `config.xml`.
-Currently, the table shows only settings from the first layer of `config.xml` and doesn't support nested configs (e.g. [logger](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-logger)).
+<SystemTableCloud/>
+
+Contains information about global settings for the server, which are specified in `config.xml`.
+Currently, the table shows only settings from the first layer of `config.xml` and doesn't support nested configs (e.g. [logger](../../operations/server-configuration-parameters/settings.md#logger)).
 
 Columns:
 
@@ -50,7 +55,7 @@ WHERE name LIKE '%thread_pool%'
 
 ```
 
-Using of `WHERE changed` can be useful, for example, when you want to check 
+Using of `WHERE changed` can be useful, for example, when you want to check
 whether settings in configuration files are loaded correctly and are in use.
 
 <!-- -->

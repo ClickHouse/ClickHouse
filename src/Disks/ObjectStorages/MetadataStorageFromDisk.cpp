@@ -1,10 +1,9 @@
 #include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Disks/ObjectStorages/IMetadataStorage.h>
-#include <Common/getRandomASCIIString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <ranges>
-#include <filesystem>
+#include <shared_mutex>
 
 
 namespace DB
@@ -20,19 +19,19 @@ const std::string & MetadataStorageFromDisk::getPath() const
     return disk->getPath();
 }
 
-bool MetadataStorageFromDisk::exists(const std::string & path) const
+bool MetadataStorageFromDisk::existsFile(const std::string & path) const
 {
-    return disk->exists(path);
+    return disk->existsFile(path);
 }
 
-bool MetadataStorageFromDisk::isFile(const std::string & path) const
+bool MetadataStorageFromDisk::existsDirectory(const std::string & path) const
 {
-    return disk->isFile(path);
+    return disk->existsDirectory(path);
 }
 
-bool MetadataStorageFromDisk::isDirectory(const std::string & path) const
+bool MetadataStorageFromDisk::existsFileOrDirectory(const std::string & path) const
 {
-    return disk->isDirectory(path);
+    return disk->existsFileOrDirectory(path);
 }
 
 Poco::Timestamp MetadataStorageFromDisk::getLastModified(const std::string & path) const
@@ -66,7 +65,7 @@ DirectoryIteratorPtr MetadataStorageFromDisk::iterateDirectory(const std::string
 
 std::string MetadataStorageFromDisk::readFileToString(const std::string & path) const
 {
-    auto buf = disk->readFile(path);
+    auto buf = disk->readFile(path, ReadSettings{});
     std::string result;
     readStringUntilEOF(result, *buf);
     return result;

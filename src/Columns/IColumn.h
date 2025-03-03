@@ -1,9 +1,9 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <base/StringRef.h>
 #include <Common/COW.h>
-#include <Common/Exception.h>
 #include <Common/PODArray_fwd.h>
 #include <Common/typeid_cast.h>
 
@@ -22,18 +22,15 @@ namespace llvm
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_GET_SIZE_OF_FIELD;
-    extern const int NOT_IMPLEMENTED;
-    extern const int BAD_COLLATION;
-}
-
 class Arena;
 class ColumnGathererStream;
 class Field;
 class WeakHash32;
 class ColumnConst;
+class IDataType;
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using IColumnPermutation = PaddedPODArray<size_t>;
+using IColumnFilter = PaddedPODArray<UInt8>;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
@@ -47,7 +44,36 @@ struct EqualRange
     size_t size() const { return to - from; }
 };
 
-using EqualRanges = std::vector<EqualRange>;
+/// A checkpoint that contains size of column and all its subcolumns.
+/// It can be used to rollback column to the previous state, for example
+/// after failed parsing when column may be in inconsistent state.
+struct ColumnCheckpoint
+{
+    size_t size;
+
+    explicit ColumnCheckpoint(size_t size_) : size(size_) {}
+    virtual ~ColumnCheckpoint() = default;
+};
+
+struct ColumnCheckpointWithNested : public ColumnCheckpoint
+{
+    ColumnCheckpointWithNested(size_t size_, ColumnCheckpointPtr nested_)
+        : ColumnCheckpoint(size_), nested(std::move(nested_))
+    {
+    }
+
+    ColumnCheckpointPtr nested;
+};
+
+struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
+{
+    ColumnCheckpointWithMultipleNested(size_t size_, ColumnCheckpoints nested_)
+        : ColumnCheckpoint(size_), nested(std::move(nested_))
+    {
+    }
+
+    ColumnCheckpoints nested;
+};
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -95,7 +121,7 @@ public:
     /// Creates column with the same type and specified size.
     /// If size is less than current size, then data is cut.
     /// If size is greater, then default values are appended.
-    [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cloneResized() column {}", getName()); }
+    [[nodiscard]] virtual MutablePtr cloneResized(size_t /*size*/) const;
 
     /// Returns number of values in column.
     [[nodiscard]] virtual size_t size() const = 0;
@@ -110,6 +136,8 @@ public:
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
 
+    virtual std::pair<String, DataTypePtr> getValueNameAndType(size_t) const = 0;
+
     /// If possible, returns pointer to memory chunk which contains n-th element (if it isn't possible, throws an exception)
     /// Is used to optimize some computations (in aggregation, for example).
     [[nodiscard]] virtual StringRef getDataAt(size_t n) const = 0;
@@ -117,48 +145,30 @@ public:
     /// If column stores integers, it returns n-th element transformed to UInt64 using static_cast.
     /// If column stores floating point numbers, bits of n-th elements are copied to lower bits of UInt64, the remaining bits are zeros.
     /// Is used to optimize some computations (in aggregation, for example).
-    [[nodiscard]] virtual UInt64 get64(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method get64 is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual UInt64 get64(size_t /*n*/) const;
 
-    /// If column stores native numeric type, it returns n-th element casted to Float64
+    /// If column stores native numeric type, it returns n-th element cast to Float64
     /// Is used in regression methods to cast each features into uniform type
-    [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat64 is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual Float64 getFloat64(size_t /*n*/) const;
 
-    [[nodiscard]] virtual Float32 getFloat32(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getFloat32 is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual Float32 getFloat32(size_t /*n*/) const;
 
-    /** If column is numeric, return value of n-th element, casted to UInt64.
+    /** If column is numeric, return value of n-th element, cast to UInt64.
       * For NULL values of Nullable column it is allowed to return arbitrary value.
       * Otherwise throw an exception.
       */
-    [[nodiscard]] virtual UInt64 getUInt(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getUInt is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual UInt64 getUInt(size_t /*n*/) const;
 
-    [[nodiscard]] virtual Int64 getInt(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getInt is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual Int64 getInt(size_t /*n*/) const;
 
     [[nodiscard]] virtual bool isDefaultAt(size_t n) const = 0;
     [[nodiscard]] virtual bool isNullAt(size_t /*n*/) const { return false; }
 
-    /** If column is numeric, return value of n-th element, casted to bool.
+    /** If column is numeric, return value of n-th element, cast to bool.
       * For NULL values of Nullable column returns false.
       * Otherwise throw an exception.
       */
-    [[nodiscard]] virtual bool getBool(size_t /*n*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getBool is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual bool getBool(size_t /*n*/) const;
 
     /// Removes all elements outside of specified range.
     /// Is used in LIMIT operation, for example.
@@ -254,38 +264,23 @@ public:
       *  For example, to obtain unambiguous representation of Array of strings, strings data should be interleaved with their sizes.
       * Parameter begin should be used with Arena::allocContinue.
       */
-    virtual StringRef serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArena is not supported for {}", getName());
-    }
+    virtual StringRef serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const;
 
     /// Same as above but serialize into already allocated continuous memory.
     /// Return pointer to the end of the serialization data.
-    virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemory is not supported for {}", getName());
-    }
+    virtual char * serializeValueIntoMemory(size_t /* n */, char * /* memory */) const;
 
     /// Nullable variant to avoid calling virtualized method inside ColumnNullable.
     virtual StringRef
-    serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoArenaWithNull is not supported for {}", getName());
-    }
+    serializeValueIntoArenaWithNull(size_t /* n */, Arena & /* arena */, char const *& /* begin */, const UInt8 * /* is_null */) const;
 
-    virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeValueIntoMemoryWithNull is not supported for {}", getName());
-    }
+    virtual char * serializeValueIntoMemoryWithNull(size_t /* n */, char * /* memory */, const UInt8 * /* is_null */) const;
 
     /// Calculate all the sizes of serialized data in column, then added to `sizes`.
     /// If `is_null` is not nullptr, also take null bit into account.
     /// This is currently used to facilitate the allocation of memory for an entire continuous row
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
-    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
-    }
+    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.
     /// Returns pointer to the position after the read data.
@@ -314,7 +309,7 @@ public:
       * if 0, then don't makes reserve(),
       * otherwise (i.e. < 0), makes reserve() using size of source column.
       */
-    using Filter = PaddedPODArray<UInt8>;
+    using Filter = IColumnFilter;
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /** Expand column by mask inplace. After expanding column will
@@ -327,7 +322,7 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
-    using Permutation = PaddedPODArray<size_t>;
+    using Permutation = IColumnPermutation;
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
@@ -359,20 +354,13 @@ public:
 
     [[nodiscard]] virtual bool isComparatorCompilable() const { return false; }
 
-    [[nodiscard]] virtual llvm::Value * compileComparator(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method compileComparator is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual llvm::Value * compileComparator(
+        llvm::IRBuilderBase & /*builder*/, llvm::Value * /*lhs*/, llvm::Value * /*rhs*/, llvm::Value * /*nan_direction_hint*/) const;
 
 #endif
 
     /// Equivalent to compareAt, but collator is used to compare values.
-    [[nodiscard]] virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const
-    {
-        throw Exception(ErrorCodes::BAD_COLLATION,
-                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-                        "or for Array or Tuple, containing it.");
-    }
+    [[nodiscard]] virtual int compareAtWithCollation(size_t, size_t, const IColumn &, int, const Collator &) const;
 
     /// Compare the whole column with single value from rhs column.
     /// If row_indexes is nullptr, it's ignored. Otherwise, it is a set of rows to compare.
@@ -422,21 +410,22 @@ public:
     /** Equivalent to getPermutation and updatePermutation but collator is used to compare values.
       * Supported for String, LowCardinality(String), Nullable(String) and for Array and Tuple, containing them.
       */
-    virtual void getPermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
-                            size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/) const
-    {
-        throw Exception(ErrorCodes::BAD_COLLATION,
-                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-                        "or for Array or Tuple, containing them.");
-    }
+    virtual void getPermutationWithCollation(
+        const Collator & /*collator*/,
+        PermutationSortDirection /*direction*/,
+        PermutationSortStability /*stability*/,
+        size_t /*limit*/,
+        int /*nan_direction_hint*/,
+        Permutation & /*res*/) const;
 
-    virtual void updatePermutationWithCollation(const Collator & /*collator*/, PermutationSortDirection /*direction*/, PermutationSortStability /*stability*/,
-                            size_t /*limit*/, int /*nan_direction_hint*/, Permutation & /*res*/, EqualRanges & /*equal_ranges*/) const
-    {
-        throw Exception(ErrorCodes::BAD_COLLATION,
-                        "Collations could be specified only for String, LowCardinality(String), Nullable(String) "
-                        "or for Array or Tuple, containing them.");
-    }
+    virtual void updatePermutationWithCollation(
+        const Collator & /*collator*/,
+        PermutationSortDirection /*direction*/,
+        PermutationSortStability /*stability*/,
+        size_t /*limit*/,
+        int /*nan_direction_hint*/,
+        Permutation & /*res*/,
+        EqualRanges & /*equal_ranges*/) const;
 
     /// Estimate the cardinality (number of unique values) of the values in 'equal_range' after permutation, formally: |{ column[permutation[r]] : r in equal_range }|.
     virtual size_t estimateCardinalityInPermutedRange(const Permutation & permutation, const EqualRange & equal_range) const;
@@ -475,6 +464,18 @@ public:
     /// It affects performance only (not correctness).
     virtual void reserve(size_t /*n*/) {}
 
+    /// Returns the number of elements allocated in reserve.
+    virtual size_t capacity() const { return size(); }
+
+    /// Reserve memory before squashing all specified source columns into this column.
+    virtual void prepareForSquashing(const std::vector<Ptr> & source_columns)
+    {
+        size_t new_size = size();
+        for (const auto & source_column : source_columns)
+            new_size += source_column->size();
+        reserve(new_size);
+    }
+
     /// Requests the removal of unused capacity.
     /// It is a non-binding request to reduce the capacity of the underlying container to its size.
     virtual void shrinkToFit() {}
@@ -497,33 +498,41 @@ public:
     /// The operation is slow and performed only for debug builds.
     virtual void protect() {}
 
+    /// Returns checkpoint of current state of column.
+    virtual ColumnCheckpointPtr getCheckpoint() const { return std::make_shared<ColumnCheckpoint>(size()); }
+
+    /// Updates the checkpoint with current state. It is used to avoid extra allocations in 'getCheckpoint'.
+    virtual void updateCheckpoint(ColumnCheckpoint & checkpoint) const { checkpoint.size = size(); }
+
+    /// Rollbacks column to the checkpoint.
+    /// Unlike 'popBack' this method should work correctly even if column has invalid state.
+    /// Sizes of columns in checkpoint must be less or equal than current size.
+    virtual void rollback(const ColumnCheckpoint & checkpoint) { popBack(size() - checkpoint.size); }
+
     /// If the column contains subcolumns (such as Array, Nullable, etc), do callback on them.
     /// Shallow: doesn't do recursive calls; don't do call for itself.
 
     using MutableColumnCallback = std::function<void(WrappedPtr &)>;
-    virtual void forEachSubcolumn(MutableColumnCallback) {}
+    virtual void forEachMutableSubcolumn(MutableColumnCallback) {}
 
-    /// Default implementation calls the mutable overload using const_cast.
+    /// Note: If you implement forEachSubcolumn(Recursively), you must also implement forEachMutableSubcolumn(Recursively), and vice versa
     using ColumnCallback = std::function<void(const WrappedPtr &)>;
-    virtual void forEachSubcolumn(ColumnCallback) const;
+    virtual void forEachSubcolumn(ColumnCallback) const {}
 
     /// Similar to forEachSubcolumn but it also do recursive calls.
     /// In recursive calls it's prohibited to replace pointers
     /// to subcolumns, so we use another callback function.
 
     using RecursiveMutableColumnCallback = std::function<void(IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveMutableColumnCallback) {}
+    virtual void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback) {}
 
     /// Default implementation calls the mutable overload using const_cast.
     using RecursiveColumnCallback = std::function<void(const IColumn &)>;
-    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const;
+    virtual void forEachSubcolumnRecursively(RecursiveColumnCallback) const {}
 
     /// Columns have equal structure.
     /// If true - you can use "compareAt", "insertFrom", etc. methods.
-    [[nodiscard]] virtual bool structureEquals(const IColumn &) const
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method structureEquals is not supported for {}", getName());
-    }
+    [[nodiscard]] virtual bool structureEquals(const IColumn &) const;
 
     /// Returns ratio of values in column, that are equal to default value of column.
     /// Checks only @sample_ratio ratio of rows.
@@ -544,7 +553,8 @@ public:
 
     /// Compress column in memory to some representation that allows to decompress it back.
     /// Return itself if compression is not applicable for this column type.
-    [[nodiscard]] virtual Ptr compress() const
+    /// The flag `force_compression` indicates that compression should be performed even if it's not efficient (if only compression factor < 1).
+    [[nodiscard]] virtual Ptr compress([[maybe_unused]] bool force_compression) const
     {
         /// No compression by default.
         return getPtr();
@@ -572,12 +582,15 @@ public:
     {
         MutablePtr res = ptr->shallowMutate(); /// Now use_count is 2.
         ptr.reset(); /// Reset use_count to 1.
-        res->forEachSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
+        res->forEachMutableSubcolumn([](WrappedPtr & subcolumn) { subcolumn = IColumn::mutate(std::move(subcolumn).detach()); });
         return res;
     }
 
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicStructure() const { return false; }
+
+    /// For columns with dynamic subcolumns checks if columns have equal dynamic structure.
+    [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
     /// For columns with dynamic subcolumns this method takes dynamic structure from source columns
     /// and creates proper resulting dynamic structure in advance for merge of these source columns.
     virtual void takeDynamicStructureFromSourceColumns(const std::vector<Ptr> & /*source_columns*/) {}
@@ -622,10 +635,10 @@ public:
     [[nodiscard]] virtual bool isFixedAndContiguous() const { return false; }
 
     /// If isFixedAndContiguous, returns the underlying data array, otherwise throws an exception.
-    [[nodiscard]] virtual std::string_view getRawData() const { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Column {} is not a contiguous block of memory", getName()); }
+    [[nodiscard]] virtual std::string_view getRawData() const;
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
-    [[nodiscard]] virtual size_t sizeOfValueIfFixed() const { throw Exception(ErrorCodes::CANNOT_GET_SIZE_OF_FIELD, "Values of column {} are not fixed size.", getName()); }
+    [[nodiscard]] virtual size_t sizeOfValueIfFixed() const;
 
     /// Column is ColumnVector of numbers or ColumnConst of it. Note that Nullable columns are not numeric.
     [[nodiscard]] virtual bool isNumeric() const { return false; }
@@ -691,13 +704,6 @@ private:
 #endif
 };
 
-using ColumnPtr = IColumn::Ptr;
-using MutableColumnPtr = IColumn::MutablePtr;
-using Columns = std::vector<ColumnPtr>;
-using MutableColumns = std::vector<MutableColumnPtr>;
-
-using ColumnRawPtrs = std::vector<const IColumn *>;
-
 
 template <typename ... Args>
 struct IsMutableColumns;
@@ -755,6 +761,15 @@ bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 template <typename Derived, typename Parent = IColumn>
 class IColumnHelper : public Parent
 {
+private:
+    using Self = IColumnHelper<Derived, Parent>;
+
+    friend Derived;
+    friend class COWHelper<Self, Derived>;
+
+    IColumnHelper() = default;
+    IColumnHelper(const IColumnHelper &) = default;
+
     /// Devirtualize insertFrom.
     MutableColumns scatter(IColumn::ColumnIndex num_columns, const IColumn::Selector & selector) const override;
 

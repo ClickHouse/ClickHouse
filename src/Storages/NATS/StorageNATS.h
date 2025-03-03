@@ -3,10 +3,10 @@
 #include <atomic>
 #include <mutex>
 #include <uv.h>
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/NATS/NATSConnection.h>
-#include <Storages/NATS/NATSSettings.h>
 #include <Poco/Semaphore.h>
 #include <Common/thread_local_rng.h>
 
@@ -15,6 +15,7 @@ namespace DB
 
 class NATSConsumer;
 using NATSConsumerPtr = std::shared_ptr<NATSConsumer>;
+struct NATSSettings;
 
 class StorageNATS final : public IStorage, WithContext
 {
@@ -26,6 +27,8 @@ public:
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode);
+
+    ~StorageNATS() override;
 
     std::string getName() const override { return "NATS"; }
 
@@ -66,7 +69,7 @@ public:
     void incrementReader();
     void decrementReader();
 
-    void startStreaming() { if (!mv_attached) { streaming_task->activateAndSchedule(); } }
+    void startStreaming();
 
 private:
     ContextMutablePtr nats_context;
@@ -94,9 +97,9 @@ private:
 
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
-    BackgroundSchedulePool::TaskHolder streaming_task;
-    BackgroundSchedulePool::TaskHolder looping_task;
-    BackgroundSchedulePool::TaskHolder connection_task;
+    BackgroundSchedulePoolTaskHolder streaming_task;
+    BackgroundSchedulePoolTaskHolder looping_task;
+    BackgroundSchedulePoolTaskHolder connection_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
@@ -141,7 +144,7 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop);
+    void deactivateTask(BackgroundSchedulePoolTaskHolder & task, bool stop_loop);
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);

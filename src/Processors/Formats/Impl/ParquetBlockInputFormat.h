@@ -7,7 +7,13 @@
 #include <Formats/FormatSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-namespace parquet { class FileMetaData; }
+#include <queue>
+
+namespace parquet
+{
+class ParquetFileReader;
+class FileMetaData;
+}
 namespace parquet::arrow { class FileReader; }
 namespace arrow { class Buffer; class RecordBatchReader;}
 namespace arrow::io { class RandomAccessFile; }
@@ -53,6 +59,7 @@ public:
         const Block & header,
         const FormatSettings & format_settings,
         size_t max_decoding_threads,
+        size_t max_io_threads,
         size_t min_bytes_for_seek);
 
     ~ParquetBlockInputFormat() override;
@@ -61,14 +68,14 @@ public:
 
     String getName() const override { return "ParquetBlockInputFormat"; }
 
-    const BlockMissingValues & getMissingValues() const override;
+    const BlockMissingValues * getMissingValues() const override;
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
 private:
     Chunk read() override;
 
-    void onCancel() override
+    void onCancel() noexcept override
     {
         is_stopped = 1;
     }
@@ -82,6 +89,8 @@ private:
     void scheduleRowGroup(size_t row_group_batch_idx);
 
     void threadFunction(size_t row_group_batch_idx);
+
+    inline bool supportPrefetch() const;
 
     // Data layout in the file:
     //
@@ -168,6 +177,8 @@ private:
     //  * The max_pending_chunks_per_row_group limit could be based on actual memory usage too.
     //    Useful for preserve_order.
 
+    class RowGroupPrefetchIterator;
+
     struct RowGroupBatchState
     {
         // Transitions:
@@ -207,6 +218,7 @@ private:
 
         size_t total_rows = 0;
         size_t total_bytes_compressed = 0;
+        std::vector<size_t> row_group_sizes;
 
         size_t adaptive_chunk_size = 0;
 
@@ -217,6 +229,7 @@ private:
         // otherwise, only native_record_reader is not used.
         std::shared_ptr<ParquetRecordReader> native_record_reader;
         std::unique_ptr<parquet::arrow::FileReader> file_reader;
+        std::unique_ptr<RowGroupPrefetchIterator> prefetch_iterator;
         std::shared_ptr<arrow::RecordBatchReader> record_batch_reader;
         std::unique_ptr<ArrowColumnToCHColumn> arrow_column_to_ch_column;
     };
@@ -224,6 +237,8 @@ private:
     // Chunk ready to be delivered by read().
     struct PendingChunk
     {
+        explicit PendingChunk(size_t num_columns) : block_missing_values(num_columns) {}
+
         Chunk chunk;
         BlockMissingValues block_missing_values;
         size_t chunk_idx; // within row group
@@ -247,9 +262,43 @@ private:
         };
     };
 
+    // The trigger for row group prefetching improves the overall parsing response time
+    // by hiding the IO overhead of the next row group in the processing time of the previous row group.
+    // +-------------------------------------------------------------------------------------------------------------------+
+    // |io       +-----------+     +-----------+     +-----------+      +-----------+      +-----------+                   |
+    // |         |fetch rg 0 |---->|fetch rg 1 |---->|fetch rg 2 |----->|fetch rg 3 |----->|fetch rg 4 |                   |
+    // |         +-----------+     +-----------+     +-----------+      +-----------+      +-----------+                   |
+    // +-------------------------------------------------------------------------------------------------------------------+
+    // +-------------------------------------------------------------------------------------------------------------------+
+    // |compute                    +-----------+     +-----------+     +-----------+      +-----------+      +-----------+ |
+    // |                           |parse rg 0 |---->|parse rg 1 |---->|parse rg 2 |----->|parse rg 3 |----->|parse rg 4 | |
+    // |                           +-----------+     +-----------+     +-----------+      +-----------+      +-----------+ |
+    // +-------------------------------------------------------------------------------------------------------------------+
+
+    class RowGroupPrefetchIterator
+    {
+    public:
+        RowGroupPrefetchIterator(
+            parquet::ParquetFileReader* file_reader_, RowGroupBatchState & row_group_batch_, const std::vector<int> & column_indices_, size_t min_bytes_for_seek_)
+            : file_reader(file_reader_), row_group_batch(row_group_batch_), column_indices(column_indices_), min_bytes_for_seek(min_bytes_for_seek_)
+        {
+            prefetchNextRowGroups();
+        }
+        std::shared_ptr<arrow::RecordBatchReader> nextRowGroupReader();
+    private:
+        void prefetchNextRowGroups();
+        size_t next_row_group_idx= 0;
+        std::vector<int> prefetched_row_groups;
+        parquet::ParquetFileReader * file_reader;
+        RowGroupBatchState& row_group_batch;
+        const std::vector<int>& column_indices;
+        const size_t min_bytes_for_seek;
+    };
+
     const FormatSettings format_settings;
     const std::unordered_set<int> & skip_row_groups;
     size_t max_decoding_threads;
+    size_t max_io_threads;
     size_t min_bytes_for_seek;
     const size_t max_pending_chunks_per_row_group_batch = 2;
 
@@ -281,6 +330,7 @@ private:
     // These are only used when max_decoding_threads > 1.
     size_t row_group_batches_started = 0;
     std::unique_ptr<ThreadPool> pool;
+    std::shared_ptr<ThreadPool> io_pool;
 
     BlockMissingValues previous_block_missing_values;
     size_t previous_approx_bytes_read_for_chunk = 0;

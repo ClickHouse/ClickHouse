@@ -3,8 +3,6 @@
 #include <Common/Scheduler/ISchedulerConstraint.h>
 
 #include <chrono>
-#include <mutex>
-#include <limits>
 #include <utility>
 
 
@@ -15,7 +13,7 @@ namespace DB
  * Limited throughput constraint. Blocks if token-bucket constraint is violated:
  * i.e. more than `max_burst + duration * max_speed` cost units (aka tokens) dequeued from this node in last `duration` seconds.
  */
-class ThrottlerConstraint : public ISchedulerConstraint
+class ThrottlerConstraint final : public ISchedulerConstraint
 {
 public:
     static constexpr double default_burst_seconds = 1.0;
@@ -28,10 +26,28 @@ public:
         , tokens(max_burst)
     {}
 
+    ThrottlerConstraint(EventQueue * event_queue_, const SchedulerNodeInfo & info_, double max_speed_, double max_burst_)
+        : ISchedulerConstraint(event_queue_, info_)
+        , max_speed(max_speed_)
+        , max_burst(max_burst_)
+        , last_update(event_queue_->now())
+        , tokens(max_burst)
+    {}
+
     ~ThrottlerConstraint() override
     {
         // We should cancel event on destruction to avoid dangling references from event queue
         event_queue->cancelPostponed(postponed);
+
+        // We need to clear `parent` in child to avoid dangling reference
+        if (child)
+            removeChild(child.get());
+    }
+
+    const String & getTypeName() const override
+    {
+        static String type_name("bandwidth_limit");
+        return type_name;
     }
 
     bool equals(ISchedulerNode * other) override
@@ -68,8 +84,7 @@ public:
     {
         if (child->basename == child_name)
             return child.get();
-        else
-            return nullptr;
+        return nullptr;
     }
 
     std::pair<ResourceRequest *, bool> dequeueRequest() override
@@ -79,27 +94,19 @@ public:
         if (!request)
             return {nullptr, false};
 
-        // Request has reference to the first (closest to leaf) `constraint`, which can have `parent_constraint`.
-        // The former is initialized here dynamically and the latter is initialized once during hierarchy construction.
-        if (!request->constraint)
-            request->constraint = this;
+        // We don't do `request->addConstraint(this)` because `finishRequest()` is no-op
 
         updateBucket(request->cost);
 
         child_active = child_now_active;
         if (!active())
             busy_periods++;
-        dequeued_requests++;
-        dequeued_cost += request->cost;
+        incrementDequeued(request->cost);
         return {request, active()};
     }
 
-    void finishRequest(ResourceRequest * request) override
+    void finishRequest(ResourceRequest *) override
     {
-        // Recursive traverse of parent flow controls in reverse order
-        if (parent_constraint)
-            parent_constraint->finishRequest(request);
-
         // NOTE: Token-bucket constraint does not require any action when consumption ends
     }
 
@@ -108,6 +115,21 @@ public:
         if (child_ == child.get())
             if (!std::exchange(child_active, true) && satisfied() && parent)
                 parent->activateChild(this);
+    }
+
+    /// Update limits.
+    /// Should be called from the scheduler thread because it could lead to activation
+    void updateConstraints(double new_max_speed, double new_max_burst)
+    {
+        event_queue->cancelPostponed(postponed);
+        postponed = EventQueue::not_postponed;
+        bool was_active = active();
+        updateBucket(0, true); // To apply previous params for duration since `last_update`
+        max_speed = new_max_speed;
+        max_burst = new_max_burst;
+        updateBucket(0, false); // To postpone (if needed) using new params
+        if (!was_active && active() && parent)
+            parent->activateChild(this);
     }
 
     bool isActive() override
@@ -152,7 +174,7 @@ private:
             parent->activateChild(this);
     }
 
-    void updateBucket(ResourceCost use = 0)
+    void updateBucket(ResourceCost use = 0, bool do_not_postpone = false)
     {
         auto now = event_queue->now();
         if (max_speed > 0.0)
@@ -162,7 +184,7 @@ private:
             tokens -= use; // This is done outside min() to avoid passing large requests w/o token consumption after long idle period
 
             // Postpone activation until there is positive amount of tokens
-            if (tokens < 0.0)
+            if (!do_not_postpone && tokens < 0.0)
             {
                 auto delay_ns = std::chrono::nanoseconds(static_cast<Int64>(-tokens / max_speed * 1e9));
                 if (postponed == EventQueue::not_postponed)
@@ -186,8 +208,8 @@ private:
         return satisfied() && child_active;
     }
 
-    const double max_speed{0}; /// in tokens per second
-    const double max_burst{0}; /// in tokens
+    double max_speed{0}; /// in tokens per second
+    double max_burst{0}; /// in tokens
 
     EventQueue::TimePoint last_update;
     UInt64 postponed = EventQueue::not_postponed;

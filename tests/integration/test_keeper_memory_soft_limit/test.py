@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 import random
 import string
+
 import pytest
-from helpers.cluster import ClickHouseCluster
-from helpers import keeper_utils
 from kazoo.client import KazooClient, KazooState
 from kazoo.exceptions import ConnectionLoss
+
+from helpers import keeper_utils
+from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__, keeper_config_dir="configs/")
 

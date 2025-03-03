@@ -1,0 +1,16 @@
+<clickhouse>
+    <named_collections>
+        <mongo1>
+            <user>root</user>
+            <password>clickhouse</password>
+            <host>mongo1</host>
+            <port>27017</port>
+            <database>test</database>
+            <collection>simple_table</collection>
+        </mongo1>
+        <mongo1_uri>
+            <uri>mongodb://root:clickhouse@mongo1:27017/test</uri>
+            <collection>simple_table_uri</collection>
+        </mongo1_uri>
+    </named_collections>
+</clickhouse>

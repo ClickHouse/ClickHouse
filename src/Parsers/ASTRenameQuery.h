@@ -141,67 +141,80 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Rename; }
 
+    void addElement(const String & from_db, const String & from_table, const String & to_db, const String & to_table)
+    {
+        auto identifier = [&](const String & name) -> ASTPtr
+        {
+            if (name.empty())
+                return nullptr;
+            ASTPtr ast = std::make_shared<ASTIdentifier>(name);
+            children.push_back(ast);
+            return ast;
+        };
+        elements.push_back(Element {.from = Table {.database = identifier(from_db), .table = identifier(from_table)}, .to = Table {.database = identifier(to_db), .table = identifier(to_table)}});
+    }
+
 protected:
-    void formatQueryImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
+    void formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override
     {
         if (database)
         {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << "RENAME DATABASE " << (settings.hilite ? hilite_none : "");
+            ostr << (settings.hilite ? hilite_keyword : "") << "RENAME DATABASE " << (settings.hilite ? hilite_none : "");
 
             if (elements.at(0).if_exists)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
+                ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
 
-            elements.at(0).from.database->formatImpl(settings, state, frame);
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
-            elements.at(0).to.database->formatImpl(settings, state, frame);
-            formatOnCluster(settings);
+            elements.at(0).from.database->format(ostr, settings, state, frame);
+            ostr << (settings.hilite ? hilite_keyword : "") << " TO " << (settings.hilite ? hilite_none : "");
+            elements.at(0).to.database->format(ostr, settings, state, frame);
+            formatOnCluster(ostr, settings);
             return;
         }
 
-        settings.ostr << (settings.hilite ? hilite_keyword : "");
+        ostr << (settings.hilite ? hilite_keyword : "");
         if (exchange && dictionary)
-            settings.ostr << "EXCHANGE DICTIONARIES ";
+            ostr << "EXCHANGE DICTIONARIES ";
         else if (exchange)
-            settings.ostr << "EXCHANGE TABLES ";
+            ostr << "EXCHANGE TABLES ";
         else if (dictionary)
-            settings.ostr << "RENAME DICTIONARY ";
+            ostr << "RENAME DICTIONARY ";
         else
-            settings.ostr << "RENAME TABLE ";
+            ostr << "RENAME TABLE ";
 
-        settings.ostr << (settings.hilite ? hilite_none : "");
+        ostr << (settings.hilite ? hilite_none : "");
 
         for (auto it = elements.cbegin(); it != elements.cend(); ++it)
         {
             if (it != elements.cbegin())
-                settings.ostr << ", ";
+                ostr << ", ";
 
             if (it->if_exists)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
+                ostr << (settings.hilite ? hilite_keyword : "") << "IF EXISTS " << (settings.hilite ? hilite_none : "");
 
 
             if (it->from.database)
             {
-                it->from.database->formatImpl(settings, state, frame);
-                settings.ostr << '.';
+                it->from.database->format(ostr, settings, state, frame);
+                ostr << '.';
             }
 
             chassert(it->from.table);
-            it->from.table->formatImpl(settings, state, frame);
+            it->from.table->format(ostr, settings, state, frame);
 
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "");
+            ostr << (settings.hilite ? hilite_keyword : "") << (exchange ? " AND " : " TO ") << (settings.hilite ? hilite_none : "");
 
             if (it->to.database)
             {
-                it->to.database->formatImpl(settings, state, frame);
-                settings.ostr << '.';
+                it->to.database->format(ostr, settings, state, frame);
+                ostr << '.';
             }
 
             chassert(it->to.table);
-            it->to.table->formatImpl(settings, state, frame);
+            it->to.table->format(ostr, settings, state, frame);
 
         }
 
-        formatOnCluster(settings);
+        formatOnCluster(ostr, settings);
     }
 
     Elements elements;

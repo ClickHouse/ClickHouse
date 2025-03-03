@@ -78,8 +78,7 @@ bool TestHint::needRetry(const std::unique_ptr<Exception> & server_exception, si
 
     if (retry_until)
         return !hasExpectedServerError(error);  /// retry until we get the expected error
-    else
-        return hasExpectedServerError(error);   /// retry while we have the expected error
+    return hasExpectedServerError(error); /// retry while we have the expected error
 }
 
 void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
@@ -89,6 +88,7 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
     std::unordered_set<std::string_view> command_errors{
         "serverError",
         "clientError",
+        "error",
     };
 
     for (Token token = comment_lexer.nextToken(); !token.isEnd(); token = comment_lexer.nextToken())
@@ -174,9 +174,18 @@ void TestHint::parse(Lexer & comment_lexer, bool is_leading_hint)
             }
 
             if (item == "serverError")
+            {
                 server_errors = error_codes;
-            else
+            }
+            else if (item == "clientError")
+            {
                 client_errors = error_codes;
+            }
+            else
+            {
+                server_errors = error_codes;
+                client_errors = error_codes;
+            }
             break;
         }
     }

@@ -337,6 +337,24 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 
 设置为«NULL»的元素将作为普通的元素值处理。
 
+## indexOfAssumeSorted(arr, x)
+
+返回数组中第一个’x’元素的索引（从1开始），如果’x’元素不存在在数组中，则返回0.
+该函数应用于不按降序排序的数组，因为二进制搜索用于搜索。
+如果内部数组类型为空，则将使用’indexOf’函数。
+
+示例:
+
+``` sql
+SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
+```
+
+``` text
+┌─indexOf([1, 3, 3, 3, 4, 4, 5], NULL)─┐
+│                                 5    │
+└──────────────────────────────────--─-┘
+```
+
 ## arrayCount(\[func,\] arr1, ...) {#array-count}
 
 `func`将arr数组作为参数，其返回结果为非零值的数量。如果未指定“func”，则返回数组中非零元素的数量。
@@ -845,13 +863,13 @@ arrayDifference(array)
 
 **参数**
 
--   `array` –类型为[数组](https://clickhouse.com/docs/en/data_types/array/)。
+-   `array` –类型为[数组](/sql-reference/data-types/array)。
 
 **返回值**
 
 返回相邻元素之间的差异数组。
 
-类型: [UInt\*](https://clickhouse.com/docs/en/data_types/int_uint/#uint-ranges), [Int\*](https://clickhouse.com/docs/en/data_types/int_uint/#int-ranges), [Float\*](https://clickhouse.com/docs/en/data_types/float/)。
+类型: [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float)。
 
 **示例**
 
@@ -896,7 +914,7 @@ arrayDistinct(array)
 
 **参数**
 
--   `array` –类型为[数组](https://clickhouse.com/docs/en/data_types/array/)。
+-   `array` –类型为[数组](/sql-reference/data-types/array)。
 
 **返回值**
 

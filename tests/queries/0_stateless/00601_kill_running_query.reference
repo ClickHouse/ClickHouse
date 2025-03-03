@@ -1,1 +1,1 @@
-waiting	test_00601_default	default	SELECT sum(ignore(*)) FROM (SELECT number % 1000 AS k, groupArray(number) FROM numbers(50000000) GROUP BY k)
+waiting	test_00601_default	default	SELECT sum(ignore(*)) FROM (SELECT number % 1000 AS k, groupArray(number) FROM numbers(50000000) GROUP BY k) SETTINGS max_rows_to_read = 0

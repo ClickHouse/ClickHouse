@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/graphitemergetree
+slug: /engines/table-engines/mergetree-family/graphitemergetree
 sidebar_position: 90
 sidebar_label:  GraphiteMergeTree
+title: "GraphiteMergeTree"
+description: "Designed for thinning and aggregating/averaging (rollup) Graphite data."
 ---
 
 # GraphiteMergeTree
@@ -29,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 A table for the Graphite data should have the following columns for the following data:
 
@@ -79,7 +81,7 @@ All of the parameters excepting `config_section` have the same meaning as in `Me
 
 ## Rollup Configuration {#rollup-configuration}
 
-The settings for rollup are defined by the [graphite_rollup](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-graphite) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
+The settings for rollup are defined by the [graphite_rollup](../../../operations/server-configuration-parameters/settings.md#graphite) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
 
 Rollup configuration structure:
 
@@ -88,17 +90,17 @@ Rollup configuration structure:
 
 ### Required Columns {#required-columns}
 
-#### path_column_name
+#### path_column_name {#path_column_name}
 
 `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
 
-#### time_column_name
+#### time_column_name {#time_column_name}
 `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
 
-#### value_column_name
+#### value_column_name {#value_column_name}
 `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
 
-#### version_column_name
+#### version_column_name {#version_column_name}
 `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
 ### Patterns {#patterns}

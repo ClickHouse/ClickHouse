@@ -1,7 +1,7 @@
 #include <Analyzer/UnionNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
-#include <Common/FieldVisitorToString.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -35,6 +35,7 @@ namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
@@ -48,6 +49,26 @@ UnionNode::UnionNode(ContextMutablePtr context_, SelectUnionMode union_mode_)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "UNION mode {} must be normalized", toString(union_mode));
 
     children[queries_child_index] = std::make_shared<ListNode>();
+}
+
+bool UnionNode::isResolved() const
+{
+    for (const auto & query_node : getQueries().getNodes())
+    {
+        bool is_resolved = false;
+
+        if (auto * query_node_typed = query_node->as<QueryNode>())
+            is_resolved = query_node_typed->isResolved();
+        else if (auto * union_node_typed = query_node->as<UnionNode>())
+            is_resolved = union_node_typed->isResolved();
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected query tree node type in UNION node");
+
+        if (!is_resolved)
+            return false;
+    }
+
+    return true;
 }
 
 NamesAndTypes UnionNode::computeProjectionColumns() const
@@ -92,32 +113,6 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
     }
 
     return result_columns;
-}
-
-void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
-{
-    if (recursive_cte_table)
-        return;
-
-    auto projection_columns = computeProjectionColumns();
-    size_t projection_columns_size = projection_columns.size();
-    std::unordered_set<size_t> used_projection_column_indexes;
-
-    for (size_t i = 0; i < projection_columns_size; ++i)
-    {
-        const auto & projection_column = projection_columns[i];
-        if (used_projection_columns.contains(projection_column.name))
-            used_projection_column_indexes.insert(i);
-    }
-
-    auto & query_nodes = getQueries().getNodes();
-    for (auto & query_node : query_nodes)
-    {
-        if (auto * query_node_typed = query_node->as<QueryNode>())
-            query_node_typed->removeUnusedProjectionColumns(used_projection_column_indexes);
-        else if (auto * union_node_typed = query_node->as<UnionNode>())
-            union_node_typed->removeUnusedProjectionColumns(used_projection_column_indexes);
-    }
 }
 
 void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)
@@ -170,7 +165,7 @@ bool UnionNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     if (recursive_cte_table && rhs_typed.recursive_cte_table &&
         recursive_cte_table->getStorageID() != rhs_typed.recursive_cte_table->getStorageID())
         return false;
-    else if ((recursive_cte_table && !rhs_typed.recursive_cte_table) || (!recursive_cte_table && rhs_typed.recursive_cte_table))
+    if ((recursive_cte_table && !rhs_typed.recursive_cte_table) || (!recursive_cte_table && rhs_typed.recursive_cte_table))
         return false;
 
     return is_subquery == rhs_typed.is_subquery && is_cte == rhs_typed.is_cte && is_recursive_cte == rhs_typed.is_recursive_cte

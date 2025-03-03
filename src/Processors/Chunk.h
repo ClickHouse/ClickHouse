@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
 #include <Common/CollectionOfDerived.h>
-#include <Columns/IColumn.h>
 
 #include <memory>
 
@@ -22,13 +22,16 @@ public:
 };
 
 
-template<class Derived>
+template <typename Derived>
 class ChunkInfoCloneable : public ChunkInfo
 {
-public:
+    friend Derived;
+
+private:
     ChunkInfoCloneable() = default;
     ChunkInfoCloneable(const ChunkInfoCloneable & other) = default;
 
+public:
     Ptr clone() const override
     {
         return std::static_pointer_cast<ChunkInfo>(std::make_shared<Derived>(*static_cast<const Derived*>(this)));
@@ -152,28 +155,6 @@ public:
 };
 
 using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
-
-/// Extension to support delayed defaults. AddingDefaultsProcessor uses it to replace missing values with column defaults.
-class ChunkMissingValues : public ChunkInfoCloneable<ChunkMissingValues>
-{
-public:
-    ChunkMissingValues(const ChunkMissingValues & other) = default;
-
-    using RowsBitMask = std::vector<bool>; /// a bit per row for a column
-
-    const RowsBitMask & getDefaultsBitmask(size_t column_idx) const;
-    void setBit(size_t column_idx, size_t row_idx);
-    bool empty() const { return rows_mask_by_column_id.empty(); }
-    size_t size() const { return rows_mask_by_column_id.size(); }
-    void clear() { rows_mask_by_column_id.clear(); }
-
-private:
-    using RowsMaskByColumnId = std::unordered_map<size_t, RowsBitMask>;
-
-    /// If rows_mask_by_column_id[column_id][row_id] is true related value in Block should be replaced with column default.
-    /// It could contain less columns and rows then related block.
-    RowsMaskByColumnId rows_mask_by_column_id;
-};
 
 /// Converts all columns to full serialization in chunk.
 /// It's needed, when you have to access to the internals of the column,

@@ -9,7 +9,6 @@
 
 #include <deque>
 #include <queue>
-#include <mutex>
 #include <memory>
 
 
@@ -49,8 +48,20 @@ public:
 
     const Processors & getProcessors() const;
 
+    enum class ExecutionStatus
+    {
+        NotStarted,
+        Executing,
+        Finished,
+        Exception,
+        CancelledByUser,
+        CancelledByTimeout,
+    };
+
     /// Cancel execution. May be called from another thread.
-    void cancel();
+    void cancel() { cancel(ExecutionStatus::CancelledByUser); }
+
+    ExecutionStatus getExecutionStatus() const { return execution_status.load(); }
 
     /// Cancel processors which only read data from source. May be called from another thread.
     void cancelReading();
@@ -74,6 +85,7 @@ private:
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
     std::unique_ptr<ThreadPool> pool;
     std::atomic_size_t threads = 0;
+    std::mutex spawn_lock;
 
     /// Flag that checks that initializeExecution was called.
     bool is_execution_initialized = false;
@@ -82,7 +94,7 @@ private:
     /// system.opentelemetry_span_log
     bool trace_processors = false;
 
-    std::atomic_bool cancelled = false;
+    std::atomic<ExecutionStatus> execution_status = ExecutionStatus::NotStarted;
     std::atomic_bool cancelled_reading = false;
 
     LoggerPtr log = getLogger("PipelineExecutor");
@@ -100,12 +112,17 @@ private:
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.
     void spawnThreads();
+    void spawnThreadsImpl() TSA_REQUIRES(spawn_lock);
 
     /// Methods connected to execution.
     void executeImpl(size_t num_threads, bool concurrency_control);
     void executeStepImpl(size_t thread_num, std::atomic_bool * yield_flag = nullptr);
     void executeSingleThread(size_t thread_num);
     void finish();
+    void cancel(ExecutionStatus reason);
+
+    /// If execution_status == from, change it to desired.
+    bool tryUpdateExecutionStatus(ExecutionStatus expected, ExecutionStatus desired);
 
     String dumpPipeline() const;
 };

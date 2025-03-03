@@ -21,6 +21,7 @@ enum class TypeIndex : uint8_t
     Int64,
     Int128,
     Int256,
+    BFloat16,
     Float32,
     Float64,
     Date,
@@ -45,6 +46,7 @@ enum class TypeIndex : uint8_t
     AggregateFunction,
     LowCardinality,
     Map,
+    ObjectDeprecated,
     Object,
     IPv4,
     IPv6,
@@ -93,6 +95,7 @@ TYPEID_MAP(Int32)
 TYPEID_MAP(Int64)
 TYPEID_MAP(Int128)
 TYPEID_MAP(Int256)
+TYPEID_MAP(BFloat16)
 TYPEID_MAP(Float32)
 TYPEID_MAP(Float64)
 TYPEID_MAP(UUID)

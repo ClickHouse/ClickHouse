@@ -2,8 +2,6 @@
 # Tags: long
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# reset --log_comment
-CLICKHOUSE_LOG_COMMENT=
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
@@ -12,7 +10,7 @@ CH_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_variant_type=1 --allow_suspic
 function test4_insert()
 {
     echo "test4 insert"
-    $CH_CLIENT -nmq "insert into test select number, NULL from numbers(100000);
+    $CH_CLIENT -mq "insert into test select number, NULL from numbers(100000);
 insert into test select number + 100000, number from numbers(100000);
 insert into test select number + 200000, ('str_' || toString(number))::Variant(String) from numbers(100000);
 insert into test select number + 300000, ('lc_str_' || toString(number))::LowCardinality(String) from numbers(100000);
@@ -23,7 +21,7 @@ insert into test select number + 500000, range(number % 20 + 1)::Array(UInt64) f
 function test4_select
 {
     echo "test4 select"
-    $CH_CLIENT -nmq "select v from test format Null;
+    $CH_CLIENT -mq "select v from test format Null;
 select count() from test where isNotNull(v);
 select v.String from test format Null;
 select count() from test where isNotNull(v.String);

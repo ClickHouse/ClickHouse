@@ -20,6 +20,7 @@ public:
     UInt16 portNumber() const override { return tcp_server->portNumber(); }
     size_t currentConnections() const override { return tcp_server->currentConnections(); }
     size_t currentThreads() const override { return tcp_server->currentThreads(); }
+    size_t refusedConnections() const override { return tcp_server->refusedConnections(); }
 
 private:
     std::unique_ptr<TCPServer> tcp_server;
@@ -29,11 +30,13 @@ ProtocolServerAdapter::ProtocolServerAdapter(
     const std::string & listen_host_,
     const char * port_name_,
     const std::string & description_,
-    std::unique_ptr<TCPServer> tcp_server_)
+    std::unique_ptr<TCPServer> tcp_server_,
+    bool supports_runtime_reconfiguration_)
     : listen_host(listen_host_)
     , port_name(port_name_)
     , description(description_)
     , impl(std::make_unique<TCPServerAdapterImpl>(std::move(tcp_server_)))
+    , supports_runtime_reconfiguration(supports_runtime_reconfiguration_)
 {
 }
 
@@ -54,6 +57,7 @@ public:
     UInt16 portNumber() const override { return grpc_server->portNumber(); }
     size_t currentConnections() const override { return grpc_server->currentConnections(); }
     size_t currentThreads() const override { return grpc_server->currentThreads(); }
+    size_t refusedConnections() const override { return 0; }
 
 private:
     std::unique_ptr<GRPCServer> grpc_server;
@@ -64,11 +68,13 @@ ProtocolServerAdapter::ProtocolServerAdapter(
     const std::string & listen_host_,
     const char * port_name_,
     const std::string & description_,
-    std::unique_ptr<GRPCServer> grpc_server_)
+    std::unique_ptr<GRPCServer> grpc_server_,
+    bool supports_runtime_reconfiguration_)
     : listen_host(listen_host_)
     , port_name(port_name_)
     , description(description_)
     , impl(std::make_unique<GRPCServerAdapterImpl>(std::move(grpc_server_)))
+    , supports_runtime_reconfiguration(supports_runtime_reconfiguration_)
 {
 }
 #endif

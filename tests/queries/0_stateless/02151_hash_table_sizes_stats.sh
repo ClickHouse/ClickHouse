@@ -35,7 +35,7 @@ prepare_table_with_sorting_key() {
 
 run_query() {
   query_id="${CLICKHOUSE_DATABASE}_hash_table_sizes_stats_$RANDOM$RANDOM"
-  $CLICKHOUSE_CLIENT --query_id="$query_id" --multiquery -q "
+  $CLICKHOUSE_CLIENT --query_id="$query_id" -q "
     SET max_block_size = $((table_size / 10));
     SET merge_tree_min_rows_for_concurrent_read = 1;
     SET max_untracked_memory = 0;

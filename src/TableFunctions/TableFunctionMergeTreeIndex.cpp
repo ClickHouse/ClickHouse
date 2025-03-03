@@ -76,9 +76,9 @@ void TableFunctionMergeTreeIndex::parseArguments(const ASTPtr & ast_function, Co
                     "Table function '{}' expected bool flag for 'with_marks' argument", getName());
 
             if (value.getType() == Field::Types::Bool)
-                with_marks = value.get<bool>();
+                with_marks = value.safeGet<bool>();
             else
-                with_marks = value.get<UInt64>();
+                with_marks = value.safeGet<UInt64>();
         }
 
         if (!params.empty())
@@ -197,7 +197,7 @@ void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory)
         {
             .description = "Represents the contents of index and marks files of MergeTree tables. It can be used for introspection",
             .examples = {{"mergeTreeIndex", "SELECT * FROM mergeTreeIndex(currentDatabase(), mt_table, with_marks = true)", ""}},
-            .categories = {"Other"},
+            .category = {""},
         },
         .allow_readonly = true,
     });

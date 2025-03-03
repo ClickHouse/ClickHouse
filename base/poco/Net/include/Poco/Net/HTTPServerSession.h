@@ -58,10 +58,14 @@ namespace Net
 
         void setKeepAliveTimeout(Poco::Timespan keepAliveTimeout);
 
+        size_t getKeepAliveTimeout() const { return _keepAliveTimeout.totalSeconds(); }
+
+        size_t getMaxKeepAliveRequests() const { return _maxKeepAliveRequests; }
+
     private:
         bool _firstRequest;
         Poco::Timespan _keepAliveTimeout;
-        int _maxKeepAliveRequests;
+        size_t _maxKeepAliveRequests;
     };
 
 
@@ -70,7 +74,7 @@ namespace Net
     //
     inline bool HTTPServerSession::canKeepAlive() const
     {
-        return _maxKeepAliveRequests != 0;
+        return getKeepAlive() && _maxKeepAliveRequests > 0;
     }
 
 

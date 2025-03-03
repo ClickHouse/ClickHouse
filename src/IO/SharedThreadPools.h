@@ -52,6 +52,9 @@ StaticThreadPool & getIOThreadPool();
 /// ThreadPool used for the Backup IO.
 StaticThreadPool & getBackupsIOThreadPool();
 
+/// ThreadPool used for FETCH PARTITION
+StaticThreadPool & getFetchPartitionThreadPool();
+
 /// ThreadPool used for the loading of Outdated data parts for MergeTree tables.
 StaticThreadPool & getActivePartsLoadingThreadPool();
 
@@ -68,5 +71,11 @@ StaticThreadPool & getUnexpectedPartsLoadingThreadPool();
 
 /// ThreadPool used for creating tables in DatabaseReplicated.
 StaticThreadPool & getDatabaseReplicatedCreateTablesThreadPool();
+
+/// ThreadPool used for dropping tables.
+StaticThreadPool & getDatabaseCatalogDropTablesThreadPool();
+
+/// ThreadPool used for parallel prefixes deserialization of subcolumns in Wide MergeTree parts.
+StaticThreadPool & getMergeTreePrefixesDeserializationThreadPool();
 
 }

@@ -9,7 +9,6 @@ RUN apt-get update \
             curl \
             dmidecode \
             g++ \
-            gdb \
             git \
             gnuplot \
             imagemagick \
@@ -41,6 +40,9 @@ COPY requirements.txt /
 RUN pip3 --no-cache-dir install -r requirements.txt
 
 COPY run.sh /
+
+COPY --from=clickhouse/cctools:0d6b90a7a490 /opt/gdb /opt/gdb
+ENV PATH="/opt/gdb/bin:${PATH}"
 
 CMD ["bash", "/run.sh"]
 
