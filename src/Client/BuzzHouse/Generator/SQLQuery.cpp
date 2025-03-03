@@ -613,7 +613,7 @@ bool StatementGenerator::joinedTableOrFunction(
         SQLRelation rel(rel_name);
         TableFunction * tf = tof->mutable_tfunc();
         MergeTreeIndexFunc * mtudf = tf->mutable_mtindex();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
 
         mtudf->set_mdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
         mtudf->set_mtable("t" + std::to_string(t.tname));
