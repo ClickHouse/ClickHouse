@@ -2422,16 +2422,46 @@ CONV_FN(CodecParam, cp)
     }
 }
 
+CONV_FN(DatabaseEngineParam, dep)
+{
+    using DatabaseEngineParamType = DatabaseEngineParam::DatabaseEngineParamOneofCase;
+    switch (dep.database_engine_param_oneof_case())
+    {
+        case DatabaseEngineParamType::kSvalue:
+            ret += "'";
+            ret += dep.svalue();
+            ret += "'";
+            break;
+        case DatabaseEngineParamType::kDatabase:
+            DatabaseToString(ret, dep.database());
+            break;
+        case DatabaseEngineParamType::kDisk:
+            ret += "Disk('";
+            ret += dep.disk().disk();
+            ret += "', '";
+            DatabaseToString(ret, dep.disk().database());
+            ret += "')";
+            break;
+        default:
+            ret += "d0";
+    }
+}
+
 CONV_FN(DatabaseEngine, deng)
 {
-    const DatabaseEngineValues dengine = deng.engine();
-
-    ret += DatabaseEngineValues_Name(dengine).substr(1);
-    if (dengine == DatabaseEngineValues::DReplicated)
+    ret += DatabaseEngineValues_Name(deng.engine()).substr(1);
+    if (deng.params_size())
     {
-        ret += "('/test/db";
-        ret += std::to_string(deng.zoo_path());
-        ret += "', 's1', 'r1')";
+        ret += "(";
+        for (int i = 0; i < deng.params_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            DatabaseEngineParamToString(ret, deng.params(i));
+        }
+        ret += ")";
     }
 }
 

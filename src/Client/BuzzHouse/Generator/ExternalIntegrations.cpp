@@ -81,10 +81,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
             newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
-            if (t.db->isReplicatedDatabase())
-            {
-                deng->set_zoo_path(t.db->zoo_path_counter);
-            }
+            t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
             res &= performQuery(buf + ";");
         }

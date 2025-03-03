@@ -2655,11 +2655,25 @@ enum DatabaseEngineValues {
     DShared = 4;
     DLazy = 5;
     DOrdinary = 6;
+    DDatabaseBackup = 7;
+}
+
+message BackupDisk {
+    required string disk = 1;
+    required Database database = 2;
+}
+
+message DatabaseEngineParam {
+    oneof database_engine_param_oneof {
+        string svalue = 1;
+        Database database = 2;
+        BackupDisk disk = 3;
+    }
 }
 
 message DatabaseEngine {
     required DatabaseEngineValues engine = 1;
-    optional uint32 zoo_path = 2;
+    repeated DatabaseEngineParam params = 2;
 }
 
 message CreateDatabase {

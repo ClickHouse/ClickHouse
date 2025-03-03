@@ -69,6 +69,10 @@ DatabaseEngineValues StatementGenerator::getNextDatabaseEngine(RandomGenerator &
     {
         this->ids.emplace_back(DShared);
     }
+    if (!fc.disks.empty())
+    {
+        this->ids.emplace_back(DDatabaseBackup);
+    }
     const auto res = static_cast<DatabaseEngineValues>(rg.pickRandomlyFromVector(this->ids));
     this->ids.clear();
     return res;
@@ -85,7 +89,12 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     if (next.isReplicatedDatabase())
     {
         next.zoo_path_counter = this->zoo_path_counter++;
-        deng->set_zoo_path(next.zoo_path_counter);
+    }
+    else if (next.isBackupDatabase())
+    {
+        next.backed_db
+            = "d" + ((databases.empty() || rg.nextSmallNumber() < 9) ? std::to_string(rg.pickKeyRandomlyFromMap(databases)) : "efault");
+        next.backed_disk = rg.pickRandomlyFromVector(fc.disks);
     }
     if (!fc.clusters.empty() && rg.nextSmallNumber() < (next.isReplicatedOrSharedDatabase() ? 9 : 4))
     {
@@ -93,6 +102,7 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
         cd->mutable_cluster()->set_cluster(next.cluster.value());
     }
     next.dname = dname;
+    next.finishDatabaseSpecification(deng);
     cd->mutable_database()->set_database("d" + std::to_string(dname));
     if (rg.nextSmallNumber() < 3)
     {
