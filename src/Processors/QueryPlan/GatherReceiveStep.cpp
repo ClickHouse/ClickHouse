@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/WriteHelpers.h>
@@ -13,10 +14,6 @@
 namespace DB
 {
 
-/// TODO: include it
-String fileNameForShuffleExchange(const String & exchange_id, size_t bucket);
-
-
 void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
@@ -24,7 +21,7 @@ void GatherReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// Read from all buckets
     for (size_t i = 0; i < num_buckets; ++i)
     {
-        auto file_name = fileNameForShuffleExchange(exchange_id, i);
+        auto file_name = fileNameForExchange(exchange_id, i, "0");
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
         pipeline_ptr->init(Pipe(std::make_shared<NativeCompressedSource>(output_header.value(), settings.temporary_file_lookup->getTemporaryFileForReading(file_name))));
         pipelines.emplace_back(std::move(pipeline_ptr));

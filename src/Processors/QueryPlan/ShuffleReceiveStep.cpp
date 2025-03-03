@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/WriteHelpers.h>
@@ -13,20 +14,16 @@
 namespace DB
 {
 
-/// TODO: include it
-String fileNameForShuffleExchange(const String & exchange_id, size_t bucket);
-
-
 void ShuffleReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    const size_t bucket_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<UInt64>();
+    const String bucket_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
     std::vector<std::unique_ptr<QueryPipelineBuilder>> pipelines;
 
     /// Read all shards
-    for (const String & shard_id : list_of_shard_ids)
+    for (const String & shard_id : source_shards)
     {
-        const auto shard_file_name = fileNameForShuffleExchange(exchange_id + "_shard_" + shard_id, bucket_id);
+        const auto shard_file_name = fileNameForExchange(exchange_id, shard_id, bucket_id);
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
         pipeline_ptr->init(Pipe(std::make_shared<NativeCompressedSource>(output_header.value(), settings.temporary_file_lookup->getTemporaryFileForReading(shard_file_name))));
         pipelines.emplace_back(std::move(pipeline_ptr));
@@ -38,8 +35,8 @@ void ShuffleReceiveStep::initializePipeline(QueryPipelineBuilder & pipeline, con
 void ShuffleReceiveStep::serialize(Serialization & ctx) const
 {
     writeStringBinary(exchange_id, ctx.out);
-    writeVarUInt(list_of_shard_ids.size(), ctx.out);
-    for (const String & shard_id : list_of_shard_ids)
+    writeVarUInt(source_shards.size(), ctx.out);
+    for (const String & shard_id : source_shards)
         writeStringBinary(shard_id, ctx.out);
 }
 

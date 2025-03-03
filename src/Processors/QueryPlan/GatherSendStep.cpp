@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 #include <Processors/QueryPlan/TemporaryFiles.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/Pipe.h>
 #include <IO/WriteHelpers.h>
@@ -11,10 +12,6 @@
 
 namespace DB
 {
-
-/// TODO: include it
-String fileNameForShuffleExchange(const String & exchange_id, size_t bucket);
-
 
 QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
@@ -24,8 +21,8 @@ QueryPipelineBuilderPtr GatherSendStep::updatePipeline(QueryPipelineBuilders pip
     auto & pipeline = *pipelines.front();
     Block stream_header = pipeline.getHeader();
 
-    size_t bucket = settings.parameter_lookup->getParameter("bucket_id").safeGet<UInt64>();
-    auto file_name = fileNameForShuffleExchange(exchange_id, bucket);
+    const String bucket = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
+    auto file_name = fileNameForExchange(exchange_id, bucket, "0");
 
     chassert(pipeline.getNumStreams() == 1, "Single stream is expected to be written to NativeCompressedSink");
 

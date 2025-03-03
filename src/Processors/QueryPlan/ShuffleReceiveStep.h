@@ -10,10 +10,10 @@ namespace DB
 class ShuffleReceiveStep : public ISourceStep
 {
 public:
-    ShuffleReceiveStep(Header header_, const String & exchange_id_, const Strings & list_of_shard_ids_)
+    ShuffleReceiveStep(Header header_, const String & exchange_id_, const Strings & source_shards_)
         : ISourceStep(std::move(header_))
         , exchange_id(exchange_id_)
-        , list_of_shard_ids(list_of_shard_ids_)
+        , source_shards(source_shards_)
     {
     }
 
@@ -27,7 +27,7 @@ public:
 
 private:
     const String exchange_id;
-    const Strings list_of_shard_ids;
+    const Strings source_shards;
 };
 
 }
