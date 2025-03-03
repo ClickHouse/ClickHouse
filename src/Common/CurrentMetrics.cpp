@@ -201,6 +201,9 @@
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
+    M(LogCompressionThreads, "Number of threads in the threadpool for compressing logs.") \
+    M(LogCompressionActiveThreads, "Number of active threads in the threadpool for compressing logs.") \
+    M(LogCompressionScheduledThreads, "Number of queued or active jobs in the threadpool for compressing logs.") \
     \
     M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableAzureFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \

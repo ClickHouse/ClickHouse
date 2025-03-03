@@ -45,10 +45,7 @@ public:
     Logger(std::string_view name_, QuillLoggerPtr logger_);
     Logger(std::string name_, QuillLoggerPtr logger_);
 
-    QuillLoggerPtr getLogger()
-    {
-        return logger;
-    }
+    QuillLoggerPtr getLogger();
 
     std::string_view getName()
     {

@@ -4,7 +4,6 @@
 #include "Loggers/OwnSplitChannel.h"
 
 #include <quill/Frontend.h>
-#include <iostream>
 
 namespace
 {
@@ -34,6 +33,14 @@ void Logger::setFormatter(std::unique_ptr<OwnPatternFormatter> formatter_)
 {
     formatter = std::move(formatter_);
     formatter_ptr.store(formatter.get(), std::memory_order_relaxed);
+}
+
+QuillLoggerPtr Logger::getLogger()
+{
+    if (!logger)
+        logger = quill::Frontend::get_logger("root");
+
+    return logger;
 }
 
 DB::OwnSplitChannel & Logger::getTextLogChannel()

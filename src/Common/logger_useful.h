@@ -87,7 +87,7 @@ constexpr std::string_view levelToString(quill::LogLevel level)
 ///  the first argument is interpreted as a template with {}-substitutions
 ///  and the latter arguments are treated as values to substitute.
 /// If only one argument is provided, it is treated as a message without substitutions.
-#define LOG_IMPL(logger, quill_log_macro, priority, ...) do  \
+#define LOG_IMPL(logger, priority, ...) do  \
 {  \
     if (!isLoggingEnabled()) \
         break; \
@@ -123,7 +123,7 @@ constexpr std::string_view levelToString(quill::LogLevel level)
         }                                                                                                           \
         else                                                                                                        \
         {                                                                                                           \
-             _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
+            _formatted_message = _nargs == 1 ? firstArg(__VA_ARGS__) : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
         }                                                                                                           \
         \
         std::string _file_function = __FILE__ "; ";                                                                 \
@@ -133,7 +133,7 @@ constexpr std::string_view levelToString(quill::LogLevel level)
         DB::ExtendedLogMessage _msg_ext = DB::ExtendedLogMessage::getFrom(_poco_message); \
         std::string _text;\
         _formatter->formatExtended(_msg_ext, _text);\
-        quill_log_macro(::impl::getRawLogger(_logger), "{}", _text);   \
+        QUILL_LOG_DYNAMIC(::impl::getRawLogger(_logger), priority, "{}", _text);   \
         Logger::getTextLogChannel().log(_poco_message);\
     }                                                                                                               \
     catch (const Poco::Exception & logger_exception)                                                                \
@@ -156,10 +156,10 @@ constexpr std::string_view levelToString(quill::LogLevel level)
 } while (false)
 
 
-#define LOG_TEST(logger, ...) LOG_IMPL(logger, QUILL_LOG_TRACE_L2, quill::LogLevel::TraceL2, __VA_ARGS__)
-#define LOG_TRACE(logger, ...) LOG_IMPL(logger, QUILL_LOG_TRACE_L1, quill::LogLevel::TraceL1, __VA_ARGS__)
-#define LOG_DEBUG(logger, ...) LOG_IMPL(logger, QUILL_LOG_DEBUG, quill::LogLevel::Debug, __VA_ARGS__)
-#define LOG_INFO(logger, ...) LOG_IMPL(logger, QUILL_LOG_INFO, quill::LogLevel::Info, __VA_ARGS__)
-#define LOG_WARNING(logger, ...) LOG_IMPL(logger, QUILL_LOG_WARNING, quill::LogLevel::Warning, __VA_ARGS__)
-#define LOG_ERROR(logger, ...) LOG_IMPL(logger, QUILL_LOG_ERROR, quill::LogLevel::Error, __VA_ARGS__)
-#define LOG_FATAL(logger, ...) LOG_IMPL(logger, QUILL_LOG_CRITICAL, quill::LogLevel::Critical, __VA_ARGS__)
+#define LOG_TEST(logger, ...) LOG_IMPL(logger, quill::LogLevel::TraceL2, __VA_ARGS__)
+#define LOG_TRACE(logger, ...) LOG_IMPL(logger, quill::LogLevel::TraceL1, __VA_ARGS__)
+#define LOG_DEBUG(logger, ...) LOG_IMPL(logger, quill::LogLevel::Debug, __VA_ARGS__)
+#define LOG_INFO(logger, ...) LOG_IMPL(logger, quill::LogLevel::Info, __VA_ARGS__)
+#define LOG_WARNING(logger, ...) LOG_IMPL(logger, quill::LogLevel::Warning, __VA_ARGS__)
+#define LOG_ERROR(logger, ...) LOG_IMPL(logger, quill::LogLevel::Error, __VA_ARGS__)
+#define LOG_FATAL(logger, ...) LOG_IMPL(logger, quill::LogLevel::Critical, __VA_ARGS__)

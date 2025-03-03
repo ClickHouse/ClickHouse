@@ -4,25 +4,39 @@
 #include "OwnPatternFormatter.h"
 #include "OwnSplitChannel.h"
 
+#include <exception>
 #include <iostream>
 #include <sstream>
+
+#include <IO/ReadHelpers.h>
+#include <Common/ThreadPool.h>
+#include <Common/LockMemoryExceptionInThread.h>
 
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#define POCO_UNBUNDLED_ZLIB 1
+#include <Poco/DeflatingStream.h>
+#undef POCO_UNBUNDLED_ZLIB
+#include <Poco/StreamCopier.h>
+#include <Poco/FileStream.h>
+#include <Poco/File.h>
+
 
 #include <quill/Backend.h>
 #include <quill/Frontend.h>
 #include <quill/sinks/ConsoleSink.h>
-#include <quill/sinks/RotatingFileSink.h>
+#include <quill/sinks/FileSink.h>
+#include <quill/sinks/StreamSink.h>
 
 #ifndef WITHOUT_TEXT_LOG
     #include <Interpreters/TextLog.h>
 #endif
 
 #include <filesystem>
+#include <future>
 
 namespace fs = std::filesystem;
 
@@ -37,14 +51,91 @@ namespace ErrorCodes
 
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric LogCompressionThreads;
+    extern const Metric LogCompressionActiveThreads;
+    extern const Metric LogCompressionScheduledThreads;
+}
+
+namespace
+{
+bool renameFile(const fs::path & previous_file, const fs::path & new_file) noexcept
+{
+    std::error_code ec;
+    fs::rename(previous_file, new_file, ec);
+    return ec.value() == 0;
+}
+
+bool removeFile(const fs::path & filename) noexcept
+{
+    std::error_code ec;
+    fs::remove(filename, ec);
+    return ec.value() == 0;
+}
+
+bool compressLog(const std::string & path, const std::string & compressed_path)
+{
+    Poco::FileInputStream istr(path);
+    Poco::FileOutputStream ostr(compressed_path);
+    try
+    {
+        Poco::DeflatingOutputStream deflater(ostr, Poco::DeflatingStreamBuf::STREAM_GZIP);
+        Poco::StreamCopier::copyStream(istr, static_cast<std::ostream &>(deflater));
+        if (!deflater.good() || !ostr.good()) throw Poco::WriteFileException(compressed_path);
+        deflater.close();
+        ostr.close();
+        istr.close();
+    }
+    catch (...)
+    {
+        // deflating failed - remove gz file and leave uncompressed log file
+        ostr.close();
+        Poco::File gzf(compressed_path);
+        gzf.remove();
+        return false;
+    }
+    Poco::File f(path);
+    f.remove();
+    return true;
+}
+}
+
+class RotatingSinkConfiguration : public quill::FileSinkConfig
+{
+public:
+    size_t max_file_size = 0;
+    size_t max_backup_files = 0;
+    bool compress = false;
+};
 
 template<typename TBase>
-class CompressedRotatingSink : public quill::RotatingSink<TBase>
+class RotatingSink : public TBase
 {
-    using Base = quill::RotatingSink<TBase>;
+    using Base = TBase;
 public:
-    
-    using Base::Base;
+    explicit RotatingSink(const fs::path & filename, RotatingSinkConfiguration config_)
+        : Base(filename, static_cast<const quill::FileSinkConfig &>(config_), quill::FileEventNotifier{}, /*do_fopen=*/false)
+        , config(config_)
+    {
+        if (config.max_file_size == 0)
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Max file size for logs cannot be 0");
+
+        recoverFiles();
+
+        this->open_file(this->_filename, "a");
+        created_files.emplace_front(this->_filename, 0);
+
+        if (!this->is_null())
+            current_log_size = fs::file_size(this->_filename);
+
+        if (config.compress)
+            pool.emplace(
+                CurrentMetrics::LogCompressionThreads,
+                CurrentMetrics::LogCompressionActiveThreads,
+                CurrentMetrics::LogCompressionScheduledThreads,
+                /*max_threads_=*/1);
+    }
 
     QUILL_ATTRIBUTE_HOT void write_log(
         quill::MacroMetadata const * log_metadata,
@@ -60,6 +151,28 @@ public:
         std::string_view log_message,
         std::string_view log_statement) override
     {
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        if (this->is_null())
+        {
+            Base::write_log(
+                log_metadata,
+                log_timestamp,
+                thread_id,
+                thread_name,
+                process_id,
+                logger_name,
+                log_level,
+                log_level_description,
+                log_level_short_code,
+                named_args,
+                log_message,
+                log_statement);
+            return;
+        }
+
+        if (current_log_size + log_statement.size() > config.max_file_size)
+            rotateFiles();
+
         Base::write_log(
             log_metadata,
             log_timestamp,
@@ -74,24 +187,174 @@ public:
             log_message,
             log_statement);
 
-        for (auto & file_info : Base::_created_files)
+        current_log_size += log_statement.size();
+    }
+private:
+    void recoverFiles()
+    {
+        for (const auto & entry : fs::directory_iterator(fs::current_path() / this->_filename.parent_path()))
         {
-            if (file_info.index > 0)
-            {
-                if (file_info.base_filename.extension() == ".log")
-                {
-                    auto const [stem, ext] = Base::extract_stem_and_extension(file_info.base_filename);
-                    auto path_with_index = stem + "." + std::to_string(file_info.index) + ext;
-                    auto new_path_with_index = std::string{file_info.base_filename} + "." + std::to_string(file_info.index) + ".gz";
-                    std::error_code ec;
+            if (entry.is_directory())
+                continue;
 
-                    std::filesystem::rename(path_with_index, new_path_with_index, ec);
-                    if (!ec)
-                        file_info.base_filename = std::string{file_info.base_filename} + ".gz";
+            const auto extension = entry.path().extension().string();
+
+            if (extension == ".gz")
+            {
+                if (!entry.path().filename().string().starts_with(this->_filename.filename().string() + "."))
+                    continue;
+            }
+            else if (extension == this->_filename.extension().string())
+            {
+                if (!entry.path().filename().string().starts_with(this->_filename.stem().string() + "."))
+                    continue;
+            }
+            else
+            {
+                continue;
+            }
+
+            if (const size_t pos = entry.path().stem().string().find_last_of('.'); pos != std::string::npos)
+            {
+                const std::string index = entry.path().stem().string().substr(pos + 1, entry.path().stem().string().length());
+                std::string current_filename = entry.path().filename().string().substr(0, pos) + extension;
+                fs::path current_file = entry.path().parent_path();
+                current_file.append(current_filename);
+
+                try
+                {
+                    created_files.emplace_front(current_file, static_cast<size_t>(DB::parseFromString<size_t>(index) + 1));
+                }
+                catch (...)
+                {
+                    std::cerr << "Fail to recover log file: " << current_file;
                 }
             }
         }
+
+        // finally we need to sort the deque
+        std::sort(created_files.begin(), created_files.end(), [](FileInfo const & a, FileInfo const & b) { return a.index < b.index; });
     }
+
+    void rotateFiles()
+    {
+        Base::flush_sink();
+        Base::fsync_file(/*force_fsync=*/true);
+
+        this->close_file();
+
+        for (auto it = created_files.rbegin(); it != created_files.rend(); ++it)
+        {
+            if (config.compress && it->index == 1)
+            {
+                if (compression_result.has_value())
+                {
+                    try
+                    {
+                        if (compression_result->get())
+                            it->base_filename += ".gz";
+                    }
+                    catch (...)
+                    {
+                        std::cerr << "Failed to fetch compression result: " << DB::getCurrentExceptionMessage(true) << std::endl;
+                    }
+                    compression_result.reset();
+                }
+            }
+
+            fs::path existing_file = getFilename(it->base_filename, it->index);
+
+            // increment the index if needed and rename the file
+            uint32_t index_to_use = it->index + 1;
+            fs::path renamed_file = getFilename(it->base_filename, index_to_use);
+            it->index = index_to_use;
+            renameFile(existing_file, renamed_file);
+
+            if (config.compress && it->index == 1)
+            {
+                chassert(!compression_result.has_value());
+
+                auto compression_result_promise = std::make_shared<std::promise<bool>>();
+                compression_result.emplace(compression_result_promise->get_future());
+                auto compressed_path = getFilename(existing_file.string() + ".gz", it->index);
+                try
+                {
+                    pool->scheduleOrThrowOnError(
+                        [current_path = std::move(renamed_file),
+                         new_path = std::move(compressed_path),
+                         compression_result_promise]() mutable
+                        {
+                            try
+                            {
+                                compression_result_promise->set_value(compressLog(current_path, new_path));
+                            }
+                            catch (...)
+                            {
+                                std::cerr << "Failed to compress log: " << DB::getCurrentExceptionMessage(true) << std::endl;
+                                compression_result_promise->set_exception(std::current_exception());
+                            }
+                        });
+                }
+                catch (...)
+                {
+                    compression_result.reset();
+                    compression_result_promise.reset();
+                    std::cerr << "Failed to schedule thread for log compression: " << DB::getCurrentExceptionMessage(true) << std::endl;
+                }
+            }
+        }
+
+        // Check if we have too many files in the queue remove_file the oldest one
+        if (created_files.size() > config.max_backup_files)
+        {
+            // remove_file that file from the system and also pop it from the queue
+            const fs::path removed_file = getFilename(
+                created_files.back().base_filename, created_files.back().index);
+            removeFile(removed_file);
+            created_files.pop_back();
+        }
+
+        // add the current file back to the list with index 0
+        created_files.emplace_front(this->_filename, 0);
+
+        // Open file for logging
+        this->open_file(this->_filename, "w");
+        current_log_size = 0;
+    }
+
+    static fs::path appendIndexToFilename(const fs::path & filename, size_t index)
+    {
+        if (index == 0)
+            return filename;
+
+        auto const [stem, ext] = Base::extract_stem_and_extension(filename);
+        return fs::path{stem + "." + std::to_string(index - 1) + ext};
+    }
+
+    static fs::path getFilename(fs::path base_filename, size_t index)
+    {
+        if (index > 0)
+            return appendIndexToFilename(base_filename, index);
+        return base_filename;
+    }
+
+    struct FileInfo
+    {
+        FileInfo(fs::path base_filename_, uint32_t index_)
+            : base_filename{std::move(base_filename_)}, index{index_}
+        {
+        }
+
+        fs::path base_filename;
+        uint32_t index;
+    };
+
+    std::deque<FileInfo> created_files;
+    size_t current_log_size{0};
+    RotatingSinkConfiguration config;
+
+    std::optional<ThreadPool> pool;
+    std::optional<std::future<bool>> compression_result;
 };
 
 // TODO: move to libcommon
@@ -120,22 +383,19 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 {
     quill::Backend::start();
 
-    auto rotating_file_sink = quill::Frontend::create_or_get_sink<CompressedRotatingSink<quill::FileSink>>(
-        "rotating_file.log",
-        []()
-        {
-            // See RotatingFileSinkConfig for more options
-            quill::RotatingFileSinkConfig cfg;
-            cfg.set_open_mode('a');
-            cfg.set_rotation_naming_scheme(quill::RotatingFileSinkConfig::RotationNamingScheme::Index);
-            cfg.set_rotation_max_file_size(1024); // small value to demonstrate the example
-            cfg.set_max_backup_files(10);
-            return cfg;
-        }());
+    RotatingSinkConfiguration rotating_sink_config
+    {
+        .max_file_size = 10240,
+        .max_backup_files = 10,
+        .compress = true,
+    };
+
+    auto rotating_file_sink = quill::Frontend::create_or_get_sink<RotatingSink<quill::FileSink>>("/home/antonio/projects/rotating_file.log", rotating_sink_config);
+    auto console_sink = quill::Frontend::create_or_get_sink<quill::ConsoleSink>("sink_id_1", quill::ConsoleSink::ColourMode::Never);
 
     [[maybe_unused]] quill::Logger * quill_logger = quill::Frontend::create_or_get_logger(
         "root",
-        {quill::Frontend::create_or_get_sink<quill::ConsoleSink>("sink_id_1", quill::ConsoleSink::ColourMode::Never), rotating_file_sink},
+        {rotating_file_sink},
         quill::PatternFormatterOptions{"%(message)"});
 
     quill_logger->set_log_level(quill::LogLevel::TraceL1);
