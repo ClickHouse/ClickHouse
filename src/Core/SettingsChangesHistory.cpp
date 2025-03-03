@@ -66,7 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.3",
         {
-            {"iceberg_timestamp_ms", 0, 0, "New setting."},
+            {"iceberg_timestamp_ms", 0, 0, "New setting. Query Iceberg table using the metadata that was relevant at a specific timestamp."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
