@@ -22,8 +22,8 @@
 #endif
 
 #if USE_SHA3IUF
-extern "C" { 
-    #include <sha3.h> 
+extern "C" {
+    #include <sha3.h>
 }
 #endif
 
