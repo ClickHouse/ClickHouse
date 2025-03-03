@@ -3578,6 +3578,37 @@ message SystemCommand {
     }
 }
 
+message BackupRestoreObject {
+    optional bool is_temp = 1;
+    required SQLObject sobject = 2;
+    required SQLObjectName object = 3;
+    optional SQLObjectName alias = 4;
+    repeated PartitionExpr partition = 5;
+}
+
+message BackupRestore {
+    enum BackupCommand {
+        BACKUP = 1;
+        RESTORE = 2;
+    }
+    required BackupCommand command = 1;
+    oneof backup_oneof {
+        BackupRestoreObject bobject = 2;
+        bool all_temporary = 3;
+        bool all = 4;
+    }
+    repeated ExprSchemaTable except_tables = 5;
+    optional Cluster cluster = 6;
+    enum BackupOutput {
+        Disk = 1;
+        File = 2;
+        S3 = 3;
+    }
+    required BackupOutput out = 7;
+    repeated string out_params = 8;
+    optional SettingValues setting_values = 9;
+}
+
 message SQLQueryInner {
     oneof query_inner_oneof {
         TopSelect select = 1;
@@ -3598,6 +3629,7 @@ message SQLQueryInner {
         CreateDatabase create_database = 16;
         CreateFunction create_function = 17;
         SystemCommand system_cmd = 18;
+        BackupRestore backup_restore = 19;
     }
 }
 

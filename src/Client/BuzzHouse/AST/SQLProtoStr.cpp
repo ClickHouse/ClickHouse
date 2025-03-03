@@ -4153,6 +4153,96 @@ CONV_FN(SystemCommand, cmd)
     }
 }
 
+CONV_FN(BackupRestoreObject, bobject)
+{
+    const bool is_table = bobject.sobject() == SQLObject::TABLE;
+
+    if (is_table && bobject.is_temp())
+    {
+        ret += "TEMPORARY ";
+    }
+    ret += SQLObject_Name(bobject.sobject());
+    ret += " ";
+    SQLObjectNameToString(ret, bobject.object());
+    if (bobject.has_alias())
+    {
+        ret += " AS ";
+        SQLObjectNameToString(ret, bobject.alias());
+    }
+    if (is_table && !bobject.is_temp() && bobject.partition_size())
+    {
+        ret += " PARTITIONS ";
+        for (int i = 0; i < bobject.partition_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            PartitionExprToString(ret, bobject.partition(i));
+        }
+    }
+}
+
+CONV_FN(BackupRestore, backup)
+{
+    const BackupRestore_BackupCommand & command = backup.command();
+
+    ret += BackupRestore_BackupCommand_Name(command);
+    ret += " ";
+    using BackupType = BackupRestore::BackupOneofCase;
+    switch (backup.backup_oneof_case())
+    {
+        case BackupType::kBobject:
+            BackupRestoreObjectToString(ret, backup.bobject());
+            break;
+        case BackupType::kAllTemporary:
+            ret += "ALL TEMPORARY TABLES";
+            break;
+        default:
+            ret += "ALL";
+            break;
+    }
+    if (backup.except_tables_size() && (!backup.has_bobject() || backup.bobject().sobject() == SQLObject::DATABASE))
+    {
+        ret += " EXCEPT";
+        ret += backup.has_bobject() ? " TABLES" : "";
+        ret += " ";
+        for (int i = 0; i < backup.except_tables_size(); i++)
+        {
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ExprSchemaTableToString(ret, backup.except_tables(i));
+        }
+    }
+    if (backup.has_cluster())
+    {
+        ClusterToString(ret, backup.cluster());
+    }
+    ret += " ";
+    ret += command == BackupRestore_BackupCommand_BACKUP ? "TO" : "FROM";
+    ret += " ";
+    ret += BackupRestore_BackupOutput_Name(backup.out());
+    ret += "(";
+    for (int i = 0; i < backup.out_params_size(); i++)
+    {
+        if (i != 0)
+        {
+            ret += ", ";
+        }
+        ret += "'";
+        ret += backup.out_params(i);
+        ret += "'";
+    }
+    ret += ")";
+    if (backup.has_setting_values())
+    {
+        ret += " SETTINGS ";
+        SettingValuesToString(ret, backup.setting_values());
+    }
+}
+
 CONV_FN(SQLQueryInner, query)
 {
     using QueryType = SQLQueryInner::QueryInnerOneofCase;
@@ -4212,6 +4302,9 @@ CONV_FN(SQLQueryInner, query)
             break;
         case QueryType::kSystemCmd:
             SystemCommandToString(ret, query.system_cmd());
+            break;
+        case QueryType::kBackupRestore:
+            BackupRestoreToString(ret, query.backup_restore());
             break;
         default:
             ret += "SELECT 1";
