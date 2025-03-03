@@ -1254,9 +1254,7 @@ void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &)
         return;
 
     if (distinct->disallowInOrderOptimization())
-    {
         return;
-    }
 
     auto order_info = buildInputOrderInfo(*distinct, *node.children.front());
     if (order_info.input_order)

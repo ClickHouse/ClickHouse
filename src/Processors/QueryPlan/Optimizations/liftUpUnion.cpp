@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/DistinctStep.h>
-#include <Common/logger_useful.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -69,8 +68,6 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         ///                  - Something
         /// Distinct - Union - Something
         ///                  - Something
-
-        union_step->liftedUpDueToDistinct() = true;
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);

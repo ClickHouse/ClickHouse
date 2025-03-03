@@ -4,11 +4,8 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/DistinctStep.h>
-#include <Processors/QueryPlan/ReadFromRemote.h>
 
 #include <stack>
-#include <ranges>
 
 namespace DB
 {

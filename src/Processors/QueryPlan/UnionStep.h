@@ -19,9 +19,6 @@ public:
 
     size_t getMaxThreads() const { return max_threads; }
     bool parallelReplicas() const { return parallel_replicas; }
-    bool & liftedUpDueToDistinct() { return lifted_up_due_to_distinct; }
-
-    bool inOrderOptimizationBarrier() const { return parallel_replicas && lifted_up_due_to_distinct; }
 
     void serialize(Serialization & ctx) const override;
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);

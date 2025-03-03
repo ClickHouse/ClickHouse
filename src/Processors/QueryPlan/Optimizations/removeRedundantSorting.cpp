@@ -21,7 +21,7 @@
 
 namespace DB::QueryPlanOptimizations
 {
-constexpr bool debug_logging_enabled = true;
+constexpr bool debug_logging_enabled = false;
 
 class RemoveRedundantSorting : public QueryPlanVisitor<RemoveRedundantSorting, debug_logging_enabled>
 {
