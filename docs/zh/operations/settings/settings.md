@@ -613,7 +613,7 @@ log_query_threads=1
 
 越小 `max_threads` 值，较少的内存被消耗。
 
-## max_insert_threads {#settings-max-insert-threads}
+## max_insert_threads {#max_insert_threads}
 
 要执行的最大线程数 `INSERT SELECT` 查询。
 
@@ -624,7 +624,7 @@ log_query_threads=1
 
 默认值：0。
 
-平行 `INSERT SELECT` 只有在 `SELECT` 部分并行执行，请参阅 [max_threads](#settings-max_threads) 设置。
+平行 `INSERT SELECT` 只有在 `SELECT` 部分并行执行，请参阅 [max_threads](/operations/settings/settings#max_threads) 设置。
 更高的值将导致更高的内存使用率。
 
 ## max_compress_block_size {#max-compress-block-size}

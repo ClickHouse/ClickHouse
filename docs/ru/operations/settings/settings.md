@@ -1063,7 +1063,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: 0.
 
-Параллельный `INSERT SELECT` действует только в том случае, если часть SELECT выполняется параллельно, см. настройку [max_threads](#settings-max_threads).
+Параллельный `INSERT SELECT` действует только в том случае, если часть SELECT выполняется параллельно, см. настройку [max_threads](/operations/settings/settings#max_threads).
 Чем больше значение `max_insert_threads`, тем больше потребление оперативной памяти.
 
 ## max_compress_block_size {#max-compress-block-size}
