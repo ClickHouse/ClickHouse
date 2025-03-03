@@ -193,7 +193,7 @@ Int32 IcebergMetadata::parseTableSchema(
 }
 
 
-Int32 getMetadataVersion(const String & path)
+Int32 parseMetadatVersionFromFileName(const String & path)
 {
     std::string_view file_name(path.begin() + path.find_last_of('/') + 1, path.end());
     std::string_view version_str;
@@ -218,8 +218,7 @@ std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorage::Configuration & configuration,
     ContextPtr local_context,
-    LoggerPtr log,
-    Int32 format_version)
+    LoggerPtr log)
 {
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
@@ -233,7 +232,7 @@ std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
 
     for (const auto & path : metadata_files)
     {
-        metadata_files_with_versions.emplace_back(getMetadataVersion(path), path);
+        metadata_files_with_versions.emplace_back(parseMetadatVersionFromFileName(path), path);
     }
 
     auto [version, path] = *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
@@ -254,6 +253,8 @@ std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
 
     std::optional<std::string> table_uuid
         = metadata_object->has("table-uuid") ? std::optional{metadata_object->getValue<std::string>("table-uuid")} : std::nullopt;
+
+    Int32 format_version = metadata_object->getValue<Int32>(FIELD_FORMAT_VERSION_NAME);
 
     if (format_version > 1 && !table_uuid)
     {
@@ -283,7 +284,7 @@ std::pair<Int32, Poco::JSON::Object::Ptr> getMetadataFileAndVersion(
         }
         if (chosen_metadata_path)
         {
-            chosen_version = getMetadataVersion(chosen_metadata_path.value());
+            chosen_version = parseMetadatVersionFromFileName(chosen_metadata_path.value());
         }
     }
     else
