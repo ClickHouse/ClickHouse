@@ -121,6 +121,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_insert_skip_read_only_replicas", CHSetting(trueOrFalse, {}, false)},
     {"do_not_merge_across_partitions_select_final", CHSetting(trueOrFalse, {}, false)},
     {"empty_result_for_aggregation_by_constant_keys_on_empty_set", CHSetting(trueOrFalse, {}, false)},
+    {"enable_adaptive_memory_spill_scheduler", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"enable_analyzer", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"enable_blob_storage_log", CHSetting(trueOrFalse, {}, false)},
     {"enable_early_constant_folding", CHSetting(trueOrFalse, {}, false)},
