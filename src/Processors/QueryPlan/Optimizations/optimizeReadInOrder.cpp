@@ -98,6 +98,9 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, bool allow_existing_or
     if (node.children.size() != 1)
         return nullptr;
 
+    if (step->optimizationBarrier())
+        return nullptr;
+
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
         return findReadingStep(*node.children.front(), allow_existing_order);
 

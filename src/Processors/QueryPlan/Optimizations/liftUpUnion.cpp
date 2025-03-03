@@ -20,6 +20,9 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
     if (!union_step)
         return 0;
 
+    if (union_step->optimizationBarrier())
+        return 0;
+
     if (auto * expression = typeid_cast<ExpressionStep *>(parent.get()))
     {
         /// Union does not change header.
