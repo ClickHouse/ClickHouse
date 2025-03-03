@@ -3832,12 +3832,12 @@ CONV_FN(Attach, at)
 {
     ret += "ATTACH ";
     ret += SQLObject_Name(at.sobject());
+    ret += " ";
+    SQLObjectNameToString(ret, at.object());
     if (at.has_cluster())
     {
         ClusterToString(ret, at.cluster());
     }
-    ret += " ";
-    SQLObjectNameToString(ret, at.object());
     if (at.sobject() != SQLObject::DATABASE && at.has_as_replicated())
     {
         ret += " AS";
@@ -3855,12 +3855,12 @@ CONV_FN(Detach, dt)
 {
     ret += "DETACH ";
     ret += SQLObject_Name(dt.sobject());
+    ret += " ";
+    SQLObjectNameToString(ret, dt.object());
     if (dt.has_cluster())
     {
         ClusterToString(ret, dt.cluster());
     }
-    ret += " ";
-    SQLObjectNameToString(ret, dt.object());
     if (dt.permanently())
     {
         ret += " PERMANENTLY";
