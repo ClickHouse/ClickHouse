@@ -3586,27 +3586,36 @@ message BackupRestoreObject {
     repeated PartitionExpr partition = 5;
 }
 
+message BackupRestoreElement {
+    oneof backup_oneof {
+        BackupRestoreObject bobject = 1;
+        bool all_temporary = 2;
+        bool all = 3;
+    }
+    repeated ExprSchemaTable except_tables = 4;
+}
+
 message BackupRestore {
     enum BackupCommand {
         BACKUP = 1;
         RESTORE = 2;
     }
     required BackupCommand command = 1;
-    oneof backup_oneof {
-        BackupRestoreObject bobject = 2;
-        bool all_temporary = 3;
-        bool all = 4;
-    }
-    repeated ExprSchemaTable except_tables = 5;
-    optional Cluster cluster = 6;
+    required BackupRestoreElement backup_element = 2;
+    repeated BackupRestoreElement other_elements = 3;
+    optional Cluster cluster = 4;
     enum BackupOutput {
         Disk = 1;
         File = 2;
-        S3 = 3;
+        Memory = 3;
+        Null = 4;
+        S3 = 5;
     }
-    required BackupOutput out = 7;
-    repeated string out_params = 8;
-    optional SettingValues setting_values = 9;
+    required BackupOutput out = 5;
+    repeated string out_params = 6;
+    optional OutFormat format = 7;
+    optional SettingValues setting_values = 8;
+    optional bool async = 9;
 }
 
 message SQLQueryInner {

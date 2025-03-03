@@ -4183,13 +4183,9 @@ CONV_FN(BackupRestoreObject, bobject)
     }
 }
 
-CONV_FN(BackupRestore, backup)
+CONV_FN(BackupRestoreElement, backup)
 {
-    const BackupRestore_BackupCommand & command = backup.command();
-
-    ret += BackupRestore_BackupCommand_Name(command);
-    ret += " ";
-    using BackupType = BackupRestore::BackupOneofCase;
+    using BackupType = BackupRestoreElement::BackupOneofCase;
     switch (backup.backup_oneof_case())
     {
         case BackupType::kBobject:
@@ -4216,6 +4212,21 @@ CONV_FN(BackupRestore, backup)
             ExprSchemaTableToString(ret, backup.except_tables(i));
         }
     }
+}
+
+CONV_FN(BackupRestore, backup)
+{
+    const BackupRestore_BackupCommand & command = backup.command();
+    const BackupRestore_BackupOutput & output = backup.out();
+
+    ret += BackupRestore_BackupCommand_Name(command);
+    ret += " ";
+    BackupRestoreElementToString(ret, backup.backup_element());
+    for (int i = 0; i < backup.other_elements_size(); i++)
+    {
+        ret += ", ";
+        BackupRestoreElementToString(ret, backup.other_elements(i));
+    }
     if (backup.has_cluster())
     {
         ClusterToString(ret, backup.cluster());
@@ -4223,23 +4234,35 @@ CONV_FN(BackupRestore, backup)
     ret += " ";
     ret += command == BackupRestore_BackupCommand_BACKUP ? "TO" : "FROM";
     ret += " ";
-    ret += BackupRestore_BackupOutput_Name(backup.out());
-    ret += "(";
-    for (int i = 0; i < backup.out_params_size(); i++)
+    ret += BackupRestore_BackupOutput_Name(output);
+    if (output != BackupRestore_BackupOutput_Null)
     {
-        if (i != 0)
+        ret += "(";
+        for (int i = 0; i < backup.out_params_size(); i++)
         {
-            ret += ", ";
+            if (i != 0)
+            {
+                ret += ", ";
+            }
+            ret += "'";
+            ret += backup.out_params(i);
+            ret += "'";
         }
-        ret += "'";
-        ret += backup.out_params(i);
-        ret += "'";
+        ret += ")";
     }
-    ret += ")";
+    if (backup.has_format())
+    {
+        ret += " FORMAT ";
+        ret += OutFormat_Name(backup.format()).substr(4);
+    }
     if (backup.has_setting_values())
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, backup.setting_values());
+    }
+    if (backup.async())
+    {
+        ret += " ASYNC";
     }
 }
 
