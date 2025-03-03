@@ -679,8 +679,8 @@ if (TARGET ch_contrib::delta_kernel_rs)
     target_link_libraries(dbms PRIVATE ch_contrib::delta_kernel_rs)
 endif ()
 
-if (TARGET ch_contrib::ethash)
-    dbms_target_link_libraries(PUBLIC ch_contrib::ethash)
+if (TARGET ch_contrib::sha3iuf)
+    dbms_target_link_libraries(PUBLIC ch_contrib::sha3iuf)
 endif()
 
 if (ENABLE_BUZZHOUSE)

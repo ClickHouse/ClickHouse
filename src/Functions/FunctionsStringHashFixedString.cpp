@@ -21,8 +21,10 @@
 #    include <openssl/sha.h>
 #endif
 
-#if defined USE_ETHASH && USE_ETHASH
-#    include <ethash/keccak.hpp>
+#if USE_SHA3IUF
+extern "C" { 
+    #include <sha3.h> 
+}
 #endif
 
 
@@ -223,7 +225,7 @@ struct ImplBLAKE3
 
 #endif
 
-#if USE_ETHASH
+#if USE_SHA3IUF
 struct Keccak256Impl
 {
     static constexpr auto name = "keccak256";
@@ -234,11 +236,7 @@ struct Keccak256Impl
 
     static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
     {
-        auto h = ethash::keccak256(
-            reinterpret_cast<const uint8_t*>(begin),
-            size
-        );
-        memcpy(out_char_data, h.bytes, Keccak256Impl::length);
+        sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, begin, size, out_char_data, Keccak256Impl::length);
     }
 };
 #endif
@@ -323,7 +321,7 @@ public:
     }
 };
 
-#if USE_SSL || USE_BLAKE3 || USE_ETHASH
+#if USE_SSL || USE_BLAKE3 || USE_SHA3IUF
 REGISTER_FUNCTION(HashFixedStrings)
 {
 #    if USE_SSL
@@ -480,7 +478,7 @@ REGISTER_FUNCTION(HashFixedStrings)
         .category{"Hash"}});
 #    endif
 
-#   if USE_ETHASH
+#   if USE_SHA3IUF
     using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
     factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
         .description = R"(Calculates the keccak-256 hash of the given string.)",

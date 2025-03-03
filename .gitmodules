@@ -375,6 +375,6 @@
 [submodule "contrib/delta-kernel-rs"]
 	path = contrib/delta-kernel-rs
 	url = https://github.com/ClickHouse/delta-kernel-rs.git
-[submodule "contrib/ethash"]
-	path = contrib/ethash
-	url = https://github.com/chfast/ethash.git
+[submodule "contrib/SHA3IUF"]
+	path = contrib/SHA3IUF
+	url = https://github.com/brainhub/SHA3IUF.git
