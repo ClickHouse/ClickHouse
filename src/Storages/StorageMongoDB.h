@@ -16,15 +16,13 @@
 namespace DB
 {
 
-constexpr std::string MONGODB_ID_FIELD = "_id";
-
 inline mongocxx::instance inst{};
 
 struct MongoDBConfiguration
 {
     std::unique_ptr<mongocxx::uri> uri;
     String collection;
-    std::unordered_set<String> oid_fields{MONGODB_ID_FIELD};
+    std::unordered_set<String> oid_fields = {"_id"};
 
     void checkHosts(const ContextPtr & context) const
     {
@@ -40,8 +38,8 @@ struct MongoDBConfiguration
 };
 
 /** Implements storage in the MongoDB database.
- *  Use ENGINE = MongoDB(host:port, database, collection, user, password [, options[, oid_columns]]);
- *               MongoDB(uri, collection [, oid columns]);
+ *  Use ENGINE = MongoDB(host:port, database, collection, user, password[, options[, oid_columns]]);
+ *               MongoDB(uri, collection[, oid columns]);
  *  Read only.
  *  One stream only.
  */

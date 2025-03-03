@@ -4,8 +4,13 @@
 
 #if USE_MONGODB
 #include <Common/Base64.h>
+#include <Common/JSONBuilder.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <DataTypes/FieldToDataType.h>
-#include "Columns/ColumnNullable.h"
+#include "DataTypes/DataTypeNullable.h"
+
+#include <mongocxx/client.hpp>
 
 namespace DB
 {
@@ -24,7 +29,7 @@ using bsoncxx::builder::basic::document;
 using bsoncxx::builder::basic::kvp;
 using bsoncxx::builder::basic::make_document;
 
-static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type, const bool shouldBeOid)
+static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, const DataTypePtr & type, const bool is_oid)
 {
     if (field.isNull())
         return bsoncxx::types::b_null{};
@@ -39,7 +44,7 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
             return bsoncxx::types::b_null{};
         case TypeIndex::String:
         {
-            if (shouldBeOid)
+            if (is_oid)
                 return bsoncxx::oid(field.safeGet<String>());
             return bsoncxx::types::b_string{field.safeGet<String>()};
         }
@@ -92,14 +97,14 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
         {
             auto arr = bsoncxx::v_noabi::builder::basic::array();
             for (const auto & elem : field.safeGet<Tuple>())
-                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), shouldBeOid));
+                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), is_oid));
             return arr.view();
         }
         case TypeIndex::Array:
         {
             auto arr = bsoncxx::v_noabi::builder::basic::array();
             for (const auto & elem : field.safeGet<Array>())
-                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), shouldBeOid));
+                arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem), is_oid));
             return arr.view();
         }
         default:

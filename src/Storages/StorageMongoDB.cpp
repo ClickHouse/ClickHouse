@@ -1,18 +1,21 @@
 #include "config.h"
 
 #if USE_MONGODB
-#include <memory>
-#include <boost/algorithm/string/classification.hpp>
-#include <boost/algorithm/string/split.hpp>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/QueryNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryNode.h>
 #include <Analyzer/SortNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
+#include <Common/BSONCXXHelper.h>
+#include <Common/ErrorCodes.h>
+#include <Common/logger_useful.h>
+#include <Common/parseAddress.h>
+#include <Core/Joins.h>
+#include <Core/Settings.h>
 #include <Formats/BSONTypes.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
@@ -22,14 +25,13 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMongoDB.h>
 #include <Storages/checkAndGetLiteralArgument.h>
-#include <Common/parseAddress.h>
-#include <Common/ErrorCodes.h>
-#include <Common/BSONCXXHelper.h>
-#include <Common/logger_useful.h>
-#include <Core/Settings.h>
-#include <Core/Joins.h>
 
 #include <bsoncxx/json.hpp>
+
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
+
+#include <memory>
 
 using bsoncxx::builder::basic::document;
 using bsoncxx::builder::basic::make_document;
@@ -161,7 +163,7 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
         else
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                                 "Incorrect number of arguments. Example usage: "
-                                "MongoDB('host:port', 'database', 'collection', 'user', 'password' [, options[, oid_columns]]) or MongoDB('uri', 'collection' [, oid columns]).");
+                                "MongoDB('host:port', 'database', 'collection', 'user', 'password'[, options[, oid_columns]]) or MongoDB('uri', 'collection'[, oid columns]).");
     }
 
     configuration.checkHosts(context);

@@ -79,8 +79,9 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
     ASTs & args = func_args.arguments->children;
     if ((args.size() < 3 || args.size() > 4) && (args.size() < 6 || args.size() > 8))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                        "Incorrect count of arguments. Example usage: "
-                        "mongodb('host:port', database, collection, user, password, structure [, options[, oid_columns]]) or mongodb(uri, collection, structure [, oid columns]).");
+                        "Incorrect argument count for table function '{}'. Usage: "
+                        "mongodb('host:port', database, collection, user, password, structure[, options[, oid_columns]]) or mongodb(uri, collection, structure[, oid_columns]).",
+                        getName());
 
     ASTs main_arguments;
     for (size_t i = 0; i < args.size(); ++i)
@@ -92,7 +93,8 @@ void TableFunctionMongoDB::parseArguments(const ASTPtr & ast_function, ContextPt
                 structure = checkAndGetLiteralArgument<String>(arg_value, arg_name);
             else if (arg_name == "options" || arg_name == "oid_columns")
                 main_arguments.push_back(arg_value);
-        } else if (args.size() >= 6 && i == 5)
+        }
+        else if (args.size() >= 6 && i == 5)
             structure = checkAndGetLiteralArgument<String>(args[i], "structure");
         else if (args.size() <= 4 && i == 2)
             structure = checkAndGetLiteralArgument<String>(args[i], "structure");
