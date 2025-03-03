@@ -2,6 +2,7 @@
 #include <Columns/ColumnSet.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Processors/Formats/Impl/Parquet/ColumnFilterFactory.h>
 
 namespace ErrorCodes
@@ -106,6 +107,36 @@ ActionsDAG::NodeRawConstPtrs getConstantNode(const ActionsDAG::Node & node)
     }
     return result;
 }
+
+Field getConstantField(const ActionsDAG::Node & node, const IDataType & target_type)
+{
+    chassert(node.column);
+    Field value;
+    node.column->get(0, value);
+    return convertFieldToTypeOrThrow(value, target_type);
+}
+
+template<typename T>
+T convertField(const Field & value)
+{
+    return value.safeGet<T>();
+}
+
+template <> Int64 convertField(const Field & value)
+{
+    if (value.getType() == Field::Types::Decimal64)
+    {
+        Decimal64 decimal64 = value.safeGet<Decimal64>();
+        return decimal64.value;
+    }
+    return value.safeGet<Int64>();
+}
+
+template <> Float32 convertField(const Field & value)
+{
+    return static_cast<Float32>(value.safeGet<Float32>());
+}
+
 }
 
 bool BigIntRangeFilterFactory::validate(const ActionsDAG::Node & node)
@@ -127,29 +158,25 @@ NamedColumnFilter BigIntRangeFilterFactory::create(const ActionsDAG::Node & node
     auto constant_nodes = getConstantNode(node);
     auto func_name = node.function_base->getName();
     ColumnFilterPtr filter = nullptr;
+    auto value = convertField<Int64>(getConstantField(*constant_nodes.at(0), *input_node->result_type));
     if (func_name == "equals")
     {
-        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<BigIntRangeFilter>(value, value, false);
     }
     else if (func_name == "less")
     {
-        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<BigIntRangeFilter>(std::numeric_limits<Int64>::min(), value - 1, false);
     }
     else if (func_name == "greater")
     {
-        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<BigIntRangeFilter>(value + 1, std::numeric_limits<Int64>::max(), false);
     }
     else if (func_name == "lessOrEquals")
     {
-        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<BigIntRangeFilter>(std::numeric_limits<Int64>::min(), value, true);
     }
     else if (func_name == "greaterOrEquals")
     {
-        Int64 value = constant_nodes.front()->column->getInt(0);
         filter = std::make_shared<BigIntRangeFilter>(value, std::numeric_limits<Int64>::max(), true);
     }
     if (filter)
@@ -177,7 +204,7 @@ NamedColumnFilter NegatedBigIntRangeFilterFactory::create(const ActionsDAG::Node
         const auto * input_node = getInputNode(node);
         auto name = input_node->result_name;
         auto constant_nodes = getConstantNode(node);
-        Int64 value = constant_nodes.front()->column->getInt(0);
+        auto value = convertField<Int64>(getConstantField(*constant_nodes.at(0), *input_node->result_type));
         auto filter = std::make_shared<NegatedBigIntRangeFilter>(value, value, false);
         return std::make_pair(name, filter);
     }
@@ -213,9 +240,9 @@ NamedColumnFilter FloatRangeFilterFactory<T>::create(const ActionsDAG::Node & no
     auto func_name = node.function_base->getName();
     T value;
     if constexpr (std::is_same_v<T, Float32>)
-        value = constant_nodes.front()->column->getFloat32(0);
+        value = convertField<Float32>(getConstantField(*constant_nodes.at(0), *input_node->result_type));
     else
-        value = constant_nodes.front()->column->getFloat64(0);
+        value = convertField<Float64>(getConstantField(*constant_nodes.at(0), *input_node->result_type));
     ColumnFilterPtr filter = nullptr;
     if (func_name == "less")
     {

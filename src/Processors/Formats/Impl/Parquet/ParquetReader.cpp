@@ -98,7 +98,6 @@ void ParquetReader::setSourceArrowFile(std::shared_ptr<arrow::io::RandomAccessFi
 
 void ParquetReader::addFilter(const String & column_name, const ColumnFilterPtr filter)
 {
-    //    std::cerr << "add filter to column " << column_name << ": " << filter->toString() << std::endl;
     condition_columns.insert(column_name);
     if (!filters.contains(column_name))
         filters[column_name] = filter;

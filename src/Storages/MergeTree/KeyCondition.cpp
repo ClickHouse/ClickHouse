@@ -879,7 +879,7 @@ KeyCondition::KeyCondition(
     }
 
     has_filter = true;
-    filter_expr = std::shared_ptr<ActionsDAG>(new ActionsDAG(filter_dag->clone()));
+    column_filter_helper = std::make_shared<ColumnFilterHelper>(*filter_dag);
     /** When non-strictly monotonic functions are employed in functional index (e.g. ORDER BY toStartOfHour(dateTime)),
       * the use of NOT operator in predicate will result in the indexing algorithm leave out some data.
       * This is caused by rewriting in KeyCondition::tryParseAtomFromAST of relational operators to less strict

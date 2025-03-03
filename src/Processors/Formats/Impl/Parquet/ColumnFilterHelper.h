@@ -1,10 +1,11 @@
 #pragma once
 #include <Interpreters/ActionsDAG.h>
-#include <Processors/Formats/Impl/Parquet/ColumnFilter.h>
-#include <Processors/Formats/Impl/Parquet/ColumnFilterFactory.h>
 
 namespace DB
 {
+class ColumnFilter;
+using ColumnFilterPtr = std::shared_ptr<ColumnFilter>;
+class ExpressionFilter;
 class ParquetReader;
 struct FilterSplitResult
 {
@@ -19,8 +20,17 @@ using FilterSplitResultPtr = std::shared_ptr<FilterSplitResult>;
 class ColumnFilterHelper
 {
 public:
-    static FilterSplitResultPtr splitFilterForPushDown(const ActionsDAG & filter_expression, bool case_insensitive = false);
+    explicit ColumnFilterHelper(const ActionsDAG & expression)
+        : filter_expression(expression.clone())
+    {
+    }
+    void pushDownToReader(ParquetReader & reader, bool case_insensitive = false) const;
+
+private:
+    FilterSplitResultPtr splitFilterForPushDown(bool case_insensitive = false) const;
+
+
+    std::optional<ActionsDAG> filter_expression;
 };
 
-void pushFilterToParquetReader(const ActionsDAG & filter_expression, ParquetReader & reader);
 }

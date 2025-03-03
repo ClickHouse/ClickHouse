@@ -785,8 +785,11 @@ void ParquetBlockInputFormat::initializeIfNeeded()
         new_native_reader = std::make_shared<ParquetReader>(
             getPort().getHeader(), *seekable_in, arrow_file, settings, row_groups_indices, metadata, io_pool);
         new_native_reader->setSourceArrowFile(arrow_file);
-        if (filter.has_value())
-            pushFilterToParquetReader(filter.value(), *new_native_reader);
+        const auto & helper = key_condition->getColumnFilterHelper();
+        if (helper)
+        {
+            helper->pushDownToReader(*new_native_reader, format_settings.parquet.case_insensitive_column_matching);
+        }
     }
 }
 
@@ -1201,18 +1204,6 @@ void ParquetBlockInputFormat::resetParser()
 const BlockMissingValues * ParquetBlockInputFormat::getMissingValues() const
 {
     return &previous_block_missing_values;
-}
-void ParquetBlockInputFormat::setKeyCondition(const std::optional<ActionsDAG> & expr, ContextPtr context)
-{
-    if (expr.has_value())
-        filter = std::optional(expr.value().clone());
-    SourceWithKeyCondition::setKeyCondition(expr, context);
-}
-
-void ParquetBlockInputFormat::setKeyCondition(const std::shared_ptr<const KeyCondition> & key_condition_)
-{
-    filter = std::optional(key_condition_->getFilterDagCopy());
-    SourceWithKeyCondition::setKeyCondition(key_condition_);
 }
 
 ParquetSchemaReader::ParquetSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

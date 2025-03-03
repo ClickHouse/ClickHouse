@@ -1,13 +1,15 @@
 #include "ColumnFilterHelper.h"
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
+#include <Processors/Formats/Impl/Parquet/ColumnFilter.h>
+#include <Processors/Formats/Impl/Parquet/ColumnFilterFactory.h>
 #include <Poco/String.h>
 
 namespace DB
 {
-FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG & filter_expression, bool case_insensitive)
+FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(bool case_insensitive) const
 {
     FilterSplitResultPtr split_result = std::make_shared<FilterSplitResult>();
-    split_result->filter_expression = filter_expression.clone();
+    split_result->filter_expression = filter_expression->clone();
     if (split_result->filter_expression.getOutputs().empty())
         return {};
     const auto * filter_node = split_result->filter_expression.getOutputs().front();
@@ -53,11 +55,11 @@ FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(const ActionsDAG
     return split_result;
 }
 
-void pushFilterToParquetReader(const ActionsDAG & filter_expression, ParquetReader & reader)
+void ColumnFilterHelper::pushDownToReader(ParquetReader & reader, bool case_insensitive) const
 {
-    if (filter_expression.getOutputs().empty())
+    if (filter_expression->getOutputs().empty())
         return;
-    auto split_result = ColumnFilterHelper::splitFilterForPushDown(filter_expression);
+    auto split_result = this->splitFilterForPushDown(case_insensitive);
     reader.pushDownFilter(split_result);
 }
 }

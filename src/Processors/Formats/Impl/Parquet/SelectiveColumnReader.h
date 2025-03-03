@@ -134,16 +134,18 @@ void computeRowSetPlainSpace(
         {
             if constexpr (std::is_same_v<T, Int64>)
                 sets.set(i, filter->testInt64(start[count]));
+            else if constexpr (std::is_same_v<T, DateTime64>)
+                sets.set(i, filter->testInt64(reinterpret_cast<const Int64 *>(start)[count]));
             else if constexpr (std::is_same_v<T, Int32>)
                 sets.set(i, filter->testInt32(start[count]));
-            else if constexpr (std::is_same_v<T, Int16>)
+            else if constexpr (std::is_same_v<T, Int16> || std::is_same_v<T, UInt16>)
                 sets.set(i, filter->testInt16(start[count]));
             else if constexpr (std::is_same_v<T, Float32>)
                 sets.set(i, filter->testFloat32(start[count]));
             else if constexpr (std::is_same_v<T, Float64>)
                 sets.set(i, filter->testFloat64(start[count]));
             else
-                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
+                throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type {} on filter {}", typeid(T).name(), filter->toString());
             count++;
         }
     }
@@ -156,16 +158,20 @@ void computeRowSetPlain(const T * start, OptionalRowSet & row_set, const ColumnF
     {
         if constexpr (std::is_same_v<T, Int64>)
             filter->testInt64Values(row_set.value(), rows_to_read, start);
+        else if constexpr (std::is_same_v<T, DateTime64>)
+            filter->testInt64Values(row_set.value(), rows_to_read, reinterpret_cast<const Int64 *>(start));
         else if constexpr (std::is_same_v<T, Int32>)
             filter->testInt32Values(row_set.value(), rows_to_read, start);
         else if constexpr (std::is_same_v<T, Int16>)
             filter->testInt16Values(row_set.value(), rows_to_read, start);
+        else if constexpr (std::is_same_v<T, UInt16>)
+            filter->testInt16Values(row_set.value(), rows_to_read, reinterpret_cast<const Int16 *>(start));
         else if constexpr (std::is_same_v<T, Float32>)
             filter->testFloat32Values(row_set.value(), rows_to_read, start);
         else if constexpr (std::is_same_v<T, Float64>)
             filter->testFloat64Values(row_set.value(), rows_to_read, start);
         else
-            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type");
+            throw Exception(ErrorCodes::PARQUET_EXCEPTION, "unsupported type {} on filter {}", typeid(T).name(), filter->toString());
     }
 }
 

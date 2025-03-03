@@ -75,9 +75,6 @@ public:
 
     size_t getApproxBytesReadForChunk() const override { return previous_approx_bytes_read_for_chunk; }
 
-    void setKeyCondition(const std::optional<ActionsDAG> & expr, ContextPtr context) override;
-
-    void setKeyCondition(const std::shared_ptr<const KeyCondition> & key_condition_) override;
 private:
     Chunk read() override;
 
@@ -346,7 +343,6 @@ private:
     std::atomic<int> is_stopped{0};
     bool is_initialized = false;
     std::shared_ptr<ParquetReader> new_native_reader = nullptr;
-    std::optional<ActionsDAG> filter = std::nullopt;
 
     // For native reader read from stdin
     std::shared_ptr<ReadBufferFromMemory> memory_buffer_reader = nullptr;

@@ -3,12 +3,13 @@
 #include <unordered_set>
 #include <Columns/ColumnsCommon.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <base/types.h>
 #include <boost/dynamic_bitset.hpp>
 #include <Common/Exception.h>
-
 
 namespace DB
 {
@@ -63,10 +64,6 @@ private:
 };
 using OptionalRowSet = std::optional<RowSet>;
 
-//bool isConstantNode(const ActionsDAG::Node & node);
-//bool isCompareColumnWithConst(const ActionsDAG::Node & node);
-//const ActionsDAG::Node * getInputNode(const ActionsDAG::Node & node);
-//ActionsDAG::NodeRawConstPtrs getConstantNode(const ActionsDAG::Node & node);
 class ColumnFilter;
 using ColumnFilterPtr = std::shared_ptr<ColumnFilter>;
 
