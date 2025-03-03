@@ -1236,10 +1236,10 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
         try
         {
+            // TODO(nickitat): increase ConcurrentBoundedQueue size
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
-
                 {
                     std::lock_guard lock(callback_mutex);
                     receivePacketsExpectCancel(state);
@@ -1262,17 +1262,47 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     }
 
                     sendLogs(state);
+                }
+
+                // Block might be empty in case of timeout, i.e. there is no data to process
+                if (block && !state.io.null_format)
+                {
+                    initBlockQueue(state);
+                    while (block && state.block_queue->enqueueForProcessing(block, /*wait=*/false))
+                    {
+                        if (!executor.pull(block, /*milliseconds=*/1))
+                        {
+                            // Both negative outcomes - timeout and end of data - should cause exit from the loop
+                            block = {};
+                        }
+                    }
+
+                    {
+                        std::lock_guard lock(callback_mutex);
+                        Block processed;
+                        // Make only one iteration with `wait=true`, all other on the best-effort basis
+                        while ((processed = state.block_queue->dequeueNextProcessed(/*wait=*/!processed)))
+                            sendData(state, processed);
+                    }
 
                     if (block)
                     {
-                        if (!state.io.null_format)
-                            sendData(state, block);
+                        // Everything that was possible to push without waiting is pushed. Now we have to push the last block regardless of the queue state
+                        state.block_queue->enqueueForProcessing(block, /*wait=*/true);
                     }
                 }
+            }
+
+            if (state.block_queue)
+            {
+                std::lock_guard lock(callback_mutex);
+                while (Block processed = state.block_queue->dequeueNextProcessed(/*wait=*/false))
+                    sendData(state, processed);
             }
         }
         catch (...)
         {
+            // TODO(nickitat): make sure queue threads do not continue to work
             executor.cancel();
             throw;
         }
@@ -2496,12 +2526,8 @@ void TCPHandler::initBlockQueue(QueryState & state)
     }
 }
 
-void TCPHandler::sendData(QueryState & state, const Block & block_)
+void TCPHandler::sendData(QueryState & state, const Block & block)
 {
-    initBlockQueue(state);
-    state.block_queue->enqueueForProcessing(block_);
-    auto block = state.block_queue->dequeueNextProcessed();
-
     initBlockOutput(state, block);
 
     size_t prev_bytes_written_out = out->count();

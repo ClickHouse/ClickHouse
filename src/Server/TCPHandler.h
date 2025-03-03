@@ -100,12 +100,21 @@ public:
         chassert(failure || processed.empty());
     }
 
-    void enqueueForProcessing(const Block & block)
+    size_t size()
+    {
+        std::unique_lock lock(mutex);
+        return processed.size();
+    }
+
+    bool enqueueForProcessing(const Block & block, bool wait = true)
     {
         {
             std::unique_lock lock(mutex);
 
-            auto predicate = [&]() { return failure || (to_be_processed.size() < max_queue_size); };
+            auto predicate = [&]() { return failure || (processed.size() < max_queue_size); };
+
+            if (!predicate() && !wait)
+                return false;
 
             //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             push_condition.wait(lock, predicate);
@@ -121,15 +130,19 @@ public:
             //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         }
         pop_condition.notify_one();
+        return true;
     }
 
-    Block dequeueNextProcessed()
+    Block dequeueNextProcessed(bool wait = true)
     {
         std::future<Block> block;
         {
             std::unique_lock lock(mutex);
 
             auto predicate = [&]() { return failure || !processed.empty(); };
+
+            if (!predicate() && !wait)
+                return {};
 
             //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             processed_condition.wait(lock, predicate);
@@ -473,7 +486,7 @@ private:
     void processTablesStatusRequest();
 
     void sendHello();
-    void sendData(QueryState & state, const Block & block_); /// Write a block to the network.
+    void sendData(QueryState & state, const Block & block); /// Write a block to the network.
     void sendLogData(QueryState & state, const Block & block);
     void sendTableColumns(QueryState & state, const ColumnsDescription & columns);
     void sendException(const Exception & e, bool with_stack_trace);
