@@ -1131,13 +1131,23 @@ bool MinIOIntegration::sendRequest(const String & resource)
     return true;
 }
 
+String MinIOIntegration::getConnectionURL()
+{
+    return "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/";
+}
+
 void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(
-        "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + tname.substr(1)
-        + (b.isS3QueueEngine() ? "/*" : ""));
+    te->add_params()->set_svalue(getConnectionURL() + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/*" : ""));
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
+}
+
+void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+{
+    br->add_out_params(getConnectionURL() + filename);
+    br->add_out_params(sc.user);
+    br->add_out_params(sc.password);
 }
 
 bool MinIOIntegration::performIntegration(
@@ -1289,6 +1299,11 @@ void ExternalIntegrations::dropPeerTableOnRemote(const SQLTable & t)
         case PeerTableDatabase::None:
             break;
     }
+}
+
+void ExternalIntegrations::setBackupDetails(const String & filename, BackupRestore * br)
+{
+    minio->setBackupDetails(filename, br);
 }
 
 bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String & query)

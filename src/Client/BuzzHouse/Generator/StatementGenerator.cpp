@@ -2749,25 +2749,221 @@ void StatementGenerator::generateNextSystemStatement(RandomGenerator & rg, Syste
     }
 }
 
+static std::optional<String> backupOrRestoreTable(BackupRestoreObject * bro, const SQLObject obj, const SQLBase & b)
+{
+    ExprSchemaTable * est = bro->mutable_object()->mutable_est();
+
+    bro->set_is_temp(b.is_temp);
+    bro->set_sobject(obj);
+    if (b.db)
+    {
+        est->mutable_database()->set_database("d" + std::to_string(b.db->dname));
+    }
+    est->mutable_table()->set_table(((obj == SQLObject::TABLE) ? "t" : "v") + std::to_string(b.tname));
+    return b.getCluster();
+}
+
+static std::optional<String> backupOrRestoreDatabase(BackupRestoreObject * bro, const std::shared_ptr<SQLDatabase> & d)
+{
+    bro->set_sobject(SQLObject::DATABASE);
+    bro->mutable_object()->mutable_database()->set_database("d" + std::to_string(d->dname));
+    return d->getCluster();
+}
+
+void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore * br)
+{
+    const uint32_t backup_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t backup_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
+    const uint32_t backup_database = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
+    const uint32_t all_temporary = 3;
+    const uint32_t everything = 3;
+    const uint32_t prob_space = backup_table + backup_view + backup_database;
+    std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+    const uint32_t nopt = next_dist(rg.generator);
+    BackupRestoreElement * bre = br->mutable_backup_element();
+    std::optional<String> cluster;
+
+    br->set_command(BackupRestore_BackupCommand_BACKUP);
+    if (backup_table && nopt < (backup_table + 1))
+    {
+        cluster = backupOrRestoreTable(
+            bre->mutable_bobject(), SQLObject::TABLE, rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables)));
+    }
+    else if (backup_view && nopt < (backup_table + backup_view + 1))
+    {
+        cluster = backupOrRestoreTable(
+            bre->mutable_bobject(), SQLObject::VIEW, rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views)));
+    }
+    else if (backup_database && nopt < (backup_table + backup_view + backup_database + 1))
+    {
+        cluster = backupOrRestoreDatabase(
+            bre->mutable_bobject(), rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
+    }
+    else if (all_temporary && nopt < (backup_table + backup_view + backup_database + all_temporary + 1))
+    {
+        bre->set_all_temporary(true);
+    }
+    else if (everything && nopt < (backup_table + backup_view + backup_database + all_temporary + everything + 1))
+    {
+        bre->set_all(true);
+    }
+    else
+    {
+        chassert(0);
+    }
+    if (cluster.has_value())
+    {
+        br->mutable_cluster()->set_cluster(cluster.value());
+    }
+
+    const uint32_t out_to_disk = 10 * static_cast<uint32_t>(!fc.disks.empty());
+    const uint32_t out_to_file = 10;
+    const uint32_t out_to_s3 = 10 * static_cast<uint32_t>(connections.hasMinIOConnection());
+    const uint32_t out_to_memory = 5;
+    const uint32_t out_to_null = 3;
+    const uint32_t prob_space2 = out_to_disk + out_to_file + out_to_s3 + out_to_memory + out_to_null;
+    std::uniform_int_distribution<uint32_t> next_dist2(1, prob_space2);
+    const uint32_t nopt2 = next_dist2(rg.generator);
+    String backup_file = "backup";
+    BackupRestore_BackupOutput outf = BackupRestore_BackupOutput_Null;
+
+    br->set_backup_number(backup_counter++);
+    /// Set backup file
+    if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_memory + 1))
+    {
+        backup_file += std::to_string(br->backup_number());
+    }
+    if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + 1) && rg.nextBool())
+    {
+        static const DB::Strings & backup_compress = {"tar", "zip", "tzst", "tgz"};
+        const String & nsuffix = rg.pickRandomlyFromVector(backup_compress);
+
+        backup_file += ".";
+        backup_file += nsuffix;
+        if (nsuffix == "tar" && rg.nextBool())
+        {
+            static const DB::Strings & tar_suffixes = {"gz", "bz2", "lzma", "zst", "xz"};
+
+            backup_file += ".";
+            backup_file += rg.pickRandomlyFromVector(tar_suffixes);
+        }
+    }
+    if (out_to_disk && (nopt2 < out_to_disk + 1))
+    {
+        outf = BackupRestore_BackupOutput_Disk;
+        br->add_out_params(rg.pickRandomlyFromVector(fc.disks));
+        br->add_out_params(std::move(backup_file));
+    }
+    else if (out_to_file && (nopt2 < out_to_disk + out_to_file + 1))
+    {
+        outf = BackupRestore_BackupOutput_File;
+        br->add_out_params((fc.db_file_path / std::move(backup_file)).generic_string());
+    }
+    else if (out_to_s3 && (nopt2 < out_to_disk + out_to_file + out_to_s3 + 1))
+    {
+        outf = BackupRestore_BackupOutput_S3;
+        connections.setBackupDetails((fc.db_file_path / std::move(backup_file)).generic_string(), br);
+    }
+    else if (out_to_memory && nopt2 < (out_to_disk + out_to_file + out_to_s3 + out_to_memory + 1))
+    {
+        outf = BackupRestore_BackupOutput_Memory;
+        br->add_out_params(std::move(backup_file));
+    }
+    br->set_out(outf);
+
+    if (rg.nextSmallNumber() < 4)
+    {
+        br->set_format(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
+    }
+}
+
+void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore * br)
+{
+    const CatalogBackup & backup = rg.pickValueRandomlyFromMap(backups);
+    BackupRestoreElement * bre = br->mutable_backup_element();
+    std::optional<String> cluster;
+
+    br->set_command(BackupRestore_BackupCommand_RESTORE);
+    if (backup.all_temporary)
+    {
+        bre->set_all_temporary(true);
+    }
+    else if (backup.all_tables)
+    {
+        bre->set_all(true);
+    }
+    else
+    {
+        const uint32_t restore_table = 10 * static_cast<uint32_t>(!backup.tables.empty());
+        const uint32_t restore_view = 10 * static_cast<uint32_t>(!backup.views.empty());
+        const uint32_t restore_database = 10 * static_cast<uint32_t>(!backup.databases.empty());
+        const uint32_t prob_space = restore_table + restore_view + restore_database;
+        std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
+        const uint32_t nopt = next_dist(rg.generator);
+
+        if (nopt < restore_table + 1)
+        {
+            cluster = backupOrRestoreTable(bre->mutable_bobject(), SQLObject::TABLE, rg.pickValueRandomlyFromMap(backup.tables));
+        }
+        else if (nopt < restore_table + restore_view + 1)
+        {
+            cluster = backupOrRestoreTable(bre->mutable_bobject(), SQLObject::VIEW, rg.pickValueRandomlyFromMap(backup.views));
+        }
+        else if (nopt < restore_table + restore_view + restore_database + 1)
+        {
+            cluster = backupOrRestoreDatabase(bre->mutable_bobject(), rg.pickValueRandomlyFromMap(backup.databases));
+        }
+        else
+        {
+            chassert(0);
+        }
+    }
+
+    if (cluster.has_value())
+    {
+        br->mutable_cluster()->set_cluster(cluster.value());
+    }
+    br->set_out(backup.outf);
+    for (const auto & entry : backup.out_params)
+    {
+        br->add_out_params(entry);
+    }
+    if (backup.out_format.has_value())
+    {
+        br->set_format(backup.out_format.value());
+    }
+    br->set_backup_number(backup.backup_num);
+}
+
+void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br)
+{
+    if (backups.empty() || rg.nextBool())
+    {
+        generateNextBackup(rg, br);
+    }
+    else
+    {
+        generateNextRestore(rg, br);
+    }
+    br->set_async(rg.nextSmallNumber() < 4);
+}
+
 void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner * sq)
 {
-    const uint32_t create_table = 6
-        * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
-                                && static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
-    const uint32_t create_view = 10
-        * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
-                                && static_cast<uint32_t>(views.size()) < this->fc.max_views);
+    const bool has_databases = collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases);
+    const bool has_tables = collectionHas<SQLTable>(attached_tables);
+
+    const uint32_t create_table = 6 * static_cast<uint32_t>(has_databases && static_cast<uint32_t>(tables.size()) < this->fc.max_tables);
+    const uint32_t create_view = 10 * static_cast<uint32_t>(has_databases && static_cast<uint32_t>(views.size()) < this->fc.max_views);
     const uint32_t drop = 2
         * static_cast<uint32_t>(
                               collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
                               || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3);
-    const uint32_t insert = 180 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
-    const uint32_t light_delete = 6 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
-    const uint32_t truncate = 2
-        * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases)
-                                || collectionHas<SQLTable>(attached_tables));
+    const uint32_t insert = 180 * static_cast<uint32_t>(has_tables);
+    const uint32_t light_delete = 6 * static_cast<uint32_t>(has_tables);
+    const uint32_t truncate = 2 * static_cast<uint32_t>(has_databases || has_tables);
     const uint32_t optimize_table = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(optimize_table_lambda));
-    const uint32_t check_table = 2 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t check_table = 2 * static_cast<uint32_t>(has_tables);
     const uint32_t desc_table = 2;
     const uint32_t exchange_tables = 1 * static_cast<uint32_t>(collectionCount<SQLTable>(exchange_table_lambda) > 1);
     const uint32_t alter_table
@@ -2782,10 +2978,11 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const uint32_t create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases);
     const uint32_t create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions);
     const uint32_t system_stmt = 1;
+    const uint32_t backup_or_restore = 2;
     const uint32_t select_query = 800;
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
-        + select_query;
+        + backup_or_restore + select_query;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -2894,11 +3091,20 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
         generateNextSystemStatement(rg, sq->mutable_system_cmd());
     }
     else if (
+        backup_or_restore
+        && nopt
+            < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
+               + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
+               + backup_or_restore + 1))
+    {
+        generateNextBackupOrRestore(rg, sq->mutable_backup_restore());
+    }
+    else if (
         select_query
         && nopt
             < (create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table + desc_table
                + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
-               + select_query + 1))
+               + backup_or_restore + select_query + 1))
     {
         generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), sq->mutable_select());
     }

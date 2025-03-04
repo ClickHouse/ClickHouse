@@ -2433,7 +2433,9 @@ CONV_FN(DatabaseEngineParam, dep)
             ret += "'";
             break;
         case DatabaseEngineParamType::kDatabase:
+            ret += "'";
             DatabaseToString(ret, dep.database());
+            ret += "'";
             break;
         case DatabaseEngineParamType::kDisk:
             ret += "Disk('";

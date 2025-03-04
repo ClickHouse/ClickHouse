@@ -3616,6 +3616,8 @@ message BackupRestore {
     optional OutFormat format = 7;
     optional SettingValues setting_values = 8;
     optional bool async = 9;
+    /// Need to know backup number
+    required uint32 backup_number = 10;
 }
 
 message SQLQueryInner {

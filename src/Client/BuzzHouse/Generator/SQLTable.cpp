@@ -724,8 +724,6 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     }
 }
 
-const DB::Strings & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
-
 void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     SettingValues * svs = nullptr;
@@ -888,6 +886,8 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             te->add_params()->set_in_out(b.file_format);
             if (rg.nextSmallNumber() < 4)
             {
+                static const DB::Strings & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
+
                 b.file_comp = rg.pickRandomlyFromVector(s3_compress);
                 te->add_params()->set_svalue(b.file_comp);
             }
