@@ -14,7 +14,7 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=[
-                "configs/config.d/storage_conf.xml",
+                "configs/config.d/storage_conf_web.xml",
                 "configs/config.d/proxy_list.xml",
             ],
             with_nginx=True,
