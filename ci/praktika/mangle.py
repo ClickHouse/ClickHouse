@@ -130,7 +130,7 @@ def _update_workflow_with_native_jobs(workflow):
                 job.requires = []
             job.requires.append(aux_job.name)
 
-    if workflow.enable_merge_ready_status:
+    if workflow.enable_merge_ready_status or workflow.post_hooks:
         from .native_jobs import _final_job
 
         print(f"Enable native job [{_final_job.name}] for [{workflow.name}]")

@@ -11,7 +11,11 @@ struct Settings;
 
 struct QueryPlanOptimizationSettings
 {
-    explicit QueryPlanOptimizationSettings(const Settings & from);
+    explicit QueryPlanOptimizationSettings(
+        const Settings & from,
+        UInt64 max_entries_for_hash_table_stats,
+        String initial_query_id);
+
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
     /// Allows to globally disable all plan-level optimizations.
@@ -72,6 +76,12 @@ struct QueryPlanOptimizationSettings
     size_t max_limit_for_lazy_materialization = 0;
 
     size_t max_limit_for_ann_queries;
+
+    /// This is needed for conversion JoinLogical -> Join
+
+    UInt64 max_entries_for_hash_table_stats;
+    String initial_query_id;
+    std::chrono::milliseconds lock_acquire_timeout;
 
     bool keep_logical_steps;
 
