@@ -637,7 +637,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
 
     size_t num_select_threads = pipeline.getNumThreads();
 
-    pipeline.resize(1);
+    pipeline.resize(1, false, settings[Setting::enable_memory_based_pipeline_throttling]);
 
     if (shouldAddSquashingForStorage(table))
     {
@@ -693,7 +693,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         presink_streams_size, sink_streams_size,
         table, /* view_level */ 0, metadata_snapshot, query_sample_block);
 
-    pipeline.resize(presink_chains.size(), false, false, settings[Setting::enable_memory_based_pipeline_throttling]);
+    pipeline.resize(presink_chains.size(), false, settings[Setting::enable_memory_based_pipeline_throttling]);
 
     if (shouldAddSquashingForStorage(table))
     {
@@ -711,7 +711,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         pipeline.addResources(chain.detachResources());
     pipeline.addChains(std::move(presink_chains));
 
-    pipeline.resize(sink_streams_size);
+    pipeline.resize(sink_streams_size, false, settings[Setting::enable_memory_based_pipeline_throttling]);
 
     for (auto & chain : sink_chains)
         pipeline.addResources(chain.detachResources());
