@@ -248,7 +248,7 @@ private:
 
     static ALWAYS_INLINE KeyBits getPart(size_t N, KeyBits x)
     {
-        if (Traits::Transform::transform_is_simple)
+        if constexpr (Traits::Transform::transform_is_simple)
             x = Traits::Transform::forward(x);
 
         return (x >> (N * Traits::PART_SIZE_BITS)) & PART_BITMASK;
@@ -294,26 +294,34 @@ private:
 
         /// Transform the array and calculate the histogram.
         /// NOTE This is slightly suboptimal. Look at https://github.com/powturbo/TurboHist
-        for (size_t i = 0; i < size; ++i)
+        if constexpr (!Traits::Transform::transform_is_simple)
         {
-            if (!Traits::Transform::transform_is_simple)
+            for (size_t i = 0; i < size; ++i)
                 Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
-
-            for (size_t pass = 0; pass < NUM_PASSES; ++pass)
-                ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
         }
+
+        for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+        {
+            size_t base = pass * HISTOGRAM_SIZE;
+            for (size_t i = 0; i < size; ++i)
+            {
+                ++histograms[base + extractPart(pass, arr[i])];
+            }
+        }
+
 
         {
             /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
-            CountType sums[NUM_PASSES] = {0};
-
-            for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
+            for (size_t pass = 0; pass < NUM_PASSES; ++pass)
             {
-                for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+                CountType sum = 0;
+                size_t base = pass * HISTOGRAM_SIZE;
+                for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
                 {
-                    CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
-                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass] - 1;
-                    sums[pass] = tmp;
+                    CountType tmp = histograms[base + i];
+
+                    histograms[base + i] = sum - 1;
+                    sum += tmp;
                 }
             }
         }
@@ -326,21 +334,26 @@ private:
 
             for (size_t i = 0; i < size; ++i)
             {
+                size_t base = pass * HISTOGRAM_SIZE;
                 size_t pos = extractPart(pass, reader[i]);
 
                 /// Place the element on the next free position.
-                auto & dest = writer[++histograms[pass * HISTOGRAM_SIZE + pos]];
+                auto & dest = writer[++histograms[base + pos]];
                 dest = reader[i];
 
                 /// On the last pass, we do the reverse transformation.
-                if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
-                    Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(reader[i]))));
+                if constexpr (!Traits::Transform::transform_is_simple)
+                {
+                    if (pass == NUM_PASSES - 1)
+                        Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(reader[i]))));
+                }
             }
         }
 
-        if (DIRECT_WRITE_TO_DESTINATION)
+        if constexpr (DIRECT_WRITE_TO_DESTINATION)
         {
             constexpr size_t pass = NUM_PASSES - 1;
+            constexpr size_t base = pass * HISTOGRAM_SIZE;
             Result * writer = destination;
             Element * reader = pass % 2 ? swap_buffer : arr;
 
@@ -349,7 +362,7 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = extractPart(pass, reader[i]);
-                    writer[size - 1 - (++histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(reader[i]);
+                    writer[size - 1 - (++histograms[base + pos])] = Traits::extractResult(reader[i]);
                 }
             }
             else
@@ -357,7 +370,7 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = extractPart(pass, reader[i]);
-                    writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(reader[i]);
+                    writer[++histograms[base + pos]] = Traits::extractResult(reader[i]);
                 }
             }
         }
