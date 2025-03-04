@@ -296,5 +296,4 @@ def test_replicated_db_startup_race(started_cluster):
     _, err = drop_query_handle.get_answer_and_error()
     assert err == ""
 
-    node1.query("drop database re sync")
     node2.query("drop database re sync")
