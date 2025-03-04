@@ -16,7 +16,7 @@ slug: /zh/engines/table-engines/
 
 ## MergeTree {#mergetree}
 
-适用于高负载任务的最通用和功能最强大的表引擎。这些引擎的共同特点是可以快速插入数据并进行后续的后台数据处理。 MergeTree系列引擎支持数据复制（使用[Replicated\*](mergetree-family/replication.md#table_engines-replication) 的引擎版本），分区和一些其他引擎不支持的其他功能。
+适用于高负载任务的最通用和功能最强大的表引擎。这些引擎的共同特点是可以快速插入数据并进行后续的后台数据处理。 MergeTree系列引擎支持数据复制（使用[Replicated\*](/engines/table-engines/mergetree-family/replication) 的引擎版本），分区和一些其他引擎不支持的其他功能。
 
 该类型的引擎：
 - [MergeTree](mergetree-family/mergetree.md#mergetree)
