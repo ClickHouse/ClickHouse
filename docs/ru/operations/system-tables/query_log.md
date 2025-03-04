@@ -12,7 +12,7 @@ slug: /ru/operations/system-tables/query_log
 
 Можно отключить логгирование настройкой [log_queries = 0](../settings/settings.md#settings-log-queries). По-возможности, не отключайте логгирование, поскольку информация из таблицы важна при решении проблем.
 
-Период сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в конфигурационной секции [query_log](../server-configuration-parameters/settings.md#server_configuration_parameters-query-log). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs).
+Период сброса данных в таблицу задаётся параметром `flush_interval_milliseconds` в конфигурационной секции [query_log](../server-configuration-parameters/settings.md/operations/server-configuration-parameters/settings#query-log). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs).
 
 ClickHouse не удаляет данные из таблица автоматически. Смотрите [Введение](/ru/operations/system-tables/).
 
@@ -27,7 +27,7 @@ ClickHouse не удаляет данные из таблица автомати
 2.  Если во время обработки запроса возникла ошибка, создаются два события с типами `QueryStart` и `ExceptionWhileProcessing`.
 3.  Если ошибка произошла ещё до запуска запроса, создается одно событие с типом `ExceptionBeforeStart`.
 
-Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_log`, вы можете использовать настройку [log_queries_probability](../../operations/settings/settings.md#log-queries-probability).
+Чтобы уменьшить количество запросов, регистрирующихся в таблице `query_log`, вы можете использовать настройку [log_queries_probability](/operations/settings/settings#log_queries_probability)).
 
 Чтобы регистрировать отформатированные запросы в столбце `formatted_query`, вы можете использовать настройку [log_formatted_queries](../../operations/settings/settings.md#settings-log-formatted-queries).
 
@@ -43,18 +43,18 @@ ClickHouse не удаляет данные из таблица автомати
 -   `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — время начала запроса с точностью до микросекунд.
 -   `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — время начала обработки запроса.
 -   `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — время начала обработки запроса с точностью до микросекунд.
--   `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — длительность выполнения запроса в миллисекундах.
--   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — общее количество строк, считанных из всех таблиц и табличных функций, участвующих в запросе. Включает в себя обычные подзапросы, подзапросы для `IN` и `JOIN`. Для распределенных запросов `read_rows` включает в себя общее количество строк, прочитанных на всех репликах. Каждая реплика передает собственное значение `read_rows`, а сервер-инициатор запроса суммирует все полученные и локальные значения. Объемы кэша не учитываюся.
--   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — общее количество байтов, считанных из всех таблиц и табличных функций, участвующих в запросе. Включает в себя обычные подзапросы, подзапросы для `IN` и `JOIN`. Для распределенных запросов `read_bytes` включает в себя общее количество байтов, прочитанных на всех репликах. Каждая реплика передает собственное значение `read_bytes`, а сервер-инициатор запроса суммирует все полученные и локальные значения. Объемы кэша не учитываюся.
--   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
--   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
--   `result_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество строк в результате запроса `SELECT` или количество строк в запросе `INSERT`.
--   `result_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — объём RAM в байтах, использованный для хранения результата запроса.
--   `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — потребление RAM запросом.
+-   `query_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — длительность выполнения запроса в миллисекундах.
+-   `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — общее количество строк, считанных из всех таблиц и табличных функций, участвующих в запросе. Включает в себя обычные подзапросы, подзапросы для `IN` и `JOIN`. Для распределенных запросов `read_rows` включает в себя общее количество строк, прочитанных на всех репликах. Каждая реплика передает собственное значение `read_rows`, а сервер-инициатор запроса суммирует все полученные и локальные значения. Объемы кэша не учитываюся.
+-   `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — общее количество байтов, считанных из всех таблиц и табличных функций, участвующих в запросе. Включает в себя обычные подзапросы, подзапросы для `IN` и `JOIN`. Для распределенных запросов `read_bytes` включает в себя общее количество байтов, прочитанных на всех репликах. Каждая реплика передает собственное значение `read_bytes`, а сервер-инициатор запроса суммирует все полученные и локальные значения. Объемы кэша не учитываюся.
+-   `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — количество записанных строк для запросов `INSERT`. Для других запросов, значение столбца 0.
+-   `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — объём записанных данных в байтах для запросов `INSERT`. Для других запросов, значение столбца 0.
+-   `result_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — количество строк в результате запроса `SELECT` или количество строк в запросе `INSERT`.
+-   `result_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — объём RAM в байтах, использованный для хранения результата запроса.
+-   `memory_usage` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — потребление RAM запросом.
 -   `current_database` ([String](../../sql-reference/data-types/string.md)) — имя текущей базы данных.
 -   `query` ([String](../../sql-reference/data-types/string.md)) — текст запроса.
 -   `formatted_query` ([String](../../sql-reference/data-types/string.md)) — текст отформатированного запроса.
--   `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — идентичная хэш-сумма без значений литералов для аналогичных запросов.
+-   `normalized_query_hash` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — идентичная хэш-сумма без значений литералов для аналогичных запросов.
 -   `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — тип запроса.
 -   `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена баз данных, присутствующих в запросе.
 -   `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — имена таблиц, присутствующих в запросе.
@@ -96,7 +96,7 @@ ClickHouse не удаляет данные из таблица автомати
 -   `forwarded_for` ([String](../../sql-reference/data-types/string.md)) — HTTP заголовок `X-Forwarded-For`.
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — `ключ квоты` из настроек [квот](quotas.md) (см. `keyed`).
 -   `revision` ([UInt32](../../sql-reference/data-types/int-uint.md)) — ревизия ClickHouse.
--   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](/ru/operations/system-tables/events)(#system_tables-events
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — счетчики для изменения различных метрик. Описание метрик можно получить из таблицы [system.events](/operations/system-tables/events)
 -   `Settings` ([Map(String, String)](../../sql-reference/data-types/array.md)) — имена настроек, которые меняются, когда клиент выполняет запрос. Чтобы разрешить логирование изменений настроек, установите параметр `log_query_settings` равным 1.
 -   `log_comment` ([String](../../sql-reference/data-types/string.md)) — комментарий к записи в логе. Представляет собой произвольную строку, длина которой должна быть не больше, чем [max_query_size](../../operations/settings/settings.md#settings-max_query_size). Если нет комментария, то пустая строка.
 -   `thread_ids` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — идентификаторы потоков, участвующих в обработке запросов, эти потоки не обязательно выполняются одновременно.
@@ -189,4 +189,4 @@ used_table_functions:                  []
 
 **См. также**
 
--   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.
+-   [system.query_thread_log](/operations/system-tables/query_thread_log) — в этой таблице содержится информация о цепочке каждого выполненного запроса.

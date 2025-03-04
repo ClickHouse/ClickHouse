@@ -914,6 +914,8 @@ std::vector<StorageID> DatabaseCatalog::getDependentViews(const StorageID & sour
 
 DDLGuardPtr DatabaseCatalog::getDDLGuard(const String & database, const String & table)
 {
+    if (database.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot obtain lock for empty database");
     std::unique_lock lock(ddl_guards_mutex);
     /// TSA does not support unique_lock
     auto db_guard_iter = TSA_SUPPRESS_WARNING_FOR_WRITE(ddl_guards).try_emplace(database).first;
