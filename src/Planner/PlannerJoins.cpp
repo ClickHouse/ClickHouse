@@ -565,7 +565,7 @@ JoinClausesAndActions buildJoinClausesAndActions(
                     right_key_node = &right_join_actions.addCast(*right_key_node, common_type, {});
             }
 
-            if (join_clause.isNullsafeCompareKey(i) && left_key_node->result_type->isNullable() && right_key_node->result_type->isNullable())
+            if (join_clause.isNullsafeCompareKey(i) && isNullableOrLowCardinalityNullable(left_key_node->result_type) && isNullableOrLowCardinalityNullable(right_key_node->result_type))
             {
                 /**
                   * In case of null-safe comparison (a IS NOT DISTICT FROM b),

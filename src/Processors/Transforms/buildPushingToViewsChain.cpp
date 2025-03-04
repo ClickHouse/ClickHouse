@@ -495,7 +495,7 @@ Chain buildPushingToViewsChain(
                 context->getQueryContext()->addViewAccessInfo(view_id.getFullTableName());
             }
         }
-        catch (const Exception & e)
+        catch (const Poco::Exception & e)
         {
             LOG_ERROR(&Poco::Logger::get("PushingToViews"), "Failed to push block to view {}, {}", view_id, e.message());
             if (!context->getSettingsRef().materialized_views_ignore_errors)
