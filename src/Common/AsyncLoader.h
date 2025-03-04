@@ -402,6 +402,14 @@ public:
     // prevent scheduling of new jobs.
     void shutdown();
 
+    // Wait for currently executing jobs to finish, but do not run any other pending jobs.
+    // Not finished jobs are left in pending state:
+    //  - they can be executed by calling resume() again;
+    //  - or canceled using ~Task() or remove() later.
+    // Currently only used in tests.
+    void pause();
+    void unpause();
+
     // Schedule all jobs of given `task` and their dependencies (even if they are not in task).
     // All dependencies of a scheduled job inherit its pool if it has higher priority. This way higher priority job
     // never waits for (blocked by) lower priority jobs. No priority inversion is possible.
@@ -478,6 +486,7 @@ private:
     LoggerPtr log;
 
     mutable std::mutex mutex; // Guards all the fields below.
+    bool is_running = true;
     bool shutdown_requested = false;
     std::optional<Priority> current_priority; // highest priority among active pools
     UInt64 last_ready_seqno = 0; // Increasing counter for ready queue keys.

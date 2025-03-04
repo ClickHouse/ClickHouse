@@ -272,8 +272,8 @@ void AsyncLoader::shutdown()
 {
     {
         std::unique_lock lock{mutex};
-        // NOTE: there is no need to notify because workers never wait
         shutdown_requested = true;
+        is_running = false;
 
         while (!scheduled_jobs.empty())
         {
@@ -288,6 +288,25 @@ void AsyncLoader::shutdown()
     // Wait for all currently running jobs to finish (and do NOT wait all pending jobs)
     for (auto & p : pools)
         p.thread_pool->wait();
+}
+
+void AsyncLoader::pause()
+{
+    {
+        std::unique_lock lock{mutex};
+        is_running = false; // NOTE: there is no need to notify because workers never wait
+    }
+
+    // Wait for all currently running jobs to finish (and do NOT wait all pending jobs)
+    for (auto & p : pools)
+        p.thread_pool->wait();
+}
+
+void AsyncLoader::unpause()
+{
+    std::unique_lock lock{mutex};
+    is_running = true;
+    updateCurrentPriorityAndSpawn(lock);
 }
 
 void AsyncLoader::schedule(LoadTask & task)
@@ -504,7 +523,7 @@ void AsyncLoader::setMaxThreads(size_t pool, size_t value)
     // Note that underlying `ThreadPool` always has unlimited `queue_size` and `max_threads`.
     // Worker management is done by `AsyncLoader` based on `Pool::max_threads + Pool::suspended_workers` instead.
     p.max_threads = value;
-    if (shutdown_requested)
+    if (!is_running)
         return;
     for (size_t i = 0; canSpawnWorker(p, lock) && i < p.ready_queue.size(); i++)
         spawn(p, lock);
@@ -831,7 +850,7 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
 bool AsyncLoader::canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> &)
 {
     // TODO(serxa): optimization: we should not spawn new worker on the first enqueue during `finish()` because current worker will take this job.
-    return !shutdown_requested
+    return is_running
         && !pool.ready_queue.empty()
         && pool.workers < pool.max_threads + pool.suspended_workers.load()
         && (!current_priority || *current_priority >= pool.priority);
@@ -839,7 +858,7 @@ bool AsyncLoader::canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> &)
 
 bool AsyncLoader::canWorkerLive(Pool & pool, std::unique_lock<std::mutex> &)
 {
-    return !shutdown_requested
+    return is_running
         && !pool.ready_queue.empty()
         && pool.workers <= pool.max_threads + pool.suspended_workers.load()
         && (!current_priority || *current_priority >= pool.priority);
