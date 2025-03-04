@@ -74,7 +74,7 @@ loadPerformanceMetric(const JSONParserImpl::Element & jobj, const uint32_t defau
 
         if (metric_entries.find(nkey) == metric_entries.end())
         {
-            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown server option: {}", nkey);
+            throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "Unknown metric option: {}", nkey);
         }
         metric_entries.at(nkey)(value);
     }
