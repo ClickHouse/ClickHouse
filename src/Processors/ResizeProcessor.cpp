@@ -1,5 +1,6 @@
 #include <Processors/ResizeProcessor.h>
 #include <Interpreters/Squashing.h>
+#include <Common/CurrentThread.h>
 
 #include <Processors/Port.h>
 
