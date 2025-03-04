@@ -20,9 +20,9 @@ For proper operation of introspection functions:
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse saves profiler reports to the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
+ClickHouse saves profiler reports to the [trace_log](/operations/system-tables/trace_log) system table. Make sure the table and profiler are configured properly.
 
-## addressToLine
+## addressToLine {#addresstoline}
 
 Converts virtual memory address inside ClickHouse server process to the filename and the line number in ClickHouse source code.
 
@@ -97,7 +97,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
 
 ``` text
 Row 1:
@@ -112,7 +112,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /build/glibc-OTsEL5/glibc-2.27/misc/../sysdeps/unix/sysv/linux/x86_64/clone.S:97
 ```
 
-## addressToLineWithInlines
+## addressToLineWithInlines {#addresstolinewithinlines}
 
 Similar to `addressToLine`, but returns an Array with all inline functions. As a result of this, it is slower than `addressToLine`.
 
@@ -213,7 +213,7 @@ The [arrayJoin](../../sql-reference/functions/array-functions.md#array-functions
 ```
 
 
-## addressToSymbol
+## addressToSymbol {#addresstosymbol}
 
 Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
 
@@ -282,7 +282,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
 
 ``` text
 Row 1:
@@ -308,7 +308,7 @@ start_thread
 clone
 ```
 
-## demangle
+## demangle {#demangle}
 
 Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol) function to the C++ function name.
 
@@ -376,7 +376,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
 
 ``` text
 Row 1:
@@ -401,9 +401,9 @@ execute_native_thread_routine
 start_thread
 clone
 ```
-## tid
+## tid {#tid}
 
-Returns id of the thread, in which current [Block](/docs/development/architecture/#block) is processed.
+Returns id of the thread, in which current [Block](/development/architecture/#block) is processed.
 
 **Syntax**
 
@@ -413,7 +413,7 @@ tid()
 
 **Returned value**
 
-- Current thread id. [Uint64](../data-types/int-uint.md#uint-ranges).
+- Current thread id. [Uint64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -431,9 +431,9 @@ Result:
 └───────┘
 ```
 
-## logTrace
+## logTrace {#logtrace}
 
-Emits trace log message to server log for each [Block](/docs/development/architecture/#block).
+Emits trace log message to server log for each [Block](/development/architecture/#block).
 
 **Syntax**
 

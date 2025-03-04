@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/quantiledeterministic
 sidebar_position: 172
+title: "quantileDeterministic"
+description: "Computes an approximate quantile of a numeric data sequence."
 ---
 
 # quantileDeterministic
