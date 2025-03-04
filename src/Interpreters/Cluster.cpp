@@ -133,6 +133,11 @@ Cluster::Address::Address(
 
     is_local = isLocal(config.getInt(port_type, 0));
 
+    /// if bind_host is set, then force is_local to false for easier testing
+    if (!bind_host.empty()) {
+        is_local = false;
+    }
+
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
     compression = config.getBool(config_prefix + ".compression", !is_local)
