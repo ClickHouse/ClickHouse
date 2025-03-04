@@ -65,7 +65,7 @@ size_t calculatePartsCount(const PartsRanges & ranges)
     return count;
 }
 
-PartsRanges splitByMergePredicate(PartsRange && range, const MergePredicatePtr & merge_predicate, LoggerPtr series_log)
+PartsRanges splitByMergePredicate(PartsRange && range, const MergePredicatePtr & merge_predicate, LogSeriesLimiter & series_log)
 {
     const auto & build_next_range = [&](PartsRange::iterator & current_it)
     {
@@ -105,7 +105,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const MergePredicatePtr &
     return mergeable_ranges;
 }
 
-PartsRanges splitByMergePredicate(PartsRanges && ranges, const MergePredicatePtr & merge_predicate, LoggerPtr series_log)
+PartsRanges splitByMergePredicate(PartsRanges && ranges, const MergePredicatePtr & merge_predicate, LogSeriesLimiter & series_log)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds);
 
@@ -244,7 +244,7 @@ PartsRanges grabAllPossibleRanges(
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
     const std::optional<PartitionIdsHint> & partitions_hint,
-    LoggerPtr series_log)
+    LogSeriesLimiter & series_log)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds);
     return parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
@@ -326,7 +326,7 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
-    LoggerPtr series_log = log;
+    LogSeriesLimiter series_log(log, 1, /*interval_s_=*/60 * 30);
 
     auto ranges = grabAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, std::nullopt, series_log);
     if (ranges.empty())
@@ -383,7 +383,7 @@ std::expected<MergeSelectorChoice, SelectMergeFailure> MergeTreeDataMergerMutato
     const auto storage_policy = data.getStoragePolicy();
     const time_t current_time = std::time(nullptr);
     const bool can_use_ttl_merges = !ttl_merges_blocker.isCancelled();
-    auto series_log = log;
+    LogSeriesLimiter series_log(log, 1, /*interval_s_=*/60 * 30);
 
     auto ranges = grabAllPossibleRanges(parts_collector, metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
     if (ranges.empty())

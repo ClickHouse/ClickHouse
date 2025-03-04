@@ -4131,7 +4131,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             }
             else
             {
-                LOG_TRACE(log, "Didn't select merge: {}", select_merge_result.error().explanation.text);
+                LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't select merge: {}", select_merge_result.error().explanation.text);
             }
         }
 

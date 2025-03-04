@@ -148,7 +148,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
             /// TODO Why 1 and 2 can happen? Do we need more assertions here or somewhere else?
             constexpr auto fmt_string = "Part {} is covered by {} but should be merged into {}. This shouldn't happen often.";
             String message;
-            LOG_WARNING(log, fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
+            LOG_WARNING(LogToStr(message, log), fmt_string, source_part_name, source_part_or_covering->name, entry.new_part_name);
             if (!source_part_or_covering->info.contains(MergeTreePartInfo::fromPartName(entry.new_part_name, storage.format_version)))
                 throw Exception::createDeprecated(message, ErrorCodes::LOGICAL_ERROR);
 

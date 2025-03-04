@@ -22,7 +22,7 @@ public:
         const StoragePolicyPtr & storage_policy,
         const time_t & current_time,
         const std::optional<PartitionIdsHint> & partitions_hint,
-        LoggerPtr series_log) const = 0;
+        LogSeriesLimiter & series_log) const = 0;
 
     virtual std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
         const StorageMetadataPtr & metadata_snapshot,

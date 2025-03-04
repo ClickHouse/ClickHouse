@@ -48,6 +48,7 @@ void setupCassandraDriverLibraryLogging(CassLogLevel level)
     std::call_once(setup_logging_flag, [level]()
     {
         auto * logger = getQuillLogger("CassandraDriverLibrary");
+        chassert(logger, "Failed to create logger");
         cass_log_set_level(level);
         if (level != CASS_LOG_DISABLED)
             cass_log_set_callback(cassandraLogCallback, logger);

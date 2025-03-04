@@ -21,7 +21,7 @@
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>

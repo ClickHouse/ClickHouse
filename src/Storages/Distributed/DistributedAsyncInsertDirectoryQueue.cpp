@@ -242,7 +242,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
             }
         }
         else
-            LOG_TEST(log, "Skipping send data over distributed table.");
+            LOG_TEST(LogFrequencyLimiter(log, 30), "Skipping send data over distributed table.");
 
         if (do_sleep)
             break;

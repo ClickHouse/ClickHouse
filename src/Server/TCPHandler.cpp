@@ -1698,7 +1698,7 @@ void TCPHandler::receiveHello()
     if (is_interserver_mode)
     {
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2)
-            LOG_WARNING(log,
+            LOG_WARNING(LogFrequencyLimiter(log, 10),
                         "Using deprecated interserver protocol because the client is too old. Consider upgrading all nodes in cluster.");
         processClusterNameAndSalt();
         return;

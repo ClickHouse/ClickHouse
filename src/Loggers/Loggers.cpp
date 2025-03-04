@@ -395,7 +395,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     [[maybe_unused]] quill::Logger * quill_logger = quill::Frontend::create_or_get_logger(
         "root",
-        {rotating_file_sink},
+        {rotating_file_sink, console_sink},
         quill::PatternFormatterOptions{"%(message)"});
 
     quill_logger->set_log_level(quill::LogLevel::TraceL1);

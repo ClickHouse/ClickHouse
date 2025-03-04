@@ -96,7 +96,7 @@ void HTTPServerConnection::run()
         }
         catch (const Poco::Net::MessageException & e)
         {
-            LOG_DEBUG(getLogger("HTTPServerConnection"), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
+            LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "HTTP request failed: {}: {}", HTTPResponse::HTTP_REASON_BAD_REQUEST, e.displayText());
             sendErrorResponse(session, Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
         }
         catch (const Poco::Net::NetException & e)
@@ -104,7 +104,7 @@ void HTTPServerConnection::run()
             /// Do not spam logs with messages related to connection reset by peer.
             if (e.code() == POCO_ENOTCONN)
             {
-                LOG_DEBUG(getLogger("HTTPServerConnection"), "Connection reset by peer while processing HTTP request: {}", e.message());
+                LOG_DEBUG(LogFrequencyLimiter(getLogger("HTTPServerConnection"), 10), "Connection reset by peer while processing HTTP request: {}", e.message());
                 break;
             }
 

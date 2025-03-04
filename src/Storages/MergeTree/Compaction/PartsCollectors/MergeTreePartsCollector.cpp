@@ -103,7 +103,10 @@ auto constructPreconditionsPredicate(const StoragePolicyPtr & storage_policy, co
 
 std::vector<MergeTreeDataPartsVector> splitPartsByPreconditions(
     MergeTreeDataPartsVector && parts,
-    const StoragePolicyPtr & storage_policy, const MergeTreeTransactionPtr & tx, const MergeTreeMergePredicatePtr & merge_pred, LoggerPtr series_log)
+    const StoragePolicyPtr & storage_policy,
+    const MergeTreeTransactionPtr & tx,
+    const MergeTreeMergePredicatePtr & merge_pred,
+    LogSeriesLimiter & series_log)
 {
     return splitRangeByPredicate(std::move(parts), constructPreconditionsPredicate(storage_policy, tx, merge_pred), series_log);
 }
@@ -129,7 +132,7 @@ PartsRanges MergeTreePartsCollector::grabAllPossibleRanges(
     const StoragePolicyPtr & storage_policy,
     const time_t & current_time,
     const std::optional<PartitionIdsHint> & partitions_hint,
-    LoggerPtr series_log) const
+    LogSeriesLimiter & series_log) const
 {
     auto parts = filterByPartitions(collectInitial(storage, tx), partitions_hint);
     auto ranges = splitPartsByPreconditions(std::move(parts), storage_policy, tx, merge_pred, series_log);

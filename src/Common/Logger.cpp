@@ -35,7 +35,7 @@ void Logger::setFormatter(std::unique_ptr<OwnPatternFormatter> formatter_)
     formatter_ptr.store(formatter.get(), std::memory_order_relaxed);
 }
 
-QuillLoggerPtr Logger::getLogger()
+QuillLoggerPtr Logger::getQuillLogger()
 {
     if (!logger)
         logger = quill::Frontend::get_logger("root");
@@ -56,22 +56,12 @@ LoggerPtr getLogger(const char * name)
 
 LoggerPtr getLogger(std::string_view name)
 {
-    auto * root = quill::Frontend::get_logger("root");
-
-    if (!root)
-        return nullptr;
-
-    return std::make_shared<Logger>(name, root);
+    return std::make_shared<Logger>(name, quill::Frontend::get_logger("root"));
 }
 
 LoggerPtr getLogger(std::string name)
 {
-    auto * root = quill::Frontend::get_logger("root");
-
-    if (!root)
-        return nullptr;
-
-    return std::make_shared<Logger>(std::move(name), root);
+    return std::make_shared<Logger>(std::move(name), quill::Frontend::get_logger("root"));
 
 }
 
