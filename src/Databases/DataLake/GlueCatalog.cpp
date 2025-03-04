@@ -277,16 +277,8 @@ bool GlueCatalog::tryGetTableMetadata(
     const std::string & table_name,
     TableMetadata & result) const
 {
-    try
-    {
-        getTableMetadata(schema_name, table_name, result);
-        return true;
-    }
-    catch (...)
-    {
-        DB::tryLogCurrentException(log);
-        return false;
-    }
+    getTableMetadata(schema_name, table_name, result);
+    return true;
 }
 
 void GlueCatalog::getTableMetadata(
@@ -307,28 +299,30 @@ void GlueCatalog::getTableMetadata(
             result.setLocation(table_outcome.GetStorageDescriptor().GetLocation());
         }
 
+        std::string table_type;
         if (table_outcome.GetParameters().contains("table_type"))
-        {
-            auto table_type = table_outcome.GetParameters().at("table_type");
-            if (table_type != "ICEBERG")
-            {
-                if (result.requiresLocation())
-                {
-                    throw DB::Exception(
-                           DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it has unsupported table_type '{}'. " \
-                           "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have table_type == '{}'",
-                           schema_name + "." + table_name, table_type, "ICEBERG");
-                }
-                else
-                {
-                    result.setDefaultReadableTable(false);
-                }
-            }
-            else
-            {
-                result.setDefaultReadableTable(true);
-            }
+            table_type = table_outcome.GetTableType();
 
+        if (table_type != "ICEBERG")
+        {
+            if (result.requiresLocation())
+            {
+                std::string message_part;
+                if (!table_type.empty())
+                    message_part = "unsupported table_type '" + table_type + "'";
+                else
+                    message_part = "no table_type";
+
+                throw DB::Exception(
+                        DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it has {}. " \
+                       "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have table_type == '{}'",
+                       schema_name + "." + table_name, message_part, "ICEBERG");
+            }
+            result.setDefaultReadableTable(false);
+        }
+        else
+        {
+            result.setDefaultReadableTable(true);
         }
 
         if (result.requiresSchema())
