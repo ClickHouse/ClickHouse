@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/third-party/proxy
+slug: /interfaces/third-party/proxy
 sidebar_position: 29
 sidebar_label: Proxies
 ---
@@ -20,7 +20,7 @@ Implemented in Go.
 
 ## KittenHouse {#kittenhouse}
 
-[KittenHouse](https://github.com/VKCOM/kittenhouse) is designed to be a local proxy between ClickHouse and application server in case it’s impossible or inconvenient to buffer INSERT data on your application side.
+[KittenHouse](https://github.com/VKCOM/kittenhouse) is designed to be a local proxy between ClickHouse and application server in case it's impossible or inconvenient to buffer INSERT data on your application side.
 
 Features:
 

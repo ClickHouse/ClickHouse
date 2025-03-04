@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/data-types-binary-encoding
+slug: /sql-reference/data-types/data-types-binary-encoding
 sidebar_position: 56
 sidebar_label: Data types binary encoding specification.
 ---
@@ -66,7 +66,7 @@ The table below describes how each data type is represented in binary format. Ea
 
 For type `JSON` byte `uint8_serialization_version` indicates the version of the serialization. Right now the version is always 0 but can change in future if new arguments will be introduced for `JSON` type.
 
-### Interval kind binary encoding
+### Interval kind binary encoding {#interval-kind-binary-encoding}
 
 The table below describes how different interval kinds of `Interval` data type are encoded.
 
@@ -84,7 +84,7 @@ The table below describes how different interval kinds of `Interval` data type a
 | `Quarter`     | `0x09`          |
 | `Year`        | `0x1A`          |
 
-### Aggregate function parameter binary encoding
+### Aggregate function parameter binary encoding {#aggregate-function-parameter-binary-encoding}
 
 The table below describes how parameters of `AggregateFunction` and `SimpleAggregateFunction` are encoded.
 The encoding of a parameter consists of 1 byte indicating the type of the parameter and the value itself.

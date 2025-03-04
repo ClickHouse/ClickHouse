@@ -182,7 +182,7 @@ class JobNames(metaclass=WithIter):
     UPGRADE_TEST_TSAN = "Upgrade check (tsan)"
     UPGRADE_TEST_MSAN = "Upgrade check (msan)"
 
-    UNIT_TEST = "Unit tests (release)"
+    UNIT_TEST = "Unit tests (binary)"
     UNIT_TEST_ASAN = "Unit tests (asan)"
     UNIT_TEST_MSAN = "Unit tests (msan)"
     UNIT_TEST_TSAN = "Unit tests (tsan)"
@@ -612,7 +612,6 @@ class CommonJobConfigs:
 
 REQUIRED_CHECKS = [
     StatusNames.PR_CHECK,
-    StatusNames.SYNC,
     JobNames.BUILD_CHECK,
     JobNames.DOCS_CHECK,
     JobNames.FAST_TEST,

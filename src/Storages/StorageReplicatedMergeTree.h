@@ -1,11 +1,28 @@
 #pragma once
 
-#include <base/UUID.h>
 #include <atomic>
+#include <expected>
+
+#include <base/UUID.h>
+#include <base/defines.h>
 #include <pcg_random.hpp>
+
+#include <Common/EventNotifier.h>
+#include <Common/ProfileEventsScope.h>
+#include <Common/Throttler.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
+#include <Common/randomSeed.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/PartLog.h>
+#include <Parsers/SyncReplicaMode.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/AsyncBlockIDsCache.h>
 #include <Storages/IStorageCluster.h>
+#include <Storages/MergeTree/AsyncBlockIDsCache.h>
+#include <Storages/MergeTree/BackgroundJobsAssignee.h>
 #include <Storages/MergeTree/DataPartsExchange.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
@@ -28,20 +45,6 @@
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Storages/RenamingRestrictions.h>
 #include <Storages/TableZnodeInfo.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/PartLog.h>
-#include <Common/randomSeed.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/ZooKeeperRetries.h>
-#include <Common/Throttler.h>
-#include <Common/EventNotifier.h>
-#include <base/defines.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <QueryPipeline/Pipe.h>
-#include <Common/ProfileEventsScope.h>
-#include <Storages/MergeTree/BackgroundJobsAssignee.h>
-#include <Parsers/SyncReplicaMode.h>
 
 
 namespace DB
@@ -164,6 +167,9 @@ public:
     std::optional<UInt64> totalRowsByPartitionPredicate(const ActionsDAG & filter_actions_dag, ContextPtr context) const override;
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
+
+    UInt64 getNumberOnFlyDataMutations() const override;
+    UInt64 getNumberOnFlyMetadataMutations() const override;
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
@@ -486,20 +492,20 @@ private:
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
     bool queue_update_in_progress = false;
-    BackgroundSchedulePool::TaskHolder queue_updating_task;
+    BackgroundSchedulePoolTaskHolder queue_updating_task;
 
-    BackgroundSchedulePool::TaskHolder mutations_updating_task;
+    BackgroundSchedulePoolTaskHolder mutations_updating_task;
     Coordination::WatchCallbackPtr mutations_watch_callback;
 
     /// A task that selects parts to merge.
-    BackgroundSchedulePool::TaskHolder merge_selecting_task;
+    BackgroundSchedulePoolTaskHolder merge_selecting_task;
     /// It is acquired for each iteration of the selection of parts to merge or each OPTIMIZE query.
     std::mutex merge_selecting_mutex;
 
     UInt64 merge_selecting_sleep_ms;
 
     /// A task that marks finished mutations as done.
-    BackgroundSchedulePool::TaskHolder mutations_finalizing_task;
+    BackgroundSchedulePoolTaskHolder mutations_finalizing_task;
 
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;

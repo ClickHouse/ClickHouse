@@ -98,6 +98,7 @@ jobs:
       build_name: package_aarch64
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      runner_type: builder-aarch64
   BuilderDebAsan:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -135,6 +136,7 @@ jobs:
       build_name: binary_darwin_aarch64
       data: ${{ needs.RunConfig.outputs.data }}
       checkout_depth: 0
+      runner_type: builder-aarch64
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################

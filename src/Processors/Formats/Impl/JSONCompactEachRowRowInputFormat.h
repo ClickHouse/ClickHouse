@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -10,6 +9,7 @@
 namespace DB
 {
 
+class Block;
 class ReadBuffer;
 class JSONCompactEachRowFormatReader;
 

@@ -669,11 +669,13 @@ def test_postgres_odbc_hashed_dictionary_no_tty_pipe_overflow(started_cluster):
         conn = get_postgres_conn(started_cluster)
         cursor = conn.cursor()
         cursor.execute("insert into clickhouse.test_table values(3, 3, 'xxx')")
+        # for first reload dictionary, we will wait for odbc-bridge start-up
+        node1.query("system reload dictionary postgres_odbc_hashed", timeout=120)
         for i in range(100):
             try:
                 node1.query("system reload dictionary postgres_odbc_hashed", timeout=15)
             except Exception as ex:
-                assert False, "Exception occured -- odbc-bridge hangs: " + str(ex)
+                assert False, "Exception occurred -- odbc-bridge hangs: " + str(ex)
 
         assert_eq_with_retry(
             node1,

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/CopyableAtomic.h>
-#include <Common/Exception.h>
 #include <Common/ZooKeeper/Types.h>
 #include <base/types.h>
 #include <IO/WriteHelpers.h>
@@ -20,12 +19,6 @@ class ReadBuffer;
 class WriteBuffer;
 class ReplicatedMergeTreeQueue;
 struct MergeTreePartInfo;
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 
 /// Record about what needs to be done. Only data (you can copy them).
 struct ReplicatedMergeTreeLogEntryData
@@ -48,26 +41,7 @@ struct ReplicatedMergeTreeLogEntryData
         DROP_PART,      /// NOTE: Virtual (has the same (de)serialization format as DROP_RANGE). Deletes the specified part.
     };
 
-    static String typeToString(Type type)
-    {
-        switch (type)
-        {
-            case ReplicatedMergeTreeLogEntryData::GET_PART:         return "GET_PART";
-            case ReplicatedMergeTreeLogEntryData::ATTACH_PART:      return "ATTACH_PART";
-            case ReplicatedMergeTreeLogEntryData::MERGE_PARTS:      return "MERGE_PARTS";
-            case ReplicatedMergeTreeLogEntryData::DROP_RANGE:       return "DROP_RANGE";
-            case ReplicatedMergeTreeLogEntryData::CLEAR_COLUMN:     return "CLEAR_COLUMN";
-            case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:      return "CLEAR_INDEX";
-            case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
-            case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
-            case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
-            case ReplicatedMergeTreeLogEntryData::SYNC_PINNED_PART_UUIDS: return "SYNC_PINNED_PART_UUIDS";
-            case ReplicatedMergeTreeLogEntryData::CLONE_PART_FROM_SHARD:  return "CLONE_PART_FROM_SHARD";
-            case ReplicatedMergeTreeLogEntryData::DROP_PART:  return "DROP_PART";
-            default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown log entry type: {}", DB::toString<int>(type));
-        }
-    }
+    static String typeToString(Type type);
 
     String typeToString() const
     {

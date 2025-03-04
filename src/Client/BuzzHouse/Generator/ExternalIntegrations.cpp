@@ -80,12 +80,11 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
+            newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
             if (t.db->isReplicatedDatabase())
             {
                 deng->set_zoo_path(t.db->zoo_path_counter);
             }
-            newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
-
             CreateDatabaseToString(buf, newd);
             res &= performQuery(buf + ";");
         }
@@ -1150,7 +1149,8 @@ bool MinIOIntegration::performIntegration(
     return sendRequest(sc.database + "/file" + std::to_string(tname));
 }
 
-ExternalIntegrations::ExternalIntegrations(const FuzzConfig & fcc) : fc(fcc)
+ExternalIntegrations::ExternalIntegrations(const FuzzConfig & fcc)
+    : fc(fcc)
 {
     if (fc.mysql_server.has_value())
     {
@@ -1332,18 +1332,25 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
     const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
 {
     String buf;
+    std::error_code ec;
     const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
 
+    if (!std::filesystem::remove(out_path, ec) && ec)
+    {
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
+        return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(fc.flush_log_wait_time));
     if (clickhouse->performQueryOnServerOrRemote(
             pt,
             fmt::format(
-                "SELECT query_duration_ms, memory_usage FROM system.query_log ORDER BY event_time_microseconds DESC LIMIT 1 INTO OUTFILE "
-                "'{}' "
-                "TRUNCATE FORMAT TabSeparated;",
+                "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage FROM "
+                "system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC "
+                "LIMIT 1;",
                 out_path.generic_string())))
     {
         std::ifstream infile(out_path);
-        if (std::getline(infile, buf))
+        if (std::getline(infile, buf) && buf.size() > 1)
         {
             if (buf[buf.size() - 1] == '\r')
             {
@@ -1373,64 +1380,72 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
 {
     String buf;
     String replaced;
-    fc.processServerQuery(fmt::format(
-        "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
-        fc.fuzz_out.generic_string()));
+    std::error_code ec;
 
-    std::ifstream infile(fc.fuzz_out);
-    while (std::getline(infile, buf))
+    if (!std::filesystem::remove(fc.fuzz_out, ec) && ec)
     {
-        if (buf[buf.size() - 1] == '\r')
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
+        return;
+    }
+    if (fc.processServerQuery(fmt::format(
+            "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
+            fc.fuzz_out.generic_string())))
+    {
+        std::ifstream infile(fc.fuzz_out);
+        while (std::getline(infile, buf) && buf.size() > 1)
         {
-            buf.pop_back();
-        }
-        const auto tabchar = buf.find('\t');
-        const auto nname = buf.substr(0, tabchar);
-        const auto nvalue = buf.substr(tabchar + 1);
-
-        replaced.resize(0);
-        for (const auto & c : nvalue)
-        {
-            switch (c)
+            if (buf[buf.size() - 1] == '\r')
             {
-                case '\'':
-                    replaced += "\\'";
-                    break;
-                case '\\':
-                    replaced += "\\\\";
-                    break;
-                case '\b':
-                    replaced += "\\b";
-                    break;
-                case '\f':
-                    replaced += "\\f";
-                    break;
-                case '\r':
-                    replaced += "\\r";
-                    break;
-                case '\n':
-                    replaced += "\\n";
-                    break;
-                case '\t':
-                    replaced += "\\t";
-                    break;
-                case '\0':
-                    replaced += "\\0";
-                    break;
-                case '\a':
-                    replaced += "\\a";
-                    break;
-                case '\v':
-                    replaced += "\\v";
-                    break;
-                default:
-                    replaced += c;
+                buf.pop_back();
             }
+            const auto tabchar = buf.find('\t');
+            const auto nname = buf.substr(0, tabchar);
+            const auto nvalue = buf.substr(tabchar + 1);
+
+            replaced.resize(0);
+            for (const auto & c : nvalue)
+            {
+                switch (c)
+                {
+                    case '\'':
+                        replaced += "\\'";
+                        break;
+                    case '\\':
+                        replaced += "\\\\";
+                        break;
+                    case '\b':
+                        replaced += "\\b";
+                        break;
+                    case '\f':
+                        replaced += "\\f";
+                        break;
+                    case '\r':
+                        replaced += "\\r";
+                        break;
+                    case '\n':
+                        replaced += "\\n";
+                        break;
+                    case '\t':
+                        replaced += "\\t";
+                        break;
+                    case '\0':
+                        replaced += "\\0";
+                        break;
+                    case '\a':
+                        replaced += "\\a";
+                        break;
+                    case '\v':
+                        replaced += "\\v";
+                        break;
+                    default:
+                        replaced += c;
+                }
+            }
+            /// Some settings may not exist in earlier ClickHouse versions, so we can ignore the errors here
+            auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = '{}';", nname, replaced));
+            UNUSED(u);
+            buf.resize(0);
         }
-        /// Some settings may not exist in earlier ClickHouse versions, so we can ignore the errors here
-        auto u = clickhouse->performQueryOnServerOrRemote(pt, fmt::format("SET {} = '{}';", nname, replaced));
-        UNUSED(u);
-        buf.resize(0);
     }
 }
 

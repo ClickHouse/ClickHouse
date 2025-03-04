@@ -1,7 +1,11 @@
-
+#include <random>
 #include <base/sort.h>
 
+#include <Core/Settings.h>
+#include <Core/BackgroundSchedulePool.h>
+#include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
+#include <Common/thread_local_rng.h>
 #include <Parsers/ASTTableOverrides.h>
 #include <Processors/Sources/PostgreSQLSource.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
@@ -17,6 +21,8 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/Context.h>
 #include <Databases/DatabaseOnDisk.h>
+
+#include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
 #include <Poco/String.h>
 
@@ -40,6 +46,11 @@ namespace MaterializedPostgreSQLSetting
     extern const MaterializedPostgreSQLSettingsString materialized_postgresql_tables_list;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_tables_list_with_schema;
     extern const MaterializedPostgreSQLSettingsBool materialized_postgresql_use_unique_replication_consumer_identifier;
+}
+
+namespace Setting
+{
+    extern const SettingsFloat postgresql_fault_injection_probability;
 }
 
 namespace ErrorCodes
@@ -164,6 +175,7 @@ PostgreSQLReplicationHandler::PostgreSQLReplicationHandler(
     , reschedule_backoff_max_ms(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_max_ms])
     , reschedule_backoff_factor(replication_settings[MaterializedPostgreSQLSetting::materialized_postgresql_backoff_factor])
     , milliseconds_to_wait(reschedule_backoff_min_ms)
+    , fault_injection_probability(getContext()->getSettingsRef()[Setting::postgresql_fault_injection_probability])
 {
     if (!schema_list.empty() && !tables_list.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot have schema list and tables list at the same time");
@@ -239,7 +251,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     }
     catch (const pqxx::broken_connection & pqxx_error)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
 
         if (!is_attach)
             throw;
@@ -249,7 +261,7 @@ void PostgreSQLReplicationHandler::checkConnectionAndStart()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
 
         if (!is_attach)
             throw;
@@ -335,7 +347,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             catch (Exception & e)
             {
                 e.addMessage("while loading table `{}`.`{}`", postgres_database, table_name);
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log);
 
                 /// Throw in case of single MaterializedPostgreSQL storage, because initial setup is done immediately
                 /// (unlike database engine where it is done in a separate thread).
@@ -382,7 +394,7 @@ void PostgreSQLReplicationHandler::startSynchronization(bool throw_on_error)
             catch (Exception & e)
             {
                 e.addMessage("while loading table {}.{}", postgres_database, table_name);
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                tryLogCurrentException(log);
 
                 if (throw_on_error)
                     throw;
@@ -444,7 +456,7 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
         table_structure = std::make_unique<PostgreSQLTableStructure>();
     }
     if (!table_structure->physical_columns)
@@ -509,15 +521,22 @@ StorageInfo PostgreSQLReplicationHandler::loadFromSnapshot(postgres::Connection 
 
 void PostgreSQLReplicationHandler::cleanupFunc()
 {
-    /// It is very important to make sure temporary replication slots are removed!
-    /// So just in case every 30 minutes check if one still exists.
-    postgres::Connection connection(connection_info);
-    String last_committed_lsn;
-    connection.execWithRetry([&](pqxx::nontransaction & tx)
+    try
     {
-        if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
-            dropReplicationSlot(tx, /* temporary */true);
-    });
+        /// It is very important to make sure temporary replication slots are removed!
+        /// So just in case every 30 minutes check if one still exists.
+        postgres::Connection connection(connection_info);
+        String last_committed_lsn;
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
+        {
+            if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
+                dropReplicationSlot(tx, /* temporary */true);
+        });
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
+    }
 
     if (!stop_synchronization)
         cleanup_task->scheduleAfter(CLEANUP_RESCHEDULE_MS);
@@ -541,7 +560,7 @@ void PostgreSQLReplicationHandler::consumerFunc()
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        tryLogCurrentException(log);
     }
 
     if (stop_synchronization)
@@ -787,10 +806,10 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         shutdown();
 
         postgres::Connection connection(connection_info);
-        connection.execWithRetry([&](pqxx::nontransaction & tx){ dropPublication(tx); });
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx){ dropPublication(tx); });
         String last_committed_lsn;
 
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */true))
                 dropReplicationSlot(tx, /* temporary */true);
@@ -799,7 +818,7 @@ void PostgreSQLReplicationHandler::shutdownFinal()
         if (user_managed_slot)
             return;
 
-        connection.execWithRetry([&](pqxx::nontransaction & tx)
+        execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx)
         {
             if (isReplicationSlotExist(tx, last_committed_lsn, /* temporary */false))
                 dropReplicationSlot(tx, /* temporary */false);
@@ -862,7 +881,7 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
                         "Publication {} already exists, but it is a CREATE query, not ATTACH. Publication will be dropped",
                         doubleQuoteString(publication_name));
 
-            connection.execWithRetry([&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
+            execWithRetryAndFaultInjection(connection, [&](pqxx::nontransaction & tx_){ dropPublication(tx_); });
         }
         else
         {
@@ -1137,5 +1156,16 @@ void PostgreSQLReplicationHandler::removeTableFromReplication(const String & pos
     consumer_task->activateAndSchedule();
 }
 
+void PostgreSQLReplicationHandler::execWithRetryAndFaultInjection(postgres::Connection & connection, const std::function<void(pqxx::nontransaction &)> & exec) const
+{
+    if (fault_injection_probability > 0.)
+    {
+        std::bernoulli_distribution fault(fault_injection_probability);
+        if (fault(thread_local_rng))
+            throw pqxx::broken_connection("Fault injected");
+    }
+
+    connection.execWithRetry(exec);
+}
 
 }

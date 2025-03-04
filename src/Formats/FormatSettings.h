@@ -74,6 +74,7 @@ struct FormatSettings
     };
 
     UInt64 schema_inference_make_columns_nullable = 1;
+    bool schema_inference_make_json_columns_nullable = false;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
@@ -277,24 +278,27 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         bool use_native_reader = false;
-        std::unordered_set<int> skip_row_groups = {};
         bool output_string_as_string = false;
         bool output_fixed_string_as_fixed_byte_array = true;
         bool output_datetime_as_uint32 = false;
         bool preserve_order = false;
         bool use_custom_encoder = true;
         bool parallel_encoding = true;
+        bool output_compliant_nested_types = true;
+        bool write_page_index = false;
+        bool write_bloom_filter = false;
+        bool enable_row_group_prefetch = true;
+        std::unordered_set<int> skip_row_groups = {};
         UInt64 max_block_size = DEFAULT_BLOCK_SIZE;
         size_t prefer_block_bytes = DEFAULT_BLOCK_SIZE * 256;
         ParquetVersion output_version;
         ParquetCompression output_compression_method = ParquetCompression::SNAPPY;
         uint64_t output_compression_level;
-        bool output_compliant_nested_types = true;
         size_t data_page_size = 1024 * 1024;
         size_t write_batch_size = 1024;
-        bool write_page_index = false;
         size_t local_read_min_bytes_for_seek = 8192;
-        bool enable_row_group_prefetch = true;
+        double bloom_filter_bits_per_value = 10.5;
+        size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
     } parquet{};
 
     struct Pretty

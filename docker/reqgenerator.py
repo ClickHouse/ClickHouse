@@ -8,16 +8,25 @@ import sys
 
 
 def build_docker_deps(image_name: str, imagedir: str) -> None:
-    print("Fetch the newest manifest for", image_name)
+    print("Get the directory of packages installed by `pip`")
+    cmd = (
+        rf"docker run --network=host --rm --entrypoint 'python3' {image_name} -c "
+        """'import sys; print([p for p in sys.path if "/usr/local/lib/python" in p][0])'"""
+    )
+    # We freeze only python packages installed by pip.
+    # Mixing distributive managed packages into the requirements.txt is disastrous
+    dist_dir = str(subprocess.check_output(cmd, shell=True, encoding="utf-8").strip())
     pip_cmd = (
-        "pip install pipdeptree 2>/dev/null 1>/dev/null && pipdeptree --freeze "
-        "--warn silence --exclude pipdeptree"
+        "pip install pipdeptree 2>/dev/null 1>/dev/null && "
+        f"pipdeptree --freeze --warn silence --exclude pipdeptree --path {dist_dir}"
     )
     # /=/!d - remove dependencies without pin
-    # ubuntu - ignore system packages
     # \s - remove spaces
-    sed = r"sed '/==/!d; /==.*+ubuntu/d; s/\s//g'"
-    cmd = rf"""docker run --rm --entrypoint "/bin/bash" {image_name} -c "{pip_cmd} | {sed} | sort -u" > {imagedir}/requirements.txt"""
+    sed = r"sed '/==/!d; s/\s//g'"
+    cmd = (
+        rf"docker run --network=host --rm --entrypoint '/bin/bash' {image_name} "
+        rf'-c "{pip_cmd} | {sed} | sort -u" > {imagedir}/requirements.txt'
+    )
     print("Running the command:", cmd)
     subprocess.check_call(cmd, shell=True)
 

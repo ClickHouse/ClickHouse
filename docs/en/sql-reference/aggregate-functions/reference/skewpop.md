@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/skewpop
+slug: /sql-reference/aggregate-functions/reference/skewpop
 sidebar_position: 185
+title: "skewPop"
+description: "Computes the skewness of a sequence."
 ---
 
 # skewPop

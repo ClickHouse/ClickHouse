@@ -1,12 +1,12 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <Common/Macros.h>
 #include <Common/thread_local_rng.h>
 #include <Core/ServerSettings.h>
 #include <Databases/DatabaseReplicated.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -14,9 +14,11 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/queryNormalization.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
+
 
 namespace CurrentMetrics
 {
@@ -129,7 +131,9 @@ void RefreshTask::startup()
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
-    refresh_task->schedule();
+
+    std::lock_guard guard(mutex);
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::shutdown()
@@ -215,7 +219,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         /// Update dependency graph.
         set_handle.changeDependencies(deps);
 
-        refresh_task->schedule();
+        scheduleRefresh(guard);
         scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
 
         refresh_settings = {};
@@ -237,7 +241,7 @@ void RefreshTask::start()
     std::lock_guard guard(mutex);
     if (!std::exchange(scheduling.stop_requested, false))
         return;
-    refresh_task->schedule();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::stop()
@@ -254,7 +258,7 @@ void RefreshTask::run()
     std::lock_guard guard(mutex);
     if (std::exchange(scheduling.out_of_schedule_refresh_requested, true))
         return;
-    refresh_task->schedule();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::cancel()
@@ -575,8 +579,11 @@ UUID RefreshTask::executeRefreshUnlocked(bool append, int32_t root_znode_version
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
             String query_for_logging = refresh_query->formatForLogging(
                 refresh_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
+            UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+
             auto process_list_entry = refresh_context->getProcessList().insert(
-                query_for_logging, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+                query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart());
+
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
             refresh_context->setProgressCallback([this](const Progress & prog)
             {
@@ -741,6 +748,12 @@ RefreshTask::determineNextRefreshTime(std::chrono::sys_seconds now)
     znode.last_attempt_succeeded = false;
 
     return {when, timeslot, znode};
+}
+
+void RefreshTask::scheduleRefresh(std::lock_guard<std::mutex> &)
+{
+    state = RefreshState::Scheduling;
+    refresh_task->schedule();
 }
 
 void RefreshTask::setState(RefreshState s, std::unique_lock<std::mutex> & lock)

@@ -1,30 +1,33 @@
 #include <Interpreters/QueryLog.h>
 
-#include <base/getFQDNOrHostName.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <IO/AsyncReadCounters.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/TransactionVersionMetadata.h>
+#include <base/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/IPv6ToBinary.h>
 #include <Common/ProfileEvents.h>
 #include <Common/typeid_cast.h>
 
 #include <Poco/Net/IPAddress.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <array>
 
@@ -46,10 +49,10 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
     auto query_cache_usage_datatype = std::make_shared<DataTypeEnum8>(
         DataTypeEnum8::Values
         {
-            {"Unknown",     static_cast<Int8>(QueryCache::Usage::Unknown)},
-            {"None",        static_cast<Int8>(QueryCache::Usage::None)},
-            {"Write",       static_cast<Int8>(QueryCache::Usage::Write)},
-            {"Read",        static_cast<Int8>(QueryCache::Usage::Read)}
+            {"Unknown",     static_cast<Int8>(QueryCacheUsage::Unknown)},
+            {"None",        static_cast<Int8>(QueryCacheUsage::None)},
+            {"Write",       static_cast<Int8>(QueryCacheUsage::Write)},
+            {"Read",        static_cast<Int8>(QueryCacheUsage::Read)}
         });
 
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
@@ -66,8 +69,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Start time of query execution with microsecond precision."},
         {"query_duration_ms", std::make_shared<DataTypeUInt64>(), "Duration of query execution in milliseconds."},
 
-        {"read_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_rows includes the total number of rows read at all replicas. Each replica sends it’s read_rows value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
-        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_bytes includes the total number of rows read at all replicas. Each replica sends it’s read_bytes value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
+        {"read_rows", std::make_shared<DataTypeUInt64>(), "Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_rows includes the total number of rows read at all replicas. Each replica sends it's read_rows value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
+        {"read_bytes", std::make_shared<DataTypeUInt64>(), "Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for IN and JOIN. For distributed queries read_bytes includes the total number of rows read at all replicas. Each replica sends it's read_bytes value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value."},
         {"written_rows", std::make_shared<DataTypeUInt64>(), "For INSERT queries, the number of written rows. For other queries, the column value is 0."},
         {"written_bytes", std::make_shared<DataTypeUInt64>(), "For INSERT queries, the number of written bytes (uncompressed). For other queries, the column value is 0."},
         {"result_rows", std::make_shared<DataTypeUInt64>(), "Number of rows in a result of the SELECT query, or a number of rows in the INSERT query."},
@@ -77,7 +80,7 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
         {"current_database", low_cardinality_string, "Name of the current database."},
         {"query", std::make_shared<DataTypeString>(), " Query string."},
         {"formatted_query", std::make_shared<DataTypeString>(), "Formatted query string."},
-        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "Identical hash value without the values of literals for similar queries."},
+        {"normalized_query_hash", std::make_shared<DataTypeUInt64>(), "A numeric hash value, such as it is identical for queries differ only by values of literals."},
         {"query_kind", low_cardinality_string, "Type of the query."},
         {"databases", array_low_cardinality_string, "Names of the databases present in the query."},
         {"tables", array_low_cardinality_string, "Names of the tables present in the query."},
@@ -318,13 +321,13 @@ void QueryLogElement::appendClientInfo(const ClientInfo & client_info, MutableCo
 
     columns[i++]->insert(client_info.current_user);
     columns[i++]->insert(client_info.current_query_id);
-    columns[i++]->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
-    columns[i++]->insert(client_info.current_address.port());
+    columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
+    columns[i++]->insert(client_info.current_address->port());
 
     columns[i++]->insert(client_info.initial_user);
     columns[i++]->insert(client_info.initial_query_id);
-    columns[i++]->insertData(IPv6ToBinary(client_info.initial_address.host()).data(), 16);
-    columns[i++]->insert(client_info.initial_address.port());
+    columns[i++]->insertData(IPv6ToBinary(client_info.initial_address->host()).data(), 16);
+    columns[i++]->insert(client_info.initial_address->port());
     columns[i++]->insert(client_info.initial_query_start_time);
     columns[i++]->insert(client_info.initial_query_start_time_microseconds);
 

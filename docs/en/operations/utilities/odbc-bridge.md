@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/odbc-bridge
+slug: /operations/utilities/odbc-bridge
 title: clickhouse-odbc-bridge
 ---
 
@@ -12,7 +12,7 @@ This tool works via HTTP, not via pipes, shared memory, or TCP because:
 - It's simpler to debug
 - jdbc-bridge can be implemented in the same way
 
-## Usage
+## Usage {#usage}
 
 `clickhouse-server` use this tool inside odbc table function and StorageODBC.
 However it can be used as standalone tool from command line with the following
@@ -24,7 +24,7 @@ parameters in POST-request URL:
 - `max_block_size` -- optional parameter, sets maximum size of single block.
 Query is send in post body. Response is returned in RowBinary format.
 
-## Example:
+## Example: {#example}
 
 ```bash
 $ clickhouse-odbc-bridge --http-port 9018 --daemon

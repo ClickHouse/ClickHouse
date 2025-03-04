@@ -244,7 +244,7 @@ public:
                     for (size_t i = row_offset + group_id; i < next_row_offset && i < all_matches.size(); i += groups_count)
                     {
                         const auto & match = all_matches[i];
-                        data_col->insertData(match.begin(), match.length());
+                        data_col->insertData(match.data(), match.length());
                     }
                     nested_offsets_col->insertValue(data_col->size());
                 }

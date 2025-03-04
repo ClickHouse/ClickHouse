@@ -112,7 +112,7 @@ OPTIMIZE TABLE execute_on_single_replica_r1 FINAL;
 SYSTEM SYNC REPLICA execute_on_single_replica_r1;
 SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT '****************************';
 SELECT '*** part_log';

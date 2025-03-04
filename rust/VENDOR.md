@@ -24,15 +24,30 @@ cargo install --version 0.2.7 cargo-local-registry
 ```bash
 export CH_TOP_DIR=$(git rev-parse --show-toplevel)
 export RUSTC_ROOT=$(rustc --print=sysroot)
+# Currently delta-lake is built outside the workspace (TODO)
+export DELTA_LAKE_DIR="$CH_TOP_DIR"/contrib/delta-kernel-rs
+
+# Clean the vendor repo
+rm -rf "$CH_TOP_DIR"/contrib/rust_vendor/*
 
 cd "$CH_TOP_DIR"/rust/workspace
-
 cargo local-registry --git --sync Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
+
+# Now handle delta-lake
+cd "$DELTA_LAKE_DIR"
+cargo generate-lockfile
+cargo local-registry --no-delete --git --sync "$DELTA_LAKE_DIR/Cargo.lock" "$CH_TOP_DIR"/contrib/rust_vendor
+
+# Standard library deps
 cp "$RUSTC_ROOT"/lib/rustlib/src/rust/library/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/
 cargo local-registry --no-delete --git --sync "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
 cp "$RUSTC_ROOT"/lib/rustlib/src/rust/library/Cargo.lock "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/
 cargo local-registry --no-delete --git --sync "$RUSTC_ROOT"/lib/rustlib/src/rust/library/test/Cargo.lock "$CH_TOP_DIR"/contrib/rust_vendor
 
+# Now we vendor the modules themselves
+cd "$CH_TOP_DIR"/rust/workspace
+cargo vendor --no-delete --locked "$CH_TOP_DIR"/contrib/rust_vendor
+cd "$DELTA_LAKE_DIR"
 cargo vendor --no-delete --locked "$CH_TOP_DIR"/contrib/rust_vendor
 cd "$RUSTC_ROOT"/lib/rustlib/src/rust/library/std/
 cargo vendor --no-delete "$CH_TOP_DIR"/contrib/rust_vendor

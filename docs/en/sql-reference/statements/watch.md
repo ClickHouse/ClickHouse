@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/watch
+slug: /sql-reference/statements/watch
 sidebar_position: 53
 sidebar_label: WATCH
 ---

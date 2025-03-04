@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated
+slug: /sql-reference/aggregate-functions/reference/quantileExactWeightedInterpolated
 sidebar_position: 176
+title: "quantileExactWeightedInterpolated"
+description: "Computes quantile of a numeric data sequence using linear interpolation, taking into account the weight of each element."
 ---
 
 # quantileExactWeightedInterpolated

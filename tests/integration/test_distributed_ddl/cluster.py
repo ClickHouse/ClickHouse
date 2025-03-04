@@ -129,6 +129,9 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
             )
         ).read()
 
+        if not len(clusters_config):
+            raise "Invalid XML"
+
         for inst_name, inst in list(self.instances.items()):
             clusters_config = clusters_config.replace(inst_name, str(inst.ip_address))
 
@@ -138,12 +141,15 @@ class ClickHouseClusterWithDDLHelpers(ClickHouseCluster):
                 [
                     "bash",
                     "-c",
-                    'echo "$NEW_CONFIG" > /etc/clickhouse-server/config.d/clusters.xml',
+                    'echo "${NEW_CONFIG:?}" > /etc/clickhouse-server/config.d/clusters.xml',
                 ],
                 environment={"NEW_CONFIG": clusters_config},
                 privileged=True,
             )
-            # print cluster.instances[inst_name].exec_in_container(['cat', "/etc/clickhouse-server/config.d/clusters.xml"])
+            # ensure that the config had been applied successfully
+            self.instances[inst_name].exec_in_container(
+                ["clickhouse", "client", "-q", "system reload config"]
+            )
 
     @staticmethod
     def ddl_check_there_are_no_dublicates(instance):

@@ -1,5 +1,8 @@
-#include <Interpreters/getColumnFromBlock.h>
+#include <Columns/IColumn.h>
+#include <Core/Block.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/getColumnFromBlock.h>
 
 namespace DB
 {

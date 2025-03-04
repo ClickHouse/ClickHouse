@@ -102,6 +102,8 @@ static constexpr auto DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION =
 
 static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_SETTINGS = 54474;
 
+static constexpr auto DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER = 54476;
+
 /// Version of ClickHouse TCP protocol.
 ///
 /// Should be incremented manually on protocol changes.
@@ -109,6 +111,6 @@ static constexpr auto DBMS_MIN_REVISION_WITH_SERVER_SETTINGS = 54474;
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54475;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54476;
 
 }

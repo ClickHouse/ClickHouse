@@ -1,9 +1,11 @@
 ---
-slug: /en/operations/system-tables/projections
+description: "System table containing information about existing projections in all tables."
+slug: /operations/system-tables/projections
+title: "system.processors_profile_log"
+keywords: ["system table", "projections"]
 ---
-# projections
 
-Contains information about existing projections in all the tables.
+Contains information about existing projections in all tables.
 
 Columns:
 

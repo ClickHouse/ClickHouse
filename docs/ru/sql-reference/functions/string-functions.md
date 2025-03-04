@@ -817,7 +817,7 @@ normalizedQueryHash(x)
 
 -   Хэш-сумма.
 
-Тип: [UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+Тип: [UInt64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Пример**
 

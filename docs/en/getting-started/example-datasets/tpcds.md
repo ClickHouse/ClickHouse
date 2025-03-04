@@ -1,10 +1,9 @@
 ---
-slug: /en/getting-started/example-datasets/tpcds
+slug: /getting-started/example-datasets/tpcds
 sidebar_label: TPC-DS
 description:  "The TPC-DS benchmark data set and queries."
+title: "TPC-DS (2012)"
 ---
-
-# TPC-DS (2012)
 
 Similar to the [Star Schema Benchmark (SSB)](star-schema.md), TPC-DS is based on [TPC-H](tpch.md), but it took the opposite route, i.e. it expanded the number of joins needed by storing the data in a complex snowflake schema (24 instead of 8 tables).
 The data distribution is skewed (e.g. normal and Poisson distributions).

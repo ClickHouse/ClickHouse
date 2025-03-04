@@ -1,5 +1,5 @@
 ---
-slug: /en/development/build-cross-riscv
+slug: /development/build-cross-riscv
 sidebar_position: 30
 sidebar_label: Build on Linux for RISC-V 64
 ---

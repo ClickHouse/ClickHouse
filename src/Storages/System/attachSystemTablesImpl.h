@@ -22,9 +22,9 @@ void attachImpl(ContextPtr context, IDatabase & system_database, const String & 
         /// Attach to Ordinary database.
         table_id = StorageID(DatabaseCatalog::SYSTEM_DATABASE, table_name);
         if constexpr (with_description)
-            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...));
+            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, StorageT::getColumnsDescription(), std::forward<StorageArgs>(args)...), {});
         else
-            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...));
+            system_database.attachTable(context, table_name, std::make_shared<StorageT>(table_id, std::forward<StorageArgs>(args)...), {});
     }
     else
     {

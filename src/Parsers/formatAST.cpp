@@ -1,5 +1,6 @@
 #include <Parsers/formatAST.h>
 
+#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {

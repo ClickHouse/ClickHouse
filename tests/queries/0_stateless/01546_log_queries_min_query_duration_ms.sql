@@ -6,7 +6,7 @@ set log_queries=1;
 -- fast -- no logging
 --
 select '01546_log_queries_min_query_duration_ms-fast' format Null;
-system flush logs;
+system flush logs query_log, query_thread_log;
 
 -- No logging, since the query is fast enough.
 select count()
@@ -27,7 +27,7 @@ where
 --
 set log_queries_min_query_duration_ms=300;
 select '01546_log_queries_min_query_duration_ms-slow', sleep(0.4) format Null;
-system flush logs;
+system flush logs query_log, query_thread_log;
 
 -- With the limit on minimum execution time, "query start" and "exception before start" events are not logged, only query finish.
 select count()

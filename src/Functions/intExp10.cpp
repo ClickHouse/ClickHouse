@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionUnaryArithmetic.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <Common/intExp.h>
+#include <Common/intExp10.h>
 
 namespace DB
 {
@@ -55,7 +55,7 @@ using FunctionIntExp10 = FunctionUnaryArithmetic<IntExp10Impl, NameIntExp10, tru
 template <> struct FunctionUnaryArithmeticMonotonicity<NameIntExp10>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
     {
         Float64 left_float = left.isNull()
             ? -std::numeric_limits<Float64>::infinity()

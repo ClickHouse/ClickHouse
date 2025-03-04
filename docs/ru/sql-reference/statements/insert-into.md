@@ -189,13 +189,13 @@ SELECT * FROM simple_table;
 -   Данные поступают в режиме реального времени.
 -   Вы загружаете данные, которые как правило отсортированы по времени.
 
-Также возможно вставлять данные асинхронно во множественных маленьких вставках. Данные от таких вставок сначала собираются в пачки, а потом вставляются в таблицу. Чтобы включить асинхронный режим, используйте настройку [async_insert](../../operations/settings/settings.md#async-insert). Обратите внимание, что асинхронные вставки поддерживаются только через протокол HTTP, а дедупликация при этом не производится.
+Также возможно вставлять данные асинхронно во множественных маленьких вставках. Данные от таких вставок сначала собираются в пачки, а потом вставляются в таблицу. Чтобы включить асинхронный режим, используйте настройку [async_insert](/operations/settings/settings#async_insert). Обратите внимание, что асинхронные вставки поддерживаются только через протокол HTTP, а дедупликация при этом не производится.
 
 **См. также**
 
--   [async_insert](../../operations/settings/settings.md#async-insert)
+-   [async_insert](/operations/settings/settings#async_insert)
 -   [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
--   [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
+-   [wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
 -   [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
 -   [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
 -   [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)

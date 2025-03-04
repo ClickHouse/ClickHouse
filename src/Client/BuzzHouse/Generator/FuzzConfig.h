@@ -52,7 +52,13 @@ public:
     String unix_socket, user, password, database;
     std::filesystem::path user_files_dir, query_log_file;
 
-    ServerCredentials() : hostname("localhost"), port(0), mysql_port(0), user("test") { }
+    ServerCredentials()
+        : hostname("localhost")
+        , port(0)
+        , mysql_port(0)
+        , user("test")
+    {
+    }
 
     ServerCredentials(
         const String & h,
@@ -89,30 +95,35 @@ private:
 
 public:
     LoggerPtr log;
-    DB::Strings collations, storage_policies, timezones, disks;
-    std::optional<ServerCredentials> clickhouse_server = std::nullopt, mysql_server = std::nullopt, postgresql_server = std::nullopt,
-                                     sqlite_server = std::nullopt, mongodb_server = std::nullopt, redis_server = std::nullopt,
-                                     minio_server = std::nullopt;
+    DB::Strings collations, storage_policies, timezones, disks, clusters;
+    std::optional<ServerCredentials> clickhouse_server, mysql_server, postgresql_server, sqlite_server, mongodb_server, redis_server,
+        minio_server;
     bool read_log = false, fuzz_floating_points = true, test_with_fill = true, use_dump_table_oracle = true,
-         compare_success_results = false, measure_performance = false, allow_infinite_tables = false;
+         compare_success_results = false, measure_performance = false, allow_infinite_tables = false, compare_explains = false;
     uint64_t seed = 0, min_insert_rows = 1, max_insert_rows = 1000, min_nested_rows = 0, max_nested_rows = 10, query_time_threshold = 10,
-             query_memory_threshold = 10, query_time_minimum = 2000, query_memory_minimum = 20000;
+             query_memory_threshold = 10, query_time_minimum = 2000, query_memory_minimum = 20000, flush_log_wait_time = 1000;
     uint32_t max_depth = 3, max_width = 3, max_databases = 4, max_functions = 4, max_tables = 10, max_views = 5, time_to_run = 0,
              type_mask = std::numeric_limits<uint32_t>::max();
     std::filesystem::path log_path = std::filesystem::temp_directory_path() / "out.sql",
                           db_file_path = std::filesystem::temp_directory_path() / "db", fuzz_out = db_file_path / "fuzz.data";
 
-    FuzzConfig() : cb(nullptr), log(getLogger("BuzzHouse")) { }
+    FuzzConfig()
+        : cb(nullptr)
+        , log(getLogger("BuzzHouse"))
+    {
+    }
 
     FuzzConfig(DB::ClientBase * c, const String & path);
 
     bool processServerQuery(const String & input) const;
 
 private:
-    void loadServerSettings(DB::Strings & out, const String & table, const String & col) const;
+    void loadServerSettings(DB::Strings & out, bool distinct, const String & table, const String & col) const;
 
 public:
     void loadServerConfigurations();
+
+    std::string getConnectionHostAndPort() const;
 
     void loadSystemTables(std::unordered_map<String, DB::Strings> & tables) const;
 

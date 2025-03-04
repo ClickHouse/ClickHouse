@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_PROTOBUF
-#   include <Columns/IColumn.h>
+#   include <Columns/IColumn_fwd.h>
 #   include <Core/NamesAndTypes.h>
 #   include <Formats/ProtobufSchemas.h>
 
@@ -17,6 +17,7 @@ class ProtobufWriter;
 class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using DataTypes = std::vector<DataTypePtr>;
+using Strings = std::vector<String>;
 class WriteBuffer;
 
 /// Utility class, does all the work for serialization in the Protobuf format.

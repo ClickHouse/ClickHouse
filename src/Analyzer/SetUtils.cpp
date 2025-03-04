@@ -112,7 +112,7 @@ ColumnsWithTypeAndName createBlockFromCollection(const Collection & collection, 
                 "Invalid type in set. Expected tuple, got {}",
                 value.getTypeName());
 
-        const auto & tuple = value.template safeGet<const Tuple &>();
+        const auto & tuple = value.template safeGet<Tuple>();
         const DataTypePtr & value_type = value_types[collection_index];
         const DataTypes & tuple_value_type = typeid_cast<const DataTypeTuple *>(value_type.get())->getElements();
 
@@ -191,15 +191,15 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(const DataTypePtr & expres
         if (rhs_which_type.isArray())
         {
             const DataTypeArray * value_array_type = assert_cast<const DataTypeArray *>(value_type.get());
-            size_t value_array_size = value.safeGet<const Array &>().size();
+            size_t value_array_size = value.safeGet<Array>().size();
             DataTypes value_types(value_array_size, value_array_type->getNestedType());
-            result_block = createBlockFromCollection(value.safeGet<const Array &>(), value_types, set_element_types, params);
+            result_block = createBlockFromCollection(value.safeGet<Array>(), value_types, set_element_types, params);
         }
         else if (rhs_which_type.isTuple())
         {
             const DataTypeTuple * value_tuple_type = assert_cast<const DataTypeTuple *>(value_type.get());
             const DataTypes & value_types = value_tuple_type->getElements();
-            result_block = createBlockFromCollection(value.safeGet<const Tuple &>(), value_types, set_element_types, params);
+            result_block = createBlockFromCollection(value.safeGet<Tuple>(), value_types, set_element_types, params);
         }
         else
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,

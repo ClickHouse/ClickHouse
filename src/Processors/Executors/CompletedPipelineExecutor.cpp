@@ -35,16 +35,9 @@ struct CompletedPipelineExecutor::Data
 static void threadFunction(
     CompletedPipelineExecutor::Data & data, ThreadGroupPtr thread_group, size_t num_threads, bool concurrency_control)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
-    setThreadName("QueryCompPipeEx");
-
     try
     {
-        if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, "QueryCompPipeEx");
 
         data.executor->execute(num_threads, concurrency_control);
     }

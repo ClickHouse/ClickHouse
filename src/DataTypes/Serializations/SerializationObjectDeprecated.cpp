@@ -11,12 +11,12 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnString.h>
 
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/VarInt.h>
-#include <magic_enum.hpp>
 #include <memory>
 #include <string>
+#include <IO/ReadHelpers.h>
+#include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
+#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -151,6 +151,13 @@ struct SerializationObjectDeprecated<Parser>::DeserializeStateObject : public IS
     DataTypePtr nested_type;
     SerializationPtr nested_serialization;
     DeserializeBinaryBulkStatePtr nested_state;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<SerializationObjectDeprecated<Parser>::DeserializeStateObject>(*this);
+        new_state->nested_state = nested_state ? nested_state->clone() : nullptr;
+        return new_state;
+    }
 };
 
 template <typename Parser>

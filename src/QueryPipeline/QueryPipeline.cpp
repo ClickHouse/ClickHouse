@@ -4,6 +4,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Cache/QueryCache.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
@@ -618,7 +619,7 @@ bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & resu
     return true;
 }
 
-void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer> query_cache_writer)
+void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCacheWriter> query_cache_writer)
 {
     assert(pulling());
 
@@ -627,7 +628,7 @@ void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer
     /// This ensures that all transforms write to the single same cache entry. The writer object synchronizes internally, the
     /// expensive stuff like cloning chunks happens outside lock scopes).
 
-    auto add_stream_in_query_cache_transform = [&](OutputPort *& out_port, QueryCache::Writer::ChunkType chunk_type)
+    auto add_stream_in_query_cache_transform = [&](OutputPort *& out_port, QueryCacheWriter::ChunkType chunk_type)
     {
         if (!out_port)
             return;
@@ -638,7 +639,7 @@ void QueryPipeline::writeResultIntoQueryCache(std::shared_ptr<QueryCache::Writer
         processors->emplace_back(std::move(transform));
     };
 
-    using enum QueryCache::Writer::ChunkType;
+    using enum QueryCacheWriter::ChunkType;
 
     add_stream_in_query_cache_transform(output, Result);
     add_stream_in_query_cache_transform(totals, Totals);

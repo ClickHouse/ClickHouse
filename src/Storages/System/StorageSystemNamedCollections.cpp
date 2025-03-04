@@ -1,6 +1,6 @@
 #include "StorageSystemNamedCollections.h"
 
-#include <Common/FieldVisitorToString.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Interpreters/Context.h>

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/aggregatefunction
+slug: /sql-reference/data-types/aggregatefunction
 sidebar_position: 46
 sidebar_label: AggregateFunction
 ---
@@ -31,9 +31,9 @@ CREATE TABLE t
 
 [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq), anyIf ([any](../../sql-reference/aggregate-functions/reference/any.md#agg_function-any)+[If](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-if)) and [quantiles](../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) are the aggregate functions supported in ClickHouse.
 
-## Usage
+## Usage {#usage}
 
-### Data Insertion
+### Data Insertion {#data-insertion}
 
 To insert data, use `INSERT SELECT` with aggregate `-State`- functions.
 
@@ -48,7 +48,7 @@ In contrast to the corresponding functions `uniq` and `quantiles`, `-State`- fun
 
 In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query, then this dump can be loaded back using `INSERT` query.
 
-### Data Selection
+### Data Selection {#data-selection}
 
 When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `-Merge`suffix.
 
@@ -62,11 +62,11 @@ SELECT uniq(UserID) FROM table
 SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
 ```
 
-## Usage Example
+## Usage Example {#usage-example}
 
 See [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) engine description.
 
 
-## Related Content
+## Related Content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/functions/array-join
+slug: /sql-reference/functions/array-join
 sidebar_position: 15
 sidebar_label: arrayJoin
 ---
@@ -78,7 +78,7 @@ GROUP BY
 │           1 │ Bobruisk │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
-### Important note!
+### Important note! {#important-note}
 Using multiple `arrayJoin` with same expression may not produce expected results due to optimizations.
 For that cases, consider modifying repeated array expression with extra operations that do not affect join result - e.g. `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`
 

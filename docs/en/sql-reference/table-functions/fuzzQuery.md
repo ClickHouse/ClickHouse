@@ -1,10 +1,12 @@
 ---
-slug: /en/sql-reference/table-functions/fuzzQuery
+slug: /sql-reference/table-functions/fuzzQuery
 sidebar_position: 75
 sidebar_label: fuzzQuery
+title: "fuzzQuery"
+description: "Perturbs the given query string with random variations."
 ---
 
-# fuzzQuery
+# fuzzQuery Table Function
 
 Perturbs the given query string with random variations.
 
@@ -22,13 +24,13 @@ fuzzQuery(query[, max_query_length[, random_seed]])
 
 A table object with a single column containing perturbed query strings.
 
-## Usage Example
+## Usage Example {#usage-example}
 
-``` sql
+```sql
 SELECT * FROM fuzzQuery('SELECT materialize(\'a\' AS key) GROUP BY key') LIMIT 2;
 ```
 
-```
+```response
    ┌─query──────────────────────────────────────────────────────────┐
 1. │ SELECT 'a' AS key GROUP BY key                                 │
 2. │ EXPLAIN PIPELINE compact = true SELECT 'a' AS key GROUP BY key │

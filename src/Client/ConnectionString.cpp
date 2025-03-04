@@ -136,7 +136,7 @@ bool tryParseConnectionString(
     else
         hosts_end_pos = hosts_or_user_info_end_pos;
 
-    const auto * hosts_end = hosts_end_pos != std::string_view::npos ? connection_string.begin() + hosts_end_pos
+    const auto hosts_end = hosts_end_pos != std::string_view::npos ? connection_string.begin() + hosts_end_pos
                                                                      : connection_string.end();
 
     try
@@ -149,8 +149,8 @@ bool tryParseConnectionString(
           * clickhouse:[user[:password]@]hostN:portN[database]?[query_parameters]
           */
         Poco::URI uri;
-        const auto * last_host_begin = connection_string.begin() + offset;
-        for (const auto * it = last_host_begin; it != hosts_end; ++it)
+        auto last_host_begin = connection_string.begin() + offset;
+        for (auto it = last_host_begin; it != hosts_end; ++it)
         {
             if (*it == ',')
             {

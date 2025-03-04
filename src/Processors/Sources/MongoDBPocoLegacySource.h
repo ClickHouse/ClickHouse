@@ -6,7 +6,6 @@
 #include <Poco/MongoDB/Element.h>
 #include <Poco/MongoDB/Array.h>
 
-#include <Core/Block.h>
 #include <Processors/ISource.h>
 #include <Core/ExternalResultDescription.h>
 
@@ -26,6 +25,8 @@ namespace MongoDB
 
 namespace DB
 {
+
+class Block;
 
 struct MongoDBPocoLegacyArrayInfo
 {

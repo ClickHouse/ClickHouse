@@ -3,6 +3,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Block.h>
+#include <Core/SortDescription.h>
 #include <Functions/FunctionHelpers.h>
 #include <Common/iota.h>
 

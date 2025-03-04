@@ -121,7 +121,7 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 
 Отключите `format_csv_allow_single_quotes`, так как для данных используются только двойные кавычки, а одинарные кавычки могут находиться внутри значений и не должны сбивать с толку CSV-парсер.
 
-Отключите [input_format_null_as_default](../../operations/settings/settings.md#settings-input-format-null-as-default), поскольку в данных нет значений [NULL](../../sql-reference/syntax.md#null-literal).
+Отключите [input_format_null_as_default](../../operations/settings/settings.md#settings-input-format-null-as-default), поскольку в данных нет значений [NULL](/operations/settings/formats#input_format_null_as_default).
 
 В противном случае ClickHouse попытается проанализировать последовательности `\N` и может перепутать с `\` в данных.
 
@@ -131,7 +131,7 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 
 Данные представлены в нескольких таблицах в [нормализованном виде](https://ru.wikipedia.org/wiki/%D0%9D%D0%BE%D1%80%D0%BC%D0%B0%D0%BB%D1%8C%D0%BD%D0%B0%D1%8F_%D1%84%D0%BE%D1%80%D0%BC%D0%B0). 
 
-Это означает, что вам нужно использовать условие объединения [JOIN](../../sql-reference/statements/select/join.md#select-join), если вы хотите получить, например, названия блюд из пунктов меню.
+Это означает, что вам нужно использовать условие объединения [JOIN](/sql-reference/statements/select/join), если вы хотите получить, например, названия блюд из пунктов меню.
 
 Для типовых аналитических задач гораздо эффективнее работать с предварительно объединенными данными, чтобы не использовать `JOIN` каждый раз. Такие данные называются денормализованными.
 

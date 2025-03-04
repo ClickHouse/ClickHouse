@@ -1,8 +1,9 @@
 #include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+
+#include <Columns/ColumnSparse.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
-#include <Columns/ColumnSparse.h>
-#include <Interpreters/getColumnFromBlock.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {
@@ -13,13 +14,14 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation)
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation)
 {
     Block result;
     for (size_t i = 0, size = names.size(); i < size; ++i)
     {
         auto src_column = block.getColumnOrSubcolumnByName(names[i]);
         src_column.column = recursiveRemoveSparse(src_column.column);
+        src_column.column = src_column.column->convertToFullColumnIfConst();
         result.insert(i, src_column);
 
         /// Reorder primary key columns in advance and add them to `primary_key_columns`.
@@ -33,7 +35,7 @@ Block getIndexBlockAndPermute(const Block & block, const Names & names, const IC
     return result;
 }
 
-Block permuteBlockIfNeeded(const Block & block, const IColumn::Permutation * permutation)
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation)
 {
     Block result;
     for (size_t i = 0; i < block.columns(); ++i)

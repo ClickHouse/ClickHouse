@@ -12,7 +12,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
-#include <Common/Exception.h>
 
 #include <base/types.h>
 
@@ -249,6 +248,7 @@ public:
     TableJoin() = default;
 
     TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
+    TableJoin(const JoinSettings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_, UInt64 max_bytes_in_join);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,
@@ -273,17 +273,7 @@ public:
 
     const std::vector<JoinAlgorithm> & getEnabledJoinAlgorithms() const { return join_algorithms; }
 
-    static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val)
-    {
-        /// When join_algorithms = {'default'} (not specified by user) we use [parallel_]hash or direct algorithm.
-        /// It's behaviour that was initially supported by clickhouse.
-        bool is_default_enabled = std::find(join_algorithms.begin(), join_algorithms.end(), JoinAlgorithm::DEFAULT) != join_algorithms.end();
-        constexpr auto default_algorithms = std::array<JoinAlgorithm, 4>{
-            JoinAlgorithm::DEFAULT, JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH, JoinAlgorithm::DIRECT};
-        if (is_default_enabled && std::ranges::find(default_algorithms, val) != default_algorithms.end())
-            return true;
-        return std::find(join_algorithms.begin(), join_algorithms.end(), val) != join_algorithms.end();
-    }
+    static bool isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val);
 
     bool isEnabledAlgorithm(JoinAlgorithm val) const
     {

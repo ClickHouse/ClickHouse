@@ -1,5 +1,5 @@
 ---
-slug: /en/development/build-osx
+slug: /development/build-osx
 sidebar_position: 15
 sidebar_label: Build on macOS for macOS
 ---
@@ -16,7 +16,7 @@ As compiler, only Clang from homebrew is supported.
 
 Building with Apple's XCode `apple-clang` is not recommended, it may break in arbitrary ways.
 
-## Install Prerequisites
+## Install Prerequisites {#install-prerequisites}
 
 First install [Homebrew](https://brew.sh/).
 
@@ -41,7 +41,7 @@ Apple uses a case-insensitive file system by default. While this usually does no
 For serious development on macOS, make sure that the source code is stored on a case-sensitive disk volume, e.g. see [these instructions](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
 :::
 
-## Build ClickHouse
+## Build ClickHouse {#build-clickhouse}
 
 To build using Homebrew's Clang compiler:
 
@@ -67,12 +67,12 @@ cmake --open .
 # The resulting binary will be created at: ./programs/Debug/clickhouse
 ```
 
-## Caveats
+## Caveats {#caveats}
 
-If you intend to run `clickhouse-server`, make sure to increase the system’s `maxfiles` variable.
+If you intend to run `clickhouse-server`, make sure to increase the system's `maxfiles` variable.
 
 :::note
-You’ll need to use sudo.
+You'll need to use sudo.
 :::
 
 To do so, create the `/Library/LaunchDaemons/limit.maxfiles.plist` file with the following content:
@@ -119,4 +119,4 @@ Load the file (or reboot):
 sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
-To check if it’s working, use the `ulimit -n` or `launchctl limit maxfiles` commands.
+To check if it's working, use the `ulimit -n` or `launchctl limit maxfiles` commands.

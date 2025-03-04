@@ -39,7 +39,7 @@ ClickHouse会使用服务器上一切可用的资源，从而以最自然的方�
 
 ClickHouse支持一种基于SQL的声明式查询语言。
 
-支持的查询[GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), [FROM](../sql-reference/statements/select/from.md), [JOIN](../sql-reference/statements/select/join.md), [IN](../sql-reference/operators/in.md)以及非相关子查询。
+支持的查询[GROUP BY](/sql-reference/statements/select/group-by), [ORDER BY](../sql-reference/statements/select/order-by.md), [FROM](../sql-reference/statements/select/from.md), [JOIN](../sql-reference/statements/select/join.md), [IN](../sql-reference/operators/in.md)以及非相关子查询。
 
 相关(依赖性)子查询和窗口函数暂不受支持，但将来会被实现。
 

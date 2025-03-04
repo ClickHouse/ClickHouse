@@ -33,6 +33,7 @@ public:
         DROP_SKIPPING_INDEX_CACHE,
         DROP_MMAP_CACHE,
         DROP_QUERY_CACHE,
+        DROP_QUERY_CONDITION_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
         DROP_FILESYSTEM_CACHE,
         DROP_DISK_METADATA_CACHE,
@@ -153,6 +154,8 @@ public:
     SyncReplicaMode sync_replica_mode = SyncReplicaMode::DEFAULT;
 
     std::vector<String> src_replicas;
+
+    Strings logs;
 
     ServerType server_type;
 

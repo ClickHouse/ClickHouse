@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/alter/order-by
+slug: /sql-reference/statements/alter/order-by
 sidebar_position: 41
 sidebar_label: ORDER BY
 ---

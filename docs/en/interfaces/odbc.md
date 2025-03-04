@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/odbc
+slug: /interfaces/odbc
 sidebar_position: 23
 sidebar_label: ODBC Driver
 ---

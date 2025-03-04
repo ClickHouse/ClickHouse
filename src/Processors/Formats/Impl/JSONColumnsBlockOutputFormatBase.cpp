@@ -1,7 +1,8 @@
-#include <Processors/Formats/Impl/JSONColumnsBlockOutputFormatBase.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferValidUTF8.h>
+#include <Columns/IColumn.h>
 #include <Formats/JSONUtils.h>
+#include <Processors/Formats/Impl/JSONColumnsBlockOutputFormatBase.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
+#include <Processors/Port.h>
 
 
 namespace DB

@@ -39,19 +39,3 @@ At a minimum, the following information should be added (but add more as needed)
 
 - Example use: A query or command.
 -->
-
-
-> Information about CI checks: https://clickhouse.com/docs/en/development/continuous-integration/
-
-#### CI Settings (Only check the boxes if you know what you are doing)
-
-All builds in Builds_1 and Builds_2 stages are always mandatory and will run independently of the checks below:
-- [ ] <!---ci_include_stateless--> Only: Stateless tests
-- [ ] <!---ci_include_integration--> Only: Integration tests
-- [ ] <!---ci_include_performance--> Only: Performance tests
----
-- [ ] <!---ci_exclude_style--> Skip: Style check
-- [ ] <!---ci_exclude_fast--> Skip: Fast test
----
-- [ ] <!---woolen_wolfdog--> Run all checks ignoring all possible failures (Resource-intensive. All test jobs execute in parallel).
-- [ ] <!---no_ci_cache--> Disable CI cache

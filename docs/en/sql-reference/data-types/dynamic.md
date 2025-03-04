@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/dynamic
+slug: /sql-reference/data-types/dynamic
 sidebar_position: 62
 sidebar_label: Dynamic
 ---
@@ -23,7 +23,7 @@ Where `N` is an optional parameter between `0` and `254` indicating how many dif
 The Dynamic data type is a beta feature. To use it, set `enable_dynamic_type = 1`.
 :::
 
-## Creating Dynamic
+## Creating Dynamic {#creating-dynamic}
 
 Using `Dynamic` type in table column definition:
 
@@ -70,7 +70,7 @@ SELECT multiIf((number % 3) = 0, number, (number % 3) = 1, range(number + 1), NU
 ```
 
 
-## Reading Dynamic nested types as subcolumns
+## Reading Dynamic nested types as subcolumns {#reading-dynamic-nested-types-as-subcolumns}
 
 `Dynamic` type supports reading a single nested type from a `Dynamic` column using the type name as a subcolumn.
 So, if you have column `d Dynamic` you can read a subcolumn of any valid type `T` using syntax `d.T`,
@@ -139,11 +139,11 @@ SELECT dynamicType(d) from test;
 └────────────────┘
 ```
 
-## Conversion between Dynamic column and other columns
+## Conversion between Dynamic column and other columns {#conversion-between-dynamic-column-and-other-columns}
 
 There are 4 possible conversions that can be performed with `Dynamic` column.
 
-### Converting an ordinary column to a Dynamic column
+### Converting an ordinary column to a Dynamic column {#converting-an-ordinary-column-to-a-dynamic-column}
 
 ```sql
 SELECT 'Hello, World!'::Dynamic as d, dynamicType(d);
@@ -155,7 +155,7 @@ SELECT 'Hello, World!'::Dynamic as d, dynamicType(d);
 └───────────────┴────────────────┘
 ```
 
-### Converting a String column to a Dynamic column through parsing
+### Converting a String column to a Dynamic column through parsing {#converting-a-string-column-to-a-dynamic-column-through-parsing}
 
 To parse `Dynamic` type values from a `String` column you can enable setting `cast_string_to_dynamic_use_inference`:
 
@@ -170,7 +170,7 @@ SELECT CAST(materialize(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'))
 └─────────────────────────────────────────────┴──────────────────────────────────────────────┘
 ```
 
-### Converting a Dynamic column to an ordinary column
+### Converting a Dynamic column to an ordinary column {#converting-a-dynamic-column-to-an-ordinary-column}
 
 It is possible to convert a `Dynamic` column to an ordinary column. In this case all nested types will be converted to a destination type:
 
@@ -190,7 +190,7 @@ SELECT d::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-### Converting a Variant column to Dynamic column
+### Converting a Variant column to Dynamic column {#converting-a-variant-column-to-dynamic-column}
 
 ```sql
 CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
@@ -207,7 +207,7 @@ SELECT v::Dynamic as d, dynamicType(d) from test;
 └─────────┴────────────────┘
 ```
 
-### Converting a Dynamic(max_types=N) column to another Dynamic(max_types=K)
+### Converting a Dynamic(max_types=N) column to another Dynamic(max_types=K) {#converting-a-dynamicmax_typesn-column-to-another-dynamicmax_typesk}
 
 If `K >= N` than during conversion the data doesn't change:
 
@@ -266,7 +266,7 @@ SELECT d, dynamicType(d), d::Dynamic(max_types=0) as d2, dynamicType(d2), isDyna
 └─────────┴────────────────┴─────────┴─────────────────┴──────────────────────────────────┘
 ```
 
-## Reading Dynamic type from the data
+## Reading Dynamic type from the data {#reading-dynamic-type-from-the-data}
 
 All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Dynamic` type. During data parsing ClickHouse tries to infer the type of each value and use it during insertion to `Dynamic` column. 
 
@@ -300,7 +300,7 @@ $$)
 └───────────────┴────────────────┴───────────────┴──────┴───────┴────────────┴─────────┘
 ```
 
-## Using Dynamic type in functions
+## Using Dynamic type in functions {#using-dynamic-type-in-functions}
 
 Most of the functions support arguments with type `Dynamic`. In this case the function is executed separately on each internal data type stored inside `Dynamic` column.
 When the result type of the function depends on the arguments types, the result of such function executed with `Dynamic` arguments will be `Dynamic`. When the result type of the function doesn't depend on the arguments types - the result will be `Nullable(T)` where `T` the usual result type of this function.
@@ -508,7 +508,7 @@ SELECT d, d.Int64 + 1 AS res, toTypeName(res) FROM test;
 └───────┴──────┴─────────────────┘
 ```
 
-## Using Dynamic type in ORDER BY and GROUP BY
+## Using Dynamic type in ORDER BY and GROUP BY {#using-dynamic-type-in-order-by-and-group-by}
 
 During `ORDER BY` and `GROUP BY` values of `Dynamic` types are compared similar to values of `Variant` type:
 The result of operator `<` for values `d1` with underlying type `T1` and `d2` with underlying type `T2`  of a type `Dynamic` is defined as follows:
@@ -589,14 +589,14 @@ SELECT d, dynamicType(d) FROM test GROUP by d SETTINGS allow_suspicious_types_in
 
 **Note:** the described comparison rule is not applied during execution of comparison functions like `<`/`>`/`=` and others because of [special work](#using-dynamic-type-in-functions) of functions with `Dynamic` type
 
-## Reaching the limit in number of different data types stored inside Dynamic
+## Reaching the limit in number of different data types stored inside Dynamic {#reaching-the-limit-in-number-of-different-data-types-stored-inside-dynamic}
 
 `Dynamic` data type can store only limited number of different data types as separate subcolumns. By default, this limit is 32, but you can change it in type declaration using syntax `Dynamic(max_types=N)` where N is between 0 and 254 (due to implementation details, it's impossible to have more than 254 different data types that can be stored as separate subcolumns inside Dynamic).
 When the limit is reached, all new data types inserted to `Dynamic` column will be inserted into a single shared data structure that stores values with different data types in binary form.
 
 Let's see what happens when the limit is reached in different scenarios.
 
-### Reaching the limit during data parsing
+### Reaching the limit during data parsing {#reaching-the-limit-during-data-parsing}
 
 During parsing of `Dynamic` values from the data, when the limit is reached for current block of data, all new values will be inserted into shared data structure:
 
@@ -624,7 +624,7 @@ SELECT d, dynamicType(d), isDynamicElementInSharedData(d) FROM format(JSONEachRo
 
 As we can see, after inserting 3 different data types `Int64`, `Array(Int64)` and `String` all new types were inserted into special shared data structure.
 
-### During merges of data parts in MergeTree table engines
+### During merges of data parts in MergeTree table engines {#during-merges-of-data-parts-in-mergetree-table-engines}
 
 During merge of several data parts in MergeTree table the `Dynamic` column in the resulting data part can reach the limit of different data types that can be stored in separate subcolumns inside and won't be able to store all types as subcolumns from source parts.
 In this case ClickHouse chooses what types will remain as separate subcolumns after merge and what types will be inserted into shared data structure. In most cases ClickHouse tries to keep the most frequent types and store the rarest types in shared data structure, but it depends on the implementation.
@@ -676,7 +676,7 @@ SELECT count(), dynamicType(d), isDynamicElementInSharedData(d), _part FROM test
 
 As we can see, ClickHouse kept the most frequent types `UInt64` and `Array(UInt64)` as subcolumns and inserted all other types into shared data.
 
-## JSONExtract functions with Dynamic
+## JSONExtract functions with Dynamic {#jsonextract-functions-with-dynamic}
 
 All `JSONExtract*` functions support `Dynamic` type:
 
@@ -710,7 +710,7 @@ SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Dyn
 └────────────────────────────────────────┴───────────────────────────────────────────────────────────────┘
 ```
 
-### Binary output format
+### Binary output format {#binary-output-format}
 
 In RowBinary format values of `Dynamic` type are serialized in the following format:
 

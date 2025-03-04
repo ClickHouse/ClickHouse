@@ -11,6 +11,7 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/ConstraintsDescription.h>
 
 
 namespace DB

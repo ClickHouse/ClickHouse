@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/limit-by
+slug: /sql-reference/statements/select/limit-by
 sidebar_label: LIMIT BY
 ---
 
@@ -21,7 +21,7 @@ During query processing, ClickHouse selects data ordered by sorting key. The sor
 If you want to use column numbers instead of column names in the `LIMIT BY` clause, enable the setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments).	
 	
 
-## Examples
+## Examples {#examples}
 
 Sample table:
 

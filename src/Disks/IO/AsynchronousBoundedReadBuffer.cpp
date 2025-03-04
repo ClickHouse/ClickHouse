@@ -131,8 +131,8 @@ void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
             if (available() >= file_offset_of_buffer_end - position)
             {
                 /// new read until position is after the current position in the working buffer
-                file_offset_of_buffer_end = position;
                 working_buffer.resize(working_buffer.size() - (file_offset_of_buffer_end - position));
+                file_offset_of_buffer_end = position;
                 pos = std::min(pos, working_buffer.end());
             }
             else

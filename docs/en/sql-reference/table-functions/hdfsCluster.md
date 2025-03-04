@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/table-functions/hdfsCluster
+slug: /sql-reference/table-functions/hdfsCluster
 sidebar_position: 81
 sidebar_label: hdfsCluster
+title: "hdfsCluster"
+description: "Allows processing files from HDFS in parallel from many nodes in a specified cluster."
 ---
 
 # hdfsCluster Table Function
@@ -29,12 +31,12 @@ A table with the specified structure for reading data in the specified file.
 
 1.  Suppose that we have a ClickHouse cluster named `cluster_simple`, and several files with following URIs on HDFS:
 
-- ‘hdfs://hdfs1:9000/some_dir/some_file_1’
-- ‘hdfs://hdfs1:9000/some_dir/some_file_2’
-- ‘hdfs://hdfs1:9000/some_dir/some_file_3’
-- ‘hdfs://hdfs1:9000/another_dir/some_file_1’
-- ‘hdfs://hdfs1:9000/another_dir/some_file_2’
-- ‘hdfs://hdfs1:9000/another_dir/some_file_3’
+- 'hdfs://hdfs1:9000/some_dir/some_file_1'
+- 'hdfs://hdfs1:9000/some_dir/some_file_2'
+- 'hdfs://hdfs1:9000/some_dir/some_file_3'
+- 'hdfs://hdfs1:9000/another_dir/some_file_1'
+- 'hdfs://hdfs1:9000/another_dir/some_file_2'
+- 'hdfs://hdfs1:9000/another_dir/some_file_3'
 
 2.  Query the amount of rows in these files:
 

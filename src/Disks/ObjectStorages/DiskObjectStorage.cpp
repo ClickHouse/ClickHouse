@@ -592,6 +592,11 @@ bool DiskObjectStorage::isReadOnly() const
     return object_storage->isReadOnly();
 }
 
+bool DiskObjectStorage::isPlain() const
+{
+    return object_storage->isPlain();
+}
+
 bool DiskObjectStorage::isWriteOnce() const
 {
     return object_storage->isWriteOnce();

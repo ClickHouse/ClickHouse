@@ -1,19 +1,19 @@
 ---
-slug: /en/getting-started/example-datasets/brown-benchmark
+description: "A new analytical benchmark for machine-generated log data"
+slug: /getting-started/example-datasets/brown-benchmark
 sidebar_label: Brown University Benchmark
-description: A new analytical benchmark for machine-generated log data
 title: "Brown University Benchmark"
 ---
 
 `MgBench` is a new analytical benchmark for machine-generated log data, [Andrew Crotty](http://cs.brown.edu/people/acrotty/).
 
 Download the data:
-```
+```bash
 wget https://datasets.clickhouse.com/mgbench{1..3}.csv.xz
 ```
 
 Unpack the data:
-```
+```bash
 xz -v -d mgbench{1..3}.csv.xz
 ```
 
@@ -85,13 +85,13 @@ ORDER BY (event_type, log_time);
 
 Insert data:
 
-```
+```bash
 clickhouse-client --query "INSERT INTO mgbench.logs1 FORMAT CSVWithNames" < mgbench1.csv
 clickhouse-client --query "INSERT INTO mgbench.logs2 FORMAT CSVWithNames" < mgbench2.csv
 clickhouse-client --query "INSERT INTO mgbench.logs3 FORMAT CSVWithNames" < mgbench3.csv
 ```
 
-## Run benchmark queries:
+## Run benchmark queries: {#run-benchmark-queries}
 
 ```sql
 USE mgbench;

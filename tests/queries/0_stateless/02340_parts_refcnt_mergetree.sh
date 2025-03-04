@@ -46,7 +46,7 @@ function check_refcnt_for_table()
     # and it should hold only parts that are required for SELECT
     #
     # So let's wait while the reading will be started.
-    while ! grep -F -q -e "Exception" -e "MergeTreeRangeReader" "$log_file"; do
+    while ! grep -F -q -e "Exception" -e "MergeTreeReadersChain" "$log_file"; do
         sleep 0.1
     done
 

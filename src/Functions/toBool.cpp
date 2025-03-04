@@ -1,3 +1,5 @@
+#include <Columns/IColumn.h>
+#include <Core/Field.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/CastOverloadResolver.h>

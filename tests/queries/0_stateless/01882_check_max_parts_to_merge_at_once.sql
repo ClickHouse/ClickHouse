@@ -20,7 +20,7 @@ SYSTEM START MERGES limited_merge_table;
 
 OPTIMIZE TABLE limited_merge_table FINAL;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT COUNT() FROM limited_merge_table;
 

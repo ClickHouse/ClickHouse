@@ -222,6 +222,11 @@ ReturnType deserializeImpl(
 
 }
 
+void SerializationBool::deserializeBinary(DB::Field & field, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
+{
+    nested_serialization->deserializeBinary(field, istr, settings);
+    field = bool(field.safeGet<bool>());
+}
 
 SerializationBool::SerializationBool(const SerializationPtr &nested_)
         : SerializationWrapper(nested_)
@@ -257,6 +262,11 @@ bool SerializationBool::tryDeserializeTextEscaped(IColumn & column, ReadBuffer &
 }
 
 void SerializationBool::serializeTextJSON(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings) const
+{
+    serializeSimple(column, row_num, ostr, settings);
+}
+
+void SerializationBool::serializeTextJSONPretty(const IColumn &column, size_t row_num, WriteBuffer &ostr, const FormatSettings &settings, size_t) const
 {
     serializeSimple(column, row_num, ostr, settings);
 }

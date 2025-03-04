@@ -14,7 +14,6 @@
 namespace DB
 {
 
-class Block;
 class Chunk;
 
 class ArrowColumnToCHColumn

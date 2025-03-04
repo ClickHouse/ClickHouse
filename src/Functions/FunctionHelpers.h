@@ -1,16 +1,12 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnsWithTypeAndName.h>
-#include <Core/callOnTypeIndex.h>
-
 
 namespace DB
 {

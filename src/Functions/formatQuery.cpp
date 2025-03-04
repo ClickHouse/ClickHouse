@@ -1,6 +1,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -154,7 +155,7 @@ private:
             if (res_data_new_size > res_data.size())
                 res_data.resize(2 * res_data_new_size);
 
-            memcpy(&res_data[res_data_size], formatted.begin(), formatted.size());
+            memcpy(&res_data[res_data_size], formatted.data(), formatted.size());
             res_data_size += formatted.size();
 
             res_data[res_data_size] = '\0';

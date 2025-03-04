@@ -36,8 +36,8 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-为了与所有MySQL客户端兼容，建议在配置文件中使用 [double SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) 来指定用户密码。
-如果使用 [SHA256](../operations/settings/settings-users.md#password_sha256_hex) 指定用户密码，一些客户端将无法进行身份验证（比如mysqljs和旧版本的命令行工具mysql）。
+为了与所有MySQL客户端兼容，建议在配置文件中使用 [double SHA1](/operations/settings/settings-users#user-namepassword) 来指定用户密码。
+如果使用 [SHA256](/sql-reference/functions/hash-functions#sha1-sha224-sha256-sha512-sha512_256) 指定用户密码，一些客户端将无法进行身份验证（比如mysqljs和旧版本的命令行工具mysql）。
 
 限制:
 

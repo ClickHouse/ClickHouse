@@ -4,15 +4,16 @@
 #include <string>
 #include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-#include "CommonPathPrefixKeyGenerator.h"
+
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
+
 template <typename BaseObjectStorage>
 class PlainRewritableObjectStorage : public BaseObjectStorage
 {
