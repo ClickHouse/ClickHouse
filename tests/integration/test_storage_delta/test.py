@@ -170,16 +170,6 @@ def get_delta_metadata(delta_metadata_file):
     return combined_json
 
 
-def create_delta_table(node, table_name, bucket="root", use_delta_kernel=False):
-    node.query(
-        f"""
-        DROP TABLE IF EXISTS {table_name};
-        CREATE TABLE {table_name}
-        ENGINE=DeltaLake(s3, filename = '{table_name}/', url = 'http://minio1:9001/{bucket}/')
-        SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
-    )
-
-
 def get_creation_expression(
     storage_type,
     table_name,
@@ -188,6 +178,7 @@ def get_creation_expression(
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
     run_on_cluster=False,
+    use_delta_kernel=False,
     **kwargs,
 ):
     allow_dynamic_metadata_for_datalakes_suffix = (
@@ -204,16 +195,19 @@ def get_creation_expression(
 
         if run_on_cluster:
             assert table_function
-            return f"deltalakeS3Cluster('cluster_simple', s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+            return (f"deltalakeS3Cluster('cluster_simple', s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+                    f"SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}")
         else:
             if table_function:
-                return f"deltalakeS3(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+                return (f"deltalakeS3(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"
+                        f"SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}")
             else:
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
-                    ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')"""
+                    ENGINE=DeltaLake(s3, filename = '{table_name}/', format={format}, url = 'http://minio1:9001/{bucket}/')
+                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
                     + allow_dynamic_metadata_for_datalakes_suffix
                 )
 
@@ -222,18 +216,21 @@ def get_creation_expression(
             assert table_function
             return f"""
                 deltalakeAzureCluster('cluster_simple', azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
+                SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
             """
         else:
             if table_function:
                 return f"""
                     deltalakeAzure(azure, container = '{cluster.azure_container_name}', storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
+                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
                 """
             else:
                 return (
                     f"""
                     DROP TABLE IF EXISTS {table_name};
                     CREATE TABLE {table_name}
-                    ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})"""
+                    ENGINE=DeltaLakeAzure(azure, container = {cluster.azure_container_name}, storage_account_url = '{cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]}', blob_path = '/{table_name}', format={format})
+                    SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}"""
                     + allow_dynamic_metadata_for_datalakes_suffix
                 )
     else:
@@ -275,7 +272,7 @@ def create_initial_data_file(
     return result_path
 
 
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"], "storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("1", "azure"), ("0", "s3"), ("0", "azure")])
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -297,14 +294,14 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
 
     assert len(files) == 2  # 1 metadata files + 1 data file
 
-    instance.query(get_creation_expression(use_delta_kernel=use_delta_kernel, storage_type, TABLE_NAME, started_cluster))
+    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel))
 
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     assert instance.query(f"SELECT * FROM {TABLE_NAME}") == instance.query(
         inserted_data
     )
 
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"], "storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("1", "azure"), ("0", "s3"), ("0", "azure")])
 def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -327,11 +324,11 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
 
     assert len(files) == 11  # 10 partitions and 1 metadata file
 
-    instance.query(get_creation_expression(use_delta_kernel=use_delta_kernel, storage_type, TABLE_NAME, started_cluster))
+    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster, use_delta_kernel=use_delta_kernel))
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
 
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"], "storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("1", "azure"), ("0", "s3"), ("0", "azure")])
 def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -371,7 +368,7 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
             ok = True
     assert ok
 
-    instance.query(get_creation_expression(use_delta_kernel=use_delta_kernel, storage_type, TABLE_NAME, started_cluster))
+    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
     assert (
         int(
             instance.query(
