@@ -78,14 +78,12 @@ DB::DataTypePtr getType(const String & type_name, const String & prefix = "")
 {
     String name = trim(type_name);
 
-    // Handle array<>
     if (name.starts_with("array<") && name.ends_with(">"))
     {
         String inner = name.substr(6, name.size() - 7);
         return std::make_shared<DB::DataTypeArray>(getType(inner));
     }
 
-    // Handle map<K,V>
     if (name.starts_with("map<") && name.ends_with(">"))
     {
         String inner = name.substr(4, name.size() - 5);
@@ -96,7 +94,6 @@ DB::DataTypePtr getType(const String & type_name, const String & prefix = "")
         return std::make_shared<DB::DataTypeMap>(getType(args[0]), getType(args[1]));
     }
 
-    // Handle struct<...>
     if (name.starts_with("struct<") && name.ends_with(">"))
     {
         String inner = name.substr(7, name.size() - 8);
