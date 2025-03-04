@@ -329,7 +329,7 @@ void writeMetadataFile(std::shared_ptr<IDisk> db_disk, const String & file_path,
 void updateDatabaseCommentWithMetadataFile(DatabasePtr db, const AlterCommand & command)
 {
     if (!command.comment)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not get database comment from query");
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
     String old_database_comment = db->getDatabaseComment();
     db->setDatabaseComment(command.comment.value());
