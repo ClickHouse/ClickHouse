@@ -24,7 +24,7 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Common/atomicRename.h>
+#include <Common/assert_cast.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>

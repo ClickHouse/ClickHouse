@@ -75,7 +75,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 ## Модификатор NULL или NOT NULL {#null-modifiers}
 
-Модификатор `NULL` или `NOT NULL`, указанный после типа данных в определении столбца, позволяет или не позволяет типу данных быть [Nullable](../../../sql-reference/data-types/nullable.md#data_type-nullable).
+Модификатор `NULL` или `NOT NULL`, указанный после типа данных в определении столбца, позволяет или не позволяет типу данных быть [Nullable](/sql-reference/data-types/nullable).
 
 Если тип не `Nullable` и указан модификатор `NULL`, то столбец будет иметь тип `Nullable`; если `NOT NULL`, то не `Nullable`. Например, `INT NULL` то же, что и `Nullable(INT)`. Если тип `Nullable` и указаны модификаторы `NULL` или `NOT NULL`, то будет вызвано исключение.
 

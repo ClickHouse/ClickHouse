@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about columns in all tables"
 slug: /operations/system-tables/columns
-title: "columns"
+title: "system.columns"
 keywords: ["system table", "columns"]
 ---
 

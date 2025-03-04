@@ -51,6 +51,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsBool allow_native_copy;
     extern const S3RequestSettingsBool check_objects_after_upload;
     extern const S3RequestSettingsUInt64 max_part_number;
+    extern const S3RequestSettingsBool allow_multipart_copy;
     extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
@@ -687,7 +688,10 @@ namespace
         void performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
-            if (!supports_multipart_copy || size <= request_settings[S3RequestSetting::max_single_operation_copy_size])
+            bool use_single_operation_copy = !supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
+                || (size <= request_settings[S3RequestSetting::max_single_operation_copy_size]);
+
+            if (use_single_operation_copy)
                 performSingleOperationCopy();
             else
                 performMultipartUploadCopy();

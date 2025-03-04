@@ -12,7 +12,7 @@ slug: /ru/operations/system-tables/server_settings
 -   `name` ([String](../../sql-reference/data-types/string.md)) — имя настройки.
 -   `value` ([String](../../sql-reference/data-types/string.md)) — значение настройки.
 -   `default` ([String](../../sql-reference/data-types/string.md)) — значению настройки по умолчанию.
--   `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — показывает, была ли настройка указана в `config.xml` или является значением по-умолчанию.
+-   `changed` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — показывает, была ли настройка указана в `config.xml` или является значением по-умолчанию.
 -   `description` ([String](../../sql-reference/data-types/string.md)) — краткое описание настройки.
 -   `type` ([String](../../sql-reference/data-types/string.md)) — тип настройки.
 
