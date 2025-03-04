@@ -25,7 +25,7 @@ static void appendString(ColumnString::Chars & chars, IColumn::Offsets & offsets
 void DictDecoder::decodeStringSpace(
     std::vector<String> & dict,
     ColumnString::Chars & chars,
-    IColumn::Offsets & offsets,
+    IColumn::Offsets & string_offsets,
     const OptionalRowSet & row_set,
     PaddedPODArray<UInt8> & null_map,
     const size_t rows_to_read) const
@@ -42,12 +42,12 @@ void DictDecoder::decodeStringSpace(
                 if (null_map[rows_read])
                 {
                     chars.push_back(0);
-                    offsets.push_back(chars.size());
+                    string_offsets.push_back(chars.size());
                 }
                 else
                 {
                     const String & value = dict.at(idx_buffer[count++]);
-                    appendString(chars, offsets, value);
+                    appendString(chars, string_offsets, value);
                 }
             }
             else if (!null_map[rows_read])
@@ -62,12 +62,12 @@ void DictDecoder::decodeStringSpace(
             if (null_map[rows_read])
             {
                 chars.push_back(0);
-                offsets.push_back(chars.size());
+                string_offsets.push_back(chars.size());
             }
             else
             {
                 const String & value = dict.at(idx_buffer[count++]);
-                appendString(chars, offsets, value);
+                appendString(chars, string_offsets, value);
             }
             rows_read++;
         }
@@ -80,7 +80,7 @@ void DictDecoder::decodeStringSpace(
 void DictDecoder::decodeString(
     std::vector<String> & dict,
     ColumnString::Chars & chars,
-    IColumn::Offsets & offsets,
+    IColumn::Offsets & string_offsets,
     const OptionalRowSet & row_set,
     const size_t rows_to_read) const
 {
@@ -91,7 +91,7 @@ void DictDecoder::decodeString(
             if (row_set.value().get(i))
             {
                 const String & value = dict.at(idx_buffer[i]);
-                appendString(chars, offsets, value);
+                appendString(chars, string_offsets, value);
             }
         }
     }
@@ -100,7 +100,7 @@ void DictDecoder::decodeString(
         for (size_t i = 0; i < rows_to_read; i++)
         {
             const String & value = dict.at(idx_buffer[i]);
-            appendString(chars, offsets, value);
+            appendString(chars, string_offsets, value);
         }
     }
     idx_buffer.resize(0);

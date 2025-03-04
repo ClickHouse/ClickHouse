@@ -783,7 +783,7 @@ void ParquetBlockInputFormat::initializeIfNeeded()
             .format_settings = format_settings,
             .min_bytes_for_seek = min_bytes_for_seek};
         new_native_reader = std::make_shared<ParquetReader>(
-            getPort().getHeader(), *seekable_in, arrow_file, settings, row_groups_indices, metadata, io_pool);
+            getPort().getHeader(), *seekable_in, settings, metadata, io_pool);
         new_native_reader->setSourceArrowFile(arrow_file);
         const auto & helper = key_condition->getColumnFilterHelper();
         if (helper)

@@ -23,17 +23,17 @@ public:
         const std::vector<Int32> & rowGroupIndices,
         std::vector<RowGroupPrefetchPtr> && row_group_condition_prefetches_,
         std::vector<RowGroupPrefetchPtr> && row_group_prefetches,
-        const ParquetReader & reader);
+        ParquetReader & reader);
     DB::Chunk read(size_t rows);
 
 private:
     bool loadRowGroupChunkReaderIfNeeded();
 
-    const ParquetReader & reader;
     std::vector<Int32> row_group_indices;
     std::vector<RowGroupPrefetchPtr> row_group_condition_prefetches;
     std::vector<RowGroupPrefetchPtr> row_group_prefetches;
     std::unique_ptr<RowGroupChunkReader> row_group_chunk_reader;
+    ParquetReader & reader;
     size_t next_row_group_idx = 0;
 };
 

@@ -127,7 +127,7 @@ SubRowGroupRangeReader::SubRowGroupRangeReader(
     const std::vector<Int32> & rowGroupIndices,
     std::vector<RowGroupPrefetchPtr> && row_group_condition_prefetches_,
     std::vector<RowGroupPrefetchPtr> && row_group_prefetches_,
-    const ParquetReader & reader_)
+    ParquetReader & reader_)
     : row_group_indices(rowGroupIndices)
     , row_group_condition_prefetches(std::move(row_group_condition_prefetches_))
     , row_group_prefetches(std::move(row_group_prefetches_))
