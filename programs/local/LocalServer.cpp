@@ -1,6 +1,7 @@
 #include "LocalServer.h"
 
 #include <sys/resource.h>
+#include <Common/QuillLoggerHelper.h>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
@@ -52,6 +53,7 @@
 #include <Formats/registerFormats.h>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
+#include <quill/sinks/FileSink.h>
 #include <filesystem>
 
 #include "config.h"
@@ -686,11 +688,10 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("server_logs_file"))
     {
-        auto poco_logs_level = Poco::Logger::parseLevel(level);
-        Poco::Logger::root().setLevel(poco_logs_level);
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::SimpleFileChannel(server_logs_file));
-        Poco::Logger::root().setChannel(log);
+        auto log_level = parseQuillLogLevel(level);
+        Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
+        auto logger = createLogger("root", {quill::Frontend::create_or_get_sink<quill::FileSink>(server_logs_file)});
+        logger->getQuillLogger()->set_log_level(log_level);
     }
     else
     {

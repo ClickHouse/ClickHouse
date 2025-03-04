@@ -246,10 +246,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     client_sinks.push_back(
         quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ClientFatalSink", quill::ConsoleSink::ColourMode::Never));
     if (options.count("client_logs_file"))
-    {
-        client_sinks.push_back(quill::Frontend::create_or_get_sink<quill::FileSink>(
-            options["client_logs_file"].as<std::string>(), quill::FileSinkConfig{}, quill::FileEventNotifier{}));
-    }
+        client_sinks.push_back(quill::Frontend::create_or_get_sink<quill::FileSink>(options["client_logs_file"].as<std::string>()));
 
     fatal_log = createLogger("ClientBase", std::move(client_sinks));
     fatal_log->getQuillLogger()->set_log_level(quill::LogLevel::Critical);

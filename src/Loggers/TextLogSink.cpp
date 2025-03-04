@@ -11,6 +11,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/setThreadName.h>
+#include <Common/IO.h>
 
 namespace DB
 {
@@ -102,7 +103,7 @@ void TextLogSink::log(const ExtendedLogMessage & msg)
     catch (...)
     {
         const std::string & exception_message = getCurrentExceptionMessage(true);
-        const std::string & message = msg.getText();
+        const std::string & message = msg.base.getText();
 
         /// NOTE: errors are ignored, since nothing can be done.
         writeRetry(STDERR_FILENO, "Cannot add message to the log: ");
@@ -112,5 +113,13 @@ void TextLogSink::log(const ExtendedLogMessage & msg)
         writeRetry(STDERR_FILENO, "\n");
     }
 }
+
+#ifndef WITHOUT_TEXT_LOG
+void TextLogSink::addTextLog(std::shared_ptr<SystemLogQueue<TextLogElement>> log_queue, int max_priority)
+{
+    text_log = log_queue;
+    text_log_max_priority.store(max_priority, std::memory_order_relaxed);
+}
+#endif
 
 }

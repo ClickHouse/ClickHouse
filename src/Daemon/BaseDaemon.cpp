@@ -51,6 +51,8 @@
 #include <Interpreters/Context.h>
 #include <filesystem>
 
+#include <quill/Backend.h>
+
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
@@ -371,12 +373,11 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
-    /// sensitive data masking rules are not used here
-    buildLoggers(config(), logger(), self.commandName());
-
     /// After initialized loggers but before initialized signal handling.
     if (should_setup_watchdog)
         setupWatchdog();
+    else
+        buildLoggers(config(), logger(), self.commandName());
 
     /// Create pid file.
     if (config().has("pid"))
@@ -584,6 +585,7 @@ void BaseDaemon::setupWatchdog()
 
         if (0 == pid)
         {
+            buildLoggers(config(), logger());
             updateCurrentThreadIdAfterFork();
             logger().information("Forked a child process to watch");
 #if defined(OS_LINUX)
@@ -602,6 +604,8 @@ void BaseDaemon::setupWatchdog()
 
             return;
         }
+
+        quill::Backend::start();
 
 #if defined(OS_LINUX)
         /// Tell the service manager the actual main process is not this one but the forked process

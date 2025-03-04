@@ -13,6 +13,7 @@
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+#include <Common/SensitiveDataMasker.h>
 #include <Common/CurrentThread.h>
 #include <Core/LogsLevel.h>
 #include <Loggers/TextLogSink.h>
@@ -202,6 +203,7 @@ namespace impl
         Stopwatch _logger_watch; \
         try \
         { \
+            ProfileEvents::incrementForLogMessage(level); \
             constexpr size_t _nargs = CH_VA_ARGS_NARGS(__VA_ARGS__); \
             using LogTypeInfo = FormatStringTypeInfo<std::decay_t<decltype(LOG_IMPL_FIRST_ARG(__VA_ARGS__))>>; \
 \
@@ -228,6 +230,9 @@ namespace impl
                     ? firstArg(__VA_ARGS__) \
                     : ConstexprIfsAreNotIfdefs<!is_preformatted_message>::getArgsAndFormat(_format_string_args, __VA_ARGS__); \
             } \
+\
+            if (auto masker = DB::SensitiveDataMasker::getInstance()) \
+                masker->wipeSensitiveData(_formatted_message); \
 \
             std::string _file_function = __FILE__ "; "; \
             _file_function += __PRETTY_FUNCTION__; \

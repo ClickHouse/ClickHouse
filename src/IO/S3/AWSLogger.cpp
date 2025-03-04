@@ -17,21 +17,19 @@ const char * S3_LOGGER_TAG_NAMES[][2] = {
 
 DB::LogsLevel convertLogLevel(Aws::Utils::Logging::LogLevel log_level)
 {
-   /// We map levels to our own logger 1 to 1 except INFO+ levels. In most cases we fail over such errors with retries
-   /// and don't want to see them as Errors in our logs.
-   static const std::unordered_map<Aws::Utils::Logging::LogLevel, DB::LogsLevel> mapping =
-   {
-       {Aws::Utils::Logging::LogLevel::Off, DB::LogsLevel::none},
-       {Aws::Utils::Logging::LogLevel::Fatal, DB::LogsLevel::information},
-       {Aws::Utils::Logging::LogLevel::Error, DB::LogsLevel::information},
-       {Aws::Utils::Logging::LogLevel::Warn, DB::LogsLevel::information},
-       {Aws::Utils::Logging::LogLevel::Info, DB::LogsLevel::debug},
-       {Aws::Utils::Logging::LogLevel::Debug, DB::LogsLevel::debug},
-       {Aws::Utils::Logging::LogLevel::Trace, DB::LogsLevel::trace},
-   };
-   return mapping.at(log_level);
+    /// We map levels to our own logger 1 to 1 except INFO+ levels. In most cases we fail over such errors with retries
+    /// and don't want to see them as Errors in our logs.
+    static const std::unordered_map<Aws::Utils::Logging::LogLevel, DB::LogsLevel> mapping = {
+        {Aws::Utils::Logging::LogLevel::Off, DB::LogsLevel::none},
+        {Aws::Utils::Logging::LogLevel::Fatal, DB::LogsLevel::information},
+        {Aws::Utils::Logging::LogLevel::Error, DB::LogsLevel::information},
+        {Aws::Utils::Logging::LogLevel::Warn, DB::LogsLevel::information},
+        {Aws::Utils::Logging::LogLevel::Info, DB::LogsLevel::debug},
+        {Aws::Utils::Logging::LogLevel::Debug, DB::LogsLevel::debug},
+        {Aws::Utils::Logging::LogLevel::Trace, DB::LogsLevel::trace},
+    };
+    return mapping.at(log_level);
 }
-
 }
 
 namespace DB::S3
