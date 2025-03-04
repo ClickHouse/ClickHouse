@@ -1,8 +1,10 @@
 ---
-slug: /en/interfaces/http
+slug: /interfaces/http
 sidebar_position: 19
 sidebar_label: HTTP Interface
 ---
+
+import PlayUI from '@site/static/images/play.png';
 
 # HTTP Interface
 
@@ -29,7 +31,7 @@ It has a secret feature for displaying charts and graphs for query pipelines.
 
 Web UI is designed for professionals like you.
 
-![Web UI](../images/play.png)
+<img src={PlayUI} alt="ClickHouse Web UI screenshot" />
 
 In health-check scripts use `GET /ping` request. This handler always returns "Ok." (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 
@@ -270,7 +272,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.
 You can also use the URL parameters to specify any settings for processing a single query or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-For more information, see the [Settings](../operations/settings/index.md) section.
+For more information, see the [Settings](/docs/operations/settings/settings) section.
 
 ``` bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
@@ -288,7 +290,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For information about other parameters, see the section "SET".
 
-## Using ClickHouse sessions in the HTTP protocol 
+## Using ClickHouse sessions in the HTTP protocol {#using-clickhouse-sessions-in-the-http-protocol}
 
 You can also use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout (in seconds), modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
@@ -339,19 +341,19 @@ This is a new feature added in ClickHouse 24.4.
 In specific scenarios, setting the granted role first might be required before executing the statement itself.
 However, it is not possible to send `SET ROLE` and the statement together, as multi-statements are not allowed:
 
-```
+```bash
 curl -sS "http://localhost:8123" --data-binary "SET ROLE my_role;SELECT * FROM my_table;"
 ```
 
 Which will result in an error:
 
-```
+```sql
 Code: 62. DB::Exception: Syntax error (Multi-statements are not allowed)
 ```
 
 To overcome this limitation, you could use the `role` query parameter instead:
 
-```
+```bash
 curl -sS "http://localhost:8123?role=my_role" --data-binary "SELECT * FROM my_table;"
 ```
 
@@ -359,7 +361,7 @@ This will be the equivalent of executing `SET ROLE my_role` before the statement
 
 Additionally, it is possible to specify multiple `role` query parameters:
 
-```
+```bash
 curl -sS "http://localhost:8123?role=my_role&role=my_other_role" --data-binary "SELECT * FROM my_table;"
 ```
 
@@ -371,7 +373,7 @@ Because of limitation of HTTP protocol, HTTP 200 response code does not guarante
 
 Here is an example:
 
-```
+```bash
 curl -v -Ss "http://localhost:8123/?max_block_size=1&query=select+sleepEachRow(0.001),throwIf(number=2)from+numbers(5)"
 *   Trying 127.0.0.1:8123...
 ...
@@ -396,7 +398,7 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-### Tabs in URL Parameters
+### Tabs in URL Parameters {#tabs-in-url-parameters}
 
 Query parameters are parsed from the "escaped" format. This has some benefits, such as the possibility to unambiguously parse nulls as `\N`. This means the tab character should be encoded as `\t` (or `\` and a tab). For example, the following contains an actual tab between `abc` and `123` and the input string is split into two values:
 
@@ -528,7 +530,7 @@ Now `rule` can configure `method`, `headers`, `url`, `handler`:
 
     - `http_response_headers` — use with any type, response headers map. Could be used to set content type as well.
 
-    - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://’ or 'config://’, find the content from the file or configuration sends to client.
+    - `response_content` — use with `static` type, response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration sends to client.
 
 Next are the configuration methods for different `type`.
 

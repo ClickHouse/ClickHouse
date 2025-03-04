@@ -6,7 +6,7 @@ sidebar_label: file
 
 # file {#file}
 
-从文件创建表。 此表函数类似于 [url](../../sql-reference/table-functions/url.md) 和 [hdfs](../../sql-reference/table-functions/hdfs.md)。
+从文件创建表。 此表函数类似于 [url](/sql-reference/table-functions/url) 和 [hdfs](/sql-reference/table-functions/hdfs)。
 
 `file` 函数可用于对[File](../../engines/table-engines/special/file.md) 表中的数据进行 `SELECT` 和 `INSERT` 查询。
 
@@ -128,4 +128,4 @@ FROM file('big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 
 **另请参阅**
 
--   [虚拟列](https://clickhouse.com/docs/en/operations/table_engines/#table_engines-virtual_columns)
+-   [虚拟列](/engines/table-engines#table_engines-virtual_columns)

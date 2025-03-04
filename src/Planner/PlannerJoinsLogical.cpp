@@ -46,6 +46,8 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/JoinInfo.h>
 
+#include <stack>
+
 namespace DB
 {
 
@@ -182,14 +184,18 @@ struct JoinInfoBuildContext
 
     JoinActionRef addExpression(const QueryTreeNodePtr & node, JoinSource src)
     {
-        const ActionsDAG::Node * dag_node_ptr = nullptr;
+        ActionsDAG * actions_dag_ptr = nullptr;
+
         if (src == JoinSource::Left)
-            dag_node_ptr = appendExpression(result_join_expression_actions.left_pre_join_actions, node, planner_context);
+            actions_dag_ptr = result_join_expression_actions.left_pre_join_actions.get();
         else if (src == JoinSource::Right)
-            dag_node_ptr = appendExpression(result_join_expression_actions.right_pre_join_actions, node, planner_context);
+            actions_dag_ptr = result_join_expression_actions.right_pre_join_actions.get();
         else
-            dag_node_ptr = appendExpression(result_join_expression_actions.post_join_actions, node, planner_context);
-        return JoinActionRef(dag_node_ptr);
+            actions_dag_ptr = result_join_expression_actions.post_join_actions.get();
+
+        return JoinActionRef(
+            appendExpression(*actions_dag_ptr, node, planner_context),
+            actions_dag_ptr);
     }
 
     const JoinNode & join_node;
@@ -522,22 +528,27 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "JOIN ON constant supported only with join algorithm 'hash'");
 
         /// Joined table expression always has __tableN prefix, other columns will appear only in projections, so these names are safe
-        if (join_actions.left_pre_join_actions.tryFindInOutputs("__lhs_const"))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected reserved name '__lhs_const' in JOIN expression {}", join_actions.left_pre_join_actions.dumpDAG());
-        if (join_actions.right_pre_join_actions.tryFindInOutputs("__rhs_const"))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected reserved name '__rhs_const' in JOIN expression {}", join_actions.right_pre_join_actions.dumpDAG());
+        if (join_actions.left_pre_join_actions->tryFindInOutputs("__lhs_const"))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected reserved name '__lhs_const' in JOIN expression {}", join_actions.left_pre_join_actions->dumpDAG());
+        if (join_actions.right_pre_join_actions->tryFindInOutputs("__rhs_const"))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected reserved name '__rhs_const' in JOIN expression {}", join_actions.right_pre_join_actions->dumpDAG());
 
         bool join_expression_value = join_expression_constant.value();
         auto dt = std::make_shared<DataTypeUInt8>();
-        JoinActionRef lhs_node(&join_actions.left_pre_join_actions.addColumn(
-            ColumnWithTypeAndName(dt->createColumnConstWithDefaultValue(1), dt, "__lhs_const")));
-        join_actions.left_pre_join_actions.addOrReplaceInOutputs(*lhs_node.node);
+        const auto & lhs_node = join_actions.left_pre_join_actions->addColumn(
+            ColumnWithTypeAndName(dt->createColumnConstWithDefaultValue(1), dt, "__lhs_const"));
+        join_actions.left_pre_join_actions->addOrReplaceInOutputs(lhs_node);
 
-        JoinActionRef rhs_node(&join_actions.right_pre_join_actions.addColumn(
-            ColumnWithTypeAndName(dt->createColumnConst(1, join_expression_value ? 0 : 1), dt, "__rhs_const")));
-        join_actions.right_pre_join_actions.addOrReplaceInOutputs(*rhs_node.node);
+        const auto & rhs_node = join_actions.right_pre_join_actions->addColumn(
+            ColumnWithTypeAndName(dt->createColumnConst(1, join_expression_value ? 0 : 1), dt, "__rhs_const"));
+        join_actions.right_pre_join_actions->addOrReplaceInOutputs(rhs_node);
 
-        build_context.result_join_info.expression.condition.predicates.emplace_back(JoinPredicate{lhs_node, rhs_node, PredicateOperator::Equals});
+        JoinPredicate predicate = {
+            JoinActionRef(&lhs_node, join_actions.left_pre_join_actions.get()),
+            JoinActionRef(&rhs_node, join_actions.right_pre_join_actions.get()),
+            PredicateOperator::Equals};
+
+        build_context.result_join_info.expression.condition.predicates.push_back(std::move(predicate));
     }
 
     return std::make_unique<JoinStepLogical>(

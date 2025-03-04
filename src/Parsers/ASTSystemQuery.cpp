@@ -403,12 +403,27 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
+        case Type::FLUSH_LOGS:
+        {
+            bool comma = false;
+            for (const auto & cur_log : logs)
+            {
+                if (comma)
+                    ostr << ',';
+                else
+                    comma = true;
+                ostr << ' ';
+                print_identifier(cur_log);
+            }
+            break;
+        }
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
+        case Type::DROP_QUERY_CONDITION_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
@@ -435,7 +450,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
-        case Type::FLUSH_LOGS:
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::START_THREAD_FUZZER:
         case Type::STOP_THREAD_FUZZER:

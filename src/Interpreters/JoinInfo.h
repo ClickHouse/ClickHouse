@@ -54,32 +54,43 @@ inline PredicateOperator reversePredicateOperator(PredicateOperator op)
     }
 }
 
+using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
+
 struct JoinExpressionActions
 {
     JoinExpressionActions(const ColumnsWithTypeAndName & left_columns, const ColumnsWithTypeAndName & right_columns, const ColumnsWithTypeAndName & joined_columns)
-        : left_pre_join_actions(left_columns)
-        , right_pre_join_actions(right_columns)
-        , post_join_actions(joined_columns)
+        : left_pre_join_actions(std::make_unique<ActionsDAG>(left_columns))
+        , right_pre_join_actions(std::make_unique<ActionsDAG>(right_columns))
+        , post_join_actions(std::make_unique<ActionsDAG>(joined_columns))
     {
     }
 
-    ActionsDAG left_pre_join_actions;
-    ActionsDAG right_pre_join_actions;
-    ActionsDAG post_join_actions;
+    ActionsDAGPtr left_pre_join_actions;
+    ActionsDAGPtr right_pre_join_actions;
+    ActionsDAGPtr post_join_actions;
 };
 
-struct JoinActionRef
-{
-    const ActionsDAG::Node * node;
-    String column_name;
 
-    explicit JoinActionRef(const ActionsDAG::Node * node_)
-        : node(node_) , column_name(node_ ? node_->result_name : "")
+class JoinActionRef
+{
+public:
+    explicit JoinActionRef(std::nullptr_t)
+        : actions_dag(nullptr)
     {}
 
-    ColumnWithTypeAndName getColumn() const { return {node->column, node->result_type, column_name}; }
+    explicit JoinActionRef(const ActionsDAG::Node * node_, const ActionsDAG * actions_dag_);
 
-    operator bool() const { return node != nullptr; } /// NOLINT
+    const ActionsDAG::Node * getNode() const;
+
+    ColumnWithTypeAndName getColumn() const;
+    const String & getColumnName() const;
+    DataTypePtr getType() const;
+
+    operator bool() const { return actions_dag != nullptr; } /// NOLINT
+
+private:
+    const ActionsDAG * actions_dag = nullptr;
+    String column_name;
 };
 
 /// JoinPredicate represents a single join qualifier
@@ -138,7 +149,7 @@ struct JoinInfo
 
 
 std::string_view toString(PredicateOperator op);
-String toString(const JoinActionRef & predicate);
+String toString(const JoinActionRef & node);
 String toString(const JoinPredicate & predicate);
 String toString(const JoinCondition & condition);
 
@@ -147,7 +158,6 @@ String toString(const JoinCondition & condition);
     M(UInt64, max_block_size) \
     \
     M(Bool, join_use_nulls) \
-    M(Bool, any_join_distinct_right_table_keys) \
     \
     M(UInt64, max_rows_in_join) \
     M(UInt64, max_bytes_in_join) \
@@ -175,13 +185,16 @@ String toString(const JoinCondition & condition);
     M(Bool, collect_hash_table_stats_during_joins) \
     M(UInt64, max_size_to_preallocate_for_joins) \
     \
-    M(Bool, query_plan_convert_outer_join_to_inner_join) \
-    M(Bool, multiple_joins_try_to_keep_original_names) \
+    M(UInt64, max_joined_block_size_rows) \
+    M(String, temporary_files_codec) \
+    M(UInt64, join_output_by_rowlist_perkey_rows_threshold) \
+    M(UInt64, join_to_sort_minimum_perkey_rows) \
+    M(UInt64, join_to_sort_maximum_table_rows) \
+    M(Bool, allow_experimental_join_right_table_sorting) \
+    M(UInt64, min_joined_block_size_bytes) \
+    M(MaxThreads, max_threads) \
     \
-    M(Bool, parallel_replicas_prefer_local_join) \
-    M(Bool, allow_experimental_join_condition) \
-    \
-    M(UInt64, cross_to_inner_join_rewrite) \
+    M(UInt64, default_max_bytes_in_join) \
 
 
 /// Subset of query settings that are relevant to join and used to configure join algorithms.

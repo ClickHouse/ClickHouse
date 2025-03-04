@@ -82,18 +82,22 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
             {
                 uint32_t col_counter = 0;
 
+                const uint32_t type_mask_backup = this->next_type_mask;
                 this->next_type_mask = fc.type_mask & ~(allow_nested);
                 SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type());
                 delete tp;
+                this->next_type_mask = type_mask_backup;
             }
         }
         if (rg.nextMediumNumber() < nested_prob)
         {
             uint32_t col_counter = 0;
 
+            const uint32_t type_mask_backup = this->next_type_mask;
             this->next_type_mask = fc.type_mask & ~(allow_nested);
             SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type());
             delete tp;
+            this->next_type_mask = type_mask_backup;
         }
         if (nsuboption < 6)
         {
@@ -555,7 +559,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
     const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 64);
     const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < 8);
     const uint32_t nfuncs = static_cast<uint32_t>(
-        (nallow_funcs ? funcs_size : 0) + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : (CHAggrs.size() - 1)) : 0));
+        (nallow_funcs ? funcs_size : 0) + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : (CHAggrs.size() - 6)) : 0));
     std::uniform_int_distribution<uint32_t> next_dist(0, nfuncs - 1);
     uint32_t generated_params = 0;
 
@@ -653,7 +657,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
 
-        func_call->set_distinct(agg.support_distinct && func_call->args_size() == 1 && rg.nextBool());
+        func_call->set_distinct(func_call->args_size() > 0 && rg.nextSmallNumber() < 4);
         if (agg.support_nulls_clause && rg.nextSmallNumber() < 7)
         {
             func_call->set_fnulls(rg.nextBool() ? FuncNulls::NRESPECT : FuncNulls::NIGNORE);
@@ -726,7 +730,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
 void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call)
 {
     const size_t funcs_size = CHTableFuncs.size();
-    std::uniform_int_distribution<uint32_t> next_dist(0, funcs_size - 1);
+    std::uniform_int_distribution<size_t> next_dist(0, funcs_size - 1);
     const CHFunction & func = CHTableFuncs[next_dist(rg.generator)];
     const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
     uint32_t generated_params = 0;
@@ -815,12 +819,14 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (noption < 501)
     {
         uint32_t col_counter = 0;
+        const uint32_t type_mask_backup = this->next_type_mask;
         CastExpr * casexpr = expr->mutable_comp_expr()->mutable_cast_expr();
 
         this->depth++;
         this->next_type_mask = fc.type_mask & ~(allow_nested);
         SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type());
         delete tp;
+        this->next_type_mask = type_mask_backup;
         this->generateExpression(rg, casexpr->mutable_expr());
         this->depth--;
     }
@@ -1053,7 +1059,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             }
             this->width -= nclauses;
         }
-        if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
+        if (!this->allow_not_deterministic || (this->width < this->fc.max_width && rg.nextSmallNumber() < 4))
         {
             generateOrderBy(rg, 0, true, wdf->mutable_order_by());
         }
