@@ -188,7 +188,9 @@ void calculateHashTableCacheKeys(QueryPlan::Node & root)
             else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
                 frame.hash->update(calculateHashFromStep(*read));
             else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
-                frame.hash->update(calculateHashFromStep(*transform));
+                // Completely ignore the ignored steps (i.e. the ones for which we return 0)
+                if (auto hash = calculateHashFromStep(*transform))
+                    frame.hash->update(hash);
         }
 
         stack.pop_back();
