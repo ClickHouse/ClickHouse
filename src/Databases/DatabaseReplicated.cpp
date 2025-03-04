@@ -975,6 +975,7 @@ void DatabaseReplicated::assertDigestWithProbability(const ContextPtr & local_co
 
 void DatabaseReplicated::assertDigest(const ContextPtr & local_context)
 {
+#if defined(DEBUG_OR_SANITIZER_BUILD)
     if (local_context->isInternalQuery())
     {
         if (auto txn = local_context->getZooKeeperMetadataTransaction())
@@ -988,6 +989,9 @@ void DatabaseReplicated::assertDigest(const ContextPtr & local_context)
     }
     else
         assertDigestWithProbability(local_context);
+#else
+    UNUSED(local_context);
+#endif
 }
 
 void DatabaseReplicated::assertDigestInTransactionOrInline(const ContextPtr & local_context, const ZooKeeperMetadataTransactionPtr & txn)
