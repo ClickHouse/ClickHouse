@@ -1,11 +1,14 @@
 #include <Processors/Transforms/FilterTransform.h>
 
+#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB
 {
@@ -43,7 +46,8 @@ FilterTransform::FilterTransform(
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_,
-    std::shared_ptr<std::atomic<size_t>> rows_filtered_)
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_,
+    std::optional<size_t> condition_hash_)
     : ISimpleTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
@@ -53,6 +57,7 @@ FilterTransform::FilterTransform(
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
+    , condition_hash(condition_hash_)
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -62,6 +67,9 @@ FilterTransform::FilterTransform(
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
         constant_filter_description = ConstantFilterDescription(*column);
+
+    if (condition_hash.has_value())
+        query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 }
 
 IProcessor::Status FilterTransform::prepare()
@@ -108,6 +116,26 @@ void FilterTransform::doTransform(Chunk & chunk)
     auto columns = chunk.detachColumns();
     DataTypes types;
 
+    auto write_into_query_condition_cache = [&]()
+    {
+        if (!query_condition_cache)
+            return;
+
+        auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
+        if (!mark_info)
+            return;
+
+        const auto & data_part = mark_info->getDataPart();
+        auto storage_id = data_part->storage.getStorageID();
+        query_condition_cache->write(
+                storage_id.uuid,
+                data_part->name,
+                *condition_hash,
+                mark_info->getMarkRanges(),
+                data_part->index_granularity->getMarksCount(),
+                data_part->index_granularity->hasFinalMark());
+    };
+
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
@@ -137,7 +165,10 @@ void FilterTransform::doTransform(Chunk & chunk)
     constant_filter_description = ConstantFilterDescription(*filter_column);
 
     if (constant_filter_description.always_false)
+    {
+        write_into_query_condition_cache();
         return; /// Will finish at next prepare call
+    }
 
     if (constant_filter_description.always_true)
     {
@@ -184,8 +215,11 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
+    {
+        write_into_query_condition_cache();
         /// SimpleTransform will skip it.
         return;
+    }
 
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)

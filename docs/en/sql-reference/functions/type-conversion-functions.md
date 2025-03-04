@@ -6409,7 +6409,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 ## accurateCastOrNull(x, T) {#accuratecastornullx-t}
 
-Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](../syntax.md/#null-literal) if the cast value is not representable in the target type.
+Converts input value `x` to the specified data type `T`. Always returns [Nullable](../data-types/nullable.md) type and returns [NULL](/sql-reference/syntax#null) if the cast value is not representable in the target type.
 
 **Syntax**
 

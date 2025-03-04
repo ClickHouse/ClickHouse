@@ -443,7 +443,7 @@ ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the
 This substitution caused the exception.
 
 :::note
-You can change this default behavior by setting [prefer_column_name_to_alias](../operations/settings/settings.md#prefer-column-name-to-alias) to `1`.
+You can change this default behavior by setting [prefer_column_name_to_alias](/operations/settings/settings#prefer_column_name_to_alias) to `1`.
 :::
 
 ## Asterisk {#asterisk}

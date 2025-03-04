@@ -19,7 +19,7 @@ There's an additional way to run aggregation over a table. If a query contains t
 
 ## NULL Processing {#null-processing}
 
-For grouping, ClickHouse interprets [NULL](/sql-reference/syntax.md#null-literal) as a value, and `NULL==NULL`. It differs from `NULL` processing in most other contexts.
+For grouping, ClickHouse interprets [NULL](/sql-reference/syntax#null) as a value, and `NULL==NULL`. It differs from `NULL` processing in most other contexts.
 
 Here's an example to show what this means.
 
