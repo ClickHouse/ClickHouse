@@ -5,4 +5,6 @@ from praktika.gh import GH
 SYNC = "CH Inc sync"
 
 if __name__ == "__main__":
-    GH.post_commit_status(name=SYNC, status="success", description="dummy status to enable merge", url="")
+    GH.post_commit_status(
+        name=SYNC, status="success", description="dummy status to enable merge", url=""
+    )

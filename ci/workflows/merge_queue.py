@@ -40,7 +40,7 @@ workflow = Workflow.Config(
     enable_commit_status_on_failure=True,
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
-        "python3 ./ci/jobs/scripts/workflow_hooks/set_dummy_ch_inc_commit_status.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/set_dummy_sync_commit_status.py",
     ],
 )
 
