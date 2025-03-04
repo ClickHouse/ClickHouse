@@ -1,5 +1,5 @@
+#include <future>
 #include <memory>
-#include <mutex>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/printPipeline.h>
@@ -16,7 +16,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Poco/URI.h>
 #include <Common/logger_useful.h>
+#include <Server/StatelessWorker/StatelessWorkerClient.h>
 
 
 namespace DB
@@ -57,10 +59,10 @@ public:
 
     WriteBuffer & getTemporaryFileForWriting(const String & file_name) override
     {
-        LOG_DEBUG(logger, "Writing to temporary file {}", file_name);
+        LOG_DEBUG(logger, "Writing to temporary file '{}'", file_name);
 
         if (!output_temporary_files.contains(file_name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected output temporary file requested: {} ", file_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected output temporary file requested: '{}'", file_name);
         StoredObject object(object_storage_path + "/" + file_name, file_name);
         write_buffers.emplace_back(object_storage->writeObject(object, WriteMode::Rewrite));
         return *write_buffers.back();
@@ -68,10 +70,10 @@ public:
 
     std::unique_ptr<ReadBuffer> getTemporaryFileForReading(const String & file_name) override
     {
-        LOG_TRACE(logger, "Reading from temporary file {}", file_name);
+        LOG_TRACE(logger, "Reading from temporary file '{}'", file_name);
 
         if (!input_temporary_files.contains(file_name))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected input temporary file requested: {} ", file_name);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected input temporary file requested: '{}'", file_name);
         StoredObject object(object_storage_path + "/" + file_name, file_name);
         return object_storage->readObject(object, {});
     }
@@ -84,6 +86,12 @@ private:
     std::vector<std::unique_ptr<WriteBuffer>> write_buffers;
     LoggerPtr logger = getLogger("TemporaryFilesInObjectStorage");
 };
+
+TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storage_, const String & object_storage_path_,
+    const Strings & input_temporary_files_, const Strings & output_temporary_files_)
+{
+    return std::make_shared<TemporaryFilesInObjectStorage>(object_storage_, object_storage_path_, input_temporary_files_, output_temporary_files_);
+}
 
 String serializeQueryPlan(const QueryPlan & query_plan)
 {
@@ -98,14 +106,7 @@ QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr 
     return QueryPlan::deserialize(in, context).plan;
 }
 
-class ResultSink
-{
-public:
-    virtual ~ResultSink() = default;
-    virtual void addBlock(Block block) = 0;
-};
-
-void doExecuteTask(const String & serialized_query_plan, const DistributedQueryTask & task, ObjectStoragePtr object_storage, const String & object_storage_path, ResultSink & result, ContextPtr context)
+void doExecuteTask(const String & serialized_query_plan, const DistributedQueryTask & task, ObjectStoragePtr object_storage, const String & object_storage_path, ContextPtr context)
 {
     QueryPlan query_plan = deserializeQueryPlan(serialized_query_plan, context);
 
@@ -113,7 +114,7 @@ void doExecuteTask(const String & serialized_query_plan, const DistributedQueryT
     LOG_TRACE(logger, "Task '{}' temporary files:\ninput: {}\noutput: {}",
         task.task_id, fmt::join(task.input_temporary_files, ", "), fmt::join(task.output_temporary_files, ", "));
 
-    auto temporary_files = std::make_shared<TemporaryFilesInObjectStorage>(
+    auto temporary_files = createTemporaryFilesLookup(
         object_storage, object_storage_path, task.input_temporary_files, task.output_temporary_files);
 
     auto pipeline_settings = BuildQueryPipelineSettings(context);
@@ -134,45 +135,22 @@ void doExecuteTask(const String & serialized_query_plan, const DistributedQueryT
         LOG_DEBUG(logger, "Executing task '{}', pipeline:\n{}", task.task_id, out.str());
     }
 
-    if (pipeline.completed())
-    {
-        CompletedPipelineExecutor executor(pipeline);
-        executor.execute();
-    }
-    else
-    {
-        PullingPipelineExecutor executor(pipeline);
-        Block block;
-        size_t block_num = 0;
-        size_t rows_num = 0;
+    if (!pipeline.completed())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline is not completed");
 
-        while (executor.pull(block))
-        {
-            if (!block)
-                continue;
-
-            ++block_num;
-            rows_num += block.rows();
-
-            LOG_TEST(logger, "Block {}:\n{}", block_num, block.dumpStructure());
-
-            result.addBlock(block);
-        }
-
-        LOG_DEBUG(logger, "Read {} blocks with {} rows from pipeline", block_num, rows_num);
-    }
+    CompletedPipelineExecutor executor(pipeline);
+    executor.execute();
 }
 
-void executeTask(const String & serialized_query_plan, const DistributedQueryTask & task, ResultSink & result, ContextPtr context)
+String sendTask(const String & endpoint_uri, const String & serialized_query_plan, const DistributedQueryTask & task, const ContextPtr & context);
+
+
+std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(ContextPtr context)
 {
     bool use_local_object_storage = true;
     ObjectStoragePtr object_storage;
     String object_storage_path;
     if (use_local_object_storage)
-//    {
-//        object_storage_path = "/tmp";
-//        object_storage = std::make_shared<LocalObjectStorage>(object_storage_path);
-//    }
     {
         object_storage_path = "./local_object_storage/tmp";
         const auto & config = context->getConfigRef();
@@ -187,21 +165,66 @@ void executeTask(const String & serialized_query_plan, const DistributedQueryTas
         object_storage = ObjectStorageFactory::instance().create("s3", config, config_prefix, context, false);
     }
 
-    doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, result, context);
+    return {object_storage, object_storage_path};
 }
 
-std::future<void> startTask(const QueryPlan & query_plan, const DistributedQueryTask & task, ResultSink & result, ContextPtr context)
+void executeTask(const String & serialized_query_plan, const DistributedQueryTask & task, ContextPtr context)
 {
+    auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(context);
+
+    doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, context);
+}
+
+std::future<void> startTask(const QueryPlan & query_plan, const DistributedQueryTask & task, ContextPtr context)
+{
+    const String serialized_query_plan = serializeQueryPlan(query_plan);
+
+#if 1
+    String stateless_worker_endpoint_uri;
+    if (context->getConfigRef().getBool("stateless_worker_client.enabled", true))
+    {
+        String host = context->getConfigRef().getString("stateless_worker_client.host", "localhost");
+        auto default_port = context->getInterserverIOAddress().second;
+        auto port = context->getConfigRef().getUInt("stateless_worker_client.port", default_port);
+        String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
+        auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
+        Poco::URI stateless_worker_uri;
+        stateless_worker_uri.setScheme("http");
+        stateless_worker_uri.setHost(host);
+        stateless_worker_uri.setPort(port);
+        stateless_worker_uri.addQueryParameter("endpoint", endpoint);
+        stateless_worker_endpoint_uri = stateless_worker_uri.toString();
+    }
+    sendTask(stateless_worker_endpoint_uri, serialized_query_plan, task, context);
+
+    /// TODO: add task to the list of running tasks and check its status periodically
+    while (true)
+    {
+        auto task_status = getTaskStatus(stateless_worker_endpoint_uri, task.task_id, 100, context);
+
+        if (task_status == "Finished\n")
+        {
+            /// Return ready future
+            std::promise<void> task_promise;
+            task_promise.set_value();
+            return task_promise.get_future();
+        }
+        else if (task_status == "Running\n")
+            continue;
+        else
+            break;
+    }
+#endif
+
+
     std::promise<void> task_promise;
     std::future<void> future = task_promise.get_future();
 
-    const String serialized_query_plan = serializeQueryPlan(query_plan);
-
-    std::thread([promise = std::move(task_promise), serialized_query_plan, task, &result, context]() mutable
+    std::thread([promise = std::move(task_promise), serialized_query_plan, task, context]() mutable
     {
         try
         {
-            executeTask(serialized_query_plan, task, result, context);
+            executeTask(serialized_query_plan, task, context);
             promise.set_value();
         }
         catch (...)
@@ -213,12 +236,12 @@ std::future<void> startTask(const QueryPlan & query_plan, const DistributedQuery
     return future;
 }
 
-void executeStage(const DistributedQueryStage & stage, ResultSink & result, ContextPtr context)
+void executeStage(const DistributedQueryStage & stage, ContextPtr context)
 {
     std::vector<std::future<void>> started_tasks;
     started_tasks.reserve(stage.tasks.size());
     for (const auto & task : stage.tasks)
-        started_tasks.emplace_back(startTask(stage.query_plan_fragment, task, result, context));
+        started_tasks.emplace_back(startTask(stage.query_plan_fragment, task, context));
 
     /// TODO: periodically check for cancellation
     for (const auto & task : started_tasks)
@@ -229,33 +252,11 @@ void executeStage(const DistributedQueryStage & stage, ResultSink & result, Cont
         task.get();
 }
 
-class StageResult : public ResultSink
-{
-public:
-    void addBlock(Block block) override
-    {
-        std::lock_guard lock(mutex);
-        blocks.push_back(std::move(block));
-    }
-
-    std::vector<Block> getBlocks()
-    {
-        std::lock_guard lock(mutex);
-        return blocks;
-    }
-
-private:
-    std::vector<Block> blocks;
-    std::mutex mutex;
-};
-
-using StageResultPtr = std::shared_ptr<StageResult>;
-
-Chunks executeDistributedQuery(const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
+void executeDistributedQuery(const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
 {
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
     /// Execute stages in topological order
-    std::unordered_map<String, StageResultPtr> executed_stages;
+    std::unordered_set<String> executed_stages;
     std::function<void(const String &)> execute_stage = [&](const String & stage_name)
     {
         if (executed_stages.contains(stage_name))
@@ -273,20 +274,12 @@ Chunks executeDistributedQuery(const DistributedQueryPlan & distributed_query_pl
             "plan:\n{}\n"
             "==========================================================================",
             stage_name, dumpQueryPlan(stage.query_plan_fragment));
-        StageResultPtr stage_result = std::make_shared<StageResult>();
-        executeStage(stage, *stage_result, context);
-        executed_stages[stage_name] = stage_result;
+        executeStage(stage, context);
+        executed_stages.insert(stage_name);
     };
 
     for (const auto & [stage_name, _] : distributed_query_plan.stages)
         execute_stage(stage_name);
-
-    Chunks result;
-    auto main_result = executed_stages.at("main");
-    for (const auto & block : main_result->getBlocks())
-        result.push_back(Chunk(block.getColumns(), block.rows()));
-
-    return result;
 }
 
 }

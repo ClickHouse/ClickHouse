@@ -245,6 +245,7 @@ struct QueryPlanParamaters
     std::unordered_map<String, Field> parameters;
 };
 
+/// Represents a single local task in a distributed query plan
 struct DistributedQueryTask
 {
     String task_id;
@@ -253,7 +254,8 @@ struct DistributedQueryTask
     std::vector<String> output_temporary_files;
 };
 
-
+/// A group of tasks with the same plan fragment and differenet parameters
+/// Tasks can be executed in parallel on different partitions of data
 struct DistributedQueryStage
 {
     QueryPlan query_plan_fragment;   /// Common for all tasks

@@ -1,0 +1,185 @@
+#include <Server/StatelessWorker/StatelessWorkerClient.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/InterserverCredentials.h>
+#include <Poco/Net/HTTPBasicCredentials.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <IO/WriteBufferFromOStream.h>
+#include <IO/ReadWriteBufferFromHTTP.h>
+#include <base/types.h>
+
+namespace DB
+{
+
+String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const ContextPtr & context)
+{
+    auto credentials = context->getInterserverCredentials();
+    Poco::Net::HTTPBasicCredentials creds{};
+    if (!credentials->getUser().empty())
+    {
+        creds.setUsername(credentials->getUser());
+        creds.setPassword(credentials->getPassword());
+    }
+
+    ConnectionTimeouts timeouts;
+    timeouts.connection_timeout = Poco::Timespan(100 * 1000);
+    timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
+    timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
+    ReadSettings read_settings;
+    read_settings.http_max_tries = 1;
+    read_settings.http_retry_initial_backoff_ms = 500;
+    read_settings.http_retry_max_backoff_ms = 1000;
+
+    Poco::URI uri(endpoint_uri);
+    uri.addQueryParameter("operation",   "start");
+    uri.addQueryParameter("compress",    "false");
+    uri.addQueryParameter("task_id",     task_id);
+
+    auto write_body_callback = [&task_serializer] (std::ostream & os)
+    {
+        WriteBufferFromOStream buf(os);
+        task_serializer(buf);
+        buf.finalize();
+    };
+
+    auto in = BuilderRWBufferFromHTTP(uri)
+        .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+        .withTimeouts(timeouts)
+        .withSettings(read_settings)
+        .withOutCallback(write_body_callback)
+        .withDelayInit(false)
+        .create(creds);
+
+    std::string s;
+    readStringUntilEOF(s, *in);
+
+    return s;
+}
+
+void serializeTask(const DistributedQueryTask & task, const String & serialized_query_plan, WriteBuffer & out);
+
+
+String sendTask(const String & endpoint_uri, const String & serialized_query_plan, const DistributedQueryTask & task, const ContextPtr & context)
+{
+    auto task_serializer = [serialized_query_plan, task] (WriteBuffer & buf)
+    {
+        serializeTask(task, serialized_query_plan, buf);
+    };
+
+    return doSendTask(endpoint_uri, task.task_id, task_serializer, context);
+}
+
+/// Get task status by its id.
+/// If wait_for_ms is set, the function will wait for the task to finish for the specified amount of time.
+String getTaskStatus(const String & endpoint_uri, const String & task_id, UInt32 wait_for_ms, const ContextPtr & context)
+{
+    auto credentials = context->getInterserverCredentials();
+    Poco::Net::HTTPBasicCredentials creds{};
+    if (!credentials->getUser().empty())
+    {
+        creds.setUsername(credentials->getUser());
+        creds.setPassword(credentials->getPassword());
+    }
+
+    ConnectionTimeouts timeouts;
+    timeouts.connection_timeout = Poco::Timespan(100 * 1000);
+    timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
+    timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
+    ReadSettings read_settings;
+    read_settings.http_max_tries = 1;
+    read_settings.http_retry_initial_backoff_ms = 500;
+    read_settings.http_retry_max_backoff_ms = 1000;
+
+    Poco::URI uri(endpoint_uri);
+    uri.addQueryParameter("operation",   "get_status");
+    uri.addQueryParameter("compress",    "false");
+    uri.addQueryParameter("task_id",     task_id);
+    uri.addQueryParameter("wait_for_ms", std::to_string(wait_for_ms));
+
+    auto in = BuilderRWBufferFromHTTP(uri)
+        .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+        .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
+        .withTimeouts(timeouts)
+        .withSettings(read_settings)
+        .withDelayInit(false)
+        .create(creds);
+
+    std::string s;
+    readStringUntilEOF(s, *in);
+
+    return s;
+}
+
+void cancelTask(const String & endpoint_uri, const String & task_id, const ContextPtr & context)
+{
+    auto credentials = context->getInterserverCredentials();
+    Poco::Net::HTTPBasicCredentials creds{};
+    if (!credentials->getUser().empty())
+    {
+        creds.setUsername(credentials->getUser());
+        creds.setPassword(credentials->getPassword());
+    }
+
+    ConnectionTimeouts timeouts;
+    timeouts.connection_timeout = Poco::Timespan(100 * 1000);
+    timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
+    timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
+    ReadSettings read_settings;
+    read_settings.http_max_tries = 1;
+    read_settings.http_retry_initial_backoff_ms = 500;
+    read_settings.http_retry_max_backoff_ms = 1000;
+
+    Poco::URI uri(endpoint_uri);
+    uri.addQueryParameter("operation",   "cancel");
+    uri.addQueryParameter("compress",    "false");
+    uri.addQueryParameter("task_id",     task_id);
+
+    auto in = BuilderRWBufferFromHTTP(uri)
+        .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+        .withTimeouts(timeouts)
+        .withSettings(read_settings)
+        .withDelayInit(false)
+        .create(creds);
+
+    std::string s;
+    readStringUntilEOF(s, *in);
+}
+
+void forgetTask(const String & endpoint_uri, const String & task_id, const ContextPtr & context)
+{
+    auto credentials = context->getInterserverCredentials();
+    Poco::Net::HTTPBasicCredentials creds{};
+    if (!credentials->getUser().empty())
+    {
+        creds.setUsername(credentials->getUser());
+        creds.setPassword(credentials->getPassword());
+    }
+
+    ConnectionTimeouts timeouts;
+    timeouts.connection_timeout = Poco::Timespan(100 * 1000);
+    timeouts.send_timeout = Poco::Timespan(100 * 1000 * 1000);
+    timeouts.receive_timeout = Poco::Timespan(100 * 1000 * 1000);
+    ReadSettings read_settings;
+    read_settings.http_max_tries = 1;
+    read_settings.http_retry_initial_backoff_ms = 500;
+    read_settings.http_retry_max_backoff_ms = 1000;
+
+    Poco::URI uri(endpoint_uri);
+    uri.addQueryParameter("operation",   "forget");
+    uri.addQueryParameter("compress",    "false");
+    uri.addQueryParameter("task_id",     task_id);
+
+    auto in = BuilderRWBufferFromHTTP(uri)
+        .withConnectionGroup(HTTPConnectionGroupType::HTTP)
+        .withMethod(Poco::Net::HTTPRequest::HTTP_POST)
+        .withTimeouts(timeouts)
+        .withSettings(read_settings)
+        .withDelayInit(false)
+        .create(creds);
+
+    std::string s;
+    readStringUntilEOF(s, *in);
+}
+
+}
