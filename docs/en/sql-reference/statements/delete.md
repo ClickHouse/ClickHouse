@@ -15,14 +15,14 @@ DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE 
 
 It is called "lightweight `DELETE`" to contrast it to the [ALTER TABLE ... DELETE](/sql-reference/statements/alter/delete) command, which is a heavyweight process.
 
-## Examples
+## Examples {#examples}
 
 ```sql
 -- Deletes all rows from the `hits` table where the `Title` column contains the text `hello`
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-## Lightweight `DELETE` does not delete data immediately
+## Lightweight `DELETE` does not delete data immediately {#lightweight-delete-does-not-delete-data-immediately}
 
 Lightweight `DELETE` is implemented as a [mutation](/sql-reference/statements/alter#mutations) that marks rows as deleted but does not immediately physically delete them.
 
@@ -30,21 +30,21 @@ By default, `DELETE` statements wait until marking the rows as deleted is comple
 
 The mutation does not physically delete the rows that have been marked as deleted, this will only happen during the next merge. As a result, it is possible that for an unspecified period, data is not actually deleted from storage and is only marked as deleted.
 
-If you need to guarantee that your data is deleted from storage in a predictable time, consider using the table setting [`min_age_to_force_merge_seconds`](/docs/operations/settings/merge-tree-settings#min_age_to_force_merge_seconds). Or you can use the [ALTER TABLE ... DELETE](/sql-reference/statements/alter/delete) command. Note that deleting data using `ALTER TABLE ... DELETE` may consume significant resources as it recreates all affected parts.
+If you need to guarantee that your data is deleted from storage in a predictable time, consider using the table setting [`min_age_to_force_merge_seconds`](/operations/settings/merge-tree-settings#min_age_to_force_merge_seconds). Or you can use the [ALTER TABLE ... DELETE](/sql-reference/statements/alter/delete) command. Note that deleting data using `ALTER TABLE ... DELETE` may consume significant resources as it recreates all affected parts.
 
-## Deleting large amounts of data
+## Deleting large amounts of data {#deleting-large-amounts-of-data}
 
 Large deletes can negatively affect ClickHouse performance. If you are attempting to delete all rows from a table, consider using the [`TRUNCATE TABLE`](/sql-reference/statements/truncate) command.
 
 If you anticipate frequent deletes, consider using a [custom partitioning key](/engines/table-engines/mergetree-family/custom-partitioning-key). You can then use the [`ALTER TABLE ... DROP PARTITION`](/sql-reference/statements/alter/partition#drop-partitionpart) command to quickly drop all rows associated with that partition.
 
-## Limitations of lightweight `DELETE`
+## Limitations of lightweight `DELETE` {#limitations-of-lightweight-delete}
 
-### Lightweight `DELETE`s with projections
+### Lightweight `DELETE`s with projections {#lightweight-deletes-with-projections}
 
-By default, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. But there is a [MergeTree setting](/docs/operations/settings/merge-tree-settings) `lightweight_mutation_projection_mode` to change the behavior.
+By default, `DELETE` does not work for tables with projections. This is because rows in a projection may be affected by a `DELETE` operation. But there is a [MergeTree setting](/operations/settings/merge-tree-settings) `lightweight_mutation_projection_mode` to change the behavior.
 
-## Performance considerations when using lightweight `DELETE`
+## Performance considerations when using lightweight `DELETE` {#performance-considerations-when-using-lightweight-delete}
 
 **Deleting large volumes of data with the lightweight `DELETE` statement can negatively affect SELECT query performance.**
 
@@ -55,7 +55,7 @@ The following can also negatively impact lightweight `DELETE` performance:
 - The affected table has a very large number of data parts.
 - Having a lot of data in compact parts. In a Compact part, all columns are stored in one file.
 
-## Delete permissions
+## Delete permissions {#delete-permissions}
 
 `DELETE` requires the `ALTER DELETE` privilege. To enable `DELETE` statements on a specific table for a given user, run the following command:
 
@@ -63,7 +63,7 @@ The following can also negatively impact lightweight `DELETE` performance:
 GRANT ALTER DELETE ON db.table to username;
 ```
 
-## How lightweight DELETEs work internally in ClickHouse
+## How lightweight DELETEs work internally in ClickHouse {#how-lightweight-deletes-work-internally-in-clickhouse}
 
 1. **A "mask" is applied to affected rows**
 
@@ -91,6 +91,6 @@ GRANT ALTER DELETE ON db.table to username;
 
    From the steps above, we can see that lightweight `DELETE` using the masking technique improves performance over traditional `ALTER TABLE ... DELETE` because it does not re-write all the columns' files for affected parts.
 
-## Related content
+## Related content {#related-content}
 
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
