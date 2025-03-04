@@ -295,3 +295,6 @@ def test_replicated_db_startup_race(started_cluster):
     node1.query("system disable failpoint database_replicated_startup_pause")
     _, err = drop_query_handle.get_answer_and_error()
     assert err == ""
+
+    node1.query("drop database re sync")
+    node2.query("drop database re sync")
