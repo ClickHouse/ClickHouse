@@ -22,6 +22,7 @@ namespace quill
 inline namespace v8
 {
 class FrontendOptions;
+class Sink;
 
 template <typename TFrontendOptions>
 class LoggerImpl;
@@ -77,18 +78,7 @@ LoggerPtr getLogger(const char (&name)[n])
 
 QuillLoggerPtr getQuillLogger(const std::string & name);
 
-PocoLoggerPtr getPocoLogger(const std::string & name);
-
-/** Create Logger with specified name, channel and logging level.
-  * If Logger already exists, throws exception.
-  * Logger is destroyed, when last shared ptr that refers to Logger with specified name is destroyed.
-  */
-PocoLoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level = Poco::Message::PRIO_INFORMATION);
-
-/** Returns true, if currently Logger with specified name is created.
-  * Otherwise, returns false.
-  */
-bool hasLogger(const std::string & name);
+LoggerPtr createLogger(const std::string & name, std::vector<std::shared_ptr<quill::Sink>> sinks);
 
 void disableLogging();
 

@@ -612,6 +612,8 @@ try
         }
     }
 
+    log->getQuillLogger()->flush_log();
+
     /// When everything is done, we will try to send these error messages to the client.
     if (thread_ptr)
         thread_ptr->onFatalError();

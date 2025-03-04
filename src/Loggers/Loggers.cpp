@@ -11,6 +11,7 @@
 #include <IO/ReadHelpers.h>
 #include <quill/core/LogLevel.h>
 #include <quill/sinks/Sink.h>
+#include "Common/Exception.h"
 #include <Common/ThreadPool.h>
 #include <Common/LockMemoryExceptionInThread.h>
 
@@ -227,9 +228,9 @@ private:
                 {
                     created_files.emplace_front(current_file, static_cast<size_t>(DB::parseFromString<size_t>(index) + 1));
                 }
-                catch (...)
+                catch (...) /// NOLINT(bugprone-empty-catch)
                 {
-                    std::cerr << "Fail to recover log file: " << current_file;
+                    /// this not the file we are looking for
                 }
             }
         }
@@ -359,54 +360,6 @@ private:
     std::optional<std::future<bool>> compression_result;
 };
 
-template <typename TBase>
-class FilteringSink : public TBase
-{
-    using Base = TBase;
-public:
-    template <typename... Args>
-    explicit FilteringSink(quill::LogLevel sink_log_level_, Args &&... args)
-        : Base(std::forward<Args>(args)...)
-        , sink_log_level(sink_log_level_)
-    {
-    }
-
-    QUILL_ATTRIBUTE_HOT void write_log(
-        quill::MacroMetadata const * log_metadata,
-        uint64_t log_timestamp,
-        std::string_view thread_id,
-        std::string_view thread_name,
-        std::string const & process_id,
-        std::string_view logger_name,
-        quill::LogLevel log_level,
-        std::string_view log_level_description,
-        std::string_view log_level_short_code,
-        std::vector<std::pair<std::string, std::string>> const * named_args,
-        std::string_view log_message,
-        std::string_view log_statement) override
-    {
-        if (log_level < sink_log_level)
-            return;
-
-        Base::write_log(
-            log_metadata,
-            log_timestamp,
-            thread_id,
-            thread_name,
-            process_id,
-            logger_name,
-            log_level,
-            log_level_description,
-            log_level_short_code,
-            named_args,
-            log_message,
-            log_statement);
-    }
-
-private:
-    quill::LogLevel sink_log_level;
-};
-
 // TODO: move to libcommon
 std::string createDirectory(const std::string & file)
 {
@@ -504,7 +457,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         file_config.max_file_size
             = getLogFileMaxSize(config.getString("logger.size", std::to_string(100_MiB))); /// TODO: support readable size like 100M
 
-        sinks.push_back(quill::Frontend::create_or_get_sink<RotatingSink<quill::FileSink>>(fs::weakly_canonical(log_path), file_config));
+        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<RotatingSink<quill::FileSink>>(fs::weakly_canonical(log_path), file_config));
+        sink->set_log_level_filter(log_level);
 
         // log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
     }
@@ -531,9 +485,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         file_config.max_backup_files = config.getUInt64("logger.count", 1);
         file_config.max_file_size
             = getLogFileMaxSize(config.getString("logger.size", std::to_string(100_MiB))); /// TODO: support readable size like 100M
-        file_config.log_level_filter.emplace(errorlog_level);
 
-        sinks.push_back(quill::Frontend::create_or_get_sink<RotatingSink<quill::FileSink>>(fs::weakly_canonical(errorlog_path), file_config));
+        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<RotatingSink<quill::FileSink>>(fs::weakly_canonical(errorlog_path), file_config));
+        sink->set_log_level_filter(errorlog_level);
     }
 
     // if (config.getBool("logger.use_syslog", false))
@@ -582,11 +536,11 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (config.getBool("logger.console", false)
         || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
     {
-        
         auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
         auto console_log_level = parseLevel(console_log_level_string);
         min_log_level = std::min(console_log_level, min_log_level);
-        sinks.push_back(quill::Frontend::create_or_get_sink<FilteringSink<quill::ConsoleSink>>("ConsoleSink", console_log_level, quill::ConsoleSink::ColourMode::Never));
+        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink", quill::ConsoleSink::ColourMode::Never));
+        sink->set_log_level_filter(console_log_level);
     }
 
     Poco::AutoPtr<OwnPatternFormatter> pf;

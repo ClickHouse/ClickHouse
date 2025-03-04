@@ -95,14 +95,9 @@ LoggerPtr getLogger(std::string name, const char * component_name)
 
 }
 
-PocoLoggerPtr getPocoLogger(const std::string & name)
+LoggerPtr createLogger(const std::string & name, std::vector<std::shared_ptr<quill::Sink>> sinks)
 {
-    return Poco::Logger::getShared(name);
-}
-
-PocoLoggerPtr createLogger(const std::string & name, Poco::Channel * channel, Poco::Message::Priority level)
-{
-    return Poco::Logger::createShared(name, channel, level);
+    return std::make_shared<Logger>(name, quill::Frontend::create_or_get_logger(name, sinks, quill::PatternFormatterOptions{"%(message)"}));
 }
 
 QuillLoggerPtr getQuillLogger(const std::string & name)

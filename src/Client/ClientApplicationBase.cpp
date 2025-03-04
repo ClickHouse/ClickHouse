@@ -8,6 +8,7 @@
 #include <Common/SignalHandlers.h>
 
 #include <Common/config_version.h>
+#include "Loggers/OwnPatternFormatter.h"
 #include "config.h"
 
 #include <unordered_set>
@@ -15,6 +16,10 @@
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <quill/sinks/ConsoleSink.h>
+#include <quill/sinks/FileSink.h>
+#include <quill/sinks/StreamSink.h>
+#include <quill/Backend.h>
 
 using namespace std::literals;
 
@@ -237,17 +242,21 @@ void ClientApplicationBase::init(int argc, char ** argv)
     /// We don't setup signal handlers for SIGINT, SIGQUIT, SIGTERM because we don't
     /// have an option for client to shutdown gracefully.
 
-    //fatal_channel_ptr = new Poco::SplitterChannel;
-    //fatal_console_channel_ptr = new Poco::ConsoleChannel;
-    //fatal_channel_ptr->addChannel(fatal_console_channel_ptr);
-    //if (options.count("client_logs_file"))
-    //{
-    //    fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_logs_file"].as<std::string>());
-    //    fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
-    //}
-//
-    //fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
-    fatal_log = getLogger("ClientBase");
+    std::vector<std::shared_ptr<quill::Sink>> client_sinks;
+    client_sinks.push_back(
+        quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ClientFatalSink", quill::ConsoleSink::ColourMode::Never));
+    if (options.count("client_logs_file"))
+    {
+        client_sinks.push_back(quill::Frontend::create_or_get_sink<quill::FileSink>(
+            options["client_logs_file"].as<std::string>(), quill::FileSinkConfig{}, quill::FileEventNotifier{}));
+    }
+
+    fatal_log = createLogger("ClientBase", std::move(client_sinks));
+    fatal_log->getQuillLogger()->set_log_level(quill::LogLevel::Critical);
+    Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
+
+    quill::Backend::start();
+
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
 
