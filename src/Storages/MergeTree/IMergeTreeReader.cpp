@@ -108,7 +108,7 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         }
 
         if (MergeTreeRangeReader::virtuals_to_fill.contains(it->name))
-            continue;
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Virtual column {} must be filled by range reader", it->name);
 
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
