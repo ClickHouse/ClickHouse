@@ -91,4 +91,4 @@ last_postpone_time:     1970-01-01 03:00:00
 
 **See Also**
 
-- [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md#query-language-system-replicated)
+- [Managing ReplicatedMergeTree Tables](/sql-reference/statements/system#managing-replicatedmergetree-tables)
