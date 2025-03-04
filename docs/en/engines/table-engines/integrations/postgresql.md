@@ -218,7 +218,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
-- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
+- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#mysql)
 
 ## Related content {#related-content}
 

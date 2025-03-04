@@ -361,7 +361,7 @@ SYSTEM WAIT LOADING PARTS [ON CLUSTER cluster_name] [db.]merge_tree_family_table
 
 ## Managing ReplicatedMergeTree Tables {#managing-replicatedmergetree-tables}
 
-ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md#table_engines-replication) tables.
+ClickHouse can manage background replication related processes in [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) tables.
 
 ### STOP FETCHES {#stop-fetches}
 
