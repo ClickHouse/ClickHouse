@@ -4,6 +4,11 @@ sidebar_position: 20
 sidebar_label: MySQL Interface
 ---
 
+import mysql0 from '@site/static/images/interfaces/mysql0.png';
+import mysql1 from '@site/static/images/interfaces/mysql1.png';
+import mysql2 from '@site/static/images/interfaces/mysql2.png';
+import mysql3 from '@site/static/images/interfaces/mysql3.png';
+
 # MySQL Interface
 
 ClickHouse supports the MySQL wire protocol. This allows certain clients that do not have native ClickHouse connectors leverage the MySQL protocol instead, and it has been validated with the following BI tools:
@@ -22,7 +27,7 @@ If there is a native driver available (e.g., [DBeaver](../integrations/dbeaver))
 If your use case involves a particular tool that does not have a native ClickHouse driver, and you would like to use it via the MySQL interface and you found certain incompatibilities - please [create an issue](https://github.com/ClickHouse/ClickHouse/issues) in the ClickHouse repository.
 
 ::::note
-To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](../operations/settings/settings.md#prefer-column-name-to-alias).
+To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](/operations/settings/settings#prefer_column_name_to_alias).
 This cannot be turned off and it can lead in rare edge cases to different behavior between queries sent to ClickHouse's normal and MySQL query interfaces.
 ::::
 
@@ -32,23 +37,23 @@ This cannot be turned off and it can lead in rare edge cases to different behavi
 
 <br/>
 
-![Credentials screen - Prompt](./images/mysql0.png)
+<img src={mysql0} alt="Credentials screen - Prompt" />
 
 2. Change the `Connect with` drop-down to `MySQL`. 
 
 <br/>
 
-![Credentials screen - Prompt](./images/mysql1.png)
+<img src={mysql1} alt="Credentials screen - MySQL selected" />
 
 3. Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
 
 <br/>
 
-![Credentials screen - Enabled MySQL](./images/mysql2.png)
+<img src={mysql2} alt="Credentials screen - Enabled MySQL" />
 
 Copy the MySQL connection string shown.
 
-![Credentials screen - Connection String](./images/mysql3.png)
+<img src={mysql3} alt="Credentials screen - Connection String" />
 
 ## Creating multiple MySQL users in ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 
@@ -148,8 +153,8 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won't be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
+For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](/operations/settings/settings-users#user-namepassword) in configuration file.
+If user password is specified using [SHA256](/sql-reference/functions/hash-functions#sha1-sha224-sha256-sha512-sha512_256), some clients won't be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
 
 Restrictions:
 
