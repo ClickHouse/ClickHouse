@@ -270,7 +270,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>();
-            return createStorageObjectStorage(args, configuration, args.getLocalContext());
+            return createStorageObjectStorage(args, configuration);
         },
         {
         .supports_settings = true,
@@ -285,7 +285,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageAzureDeltaLakeConfiguration>();
-            return createStorageObjectStorage(args, configuration, args.getLocalContext());
+            return createStorageObjectStorage(args, configuration);
         },
         {
             .supports_settings = true,
