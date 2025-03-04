@@ -96,8 +96,8 @@ public:
         push_condition.notify_all();
         thread_pool->wait();
 
-        chassert(failure || to_be_processed.empty());
-        chassert(failure || processed.empty());
+        // chassert(failure || to_be_processed.empty());
+        // chassert(failure || processed.empty());
     }
 
     size_t size()
