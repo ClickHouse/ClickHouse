@@ -93,7 +93,7 @@ class CatalogBackup
 {
 public:
     uint32_t backup_num = 0;
-    bool all_temporary = false, all_tables = false;
+    bool all_temporary = false, everything = false;
     BackupRestore_BackupOutput outf;
     std::optional<OutFormat> out_format;
     DB::Strings out_params;

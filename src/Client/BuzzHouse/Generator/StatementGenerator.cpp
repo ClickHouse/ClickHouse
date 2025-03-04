@@ -2917,7 +2917,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     {
         bre->set_all_temporary(true);
     }
-    else if (backup.all_tables)
+    else if (backup.everything)
     {
         bre->set_all(true);
     }
@@ -3011,7 +3011,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, SQLQueryInner *
     const uint32_t create_database = 2 * static_cast<uint32_t>(static_cast<uint32_t>(databases.size()) < this->fc.max_databases);
     const uint32_t create_function = 5 * static_cast<uint32_t>(static_cast<uint32_t>(functions.size()) < this->fc.max_functions);
     const uint32_t system_stmt = 1;
-    const uint32_t backup_or_restore = 2;
+    const uint32_t backup_or_restore = 1;
     const uint32_t select_query = 800;
     const uint32_t prob_space = create_table + create_view + drop + insert + light_delete + truncate + optimize_table + check_table
         + desc_table + exchange_tables + alter_table + set_values + attach + detach + create_database + create_function + system_stmt
@@ -3693,6 +3693,95 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
     else if (sq.has_explain() && !sq.explain().is_explain() && query.has_trunc() && query.trunc().has_database())
     {
         dropDatabase(static_cast<uint32_t>(std::stoul(query.trunc().database().database().substr(1))));
+    }
+    else if (sq.has_explain() && query.has_backup_restore() && !sq.explain().is_explain() && success)
+    {
+        const BackupRestore & br = query.backup_restore();
+        const BackupRestoreElement & bre = br.backup_element();
+
+        if (br.command() == BackupRestore_BackupCommand_BACKUP)
+        {
+            CatalogBackup newb;
+
+            newb.backup_num = br.backup_number();
+            newb.outf = br.out();
+            if (br.has_format())
+            {
+                newb.out_format = br.format();
+            }
+            for (int i = 0; i < br.out_params_size(); i++)
+            {
+                newb.out_params.push_back(br.out_params(i));
+            }
+            if (bre.has_all_temporary())
+            {
+                for (auto & [key, value] : this->tables)
+                {
+                    if (value.is_temp)
+                    {
+                        newb.tables[key] = value;
+                    }
+                }
+                newb.all_temporary = true;
+            }
+            else if (bre.has_all())
+            {
+                newb.tables = this->tables;
+                newb.views = this->views;
+                newb.databases = this->databases;
+                newb.everything = true;
+            }
+            else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::TABLE)
+            {
+                const uint32_t tname = static_cast<uint32_t>(std::stoul(bre.bobject().object().est().table().table().substr(1)));
+
+                newb.tables[tname] = this->tables[tname];
+            }
+            else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::VIEW)
+            {
+                const uint32_t vname = static_cast<uint32_t>(std::stoul(bre.bobject().object().est().table().table().substr(1)));
+
+                newb.views[vname] = this->views[vname];
+            }
+            else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::DATABASE)
+            {
+                const uint32_t dname = static_cast<uint32_t>(std::stoul(bre.bobject().object().database().database().substr(1)));
+
+                for (auto & [key, val] : this->tables)
+                {
+                    if (val.db && val.db->dname == dname)
+                    {
+                        newb.tables[key] = this->tables[key];
+                    }
+                }
+                for (auto & [key, val] : this->views)
+                {
+                    if (val.db && val.db->dname == dname)
+                    {
+                        newb.views[key] = this->views[key];
+                    }
+                }
+                newb.databases[dname] = this->databases[dname];
+            }
+            this->backups[br.backup_number()] = std::move(newb);
+        }
+        else
+        {
+            const CatalogBackup & backup = backups.at(br.backup_number());
+
+            for (auto & [key, _] : backup.tables)
+            {
+                this->tables[key] = backup.tables.at(key);
+            }
+            for (auto & [key, _] : backup.views)
+            {
+                this->views[key] = backup.views.at(key);
+            }
+            for (auto & [key, _] : backup.databases)
+            {
+                this->databases[key] = backup.databases.at(key);
+            }
+        }
     }
     else if (sq.has_start_trans() && success)
     {
