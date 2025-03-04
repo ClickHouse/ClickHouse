@@ -55,7 +55,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 **另请参阅**
 
--   [系统。asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [系统。活动](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
--   [系统。指标](../../operations/system-tables/metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
+-   [系统。asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
+-   [系统。活动](/operations/system-tables/events) — Contains a number of events that occurred.
+-   [系统。指标](/operations/system-tables/metrics) — Contains instantly calculated metrics.
 -   [监测](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

@@ -1,7 +1,7 @@
 ---
 description: "System database providing an almost standardized DBMS-agnostic view on metadata of database objects."
 slug: /operations/system-tables/information_schema
-title: "system.INFORMATION_SCHEMA"
+title: "INFORMATION_SCHEMA"
 keywords: ["system database", "information_schema"]
 ---
 
@@ -254,7 +254,7 @@ Columns:
 - `view_definition` ([String](../../sql-reference/data-types/string.md)) — `SELECT` query for view.
 - `check_option` ([String](../../sql-reference/data-types/string.md)) — `NONE`, no checking.
 - `is_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the view is not updated.
-- `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — Shows whether the created view is [materialized](../../sql-reference/statements/create/view.md/#materialized-view). Possible values:
+- `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — Shows whether the created view is [materialized](/sql-reference/statements/create/view#materialized-view). Possible values:
     - `NO` — The created view is not materialized.
     - `YES` — The created view is materialized.
 - `is_trigger_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the trigger is not updated.

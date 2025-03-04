@@ -1602,11 +1602,11 @@ arrayDifference(array)
 
 **Arguments**
 
-- `array` – [Array](/data_types/array/).
+- `array` – [Array](/sql-reference/data-types/array).
 
 **Returned values**
 
-Returns an array of differences between adjacent array elements. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/sql-reference/data-types/float).
+Returns an array of differences between adjacent array elements. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float).
 
 **Example**
 
@@ -1652,7 +1652,7 @@ arrayDistinct(array)
 
 **Arguments**
 
-- `array` – [Array](/data_types/array/).
+- `array` – [Array](/sql-reference/data-types/array).
 
 **Returned values**
 
@@ -2863,7 +2863,7 @@ arrayCumSum(arr)
 
 **Returned value**
 
-- Returns an array of the partial sums of the elements in the source array. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/sql-reference/data-types/float/).
+- Returns an array of the partial sums of the elements in the source array. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float/).
 
 Example:
 
@@ -2895,7 +2895,7 @@ arrayCumSumNonNegative(arr)
 
 **Returned value**
 
-- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/sql-reference/data-types/float/).
+- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float/).
 
 ``` sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res

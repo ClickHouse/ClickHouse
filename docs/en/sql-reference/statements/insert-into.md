@@ -250,7 +250,7 @@ Performance will not decrease if:
 
 ### Asynchronous inserts {#asynchronous-inserts}
 
-It is possible to asynchronously insert data in small but frequent inserts. The data from such insertions is combined into batches and then safely inserted into a table. To use asynchronous inserts, enable the [`async_insert`](../../operations/settings/settings.md#async-insert) setting.
+It is possible to asynchronously insert data in small but frequent inserts. The data from such insertions is combined into batches and then safely inserted into a table. To use asynchronous inserts, enable the [`async_insert`](/operations/settings/settings#async_insert) setting.
 
 Using `async_insert` or the [`Buffer` table engine](/engines/table-engines/special/buffer) results in additional buffering.
 
@@ -260,9 +260,9 @@ When you are inserting large amounts of data, ClickHouse will optimize write per
 
 **See Also**
 
-- [async_insert](../../operations/settings/settings.md#async-insert)
+- [async_insert](/operations/settings/settings#async_insert)
 - [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
-- [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
+- [wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
 - [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
 - [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
 - [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)

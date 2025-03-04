@@ -54,6 +54,6 @@ CurrentMetric_DistributedFilesToInsert:                          0
 
 - [metric_log setting](../../operations/server-configuration-parameters/settings.md#metric_log) — Enabling and disabling the setting.
 - [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
-- [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
+- [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
 - [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
 - [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

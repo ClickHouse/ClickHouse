@@ -2,6 +2,8 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromString.h>
 
+#include <iostream>
+
 
 int main(int, char **)
 {
