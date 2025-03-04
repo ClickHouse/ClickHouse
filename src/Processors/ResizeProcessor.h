@@ -74,7 +74,6 @@ protected:
     std::vector<OutputPortWithStatus> output_ports;
 
     std::vector<bool> is_output_enabled;
-    UInt64 chunk_size = 0;
 };
 
 
@@ -131,16 +130,7 @@ public:
     bool isMemoryDependent() const override { return true; }
 
 protected:
-    static Int64 getFreeMemory();
-
-    /// This function calculates how many output ports we want to keep "active"
-    /// based on how much free memory is available.
-    /// It's just one example of a "desired concurrency" formula.
-    static size_t calculateDesiredActiveOutputs(
-        Int64 free_memory,
-        size_t total_outputs,
-        size_t chunk_size_estimate,
-        double concurrency_factor = 1.1);
+    static bool checkMemory();
 
     Status prepare() override { return prepareRoundRobin(); }
     Status prepare(const PortNumbers &, const PortNumbers &) override;
