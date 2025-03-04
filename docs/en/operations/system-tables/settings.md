@@ -141,6 +141,6 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 **See also**
 
 - [Settings](/operations/system-tables/overview#system-tables-introduction)
-- [Permissions for Queries](../../operations/settings/permissions-for-queries.md#settings_readonly)
+- [Permissions for Queries](/operations/settings/permissions-for-queries)
 - [Constraints on Settings](../../operations/settings/constraints-on-settings.md)
 - [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings) statement
