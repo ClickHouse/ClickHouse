@@ -301,9 +301,9 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
-#if USE_AWS_S3
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
+#if USE_AWS_S3
     factory.registerFunction<TableFunctionDeltaLake>(
         {.documentation
          = {.description = R"(The table function can be used to read the DeltaLake table stored on S3, alias of deltaLakeS3.)",
@@ -317,12 +317,9 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
             .examples{{"deltaLakeS3", "SELECT * FROM deltaLakeS3(url, access_key_id, secret_access_key)", ""}},
             .category{""}},
          .allow_readonly = false});
-}
 #endif
 
 #if USE_AZURE_BLOB_STORAGE
-void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
-{
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
         {.documentation
          = {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
@@ -330,9 +327,8 @@ void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
  "                \"[account_name, account_key, format, compression, structure])", ""}},
             .category{""}},
          .allow_readonly = false});
-}
 #endif
-
+}
 #endif
 
 #if USE_AWS_S3
