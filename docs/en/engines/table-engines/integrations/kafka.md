@@ -7,8 +7,11 @@ description: "The Kafka engine works with Apache Kafka and lets you publish or s
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # Kafka
+
+<CloudNotSupportedBadge/>
 
 :::note
 ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for streaming Kafka data into ClickHouse. This natively supports high-performance insertion while ensuring the separation of concerns with the ability to scale ingestion and cluster resources independently.
@@ -302,5 +305,5 @@ As the new engine is experimental, it is not production ready yet. There are few
 **See Also**
 
 - [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns)
-- [background_message_broker_schedule_pool_size](../../../operations/server-configuration-parameters/settings.md#background_message_broker_schedule_pool_size)
+- [background_message_broker_schedule_pool_size](/operations/server-configuration-parameters/settings#background_message_broker_schedule_pool_size)
 - [system.kafka_consumers](../../../operations/system-tables/kafka_consumers.md)

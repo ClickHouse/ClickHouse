@@ -220,7 +220,7 @@ ClickHouse 不要求主键唯一，所以您可以插入多条具有相同主键
 
 可以使用 `ORDER BY tuple()` 语法创建没有主键的表。在这种情况下 ClickHouse 根据数据插入的顺序存储。如果在使用 `INSERT ... SELECT` 时希望保持数据的排序，请设置 [max_insert_threads = 1](/operations/settings/settings#max_insert_threads)。
 
-想要根据初始顺序进行数据查询，使用 [单线程查询](../../../operations/settings/settings.md#settings-max_threads)
+想要根据初始顺序进行数据查询，使用 [单线程查询](/operations/settings/settings#max_threads)
 
 ### 选择与排序键不同的主键 {#choosing-a-primary-key-that-differs-from-the-sorting-key}
 
