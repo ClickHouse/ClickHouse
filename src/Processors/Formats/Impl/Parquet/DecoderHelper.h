@@ -4,7 +4,6 @@
 #include <vector>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
-#include <DataTypes/IDataType.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/Parquet/ColumnFilter.h>
 #include <arrow/util/decimal.h>
@@ -34,13 +33,13 @@ struct ParquetData
     }
 
     // before consume, should check size first
-    void consume(size_t size)
+    void consume(const size_t size)
     {
         buffer += size;
         buffer_size -= size;
     }
 
-    void checkAndConsume(size_t size)
+    void checkAndConsume(const size_t size)
     {
         checkSize(size);
         consume(size);
@@ -64,7 +63,7 @@ struct PageOffsets
         levels_offset += rows;
     }
 
-    void reset(size_t rows)
+    void reset(const size_t rows)
     {
         remain_rows = rows;
         levels_offset = 0;
@@ -89,11 +88,11 @@ struct ValueConverterImpl<DateTime64, datetime_scale>
 {
     static void convert(const uint8_t * src, const size_t, uint8_t * dst)
     {
-        const parquet::Int96 * tmp = reinterpret_cast<const parquet::Int96 *>(src);
-        static const int max_scale_num = 9;
+        const auto tmp = reinterpret_cast<const parquet::Int96 *>(src);
+        static constexpr int max_scale_num = 9;
         static const UInt64 pow10[max_scale_num + 1] = {1000000000, 100000000, 10000000, 1000000, 100000, 10000, 1000, 100, 10, 1};
-        static const UInt64 spd = 60 * 60 * 24;
-        static const UInt64 scaled_day[max_scale_num + 1]
+        static constexpr UInt64 spd = 60 * 60 * 24;
+        static constexpr UInt64 scaled_day[max_scale_num + 1]
             = {spd,
                10 * spd,
                100 * spd,
@@ -105,11 +104,11 @@ struct ValueConverterImpl<DateTime64, datetime_scale>
                100000000 * spd,
                1000000000 * spd};
 
-        auto decoded = parquet::DecodeInt96Timestamp(*tmp);
+        auto [days_since_epoch, nanoseconds] = DecodeInt96Timestamp(*tmp);
 
-        uint64_t scaled_nano = decoded.nanoseconds / pow10[datetime_scale];
-        DateTime64 * result = reinterpret_cast<DateTime64 *>(dst);
-        *result = static_cast<Int64>((decoded.days_since_epoch * scaled_day[datetime_scale]) + scaled_nano);
+        const uint64_t scaled_nano = nanoseconds / pow10[datetime_scale];
+        const auto result = reinterpret_cast<DateTime64 *>(dst);
+        *result = static_cast<Int64>(days_since_epoch * scaled_day[datetime_scale] + scaled_nano);
     }
 };
 
@@ -163,9 +162,8 @@ struct ValueConverterImpl<Decimal256>
 
 template <typename T, typename S>
 size_t decodeFixedValueSpaceInternal(
-    PaddedPODArray<T> & data, const S * start, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read)
+    PaddedPODArray<T> & data, const S * start, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, const size_t rows_to_read)
 {
-    size_t rows_read = 0;
     size_t count = 0;
     if (!row_set.has_value())
     {
@@ -183,6 +181,7 @@ size_t decodeFixedValueSpaceInternal(
     }
     else
     {
+        size_t rows_read = 0;
         const auto & sets = row_set.value();
         while (rows_read < rows_to_read)
         {
@@ -221,11 +220,14 @@ public:
 
     void decodeBoolean(PaddedPODArray<UInt8> & data, PaddedPODArray<UInt8> & src, const OptionalRowSet & row_set, size_t rows_to_read);
 
-    void decodeFixedString(ColumnFixedString::Chars & data, const OptionalRowSet & row_set, size_t rows_to_read, size_t n);
+    void decodeFixedString(ColumnFixedString::Chars & data, const OptionalRowSet & row_set, size_t rows_to_read, size_t n) const;
 
     template <typename T>
     void decodeFixedLengthData(
-        PaddedPODArray<T> & data, const OptionalRowSet & row_set, size_t rows_to_read, size_t element_size, ValueConverter value_converter)
+        PaddedPODArray<T> & data, const OptionalRowSet & row_set,
+        const size_t rows_to_read,
+        const size_t element_size,
+        const ValueConverter value_converter)
     {
         for (size_t i = 0; i < rows_to_read; i++)
         {
@@ -242,7 +244,7 @@ public:
         offsets.consume(rows_to_read);
     }
 
-    void decodeString(ColumnString::Chars & chars, ColumnString::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read);
+    void decodeString(ColumnString::Chars & chars, ColumnString::Offsets & offsets, const OptionalRowSet & row_set, size_t rows_to_read) const;
 
     template <typename T, typename S>
     void
@@ -258,19 +260,19 @@ public:
         PaddedPODArray<UInt8> & src,
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read);
+        size_t rows_to_read) const;
 
     void decodeFixedStringSpace(
-        ColumnFixedString::Chars & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read, size_t n);
+        ColumnFixedString::Chars & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read, size_t n) const;
 
     template <typename T>
     void decodeFixedLengthDataSpace(
         PaddedPODArray<T> & data,
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read,
-        size_t element_size,
-        ValueConverter value_converter)
+        const size_t rows_to_read,
+        const size_t element_size,
+        const ValueConverter value_converter)
     {
         for (size_t i = 0; i < rows_to_read; i++)
         {
@@ -302,7 +304,7 @@ public:
         ColumnString::Offsets & offsets,
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read);
+        size_t rows_to_read) const;
 
     size_t calculateStringTotalSize(const ParquetData & data, const OptionalRowSet & row_set, size_t rows_to_read);
 
@@ -310,7 +312,7 @@ public:
         const ParquetData & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read);
 
 private:
-    void
+    static void
     addOneString(bool null, const ParquetData & data, size_t & offset, const OptionalRowSet & row_set, size_t row, size_t & total_size);
 
     ParquetData & page_data;
@@ -324,7 +326,7 @@ public:
 
     template <class DictValueType>
     void decodeFixedValue(
-        PaddedPODArray<DictValueType> & batch_buffer,
+        PaddedPODArray<DictValueType> & dict,
         PaddedPODArray<DictValueType> & data,
         const OptionalRowSet & row_set,
         size_t rows_to_read);
@@ -353,7 +355,7 @@ public:
         ColumnString::Chars & chars,
         ColumnString::Offsets & offsets,
         const OptionalRowSet & row_set,
-        size_t rows_to_read);
+        size_t rows_to_read) const;
 
     template <class DictValueType>
     void decodeFixedValueSpace(
@@ -361,7 +363,7 @@ public:
         PaddedPODArray<DictValueType> & data,
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read)
+        const size_t rows_to_read)
     {
         size_t rows_read = 0;
         size_t count = 0;
@@ -405,7 +407,7 @@ public:
         ColumnString::Offsets & offsets,
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read);
+        size_t rows_to_read) const;
 
     void decodeFixedStringSpace(
         PaddedPODArray<String> & dict,
@@ -413,7 +415,7 @@ public:
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
         size_t rows_to_read,
-        size_t element_size);
+        size_t element_size) const;
 
     template <class DictValueType>
     void decodeFixedLengthDataSpace(
@@ -421,7 +423,7 @@ public:
         PaddedPODArray<DictValueType> & data,
         const OptionalRowSet & row_set,
         PaddedPODArray<UInt8> & null_map,
-        size_t rows_to_read)
+        const size_t rows_to_read)
     {
         size_t rows_read = 0;
         size_t count = 0;

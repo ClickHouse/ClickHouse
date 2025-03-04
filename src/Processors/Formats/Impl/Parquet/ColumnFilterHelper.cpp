@@ -6,10 +6,10 @@
 
 namespace DB
 {
-FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(bool case_insensitive) const
+FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(const bool case_insensitive) const
 {
     FilterSplitResultPtr split_result = std::make_shared<FilterSplitResult>();
-    split_result->filter_expression = filter_expression->clone();
+    split_result->filter_expression = filter_expression.clone();
     if (split_result->filter_expression.getOutputs().empty())
         return {};
     const auto * filter_node = split_result->filter_expression.getOutputs().front();
@@ -17,17 +17,26 @@ FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(bool case_insens
     std::vector<ColumnFilterPtr> filters;
     ActionsDAG::NodeRawConstPtrs unsupported_conditions;
     const auto & factories = ColumnFilterFactory::allFactories();
-    for (const auto * condition : conditions)
+    for (auto condition : conditions)
     {
         // convert expr to column filter, and try to merge with existing filter on same column
         if (std::none_of(
                 factories.begin(),
                 factories.end(),
-                [&](ColumnFilterFactoryPtr factory)
+                [&](const ColumnFilterFactoryPtr & factory)
                 {
                     if (!factory->validate(*condition))
                         return false;
-                    auto named_filter = factory->create(*condition);
+                    NamedColumnFilter named_filter;
+                    try
+                    {
+                        named_filter = factory->create(*condition);
+                    }
+                    catch(...)
+                    {
+                        // can't convert expr to column filter
+                        return false;
+                    }
                     auto col_name = named_filter.first;
                     if (case_insensitive)
                         col_name = Poco::toLower(col_name);
@@ -35,8 +44,7 @@ FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(bool case_insens
                         split_result->filters.emplace(col_name, named_filter.second);
                     else
                     {
-                        auto merged = split_result->filters[col_name]->merge(named_filter.second.get());
-                        if (merged)
+                        if (auto merged = split_result->filters[col_name]->merge(named_filter.second.get()))
                             split_result->filters[col_name] = merged;
                         else
                             // doesn't support merge, use common expression push down
@@ -57,7 +65,7 @@ FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(bool case_insens
 
 void ColumnFilterHelper::pushDownToReader(ParquetReader & reader, bool case_insensitive) const
 {
-    if (filter_expression->getOutputs().empty())
+    if (filter_expression.getOutputs().empty())
         return;
     auto split_result = this->splitFilterForPushDown(case_insensitive);
     reader.pushDownFilter(split_result);

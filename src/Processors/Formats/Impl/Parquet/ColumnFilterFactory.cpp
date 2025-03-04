@@ -222,8 +222,7 @@ bool FloatRangeFilterFactory<T>::validate(const ActionsDAG::Node & node)
     if (!isCompareColumnWithConst(node))
         return false;
     const auto * input_node = getInputNode(node);
-    auto input_type = removeNullable(input_node->result_type);
-    if (!isFloat(input_type))
+    if (const auto input_type = removeNullable(input_node->result_type); !isFloat(input_type))
         return false;
     static const std::unordered_set<String> supported_functions = {"less", "greater", "lessOrEquals", "greaterOrEquals"};
     if (!supported_functions.contains(node.function_base->getName()))
@@ -412,12 +411,11 @@ NamedColumnFilter IsNotNullFilterFactory::create(const ActionsDAG::Node & node)
 {
     auto func_name = node.function_base->getName();
     auto constant_nodes = getConstantNode(node);
-    ColumnFilterPtr filter;
     if (func_name == "isNotNull")
     {
         const auto * input_node = getInputNode(node);
         auto name = input_node->result_name;
-        filter = std::make_shared<IsNotNullFilter>();
+        ColumnFilterPtr filter = std::make_shared<IsNotNullFilter>();
         return std::make_pair(name, filter);
     }
     const auto * child = getFirstChildNode(node);

@@ -1,12 +1,9 @@
 #include "SelectiveColumnReader.h"
 
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionHelpers.h>
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Common/assert_cast.h>
@@ -317,14 +314,14 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::readSpace(
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         if (plain)
         {
-            if constexpr (std::is_same_v<DataType, typename DB::DataTypeFixedString>)
+            if constexpr (std::is_same_v<DataType, DataTypeFixedString>)
             {
                 auto * string_column = static_cast<ColumnFixedString *>(column.get());
                 plain_decoder->decodeFixedStringSpace(string_column->getChars(), row_set, null_map, rows_can_read, element_size);
             }
             else
             {
-                auto * number_column = static_cast<DataType::ColumnType *>(column.get());
+                auto * number_column = static_cast<typename DataType::ColumnType *>(column.get());
                 auto & data = number_column->getData();
                 plain_decoder->decodeFixedLengthDataSpace(data, row_set, null_map, rows_can_read, element_size, getConverter());
             }
@@ -332,14 +329,14 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::readSpace(
         else
         {
             nextIdxBatchIfEmpty(rows_can_read - null_count);
-            if constexpr (std::is_same_v<DataType, typename DB::DataTypeFixedString>)
+            if constexpr (std::is_same_v<DataType, DataTypeFixedString>)
             {
                 auto * string_column = static_cast<ColumnFixedString *>(column.get());
                 dict_decoder->decodeFixedStringSpace(dict, string_column->getChars(), row_set, null_map, rows_can_read, element_size);
             }
             else
             {
-                auto * number_column = static_cast<DataType::ColumnType *>(column.get());
+                auto * number_column = static_cast<typename DataType::ColumnType *>(column.get());
                 auto & data = number_column->getData();
                 dict_decoder->decodeFixedLengthDataSpace(dict, data, row_set, null_map, rows_can_read);
             }

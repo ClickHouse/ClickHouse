@@ -113,7 +113,7 @@ public:
     explicit ExpressionFilter(ActionsDAG && dag_);
     NameSet getInputs();
 
-    IColumn::Filter execute(const ColumnsWithTypeAndName & columns);
+    IColumn::Filter execute(const ColumnsWithTypeAndName & columns) const;
 
 private:
     ExpressionActionsPtr actions;

@@ -1,24 +1,18 @@
 #include <gtest/gtest.h>
 
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
-#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Processors/Formats/Impl/ParquetBlockInputFormat.h>
 #include <Processors/Formats/Impl/ParquetBlockOutputFormat.h>
-#include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <IO/ReadBufferFromFile.h>
-#include <IO/WriteBufferFromFile.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypesNumber.h>
 
 #include <memory>
 

@@ -2,7 +2,6 @@
 
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Functions/FunctionHelpers.h>
 #include <Processors/Formats/Impl/Parquet/ParquetColumnReaderFactory.h>
 #include <Processors/Formats/Impl/Parquet/ParquetReader.h>
 #include <Common/assert_cast.h>
@@ -26,10 +25,10 @@ static void appendString(ColumnString::Chars & chars, IColumn::Offsets & offsets
 void DictDecoder::decodeStringSpace(
     std::vector<String> & dict,
     ColumnString::Chars & chars,
-    IColumn::Offsets & string_offsets,
+    IColumn::Offsets & offsets,
     const OptionalRowSet & row_set,
     PaddedPODArray<UInt8> & null_map,
-    size_t rows_to_read)
+    const size_t rows_to_read) const
 {
     size_t rows_read = 0;
     size_t count = 0;
@@ -43,12 +42,12 @@ void DictDecoder::decodeStringSpace(
                 if (null_map[rows_read])
                 {
                     chars.push_back(0);
-                    string_offsets.push_back(chars.size());
+                    offsets.push_back(chars.size());
                 }
                 else
                 {
-                    const String & value = dict[idx_buffer[count++]];
-                    appendString(chars, string_offsets, value);
+                    const String & value = dict.at(idx_buffer[count++]);
+                    appendString(chars, offsets, value);
                 }
             }
             else if (!null_map[rows_read])
@@ -63,12 +62,12 @@ void DictDecoder::decodeStringSpace(
             if (null_map[rows_read])
             {
                 chars.push_back(0);
-                string_offsets.push_back(chars.size());
+                offsets.push_back(chars.size());
             }
             else
             {
-                const String & value = dict[idx_buffer[count++]];
-                appendString(chars, string_offsets, value);
+                const String & value = dict.at(idx_buffer[count++]);
+                appendString(chars, offsets, value);
             }
             rows_read++;
         }
@@ -81,19 +80,18 @@ void DictDecoder::decodeStringSpace(
 void DictDecoder::decodeString(
     std::vector<String> & dict,
     ColumnString::Chars & chars,
-    IColumn::Offsets & string_offsets,
+    IColumn::Offsets & offsets,
     const OptionalRowSet & row_set,
-    size_t rows_to_read)
+    const size_t rows_to_read) const
 {
-    const bool has_set = row_set.has_value();
-    if (has_set)
+    if (row_set.has_value())
     {
         for (size_t i = 0; i < rows_to_read; i++)
         {
             if (row_set.value().get(i))
             {
-                const String & value = dict[idx_buffer[i]];
-                appendString(chars, string_offsets, value);
+                const String & value = dict.at(idx_buffer[i]);
+                appendString(chars, offsets, value);
             }
         }
     }
@@ -101,8 +99,8 @@ void DictDecoder::decodeString(
     {
         for (size_t i = 0; i < rows_to_read; i++)
         {
-            const String & value = dict[idx_buffer[i]];
-            appendString(chars, string_offsets, value);
+            const String & value = dict.at(idx_buffer[i]);
+            appendString(chars, offsets, value);
         }
     }
     idx_buffer.resize(0);
@@ -148,8 +146,8 @@ void DictDecoder::decodeFixedStringSpace(
     ColumnFixedString::Chars & chars,
     const OptionalRowSet & row_set,
     PaddedPODArray<UInt8> & null_map,
-    size_t rows_to_read,
-    size_t element_size)
+    const size_t rows_to_read,
+    const size_t element_size) const
 {
     size_t rows_read = 0;
     size_t count = 0;
@@ -176,7 +174,7 @@ void DictDecoder::decodeFixedStringSpace(
 }
 
 void PlainDecoder::decodeString(
-    ColumnString::Chars & chars, IColumn::Offsets & string_offsets, const OptionalRowSet & row_set, size_t rows_to_read)
+    ColumnString::Chars & chars, IColumn::Offsets & string_offsets, const OptionalRowSet & row_set, size_t rows_to_read) const
 {
     size_t offset = 0;
     if (row_set.has_value())
@@ -222,7 +220,7 @@ void PlainDecoder::decodeStringSpace(
     IColumn::Offsets & string_offsets,
     const OptionalRowSet & row_set,
     PaddedPODArray<UInt8, 4096> & null_map,
-    size_t rows_to_read)
+    size_t rows_to_read) const
 {
     size_t offset = 0;
     if (row_set.has_value())
@@ -300,7 +298,7 @@ size_t DB::PlainDecoder::calculateStringTotalSizeSpace(
     return total_size;
 }
 
-void PlainDecoder::decodeFixedString(ColumnFixedString::Chars & data, const OptionalRowSet & row_set, size_t rows_to_read, size_t n)
+void PlainDecoder::decodeFixedString(ColumnFixedString::Chars & data, const OptionalRowSet & row_set, size_t rows_to_read, size_t n) const
 {
     data.reserve(data.size() + (n * rows_to_read));
     for (size_t i = 0; i < rows_to_read; i++)
@@ -318,7 +316,7 @@ void PlainDecoder::decodeFixedString(ColumnFixedString::Chars & data, const Opti
 }
 
 void PlainDecoder::decodeFixedStringSpace(
-    ColumnFixedString::Chars & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read, size_t n)
+    ColumnFixedString::Chars & data, const OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t rows_to_read, size_t n) const
 {
     data.reserve(data.size() + (n * rows_to_read));
     for (size_t i = 0; i < rows_to_read; i++)
@@ -351,7 +349,7 @@ void PlainDecoder::decodeBooleanSpace(
     PaddedPODArray<UInt8> & src,
     const OptionalRowSet & row_set,
     PaddedPODArray<UInt8> & null_map,
-    size_t rows_to_read)
+    size_t rows_to_read) const
 {
     decodeFixedValueSpaceInternal(data, src.data(), row_set, null_map, rows_to_read);
     offsets.consume(rows_to_read);

@@ -30,7 +30,7 @@ private:
     FilterSplitResultPtr splitFilterForPushDown(bool case_insensitive = false) const;
 
 
-    std::optional<ActionsDAG> filter_expression;
+    ActionsDAG filter_expression;
 };
 
 }

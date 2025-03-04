@@ -89,8 +89,8 @@ struct PhysicTypeTraits<Decimal64>
 template <typename T, typename S>
 void FilterHelper::filterPlainFixedData(const S * src, PaddedPODArray<T> & dst, const RowSet & row_set, size_t rows_to_read)
 {
-    using batch_type = PhysicTypeTraits<S>::simd_type;
-    using bool_type = PhysicTypeTraits<S>::simd_bool_type;
+    using batch_type = typename PhysicTypeTraits<S>::simd_type;
+    using bool_type = typename PhysicTypeTraits<S>::simd_bool_type;
     auto increment = batch_type::size;
     auto num_batched = rows_to_read / increment;
     for (size_t i = 0; i < num_batched; ++i)
@@ -196,10 +196,10 @@ template <typename T>
 void FilterHelper::filterDictFixedData(
     const PaddedPODArray<T> & dict, PaddedPODArray<T> & dst, const PaddedPODArray<Int32> & idx, const RowSet & row_set, size_t rows_to_read)
 {
-    using batch_type = PhysicTypeTraits<T>::simd_type;
-    using bool_type = PhysicTypeTraits<T>::simd_bool_type;
-    using idx_batch_type = PhysicTypeTraits<T>::simd_idx_type;
-    using simd_internal_type = PhysicTypeTraits<T>::simd_internal_type;
+    using batch_type = typename PhysicTypeTraits<T>::simd_type;
+    using bool_type = typename PhysicTypeTraits<T>::simd_bool_type;
+    using idx_batch_type = typename PhysicTypeTraits<T>::simd_idx_type;
+    using simd_internal_type = typename PhysicTypeTraits<T>::simd_internal_type;
     auto increment = batch_type::size;
     auto num_batched = rows_to_read / increment;
     for (size_t i = 0; i < num_batched; ++i)
@@ -290,7 +290,7 @@ void BigIntRangeFilter::testIntValues(RowSet & row_set, size_t len, const T * da
             UNREACHABLE();
     }
 
-    bool aligned = (reinterpret_cast<long>(data) % batch_type::arch_type::alignment() == 0) && (row_set.getOffset() % increment == 0);
+    bool aligned = (reinterpret_cast<int64_t>(data) % batch_type::arch_type::alignment() == 0) && (row_set.getOffset() % increment == 0);
     for (size_t i = 0; i < num_batched; ++i)
     {
         batch_type value;
@@ -420,7 +420,7 @@ ColumnFilterPtr nullOrFalse(bool null_allowed)
     {
         return std::make_shared<IsNullFilter>();
     }
-    return std::make_unique<AlwaysFalseFilter>();
+    return std::make_shared<AlwaysFalseFilter>();
 }
 
 ColumnFilterPtr notNullOrTrue(bool nullAllowed)
@@ -450,17 +450,17 @@ ColumnFilterPtr createBigIntValuesFilter(const std::vector<Int64> & values, bool
         }
         return std::make_shared<BigIntRangeFilter>(values.front(), values.front(), nullAllowed);
     }
-    Int64 min = values[0];
-    Int64 max = values[0];
+    Int64 min = values.at(0);
+    Int64 max = values.at(0);
     for (size_t i = 1; i < values.size(); ++i)
     {
-        if (values[i] > max)
+        if (values.at(i) > max)
         {
-            max = values[i];
+            max = values.at(i);
         }
-        else if (values[i] < min)
+        else if (values.at(i) < min)
         {
-            min = values[i];
+            min = values.at(i);
         }
     }
     // If bitmap would have more than 4 words per set bit, we prefer a
@@ -676,38 +676,38 @@ ColumnFilterPtr BigIntRangeFilter::merge(const ColumnFilter * other) const
                 return std::make_shared<BigIntRangeFilter>(min, max, both_null_allowed);
             return nullOrFalse(both_null_allowed);
         }
-        case ColumnFilterKind::NegatedBigIntRange:
-        case ColumnFilterKind::BigIntValuesUsingBitmask:
-        case ColumnFilterKind::BigIntValuesUsingHashTable:
+        case NegatedBigIntRange:
+        case BigIntValuesUsingBitmask:
+        case BigIntValuesUsingHashTable:
             return other->merge(this);
-        case ColumnFilterKind::BigIntMultiRange: {
+        case BigIntMultiRange: {
             const auto * otherMultiRange = dynamic_cast<const BigIntMultiRangeFilter *>(other);
             std::vector<std::shared_ptr<BigIntRangeFilter>> newRanges;
             for (const auto & range : otherMultiRange->getRanges())
             {
                 auto merged = this->merge(range.get());
-                if (merged->kind() == ColumnFilterKind::BigIntRange)
+                if (merged->kind() == BigIntRange)
                 {
                     newRanges.push_back(toBigIntRange(std::move(merged)));
                 }
                 else
                 {
-                    chassert(merged->kind() == ColumnFilterKind::AlwaysFalse);
+                    chassert(merged->kind() == AlwaysFalse);
                 }
             }
 
             bool bothNullAllowed = null_allowed && other->testNull();
             return combineBigIntRanges(std::move(newRanges), bothNullAllowed);
         }
-        case ColumnFilterKind::NegatedBigIntValuesUsingBitmask:
-        case ColumnFilterKind::NegatedBigIntValuesUsingHashTable: {
+        case NegatedBigIntValuesUsingBitmask:
+        case NegatedBigIntValuesUsingHashTable: {
             bool bothNullAllowed = null_allowed && other->testNull();
             if (!other->testInt64Range(lower, upper, false))
             {
                 return nullOrFalse(bothNullAllowed);
             }
             std::vector<Int64> vals;
-            if (other->kind() == ColumnFilterKind::NegatedBigIntValuesUsingBitmask)
+            if (other->kind() == NegatedBigIntValuesUsingBitmask)
             {
                 const auto * otherNegated = dynamic_cast<const NegatedBigIntValuesUsingBitmaskFilter *>(other);
                 vals = otherNegated->getValues();
@@ -722,20 +722,20 @@ ColumnFilterPtr BigIntRangeFilter::merge(const ColumnFilter * other) const
             return combineRangesAndNegatedValues(rangeList, vals, bothNullAllowed);
         }
         default:
-            UNREACHABLE();
+            return nullptr;
     }
 }
 ColumnFilterPtr BytesValuesFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysTrue:
+        case AlwaysFalse:
+        case IsNull:
             return other->merge(this);
-        case ColumnFilterKind::IsNotNull:
-            return this->clone(false);
-        case ColumnFilterKind::BytesValues: {
+        case IsNotNull:
+            return this->clone(std::make_optional(false));
+        case BytesValues: {
             bool both_null_allowed = null_allowed && other->testNull();
             const auto * otherBytesValues = static_cast<const BytesValuesFilter *>(other);
 
@@ -769,7 +769,7 @@ ColumnFilterPtr BytesValuesFilter::merge(const ColumnFilter * other) const
 
             return std::make_shared<BytesValuesFilter>(std::move(newValues), both_null_allowed);
         }
-        case ColumnFilterKind::NegatedBytesValues: {
+        case NegatedBytesValues: {
             bool bothNullAllowed = null_allowed && other->testNull();
             std::vector<std::string> newValues;
             newValues.reserve(getValues().size());
@@ -788,13 +788,13 @@ ColumnFilterPtr BytesValuesFilter::merge(const ColumnFilter * other) const
 
             return std::make_shared<BytesValuesFilter>(std::move(newValues), bothNullAllowed);
         }
-        case ColumnFilterKind::BytesRange: {
+        case BytesRange: {
             const auto * otherBytesRange = static_cast<const BytesRangeFilter *>(other);
             bool bothNullAllowed = null_allowed && other->testNull();
 
             if (!testStringRange(
-                    otherBytesRange->isLowerUnbounded() ? std::nullopt : std::optional(otherBytesRange->getLower()),
-                    otherBytesRange->isUpperUnbounded() ? std::nullopt : std::optional(otherBytesRange->getUpper()),
+                    otherBytesRange->isLowerUnbounded() ? std::nullopt : std::make_optional(otherBytesRange->getLower()),
+                    otherBytesRange->isUpperUnbounded() ? std::nullopt : std::make_optional(otherBytesRange->getUpper()),
                     bothNullAllowed))
             {
                 return nullOrFalse(bothNullAllowed);
@@ -817,7 +817,7 @@ ColumnFilterPtr BytesValuesFilter::merge(const ColumnFilter * other) const
 
             return std::make_shared<BytesValuesFilter>(std::move(newValues), bothNullAllowed);
         }
-        case ColumnFilterKind::NegatedBytesRange: {
+        case NegatedBytesRange: {
             const auto * otherBytesRange = static_cast<const NegatedBytesRangeFilter *>(other);
             bool bothNullAllowed = null_allowed && other->testNull();
 
@@ -839,7 +839,7 @@ ColumnFilterPtr BytesValuesFilter::merge(const ColumnFilter * other) const
             return std::make_shared<BytesValuesFilter>(std::move(newValues), bothNullAllowed);
         }
         default:
-            UNREACHABLE();
+            return nullptr;
     }
 }
 
@@ -867,8 +867,7 @@ bool BytesValuesFilter::testStringRange(std::optional<std::string_view> min, std
 
     if (min.has_value() && max.has_value() && min.value() == max.value())
     {
-        String value(min.value());
-        return testString(value);
+        return testString(min.value());
     }
 
     // min > upper_
@@ -922,7 +921,7 @@ ColumnFilterPtr FloatRangeFilter<T>::merge(const ColumnFilter * other) const
                 lower, both_lower_unbounded, lower_exclusive_, upper, both_upper_unbounded, upper_exclusive_, both_null_allowed);
         }
         default:
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Can't merge filter of kind {}", magic_enum::enum_name(other->kind()));
+            return nullptr;
     }
 }
 
@@ -933,16 +932,16 @@ ColumnFilterPtr NegatedBytesValuesFilter::merge(const ColumnFilter * other) cons
 {
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysTrue:
+        case AlwaysFalse:
+        case IsNull:
             return other->merge(this);
-        case ColumnFilterKind::IsNotNull:
-            return this->clone(false);
-        case ColumnFilterKind::BytesValues:
+        case IsNotNull:
+            return this->clone(std::make_optional(false));
+        case BytesValues:
             return other->merge(this);
         default:
-            throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Can't merge filter of kind {}", magic_enum::enum_name(other->kind()));
+            return nullptr;
     }
 }
 
@@ -956,20 +955,20 @@ ColumnFilterPtr NegatedBigIntRangeFilter::merge(const ColumnFilter * other) cons
 {
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysTrue:
+        case AlwaysFalse:
+        case IsNull:
             return other->merge(this);
-        case ColumnFilterKind::IsNotNull:
-            return this->clone(false);
-        case ColumnFilterKind::BigIntRange: {
+        case IsNotNull:
+            return this->clone(std::make_optional(false));
+        case BigIntRange: {
             bool bothNullAllowed = null_allowed && other->testNull();
             const auto * otherRange = static_cast<const BigIntRangeFilter *>(other);
             std::vector<std::shared_ptr<BigIntRangeFilter>> rangeList;
             rangeList.emplace_back(std::make_shared<BigIntRangeFilter>(otherRange->getLower(), otherRange->getUpper(), false));
             return combineNegatedRangeOnIntRanges(this->getLower(), this->getUpper(), rangeList, bothNullAllowed);
         }
-        case ColumnFilterKind::NegatedBigIntRange: {
+        case NegatedBigIntRange: {
             bool bothNullAllowed = null_allowed && other->testNull();
             const auto * otherNegatedRange = static_cast<const NegatedBigIntRangeFilter *>(other);
             if (this->getLower() > otherNegatedRange->getUpper())
@@ -1001,19 +1000,19 @@ ColumnFilterPtr NegatedBigIntRangeFilter::merge(const ColumnFilter * other) cons
             return std::make_shared<NegatedBigIntRangeFilter>(
                 this->getLower(), std::max<Int64>(this->getUpper(), otherNegatedRange->getUpper()), bothNullAllowed);
         }
-        case ColumnFilterKind::BigIntMultiRange: {
+        case BigIntMultiRange: {
             bool bothNullAllowed = null_allowed && other->testNull();
-            auto otherMultiRanges = static_cast<const BigIntMultiRangeFilter *>(other);
+            const auto *otherMultiRanges = static_cast<const BigIntMultiRangeFilter *>(other);
             return combineNegatedRangeOnIntRanges(this->getLower(), this->getUpper(), otherMultiRanges->getRanges(), bothNullAllowed);
         }
-        case ColumnFilterKind::BigIntValuesUsingHashTable:
-        case ColumnFilterKind::BigIntValuesUsingBitmask:
+        case BigIntValuesUsingHashTable:
+        case BigIntValuesUsingBitmask:
             return other->merge(this);
-        case ColumnFilterKind::NegatedBigIntValuesUsingHashTable:
-        case ColumnFilterKind::NegatedBigIntValuesUsingBitmask: {
+        case NegatedBigIntValuesUsingHashTable:
+        case NegatedBigIntValuesUsingBitmask: {
             bool bothNullAllowed = null_allowed && other->testNull();
             std::vector<Int64> rejectedValues;
-            if (other->kind() == ColumnFilterKind::NegatedBigIntValuesUsingHashTable)
+            if (other->kind() == NegatedBigIntValuesUsingHashTable)
             {
                 const auto * otherHashTable = static_cast<const NegatedBigIntValuesUsingHashTableFilter *>(other);
                 rejectedValues = otherHashTable->getValues();
@@ -1100,7 +1099,7 @@ bool RowSet::any() const
     return res;
 }
 
-IColumn::Filter ExpressionFilter::execute(const ColumnsWithTypeAndName & columns)
+IColumn::Filter ExpressionFilter::execute(const ColumnsWithTypeAndName & columns) const
 {
     auto block = Block(columns);
     actions->execute(block);
@@ -1147,11 +1146,11 @@ ColumnFilterPtr IsNotNullFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::IsNotNull:
+        case AlwaysTrue:
+        case IsNotNull:
             return this->clone(std::nullopt);
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysFalse:
+        case IsNull:
             return std::make_shared<AlwaysFalseFilter>();
         default:
             return other->merge(this);
@@ -1162,28 +1161,28 @@ ColumnFilterPtr BoolValueFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysTrue:
+        case AlwaysFalse:
+        case IsNull:
             return other->merge(this);
-        case ColumnFilterKind::IsNotNull:
+        case IsNotNull:
             return std::make_shared<BoolValueFilter>(value, false);
-        case ColumnFilterKind::BoolValue: {
+        case BoolValue: {
             bool bothNullAllowed = null_allowed && other->testNull();
             if (other->testBool(value))
             {
-                return std::make_unique<BoolValueFilter>(value, bothNullAllowed);
+                return std::make_shared<BoolValueFilter>(value, bothNullAllowed);
             }
 
             return nullOrFalse(bothNullAllowed);
         }
         default:
-            UNREACHABLE();
+            return nullptr;
     }
 }
 BigIntValuesUsingHashTableFilter::BigIntValuesUsingHashTableFilter(
     Int64 min_, Int64 max_, const std::vector<Int64> & values_, bool nullAllowed)
-    : ColumnFilter(ColumnFilterKind::BigIntValuesUsingHashTable, nullAllowed)
+    : ColumnFilter(BigIntValuesUsingHashTable, nullAllowed)
     , min(min_)
     , max(max_)
     , values(values_)
@@ -1225,7 +1224,7 @@ BigIntValuesUsingHashTableFilter::BigIntValuesUsingHashTableFilter(
     // that one can load a full vector of elements past the last used index.
     for (auto i = 0; i < kPaddingElements; ++i)
     {
-        hashTable[sizeMask + 1 + i] = hashTable[sizeMask];
+        hashTable.at(sizeMask + 1 + i) = hashTable.at(sizeMask);
     }
     std::sort(values.begin(), values.end());
 }
@@ -1243,7 +1242,7 @@ bool BigIntValuesUsingHashTableFilter::testInt64(Int64 value) const
     for (auto i = pos; i <= pos + sizeMask; i++)
     {
         int32_t idx = i & sizeMask;
-        Int64 l = hashTable[idx];
+        Int64 l = hashTable.at(idx);
         if (l == kEmptyMarker)
         {
             return false;
@@ -1281,7 +1280,7 @@ bool BigIntValuesUsingHashTableFilter::testInt64Range(Int64 min_, Int64 max_, bo
 }
 BigIntValuesUsingBitmaskFilter::BigIntValuesUsingBitmaskFilter(
     Int64 min_, Int64 max_, const std::vector<Int64> & values_, bool null_allowed_)
-    : ColumnFilter(ColumnFilterKind::BigIntValuesUsingBitmask, null_allowed_)
+    : ColumnFilter(BigIntValuesUsingBitmask, null_allowed_)
     , min(min_)
     , max(max_)
 {
@@ -1290,9 +1289,9 @@ BigIntValuesUsingBitmaskFilter::BigIntValuesUsingBitmaskFilter(
     if (values_.size() <= 1)
         throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "values must contain at least 2 entries");
     bitmask.resize(max - min + 1);
-    for (Int64 value : values_)
+    for (auto value : values_)
     {
-        bitmask[value - min] = true;
+        bitmask.at(value - min) = true;
     }
 }
 std::vector<Int64> BigIntValuesUsingBitmaskFilter::values() const
@@ -1300,7 +1299,7 @@ std::vector<Int64> BigIntValuesUsingBitmaskFilter::values() const
     std::vector<Int64> values;
     for (size_t i = 0; i < bitmask.size(); ++i)
     {
-        if (bitmask[i])
+        if (bitmask.at(i))
             values.push_back(i + min);
     }
     return values;
@@ -1309,7 +1308,7 @@ bool BigIntValuesUsingBitmaskFilter::testInt64(Int64 value) const
 {
     if (value < min || value > max)
         return false;
-    return bitmask[value - min];
+    return bitmask.at(value - min);
 }
 bool BigIntValuesUsingBitmaskFilter::testInt64Range(Int64 min_, Int64 max_, bool has_null) const
 {
@@ -1323,13 +1322,13 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(const ColumnFilter * other
 {
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysTrue:
+        case AlwaysFalse:
+        case IsNull:
             return other->merge(this);
-        case ColumnFilterKind::IsNotNull:
+        case IsNotNull:
             return std::make_shared<BigIntValuesUsingBitmaskFilter>(*this, false);
-        case ColumnFilterKind::BigIntRange: {
+        case BigIntRange: {
             const auto * otherRange = dynamic_cast<const BigIntRangeFilter *>(other);
 
             auto min_ = std::max(min, otherRange->getLower());
@@ -1337,7 +1336,7 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(const ColumnFilter * other
 
             return merge(min_, max_, other);
         }
-        case ColumnFilterKind::BigIntValuesUsingHashTable: {
+        case BigIntValuesUsingHashTable: {
             const auto * otherValues = dynamic_cast<const BigIntValuesUsingHashTableFilter *>(other);
 
             auto min_ = std::max(min, otherValues->getMin());
@@ -1345,7 +1344,7 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(const ColumnFilter * other
 
             return merge(min_, max_, other);
         }
-        case ColumnFilterKind::BigIntValuesUsingBitmask: {
+        case BigIntValuesUsingBitmask: {
             const auto * otherValues = dynamic_cast<const BigIntValuesUsingBitmaskFilter *>(other);
 
             auto min_ = std::max(min, otherValues->min);
@@ -1353,7 +1352,7 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(const ColumnFilter * other
 
             return merge(min_, max_, other);
         }
-        case ColumnFilterKind::BigIntMultiRange: {
+        case BigIntMultiRange: {
             const auto * otherMultiRange = dynamic_cast<const BigIntMultiRangeFilter *>(other);
 
             std::vector<Int64> valuesToKeep;
@@ -1373,13 +1372,13 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(const ColumnFilter * other
             bool bothNullAllowed = null_allowed && other->testNull();
             return createBigIntValuesFilter(valuesToKeep, bothNullAllowed);
         }
-        case ColumnFilterKind::NegatedBigIntRange:
-        case ColumnFilterKind::NegatedBigIntValuesUsingBitmask:
-        case ColumnFilterKind::NegatedBigIntValuesUsingHashTable: {
+        case NegatedBigIntRange:
+        case NegatedBigIntValuesUsingBitmask:
+        case NegatedBigIntValuesUsingHashTable: {
             return merge(min, max, other);
         }
         default:
-            UNREACHABLE();
+            return nullptr;
     }
 }
 ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(Int64 min_, Int64 max_, const ColumnFilter * other) const
@@ -1388,7 +1387,7 @@ ColumnFilterPtr BigIntValuesUsingBitmaskFilter::merge(Int64 min_, Int64 max_, co
     std::vector<Int64> value_to_keep;
     for (auto i = min_; i <= max_; ++i)
     {
-        if (bitmask[i - min] && other->testInt64(i))
+        if (bitmask.at(i - min) && other->testInt64(i))
         {
             value_to_keep.push_back(i);
         }
@@ -1438,29 +1437,29 @@ ColumnFilterPtr NegatedBigIntValuesUsingHashTableFilter::merge(const ColumnFilte
     // =>Negated...(nullAllowed=false)
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysTrue:
+        case AlwaysFalse:
+        case IsNull:
             return other->merge(this);
-        case ColumnFilterKind::IsNotNull:
-            return std::make_unique<NegatedBigIntValuesUsingHashTableFilter>(*this, false);
-        case ColumnFilterKind::BigIntValuesUsingHashTable:
-        case ColumnFilterKind::BigIntValuesUsingBitmask:
-        case ColumnFilterKind::BigIntRange:
-        case ColumnFilterKind::BigIntMultiRange: {
+        case IsNotNull:
+            return std::make_shared<NegatedBigIntValuesUsingHashTableFilter>(*this, false);
+        case BigIntValuesUsingHashTable:
+        case BigIntValuesUsingBitmask:
+        case BigIntRange:
+        case BigIntMultiRange: {
             return other->merge(this);
         }
-        case ColumnFilterKind::NegatedBigIntValuesUsingHashTable: {
+        case NegatedBigIntValuesUsingHashTable: {
             const auto * otherNegated = static_cast<const NegatedBigIntValuesUsingHashTableFilter *>(other);
             bool both_null_allowed = null_allowed && other->testNull();
             return combineNegatedBigIntLists(getValues(), otherNegated->getValues(), both_null_allowed);
         }
-        case ColumnFilterKind::NegatedBigIntRange:
-        case ColumnFilterKind::NegatedBigIntValuesUsingBitmask: {
+        case NegatedBigIntRange:
+        case NegatedBigIntValuesUsingBitmask: {
             return other->merge(this);
         }
         default:
-            UNREACHABLE();
+            return nullptr;
     }
 }
 ColumnFilterPtr NegatedBigIntValuesUsingBitmaskFilter::merge(const ColumnFilter * other) const
@@ -1475,33 +1474,33 @@ ColumnFilterPtr NegatedBigIntValuesUsingBitmaskFilter::merge(const ColumnFilter 
     // =>Negated...(nullAllowed=false)
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysTrue:
+        case AlwaysFalse:
+        case IsNull:
             return other->merge(this);
-        case ColumnFilterKind::IsNotNull:
-            return std::make_unique<NegatedBigIntValuesUsingBitmaskFilter>(*this, false);
-        case ColumnFilterKind::BigIntValuesUsingHashTable:
-        case ColumnFilterKind::BigIntValuesUsingBitmask:
-        case ColumnFilterKind::BigIntRange:
-        case ColumnFilterKind::NegatedBigIntRange:
-        case ColumnFilterKind::BigIntMultiRange: {
+        case IsNotNull:
+            return std::make_shared<NegatedBigIntValuesUsingBitmaskFilter>(*this, false);
+        case BigIntValuesUsingHashTable:
+        case BigIntValuesUsingBitmask:
+        case BigIntRange:
+        case NegatedBigIntRange:
+        case BigIntMultiRange: {
             return other->merge(this);
         }
-        case ColumnFilterKind::NegatedBigIntValuesUsingHashTable: {
+        case NegatedBigIntValuesUsingHashTable: {
             const NegatedBigIntValuesUsingHashTableFilter * otherHashTable;
             otherHashTable = dynamic_cast<const NegatedBigIntValuesUsingHashTableFilter *>(other);
             bool bothNullAllowed = null_allowed && other->testNull();
             // kEmptyMarker is already in values for a bitmask
             return combineNegatedBigIntLists(getValues(), otherHashTable->getValues(), bothNullAllowed);
         }
-        case ColumnFilterKind::NegatedBigIntValuesUsingBitmask: {
+        case NegatedBigIntValuesUsingBitmask: {
             const auto * otherBitmask = dynamic_cast<const NegatedBigIntValuesUsingBitmaskFilter *>(other);
             bool both_null_allowed = null_allowed && other->testNull();
             return combineNegatedBigIntLists(getValues(), otherBitmask->getValues(), both_null_allowed);
         }
         default:
-            UNREACHABLE();
+            return nullptr;
     }
 }
 
@@ -1582,17 +1581,17 @@ ColumnFilterPtr BytesRangeFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysTrue:
+        case AlwaysFalse:
+        case IsNull:
             return other->merge(this);
-        case ColumnFilterKind::IsNotNull:
-            return this->clone(false);
-        case ColumnFilterKind::BytesValues:
-        case ColumnFilterKind::NegatedBytesValues:
-        case ColumnFilterKind::NegatedBytesRange:
+        case IsNotNull:
+            return this->clone(std::make_optional(false));
+        case BytesValues:
+        case NegatedBytesValues:
+        case NegatedBytesRange:
             return other->merge(this);
-        case ColumnFilterKind::BytesRange: {
+        case BytesRange: {
             bool bothNullAllowed = null_allowed && other->testNull();
 
             const auto * otherRange = static_cast<const BytesRangeFilter *>(other);
@@ -1652,36 +1651,35 @@ ColumnFilterPtr BytesRangeFilter::merge(const ColumnFilter * other) const
             return std::make_shared<BytesRangeFilter>(
                 lower_, lower_unbounded_, lower_exclusive_, upper_, upper_unbounded_, upper_exclusive_, bothNullAllowed);
         }
-
         default:
-            UNREACHABLE();
+            return nullptr;
     }
 }
 ColumnFilterPtr NegatedBytesRangeFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysTrue:
+        case AlwaysFalse:
+        case IsNull:
             return other->merge(this);
-        case ColumnFilterKind::IsNotNull:
-            return this->clone(false);
-        case ColumnFilterKind::BytesValues:
+        case IsNotNull:
+            return this->clone(std::make_optional(false));
+        case BytesValues:
             return other->merge(this);
-        case ColumnFilterKind::NegatedBytesValues:
-        case ColumnFilterKind::BytesRange:
-        case ColumnFilterKind::NegatedBytesRange: {
+        case NegatedBytesValues:
+        case BytesRange:
+        case NegatedBytesRange: {
             // doesn't support merging
             return nullptr;
         }
         default:
-            UNREACHABLE();
+            return nullptr;
     }
 }
 
 BigIntMultiRangeFilter::BigIntMultiRangeFilter(std::vector<std::shared_ptr<BigIntRangeFilter>> ranges_, bool null_allowed_)
-    : ColumnFilter(ColumnFilterKind::BigIntMultiRange, null_allowed_)
+    : ColumnFilter(BigIntMultiRange, null_allowed_)
     , ranges(std::move(ranges_))
 {
     if (ranges_.empty())
@@ -1694,7 +1692,7 @@ BigIntMultiRangeFilter::BigIntMultiRangeFilter(std::vector<std::shared_ptr<BigIn
     }
     for (size_t i = 1; i < lower_bounds.size(); i++)
     {
-        if (lower_bounds[i] < ranges_[i - 1]->getUpper())
+        if (lower_bounds.at(i) < ranges_.at(i - 1)->getUpper())
             throw DB::Exception(ErrorCodes::BAD_ARGUMENTS, "ranges overlap");
     }
 }
@@ -1702,13 +1700,13 @@ ColumnFilterPtr BigIntMultiRangeFilter::clone(std::optional<bool> null_allowed_)
 {
     std::vector<std::shared_ptr<BigIntRangeFilter>> ranges_;
     ranges_.reserve(ranges.size());
-    for (auto & range : ranges_)
+    for (const auto & range : ranges_)
     {
         ranges_.emplace_back(range);
     }
     if (null_allowed_)
     {
-        return std::make_unique<BigIntMultiRangeFilter>(std::move(ranges_), null_allowed_.value());
+        return std::make_shared<BigIntMultiRangeFilter>(std::move(ranges_), null_allowed_.value());
     }
     else
     {
@@ -1745,7 +1743,7 @@ bool BigIntMultiRangeFilter::testInt64(Int64 value) const
     }
     // When value did not hit a lower bound of a filter, test with the filter
     // before the place where value would be inserted.
-    return ranges[place - 1]->testInt64(value);
+    return ranges.at(place - 1)->testInt64(value);
 }
 
 bool BigIntMultiRangeFilter::testInt64Range(Int64 min, Int64 max, bool hasNull) const
@@ -1768,37 +1766,37 @@ ColumnFilterPtr BigIntMultiRangeFilter::merge(const ColumnFilter * other) const
 {
     switch (other->kind())
     {
-        case ColumnFilterKind::AlwaysTrue:
-        case ColumnFilterKind::AlwaysFalse:
-        case ColumnFilterKind::IsNull:
+        case AlwaysTrue:
+        case AlwaysFalse:
+        case IsNull:
             return other->merge(this);
-        case ColumnFilterKind::IsNotNull: {
+        case IsNotNull: {
             std::vector<std::shared_ptr<BigIntRangeFilter>> ranges_;
             ranges_.reserve(ranges.size());
-            for (auto & range : ranges)
+            for (const auto & range : ranges)
             {
                 ranges_.push_back(range);
             }
-            return std::make_shared<BigIntMultiRangeFilter>(std::move(ranges), false);
+            return std::make_shared<BigIntMultiRangeFilter>(ranges, false);
         }
-        case ColumnFilterKind::BigIntRange:
-        case ColumnFilterKind::NegatedBigIntRange:
-        case ColumnFilterKind::BigIntValuesUsingBitmask:
-        case ColumnFilterKind::BigIntValuesUsingHashTable: {
+        case BigIntRange:
+        case NegatedBigIntRange:
+        case BigIntValuesUsingBitmask:
+        case BigIntValuesUsingHashTable: {
             return other->merge(this);
         }
-        case ColumnFilterKind::BigIntMultiRange: {
+        case BigIntMultiRange: {
             std::vector<std::shared_ptr<BigIntRangeFilter>> newRanges;
             for (const auto & range : ranges)
             {
                 auto merged = range->merge(other);
-                if (merged->kind() == ColumnFilterKind::BigIntRange)
+                if (merged->kind() == BigIntRange)
                 {
                     newRanges.push_back(toBigIntRange(std::move(merged)));
                 }
-                else if (merged->kind() == ColumnFilterKind::BigIntMultiRange)
+                else if (merged->kind() == BigIntMultiRange)
                 {
-                    auto mergedMultiRange = dynamic_cast<BigIntMultiRangeFilter *>(merged.get());
+                    auto *mergedMultiRange = dynamic_cast<BigIntMultiRangeFilter *>(merged.get());
                     for (const auto & newRange : mergedMultiRange->ranges)
                     {
                         newRanges.push_back(toBigIntRange(newRange));
@@ -1806,7 +1804,7 @@ ColumnFilterPtr BigIntMultiRangeFilter::merge(const ColumnFilter * other) const
                 }
                 else
                 {
-                    if (merged->kind() != ColumnFilterKind::AlwaysFalse)
+                    if (merged->kind() != AlwaysFalse)
                     {
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected filter type");
                     }
@@ -1821,16 +1819,16 @@ ColumnFilterPtr BigIntMultiRangeFilter::merge(const ColumnFilter * other) const
 
             if (newRanges.size() == 1)
             {
-                return std::make_unique<BigIntRangeFilter>(newRanges.front()->getLower(), newRanges.front()->getUpper(), bothNullAllowed);
+                return std::make_shared<BigIntRangeFilter>(newRanges.front()->getLower(), newRanges.front()->getUpper(), bothNullAllowed);
             }
 
             return std::make_shared<BigIntMultiRangeFilter>(std::move(newRanges), bothNullAllowed);
         }
-        case ColumnFilterKind::NegatedBigIntValuesUsingHashTable:
-        case ColumnFilterKind::NegatedBigIntValuesUsingBitmask: {
+        case NegatedBigIntValuesUsingHashTable:
+        case NegatedBigIntValuesUsingBitmask: {
             std::vector<std::unique_ptr<BigIntRangeFilter>> newRanges;
             std::vector<Int64> rejects;
-            if (other->kind() == ColumnFilterKind::NegatedBigIntValuesUsingBitmask)
+            if (other->kind() == NegatedBigIntValuesUsingBitmask)
             {
                 const auto * otherNegated = dynamic_cast<const NegatedBigIntValuesUsingBitmaskFilter *>(other);
                 rejects = otherNegated->getValues();
