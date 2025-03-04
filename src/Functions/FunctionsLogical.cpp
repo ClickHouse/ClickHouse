@@ -726,6 +726,9 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
             auto coalesce_elapsed = watch.elapsed();
             auto res = executeShortCircuit<true>(new_args, result_type, profile);
             profile->executed_elapsed += coalesce_elapsed;
+            chassert(profile->argument_profiles.size() == short_circuit_args_index.size());
+            for (size_t i = 0; i < short_circuit_args_index.size(); ++i)
+                profile->argument_profiles[i].first = short_circuit_args_index[i];
             return res;
         }
         return executeShortCircuit<false>(new_args, result_type, profile);
