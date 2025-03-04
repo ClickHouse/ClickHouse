@@ -240,7 +240,7 @@ Result:
 
 ## blockSize {#blockSize}
 
-In ClickHouse, queries are processed in [blocks](../../development/architecture.md/#block-block) (chunks).
+In ClickHouse, queries are processed in [blocks](/development/architecture#block) (chunks).
 This function returns the size (row count) of the block the function is called on.
 
 **Syntax**
@@ -1238,7 +1238,7 @@ least(a, b)
 ```
 
 :::note
-Version [24.12](/docs/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+Version [24.12](/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## greatest {#greatest}
@@ -1252,7 +1252,7 @@ greatest(a, b)
 ```
 
 :::note
-Version [24.12](/docs/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+Version [24.12](/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## uptime {#uptime}
@@ -3029,7 +3029,7 @@ Result:
 
 ## getSetting {#getsetting}
 
-Returns the current value of a [custom setting](../../operations/settings/overview#custom_settings).
+Returns the current value of a [custom setting](/operations/settings/query-level#custom_settings).
 
 **Syntax**
 
@@ -3060,11 +3060,11 @@ Result:
 
 **See Also**
 
-- [Custom Settings](../../operations/settings/overview#custom_settings)
+- [Custom Settings](/operations/settings/overview#custom_settings)
 
 ## getSettingOrDefault {#getsettingordefault}
 
-Returns the current value of a [custom setting](../../operations/settings/overview#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
+Returns the current value of a [custom setting](/operations/settings/overview#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
 
 **Syntax**
 
@@ -3099,7 +3099,7 @@ NULL
 
 **See Also**
 
-- [Custom Settings](../../operations/settings/overview#custom_settings)
+- [Custom Settings](/operations/settings/overview#custom_settings)
 
 ## isDecimalOverflow {#isdecimaloverflow}
 
@@ -3235,7 +3235,7 @@ Result:
 
 Returns a list of the current [settings profiles](../../guides/sre/user-management/index.md#settings-profiles-management) for the current user.
 
-The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
+The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](/sql-reference/statements/create/user)).
 
 **Syntax**
 
@@ -3263,7 +3263,7 @@ enabledProfiles()
 
 ## defaultProfiles {#defaultprofiles}
 
-Returns all the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement).
+Returns all the profiles specified at the current user's definition (see [CREATE USER](/sql-reference/statements/create/user) statement).
 
 **Syntax**
 
@@ -3400,7 +3400,7 @@ Result:
 
 Returns the ID of the initial current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
 
-In contrast to [queryID](#queryid) function, `initialQueryID` returns the same results on different shards (see example).
+In contrast to [queryID](/sql-reference/functions/other-functions#queryid) function, `initialQueryID` returns the same results on different shards (see example).
 
 **Syntax**
 
@@ -4198,7 +4198,7 @@ If the function is used in the context of a distributed query, it returns non-em
 
 ## showCertificate {#showcertificate}
 
-Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](/docs/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
+Shows information about the current server's Secure Sockets Layer (SSL) certificate if it has been configured. See [Configuring SSL-TLS](/guides/sre/configuring-ssl) for more information on how to configure ClickHouse to use OpenSSL certificates to validate connections.
 
 **Syntax**
 
@@ -4373,7 +4373,7 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the ID of a [transaction](/docs/guides/developer/transactional#transactions-commit-and-rollback).
+Returns the ID of a [transaction](/guides/developer/transactional#transactions-commit-and-rollback).
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
@@ -4383,7 +4383,7 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/docs/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**
@@ -4423,7 +4423,7 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the newest snapshot (Commit Sequence Number) of a [transaction](/docs/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
+Returns the newest snapshot (Commit Sequence Number) of a [transaction](/guides/developer/transactional#transactions-commit-and-rollback) that is available for reading.
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
@@ -4434,7 +4434,7 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/docs/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**
@@ -4470,7 +4470,7 @@ Result:
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](/docs/guides/developer/transactional#transactions-commit-and-rollback).
+Returns the oldest snapshot (Commit Sequence Number) that is visible for some running [transaction](/guides/developer/transactional#transactions-commit-and-rollback).
 
 :::note
 This function is part of an experimental feature set. Enable experimental transaction support by adding this setting to your configuration:
@@ -4481,7 +4481,7 @@ This function is part of an experimental feature set. Enable experimental transa
 </clickhouse>
 ```
 
-For more information see the page [Transactional (ACID) support](/docs/guides/developer/transactional#transactions-commit-and-rollback).
+For more information see the page [Transactional (ACID) support](/guides/developer/transactional#transactions-commit-and-rollback).
 :::
 
 **Syntax**

@@ -4,8 +4,6 @@ sidebar_label: 主键稀疏索引
 sidebar_position: 20
 ---
 
-
-
 # ClickHouse主键索引最佳实践
 
 在本文中，我们将深入研究ClickHouse索引。我们将对此进行详细说明和讨论：
@@ -1199,7 +1197,7 @@ ClickHouse服务器日志文件中跟踪日志确认了ClickHouse正在对索引
 - 特定 URL 有多少（百分比）流量来自机器人，或
 - 我们对特定用户是否为僵尸用户有多大把握（来自该用户的流量中有多大比例被认为是（或不是）僵尸流量）
 
-我们使用该查询来计算我们要用作复合主键中三个列的基数（注意，我们使用 [URL 表函数](/docs/sql-reference/table-functions/url.md) 来即席查询 TSV 数据，而无需创建本地表）。在 `clickhouse client`中运行此查询：
+我们使用该查询来计算我们要用作复合主键中三个列的基数（注意，我们使用 [URL 表函数](/sql-reference/table-functions/url.md) 来即席查询 TSV 数据，而无需创建本地表）。在 `clickhouse client`中运行此查询：
 ```sql
 SELECT
     formatReadableQuantity(uniq(URL)) AS cardinality_URL,
