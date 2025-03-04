@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 set output_format_parquet_use_custom_encoder = 1;
 set output_format_parquet_row_group_size = 100000;
 set output_format_parquet_data_page_size = 100;

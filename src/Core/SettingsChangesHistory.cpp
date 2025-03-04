@@ -80,6 +80,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_max_rows", 10000, 1000, "It is better for usability - less amount to scroll."},
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"s3_allow_multipart_copy", true, true, "New setting."},
+            {"input_format_parquet_use_native_reader_with_filter_push_down", false, false, "A new parquet reader support full filter push down"},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -117,7 +118,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_fallback_to_vertical_min_table_width", 0, 250, "A new setting"},
             {"merge_table_max_tables_to_look_for_schema_inference", 1, 1000, "A new setting"},
             {"max_autoincrement_series", 1000, 1000, "A new setting"},
-            {"input_format_parquet_use_native_reader_with_filter_push_down", false, false, "A new parquet reader support full filter push down"},
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
