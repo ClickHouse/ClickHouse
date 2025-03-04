@@ -68,6 +68,8 @@ public:
 
     virtual void prefetchBeginOfRange(Priority) {}
 
+    MergeTreeReaderSettings & getMergeTreeReaderSettings() { return settings; }
+
 protected:
     /// Returns true if requested column is a subcolumn with offsets of Array which is part of Nested column.
     bool isSubcolumnOffsetsOfNested(const String & name_in_storage, const String & subcolumn_name) const;

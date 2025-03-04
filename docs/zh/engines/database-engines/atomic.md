@@ -51,7 +51,7 @@ EXCHANGE TABLES new_table AND old_table;
 
 ### ReplicatedMergeTree in Atomic Database {#replicatedmergetree-in-atomic-database}
 
-对于[ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication)表，建议不要在ZooKeeper和副本名称中指定engine-path的参数。在这种情况下，将使用配置的参数[default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path)和[default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name)。如果要显式指定引擎的参数，建议使用`{uuid}`宏。这是非常有用的，以便为ZooKeeper中的每个表自动生成唯一的路径。
+对于[ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication)表，建议不要在ZooKeeper和副本名称中指定engine-path的参数。在这种情况下，将使用配置的参数[default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path)和[default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name)。如果要显式指定引擎的参数，建议使用`{uuid}`宏。这是非常有用的，以便为ZooKeeper中的每个表自动生成唯一的路径。
 
 ## 另请参考
 

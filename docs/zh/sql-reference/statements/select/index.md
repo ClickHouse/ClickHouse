@@ -39,7 +39,7 @@ SELECT [DISTINCT] expr_list
 -   [JOIN 子句](../../../sql-reference/statements/select/join.md)
 -   [PREWHERE 子句](../../../sql-reference/statements/select/prewhere.md)
 -   [WHERE 子句](../../../sql-reference/statements/select/where.md)
--   [GROUP BY 子句](../../../sql-reference/statements/select/group-by.md)
+-   [GROUP BY 子句](/sql-reference/statements/select/group-by)
 -   [LIMIT BY 子句](../../../sql-reference/statements/select/limit-by.md)
 -   [HAVING 子句](../../../sql-reference/statements/select/having.md)
 -   [SELECT 子句](#select-clause)
