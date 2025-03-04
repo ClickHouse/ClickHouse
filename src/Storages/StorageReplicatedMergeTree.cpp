@@ -4087,41 +4087,20 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 local_merge_pred,
                 MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed});
 
-            std::expected<MergeSelectorChoice, SelectMergeFailure> select_merge_result =
-                std::unexpected(SelectMergeFailure{
-                    .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
-                    .explanation = PreformattedMessage::create("No parts to merge"),
-                });
-            String final_partition;
-            if (!partitions_to_merge_in.empty())
-            {
-                merge_predicate = queue.getMergePredicate(zookeeper, partitions_to_merge_in);
-                select_merge_result = merger_mutator.selectPartsToMerge(
-                    std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
-                    merge_predicate,
-                    MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed},
-                    partitions_to_merge_in);
-            }
+            if (partitions_to_merge_in.empty())
+                can_assign_merge = false;
             else
-            {
-                /// If configured, try merging a single partition into one part
-                final_partition = merger_mutator.getBestPartitionToOptimizeEntire(
-                    std::make_shared<ReplicatedMergeTreePartsCollector>(*this, local_merge_pred),
-                    local_merge_pred,
-                    MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed}
-                );
-                if (!final_partition.empty())
-                {
-                    merge_predicate = queue.getMergePredicate(zookeeper, PartitionIdsHint{final_partition});
-                    select_merge_result = merger_mutator.selectAllPartsToMergeWithinPartition(
-                        getInMemoryMetadataPtr(),
-                        std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
-                        merge_predicate,
-                        /*partition_id=*/final_partition,
-                        /*final=*/true,
-                        /*optimize_skip_merged_partitions=*/true);
-                }
-            }
+                merge_predicate = queue.getMergePredicate(zookeeper, partitions_to_merge_in);
+        }
+
+        PreformattedMessage out_reason;
+        if (can_assign_merge)
+        {
+            auto select_merge_result = merger_mutator.selectPartsToMerge(
+                std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
+                merge_predicate,
+                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed},
+                partitions_to_merge_in);
 
             if (select_merge_result.has_value())
             {
@@ -4135,16 +4114,11 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     return AttemptStatus::NeedRetry;
                 }
 
-                bool cleanup = false;
-                if (select_merge_result.value().final
+                bool cleanup = select_merge_result.value().final
                     && (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
                     && (*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
                     && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
-                    && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only]
-                )
-                {
-                    cleanup = true;
-                }
+                    && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
 
                 create_result = createLogEntryToMergeParts(
                     zookeeper,

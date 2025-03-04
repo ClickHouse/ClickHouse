@@ -58,7 +58,8 @@ SETTINGS allow_experimental_replacing_merge_with_cleanup = true,
     enable_replacing_merge_with_cleanup_for_min_age_to_force_merge = true,
     min_age_to_force_merge_on_partition_only = true,
     min_age_to_force_merge_seconds = 1,
-    merge_selecting_sleep_ms = 1000;
+    merge_selecting_sleep_ms = 1000,
+    max_merge_selecting_sleep_ms = 1000;
 
 -- Do inserts separately to create two parts to merge
 INSERT INTO replacing2 VALUES (1, 1, 1, 0);
@@ -107,6 +108,7 @@ SETTINGS allow_experimental_replacing_merge_with_cleanup = true,
     min_age_to_force_merge_on_partition_only = true,
     min_age_to_force_merge_seconds = 1,
     merge_selecting_sleep_ms = 1000,
+    max_merge_selecting_sleep_ms = 1000,
     cleanup_delay_period = 1,
     max_cleanup_delay_period = 1;
 

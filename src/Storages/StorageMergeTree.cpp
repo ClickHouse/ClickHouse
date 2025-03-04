@@ -1073,26 +1073,6 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
             MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive},
             /*partitions_hint=*/std::nullopt);
 
-        if (!select_result.has_value())
-        {
-            /// If configured, try merging a single partition into one part
-            auto final_partition = merger_mutator.getBestPartitionToOptimizeEntire(
-                parts_collector,
-                merge_predicate,
-                MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive}
-            );
-            if (!final_partition.empty())
-            {
-                select_result = merger_mutator.selectAllPartsToMergeWithinPartition(
-                    metadata_snapshot,
-                    parts_collector,
-                    merge_predicate,
-                    /*partition_id=*/final_partition,
-                    /*final=*/true,
-                    /*optimize_skip_merged_partitions=*/true);
-            }
-        }
-
         return select_result.and_then(construct_future_part);
     };
 
@@ -1484,17 +1464,11 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (is_cancelled(merge_entry))
             return false;
 
-        bool cleanup = false;
-        if (
-            merge_entry->future_part->final
+        bool cleanup = merge_entry->future_part->final
             && (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
             && (*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
             && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
-            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only]
-        )
-        {
-            cleanup = true;
-        }
+            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
 
         auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));

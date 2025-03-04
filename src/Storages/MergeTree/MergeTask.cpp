@@ -1830,9 +1830,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         if (global_ctx->cleanup && !(*merge_tree_settings)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Experimental merges with CLEANUP are not allowed");
 
-        bool cleanup = false;
-        if (global_ctx->cleanup && global_ctx->future_part->final)
-            cleanup = true;
+        bool cleanup = global_ctx->cleanup && global_ctx->future_part->final;
 
         auto merge_step = std::make_unique<MergePartsStep>(
             merge_parts_query_plan.getCurrentHeader(),
