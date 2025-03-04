@@ -64,13 +64,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "25.3",
-        {
-            
-        });
         addSettingsChanges(settings_changes_history, "25.2",
         {
-            /// Release closed. Please use 25.3
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
@@ -86,7 +81,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"parallel_replicas_only_with_analyzer", false, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
-            /// Release closed. Please use 25.3
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
