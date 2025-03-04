@@ -2338,7 +2338,7 @@ try
         LOG_INFO(log, "Stopping AsyncLoader.");
 
         // Waits for all currently running jobs to finish and do not run any other pending jobs.
-        global_context->getAsyncLoader().stop();
+        global_context->getAsyncLoader().shutdown();
     );
 
     try
