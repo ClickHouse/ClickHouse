@@ -359,22 +359,21 @@ void updateGlobalConfiguration(
         LOG_WARNING(params.log, "Ignoring Kerberos-related parameters because ClickHouse was built without krb5 library support.");
 #endif // USE_KRB5
     // No need to add any prefix, messages can be distinguished
-    //kafka_config.set_log_callback(
-    //    [log = params.log](cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
-    //    {
-    //        auto [poco_level, client_logs_level] = parseSyslogLevel(level);
-    //        const auto & kafka_object_config = handle.get_configuration();
-    //        const std::string client_id_key{"client.id"};
-    //        chassert(kafka_object_config.has_property(client_id_key) && "Kafka configuration doesn't have expected client.id set");
-    //        LOG_IMPL(
-    //            log,
-    //            client_logs_level,
-    //            poco_level,
-    //            "[client.id:{}] [rdk:{}] {}",
-    //            kafka_object_config.get(client_id_key),
-    //            facility,
-    //            message);
-    //    });
+    kafka_config.set_log_callback(
+        [log = params.log](cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
+        {
+            auto [poco_level, logs_level] = parseSyslogLevel(level);
+            const auto & kafka_object_config = handle.get_configuration();
+            const std::string client_id_key{"client.id"};
+            chassert(kafka_object_config.has_property(client_id_key) && "Kafka configuration doesn't have expected client.id set");
+            LOG_IMPL(
+                log,
+                logs_level,
+                "[client.id:{}] [rdk:{}] {}",
+                kafka_object_config.get(client_id_key),
+                facility,
+                message);
+        });
 
     /// NOTE: statistics should be consumed, otherwise it creates too much
     /// entries in the queue, that leads to memory leak and slow shutdown.

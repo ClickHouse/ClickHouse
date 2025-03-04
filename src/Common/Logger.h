@@ -65,9 +65,9 @@ using LoggerPtr = std::shared_ptr<Logger>;
 using LoggerRawPtr = Logger *;
 
 
-LoggerPtr getLogger(const char * name);
-LoggerPtr getLogger(std::string_view name);
-LoggerPtr getLogger(std::string name);
+LoggerPtr getLogger(const char * name, const char * component_name = nullptr);
+LoggerPtr getLogger(std::string_view name, const char * component_name = nullptr);
+LoggerPtr getLogger(std::string name, const char * component_name = nullptr);
 
 template <size_t n>
 LoggerPtr getLogger(const char (&name)[n])

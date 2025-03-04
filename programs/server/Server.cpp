@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
+#include <quill/core/LogLevel.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -549,7 +550,7 @@ void setOOMScore(int value, LoggerPtr log)
 
 void Server::uninitialize()
 {
-    logger().information("shutting down");
+    LOG_INFO(getLogger("Server"), "shutting down");
     BaseDaemon::uninitialize();
 }
 
@@ -577,7 +578,7 @@ void Server::initialize(Poco::Util::Application & self)
 {
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(gresource_embedded_xmlData), gresource_embedded_xmlSize));
     BaseDaemon::initialize(self);
-    logger().information("starting up");
+    LOG_INFO(getLogger("Server"), "starting up");
 
     LOG_INFO(getLogger("Server"), "OS name: {}, version: {}, architecture: {}",
         Poco::Environment::osName(),
@@ -838,7 +839,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
 static void initializeAzureSDKLogger(
     [[ maybe_unused ]] const ServerSettings & server_settings,
-    [[ maybe_unused ]] int server_logs_level)
+    [[ maybe_unused ]] quill::LogLevel server_logs_level)
 {
 #if USE_AZURE_BLOB_STORAGE
     if (!server_settings[ServerSetting::enable_azure_sdk_logging])
@@ -846,32 +847,35 @@ static void initializeAzureSDKLogger(
 
     using AzureLogsLevel = Azure::Core::Diagnostics::Logger::Level;
 
-    static const std::unordered_map<AzureLogsLevel, std::pair<Poco::Message::Priority, DB::LogsLevel>> azure_to_server_mapping =
+    static const std::unordered_map<AzureLogsLevel, DB::LogsLevel> azure_to_server_mapping =
     {
-        {AzureLogsLevel::Error, {Poco::Message::PRIO_DEBUG, LogsLevel::debug}},
-        {AzureLogsLevel::Warning, {Poco::Message::PRIO_DEBUG, LogsLevel::debug}},
-        {AzureLogsLevel::Informational, {Poco::Message::PRIO_TRACE, LogsLevel::trace}},
-        {AzureLogsLevel::Verbose, {Poco::Message::PRIO_TEST, LogsLevel::test}},
+        {AzureLogsLevel::Error, LogsLevel::debug},
+        {AzureLogsLevel::Warning, LogsLevel::debug},
+        {AzureLogsLevel::Informational, LogsLevel::trace},
+        {AzureLogsLevel::Verbose, LogsLevel::test},
     };
 
-    static const std::map<Poco::Message::Priority, AzureLogsLevel> server_to_azure_mapping =
+    static const std::map<quill::LogLevel, AzureLogsLevel> server_to_azure_mapping =
     {
-        {Poco::Message::PRIO_DEBUG, AzureLogsLevel::Warning},
-        {Poco::Message::PRIO_TRACE, AzureLogsLevel::Informational},
-        {Poco::Message::PRIO_TEST, AzureLogsLevel::Verbose},
+        {quill::LogLevel::Debug, AzureLogsLevel::Warning},
+        {quill::LogLevel::TraceL1, AzureLogsLevel::Informational},
+        {quill::LogLevel::TraceL2, AzureLogsLevel::Verbose},
+        {quill::LogLevel::TraceL3, AzureLogsLevel::Verbose},
     };
 
-    //static const LoggerPtr azure_sdk_logger = getLogger("AzureSDK");
+    static const LoggerPtr azure_sdk_logger = getLogger("AzureSDK", "Azure");
 
-    auto it = server_to_azure_mapping.lower_bound(static_cast<Poco::Message::Priority>(server_logs_level));
-    chassert(it != server_to_azure_mapping.end());
-    Azure::Core::Diagnostics::Logger::SetLevel(it->second);
+    auto azure_log_level = AzureLogsLevel::Warning;
+    if (server_logs_level <= quill::LogLevel::Debug)
+        azure_log_level = server_to_azure_mapping.at(server_logs_level);
 
-    //Azure::Core::Diagnostics::Logger::SetListener([](AzureLogsLevel level, const std::string & message)
-    //{
-    //    auto [poco_level, db_level] = azure_to_server_mapping.at(level);
-    //    LOG_IMPL(azure_sdk_logger, db_level, poco_level, fmt::runtime(message));
-    //});
+    Azure::Core::Diagnostics::Logger::SetLevel(azure_log_level);
+
+    Azure::Core::Diagnostics::Logger::SetListener([](AzureLogsLevel level, const std::string & message)
+    {
+        auto db_level = azure_to_server_mapping.at(level);
+        LOG_IMPL(azure_sdk_logger, db_level, fmt::runtime(message));
+    });
 #endif
 }
 
@@ -1840,7 +1844,7 @@ try
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
-            updateLevels(*config, logger());
+            // updateLevels(*config, logger());
             global_context->setClustersConfig(config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
@@ -2349,7 +2353,7 @@ try
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
         buildLoggers(config(), logger());
-        initializeAzureSDKLogger(server_settings, logger().getLevel());
+        initializeAzureSDKLogger(server_settings, getLogger("Server")->getQuillLogger()->get_log_level());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));

@@ -652,7 +652,7 @@ catch (...)
 void LocalServer::updateLoggerLevel(const String & logs_level)
 {
     getClientConfiguration().setString("logger.level", logs_level);
-    updateLevels(getClientConfiguration(), logger());
+    // updateLevels(getClientConfiguration(), logger());
 }
 
 void LocalServer::processConfig()

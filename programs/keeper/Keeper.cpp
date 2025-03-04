@@ -139,7 +139,7 @@ void Keeper::createServer(const std::string & listen_host, const char * port_nam
 
 void Keeper::uninitialize()
 {
-    logger().information("shutting down");
+    LOG_INFO(getLogger("Keeper"), "shutting down");
     BaseDaemon::uninitialize();
 }
 
@@ -172,7 +172,7 @@ void Keeper::initialize(Poco::Util::Application & self)
     ConfigProcessor::registerEmbeddedConfig("keeper_config.xml", std::string_view(reinterpret_cast<const char *>(gkeeper_resource_embedded_xmlData), gkeeper_resource_embedded_xmlSize));
 
     BaseDaemon::initialize(self);
-    logger().information("starting up");
+    LOG_INFO(getLogger("Keeper"), "starting up");
 
     LOG_INFO(getLogger("Keeper"), "OS Name = {}, OS Version = {}, OS Architecture = {}",
         Poco::Environment::osName(),
@@ -585,7 +585,7 @@ try
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
-            updateLevels(*config, logger());
+            // updateLevels(*config, logger());
 
             updateMemorySoftLimitInConfig(*config);
 

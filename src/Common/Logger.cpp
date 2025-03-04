@@ -1,10 +1,18 @@
 #include <Poco/Logger.h>
 #include <Common/Logger.h>
+#include <Common/Exception.h>
 #include "Loggers/OwnPatternFormatter.h"
 #include "Loggers/OwnSplitChannel.h"
 
 #include <quill/Frontend.h>
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+}
 namespace
 {
 std::unique_ptr<OwnPatternFormatter> formatter;
@@ -49,19 +57,41 @@ DB::OwnSplitChannel & Logger::getTextLogChannel()
     return split_channel;
 }
 
-LoggerPtr getLogger(const char * name)
+LoggerPtr getLogger(const char * name, const char * component_name)
 {
-    return getLogger(std::string_view{name});
+    return getLogger(std::string_view{name}, component_name);
 }
 
-LoggerPtr getLogger(std::string_view name)
+LoggerPtr getLogger(std::string_view name, const char * component_name)
 {
-    return std::make_shared<Logger>(name, quill::Frontend::get_logger("root"));
+    auto * logger = quill::Frontend::get_logger("root");
+    if (component_name)
+    {
+        if (!logger)
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "Cannot create logger for component '{}' because root logger is not initialized",
+                component_name);
+        logger = quill::Frontend::create_or_get_logger(component_name, logger);
+    }
+
+    return std::make_shared<Logger>(name, logger);
 }
 
-LoggerPtr getLogger(std::string name)
+LoggerPtr getLogger(std::string name, const char * component_name)
 {
-    return std::make_shared<Logger>(std::move(name), quill::Frontend::get_logger("root"));
+    auto * logger = quill::Frontend::get_logger("root");
+    if (component_name)
+    {
+        if (!logger)
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "Cannot create logger for component '{}' because root logger is not initialized",
+                component_name);
+        logger = quill::Frontend::create_or_get_logger(component_name, logger);
+    }
+
+    return std::make_shared<Logger>(std::move(name), logger);
 
 }
 
@@ -80,7 +110,7 @@ QuillLoggerPtr getQuillLogger(const std::string & name)
     auto * root = quill::Frontend::get_logger("root");
 
     if (!root)
-        return nullptr;
+        throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Root logger is not initialized");
 
     return quill::Frontend::create_or_get_logger(name, root);
 }
