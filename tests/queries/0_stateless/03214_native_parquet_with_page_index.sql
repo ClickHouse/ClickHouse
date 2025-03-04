@@ -31,7 +31,7 @@ FROM numbers(100000);
 
 insert into function file('test_pushdown.parquet') select * from test_pushdown order by id;
 
-SELECT count() FROM file(test_pushdown.parquet) WHERE category = 'X' settings input_format_parquet_use_native_reader_with_filter_push_down=true except SELECT count() FROM file(test_pushdown.parquet) WHERE category = 'X';
-SELECT sum(value) FROM file(test_pushdown.parquet) WHERE timestamp BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' AND value > 150.0 settings input_format_parquet_use_native_reader_with_filter_push_down=true except SELECT sum(value) FROM file(test_pushdown.parquet) WHERE timestamp BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' AND value > 150.0;
-SELECT uniq(category) FROM file(test_pushdown.parquet) WHERE category IN ('A', 'B', 'X') settings input_format_parquet_use_native_reader_with_filter_push_down=true except SELECT uniq(category) FROM file(test_pushdown.parquet) WHERE category IN ('A', 'B', 'X');
-SELECT count() FROM file(test_pushdown.parquet) WHERE (category = 'A' OR value < 50) AND is_valid = true settings input_format_parquet_use_native_reader_with_filter_push_down=true except SELECT count() FROM file(test_pushdown.parquet) WHERE (category = 'A' OR value < 50) AND is_valid = true;
+SELECT count() FROM file(test_pushdown.parquet) WHERE category = 'X' settings input_format_parquet_use_native_reader_v2=true except SELECT count() FROM file(test_pushdown.parquet) WHERE category = 'X';
+SELECT sum(value) FROM file(test_pushdown.parquet) WHERE timestamp BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' AND value > 150.0 settings input_format_parquet_use_native_reader_v2=true except SELECT sum(value) FROM file(test_pushdown.parquet) WHERE timestamp BETWEEN '2024-01-01 00:00:00' AND '2024-01-02 00:00:00' AND value > 150.0;
+SELECT uniq(category) FROM file(test_pushdown.parquet) WHERE category IN ('A', 'B', 'X') settings input_format_parquet_use_native_reader_v2=true except SELECT uniq(category) FROM file(test_pushdown.parquet) WHERE category IN ('A', 'B', 'X');
+SELECT count() FROM file(test_pushdown.parquet) WHERE (category = 'A' OR value < 50) AND is_valid = true settings input_format_parquet_use_native_reader_v2=true except SELECT count() FROM file(test_pushdown.parquet) WHERE (category = 'A' OR value < 50) AND is_valid = true;

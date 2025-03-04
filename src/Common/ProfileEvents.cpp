@@ -953,12 +953,12 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
     \
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
-    M(ParquetDecompressionTimeMicroseconds, "Time of decompress page data", ValueType::Microseconds) \
-    M(ParquetDeserializingMetaTimeMicroseconds, "Time of deserializing page header and other meta data", ValueType::Microseconds) \
-    M(ParquetFilteredRows, "rows filtered by push down filters, include skipped rows", ValueType::Number) \
-    M(ParquetSkippedRows, "rows skipped by push down filters", ValueType::Number) \
-    M(ParquetOutputRows, "parquet output rows", ValueType::Number) \
-    M(ParquetSkipPageNum, "pages skipped", ValueType::Number) \
+    M(ParquetDecompressionTimeMicroseconds, "Time spent decompressing Parquet page data", ValueType::Microseconds) \
+    M(ParquetDeserializingMetaTimeMicroseconds, "Time spent deserializing Parquet page headers and other metadata", ValueType::Microseconds) \
+    M(ParquetFilteredRows, "Rows considered by push down filters, including skipped rows", ValueType::Number) \
+    M(ParquetSkippedRows, "Rows skipped by push down filters", ValueType::Number) \
+    M(ParquetOutputRows, "Parquet output rows", ValueType::Number) \
+    M(ParquetSkipPageNum, "Parquet pages skipped", ValueType::Number) \
     \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
