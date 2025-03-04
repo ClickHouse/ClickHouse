@@ -7,7 +7,7 @@ const std::function<String(RandomGenerator &)> probRange
     = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
 
 std::unordered_map<String, CHSetting> serverSettings = {
-    {"aggregate_functions_null_for_empty", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"aggregate_functions_null_for_empty", CHSetting(trueOrFalse, {}, false)},
     {"aggregation_in_order_max_block_bytes",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(8192))); },

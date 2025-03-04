@@ -2877,7 +2877,32 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     }
     if (rg.nextSmallNumber() < 4)
     {
-        generateSettingValues(rg, backupSettings, br->mutable_setting_values());
+        SettingValues * vals = br->mutable_setting_values();
+
+        generateSettingValues(rg, backupSettings, vals);
+        if (!backups.empty() && rg.nextBool())
+        {
+            /// Do an incremental backup
+            String info;
+            SetValue * sv = vals->add_other_values();
+            const CatalogBackup & backup = rg.pickValueRandomlyFromMap(backups);
+
+            sv->set_property("base_backup");
+            info += BackupRestore_BackupOutput_Name(backup.outf);
+            info += "(";
+            for (size_t i = 0; i < backup.out_params.size(); i++)
+            {
+                if (i != 0)
+                {
+                    info += ", ";
+                }
+                info += "'";
+                info += backup.out_params[i];
+                info += "'";
+            }
+            info += ")";
+            sv->set_value(std::move(info));
+        }
     }
 }
 

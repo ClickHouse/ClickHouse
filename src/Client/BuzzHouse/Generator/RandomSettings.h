@@ -154,6 +154,7 @@ const std::unordered_map<String, CHSetting> backupSettings
        {"experimental_lightweight_snapshot", CHSetting(trueOrFalse, {}, false)},
        {"internal", CHSetting(trueOrFalse, {}, false)},
        {"read_from_filesystem_cache", CHSetting(trueOrFalse, {}, false)},
+       {"s3_storage_class", CHSetting([](RandomGenerator &) { return "'STANDARD'"; }, {}, false)},
        {"structure_only", CHSetting(trueOrFalse, {}, false)},
        {"write_access_entities_dependents", CHSetting(trueOrFalse, {}, false)}};
 
