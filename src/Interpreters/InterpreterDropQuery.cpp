@@ -397,6 +397,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
+    auto * const db_replicated = dynamic_cast<DatabaseReplicated *>(database.get());
+    if (truncate && db_replicated)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TRUNCATE DATABASE is not implemented for replicated databases");
+
     if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH PERMANENTLY is not implemented for databases");
 
@@ -477,29 +481,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     /// DETACH or DROP database itself. If TRUNCATE skip dropping/erasing the database.
     if (!truncate)
         DatabaseCatalog::instance().detachDatabase(getContext(), database_name, drop, database->shouldBeEmptyOnDetach());
-
-    /// For TRUNCATE DATABASE queries, we essentially need to drop all tables but keep the database intact.
-    /// Currently, when executing DatabaseReplicated::dropTable, the method expects a valid zookeeper transaction
-    /// to be present in the current context in order to add a an op to the txn and finally clean up table metadata at:
-    /// zookeeper_path + "/metadata/" + escapeForFileName(table_name). However, since we make this drop table request
-    /// internally, it looks like the transaction is always empty. Furthermore, we work on Context::createCopy(getContext())
-    /// for table context. For DROP DATABASE queries this doesn't really matter, since the DATABASE is erased and table metadata
-    /// is eventually cleaned up. However, for TRUNCATE DATABASE operation on a replicated database, clean up the metadata using
-    /// the removeAllTablesMetadataForTruncateDatabase function. There are additional guard rails in this method to only allow this
-    /// for drop table operations only. There might be a better way to do this, but this seems to be the simplest and it makes sense
-    /// for the logic to stay inside DatabaseReplicated.
-    auto * const db_replicated = dynamic_cast<DatabaseReplicated *>(database.get());
-    if (truncate && db_replicated)
-    {
-        try
-        {
-            db_replicated->removeAllTablesMetadataForTruncateDatabase(query_for_table);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
 
     return {};
 }

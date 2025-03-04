@@ -9,9 +9,6 @@ USE {CLICKHOUSE_DATABASE:Identifier};
 
 CREATE TABLE t1 (x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY x FORMAT NULL;
 
-TRUNCATE DATABASE {CLICKHOUSE_DATABASE:Identifier};
-
--- recreating the same table again shouldn't fail
-CREATE TABLE t1 (x UInt8, y String) ENGINE=ReplicatedMergeTree ORDER BY x FORMAT NULL;
+TRUNCATE DATABASE {CLICKHOUSE_DATABASE:Identifier}; -- { serverError 48 }
 
 DROP DATABASE {CLICKHOUSE_DATABASE:Identifier};

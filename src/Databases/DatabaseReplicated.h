@@ -86,14 +86,6 @@ public:
     LoadTaskPtr startupDatabaseAsync(AsyncLoader & async_loader, LoadJobSet startup_after, LoadingStrictnessLevel mode) override;
 
     void shutdown() override;
-    /// removeAllTablesMetadataForTruncateDatabase helps remove any leftover table metadata.
-    /// It's used to clean up table metadata after dropping tables in TRUNCATE DATABASE query
-    /// It has some additional guard rails in place, but mainly, it only allows query kind ==
-    /// drop. TRUNCATE DATABASE is special as it tries to drop tables in a database but keep
-    /// the database itself. DatabaseReplicated::dropTable expects a valid Zookeeper transaction
-    /// to be present in the current context. To work around this limitation but in a simple way,
-    /// this function can be used to clean any additional metadata left in Zookeeper.
-    void removeAllTablesMetadataForTruncateDatabase(const ASTDropQuery & query);
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr &) const override;
     void createTableRestoredFromBackup(const ASTPtr & create_table_query, ContextMutablePtr local_context, std::shared_ptr<IRestoreCoordination> restore_coordination, UInt64 timeout_ms) override;

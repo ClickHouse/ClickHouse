@@ -1638,46 +1638,6 @@ void DatabaseReplicated::shutdown()
     DatabaseAtomic::shutdown();
 }
 
-void DatabaseReplicated::removeAllTablesMetadataForTruncateDatabase(const ASTDropQuery & query)
-{
-    if (query.kind == ASTDropQuery::Kind::Drop)
-    {
-        waitDatabaseStarted();
-
-        if (is_readonly)
-            throw Exception(
-                ErrorCodes::NO_ZOOKEEPER, "Cannot clean up Keeper metadata: database {} is in readonly mode", getDatabaseName());
-
-        assert(!ddl_worker || !ddl_worker->isCurrentlyActive());
-
-        try
-        {
-            auto zookeeper = getContext()->getZooKeeper();
-            if (!zookeeper)
-                throw Exception(ErrorCodes::NO_ZOOKEEPER, "Cannot connect to ZooKeeper to clean up metadata");
-
-            String metadata_path = zookeeper_path + "/metadata";
-            LOG_INFO(log, "Cleaning up ZooKeeper metadata nodes for database {}", getDatabaseName());
-            if (zookeeper->exists(metadata_path))
-            {
-                Strings children = zookeeper->getChildren(metadata_path);
-                for (const auto & child : children)
-                {
-                    String child_path = metadata_path + "/" + child;
-                    LOG_INFO(log, "Removing ZooKeeper metadata node: {}", child_path);
-                    zookeeper->removeRecursive(child_path);
-                }
-            }
-            createEmptyLogEntry(zookeeper);
-        }
-        catch (const Exception & e)
-        {
-            LOG_WARNING(log, "Error while cleaning up ZooKeeper metadata: {}", e.displayText());
-            throw;
-        }
-    }
-}
-
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     waitDatabaseStarted();
