@@ -66,7 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.3",
         {
-        });   
+        });
         addSettingsChanges(settings_changes_history, "25.2",
         {
             /// Release closed. Please use 25.3
