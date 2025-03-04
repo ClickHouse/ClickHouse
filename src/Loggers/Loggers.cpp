@@ -1,8 +1,7 @@
 #include "Loggers.h"
 
-#include "OwnFormattingChannel.h"
-#include "OwnPatternFormatter.h"
-#include "OwnSplitChannel.h"
+#include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/TextLogSink.h>
 
 #include <exception>
 #include <iostream>
@@ -627,8 +626,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         log_settings.database = config.getString("text_log.database", "system");
         log_settings.table = config.getString("text_log.table", "text_log");
 
-        // split->addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
-        Logger::getTextLogChannel().addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
+        Logger::getTextLogSink().addTextLog(DB::TextLog::getLogQueue(log_settings), text_log_level);
     }
 #endif
 }

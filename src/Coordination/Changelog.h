@@ -20,13 +20,6 @@ namespace nuraft
     struct raft_server;
 }
 
-namespace Poco
-{
-    class Logger;
-}
-
-
-
 namespace DB
 {
 

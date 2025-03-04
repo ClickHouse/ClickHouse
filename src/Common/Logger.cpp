@@ -1,8 +1,7 @@
-#include <Poco/Logger.h>
 #include <Common/Logger.h>
 #include <Common/Exception.h>
-#include "Loggers/OwnPatternFormatter.h"
-#include "Loggers/OwnSplitChannel.h"
+#include <Loggers/OwnPatternFormatter.h>
+#include <Loggers/TextLogSink.h>
 
 #include <quill/Frontend.h>
 
@@ -51,10 +50,10 @@ QuillLoggerPtr Logger::getQuillLogger()
     return logger;
 }
 
-DB::OwnSplitChannel & Logger::getTextLogChannel()
+DB::TextLogSink & Logger::getTextLogSink()
 {
-    static DB::OwnSplitChannel split_channel;
-    return split_channel;
+    static DB::TextLogSink text_log_sink;
+    return text_log_sink;
 }
 
 LoggerPtr getLogger(const char * name, const char * component_name)
@@ -108,11 +107,6 @@ QuillLoggerPtr getQuillLogger(const std::string & name)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Root logger is not initialized");
 
     return quill::Frontend::create_or_get_logger(name, root);
-}
-
-bool hasLogger(const std::string & name)
-{
-    return Poco::Logger::has(name);
 }
 
 static constinit std::atomic<bool> allow_logging{true};

@@ -33,7 +33,7 @@ using QuillLoggerPtr =  quill::v8::LoggerImpl<quill::v8::FrontendOptions> *;
 
 namespace DB
 {
-class OwnSplitChannel;
+class TextLogSink;
 }
 
 using PocoLoggerPtr = std::shared_ptr<Poco::Logger>;
@@ -53,7 +53,7 @@ public:
         return name;
     }
 
-    static DB::OwnSplitChannel & getTextLogChannel();
+    static DB::TextLogSink & getTextLogSink();
     static OwnPatternFormatter * getFormatter();
     static void setFormatter(std::unique_ptr<OwnPatternFormatter> formatter);
 private:

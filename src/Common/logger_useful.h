@@ -15,7 +15,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/CurrentThread.h>
 #include <Core/LogsLevel.h>
-#include <Loggers/OwnSplitChannel.h>
+#include <Loggers/TextLogSink.h>
 #include <Loggers/OwnPatternFormatter.h>
 
 #define QUILL_DISABLE_NON_PREFIXED_MACROS 1
@@ -249,7 +249,7 @@ namespace impl
                 ::impl::getQuillLogger(_logger)->template log_statement<QUILL_IMMEDIATE_FLUSH, true>( \
                     ::impl::logLevelToQuillLogLevel(level), &macro_metadata, _text); \
             } \
-            Logger::getTextLogChannel().log(_poco_message); \
+            Logger::getTextLogSink().log(_msg_ext); \
         } \
         catch (const Poco::Exception & logger_exception) \
         { \
