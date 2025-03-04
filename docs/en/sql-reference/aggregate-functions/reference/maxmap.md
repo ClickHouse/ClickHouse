@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/maxmap
 sidebar_position: 165
+title: "maxMap"
+description: "Calculates the maximum from `value` array according to the keys specified in the `key` array."
 ---
 
 # maxMap

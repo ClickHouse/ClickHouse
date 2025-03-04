@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/deltasum
 sidebar_position: 129
+title: "deltaSum"
+description: "Sums the arithmetic difference between consecutive rows."
 ---
 
 # deltaSum
@@ -8,7 +10,7 @@ sidebar_position: 129
 Sums the arithmetic difference between consecutive rows. If the difference is negative, it is ignored.
 
 :::note
-The underlying data must be sorted for this function to work properly. If you would like to use this function in a [materialized view](../../../sql-reference/statements/create/view.md#materialized), you most likely want to use the [deltaSumTimestamp](../../../sql-reference/aggregate-functions/reference/deltasumtimestamp.md#agg_functions-deltasumtimestamp) method instead.
+The underlying data must be sorted for this function to work properly. If you would like to use this function in a [materialized view](/sql-reference/statements/create/view#materialized-view), you most likely want to use the [deltaSumTimestamp](../../../sql-reference/aggregate-functions/reference/deltasumtimestamp.md#agg_functions-deltasumtimestamp) method instead.
 :::
 
 **Syntax**
