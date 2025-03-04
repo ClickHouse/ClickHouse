@@ -256,7 +256,7 @@ public:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
 
-    virtual ObjectStorageType extractDynamicStorageType(ASTs & /* args */, ASTPtr * /* type_arg */ = nullptr) const
+    virtual ObjectStorageType extractDynamicStorageType(ASTs & /* args */, ContextPtr /* context */, ASTPtr * /* type_arg */ = nullptr) const
     { return ObjectStorageType::None; }
 
     void assertInitialized() const;

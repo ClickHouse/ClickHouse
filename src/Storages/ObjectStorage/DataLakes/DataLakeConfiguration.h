@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
@@ -350,7 +351,7 @@ public:
         bool with_table_structure,
         StorageObjectStorageSettings * settings) override
     {
-        createDynamicConfiguration(engine_args);
+        createDynamicConfiguration(engine_args, local_context);
         getImpl().initialize(engine_args, local_context, with_table_structure, settings);
     }
 
@@ -362,8 +363,18 @@ protected:
 
     /// Find storage_type argument and remove it from args if exists.
     /// Return storage type.
-    ObjectStorageType extractDynamicStorageType(ASTs & args, ASTPtr * type_arg = nullptr) const override
+    ObjectStorageType extractDynamicStorageType(ASTs & args, ContextPtr context, ASTPtr * type_arg = nullptr) const override
     {
+        static const auto storage_type_name = "storage_type";
+
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args, context))
+        {
+            if (named_collection->has(storage_type_name))
+            {
+                return objectStorageTypeFromString(named_collection->get<String>(storage_type_name));
+            }
+        }
+
         auto type_it = args.end();
 
         /// S3 by default for backward compatibility
@@ -379,7 +390,7 @@ protected:
             {
                 auto name = type_ast_function->arguments->children[0]->as<ASTIdentifier>();
 
-                if (name && name->name() == "storage_type")
+                if (name && name->name() == storage_type_name)
                 {
                     if (type_it != args.end())
                     {
@@ -421,9 +432,9 @@ protected:
         return type;
     }
 
-    void createDynamicConfiguration(ASTs & args)
+    void createDynamicConfiguration(ASTs & args, ContextPtr context)
     {
-        ObjectStorageType type = extractDynamicStorageType(args);
+        ObjectStorageType type = extractDynamicStorageType(args, context);
         createDynamicStorage(type);
     }
 

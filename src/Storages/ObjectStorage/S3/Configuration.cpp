@@ -74,7 +74,8 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "max_single_part_upload_size",
     "max_connections",
     "expiration_window_seconds",
-    "no_sign_request"
+    "no_sign_request",
+    "storage_type",
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
