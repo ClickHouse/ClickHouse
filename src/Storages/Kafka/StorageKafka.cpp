@@ -544,7 +544,7 @@ void StorageKafka::threadFunc(size_t idx)
             // Keep streaming as long as there are attached views and streaming is not cancelled
             while (!task->stream_cancelled)
             {
-                if (DatabaseCatalog::instance().getDependentViews(table_id).empty())
+                if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
                     break;
 
                 LOG_DEBUG(log, "Started streaming to {} attached views", num_views);

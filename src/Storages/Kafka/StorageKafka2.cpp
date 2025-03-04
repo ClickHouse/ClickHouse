@@ -1036,28 +1036,35 @@ void StorageKafka2::threadFunc(size_t idx)
     try
     {
         auto table_id = getStorageID();
-        auto start_time = std::chrono::steady_clock::now();
-
-        // Keep streaming as long as there are attached views and streaming is not cancelled
-        while (!task->stream_cancelled && num_created_consumers > 0)
+        // Check if at least one direct dependency is attached
+        size_t num_views = DatabaseCatalog::instance().getDependentViews(table_id).size();
+        if (num_views)
         {
-            maybe_stall_reason.reset();
-            if (DatabaseCatalog::instance().getDependentViews(table_id).empty())
-                break;
+            auto start_time = std::chrono::steady_clock::now();
 
-            // Exit the loop & reschedule if some stream stalled
-            if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
+            // Keep streaming as long as there are attached views and streaming is not cancelled
+            while (!task->stream_cancelled && num_created_consumers > 0)
             {
-                LOG_TRACE(log, "Stream stalled.");
-                break;
-            }
+                maybe_stall_reason.reset();
+                if (!StorageKafkaUtils::checkDependencies(table_id, getContext()))
+                    break;
 
-            auto ts = std::chrono::steady_clock::now();
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
-            if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
-            {
-                LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
-                break;
+                LOG_DEBUG(log, "Started streaming to {} attached views", num_views);
+
+                // Exit the loop & reschedule if some stream stalled
+                if (maybe_stall_reason = streamToViews(idx); maybe_stall_reason.has_value())
+                {
+                    LOG_TRACE(log, "Stream stalled.");
+                    break;
+                }
+
+                auto ts = std::chrono::steady_clock::now();
+                auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(ts - start_time);
+                if (duration.count() > KAFKA_MAX_THREAD_WORK_DURATION_MS)
+                {
+                    LOG_TRACE(log, "Thread work duration limit exceeded. Reschedule.");
+                    break;
+                }
             }
         }
     }
