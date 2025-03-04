@@ -367,43 +367,46 @@ def test_materialized_views_replicated(started_cluster):
         )
         nodenum += 1
 
-    plr = 1
+    for i in range(100):
+        node1.query(
+            f"INSERT INTO test_mv.test_table_H VALUES({i}) "
+        )
 
-    p = Pool(1)
+    node1.stop_clickhouse()
+
     disconnect_event = threading.Event()
+    p = Pool(1)
 
     def reload_node(node, event):
         node.restart_clickhouse()
+        logging.debug("CH started, setting event")
         event.set()
-
-    for i in range(100):
-        node1.query(
-            f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i}) "
-        )
-
     job = p.apply_async(
         reload_node,
         (
             node1,
             disconnect_event,
-        ),
+        )
     )
 
-    i = 0
+    # start INSERTS when CH is not started yet
     for i in range(100, 130):
         try:
             node1.query(
-                f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i})"
+                f"INSERT INTO test_mv.test_table_H VALUES({i})"
             )
+            logging.debug(f"{i} inserted")
         except QueryRuntimeException as e:
-            time.sleep(0.1)
-    logging.debug(f"i is {i}")
+            # CH is not started yet
+            logging.debug(f"{i} is not inserted - skip")
+            time.sleep(0.2)
+
 
     disconnect_event.wait(90)
 
     for i in range(2000, 2100):
         node1.query(
-            f"INSERT INTO test_mv.test_table_H SETTINGS prefer_localhost_replica={plr} VALUES({i})"
+            f"INSERT INTO test_mv.test_table_H VALUES({i})"
         )
 
     src_rows = node1.query("select count(*) from test_mv.test_table_H Format CSV")
