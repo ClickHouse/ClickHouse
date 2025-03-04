@@ -170,14 +170,8 @@ struct Quantize4BitImpl
             f = 6.0f;
         }
 
-        if (f > 6.0f)
-        {
-            f = 6.0f;
-        }
-        if (f < -6.0f)
-        {
-            f = -6.0f;
-        }
+        f = std::min(f, 6.0f);
+        f = std::max(f, -6.0f);
 
         uint8_t sign = (f < 0) ? 1 : 0;
         float abs_f = std::fabs(f);

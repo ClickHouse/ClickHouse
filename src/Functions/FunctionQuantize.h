@@ -103,8 +103,7 @@ public:
             size_t offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                QuantizeImpl::execute(
-                    col_float32->getData().data() + offset, result_chars.data() + i * fixed_string_length, fixed_string_length);
+                QuantizeImpl::execute(col_float32->getData().data() + offset, result_chars.data() + i * fixed_string_length, array_size);
                 offset += array_size;
             }
         }
@@ -113,8 +112,7 @@ public:
             size_t offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                QuantizeImpl::execute(
-                    col_float64->getData().data() + offset, result_chars.data() + i * fixed_string_length, fixed_string_length);
+                QuantizeImpl::execute(col_float64->getData().data() + offset, result_chars.data() + i * fixed_string_length, array_size);
                 offset += array_size;
             }
         }
