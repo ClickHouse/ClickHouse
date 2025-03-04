@@ -27,23 +27,19 @@ UInt64 calculateHashFromStep(const ReadFromParallelRemoteReplicasStep & source)
 
 UInt64 calculateHashFromStep(const SourceStepWithFilter & read)
 {
-    WriteBufferFromOwnString wbuf;
-    SerializedSetsRegistry registry;
-    IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry};
-
-    writeStringBinary(read.getSerializationName(), wbuf);
-    if (const auto & snapshot = read.getStorageSnapshot())
-        writeStringBinary(snapshot->storage.getStorageID().getFullTableName(), wbuf);
-    if (const auto & dag = read.getPrewhereInfo())
-        dag->prewhere_actions.serialize(ctx.out, ctx.registry);
-
     SipHash hash;
-    hash.update(wbuf.str());
+    hash.update(read.getSerializationName());
+    if (const auto & snapshot = read.getStorageSnapshot())
+        hash.update(snapshot->storage.getStorageID().getFullTableName());
+    if (const auto & dag = read.getPrewhereInfo())
+        dag->prewhere_actions.updateHash(hash);
     return hash.get64();
 }
 
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
+    // The purpose of `HashTablesStatistics` is to provide cardinality estimations.
+    // Steps that preserve the number of input rows do not affect cardinality, so we can skip them.
     if (!transform.getTransformTraits().preserves_number_of_rows)
     {
         WriteBufferFromOwnString wbuf;
@@ -71,33 +67,30 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
 
 UInt64 calculateHashFromStep(const JoinStepLogical & join_step, JoinTableSide side)
 {
-    WriteBufferFromOwnString wbuf;
-    SerializedSetsRegistry registry;
-    IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry};
+    SipHash hash;
 
     auto serialize_join_condition = [&](const JoinCondition & condition)
     {
-        writeBinary(condition.predicates.size(), wbuf);
+        hash.update(condition.predicates.size());
         for (const auto & pred : condition.predicates)
         {
             const auto & node = side == JoinTableSide::Left ? pred.left_node : pred.right_node;
-            writeStringBinary(node.getColumnName(), wbuf);
-            writeBinary(static_cast<UInt8>(pred.op), wbuf);
+            hash.update(node.getColumnName());
+            hash.update(static_cast<UInt8>(pred.op));
         }
     };
 
-    writeStringBinary(join_step.getSerializationName(), wbuf);
+    hash.update(join_step.getSerializationName());
     const auto & pre_join_actions = side == JoinTableSide::Left ? join_step.getExpressionActions().left_pre_join_actions
                                                                 : join_step.getExpressionActions().right_pre_join_actions;
     chassert(pre_join_actions);
-    pre_join_actions->serialize(ctx.out, ctx.registry);
+    pre_join_actions->updateHash(hash);
+
     serialize_join_condition(join_step.getJoinInfo().expression.condition);
     for (const auto & condition : join_step.getJoinInfo().expression.disjunctive_conditions)
         serialize_join_condition(condition);
-    writeBinary(join_step.getJoinInfo().expression.is_using, wbuf);
+    hash.update(join_step.getJoinInfo().expression.is_using);
 
-    SipHash hash;
-    hash.update(wbuf.str());
     return hash.get64();
 }
 

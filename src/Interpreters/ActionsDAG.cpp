@@ -169,6 +169,41 @@ void ActionsDAG::Node::updateHash(SipHash & hash_state) const
         child->updateHash(hash_state);
 }
 
+UInt64 ActionsDAG::getHash() const
+{
+    SipHash hash;
+    updateHash(hash);
+    return hash.get64();
+}
+
+void ActionsDAG::updateHash(SipHash & hash_state) const
+{
+    struct Frame
+    {
+        const ActionsDAG::Node * const node;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> stack;
+    for (const auto & node : outputs)
+        stack.push({.node = node});
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+        if (frame.next_child == frame.node->children.size())
+        {
+            frame.node->updateHash(hash_state);
+            stack.pop();
+        }
+        else
+        {
+            stack.push({.node = frame.node->children[frame.next_child]});
+            ++frame.next_child;
+        }
+    }
+}
+
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
 {
     for (const auto & input : inputs_)
