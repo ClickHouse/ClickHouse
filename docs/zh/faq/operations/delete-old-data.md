@@ -29,7 +29,7 @@ ClickHouse没有像[OLTP](https://en.wikipedia.org/wiki/Online_transaction_proce
 
 这是使基于ClickHouse的系统符合[GDPR](https://gdpr-info.eu)的最常见方法。
 
-有关[mutations](../../sql-reference/statements/alter.md/#alter-mutations)的更多详细信息。
+有关[mutations](/sql-reference/statements/alter#mutations)的更多详细信息。
 
 ## DROP PARTITION {#drop-partition}
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=line-too-long
 
 import argparse
 import logging
@@ -253,7 +254,10 @@ def main():
         status=build_status,
         start_time=stopwatch.start_time_str,
         duration=elapsed,
-        additional_files=[log_path],
+        additional_files=[
+            str(log_path),
+            "/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/build_docker/contrib/delta-kernel-rs-cmake/_delta_kernel_rs_target-prefix/src/_delta_kernel_rs_target-stamp/_delta_kernel_rs_target-build-err.log"
+        ],
         build_dir_for_upload=build_output_path,
         version=version.describe,
     ).dump()

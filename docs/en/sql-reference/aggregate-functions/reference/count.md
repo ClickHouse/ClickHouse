@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/count
 sidebar_position: 120
+title: "count"
+description: "Counts the number of rows or not-NULL values."
 ---
 
 # count
@@ -36,7 +38,7 @@ However `SELECT count(nullable_column) FROM table` query can be optimized by ena
 
 **Improving COUNT(DISTINCT expr) performance**
 
-If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](../../../sql-reference/statements/select/group-by.md) clause as this improves parallelization. You can also use a [projection](../../../sql-reference/statements/alter/projection.md) to create an index on the target column used with `COUNT(DISTINCT target_col)`.
+If your `COUNT(DISTINCT expr)` query is slow, consider adding a [`GROUP BY`](/sql-reference/statements/select/group-by) clause as this improves parallelization. You can also use a [projection](../../../sql-reference/statements/alter/projection.md) to create an index on the target column used with `COUNT(DISTINCT target_col)`.
 
 **Examples**
 

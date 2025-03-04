@@ -1,6 +1,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include "Formats/MarkInCompressedFile.h"
 
 namespace DB
@@ -165,7 +166,7 @@ void writeColumnSingleGranule(
 
 }
 
-void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumn::Permutation * permutation)
+void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPermutation * permutation)
 {
     Block result_block = block;
 
