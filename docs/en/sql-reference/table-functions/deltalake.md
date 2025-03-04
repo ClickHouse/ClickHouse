@@ -11,8 +11,10 @@ description: "Provides a read-only table-like interface to the Delta Lake tables
 Provides a read-only table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3 or Azure Blob Storage.
 
 ## Syntax {#syntax}
-
+`deltaLake` is an alias of `deltaLakeS3`, its supported for compatibility.
 ``` sql
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
 deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 
 deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
