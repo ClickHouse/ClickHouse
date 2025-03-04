@@ -275,7 +275,8 @@ void AsyncLoader::shutdown()
         // NOTE: there is no need to notify because workers never wait
         shutdown_requested = true;
 
-        while (!scheduled_jobs.empty()) {
+        while (!scheduled_jobs.empty())
+        {
             LoadJobPtr job = scheduled_jobs.begin()->first;
             auto e = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "AsyncLoader was shut down"));
             finish(job, LoadStatus::CANCELED, e, lock);
