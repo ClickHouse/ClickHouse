@@ -32,7 +32,7 @@ FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(const bool case_
                     {
                         named_filter = factory->create(*condition);
                     }
-                    catch(...)
+                    catch(Exception &)
                     {
                         // can't convert expr to column filter
                         return false;

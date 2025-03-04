@@ -41,10 +41,9 @@ RowGroupChunkReader::RowGroupChunkReader(
     column_readers.reserve(parquet_reader->header.columns());
     column_buffers.resize(parquet_reader->header.columns());
     context.parquet_reader = parquetReader;
-    context.row_group_meta = row_group_meta;
+    context.row_group_meta = row_group_meta.get();
     context.prefetch = prefetch;
     context.prefetch_conditions = prefetch_conditions;
-    context.filter_columns = filter_columns;
     remain_rows = row_group_meta->num_rows();
     builder = std::make_unique<ColumnReaderBuilder>(
         parquet_reader->header, context, parquet_reader->filters, parquet_reader->condition_columns);
@@ -207,7 +206,7 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
                     columns.emplace_back(std::move(column));
                 }
             }
-            rows_read = columns[0]->size();
+            rows_read = columns.front()->size();
             metrics.filtered_rows += (rows_to_read - rows_read);
             ProfileEvents::increment(ProfileEvents::ParquetFilteredRows, rows_to_read - rows_read);
         }
@@ -222,7 +221,7 @@ Chunk RowGroupChunkReader::readChunk(size_t rows)
         auto types = parquet_reader->header.getColumnsWithTypeAndName();
         for (size_t i = 0; i < types.size(); i++)
         {
-            ColumnWithTypeAndName src_col = ColumnWithTypeAndName{std::move(columns[i]), reader_data_types.at(i), types.at(i).name};
+            ColumnWithTypeAndName src_col = ColumnWithTypeAndName{std::move(columns.at(i)), reader_data_types.at(i), types.at(i).name};
             // intermediate column is already casted
             if (removeNullableOrLowCardinalityNullable(src_col.column)->getDataType()
                 == removeNullableOrLowCardinalityNullable(types.at(i).type)->getColumnType())
@@ -286,11 +285,11 @@ void RowGroupPrefetch::startPrefetch()
     read_range_buffers.resize(ranges.size());
     for (size_t i = 0; i < ranges.size(); i++)
     {
-        auto & range = ranges[i];
-        read_range_buffers[i].range = range;
+        auto & range = ranges.at(i);
+        read_range_buffers.at(i).range = range;
         auto task = [this, range, i]() -> ColumnChunkData
         {
-            auto & buffer = read_range_buffers[i].buffer;
+            auto & buffer = read_range_buffers.at(i).buffer;
 
             buffer.resize(range.length);
             int64_t count = 0;
@@ -380,13 +379,13 @@ static IColumn::Filter mergeFilters(std::vector<IColumn::Filter> & filters)
 {
     assert(!filters.empty());
     if (filters.size() == 1)
-        return std::move(filters[0]);
+        return std::move(filters.front());
     IColumn::Filter result;
     size_t size = filters.front().size();
     result.resize_fill(size, 1);
     for (size_t i = 0; i < filters.size(); i++)
     {
-        auto & current = filters[i];
+        auto & current = filters.at(i);
         for (size_t j = 0; j < size; j++)
         {
             if (!result[i])
@@ -416,7 +415,7 @@ SelectResult SelectConditions::selectRows(size_t rows)
 {
     OptionalRowSet total_set;
     if (has_filter)
-        total_set = std::optional(RowSet(rows));
+        total_set = std::make_optional(RowSet(rows));
     else
         return SelectResult{std::nullopt, {}, {}, rows, false};
 
@@ -488,11 +487,9 @@ SelectResult SelectConditions::selectRows(size_t rows)
         {
             auto filter = mergeFilters(intermediate_filters);
             combineRowSetAndFilter(total_set.value(), filter);
-            auto valid_count = total_set.value().count();
-            return SelectResult{std::move(total_set), std::move(intermediate_columns), std::move(filter), valid_count, false};
+            return SelectResult{std::move(total_set), std::move(intermediate_columns), std::move(filter), total_set.value().count(), false};
         }
-        auto valid_count = total_set.value().count();
-        return SelectResult{std::move(total_set), {}, {}, valid_count, false};
+        return SelectResult{std::move(total_set), {}, {}, total_set.value().count(), false};
     }
 }
 SelectConditions::SelectConditions(

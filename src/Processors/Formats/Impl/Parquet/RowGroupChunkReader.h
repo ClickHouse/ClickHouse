@@ -86,8 +86,7 @@ private:
 struct RowGroupContext
 {
     ParquetReader * parquet_reader;
-    std::shared_ptr<parquet::RowGroupMetaData> row_group_meta;
-    std::vector<String> filter_columns;
+    parquet::RowGroupMetaData * row_group_meta;
     RowGroupPrefetchPtr prefetch_conditions;
     RowGroupPrefetchPtr prefetch;
     std::shared_ptr<parquet::RowGroupPageIndexReader> row_group_index_reader;
@@ -112,7 +111,6 @@ public:
         std::unordered_map<String, ColumnFilterPtr> filters);
     ~RowGroupChunkReader()
     {
-//        printMetrics(std::cerr);
     }
     Chunk readChunk(size_t rows);
     bool hasMoreRows() const { return remain_rows > 0; }
@@ -122,7 +120,7 @@ public:
     }
 private:
     ParquetReader * parquet_reader;
-    std::shared_ptr<parquet::RowGroupMetaData> row_group_meta;
+    std::unique_ptr<parquet::RowGroupMetaData> row_group_meta;
     std::vector<String> filter_columns;
     RowGroupPrefetchPtr prefetch_conditions;
     RowGroupPrefetchPtr prefetch;
