@@ -672,6 +672,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
+            /// Release closed. Please use 25.3
             {"shared_merge_tree_initial_parts_update_backoff_ms", 50, 50, "New setting"},
             {"shared_merge_tree_max_parts_update_backoff_ms", 5000, 5000, "New setting"},
             {"shared_merge_tree_interserver_http_connection_timeout_ms", 100, 100, "New setting"},
@@ -680,6 +681,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_reduce_blocking_parts_task", false, true, "Now SMT will remove stale blocking parts from ZooKeeper by default"},
             {"shared_merge_tree_max_suspicious_broken_parts", 0, 0, "Max broken parts for SMT, if more - deny automatic detach"},
             {"shared_merge_tree_max_suspicious_broken_parts_bytes", 0, 0, "Max size of all broken parts for SMT, if more - deny automatic detach"},
+            /// Release closed. Please use 25.3
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
