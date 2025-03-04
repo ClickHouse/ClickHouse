@@ -2835,8 +2835,8 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     }
     if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + 1) && rg.nextBool())
     {
-        static const DB::Strings & backup_compress = {"tar", "zip", "tzst", "tgz"};
-        const String & nsuffix = rg.pickRandomlyFromVector(backup_compress);
+        static const DB::Strings & backup_formats = {"tar", "zip", "tzst", "tgz"};
+        const String & nsuffix = rg.pickRandomlyFromVector(backup_formats);
 
         backup_file += ".";
         backup_file += nsuffix;
@@ -2874,6 +2874,10 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     if (rg.nextSmallNumber() < 4)
     {
         br->set_format(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
+    }
+    if (rg.nextSmallNumber() < 4)
+    {
+        generateSettingValues(rg, backupSettings, br->mutable_setting_values());
     }
 }
 
@@ -2933,6 +2937,10 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
         br->set_format(backup.out_format.value());
     }
     br->set_backup_number(backup.backup_num);
+    if (rg.nextSmallNumber() < 4)
+    {
+        generateSettingValues(rg, restoreSettings, br->mutable_setting_values());
+    }
 }
 
 void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br)
