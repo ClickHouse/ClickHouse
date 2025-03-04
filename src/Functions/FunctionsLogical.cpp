@@ -8,7 +8,6 @@
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnFunction.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/Stopwatch.h>
 #include <Columns/MaskOperations.h>
@@ -740,7 +739,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
     ColumnPtr result_col = nullptr;
     if (result_type->isNullable())
         result_col = executeForTernaryLogicImpl<Impl>(std::move(args_in), result_type, input_rows_count);
-    result_col = basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
+    else
+        result_col = basicExecuteImpl<Impl>(std::move(args_in), input_rows_count);
     if (profile)
     {
         profile->executed_rows = input_rows_count;
