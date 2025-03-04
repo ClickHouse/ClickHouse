@@ -103,6 +103,7 @@ public:
     void updateInputHeaders(Headers input_headers_);
     void updateInputHeader(Header input_header, size_t idx = 0);
 
+    bool optimizationBarrier() const { return optimization_barrier; }
     bool & optimizationBarrier() { return optimization_barrier; }
 
 protected:

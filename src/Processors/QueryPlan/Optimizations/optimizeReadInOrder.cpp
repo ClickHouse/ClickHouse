@@ -1124,8 +1124,11 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
     bool apply_virtual_row = false;
 
-    if (typeid_cast<const UnionStep *>(node.children.front()->step.get()))
+    if (const auto * union_step = typeid_cast<const UnionStep *>(node.children.front()->step.get()))
     {
+        if (union_step->optimizationBarrier())
+            return;
+
         auto & union_node = node.children.front();
 
         bool use_buffering = false;
