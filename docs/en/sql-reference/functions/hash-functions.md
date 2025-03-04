@@ -1950,7 +1950,7 @@ SELECT sqidDecode('gXHfJ1C6dN');
 └──────────────────────────┘
 ```
 
-## keccak256
+## keccak256 {#keccak256}
 
 Calculates Keccak-256 hash string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
 
