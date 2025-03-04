@@ -6,7 +6,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
