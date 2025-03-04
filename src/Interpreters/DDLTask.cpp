@@ -602,7 +602,10 @@ void ZooKeeperMetadataTransaction::commit()
     state = COMMITTED;
 
     if (finalizer)
+    {
         finalizer();
+        finalizer = FinalizerCallback();
+    }
 }
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)

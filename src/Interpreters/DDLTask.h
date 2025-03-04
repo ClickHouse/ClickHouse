@@ -248,7 +248,7 @@ public:
     void addFinalizer(FinalizerCallback && callback)
     {
         if (isExecuted())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add finalizer because query is executed. It's a bug.");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add finalizer because transaction had been already executed. It's a bug.");
         if (finalizer)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Finalizer already set. It's a bug.");
         finalizer = std::move(callback);
