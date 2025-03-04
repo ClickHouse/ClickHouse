@@ -107,6 +107,12 @@ Poco::Util::LayeredConfiguration & ClientEmbedded::getClientConfiguration()
 }
 
 
+bool ClientEmbedded::isEmbeeddedClient() const
+{
+    return true;
+}
+
+
 int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
 try
 {
