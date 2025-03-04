@@ -553,8 +553,10 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
 
+    Field value = convertFieldToType(expression_value, type, value_raw.second.get(), format_settings);
+
     /// Check that we are indeed allowed to insert a NULL.
-    if (expression_value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
+    if (value.isNull() && !type.isNullable() && !type.isLowCardinalityNullable())
     {
         if (format_settings.null_as_default)
         {
@@ -567,9 +569,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                         std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf->buffer().end() - buf->position())));
     }
 
-    auto const_column = value_raw.second->createColumnConst(1, expression_value);
-    auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
-    column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
+    /// Insert value into the column.
+    /// For Dynamic type we cannot just insert Field as we loose information about the data type.
+    /// Instead try to create a column with single element and cast it to the destination type.
+    if (type.hasDynamicSubcolumns())
+    {
+        auto const_column = value_raw.second->createColumnConst(1, expression_value);
+        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
+        column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
+    }
+    else
+    {
+        column.insert(value);
+    }
     return true;
 }
 
