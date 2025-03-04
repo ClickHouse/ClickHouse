@@ -91,11 +91,6 @@ UInt64 calculateHashFromStep(const JoinStepLogical & join_step, JoinTableSide si
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int NOT_IMPLEMENTED;
-}
-
 namespace QueryPlanOptimizations
 {
 
