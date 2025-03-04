@@ -51,20 +51,6 @@ def pre_build(repo_path: Path, env_variables: List[str]) -> None:
         current_branch = subprocess.check_output(
             "git branch --show-current", shell=True, encoding="utf-8"
         ).strip()
-        is_shallow = (
-            subprocess.check_output(
-                "git rev-parse --is-shallow-repository", shell=True, encoding="utf-8"
-            )
-            == "true\n"
-        )
-        if is_shallow:
-            # I've spent quite some time on looking around the problem, and my
-            # conclusion is: in the current state the easiest way to go is to force
-            # unshallow repository for performance artifacts.
-            # To change it we need to rework our performance tests docker image
-            raise BuildException(
-                "shallow repository is not suitable for performance builds"
-            )
         if current_branch != "master":
             cmd = (
                 f"git -C {repo_path} fetch --no-recurse-submodules "
@@ -270,10 +256,6 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
         # Reduce linking and building time by avoid *install/all dependencies
         cmake_flags.append("-DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON")
-        # Add bridges to the build target
-        build_target = (
-            f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
-        )
         if is_release_build(debug_build, package_type, sanitizer, coverage):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")

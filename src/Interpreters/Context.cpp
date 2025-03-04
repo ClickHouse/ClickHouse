@@ -4,7 +4,8 @@
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/Application.h>
-#include "Common/ISlotControl.h"
+#include <Common/ISlotControl.h>
+#include <Common/Scheduler/IResourceManager.h>
 #include <Common/AsyncLoader.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/PoolId.h>
@@ -53,9 +54,10 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -88,6 +90,7 @@
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
+#include <IO/AsyncReadCounters.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/UncompressedCache.h>
@@ -251,6 +254,8 @@ namespace Setting
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool parallel_replicas_only_with_analyzer;
 }
 
 namespace MergeTreeSetting
@@ -416,6 +421,7 @@ struct ContextSharedPart : boost::noncopyable
     String buffer_profile_name;                                 /// Profile used by Buffer engine for flushing to the underlying
     String merge_workload TSA_GUARDED_BY(mutex);                /// Workload setting value that is used by all merges
     String mutation_workload TSA_GUARDED_BY(mutex);             /// Workload setting value that is used by all mutations
+    bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
@@ -437,6 +443,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
+    mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Mark filter for caching query conditions
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
@@ -801,6 +808,18 @@ struct ContextSharedPart : boost::noncopyable
         for (const auto & [_, cache] : caches)
             cache->cache->deactivateBackgroundOperations();
         FileCacheFactory::instance().clear();
+
+        {
+            std::lock_guard lock(clusters_mutex);
+            if (cluster_discovery)
+            {
+                LOG_TRACE(log, "Shutting down ClusterDiscovery");
+                /// Reset cluster_discovery if any.
+                /// Some classes (such as ZooKeeper, ReplicatedAccessStorage) will finalize the keeper session while deconstructing,
+                /// which will trigger the callback and make ClusterDiscovery reconnect to keeper again (unnecessary).
+                cluster_discovery.reset();
+            }
+        }
 
         {
             // Disk selector might not be initialized if there was some error during
@@ -1843,12 +1862,16 @@ void Context::setCurrentProfiles(const SettingsProfilesInfo & profiles_info, boo
 std::vector<UUID> Context::getCurrentProfiles() const
 {
     SharedLockGuard lock(mutex);
+    if (!settings_constraints_and_current_profiles)
+        return {};
     return settings_constraints_and_current_profiles->current_profiles;
 }
 
 std::vector<UUID> Context::getEnabledProfiles() const
 {
     SharedLockGuard lock(mutex);
+    if (!settings_constraints_and_current_profiles)
+        return {};
     return settings_constraints_and_current_profiles->enabled_profiles;
 }
 
@@ -1864,10 +1887,11 @@ ResourceManagerPtr Context::getResourceManager() const
 
 ClassifierPtr Context::getWorkloadClassifier() const
 {
+    ClassifierSettings settings{.throw_on_unknown_workload = getThrowOnUnknownWorkload()}; // to avoid locking shared mutex under `mutex`
     std::lock_guard lock(mutex);
     // NOTE: Workload cannot be changed after query start, and getWorkloadClassifier() should not be called before proper `workload` is set
     if (!classifier)
-        classifier = getResourceManager()->acquire(getSettingsRef()[Setting::workload]);
+        classifier = getResourceManager()->acquire(getSettingsRef()[Setting::workload], settings);
     return classifier;
 }
 
@@ -1893,6 +1917,18 @@ void Context::setMutationWorkload(const String & value)
 {
     std::lock_guard lock(shared->mutex);
     shared->mutation_workload = value;
+}
+
+bool Context::getThrowOnUnknownWorkload() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->throw_on_unknown_workload;
+}
+
+void Context::setThrowOnUnknownWorkload(bool value)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->throw_on_unknown_workload = value;
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const
@@ -3067,7 +3103,7 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
 
 void Context::waitForDictionariesLoad() const
 {
-    LOG_TRACE(shared->log, "Waiting for dictionaries to be loaded");
+    LOG_INFO(shared->log, "Waiting for dictionaries to be loaded");
     auto results = getExternalDictionariesLoader().tryLoadAll<ExternalLoader::LoadResults>();
     bool all_dictionaries_loaded = true;
     for (const auto & result : results)
@@ -3584,6 +3620,41 @@ void Context::clearQueryCache(const std::optional<String> & tag) const
         cache->clear(tag);
 }
 
+void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark filter cache has been already create.");
+
+    shared->query_condition_cache = std::make_shared<QueryConditionCache>(cache_policy, max_size_in_bytes, size_ratio);
+}
+
+QueryConditionCachePtr Context::getQueryConditionCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->query_condition_cache;
+}
+
+void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("query_condition_cache_size", DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE);
+    shared->query_condition_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+void Context::clearQueryConditionCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_condition_cache)
+        shared->query_condition_cache->clear();
+}
+
 void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
@@ -3617,6 +3688,10 @@ void Context::clearCaches() const
     shared->mmap_cache->clear();
 
     /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
+
+    if (!shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
+    shared->query_condition_cache->clear();
 }
 
 void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
@@ -3762,7 +3837,12 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
 
 ThrottlerPtr Context::getRemoteReadThrottler() const
 {
-    ThrottlerPtr throttler = shared->remote_read_throttler;
+    ThrottlerPtr throttler;
+    {
+        std::lock_guard lock(shared->mutex);
+        throttler = shared->remote_read_throttler;
+    }
+
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
     {
         std::lock_guard lock(mutex);
@@ -3775,7 +3855,12 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
 
 ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
-    ThrottlerPtr throttler = shared->remote_write_throttler;
+    ThrottlerPtr throttler;
+    {
+        std::lock_guard lock(shared->mutex);
+        throttler = shared->remote_write_throttler;
+    }
+
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
     {
         std::lock_guard lock(mutex);
@@ -3833,6 +3918,29 @@ ThrottlerPtr Context::getMutationsThrottler() const
 ThrottlerPtr Context::getMergesThrottler() const
 {
     return shared->merges_throttler;
+}
+
+void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
+{
+    if (read_bandwidth)
+    {
+        std::lock_guard lock(shared->mutex);
+        if (!shared->remote_read_throttler)
+            shared->remote_read_throttler = std::make_shared<Throttler>(read_bandwidth);
+    }
+
+    if (shared->remote_read_throttler)
+        shared->remote_read_throttler->setMaxSpeed(read_bandwidth);
+
+    if (write_bandwidth)
+    {
+        std::lock_guard lock(shared->mutex);
+        if (!shared->remote_write_throttler)
+            shared->remote_write_throttler = std::make_shared<Throttler>(write_bandwidth);
+    }
+
+    if (shared->remote_write_throttler)
+        shared->remote_write_throttler->setMaxSpeed(write_bandwidth);
 }
 
 bool Context::hasDistributedDDL() const
@@ -4570,6 +4678,17 @@ std::shared_ptr<MetricLog> Context::getMetricLog() const
 }
 
 
+std::shared_ptr<LatencyLog> Context::getLatencyLog() const
+{
+    SharedLockGuard lock(shared->mutex);
+
+    if (!shared->system_logs)
+        return {};
+
+    return shared->system_logs->latency_log;
+}
+
+
 std::shared_ptr<AsynchronousMetricLog> Context::getAsynchronousMetricLog() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -4835,6 +4954,22 @@ StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) con
     /// Note: it is important to put storage policy into disk selector (and not recreate it on each call)
     /// because in some places there are checks that storage policy pointers are the same from different tables.
     /// (We can assume that tables with the same `disk` setting are on the same storage policy).
+
+    return storage_policy;
+}
+
+StoragePolicyPtr Context::getOrCreateStoragePolicy(const String & name, StoragePolicyCreator creator) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto storage_policy_selector = getStoragePolicySelector(lock);
+
+    auto storage_policy = storage_policy_selector->tryGet(name);
+    if (!storage_policy)
+    {
+        storage_policy = creator(storage_policy_selector->getPoliciesMap());
+        const_cast<StoragePolicySelector *>(storage_policy_selector.get())->add(storage_policy);
+    }
 
     return storage_policy;
 }
@@ -5376,6 +5511,12 @@ void Context::setClientVersion(UInt64 client_version_major, UInt64 client_versio
     client_info.client_tcp_protocol_version = client_tcp_protocol_version;
 }
 
+void Context::setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number)
+{
+    client_info.script_query_number = query_number;
+    client_info.script_line_number = line_number;
+}
+
 void Context::setClientConnectionId(uint32_t connection_id_)
 {
     client_info.connection_id = connection_id_;
@@ -5419,7 +5560,7 @@ void Context::setCurrentUserName(const String & current_user_name)
 
 void Context::setCurrentAddress(const Poco::Net::SocketAddress & current_address)
 {
-    client_info.current_address = current_address;
+    client_info.current_address = std::make_shared<Poco::Net::SocketAddress>(current_address);
     need_recalculate_access = true;
 }
 
@@ -5431,7 +5572,7 @@ void Context::setInitialUserName(const String & initial_user_name)
 
 void Context::setInitialAddress(const Poco::Net::SocketAddress & initial_address)
 {
-    client_info.initial_address = initial_address;
+    client_info.initial_address = std::make_shared<Poco::Net::SocketAddress>(initial_address);
 }
 
 void Context::setInitialQueryId(const String & initial_query_id)
@@ -6041,6 +6182,9 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
+
+    if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
+        return false;
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS

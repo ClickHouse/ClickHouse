@@ -1,14 +1,16 @@
 ---
-slug: /en/sql-reference/table-functions/deltalake
+slug: /sql-reference/table-functions/deltalake
 sidebar_position: 45
 sidebar_label: deltaLake
+title: "deltaLake"
+description: "Provides a read-only table-like interface to the Delta Lake tables in Amazon S3."
 ---
 
 # deltaLake Table Function
 
 Provides a read-only table-like interface to [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3 or Azure Blob Storage.
 
-## Syntax
+## Syntax {#syntax}
 
 ``` sql
 deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
@@ -16,7 +18,7 @@ deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structur
 deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
 ```
 
-## Arguments
+## Arguments {#arguments}
 
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
 `format` stands for the format of data files in the Delta lake table.
@@ -47,5 +49,5 @@ LIMIT 2
 
 **See Also**
 
-- [DeltaLake engine](/docs/en/engines/table-engines/integrations/deltalake.md)
-- [DeltaLake cluster table function](/docs/en/sql-reference/table-functions/deltalakeCluster.md)
+- [DeltaLake engine](engines/table-engines/integrations/deltalake.md)
+- [DeltaLake cluster table function](sql-reference/table-functions/deltalakeCluster.md)

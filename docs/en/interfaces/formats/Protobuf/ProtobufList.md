@@ -1,28 +1,39 @@
 ---
-title : ProtobufList
-slug : /en/interfaces/formats/ProtobufList
-keywords : [ProtobufList]
+title: ProtobufList
+slug: /interfaces/formats/ProtobufList
+keywords: [ProtobufList]
+input_format: true
+output_format: true
+alias: []
 ---
 
-## Description
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-Similar to Protobuf but rows are represented as a sequence of sub-messages contained in a message with fixed name "Envelope".
+<CloudNotSupportedBadge/>
 
-## Example Usage
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
-Usage example:
+## Description {#description}
 
-``` sql
+The `ProtobufList` format is similar to the [`Protobuf`](./Protobuf.md) format but rows are represented as a sequence of sub-messages contained in a message with a fixed name of "Envelope".
+
+## Example Usage {#example-usage}
+
+For example:
+
+```sql
 SELECT * FROM test.table FORMAT ProtobufList SETTINGS format_schema = 'schemafile:MessageType'
 ```
 
-``` bash
+```bash
 cat protobuflist_messages.bin | clickhouse-client --query "INSERT INTO test.table FORMAT ProtobufList SETTINGS format_schema='schemafile:MessageType'"
 ```
 
-where the file `schemafile.proto` looks like this:
+Where the file `schemafile.proto` looks like this:
 
-``` capnp
+```capnp title="schemafile.proto"
 syntax = "proto3";
 message Envelope {
   message MessageType {
@@ -35,4 +46,4 @@ message Envelope {
 };
 ```
 
-## Format Settings
+## Format Settings {#format-settings}

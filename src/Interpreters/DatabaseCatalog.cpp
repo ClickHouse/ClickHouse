@@ -24,13 +24,14 @@
 #include <IO/SharedThreadPools.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Common/atomicRename.h>
+#include <Common/assert_cast.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/noexcept_scope.h>
 #include <Common/checkStackSize.h>
+#include <Common/threadPoolCallbackRunner.h>
 #include <base/scope_guard.h>
 
 #include <base/isSharedPtrUnique.h>
@@ -64,6 +65,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
+    extern const int TABLE_UUID_MISMATCH;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int DATABASE_ALREADY_EXISTS;
     extern const int DATABASE_NOT_EMPTY;
@@ -359,6 +361,17 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
                     exception->emplace(Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist. Maybe you meant {}?", table_id.getNameForLogs(), backQuoteIfNeed(names[0])));
             }
             return {};
+        }
+        else
+        {
+            const auto & table_storage_id = db_and_table.second->getStorageID();
+            if (db_and_table.first->getDatabaseName() != table_id.database_name ||
+                std::tie(table_storage_id.database_name, table_storage_id.table_name) != std::tie(table_id.database_name, table_id.table_name))
+            {
+                if (exception)
+                    exception->emplace(Exception(ErrorCodes::TABLE_UUID_MISMATCH, "Table {} does not match {}", table_id.getNameForLogs(), table_storage_id.getNameForLogs()));
+                return {};
+            }
         }
 
         /// Wait for table to be started because we are going to return StoragePtr
@@ -791,7 +804,7 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
     auto it = map_part.map.find(uuid);
     if (it == map_part.map.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mapping for table with UUID={} doesn't exist", uuid);
-    it->second = {};
+    it->second = {nullptr, nullptr};
 }
 
 void DatabaseCatalog::removeUUIDMappingFinally(const UUID & uuid)

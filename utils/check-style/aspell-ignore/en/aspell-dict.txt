@@ -48,6 +48,7 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+AvroFormatSettings
 AzureQueue
 Azurite
 BFloat
@@ -88,6 +89,7 @@ BestEffortUS
 BestEffortUSOrNull
 BestEffortUSOrZero
 BetaBadge
+Bitwise
 Blazingly
 BlockActiveTime
 BlockDiscardBytes
@@ -229,8 +231,8 @@ Damerau
 DataGrip
 DataLens
 DataPacket
-DataTime
 DataTypes
+DataTypesMatching
 DatabaseCatalog
 DatabaseCatalogThreads
 DatabaseCatalogThreadsActive
@@ -462,10 +464,12 @@ JSONCompactColumns
 JSONCompactEachRow
 JSONCompactEachRowWithNames
 JSONCompactEachRowWithNamesAndTypes
+JSONCompactEachRowWithProgress
 JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
+JSONCompactStringsEachRowWithProgress
 JSONCompactWithProgress
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
@@ -828,6 +832,7 @@ PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
 PrettyCompactNoEscapesMonoBlock
+PrettyFormatSettings
 PrettyJSONEachRow
 PrettyJSONLines
 PrettyMonoBlock
@@ -933,6 +938,7 @@ RoaringBitmap
 RocksDB
 Rollup
 RowBinary
+RowBinaryFormatSettings
 RowBinaryWithDefaults
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
@@ -963,6 +969,7 @@ SaaS
 Sanjeev
 Sankey
 Scalable
+ScalePlanFeatureBadge
 Scatterplot
 Schaefer
 SchemaInferenceMode
@@ -1025,6 +1032,7 @@ SummingMergeTree
 SuperSet
 Superset
 SupersetDocker
+SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
@@ -1319,6 +1327,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arraySymmetricDifference
 arrayUnion
 arrayUniq
 arrayWithConstant
@@ -1334,6 +1343,7 @@ atan
 atanh
 atomicity
 auth
+authType
 authenticator
 authenticators
 autocompletion
@@ -1505,6 +1515,7 @@ codepoints
 collapsingmergetree
 combinator
 combinators
+compareSubstrings
 comparising
 composable
 composable
@@ -1524,6 +1535,7 @@ connectionId
 const
 contrib
 convertCharset
+cooldown
 coroutines
 corrMatrix
 corrStable
@@ -1995,6 +2007,7 @@ infty
 initcap
 initcapUTF
 initialQueryID
+initialQueryStartTime
 initializeAggregation
 injective
 innogames
@@ -2454,6 +2467,7 @@ prefetched
 prefetches
 prefetching
 prefetchsize
+preflight
 preimage
 preloaded
 prem
@@ -2493,6 +2507,7 @@ protobuf
 protobuflist
 protobufsingle
 protocol
+protos
 proxied
 pseudorandom
 pseudorandomize
@@ -2751,6 +2766,7 @@ sql
 sqlalchemy
 sqlinsert
 sqlite
+sqlreference
 sqrt
 src
 srcReplicas
@@ -2783,6 +2799,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
 stringToH
@@ -2910,8 +2927,8 @@ timeZoneOffset
 timezones
 tinylog
 tmp
-toBool
 toBFloat
+toBool
 toColumnTypeName
 toDate
 toDateOrDefault
@@ -3124,6 +3141,7 @@ userspace
 userver
 utils
 uuid
+uuids
 uuidv
 vCPU
 varPop
@@ -3182,6 +3200,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+workfactor
 writability
 wrt
 wyHash
@@ -3204,3 +3223,6 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+groupArrayArray
+benchmarked
+FastFormats

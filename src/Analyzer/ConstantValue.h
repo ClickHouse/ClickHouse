@@ -1,36 +1,51 @@
 #pragma once
 
-#include <Core/Field.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/IColumn_fwd.h>
+#include <DataTypes/FieldToDataType.h>
 #include <DataTypes/IDataType.h>
 
 namespace DB
 {
 
-/** Immutable constant value representation during analysis stage.
-  * Some query nodes can be represented by constant (scalar subqueries, functions with constant arguments).
-  */
-class ConstantValue;
-using ConstantValuePtr = std::shared_ptr<ConstantValue>;
-
 class ConstantValue
 {
 public:
-    ConstantValue(Field value_, DataTypePtr data_type_)
-        : value(std::move(value_))
+    ConstantValue(ColumnPtr column_, DataTypePtr data_type_)
+        : column(wrapToColumnConst(column_))
         , data_type(std::move(data_type_))
     {}
 
-    const Field & getValue() const
+    ConstantValue(const Field & field_, DataTypePtr data_type_)
+        : column(data_type_->createColumnConst(1, field_))
+        , data_type(std::move(data_type_))
+    {}
+
+    const ColumnPtr & getColumn() const
     {
-        return value;
+        return column;
     }
 
     const DataTypePtr & getType() const
     {
         return data_type;
     }
+
+    std::pair<String, DataTypePtr> getValueNameAndType() const
+    {
+        return column->getValueNameAndType(0);
+    }
+
 private:
-    Field value;
+
+    static ColumnPtr wrapToColumnConst(ColumnPtr column_)
+    {
+        if (!isColumnConst(*column_))
+            return ColumnConst::create(column_, 1);
+        return column_;
+    }
+
+    ColumnPtr column;
     DataTypePtr data_type;
 };
 

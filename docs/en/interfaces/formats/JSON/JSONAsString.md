@@ -1,28 +1,43 @@
 ---
-title : JSONAsString
-slug : /en/interfaces/formats/JSONAsString
-keywords : [JSONAsString]
+title: JSONAsString
+slug: /interfaces/formats/JSONAsString
+keywords: [JSONAsString]
+input_format: true
+output_format: false
+alias: []
 ---
 
-## Description
+| Input | Output  | Alias |
+|-------|---------|-------|
+| ✔     | ✗       |       |
 
-In this format, a single JSON object is interpreted as a single value. If the input has several JSON objects (comma separated), they are interpreted as separate rows. If the input data is enclosed in square brackets, it is interpreted as an array of JSONs.
-This format can only be parsed for a table with a single field of type [String](/docs/en/sql-reference/data-types/string.md). The remaining columns must be set to [DEFAULT](/docs/en/sql-reference/statements/create/table.md/#default) or [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized), or omitted. Once you collect the whole JSON object to string you can use [JSON functions](/docs/en/sql-reference/functions/json-functions.md) to process it.
 
-## Example Usage
+## Description {#description}
 
-Query:
+In this format, a single JSON object is interpreted as a single value. 
+If the input has several JSON objects (which are comma separated), they are interpreted as separate rows. 
+If the input data is enclosed in square brackets, it is interpreted as an array of JSON objects.
 
-``` sql
+:::note
+This format can only be parsed for a table with a single field of type [String](/sql-reference/data-types/string.md). 
+The remaining columns must be set to either [`DEFAULT`](/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/sql-reference/statements/create/table.md/#materialized), 
+or be omitted. 
+:::
+
+Once you serialize the entire JSON object to a String you can use the [JSON functions](/sql-reference/functions/json-functions.md) to process it.
+
+## Example Usage {#example-usage}
+
+### Basic Example {#basic-example}
+
+```sql title="Query"
 DROP TABLE IF EXISTS json_as_string;
 CREATE TABLE json_as_string (json String) ENGINE = Memory;
 INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
 SELECT * FROM json_as_string;
 ```
 
-Result:
-
-``` response
+```response title="Response"
 ┌─json──────────────────────────────┐
 │ {"foo":{"bar":{"x":"y"},"baz":1}} │
 │ {}                                │
@@ -30,24 +45,20 @@ Result:
 └───────────────────────────────────┘
 ```
 
-**An array of JSON objects**
+### An array of JSON objects {#an-array-of-json-objects}
 
-Query:
-
-``` sql
+```sql title="Query"
 CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
 INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
 
 SELECT * FROM json_square_brackets;
 ```
 
-Result:
-
-```response
+```response title="Response"
 ┌─field──────────────────────┐
 │ {"id": 1, "name": "name1"} │
 │ {"id": 2, "name": "name2"} │
 └────────────────────────────┘
 ```
 
-## Format Settings
+## Format Settings {#format-settings}

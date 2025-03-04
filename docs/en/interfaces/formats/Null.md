@@ -1,14 +1,26 @@
 ---
-title : "Null"
-slug : /en/interfaces/formats/Null
-keywords : ["Null"]
+title: "Null"
+slug: /interfaces/formats/Null
+keywords: ["Null"]
+input_format: false
+output_format: true
+alias: []
 ---
 
-## Description
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
 
-Nothing is output. However, the query is processed, and when using the command-line client, data is transmitted to the client. This is used for tests, including performance testing.
-Obviously, this format is only appropriate for output, not for parsing.
+## Description {#description}
 
-## Example Usage
+In the `Null` format - nothing is output. 
+This may at first sound strange, but it's important to note that despite outputting nothing, the query is still processed, 
+and when using the command-line client, data is transmitted to the client. 
 
-## Format Settings
+:::tip
+The `Null` format can be useful for performance testing.
+:::
+
+## Example Usage {#example-usage}
+
+## Format Settings {#format-settings}

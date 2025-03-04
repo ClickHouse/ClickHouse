@@ -1,14 +1,22 @@
 ---
-title : TSKV
-slug : /en/interfaces/formats/TSKV
-keywords : [TSKV]
+title: TSKV
+slug: /interfaces/formats/TSKV
+keywords: [TSKV]
+input_format: true
+output_format: true
+alias: []
 ---
 
-## Description
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
-Similar to TabSeparated, but outputs a value in name=value format. Names are escaped the same way as in TabSeparated format, and the = symbol is also escaped.
+## Description {#description}
 
-``` text
+Similar to the [`TabSeparated`](./TabSeparated.md) format, but outputs a value in `name=value` format. 
+Names are escaped the same way as in the [`TabSeparated`](./TabSeparated.md) format, and the `=` symbol is also escaped.
+
+```text
 SearchPhrase=   count()=8267016
 SearchPhrase=bathroom interior design    count()=2166
 SearchPhrase=clickhouse     count()=1655
@@ -22,24 +30,31 @@ SearchPhrase=baku       count()=1000
 ```
 
 
-``` sql
+```sql title="Query"
 SELECT * FROM t_null FORMAT TSKV
 ```
 
-``` text
+```text title="Response"
 x=1    y=\N
 ```
 
-When there is a large number of small columns, this format is ineffective, and there is generally no reason to use it. Nevertheless, it is no worse than JSONEachRow in terms of efficiency.
+:::note
+When there are a large number of small columns, this format is ineffective, and there is generally no reason to use it. 
+Nevertheless, it is no worse than the [`JSONEachRow`](../JSON/JSONEachRow.md) format in terms of efficiency.
+:::
 
-Both data output and parsing are supported in this format. For parsing, any order is supported for the values of different columns. It is acceptable for some values to be omitted – they are treated as equal to their default values. In this case, zeros and blank rows are used as default values. Complex values that could be specified in the table are not supported as defaults.
+For parsing, any order is supported for the values of the different columns. 
+It is acceptable for some values to be omitted as they are treated as equal to their default values.
+In this case, zeros and blank rows are used as default values. 
+Complex values that could be specified in the table are not supported as defaults.
 
-Parsing allows the presence of the additional field `tskv` without the equal sign or a value. This field is ignored.
+Parsing allows an additional field `tskv` to be added without the equal sign or a value. This field is ignored.
 
-During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
+During import, columns with unknown names will be skipped, 
+if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
 
-[NULL](/docs/en/sql-reference/syntax.md) is formatted as `\N`.
+[NULL](/sql-reference/syntax.md) is formatted as `\N`.
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

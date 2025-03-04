@@ -3,6 +3,7 @@
 #if USE_USEARCH
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -378,8 +379,8 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(block.getByName(index_column_name).type.get());
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
-    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
 
+    const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
     if (WhichDataType(nested_type_index).isFloat32())
         updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
     else if (WhichDataType(nested_type_index).isFloat64())
@@ -569,7 +570,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     if (!data_type_array)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
     TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
-    if (!WhichDataType(nested_type_index).isFloat())
+    if (!WhichDataType(nested_type_index).isNativeFloat())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
 }
 

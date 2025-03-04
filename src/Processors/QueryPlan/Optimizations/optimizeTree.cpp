@@ -80,9 +80,15 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
                 continue;
 
             if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
+            {
+                if (optimization_settings.is_explain)
+                    return;
+
                 throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
                                 "Too many optimizations applied to query plan. Current limit {}",
                                 max_optimizations_to_apply);
+            }
+
 
             /// Try to apply optimization.
             Optimization::ExtraSettings extra_settings= { optimization_settings.max_limit_for_ann_queries };
@@ -118,6 +124,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     {
         optimizePrimaryKeyConditionAndLimit(stack);
 
+        tryUpdateQueryConditionCache(optimization_settings, stack);
+
         /// NOTE: optimizePrewhere can modify the stack.
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
         if (optimization_settings.optimize_prewhere)
@@ -125,8 +133,30 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         auto & frame = stack.back();
 
+        /// Traverse all children first.
+        if (frame.next_child < frame.node->children.size())
+        {
+            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
+            ++frame.next_child;
+            stack.push_back(next_frame);
+            continue;
+        }
+
+        stack.pop_back();
+    }
+
+    stack.push_back({.node = &root});
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+
         if (frame.next_child == 0)
         {
+            optimizeJoinLogical(*frame.node, nodes, optimization_settings);
+            bool has_join_logical = convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings);
+            if (!has_join_logical)
+                optimizeJoinLegacy(*frame.node, nodes, optimization_settings);
+
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
 
@@ -188,9 +218,13 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 applied_projection_names.insert(*applied_projection);
 
                 if (max_optimizations_to_apply && max_optimizations_to_apply < applied_projection_names.size())
-                    throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                    "Too many projection optimizations applied to query plan. Current limit {}",
-                                    max_optimizations_to_apply);
+                {
+                    /// Limit only first pass in EXPLAIN mode.
+                    if (!optimization_settings.is_explain)
+                        throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                                        "Too many projection optimizations applied to query plan. Current limit {}",
+                                        max_optimizations_to_apply);
+                }
 
                 /// Stack is updated after this optimization and frame is not valid anymore.
                 /// Try to apply optimizations again to newly added plan steps.
@@ -226,9 +260,6 @@ void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::No
     {
         /// NOTE: frame cannot be safely used after stack was modified.
         auto & frame = stack.back();
-
-        if (frame.next_child == 0)
-            optimizeJoin(*frame.node, nodes);
 
         /// Traverse all children first.
         if (frame.next_child < frame.node->children.size())

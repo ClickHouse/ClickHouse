@@ -1,14 +1,25 @@
 ---
-title : ProtobufSingle
-slug : /en/interfaces/formats/ProtobufSingle
-keywords : [ProtobufSingle]
+title: ProtobufSingle
+slug: /interfaces/formats/ProtobufSingle
+keywords: [ProtobufSingle]
+input_format: true
+output_format: true
+alias: []
 ---
 
-## Description
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-Same as [Protobuf](/docs/en/interfaces/formats/Protobuf) but for storing/parsing single Protobuf message without length delimiters.
+<CloudNotSupportedBadge/>
 
-## Example Usage
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
 
-## Format Settings
+## Description {#description}
+
+The `ProtobufSingle` format is the same as the [`Protobuf`](./Protobuf.md) format but it is intended for storing/parsing single Protobuf messages without length delimiters.
+
+## Example Usage {#example-usage}
+
+## Format Settings {#format-settings}
 

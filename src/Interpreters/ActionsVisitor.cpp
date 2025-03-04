@@ -45,7 +45,6 @@
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
@@ -160,7 +159,7 @@ static ColumnsWithTypeAndName createBlockFromCollection(const Collection & colle
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Invalid type in set. Expected tuple, got {}",
                     String(value.getTypeName()));
 
-            const auto & tuple = value.template safeGet<const Tuple &>();
+            const auto & tuple = value.template safeGet<Tuple>();
             size_t tuple_size = tuple.size();
             if (tuple_size != columns_num)
                 throw Exception(ErrorCodes::INCORRECT_ELEMENT_OF_SET, "Incorrect size of tuple in set: {} instead of {}",
@@ -373,14 +372,14 @@ ColumnsWithTypeAndName createBlockForSet(
         if (type_index == TypeIndex::Tuple)
         {
             const DataTypes & value_types = assert_cast<const DataTypeTuple *>(right_arg_type.get())->getElements();
-            block = createBlockFromCollection(right_arg_value.safeGet<const Tuple &>(), value_types, set_element_types, set_params);
+            block = createBlockFromCollection(right_arg_value.safeGet<Tuple>(), value_types, set_element_types, set_params);
         }
         else if (type_index == TypeIndex::Array)
         {
             const auto* right_arg_array_type =  assert_cast<const DataTypeArray *>(right_arg_type.get());
-            size_t right_arg_array_size = right_arg_value.safeGet<const Array &>().size();
+            size_t right_arg_array_size = right_arg_value.safeGet<Array>().size();
             DataTypes value_types(right_arg_array_size, right_arg_array_type->getNestedType());
-            block = createBlockFromCollection(right_arg_value.safeGet<const Array &>(), value_types, set_element_types, set_params);
+            block = createBlockFromCollection(right_arg_value.safeGet<Array>(), value_types, set_element_types, set_params);
         }
         else
             throw_unsupported_type(right_arg_type);
@@ -484,7 +483,7 @@ FutureSetPtr makeExplicitSet(
     else
         block = createBlockForSet(left_arg_type, right_arg, set_element_types, context);
 
-    return prepared_sets.addFromTuple(set_key, std::move(block), context->getSettingsRef());
+    return prepared_sets.addFromTuple(set_key, right_arg_func, std::move(block), context->getSettingsRef());
 }
 
 class ScopeStack::Index
@@ -1490,7 +1489,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
                     return set;
 
                 if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
-                    return data.prepared_sets->addFromStorage(set_key, storage_set->getSet(), table_id);
+                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
             }
 
             if (!data.getContext()->isGlobalContext())
@@ -1520,7 +1519,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
         }
 
         return data.prepared_sets->addFromSubquery(
-            set_key, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
+            set_key, right_in_operand, std::move(source), nullptr, std::move(external_table_set), data.getContext()->getSettingsRef());
     }
 
     const auto & last_actions = data.actions_stack.getLastActions();

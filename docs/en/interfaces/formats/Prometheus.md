@@ -1,27 +1,34 @@
 ---
-title : Prometheus
-slug : /en/interfaces/formats/Prometheus
-keywords : [Prometheus]
+title: Prometheus
+slug: /interfaces/formats/Prometheus
+keywords: [Prometheus]
+input_format: false
+output_format: true
+alias: []
 ---
 
-## Description
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
 
-Expose metrics in [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
+## Description {#description}
 
-The output table should have a proper structure.
-Columns `name` ([String](/docs/en/sql-reference/data-types/string.md)) and `value` (number) are required.
-Rows may optionally contain `help` ([String](/docs/en/sql-reference/data-types/string.md)) and `timestamp` (number).
-Column `type` ([String](/docs/en/sql-reference/data-types/string.md)) is either `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
-Each metric value may also have some `labels` ([Map(String, String)](/docs/en/sql-reference/data-types/map.md)).
-Several consequent rows may refer to the one metric with different labels. The table should be sorted by metric name (e.g., with `ORDER BY name`).
+Exposes metrics in the [Prometheus text-based exposition format](https://prometheus.io/docs/instrumenting/exposition_formats/#text-based-format).
 
-There are special requirements for labels for `histogram` and `summary`, see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. Special rules applied to row with labels `{'count':''}` and `{'sum':''}`, they'll be converted to `<metric_name>_count` and `<metric_name>_sum` respectively.
+For this format, it is a requirement for the output table to be structured correctly, by the following rules:
 
-## Example Usage
+- Columns `name` ([String](/sql-reference/data-types/string.md)) and `value` (number) are required.
+- Rows may optionally contain `help` ([String](/sql-reference/data-types/string.md)) and `timestamp` (number).
+- Column `type` ([String](/sql-reference/data-types/string.md)) should be one of `counter`, `gauge`, `histogram`, `summary`, `untyped` or empty.
+- Each metric value may also have some `labels` ([Map(String, String)](/sql-reference/data-types/map.md)).
+- Several consequent rows may refer to the one metric with different labels. The table should be sorted by metric name (e.g., with `ORDER BY name`).
 
-**Example:**
+There are special requirements for the `histogram` and `summary` labels - see [Prometheus doc](https://prometheus.io/docs/instrumenting/exposition_formats/#histograms-and-summaries) for the details. 
+Special rules are applied to rows with labels `{'count':''}` and `{'sum':''}`, which are converted to `<metric_name>_count` and `<metric_name>_sum` respectively.
 
-```
+## Example Usage {#example-usage}
+
+```yaml
 ┌─name────────────────────────────────┬─type──────┬─help──────────────────────────────────────┬─labels─────────────────────────┬────value─┬─────timestamp─┐
 │ http_request_duration_seconds       │ histogram │ A histogram of the request duration.      │ {'le':'0.05'}                  │    24054 │             0 │
 │ http_request_duration_seconds       │ histogram │                                           │ {'le':'0.1'}                   │    33444 │             0 │
@@ -46,7 +53,7 @@ There are special requirements for labels for `histogram` and `summary`, see [Pr
 
 Will be formatted as:
 
-```
+```text
 # HELP http_request_duration_seconds A histogram of the request duration.
 # TYPE http_request_duration_seconds histogram
 http_request_duration_seconds_bucket{le="0.05"} 24054
@@ -77,4 +84,4 @@ rpc_duration_seconds_count 2693
 something_weird{problem="division by zero"} +Inf -3982045
 ```
 
-## Format Settings
+## Format Settings {#format-settings}

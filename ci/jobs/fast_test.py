@@ -47,7 +47,6 @@ def clone_submodules():
         "contrib/c-ares",
         "contrib/morton-nd",
         "contrib/xxHash",
-        "contrib/expected",
         "contrib/simdjson",
         "contrib/liburing",
         "contrib/libfiu",
@@ -59,10 +58,10 @@ def clone_submodules():
     res = Shell.check("git submodule sync", verbose=True, strict=True)
     res = res and Shell.check("git submodule init", verbose=True, strict=True)
     res = res and Shell.check(
-        command=f"xargs --max-procs={min([Utils.cpu_count(), 20])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
+        command=f"xargs --max-procs={min([Utils.cpu_count(), 10])} --null --no-run-if-empty --max-args=1 git submodule update --depth 1 --single-branch",
         stdin_str="\0".join(submodules_to_update) + "\0",
-        timeout=120,
-        retries=3,
+        timeout=240,
+        retries=2,
         verbose=True,
     )
     res = res and Shell.check("git submodule foreach git reset --hard", verbose=True)

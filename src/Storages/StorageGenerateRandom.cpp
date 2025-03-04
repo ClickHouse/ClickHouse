@@ -28,12 +28,15 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NestedUtils.h>
 
-#include <Common/SipHash.h>
-#include <Common/randomSeed.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Common/SipHash.h>
+#include <Common/intExp10.h>
+#include <Common/randomSeed.h>
 
 #include <Functions/FunctionFactory.h>
+
+#include <pcg_random.hpp>
 
 
 namespace DB

@@ -39,7 +39,7 @@ SELECT [DISTINCT] expr_list
 -   [JOIN 子句](../../../sql-reference/statements/select/join.md)
 -   [PREWHERE 子句](../../../sql-reference/statements/select/prewhere.md)
 -   [WHERE 子句](../../../sql-reference/statements/select/where.md)
--   [GROUP BY 子句](../../../sql-reference/statements/select/group-by.md)
+-   [GROUP BY 子句](/sql-reference/statements/select/group-by)
 -   [LIMIT BY 子句](../../../sql-reference/statements/select/limit-by.md)
 -   [HAVING 子句](../../../sql-reference/statements/select/having.md)
 -   [SELECT 子句](#select-clause)
@@ -158,4 +158,4 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 有关详细信息，请参阅部分 “Settings”. 可以使用外部排序（将临时表保存到磁盘）和外部聚合。
 
-[原始文章](/docs/en/sql-reference/statements/select/)
+[原始文章](/sql-reference/statements/select/)

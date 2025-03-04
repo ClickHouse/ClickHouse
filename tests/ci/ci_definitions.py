@@ -50,6 +50,8 @@ class WorkflowStages(metaclass=WithIter):
     TESTS_2_WW = "Tests_2_ww"
     # all tests not required for merge
     TESTS_2 = "Tests_2"
+    BUILDS_0 = "Builds_0"
+    TESTS_0 = "Tests_0"
 
 
 class Runners(metaclass=WithIter):
@@ -147,7 +149,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_MSAN = "Stateless tests (msan)"
     STATELESS_TEST_UBSAN = "Stateless tests (ubsan)"
     STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE = (
-        "Stateless tests (release, old analyzer, s3 storage, DatabaseReplicated)"
+        "Stateless tests (release, old analyzer, s3, DatabaseReplicated)"
     )
     STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE = (
         "Stateless tests (release, ParallelReplicas, s3 storage)"
@@ -155,23 +157,7 @@ class JobNames(metaclass=WithIter):
     STATELESS_TEST_S3_DEBUG = "Stateless tests (debug, s3 storage)"
     STATELESS_TEST_S3_TSAN = "Stateless tests (tsan, s3 storage)"
     STATELESS_TEST_AZURE_ASAN = "Stateless tests (azure, asan)"
-    STATELESS_TEST_FLAKY_ASAN = "Stateless tests flaky check (asan)"
-
-    STATEFUL_TEST_DEBUG = "Stateful tests (debug)"
-    STATEFUL_TEST_RELEASE = "Stateful tests (release)"
-    STATEFUL_TEST_RELEASE_COVERAGE = "Stateful tests (coverage)"
-    STATEFUL_TEST_AARCH64 = "Stateful tests (aarch64)"
-    STATEFUL_TEST_ASAN = "Stateful tests (asan)"
-    STATEFUL_TEST_AARCH64_ASAN = "Stateful tests (aarch64, asan)"
-    STATEFUL_TEST_TSAN = "Stateful tests (tsan)"
-    STATEFUL_TEST_MSAN = "Stateful tests (msan)"
-    STATEFUL_TEST_UBSAN = "Stateful tests (ubsan)"
-    STATEFUL_TEST_PARALLEL_REPL_RELEASE = "Stateful tests (release, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_DEBUG = "Stateful tests (debug, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_ASAN = "Stateful tests (asan, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_MSAN = "Stateful tests (msan, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_UBSAN = "Stateful tests (ubsan, ParallelReplicas)"
-    STATEFUL_TEST_PARALLEL_REPL_TSAN = "Stateful tests (tsan, ParallelReplicas)"
+    STATELESS_TEST_FLAKY_ASAN = "Stateless tests (asan, flaky check)"
 
     STRESS_TEST_ASAN = "Stress test (asan)"
     STRESS_TEST_TSAN = "Stress test (tsan)"
@@ -186,14 +172,14 @@ class JobNames(metaclass=WithIter):
     INTEGRATION_TEST_ASAN_OLD_ANALYZER = "Integration tests (asan, old analyzer)"
     INTEGRATION_TEST_TSAN = "Integration tests (tsan)"
     INTEGRATION_TEST_AARCH64 = "Integration tests (aarch64)"
-    INTEGRATION_TEST_FLAKY = "Integration tests flaky check (asan)"
+    INTEGRATION_TEST_FLAKY = "Integration tests (asan, flaky check)"
 
     UPGRADE_TEST_DEBUG = "Upgrade check (debug)"
     UPGRADE_TEST_ASAN = "Upgrade check (asan)"
     UPGRADE_TEST_TSAN = "Upgrade check (tsan)"
     UPGRADE_TEST_MSAN = "Upgrade check (msan)"
 
-    UNIT_TEST = "Unit tests (release)"
+    UNIT_TEST = "Unit tests (binary)"
     UNIT_TEST_ASAN = "Unit tests (asan)"
     UNIT_TEST_MSAN = "Unit tests (msan)"
     UNIT_TEST_TSAN = "Unit tests (tsan)"
@@ -436,30 +422,11 @@ class CommonJobConfigs:
         run_command='functional_test_check.py "$CHECK_NAME"',
         runner_type=Runners.FUNC_TESTER,
     )
-    STATEFUL_TEST = JobConfig(
-        job_name_keyword="stateful",
-        digest=DigestConfig(
-            include_paths=[
-                "./tests/ci/functional_test_check.py",
-                "./tests/queries/1_stateful/",
-                "./tests/clickhouse-test",
-                "./tests/config",
-                "./tests/*.txt",
-                "./tests/docker_scripts/",
-            ],
-            exclude_files=[".md"],
-            docker=["clickhouse/stateful-test"],
-        ),
-        run_command='functional_test_check.py "$CHECK_NAME"',
-        runner_type=Runners.FUNC_TESTER,
-        timeout=3600,
-    )
     STRESS_TEST = JobConfig(
         job_name_keyword="stress",
         digest=DigestConfig(
             include_paths=[
                 "./tests/queries/0_stateless/",
-                "./tests/queries/1_stateful/",
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",
@@ -614,16 +581,7 @@ class CommonJobConfigs:
         digest=DigestConfig(
             include_paths=[
                 "./src",
-                "./contrib/*-cmake",
-                "./contrib/consistent-hashing",
-                "./contrib/murmurhash",
-                "./contrib/libfarmhash",
-                "./contrib/pdqsort",
-                "./contrib/cityhash102",
-                "./contrib/sparse-checkout",
-                "./contrib/libmetrohash",
-                "./contrib/update-submodules.sh",
-                "./contrib/CMakeLists.txt",
+                "./contrib",
                 "./CMakeLists.txt",
                 "./PreLoad.cmake",
                 "./cmake",
@@ -651,17 +609,13 @@ class CommonJobConfigs:
 
 REQUIRED_CHECKS = [
     StatusNames.PR_CHECK,
-    StatusNames.SYNC,
     JobNames.BUILD_CHECK,
     JobNames.DOCS_CHECK,
     JobNames.FAST_TEST,
-    JobNames.STATEFUL_TEST_RELEASE,
     JobNames.STATELESS_TEST_RELEASE,
     JobNames.STATELESS_TEST_ASAN,
     JobNames.STATELESS_TEST_AARCH64_ASAN,
-    JobNames.STATEFUL_TEST_AARCH64_ASAN,
     JobNames.STATELESS_TEST_FLAKY_ASAN,
-    JobNames.STATEFUL_TEST_ASAN,
     JobNames.STYLE_CHECK,
     JobNames.UNIT_TEST_ASAN,
     JobNames.UNIT_TEST_MSAN,
@@ -669,6 +623,7 @@ REQUIRED_CHECKS = [
     JobNames.UNIT_TEST_TSAN,
     JobNames.UNIT_TEST_UBSAN,
     JobNames.INTEGRATION_TEST_ASAN_OLD_ANALYZER,
+    JobNames.INTEGRATION_TEST_FLAKY,
     JobNames.STATELESS_TEST_OLD_ANALYZER_S3_REPLICATED_RELEASE,
     JobNames.STATELESS_TEST_PARALLEL_REPLICAS_REPLICATED_RELEASE,
     JobNames.INSTALL_TEST_AMD,

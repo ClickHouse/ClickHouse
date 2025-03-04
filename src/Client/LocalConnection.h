@@ -3,7 +3,6 @@
 #include "Connection.h"
 #include <Interpreters/Context.h>
 #include <QueryPipeline/BlockIO.h>
-#include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ColumnsDescription.h>
@@ -147,6 +146,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds/* = 0*/) override;
 
     Packet receivePacket() override;
+    UInt64 receivePacketType() override;
 
     void forceConnected(const ConnectionTimeouts &) override {}
 

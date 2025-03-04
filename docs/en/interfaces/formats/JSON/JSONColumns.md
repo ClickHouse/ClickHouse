@@ -1,22 +1,33 @@
 ---
-title : JSONColumns
-slug : /en/interfaces/formats/JSONColumns
-keywords : [JSONColumns]
+title: JSONColumns
+slug: /interfaces/formats/JSONColumns
+keywords: [JSONColumns]
+input_format: true
+output_format: true
+alias: []
 ---
 
-## Description
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
 
 :::tip
-The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row of the table for that field;
+The output of the JSONColumns* formats provides the ClickHouse field name and then the content of each row in the table for that field;
 visually, the data is rotated 90 degrees to the left.
 :::
 
 In this format, all data is represented as a single JSON Object.
-Note that JSONColumns output format buffers all data in memory to output it as a single block and it can lead to high memory consumption.
 
-## Example Usage
+:::note
+The `JSONColumns` format buffers all data in memory and then outputs it as a single block, so, it can lead to high memory consumption.
+:::
+
+## Example Usage {#example-usage}
 
 Example:
+
 ```json
 {
 	"num": [42, 43, 44],
@@ -25,7 +36,7 @@ Example:
 }
 ```
 
-During import, columns with unknown names will be skipped if setting [input_format_skip_unknown_fields](/docs/en/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to 1.
-Columns that are not present in the block will be filled with default values (you can use the [input_format_defaults_for_omitted_fields](/docs/en/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)
+## Format Settings {#format-settings}
 
-## Format Settings
+During import, columns with unknown names will be skipped if setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
+Columns that are not present in the block will be filled with default values (you can use the [`input_format_defaults_for_omitted_fields`](/operations/settings/settings-formats.md/#input_format_defaults_for_omitted_fields) setting here)

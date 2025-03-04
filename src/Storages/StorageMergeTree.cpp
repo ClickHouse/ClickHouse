@@ -41,14 +41,21 @@
 #include <fmt/core.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
+#include "Core/Names.h"
 #include <IO/SharedThreadPools.h>
-
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char storage_merge_tree_background_clear_old_parts_pause[];
+};
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
@@ -611,8 +618,6 @@ void StorageMergeTree::updateMutationEntriesErrors(FutureMergedMutatedPartPtr re
                     entry.latest_fail_error_code_name.clear();
                     if (static_cast<UInt64>(result_part->part_info.mutation) == it->first)
                         mutation_backoff_policy.removePartFromFailed(failed_part->name);
-
-                    decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry.commands);
                 }
             }
             else
@@ -891,15 +896,12 @@ CancellationCode StorageMergeTree::killMutation(const String & mutation_id)
     std::optional<MergeTreeMutationEntry> to_kill;
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
+
         auto it = current_mutations_by_version.find(mutation_version);
         if (it != current_mutations_by_version.end())
         {
-            if (std::optional<Int64> min_version = getMinPartDataVersion())
-            {
-                bool mutation_finished = *min_version > static_cast<Int64>(mutation_version);
-                if (!mutation_finished)
-                    decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands);
-            }
+            if (!it->second.is_done)
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *it->second.commands);
 
             to_kill.emplace(std::move(it->second));
             current_mutations_by_version.erase(it);
@@ -1431,7 +1433,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn))
                 merge_entry = std::move(merge_select_result.value());
             else
-                LOG_DEBUG(LogFrequencyLimiter(log.load(), 10), "Failed to start merge: {}", merge_select_result.error().explanation.text);
+                LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start merge: {}", merge_select_result.error().explanation.text);
         }
 
         if (!merge_entry && !current_mutations_by_version.empty())
@@ -1440,7 +1442,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
             mutate_entry = selectPartsToMutate(metadata_snapshot, out_reason, shared_lock, lock);
 
             if (!mutate_entry)
-                LOG_DEBUG(LogFrequencyLimiter(log.load(), 10), "Failed to start mutation: {}", out_reason.text);
+                LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start mutation: {}", out_reason.text);
         }
 
         has_mutations = !current_mutations_by_version.empty();
@@ -1508,7 +1510,7 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
                 /// All use relative_data_path which changes during rename
                 /// so execute under share lock.
                 size_t cleared_count = 0;
-                cleared_count += clearOldPartsFromFilesystem();
+                cleared_count += clearOldPartsFromFilesystem(/* force */ false, /* with_pause_point */true);
                 cleared_count += clearOldMutations();
                 cleared_count += clearEmptyParts();
                 cleared_count += unloadPrimaryKeysAndClearCachesOfOutdatedParts();
@@ -1543,27 +1545,30 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        if (current_mutations_by_version.size() <= finished_mutations_to_keep)
-            return 0;
-
         auto end_it = current_mutations_by_version.end();
         auto begin_it = current_mutations_by_version.begin();
 
         if (std::optional<Int64> min_version = getMinPartDataVersion())
             end_it = current_mutations_by_version.upper_bound(*min_version);
 
-        size_t done_count = std::distance(begin_it, end_it);
-
-        if (done_count <= finished_mutations_to_keep)
-            return 0;
-
+        size_t done_count = 0;
         for (auto it = begin_it; it != end_it; ++it)
         {
-            if (!it->second.tid.isPrehistoric())
+            auto & entry = it->second;
+
+            if (!entry.tid.isPrehistoric())
             {
-                done_count = std::distance(begin_it, it);
+                end_it = it;
                 break;
             }
+
+            if (!entry.is_done)
+            {
+                entry.is_done = true;
+                decrementMutationsCounters(num_data_mutations_to_apply, num_metadata_mutations_to_apply, *entry.commands);
+            }
+
+            ++done_count;
         }
 
         if (done_count <= finished_mutations_to_keep)
@@ -1578,6 +1583,7 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
             if (!tid.isPrehistoric() && !TransactionLog::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
                                 it->first, tid);
+
             mutations_to_delete.push_back(std::move(it->second));
             it = current_mutations_by_version.erase(it);
         }
@@ -1590,6 +1596,34 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
     }
 
     return mutations_to_delete.size();
+}
+
+size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause_fail_point)
+{
+    DataPartsVector parts_to_remove = grabOldParts(force);
+    if (parts_to_remove.empty())
+        return 0;
+
+    if (with_pause_fail_point)
+    {
+        // storage_merge_tree_background_clear_old_parts_pause is set after grabOldParts intentionally
+        // It allows the use case
+        // - firstly SYSTEM ENABLE FAILPOINT storage_merge_tree_background_clear_old_parts_pause
+        // - after do operation like merge / optimize final (operations like drop part / drop partition / truncate do not fit here, they remove old parts synchronously without timeout)
+        // All parts which are dropped in that operations are not removed until failpoint is released
+        // If we would set this failpoint before grabOldParts, it leads us to a case when
+        // background thread already passed the failpoint but did not reach grabOldParts yet
+        // if failpoint is enabled at that time, background thread could grab parts from those operations and remove them regardless enabled failpoint
+        FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
+    }
+
+    clearPartsFromFilesystemAndRollbackIfError(parts_to_remove, "old");
+
+    /// This is needed to close files to avoid they reside on disk after being deleted.
+    /// NOTE: we can drop files from cache more selectively but this is good enough.
+    getContext()->clearMMappedFileCache();
+
+    return parts_to_remove.size();
 }
 
 bool StorageMergeTree::optimize(
@@ -2534,7 +2568,6 @@ std::optional<CheckResult> StorageMergeTree::checkDataNext(DataValidationTasksPt
 void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
 {
     const auto & backup_settings = backup_entries_collector.getBackupSettings();
-    const auto & read_settings = backup_entries_collector.getReadSettings();
     auto local_context = backup_entries_collector.getContext();
 
     DataPartsVector data_parts;
@@ -2547,7 +2580,7 @@ void StorageMergeTree::backupData(BackupEntriesCollector & backup_entries_collec
     for (const auto & data_part : data_parts)
         min_data_version = std::min(min_data_version, data_part->info.getDataVersion() + 1);
 
-    auto parts_backup_entries = backupParts(data_parts, data_path_in_backup, backup_settings, read_settings, local_context);
+    auto parts_backup_entries = backupParts(data_parts, data_path_in_backup, backup_settings, local_context);
     for (auto & part_backup_entries : parts_backup_entries)
         backup_entries_collector.addBackupEntries(std::move(part_backup_entries.backup_entries));
 
@@ -2632,7 +2665,7 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
     auto res = std::make_shared<MutationsSnapshot>(params, std::move(info));
 
     bool need_data_mutations = res->hasDataMutations();
-    bool need_metadata_mutations = num_metadata_mutations_to_apply > 0;
+    bool need_metadata_mutations = res->hasMetadataMutations();
 
     if (!need_data_mutations && !need_metadata_mutations)
         return res;
@@ -2657,6 +2690,18 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
     }
 
     return res;
+}
+
+UInt64 StorageMergeTree::getNumberOnFlyDataMutations() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return num_data_mutations_to_apply;
+}
+
+UInt64 StorageMergeTree::getNumberOnFlyMetadataMutations() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return num_metadata_mutations_to_apply;
 }
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()

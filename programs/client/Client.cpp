@@ -10,7 +10,6 @@
 #include <Common/ThreadStatus.h>
 #include "Client/ConnectionString.h"
 #include "Core/Protocol.h"
-#include "Parsers/formatAST.h"
 
 #include <Access/AccessControl.h>
 
@@ -35,9 +34,13 @@
 #include <Formats/registerFormats.h>
 #include <Functions/registerFunctions.h>
 
+#include <Parsers/ASTAlterQuery.h>
+
 #include <Poco/Util/Application.h>
 
 #include "config.h"
+
+#include <filesystem>
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -483,15 +486,7 @@ void Client::connect()
             config().setString("host", connection_parameters.host);
             config().setInt("port", connection_parameters.port);
 
-            /// Apply setting changes received from server, but with lower priority than settings
-            /// changed from command line.
-            SettingsChanges settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
-            const Settings & settings = global_context->getSettingsRef();
-            std::erase_if(settings_from_server, [&](const SettingChange & change)
-            {
-                return settings.isChanged(change.name);
-            });
-            global_context->applySettingsChanges(settings_from_server);
+            settings_from_server = assert_cast<Connection &>(*connection).settingsFromServer();
 
             break;
         }
@@ -660,7 +655,7 @@ void Client::printHelpMessage(const OptionsDescription & options_description)
     if (options_description.hosts_and_ports_description.has_value())
         output_stream << options_description.hosts_and_ports_description.value() << "\n";
 
-    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n";
+    output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n";
     output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/integrations/sql-clients/cli\n";
 }

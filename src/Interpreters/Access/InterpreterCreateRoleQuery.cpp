@@ -53,7 +53,7 @@ BlockIO InterpreterCreateRoleQuery::execute()
     for (const auto & name : query.names)
         getContext()->checkAccess(access_type, name);
 
-    if (!query.new_name.empty())
+    if (!query.new_name.empty() && !query.alter)
         getContext()->checkAccess(AccessType::CREATE_ROLE, query.new_name);
 
     std::optional<AlterSettingsProfileElements> settings_from_query;

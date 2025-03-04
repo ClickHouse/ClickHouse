@@ -1,3 +1,5 @@
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
@@ -113,6 +115,14 @@ void ColumnNullable::get(size_t n, Field & res) const
         res = Null();
     else
         getNestedColumn().get(n, res);
+}
+
+std::pair<String, DataTypePtr> ColumnNullable::getValueNameAndType(size_t n) const
+{
+    if (isNullAt(n))
+        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
+
+    return getNestedColumn().getValueNameAndType(n);
 }
 
 Float64 ColumnNullable::getFloat64(size_t n) const
