@@ -26,7 +26,7 @@ CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
 
 String CachedInMemoryReadBufferFromFile::getFileName() const
 {
-    return in->getFileName();
+    return cache_key.path;
 }
 
 String CachedInMemoryReadBufferFromFile::getInfoForLog()

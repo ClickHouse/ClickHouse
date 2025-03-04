@@ -42,6 +42,8 @@ public:
     /// This function is like getPosition(), but it returns std::nullopt instead of throwing exception.
     std::optional<off_t> tryGetPosition();
 
+    /// Shouldn't be called frequently, may be expensive.
+    /// (In particular, in AsynchronousBoundedReadBuffer it waits for prefetch, to avoid race condition.)
     virtual String getInfoForLog() { return ""; }
 
     /// NOTE: This method should be thread-safe against seek(), since it can be
