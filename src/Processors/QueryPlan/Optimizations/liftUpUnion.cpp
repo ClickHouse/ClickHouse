@@ -72,7 +72,8 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);
         std::swap(parent_node->children.front(), child_node->children.front());
-        distinct->disallowInOrderOptimization() = true;
+        if (union_step->parallelReplicas())
+            distinct->disallowInOrderOptimization() = true;
 
         ///       - Distinct - Something
         /// Union - Something
