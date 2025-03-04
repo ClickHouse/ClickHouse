@@ -104,7 +104,4 @@ namespace MergeTreeColumnSettings
 {
     void validate(const SettingsChanges & changes);
 }
-
-
-
 }

@@ -7,9 +7,6 @@
 #include <Common/escapeForFileName.h>
 #include <DataTypes/NestedUtils.h>
 #include <base/EnumReflection.h>
-#include <Interpreters/Context.h>
-#include <Core/Settings.h>
-#include <Common/CurrentThread.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 namespace DB

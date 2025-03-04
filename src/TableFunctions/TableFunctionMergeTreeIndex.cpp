@@ -1,6 +1,4 @@
 #include <Storages/StorageMergeTreeIndex.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -22,11 +20,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool escape_variant_subcolumn_filenames;
 }
 
 class TableFunctionMergeTreeIndex : public ITableFunction
