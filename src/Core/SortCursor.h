@@ -601,14 +601,31 @@ private:
         else
             return;
 
-        if (unlikely(begin_cursor.totallyLessOrEquals(next_child_cursor)))
+        /// Linear detection at most 8 elements to quickly find a small batch size.
+        /// This heuristic helps to avoid the overhead of binary search for small batches.
+        size_t i = 0;
+        constexpr size_t max_linear_detection = 8;
+        while (min_cursor_pos + batch_size < min_cursor_size && i < max_linear_detection && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
         {
-            batch_size = min_cursor_size - min_cursor_pos;
-            return;
+            ++batch_size;
+            ++i;
         }
 
-        while (min_cursor_pos + batch_size < min_cursor_size && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
-            ++batch_size;
+        if (i < max_linear_detection)
+            return;
+
+        /// Binary search for the rest of elements in case of large batch size especially when sort columns have low cardinality.
+        size_t start_offset = batch_size;
+        size_t end_offset = min_cursor_size - min_cursor_pos;
+        while (start_offset < end_offset)
+        {
+            size_t mid_offset = start_offset + (end_offset - start_offset) / 2;
+            if (next_child_cursor.greaterWithOffset(begin_cursor, 0, mid_offset))
+                start_offset = mid_offset + 1;
+            else
+                end_offset = mid_offset;
+        }
+        batch_size = start_offset;
     }
 };
 
