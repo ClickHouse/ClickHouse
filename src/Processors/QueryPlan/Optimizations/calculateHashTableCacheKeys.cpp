@@ -47,16 +47,8 @@ UInt64 calculateHashFromStep(const ITransformingStep & transform)
         IQueryPlanStep::Serialization ctx{.out = wbuf, .registry = registry};
 
         writeStringBinary(transform.getSerializationName(), wbuf);
-        try
-        {
+        if (transform.isSerializable())
             transform.serialize(ctx);
-        }
-        catch (const Exception & e)
-        {
-            // Some steps currently missing serialization support. Let's just skip them.
-            if (e.code() != ErrorCodes::NOT_IMPLEMENTED)
-                throw;
-        }
 
         SipHash hash;
         hash.update(wbuf.str());
