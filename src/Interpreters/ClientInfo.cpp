@@ -129,6 +129,17 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         writeVarUInt(script_query_number, out);
         writeVarUInt(script_line_number, out);
     }
+
+    if (server_protocol_revision >= DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+    {
+        if (!jwt.empty())
+        {
+            writeBinary(static_cast<UInt8>(1), out);
+            writeBinary(jwt, out);
+        }
+        else
+            writeBinary(static_cast<UInt8>(0), out);
+    }
 }
 
 
@@ -224,6 +235,14 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
     {
         readVarUInt(script_query_number, in);
         readVarUInt(script_line_number, in);
+    }
+
+    if (client_protocol_revision >= DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+    {
+        UInt8 have_jwt = 0;
+        readBinary(have_jwt, in);
+        if (have_jwt)
+            readBinary(jwt, in);
     }
 }
 
