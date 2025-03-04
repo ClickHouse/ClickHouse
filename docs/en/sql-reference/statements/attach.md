@@ -17,7 +17,7 @@ The query does not create data on the disk, but assumes that data is already in 
 
 If a table was previously detached ([DETACH](../../sql-reference/statements/detach.md) query), meaning that its structure is known, you can use shorthand without defining the structure.
 
-## Attach Existing Table
+## Attach Existing Table {#attach-existing-table}
 
 **Syntax**
 
@@ -29,9 +29,9 @@ This query is used when starting the server. The server stores table metadata as
 
 If the table was detached permanently, it won't be reattached at the server start, so you need to use `ATTACH` query explicitly.
 
-## Create New Table And Attach Data
+## Create New Table And Attach Data {#create-new-table-and-attach-data}
 
-### With Specified Path to Table Data
+### With Specified Path to Table Data {#with-specified-path-to-table-data}
 
 The query creates a new table with provided structure and attaches table data from the provided directory in `user_files`.
 
@@ -59,7 +59,7 @@ Result:
 └──────┴────┘
 ```
 
-### With Specified Table UUID
+### With Specified Table UUID {#with-specified-table-uuid}
 
 This query creates a new table with provided structure and attaches data from the table with the specified UUID.
 It is supported by the [Atomic](../../engines/database-engines/atomic.md) database engine.
@@ -70,7 +70,7 @@ It is supported by the [Atomic](../../engines/database-engines/atomic.md) databa
 ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
 ```
 
-## Attach MergeTree table as ReplicatedMergeTree
+## Attach MergeTree table as ReplicatedMergeTree {#attach-mergetree-table-as-replicatedmergetree}
 
 Allows to attach non-replicated MergeTree table as ReplicatedMergeTree. ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings. It is also possible to attach a replicated table as a regular MergeTree.
 
@@ -112,7 +112,7 @@ ATTACH TABLE test AS NOT REPLICATED;
 SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
 ```
 
-## Attach Existing Dictionary
+## Attach Existing Dictionary {#attach-existing-dictionary}
 
 Attaches a previously detached dictionary.
 
@@ -122,7 +122,7 @@ Attaches a previously detached dictionary.
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-## Attach Existing Database
+## Attach Existing Database {#attach-existing-database}
 
 Attaches a previously detached database.
 

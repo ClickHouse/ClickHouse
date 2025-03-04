@@ -36,6 +36,7 @@ namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool join_any_take_last_row;
+    extern const SettingsUInt64 default_max_bytes_in_join;
 }
 
 namespace ErrorCodes
@@ -109,7 +110,6 @@ JoinStepLogical::JoinStepLogical(
     , expression_actions_settings(query_context_->getSettingsRef())
     , tmp_volume(query_context_->getGlobalTemporaryVolume())
     , tmp_data(query_context_->getTempDataOnDisk())
-    , query_context(std::move(query_context_))
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -511,9 +511,14 @@ static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolve
     }
 }
 
-JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_explain_logical)
+JoinPtr JoinStepLogical::convertToPhysical(
+    JoinActionRef & post_filter,
+    bool is_explain_logical,
+    UInt64 max_entries_for_hash_table_stats,
+    String initial_query_id,
+    std::chrono::milliseconds lock_acquire_timeout)
 {
-    auto table_join = std::make_shared<TableJoin>(join_settings, tmp_volume, tmp_data, query_context);
+    auto table_join = std::make_shared<TableJoin>(join_settings, tmp_volume, tmp_data, join_settings.default_max_bytes_in_join);
 
     auto & join_expression = join_info.expression;
 
@@ -550,7 +555,9 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
             table_join_clauses.pop_back();
             bool can_convert_to_cross = (isInner(join_info.kind) || isCrossOrComma(join_info.kind))
                 && join_info.strictness == JoinStrictness::All
-                && join_expression.disjunctive_conditions.empty();
+                && join_expression.disjunctive_conditions.empty()
+                && join_expression.condition.left_filter_conditions.empty()
+                && join_expression.condition.right_filter_conditions.empty();
 
             if (!can_convert_to_cross)
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
@@ -561,12 +568,12 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
 
     if (auto left_pre_filter_condition = concatMergeConditions(join_expression.condition.left_filter_conditions, expression_actions.left_pre_join_actions))
     {
-        table_join_clauses.back().analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
+        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
     }
 
     if (auto right_pre_filter_condition = concatMergeConditions(join_expression.condition.right_filter_conditions, expression_actions.right_pre_join_actions))
     {
-        table_join_clauses.back().analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
+        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
     }
 
     if (join_info.strictness == JoinStrictness::Asof)
@@ -718,8 +725,14 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
         std::swap(hash_table_key_hash_left, hash_table_key_hash_right);
     }
 
+    JoinAlgorithmSettings algo_settings(
+        join_settings,
+        max_entries_for_hash_table_stats,
+        std::move(initial_query_id),
+        lock_acquire_timeout);
+
     auto join_algorithm_ptr = chooseJoinAlgorithm(
-        table_join, prepared_join_storage, left_sample_block, right_sample_block, query_context, hash_table_key_hash_right.value_or(0));
+        table_join, prepared_join_storage, left_sample_block, right_sample_block, algo_settings, hash_table_key_hash_right.value_or(0));
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;
 }

@@ -2,9 +2,10 @@
 slug: /sql-reference/functions/tuple-map-functions
 sidebar_position: 120
 sidebar_label: Maps
+title: Map Functions
 ---
 
-## map
+## map {#map}
 
 Creates a value of type [Map(key, value)](../data-types/map.md) from key-value pairs.
 
@@ -41,7 +42,7 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## mapFromArrays
+## mapFromArrays {#mapfromarrays}
 
 Creates a map from an array or map of keys and an array or map of values.
 
@@ -111,7 +112,7 @@ Result:
 └───────────────────────────────────────────────────────┘
 ```
 
-## extractKeyValuePairs
+## extractKeyValuePairs {#extractkeyvaluepairs}
 
 Converts a string of key-value pairs to a [Map(String, String)](../data-types/map.md).
 Parsing is tolerant towards noise (e.g. log files).
@@ -204,7 +205,7 @@ map_serialized: {'John':'33','Paula':'31'}
 map_restored:   {'John':'33','Paula':'31'}
 ```
 
-## extractKeyValuePairsWithEscaping
+## extractKeyValuePairsWithEscaping {#extractkeyvaluepairswithescaping}
 
 Same as `extractKeyValuePairs` but supports escaping.
 
@@ -235,7 +236,7 @@ Result:
 └───────────────────┘
 ```
 
-## mapAdd
+## mapAdd {#mapadd}
 
 Collect all the keys and sum corresponding values.
 
@@ -247,7 +248,7 @@ mapAdd(arg1, arg2 [, ...])
 
 **Arguments**
 
-Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promoted to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](../data-types/int-uint.md#uint-ranges) or [Float64](../data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promoted to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges) or [Float64](../data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
@@ -283,7 +284,7 @@ Result:
 └───────────────┴────────────────────────────────────┘
 ```
 
-## mapSubtract
+## mapSubtract {#mapsubtract}
 
 Collect all the keys and subtract corresponding values.
 
@@ -295,7 +296,7 @@ mapSubtract(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 
 **Arguments**
 
-Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](../data-types/int-uint.md#uint-ranges) or [Float64](../data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges) or [Float64](../data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
@@ -331,7 +332,7 @@ Result:
 └────────────────┴───────────────────────────────────┘
 ```
 
-## mapPopulateSeries
+## mapPopulateSeries {#mappopulateseries}
 
 Fills missing key-value pairs in a map with integer keys.
 To support extending the keys beyond the largest value, a maximum key can be specified.
@@ -358,8 +359,8 @@ Mapped arrays:
 
 or
 
-- `keys` — Array of keys. [Array](../data-types/array.md#data-type-array)([Int](../data-types/int-uint.md#uint-ranges)).
-- `values` — Array of values. [Array](../data-types/array.md#data-type-array)([Int](../data-types/int-uint.md#uint-ranges)).
+- `keys` — Array of keys. [Array](../data-types/array.md#data-type-array)([Int](/sql-reference/data-types/int-uint#integer-ranges)).
+- `values` — Array of values. [Array](../data-types/array.md#data-type-array)([Int](/sql-reference/data-types/int-uint#integer-ranges)).
 - `max` — Maximum key value. Optional. [Int8, Int16, Int32, Int64, Int128, Int256](../data-types/int-uint.md#int-ranges).
 
 **Returned value**
@@ -396,7 +397,7 @@ Result:
 └──────────────────────────────┴───────────────────────────────────┘
 ```
 
-## mapContains
+## mapContains {#mapcontains}
 
 Returns if a given key is contained in a given map.
 
@@ -437,7 +438,7 @@ Result:
 └────────────────────────┘
 ```
 
-## mapKeys
+## mapKeys {#mapkeys}
 
 Returns the keys of a given map.
 
@@ -480,7 +481,7 @@ Result:
 └───────────────────────┘
 ```
 
-## mapValues
+## mapValues {#mapvalues}
 
 Returns the values of a given map.
 
@@ -523,7 +524,7 @@ Result:
 └──────────────────┘
 ```
 
-## mapContainsKeyLike
+## mapContainsKeyLike {#mapcontainskeylike}
 
 **Syntax**
 
@@ -560,7 +561,7 @@ Result:
 └─────────────────────────────┘
 ```
 
-## mapExtractKeyLike
+## mapExtractKeyLike {#mapextractkeylike}
 
 Give a map with string keys and a LIKE pattern, this function returns a map with elements where the key matches the pattern.
 
@@ -600,7 +601,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## mapApply
+## mapApply {#mapapply}
 
 Applies a function to each element of a map.
 
@@ -612,7 +613,7 @@ mapApply(func, map)
 
 **Arguments**
 
-- `func` — [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` — [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -642,7 +643,7 @@ Result:
 └───────────────────────┘
 ```
 
-## mapFilter
+## mapFilter {#mapfilter}
 
 Filters a map by applying a function to each map element.
 
@@ -654,7 +655,7 @@ mapFilter(func, map)
 
 **Arguments**
 
-- `func`  - [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func`  - [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -684,7 +685,7 @@ Result:
 └─────────────────────┘
 ```
 
-## mapUpdate
+## mapUpdate {#mapupdate}
 
 **Syntax**
 
@@ -717,7 +718,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## mapConcat
+## mapConcat {#mapconcat}
 
 Concatenates multiple maps based on the equality of their keys.
 If elements with the same key exist in more than one input map, all elements are added to the result map, but only the first one is accessible via operator `[]`
@@ -766,12 +767,12 @@ Result:
 └──────────────────────────────┴──────┘
 ```
 
-## mapExists(\[func,\], map)
+## mapExists(\[func,\], map) {#mapexistsfunc-map}
 
 Returns 1 if at least one key-value pair in `map` exists for which `func(key, value)` returns something other than 0. Otherwise, it returns 0.
 
 :::note
-`mapExists` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions).
+`mapExists` is a [higher-order function](/docs/sql-reference/functions/overview#higher-order-functions).
 You can pass a lambda function to it as the first argument.
 :::
 
@@ -791,12 +792,12 @@ Result:
 └─────┘
 ```
 
-## mapAll(\[func,\] map)
+## mapAll(\[func,\] map) {#mapallfunc-map}
 
 Returns 1 if `func(key, value)` returns something other than 0 for all key-value pairs in `map`. Otherwise, it returns 0.
 
 :::note
-Note that the `mapAll` is a [higher-order function](../../sql-reference/functions/index.md#higher-order-functions).
+Note that the `mapAll` is a [higher-order function](/docs/sql-reference/functions/overview#higher-order-functions).
 You can pass a lambda function to it as the first argument.
 :::
 
@@ -816,7 +817,7 @@ Result:
 └─────┘
 ```
 
-## mapSort(\[func,\], map)
+## mapSort(\[func,\], map) {#mapsortfunc-map}
 
 Sorts the elements of a map in ascending order.
 If the `func` function is specified, the sorting order is determined by the result of the `func` function applied to the keys and values of the map.
@@ -845,7 +846,7 @@ SELECT mapSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 
 For more details see the [reference](../../sql-reference/functions/array-functions.md#array_functions-sort) for `arraySort` function. 
 
-## mapPartialSort
+## mapPartialSort {#mappartialsort}
 
 Sorts the elements of a map in ascending order with additional `limit` argument allowing partial sorting. 
 If the `func` function is specified, the sorting order is determined by the result of the `func` function applied to the keys and values of the map.
@@ -857,7 +858,7 @@ mapPartialSort([func,] limit, map)
 ```
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
 - `map` – Map to sort. [Map](../data-types/map.md).
 
@@ -877,7 +878,7 @@ SELECT mapPartialSort((k, v) -> v, 2, map('k1', 3, 'k2', 1, 'k3', 2));
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-## mapReverseSort(\[func,\], map)
+## mapReverseSort(\[func,\], map) {#mapreversesortfunc-map}
 
 Sorts the elements of a map in descending order.
 If the `func` function is specified, the sorting order is determined by the result of the `func` function applied to the keys and values of the map.
@@ -906,7 +907,7 @@ SELECT mapReverseSort((k, v) -> v, map('key2', 2, 'key3', 1, 'key1', 3)) AS map;
 
 For more details see function [arrayReverseSort](../../sql-reference/functions/array-functions.md#array_functions-reverse-sort).
 
-## mapPartialReverseSort
+## mapPartialReverseSort {#mappartialreversesort}
 
 Sorts the elements of a map in descending order with additional `limit` argument allowing partial sorting.
 If the `func` function is specified, the sorting order is determined by the result of the `func` function applied to the keys and values of the map.
@@ -918,7 +919,7 @@ mapPartialReverseSort([func,] limit, map)
 ```
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](../../sql-reference/functions/index.md#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
 - `map` – Map to sort. [Map](../data-types/map.md).
 
