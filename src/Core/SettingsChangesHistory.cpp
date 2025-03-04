@@ -66,7 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.3",
         {
-            {"use_page_cache_with_distributed_cache", 0., 0., "New setting"},
+            {"use_page_cache_with_distributed_cache", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
