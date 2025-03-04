@@ -22,7 +22,6 @@ public:
 class S3Credentials final : public IStorageCredentials
 {
 public:
-    /// TODO: support region as well.
     S3Credentials(
         const std::string & access_key_id_,
         const std::string & secret_access_key_,
@@ -42,10 +41,16 @@ public:
         engine_args.push_back(std::make_shared<DB::ASTLiteral>(session_token));
     }
 
+    void setRegion(const std::string & region_)
+    {
+        region = region_;
+    }
+
 private:
     std::string access_key_id;
     std::string secret_access_key;
     std::string session_token;
+    std::string region;
 };
 
 }

@@ -8,6 +8,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DataLake/UnityCatalog.h>
 #include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/GlueCatalog.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -40,6 +41,11 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString storage_endpoint;
     extern const DatabaseDataLakeSettingsString oauth_server_uri;
     extern const DatabaseDataLakeSettingsBool vended_credentials;
+
+
+    extern const DatabaseDataLakeSettingsString access_key_id;
+    extern const DatabaseDataLakeSettingsString secret_access_key;
+    extern const DatabaseDataLakeSettingsString region;
 }
 namespace Setting
 {
@@ -126,6 +132,16 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 Context::getGlobalContextInstance());
             break;
         }
+
+        case DB::DatabaseDataLakeCatalogType::GLUE:
+        {
+            catalog_impl = std::make_shared<DataLake::GlueCatalog>(
+                settings[DatabaseDataLakeSetting::access_key_id].value,
+                settings[DatabaseDataLakeSetting::secret_access_key].value,
+                settings[DatabaseDataLakeSetting::region].value,
+                Context::getGlobalContextInstance());
+            break;
+        }
     }
     return catalog_impl;
 }
@@ -178,7 +194,7 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
 #if !USE_AWS_S3 || !USE_AZURE_BLOB_STORAGE || !USE_HDFS
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Server does not contain support for storage type {}",
+                                    "Server does not contain support for storage type {} for Iceberg Rest catalog",
                                     type);
 #endif
             }
@@ -211,7 +227,27 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
                 }
                 default:
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Server does not contain support for storage type {}",
+                                    "Server does not contain support for storage type {} for Unity catalog",
+                                    type);
+            }
+        }
+        case DatabaseDataLakeCatalogType::GLUE:
+        {
+            switch (type)
+            {
+#if USE_AWS_S3
+                case DB::DatabaseDataLakeStorageType::S3:
+                {
+                    return std::make_shared<StorageS3IcebergConfiguration>();
+                }
+#endif
+                case DB::DatabaseDataLakeStorageType::Other:
+                {
+                    return std::make_shared<StorageLocalIcebergConfiguration>();
+                }
+                default:
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Server does not contain support for storage type {} for Glue catalog",
                                     type);
             }
         }
@@ -491,6 +527,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         switch (database_settings[DB::DatabaseDataLakeSetting::catalog_type].value)
         {
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
+            case DatabaseDataLakeCatalogType::GLUE:
             {
                 if (!args.create_query.attach
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])

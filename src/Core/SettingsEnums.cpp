@@ -284,6 +284,7 @@ IMPLEMENT_SETTING_ENUM(
 
 IMPLEMENT_SETTING_ENUM(DatabaseDataLakeCatalogType, ErrorCodes::BAD_ARGUMENTS,
                        {{"iceberg_rest", DatabaseDataLakeCatalogType::ICEBERG_REST},
-                        {"unity", DatabaseDataLakeCatalogType::UNITY}})
+                        {"unity", DatabaseDataLakeCatalogType::UNITY},
+                        {"glue", DatabaseDataLakeCatalogType::GLUE}})
 
 }
