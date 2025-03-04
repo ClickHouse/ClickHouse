@@ -77,6 +77,11 @@ ClientApplicationBase & ClientApplicationBase::getInstance()
     return dynamic_cast<ClientApplicationBase&>(Poco::Util::Application::instance());
 }
 
+bool ClientApplicationBase::isEmbeeddedClient() const
+{
+    return false;
+}
+
 void ClientApplicationBase::setupSignalHandler()
 {
     ClientApplicationBase::getInstance().stopQuery();
@@ -244,7 +249,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
 
     if (options.count("client_logs_file"))
     {
-        if (client_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+        if (isEmbeeddedClient())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing logs to a file is disabled in an embedded mode.");
 
         fatal_file_channel_ptr = new Poco::SimpleFileChannel(options["client_logs_file"].as<std::string>());
