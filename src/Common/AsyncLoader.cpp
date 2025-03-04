@@ -336,9 +336,6 @@ void AsyncLoader::schedule(const LoadJobSet & jobs_to_schedule)
 {
     std::unique_lock lock{mutex};
 
-    if (shutdown_requested)
-        throw Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "AsyncLoader was shut down");
-
     // Restart watches after idle period
     if (scheduled_jobs.empty())
     {
@@ -353,6 +350,12 @@ void AsyncLoader::schedule(const LoadJobSet & jobs_to_schedule)
     LoadJobSet jobs;
     for (const auto & job : jobs_to_schedule)
         gatherNotScheduled(job, jobs, lock);
+
+    if (jobs.empty())
+        return;
+
+    if (shutdown_requested)
+        throw Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "AsyncLoader was shut down");
 
     // Ensure scheduled_jobs graph will have no cycles. The only way to get a cycle is to add a cycle, assuming old jobs cannot reference new ones.
     checkCycle(jobs, lock);

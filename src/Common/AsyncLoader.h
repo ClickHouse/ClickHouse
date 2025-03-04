@@ -404,7 +404,7 @@ public:
 
     // Wait for currently executing jobs to finish, but do not run any other pending jobs.
     // Not finished jobs are left in pending state:
-    //  - they can be executed by calling resume() again;
+    //  - they can be executed by calling unpause() again;
     //  - or canceled using ~Task() or remove() later.
     // Currently only used in tests.
     void pause();

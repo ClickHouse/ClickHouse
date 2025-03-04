@@ -97,6 +97,7 @@ namespace ErrorCodes
     extern const int CANNOT_RESTORE_TABLE;
     extern const int QUERY_IS_PROHIBITED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ASYNC_LOAD_CANCELED;
 }
 
 namespace FailPoints
@@ -1630,8 +1631,16 @@ void DatabaseReplicated::renameDatabase(ContextPtr query_context, const String &
 
 void DatabaseReplicated::stopReplication()
 {
-    /// Make sure startupDatabaseAsync doesn't start ddl_worker after stopReplication().
-    waitDatabaseStarted();
+    try
+    {
+        /// Make sure startupDatabaseAsync doesn't start ddl_worker after stopReplication().
+        waitDatabaseStarted();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() != ErrorCodes::ASYNC_LOAD_CANCELED)
+            tryLogCurrentException("DatabaseReplicated", "Async loading failed", LogsLevel::warning);
+    }
 
     std::lock_guard lock{ddl_worker_mutex};
     if (ddl_worker)
