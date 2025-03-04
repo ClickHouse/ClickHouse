@@ -12,9 +12,9 @@ import SystemLogParameters from '@site/docs/operations/server-configuration-para
 
 # Global Server Settings
 
-This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/docs/operations/configuration-files).
+This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/operations/configuration-files).
 
-Other settings are described in the "[Settings](../../operations/settings/overview#session-settings-intro)" section.
+Other settings are described in the "[Settings](/operations/settings/overview)" section.
 Before studying the settings, we recommend to read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
 ## allow_use_jemalloc_memory {#allow_use_jemalloc_memory}
@@ -91,7 +91,7 @@ Default: `0`
 
 ## background_buffer_flush_schedule_pool_size {#background_buffer_flush_schedule_pool_size}
 
-The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/docs/engines/table-engines/special/buffer) in the background.
+The maximum number of threads that will be used for performing flush operations for [Buffer-engine tables](/engines/table-engines/special/buffer) in the background.
 
 Type: `UInt64`
 
@@ -99,7 +99,7 @@ Default: `16`
 
 ## background_common_pool_size {#background_common_pool_size}
 
-The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/docs/engines/table-engines/mergetree-family) tables in the background.
+The maximum number of threads that will be used for performing a variety of operations (mostly garbage collection) for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.
 
 Type: `UInt64`
 
@@ -115,7 +115,7 @@ Default: `16`
 
 ## background_fetches_pool_size {#background_fetches_pool_size}
 
-The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/docs/engines/table-engines/mergetree-family) tables in the background.
+The maximum number of threads that will be used for fetching data parts from another replica for [*MergeTree-engine](/engines/table-engines/mergetree-family) tables in the background.
 
 Type: `UInt64`
 
@@ -418,7 +418,7 @@ Default: `SLRU`
 
 ## mark_cache_size {#mark_cache_size}
 
-Maximum size of cache for marks (index of [`MergeTree`](/docs/engines/table-engines/mergetree-family) family of tables).
+Maximum size of cache for marks (index of [`MergeTree`](/engines/table-engines/mergetree-family) family of tables).
 
 :::note
 This setting can be modified at runtime and will take effect immediately.
@@ -467,7 +467,7 @@ Limit on total number of concurrently executed queries. Note that limits on `INS
 See also:
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
 - [`max_concurrent_select_queries`](#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_all_users`](/docs/operations/settings/settings/#max_concurrent_queries_for_all_users)
+- [`max_concurrent_queries_for_all_users`](/operations/settings/settings/#max_concurrent_queries_for_all_users)
 
 :::note
 
@@ -521,8 +521,8 @@ Waiting queries are not counted when limits controlled by the following settings
 - [`max_concurrent_queries`](#max_concurrent_queries)
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
 - [`max_concurrent_select_queries`](#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_user`](/docs/operations/settings/settings#max_concurrent_select_queries)
-- [`max_concurrent_queries_for_all_users`](/docs/operations/settings/settings#max_concurrent_queries_for_all_users)
+- [`max_concurrent_queries_for_user`](/operations/settings/settings#max_concurrent_select_queries)
+- [`max_concurrent_queries_for_all_users`](/operations/settings/settings#max_concurrent_queries_for_all_users)
 
 This correction is done to avoid hitting these limits just after server startup.
 :::
@@ -904,8 +904,8 @@ A value of `0` means unlimited.
 :::
 
 See also:
-- [`max_temporary_data_on_disk_size_for_user`](/docs/operations/settings/settings#max_temporary_data_on_disk_size_for_user)
-- [`max_temporary_data_on_disk_size_for_query`](/docs/operations/settings/settings#max_temporary_data_on_disk_size_for_query)
+- [`max_temporary_data_on_disk_size_for_user`](/operations/settings/settings#max_temporary_data_on_disk_size_for_user)
+- [`max_temporary_data_on_disk_size_for_query`](/operations/settings/settings#max_temporary_data_on_disk_size_for_query)
 
 Type: `UInt64`
 
@@ -947,9 +947,9 @@ The amount of data in mapped files can be monitored in the following system tabl
 
 | System Table                                                                                                                                                                                                                                                                                                                                                       | Metric                                                                                                   |
 |--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| [`system.metrics`](/docs/operations/system-tables/metrics) and [`system.metric_log`](/docs/operations/system-tables/metric_log)                                                                                                                                                                                                                              | `MMappedFiles` and `MMappedFileBytes`                                                                    |
-| [`system.asynchronous_metrics_log`](/docs/operations/system-tables/asynchronous_metric_log)                                                                                                                                                                                                                                                                     | `MMapCacheCells`                                                                                         |
-| [`system.events`](/docs/operations/system-tables/events), [`system.processes`](/docs/operations/system-tables/processes), [`system.query_log`](/docs/operations/system-tables/query_log), [`system.query_thread_log`](/docs/operations/system-tables/query_thread_log), [`system.query_views_log`](/docs/operations/system-tables/query_views_log)  | `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` |
+| [`system.metrics`](/operations/system-tables/metrics) and [`system.metric_log`](/operations/system-tables/metric_log)                                                                                                                                                                                                                              | `MMappedFiles` and `MMappedFileBytes`                                                                    |
+| [`system.asynchronous_metrics_log`](/operations/system-tables/asynchronous_metric_log)                                                                                                                                                                                                                                                                     | `MMapCacheCells`                                                                                         |
+| [`system.events`](/operations/system-tables/events), [`system.processes`](/operations/system-tables/processes), [`system.query_log`](/operations/system-tables/query_log), [`system.query_thread_log`](/operations/system-tables/query_thread_log), [`system.query_views_log`](/operations/system-tables/query_views_log)  | `CreatedReadBufferMMap`, `CreatedReadBufferMMapFailed`, `MMappedFileCacheHits`, `MMappedFileCacheMisses` |
 
 :::note
 The amount of data in mapped files does not consume memory directly and is not accounted for in query or server memory usage — because this memory can be discarded similar to the OS page cache. The cache is dropped (the files are closed) automatically on the removal of old parts in tables of the MergeTree family, also it can be dropped manually by the `SYSTEM DROP MMAP CACHE` query.
@@ -1063,7 +1063,7 @@ Default: `10000`
 
 ## tmp_policy {#tmp_policy}
 
-Policy for storage with temporary data. For more information see the [MergeTree Table Engine](/docs/engines/table-engines/mergetree-family/mergetree) documentation.
+Policy for storage with temporary data. For more information see the [MergeTree Table Engine](/engines/table-engines/mergetree-family/mergetree) documentation.
 
 :::note
 - Only one option can be used to configure temporary data storage: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
@@ -1334,7 +1334,7 @@ To disable `error_log` setting, you should create the following file `/etc/click
 
 ## custom_settings_prefixes {#custom_settings_prefixes}
 
-List of prefixes for [custom settings](../../operations/settings/overview#custom_settings). The prefixes must be separated with commas.
+List of prefixes for [custom settings](/operations/settings/query-level#custom_settings). The prefixes must be separated with commas.
 
 **Example**
 
@@ -1344,7 +1344,7 @@ List of prefixes for [custom settings](../../operations/settings/overview#custom
 
 **See Also**
 
-- [Custom settings](../../operations/settings/overview#custom_settings)
+- [Custom settings](/operations/settings/query-level#custom_settings)
 
 ## core_dump {#core_dump}
 
@@ -1366,7 +1366,7 @@ Default: `1073741824`
 
 ## database_atomic_delay_before_drop_table_sec {#database_atomic_delay_before_drop_table_sec}
 
-The delay during which a dropped table can be restored using the [`UNDROP`](/docs/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
+The delay during which a dropped table can be restored using the [`UNDROP`](/sql-reference/statements/undrop.md) statement. If `DROP TABLE` ran with a `SYNC` modifier, the setting is ignored.
 The default for this setting is `480` (8 minutes).
 
 Default: `480`
@@ -1486,7 +1486,7 @@ Path:
 - The path can contain wildcards \* and ?.
 
 See also:
-- "[Executable User Defined Functions](../../sql-reference/functions/overview#executable-user-defined-functions).".
+- "[Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).".
 
 **Example**
 
@@ -2833,7 +2833,7 @@ If the table does not exist, ClickHouse will create it. If the structure of the 
 </query_log>
 ```
 
-# query_metric_log
+## query_metric_log {#query_metric_log}
 
 It is disabled by default.
 
@@ -3109,7 +3109,7 @@ Example:
 ## query_masking_rules {#query_masking_rules}
 
 Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
-[`system.query_log`](/docs/operations/system-tables/query_log), [`system.text_log`](/docs/operations/system-tables/text_log), [`system.processes`](/docs/operations/system-tables/processes) tables, and in logs sent to the client. That allows preventing
+[`system.query_log`](/operations/system-tables/query_log), [`system.text_log`](/operations/system-tables/text_log), [`system.processes`](/operations/system-tables/processes) tables, and in logs sent to the client. That allows preventing
 sensitive data leakage from SQL queries such as names, emails, personal identifiers or credit card numbers to logs.
 
 **Example**
@@ -3134,7 +3134,7 @@ sensitive data leakage from SQL queries such as names, emails, personal identifi
 
 The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parseable queries).
 
-The [`system.events`](/docs/operations/system-tables/events) table has counter `QueryMaskingRulesMatch` which has an overall number of query masking rules matches.
+The [`system.events`](/operations/system-tables/events) table has counter `QueryMaskingRulesMatch` which has an overall number of query masking rules matches.
 
 For distributed queries each server has to be configured separately, otherwise, subqueries passed to other
 nodes will be stored without masking.
@@ -3291,7 +3291,7 @@ The directory with user files. Used in the table function [file()](../../sql-ref
 
 ## user_scripts_path {#user_scripts_path}
 
-The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](../../sql-reference/functions/overview#executable-user-defined-functions).
+The directory with user scripts files. Used for Executable user defined functions [Executable User Defined Functions](/sql-reference/functions/udf#executable-user-defined-functions).
 
 **Example**
 
@@ -3464,7 +3464,7 @@ There is also the `zookeeper_load_balancing` setting (optional) which lets you s
 
 ## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
-Storage method for data part headers in ZooKeeper. This setting only applies to the [`MergeTree`](/docs/engines/table-engines/mergetree-family) family. It can be specified:
+Storage method for data part headers in ZooKeeper. This setting only applies to the [`MergeTree`](/engines/table-engines/mergetree-family) family. It can be specified:
 
 **Globally in the [merge_tree](#merge_tree) section of the `config.xml` file**
 
@@ -3494,7 +3494,7 @@ Default: 0
 ## distributed_ddl {#distributed_ddl}
 
 Manage executing [distributed ddl queries](../../sql-reference/distributed-ddl.md) (`CREATE`, `DROP`, `ALTER`, `RENAME`) on cluster.
-Works only if [ZooKeeper](/docs/operations/server-configuration-parameters/settings#zookeeper) is enabled.
+Works only if [ZooKeeper](/operations/server-configuration-parameters/settings#zookeeper) is enabled.
 
 The configurable settings within `<distributed_ddl>` include:
 
@@ -3930,14 +3930,14 @@ Type: `String`
 Default: `default`
 
 **See Also**
-- [Workload Scheduling](/docs/operations/workload-scheduling.md)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 
 ## mutation_workload {#mutation_workload}
 
 Used to regulate how resources are utilized and shared between mutations and other workloads. Specified value is used as `workload` setting value for all background mutations. Can be overridden by a merge tree setting.
 
 **See Also**
-- [Workload Scheduling](/docs/operations/workload-scheduling.md)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 
 Type: `String`
 
@@ -3951,7 +3951,7 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 - If `false` (default), unlimited access w/o resource scheduling is provided to a query with 'workload' setting pointing to unknown WORKLOAD. This is important during setting up hierarchy of WORKLOAD, before WORKLOAD default is added.
 
 **See Also**
-- [Workload Scheduling](/docs/operations/workload-scheduling.md)
+- [Workload Scheduling](/operations/workload-scheduling.md)
 
 Type: String
 
@@ -3974,7 +3974,7 @@ The directory used as a storage for all `CREATE WORKLOAD` and `CREATE RESOURCE` 
 ```
 
 **See Also**
-- [Workload Hierarchy](/docs/operations/workload-scheduling.md#workloads)
+- [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_zookeeper_path](#workload_zookeeper_path)
 
 ## workload_zookeeper_path {#workload_zookeeper_path}
@@ -3988,7 +3988,7 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 ```
 
 **See Also**
-- [Workload Hierarchy](/docs/operations/workload-scheduling.md#workloads)
+- [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
 
 ## use_legacy_mongodb_integration {#use_legacy_mongodb_integration}

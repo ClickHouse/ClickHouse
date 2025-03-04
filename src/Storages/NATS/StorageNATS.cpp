@@ -31,6 +31,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
 #include <openssl/ssl.h>
 
 namespace DB
