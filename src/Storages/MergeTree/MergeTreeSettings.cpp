@@ -276,6 +276,7 @@ namespace ErrorCodes
     DECLARE(Bool, enable_replacing_merge_with_cleanup_for_min_age_to_force_merge, false, "Whether to use CLEANUP merges for ReplacingMergeTree when merging partitions down to a single part. Requires allow_experimental_replacing_merge_with_cleanup, min_age_to_force_merge_seconds and min_age_to_force_merge_on_partition_only to be enabled.", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, "Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, "Enables writing attributes into virtual parts and committing blocks in keeper", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \

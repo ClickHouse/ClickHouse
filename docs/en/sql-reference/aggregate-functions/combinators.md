@@ -190,7 +190,7 @@ Result:
 
 Changes behavior of an aggregate function.
 
-This combinator converts a result of an aggregate function to the [Nullable](../../sql-reference/data-types/nullable.md) data type. If the aggregate function does not have values to calculate it returns [NULL](../../sql-reference/syntax.md#null-literal).
+This combinator converts a result of an aggregate function to the [Nullable](../../sql-reference/data-types/nullable.md) data type. If the aggregate function does not have values to calculate it returns [NULL](/operations/settings/formats#input_format_null_as_default).
 
 `-OrNull` can be used with other combinators.
 

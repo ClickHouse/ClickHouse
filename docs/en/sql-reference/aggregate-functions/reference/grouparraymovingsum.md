@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/grouparraymovingsum
 sidebar_position: 144
+title: "groupArrayMovingSum"
+description: "Calculates the moving sum of input values."
 ---
 
 # groupArrayMovingSum
