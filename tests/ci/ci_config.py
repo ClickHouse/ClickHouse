@@ -201,7 +201,7 @@ class CI:
                 compiler="clang-19-aarch64-v80compat",
                 package_type="binary",
                 static_binary_name="aarch64v80compat",
-                comment="For ARMv8.1 and older",
+                comment="ARMv8.1_and_older",
             ),
         ),
         BuildNames.BINARY_FREEBSD: CommonJobConfigs.BUILD.with_properties(
@@ -617,15 +617,12 @@ class CI:
     @classmethod
     def get_job_config(cls, check_name: str) -> JobConfig:
         # remove job batch if it exists in check name (hack for migration to praktika)
-        check_name = re.sub(r", \d+/\d+\)", ")", check_name)
+        check_name = re.sub(r",\s*\d+/\d+\)", ")", check_name)
         return cls.JOB_CONFIGS[check_name]
 
     @classmethod
     def get_required_build_name(cls, check_name: str) -> str:
-        # remove job batch if it exists in check name (hack for migration to praktika)
-        check_name = re.sub(r", \d+/\d+\)", ")", check_name)
-        assert check_name in cls.JOB_CONFIGS
-        required_builds = cls.JOB_CONFIGS[check_name].required_builds
+        required_builds = cls.get_job_config(check_name).required_builds
         assert required_builds and len(required_builds) == 1
         return required_builds[0]
 
@@ -740,6 +737,32 @@ class CI:
         return True
 
 
+BUILD_NAMES_MAPPING = {
+    "Build (amd_debug)": BuildNames.PACKAGE_DEBUG,
+    "Build (amd_release)": BuildNames.PACKAGE_RELEASE,
+    "Build (amd_binary)": BuildNames.BINARY_RELEASE,
+    "Build (amd_asan)": BuildNames.PACKAGE_ASAN,
+    "Build (amd_tsan)": BuildNames.PACKAGE_TSAN,
+    "Build (amd_msan)": BuildNames.PACKAGE_MSAN,
+    "Build (amd_ubsan)": BuildNames.PACKAGE_UBSAN,
+    "Build (arm_release)": BuildNames.PACKAGE_AARCH64,
+    "Build (arm_asan)": BuildNames.PACKAGE_AARCH64_ASAN,
+    "Build (amd_coverage)": BuildNames.PACKAGE_RELEASE_COVERAGE,
+    "Build (arm_binary)": BuildNames.BINARY_AARCH64,
+    "Build (amd_tidy)": BuildNames.BINARY_TIDY,
+    "Build (amd_darwin)": BuildNames.BINARY_DARWIN,
+    "Build (arm_darwin)": BuildNames.BINARY_DARWIN_AARCH64,
+    "Build (arm_v80compat)": BuildNames.BINARY_AARCH64_V80COMPAT,
+    "Build (amd_freebsd)": BuildNames.BINARY_FREEBSD,
+    "Build (ppc64le)": BuildNames.BINARY_PPC64LE,
+    "Build (amd_compat)": BuildNames.BINARY_AMD64_COMPAT,
+    "Build (amd_musl)": BuildNames.BINARY_AMD64_MUSL,
+    "Build (riscv64)": BuildNames.BINARY_RISCV64,
+    "Build (s390x)": BuildNames.BINARY_S390X,
+    "Build (loongarch64)": BuildNames.BINARY_LOONGARCH64,
+    "Build (fuzzers)": BuildNames.FUZZERS,
+}
+
 if __name__ == "__main__":
     parser = ArgumentParser(
         formatter_class=ArgumentDefaultsHelpFormatter,
@@ -752,9 +775,11 @@ if __name__ == "__main__":
         help="if set, the ENV parameters are provided for shell export",
     )
     args = parser.parse_args()
-    assert (
-        args.build_name in CI.JOB_CONFIGS
-    ), f"Build name [{args.build_name}] is not valid"
-    build_config = CI.JOB_CONFIGS[args.build_name].build_config
+    if args.build_name in BUILD_NAMES_MAPPING:
+        build_name = BUILD_NAMES_MAPPING[args.build_name]
+    else:
+        build_name = args.build_name
+    assert build_name in CI.JOB_CONFIGS, f"Build name [{build_name}] is not valid"
+    build_config = CI.JOB_CONFIGS[build_name].build_config
     assert build_config, "--export must not be used for non-build jobs"
     print(build_config.export_env(args.export))

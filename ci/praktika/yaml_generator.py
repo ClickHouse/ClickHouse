@@ -20,29 +20,30 @@ on:
   {EVENT}:
     branches: [{BRANCHES}]
 
-# Cancel the previous wf run in PRs.
-concurrency:
-  group: ${{{{{{{{ github.workflow }}}}}}}}-${{{{{{{{ github.ref }}}}}}}}
-  cancel-in-progress: true
-
 env:
   # Force the stdout and stderr streams to be unbuffered
   PYTHONUNBUFFERED: 1
-  GH_TOKEN: ${{{{{{{{ github.token }}}}}}}}
 {ENV_CHECKOUT_REFERENCE}
-
-# Allow updating GH commit statuses and PR comments to post an actual job reports link
-permissions: write-all
+{ENV_SECRETS}
+{GH_TOKEN_PERMISSIONS}
 
 jobs:
 {JOBS}\
 """
+        TEMPLATE_GH_TOKEN_PERMISSIONS = """\
+# Allow updating GH commit statuses and PR comments to post an actual job reports link
+permissions: write-all\
+"""
         TEMPLATE_ENV_CHECKOUT_REF_PR = """\
-  USE_MERGE_COMMIT: ${{{{ vars.USE_MERGE_COMMIT || '0' }}}}
-  CHECKOUT_REF: ${{{{ vars.USE_MERGE_COMMIT == '1' && github.event.pull_request.merge_commit_sha || github.head_ref }}}}
+  DISABLE_CI_MERGE_COMMIT: ${{{{ vars.DISABLE_CI_MERGE_COMMIT || '0' }}}}
+  DISABLE_CI_CACHE: ${{{{ vars.DISABLE_CI_CACHE || '0' }}}}
+  CHECKOUT_REF: ${{{{ vars.DISABLE_CI_MERGE_COMMIT == '1' && github.event.pull_request.head.sha || '' }}}}\
 """
         TEMPLATE_ENV_CHECKOUT_REF_PUSH = """\
   CHECKOUT_REF: ${{{{ github.head_ref }}}}
+"""
+        TEMPLATE_ENV_SECRET = """\
+  {SECRET_NAME}: ${{{{{{{{ secrets.{SECRET_NAME} }}}}}}}}
 """
 
         TEMPLATE_SCHEDULE = """\
@@ -52,6 +53,9 @@ name: {NAME}
 on:
   schedule:{CRON_TEMPLATES}
   workflow_dispatch:
+
+concurrency:
+  group: ${{{{{{{{ github.workflow }}}}}}}}
 
 env:
   PYTHONUNBUFFERED: 1
@@ -206,7 +210,7 @@ jobs:
 
     @classmethod
     def _get_workflow_file_name(cls, file_name):
-        yaml_name = file_name.removesuffix(".py") + ".yaml"
+        yaml_name = file_name.removesuffix(".py") + ".yml"
         return f"{Settings.WORKFLOW_PATH_PREFIX}/{Utils.normalize_string(yaml_name)}"
 
     def generate(self):
@@ -221,7 +225,7 @@ jobs:
             with open(self._get_workflow_file_name(workflow_file_name), "w") as f:
                 f.write(yaml_workflow_str)
 
-        Shell.check("git add ./.github/workflows/*.yaml")
+        Shell.check("git add ./.github/workflows/*.yml")
 
 
 class PullRequestPushYamlGen:
@@ -360,6 +364,11 @@ class PullRequestPushYamlGen:
                     [f"'{branch}'" for branch in self.workflow_config.branches]
                 ),
                 "EVENT": self.workflow_config.event,
+                "GH_TOKEN_PERMISSIONS": (
+                    YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
+                    # if not Settings.USE_CUSTOM_GH_AUTH
+                    # else ""
+                ),
             }
             if self.workflow_config.event in (Workflow.Event.PULL_REQUEST,):
                 ENV_CHECKOUT_REFERENCE = (
@@ -385,6 +394,14 @@ class PullRequestPushYamlGen:
             assert (
                 False
             ), f"Invalid or Not implemented event [{self.workflow_config.event}]"
+
+        SECRET_ENVS = ""
+        for secret in self.parser.config.secrets:
+            if secret.is_gh():
+                SECRET_ENVS += YamlGenerator.Templates.TEMPLATE_ENV_SECRET.format(
+                    SECRET_NAME=secret.name
+                )
+        format_kwargs["ENV_SECRETS"] = SECRET_ENVS
 
         template_1 = base_template.strip().format(
             NAME=self.workflow_config.name,
@@ -414,7 +431,7 @@ class AuxConfig:
             suffix += "_uplgh"
         for _ in self.downloads_gh:
             suffix += "_dnlgh"
-        return f"{Settings.WORKFLOW_PATH_PREFIX}/aux_job{suffix}.yaml"
+        return f"{Settings.WORKFLOW_PATH_PREFIX}/aux_job{suffix}.yml"
 
     def get_aux_workflow_input(self):
         res = ""

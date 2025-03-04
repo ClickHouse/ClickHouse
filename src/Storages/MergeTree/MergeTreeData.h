@@ -7,6 +7,7 @@
 #include <Common/MultiVersion.h>
 #include <Common/Logger.h>
 #include <Storages/IStorage.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
@@ -32,7 +33,6 @@
 #include <Storages/extractKeyExpressionList.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MarkCache.h>
-#include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Interpreters/PartLog.h>
 #include <Poco/Timestamp.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -546,7 +546,6 @@ public:
     ProjectionPartsVector getProjectionPartsVectorForInternalUsage(
         const DataPartStates & affordable_states, MergeTreeData::DataPartStateVector * out_states) const;
 
-
     /// Returns absolutely all parts (and snapshot of their states)
     DataPartsVector getAllDataPartsVector(DataPartStateVector * out_states = nullptr) const;
 
@@ -554,6 +553,12 @@ public:
 
     /// Return the number of marks in all parts
     size_t getTotalMarksCount() const;
+
+    /// Returns the number of data mutations (UPDATEs and DELETEs) suitable for applying on the fly.
+    virtual UInt64 getNumberOnFlyDataMutations() const = 0;
+
+    /// Returns the number of metadata mutations (RENAMEs) suitable for applying on the fly.
+    virtual UInt64 getNumberOnFlyMetadataMutations() const = 0;
 
     /// Same as above but only returns projection parts
     ProjectionPartsVector getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states = nullptr) const;
@@ -679,6 +684,7 @@ public:
 
     DataPartsVector grabActivePartsToRemoveForDropRange(
         MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock);
+
     /// This wrapper is required to restrict access to parts in Deleting state
     class PartToRemoveFromZooKeeper
     {
@@ -736,11 +742,19 @@ public:
     /// Removes parts from data_parts, they should be in Deleting state
     void removePartsFinally(const DataPartsVector & parts);
 
-    /// Delete irrelevant parts from memory and disk.
-    /// If 'force' - don't wait for old_parts_lifetime.
-    size_t clearOldPartsFromFilesystem(bool force = false);
-    /// Try to clear parts from filesystem. Throw exception in case of errors.
-    void clearPartsFromFilesystem(const DataPartsVector & parts, bool throw_on_error = true, NameSet * parts_failed_to_delete = nullptr);
+    /// Try to clear parts from filesystem.
+    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
+    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, bool throw_on_error, NameSet * parts_failed_to_delete);
+
+    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
+    /// Throw exception in case of errors.
+    /// Otherwise, in non-parallel case will break and return.
+    void clearPartsFromFilesystemImplMaybeInParallel(const DataPartsVector & parts_to_remove, NameSet * part_names_succeed);
+
+    /// Try to clear parts from filesystem.
+    /// In case of error at some point for the rest of the parts its part's state is rollback Deleting - > Outdated.
+    /// That allows to schedule them for deletion a bit later
+    size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
 
     /// Delete all directories which names begin with "tmp"
     /// Must be called with locked lockForShare() because it's using relative_data_path.
@@ -870,6 +884,7 @@ public:
     size_t getColumnCompressedSize(const std::string & name) const
     {
         auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         const auto it = column_sizes.find(name);
         return it == std::end(column_sizes) ? 0 : it->second.data_compressed;
     }
@@ -877,6 +892,7 @@ public:
     ColumnSizeByName getColumnSizes() const override
     {
         auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         return column_sizes;
     }
 
@@ -887,6 +903,7 @@ public:
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
         return secondary_index_sizes;
     }
 
@@ -1183,11 +1200,21 @@ protected:
     /// under lockForShare if rename is possible.
     String relative_data_path;
 
+private:
+    /// Columns and secondary indices sizes can be calculated lazily.
+    mutable std::mutex columns_and_secondary_indices_sizes_mutex;
+    mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
-    ColumnSizeByName column_sizes;
-
+    mutable ColumnSizeByName column_sizes;
     /// Current secondary index sizes in compressed and uncompressed form.
-    IndexSizeByName secondary_index_sizes;
+    mutable IndexSizeByName secondary_index_sizes;
+
+protected:
+    void resetColumnSizes()
+    {
+        column_sizes.clear();
+        are_columns_and_secondary_indices_sizes_calculated = false;
+    }
 
     /// Engine-specific methods
     BrokenPartCallback broken_part_callback;
@@ -1359,11 +1386,12 @@ protected:
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex locked.
-    void calculateColumnAndSecondaryIndexSizesImpl();
+    void calculateColumnAndSecondaryIndexSizesIfNeeded() const;
 
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
-    void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
-    void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part);
+    void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
+    void addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const;
+    void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, DataPartsLock & data_parts_lock) const;
@@ -1449,7 +1477,6 @@ protected:
                             , max_postpone_power((max_postpone_time_ms_) ? (static_cast<size_t>(std::log2(max_postpone_time_ms_))) : (0ull))
             {}
 
-
             size_t getNextMinExecutionTimeUsResolution() const
             {
                 if (max_postpone_time_ms == 0)
@@ -1484,19 +1511,19 @@ protected:
 
         void resetMutationFailures()
         {
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             failed_mutation_parts.clear();
         }
 
         void removePartFromFailed(const String & part_name)
         {
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             failed_mutation_parts.erase(part_name);
         }
 
         void addPartMutationFailure (const String& part_name, size_t max_postpone_time_ms_)
         {
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             auto part_info_it = failed_mutation_parts.find(part_name);
             if (part_info_it == failed_mutation_parts.end())
             {
@@ -1509,8 +1536,7 @@ protected:
 
         bool partCanBeMutated(const String& part_name)
         {
-
-            std::unique_lock _lock(parts_info_lock);
+            std::unique_lock lock(parts_info_lock);
             auto iter = failed_mutation_parts.find(part_name);
             if (iter == failed_mutation_parts.end())
                 return true;
@@ -1534,7 +1560,7 @@ protected:
     using PartsBackupEntries = std::vector<PartBackupEntries>;
 
     /// Makes backup entries to backup the parts of this table.
-    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ReadSettings & read_settings, const ContextPtr & local_context);
+    PartsBackupEntries backupParts(const DataPartsVector & data_parts, const String & data_path_in_backup, const BackupSettings & backup_settings, const ContextPtr & local_context);
 
     class RestoredPartsHolder;
 
@@ -1562,11 +1588,11 @@ protected:
      *  This tree provides the order of loading of parts.
      *
      *  We start to traverse tree from the top level and load parts
-     *  corresposponded to nodes. If part is loaded successfully then
+     *  corresponding to nodes. If part is loaded successfully then
      *  we stop traversal at this node. Otherwise part is broken and we
      *  traverse its children and try to load covered parts which will
      *  replace broken covering part. Unloaded nodes represent outdated parts
-     *  nd they are pushed to background task and loaded asynchronoulsy.
+     *  and they are pushed to background task and loaded asynchronously.
      */
     class PartLoadingTree
     {
@@ -1630,7 +1656,7 @@ protected:
     mutable std::mutex outdated_data_parts_mutex;
     mutable std::condition_variable outdated_data_parts_cv;
 
-    BackgroundSchedulePool::TaskHolder outdated_data_parts_loading_task;
+    BackgroundSchedulePoolTaskHolder outdated_data_parts_loading_task;
     PartLoadingTreeNodes outdated_unloaded_data_parts TSA_GUARDED_BY(outdated_data_parts_mutex);
     bool outdated_data_parts_loading_canceled TSA_GUARDED_BY(outdated_data_parts_mutex) = false;
 
@@ -1646,7 +1672,7 @@ protected:
         MutableDataPartPtr part;
     };
 
-    BackgroundSchedulePool::TaskHolder unexpected_data_parts_loading_task;
+    BackgroundSchedulePoolTaskHolder unexpected_data_parts_loading_task;
     std::vector<UnexpectedPartLoadState> unexpected_data_parts;
     bool unexpected_data_parts_loading_canceled TSA_GUARDED_BY(unexpected_data_parts_mutex) = false;
 
@@ -1771,11 +1797,6 @@ private:
     /// distributed operations which can lead to data duplication. Implemented only in ReplicatedMergeTree.
     virtual std::optional<ZeroCopyLock> tryCreateZeroCopyExclusiveLock(const String &, const DiskPtr &) { return std::nullopt; }
     virtual bool waitZeroCopyLockToDisappear(const ZeroCopyLock &, size_t) { return false; }
-
-    /// Remove parts from disk calling part->remove(). Can do it in parallel in case of big set of parts and enabled settings.
-    /// If we fail to remove some part and throw_on_error equal to `true` will throw an exception on the first failed part.
-    /// Otherwise, in non-parallel case will break and return.
-    void clearPartsFromFilesystemImpl(const DataPartsVector & parts, NameSet * part_names_succeed);
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 

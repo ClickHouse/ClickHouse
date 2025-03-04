@@ -13,7 +13,7 @@ sidebar_label: DISTINCT
 
 ## 替代办法 {#alternatives}
 
-通过应用可以获得相同的结果 [GROUP BY](../../../sql-reference/statements/select/group-by.md) 在同一组值指定为 `SELECT` 子句，并且不使用任何聚合函数。 但与 `GROUP BY` 有几个不同的地方:
+通过应用可以获得相同的结果 [GROUP BY](/sql-reference/statements/select/group-by) 在同一组值指定为 `SELECT` 子句，并且不使用任何聚合函数。 但与 `GROUP BY` 有几个不同的地方:
 
 -   `DISTINCT` 可以与 `GROUP BY` 一起使用.
 -   当 [ORDER BY](../../../sql-reference/statements/select/order-by.md) 被省略并且 [LIMIT](../../../sql-reference/statements/select/limit.md) 被定义时，在读取所需数量的不同行后立即停止运行。

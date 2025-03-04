@@ -12,6 +12,12 @@
 #include <base/hex.h>
 
 
+namespace ProfileEvents
+{
+    extern const Event BackupPreparingFileInfosMicroseconds;
+}
+
+
 namespace DB
 {
 
@@ -59,7 +65,7 @@ namespace
 
     /// Calculate checksum for backup entry if it's empty.
     /// Also able to calculate additional checksum of some prefix.
-    ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(const BackupEntryPtr & entry, size_t prefix_size, const ReadSettings & read_settings)
+    ChecksumsForNewEntry calculateNewEntryChecksumsIfNeeded(const BackupEntryPtr & entry, UInt64 prefix_size, const ReadSettings & read_settings)
     {
         ChecksumsForNewEntry res;
         /// The partial checksum should be calculated before the full checksum to enable optimization in BackupEntryWithChecksumCalculation.
@@ -85,6 +91,7 @@ String BackupFileInfo::describe() const
     String result;
     result += fmt::format("file_name: {};\n", file_name);
     result += fmt::format("size: {};\n", size);
+    result += fmt::format("object_key: {};\n", object_key);
     result += fmt::format("checksum: {};\n", getHexUIntLowercase(checksum));
     result += fmt::format("base_size: {};\n", base_size);
     result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
@@ -147,7 +154,8 @@ BackupFileInfo buildFileInfoForBackupEntry(
             info.checksum = checksums.full_checksum;
 
             /// We have prefix of this file in backup with the same checksum.
-            /// In ClickHouse this can happen for StorageLog for example.
+            /// In ClickHouse this can happen for StorageLog for example,
+            /// or for .sql files that store DDL if only last part of the query was changed.
             if (checksums.prefix_checksum == base_backup_file_info->second)
             {
                 LOG_TRACE(log, "Found prefix of file {} in the base backup, will write rest of the file to current backup", adjusted_path);
@@ -207,12 +215,14 @@ BackupFileInfo buildFileInfoForBackupEntry(
 
 BackupFileInfos buildFileInfosForBackupEntries(const BackupEntries & backup_entries, const BackupPtr & base_backup, const ReadSettings & read_settings, ThreadPool & thread_pool, QueryStatusPtr process_list_element)
 {
+    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
+    LOG_TRACE(log, "Building file infos for backup entries");
+    auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::BackupPreparingFileInfosMicroseconds);
+
     BackupFileInfos infos;
     infos.resize(backup_entries.size());
 
     std::atomic_bool failed = false;
-
-    LoggerPtr log = getLogger("FileInfosFromBackupEntries");
 
     ThreadPoolCallbackRunnerLocal<void> runner(thread_pool, "BackupWorker");
     for (size_t i = 0; i != backup_entries.size(); ++i)

@@ -1,14 +1,13 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 
-#include <Parsers/ASTFunction.h>
-
-#include <Poco/Logger.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/quoteString.h>
+
+#include <Columns/ColumnNullable.h>
+
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
@@ -146,9 +145,9 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
         else
         {
             hyperrectangle[i].left
-                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].left, field_min) ? hyperrectangle[i].left : field_min;
+                = accurateLess(hyperrectangle[i].left, field_min) ? hyperrectangle[i].left : field_min;
             hyperrectangle[i].right
-                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].right, field_max) ? field_max : hyperrectangle[i].right;
+                = accurateLess(hyperrectangle[i].right, field_max) ? field_max : hyperrectangle[i].right;
         }
     }
 

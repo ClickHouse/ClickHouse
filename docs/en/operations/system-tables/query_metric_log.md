@@ -1,13 +1,15 @@
 ---
-slug: /en/operations/system-tables/query_metric_log
+description: "System table containing a history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk."
+slug: /operations/system-tables/query_metric_log
+title: "system.query_metric_log"
+keywords: ["system table", "query_metric_log"]
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-# query_metric_log
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
-Contains history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk.
+Contains a history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk.
 
 Once a query starts, data is collected at periodic intervals of `query_metric_log_interval` milliseconds (which is set to 1000
 by default). The data is also collected when the query finishes if the query takes longer than `query_metric_log_interval`.
@@ -48,6 +50,6 @@ ProfileEvent_FailedSelectQuery:                                  0
 - [query_metric_log setting](../../operations/server-configuration-parameters/settings.md#query_metric_log) — Enabling and disabling the setting.
 - [query_metric_log_interval](../../operations/settings/settings.md#query_metric_log_interval)
 - [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
-- [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
+- [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
 - [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
 - [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

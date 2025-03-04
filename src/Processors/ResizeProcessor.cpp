@@ -1,6 +1,8 @@
 #include <Processors/ResizeProcessor.h>
 #include <Interpreters/Squashing.h>
 
+#include <Processors/Port.h>
+
 namespace DB
 {
 namespace ErrorCodes

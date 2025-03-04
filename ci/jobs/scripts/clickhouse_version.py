@@ -23,7 +23,7 @@ SET(VERSION_STRING {string})
 """
 
     @classmethod
-    def get_version_as_dict(cls):
+    def get_release_version_as_dict(cls):
         versions = {}
         for line in (
             Path(cls.FILE_WITH_VERSION_PATH).read_text(encoding="utf-8").splitlines()
@@ -34,51 +34,63 @@ SET(VERSION_STRING {string})
 
             name, value = line[4:-1].split(maxsplit=1)
             name = name.removeprefix("VERSION_").lower()
-            if name not in ("major", "minor", "patch"):
-                continue
-            value = int(value)
+            if name in ("major", "minor", "patch"):
+                value = int(value)
             versions[name] = value
 
+        result = {
+            "major": versions["major"],
+            "minor": versions["minor"],
+            "patch": versions["patch"],
+            "revision": versions["revision"],
+            "githash": versions["githash"],
+            "describe": versions["describe"],
+            "string": versions["string"],
+        }
+        return result
+
+    @classmethod
+    def get_curent_version_as_dict(cls):
+        version = cls.get_release_version_as_dict()
         info = Info()
-        version_sha = info.sha
-        if info.pr_number == 0:
+        try:
             tweak = int(
                 Shell.get_output(
-                    f"git rev-list --count {version_sha}..HEAD", verbose=True
+                    f"git rev-list --count {version['githash']}..HEAD", verbose=True
                 )
             )
-        else:
+        except ValueError:
+            # Shallow checkout
             tweak = 1
         version_type = "testing"
         if info.pr_number == 0 and bool(
             re.match(r"^\d{2}\.\d+$", info.git_branch.removeprefix("release/"))
         ):
-            if versions["minor"] % 5 == 3:
+            if version["minor"] % 5 == 3:
                 version_type = "lts"
             else:
                 version_type = "stable"
         version_string = (
-            f'{versions["major"]}.{versions["minor"]}.{versions["patch"]}.{tweak}'
+            f'{version["major"]}.{version["minor"]}.{version["patch"]}.{tweak}'
         )
         version_description = f"v{version_string}-{version_type}"
-        result = {
-            "major": versions["major"],
-            "minor": versions["minor"],
-            "patch": versions["patch"],
-            "revision": tweak,
-            "githash": Info().sha,
-            "describe": version_description,
-            "string": version_string,
-        }
-        return result
+        version["githash"] = info.sha
+        version["tweak"] = tweak
+        version["describe"] = version_description
+        version["string"] = version_string
+        return version
 
     @classmethod
     def get_version(cls):
-        return cls.get_version_as_dict()["string"]
+        return cls.get_curent_version_as_dict()["string"]
+
+    @classmethod
+    def get_release_sha(cls):
+        return cls.get_release_version_as_dict()["githash"]
 
     @classmethod
     def store_version_data_in_ci_pipeline(cls):
-        Info().store_custom_data("clickhouse_version", cls.get_version_as_dict())
+        Info().store_custom_data("clickhouse_version", cls.get_curent_version_as_dict())
 
     @classmethod
     def set_build_version(cls):
@@ -92,5 +104,5 @@ SET(VERSION_STRING {string})
 
     @classmethod
     def get_latest_release_major_minor_sha(cls):
-        version_dict = cls.get_version_as_dict()
+        version_dict = cls.get_curent_version_as_dict()
         return version_dict["major"], version_dict["minor"], version_dict["githash"]

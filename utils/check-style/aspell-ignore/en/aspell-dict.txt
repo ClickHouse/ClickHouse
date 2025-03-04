@@ -89,6 +89,7 @@ BestEffortUS
 BestEffortUSOrNull
 BestEffortUSOrZero
 BetaBadge
+Bitwise
 Blazingly
 BlockActiveTime
 BlockDiscardBytes
@@ -230,7 +231,6 @@ Damerau
 DataGrip
 DataLens
 DataPacket
-DataTime
 DataTypes
 DataTypesMatching
 DatabaseCatalog
@@ -464,10 +464,12 @@ JSONCompactColumns
 JSONCompactEachRow
 JSONCompactEachRowWithNames
 JSONCompactEachRowWithNamesAndTypes
+JSONCompactEachRowWithProgress
 JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
+JSONCompactStringsEachRowWithProgress
 JSONCompactWithProgress
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
@@ -830,6 +832,7 @@ PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
 PrettyCompactNoEscapesMonoBlock
+PrettyFormatSettings
 PrettyJSONEachRow
 PrettyJSONLines
 PrettyMonoBlock
@@ -840,7 +843,6 @@ PrettySpace
 PrettySpaceMonoBlock
 PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
-PrettyFormatSettings
 Prewhere
 PrivateKeyPassphraseHandler
 PrivatePreviewBadge
@@ -936,10 +938,10 @@ RoaringBitmap
 RocksDB
 Rollup
 RowBinary
+RowBinaryFormatSettings
 RowBinaryWithDefaults
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
-RowBinaryFormatSettings
 Runtime
 SATA
 SELECTs
@@ -1030,6 +1032,7 @@ SummingMergeTree
 SuperSet
 Superset
 SupersetDocker
+SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
@@ -1324,6 +1327,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arraySymmetricDifference
 arrayUnion
 arrayUniq
 arrayWithConstant
@@ -1339,6 +1343,7 @@ atan
 atanh
 atomicity
 auth
+authType
 authenticator
 authenticators
 autocompletion
@@ -1510,6 +1515,7 @@ codepoints
 collapsingmergetree
 combinator
 combinators
+compareSubstrings
 comparising
 composable
 composable
@@ -1529,6 +1535,7 @@ connectionId
 const
 contrib
 convertCharset
+cooldown
 coroutines
 corrMatrix
 corrStable
@@ -1536,7 +1543,6 @@ corrmatrix
 corrstable
 cors
 cosineDistance
-cooldown
 countDigits
 countEqual
 countIf
@@ -2461,6 +2467,7 @@ prefetched
 prefetches
 prefetching
 prefetchsize
+preflight
 preimage
 preloaded
 prem
@@ -2500,6 +2507,7 @@ protobuf
 protobuflist
 protobufsingle
 protocol
+protos
 proxied
 pseudorandom
 pseudorandomize
@@ -2758,6 +2766,7 @@ sql
 sqlalchemy
 sqlinsert
 sqlite
+sqlreference
 sqrt
 src
 srcReplicas
@@ -2790,6 +2799,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
 stringToH
@@ -2883,7 +2893,6 @@ sysctl
 syslog
 syslogd
 systemd
-sqlreference
 tabix
 tablum
 tabseparated
@@ -2981,7 +2990,6 @@ toStartOfFiveMinutes
 toStartOfHour
 toStartOfISOYear
 toStartOfInterval
-toStartOfIntervalAllowNegative
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
@@ -3192,6 +3200,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+workfactor
 writability
 wrt
 wyHash
@@ -3214,3 +3223,6 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+groupArrayArray
+benchmarked
+FastFormats
