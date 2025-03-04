@@ -74,7 +74,7 @@ void MergeTreeDataPartWriterCompact::addStreams(const NameAndTypePair & name_and
     ISerialization::StreamCallback callback = [&](const auto & substream_path)
     {
         assert(!substream_path.empty());
-        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path);
+        String stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
         /// Shared offsets for Nested type.
         if (compressed_streams.contains(stream_name))
@@ -237,7 +237,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             CompressedStreamPtr prev_stream;
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
-                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
+                String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
 
                 auto & result_stream = compressed_streams[stream_name];
                 /// Write one compressed block per column in granule for more optimal reading.

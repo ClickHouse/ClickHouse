@@ -7650,7 +7650,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         auto callback = [&](const auto & substream_path)
         {
             String stream_name;
-            auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path);
+            auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
 
             if (settings[MergeTreeSetting::replace_long_file_name_to_hash] && full_stream_name.size() > settings[MergeTreeSetting::max_file_name_length])
                 stream_name = sipHash128String(full_stream_name);

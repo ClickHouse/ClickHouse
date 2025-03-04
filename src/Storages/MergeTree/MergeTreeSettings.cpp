@@ -68,6 +68,7 @@ namespace ErrorCodes
     DECLARE(UInt64, merge_total_max_bytes_to_prewarm_cache, 15ULL * 1024 * 1024 * 1024, "Only available in ClickHouse Cloud. Maximal size of parts in total to prewarm cache during merge.", 0) \
     DECLARE(Bool, load_existing_rows_count_for_old_parts, false, "Whether to load existing_rows_count for existing parts. If false, existing_rows_count will be equal to rows_count for existing parts.", 0) \
     DECLARE(Bool, use_compact_variant_discriminators_serialization, true, "Use compact version of Variant discriminators serialization.", 0) \
+    DECLARE(Bool, escape_variant_subcolumn_filenames, true, "Escape special symbols in filenames created for subcolumns of Variant data type in Wide parts of MergeTree table. Needed for compatibility", 0) \
     \
     /** Merge selector settings. */ \
     DECLARE(UInt64, merge_selector_blurry_base_scale_factor, 0, "Controls when the logic kicks in relatively to the number of parts in partition. The bigger the factor the more belated reaction will be.", 0) \

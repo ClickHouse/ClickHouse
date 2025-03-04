@@ -30,6 +30,7 @@ IMergeTreeReader::IMergeTreeReader(
     const NamesAndTypesList & columns_,
     const VirtualFields & virtual_fields_,
     const StorageSnapshotPtr & storage_snapshot_,
+    const MergeTreeSettingsPtr & storage_settings_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
     const MarkRanges & all_mark_ranges_,
@@ -43,6 +44,7 @@ IMergeTreeReader::IMergeTreeReader(
     , uncompressed_cache(uncompressed_cache_)
     , mark_cache(mark_cache_)
     , settings(settings_)
+    , storage_settings(storage_settings_)
     , storage_snapshot(storage_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(data_part_info_for_read->getAlterConversions())
