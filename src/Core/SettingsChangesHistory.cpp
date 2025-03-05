@@ -4,6 +4,8 @@
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -67,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             {"query_plan_remove_unused_columns", false, true, "New setting. Add optimization to remove unused columns in query plan."},
+            {"use_page_cache_with_distributed_cache", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {

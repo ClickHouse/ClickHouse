@@ -1089,9 +1089,12 @@ public:
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void clearUncompressedCache() const;
 
-    void setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages);
+    void setPageCache(
+        size_t default_block_size, size_t default_lookahead_blocks,
+        std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
+        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio);
     std::shared_ptr<PageCache> getPageCache() const;
-    void dropPageCache() const;
+    void clearPageCache() const;
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
