@@ -1,7 +1,7 @@
 # Compiler
 
-if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    message (FATAL_ERROR "Compiler ${CMAKE_CXX_COMPILER_ID} is not supported")
+if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    message (FATAL_ERROR "Compiler ${CMAKE_CXX_COMPILER_ID} is not supported. Please switch to Clang")
 endif ()
 
 # Print details to output
@@ -14,15 +14,8 @@ message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
 set (CLANG_MINIMUM_VERSION 19)
-if (CMAKE_CXX_COMPILER_ID MATCHES "AppleClang")
-    # (Experimental!) Specify "-DALLOW_APPLECLANG=ON" when running CMake configuration step, if you want to experiment with using it.
-    if (NOT ALLOW_APPLECLANG AND NOT DEFINED ENV{ALLOW_APPLECLANG})
-        message (FATAL_ERROR "Compilation with AppleClang is unsupported. Please use vanilla Clang, e.g. from Homebrew.")
-    endif ()
-else ()
-    if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
-        message (FATAL_ERROR "Compilation with Clang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${CLANG_MINIMUM_VERSION}.")
-    endif ()
+if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
+    message (FATAL_ERROR "Compilation with Clang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${CLANG_MINIMUM_VERSION}.")
 endif ()
 
 string (REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
