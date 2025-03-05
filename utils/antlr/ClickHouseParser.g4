@@ -463,7 +463,7 @@ columnLambdaExpr:
     ARROW columnExpr
     ;
 columnIdentifier: (tableIdentifier DOT)? nestedIdentifier;
-nestedIdentifier: identifier (DOT identifier)?;
+nestedIdentifier: identifier (DOT identifier)*;
 columnExceptExpr
     : EXCEPT (stringLiteral | (LPAREN stringLiteral RPAREN))                # columnExceptExprRegexp
     | EXCEPT (identifier | (LPAREN identifier (COMMA identifier)* RPAREN))  # columnExceptExprIdentifiers
