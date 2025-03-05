@@ -84,7 +84,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_max_rows", 10000, 1000, "It is better for usability - less amount to scroll."},
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"use_query_condition_cache", false, false, "New setting."},
-            {"parallel_replicas_only_with_analyzer", false, true, "Parallel replicas is supported only with analyzer enabled"},
+            {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
             /// Release closed. Please use 25.3
         });
