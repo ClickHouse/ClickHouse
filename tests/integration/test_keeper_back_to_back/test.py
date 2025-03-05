@@ -6,7 +6,9 @@ from multiprocessing.dummy import Pool
 
 import pytest
 
+import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
+from kazoo.client import KazooState
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -15,7 +17,6 @@ node = cluster.add_instance(
     with_zookeeper=True,
     use_keeper=False,
 )
-from kazoo.client import KazooClient, KazooState, KeeperState
 
 
 def get_genuine_zk():
@@ -24,15 +25,7 @@ def get_genuine_zk():
 
 
 def get_fake_zk():
-    print("node", cluster.get_instance_ip("node"))
-    kazoo_retry = {
-        "max_tries": 10,
-    }
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip("node") + ":9181",
-        timeout=30.0,
-        connection_retry=kazoo_retry,
-    )
+    _fake_zk_instance = keeper_utils.get_fake_zk(cluster, "node", start=False)
 
     def reset_last_zxid_listener(state):
         print("Fake zk callback called for state", state)
@@ -559,10 +552,8 @@ def test_end_of_session(started_cluster):
     genuine_zk2 = None
 
     try:
-        fake_zk1 = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181")
-        fake_zk1.start()
-        fake_zk2 = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181")
-        fake_zk2.start()
+        fake_zk1 = keeper_utils.get_fake_zk(cluster, "node")
+        fake_zk2 = keeper_utils.get_fake_zk(cluster, "node")
         genuine_zk1 = cluster.get_kazoo_client("zoo1")
         genuine_zk1.start()
         genuine_zk2 = cluster.get_kazoo_client("zoo1")
@@ -627,11 +618,8 @@ def test_end_of_watches_session(started_cluster):
     fake_zk1 = None
     fake_zk2 = None
     try:
-        fake_zk1 = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181")
-        fake_zk1.start()
-
-        fake_zk2 = KazooClient(hosts=cluster.get_instance_ip("node") + ":9181")
-        fake_zk2.start()
+        fake_zk1 = keeper_utils.get_fake_zk(cluster, "node")
+        fake_zk2 = keeper_utils.get_fake_zk(cluster, "node")
 
         fake_zk1.create("/test_end_of_watches_session")
 

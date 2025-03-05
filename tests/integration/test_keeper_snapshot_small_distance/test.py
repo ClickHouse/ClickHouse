@@ -6,7 +6,6 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
-from kazoo.client import KazooClient, KazooRetry
 from kazoo.handlers.threading import KazooTimeoutError
 
 import helpers.keeper_utils as keeper_utils
@@ -143,12 +142,7 @@ def get_genuine_zk(node, timeout=30.0):
     CONNECTION_RETRIES = 100
     for i in range(CONNECTION_RETRIES):
         try:
-            _genuine_zk_instance = KazooClient(
-                hosts=cluster.get_instance_ip(node.name) + ":2181",
-                timeout=timeout,
-                connection_retry=KazooRetry(max_tries=20),
-            )
-            _genuine_zk_instance.start()
+            _genuine_zk_instance = cluster.get_kazoo_client(node.name, timeout=timeout, external_port=2181)
             return _genuine_zk_instance
         except KazooTimeoutError:
             if i == CONNECTION_RETRIES - 1:
