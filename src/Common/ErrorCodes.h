@@ -21,6 +21,8 @@ namespace ErrorCodes
     using Value = size_t;
     using FramePointers = std::vector<void *>;
 
+    extern const int CANNOT_WRITE_TO_FILE;
+
     /// Get name of error_code by identifier.
     /// Returns statically allocated string.
     std::string_view getName(ErrorCode error_code);
