@@ -60,6 +60,7 @@ static struct InitFiu
     REGULAR(smt_dont_merge_first_part) \
     REGULAR(smt_sleep_in_schedule_data_processing_job) \
     REGULAR(cache_warmer_stall) \
+    REGULAR(file_cache_dynamic_resize_fail_to_evict) \
     REGULAR(check_table_query_delay_for_part) \
     REGULAR(dummy_failpoint) \
     REGULAR(prefetched_reader_pool_failpoint) \
