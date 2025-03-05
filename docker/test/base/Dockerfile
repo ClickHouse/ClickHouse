@@ -17,6 +17,14 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+# Install ODBC Bridge and Library Bridge, which are separately built components.
+RUN BRIDGE_VERSION='25.1.5.31' \
+    && ARCH=$(dpkg --print-architecture) \
+    && cd /tmp \
+    && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
+    && wget "https://packages.clickhouse.com/deb/pool/main/c/clickhouse/clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb" \
+    && dpkg -i clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb \
+    && rm clickhouse-odbc-bridge_${BRIDGE_VERSION}_${ARCH}.deb clickhouse-library-bridge_${BRIDGE_VERSION}_${ARCH}.deb
 
 # Sanitizer options for services (clickhouse-server)
 # Set resident memory limit for TSAN to 45GiB (46080MiB) to avoid OOMs in Stress tests

@@ -8,7 +8,7 @@ sidebar_label: SELECT
 
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](../../../sql-reference/statements/insert-into.md) it can be forwarded to a different table.
 
-## Syntax
+## Syntax {#syntax}
 
 ``` sql
 [WITH expr_list(subquery)]
@@ -45,7 +45,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 - [WHERE clause](../../../sql-reference/statements/select/where.md)
 - [WINDOW clause](../../../sql-reference/window-functions/index.md)
-- [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
+- [GROUP BY clause](/sql-reference/statements/select/group-by)
 - [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 - [HAVING clause](../../../sql-reference/statements/select/having.md)
 - [QUALIFY clause](../../../sql-reference/statements/select/qualify.md)
@@ -57,14 +57,14 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [INTO OUTFILE clause](../../../sql-reference/statements/select/into-outfile.md)
 - [FORMAT clause](../../../sql-reference/statements/select/format.md)
 
-## SELECT Clause
+## SELECT Clause {#select-clause}
 
-[Expressions](../../../sql-reference/syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](../../../sql-reference/statements/select/group-by.md) aggregation.
+[Expressions](/sql-reference/syntax#expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](/sql-reference/statements/select/group-by) aggregation.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
 
-### Dynamic column selection
+### Dynamic column selection {#dynamic-column-selection}
 
 Dynamic column selection (also known as a COLUMNS expression) allows you to match some columns in a result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression.
 
@@ -123,7 +123,7 @@ In this example, `COLUMNS('a')` returns two columns: `aa` and `ab`. `COLUMNS('c'
 
 Columns that matched the `COLUMNS` expression can have different data types. If `COLUMNS` does not match any columns and is the only expression in `SELECT`, ClickHouse throws an exception.
 
-### Asterisk
+### Asterisk {#asterisk}
 
 You can put an asterisk in any part of a query instead of an expression. When the query is analyzed, the asterisk is expanded to a list of all table columns (excluding the `MATERIALIZED` and `ALIAS` columns). There are only a few cases when using an asterisk is justified:
 
@@ -135,7 +135,7 @@ You can put an asterisk in any part of a query instead of an expression. When th
 
 In all other cases, we do not recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
 
-### Extreme Values
+### Extreme Values {#extreme-values}
 
 In addition to results, you can also get minimum and maximum values for the results columns. To do this, set the **extremes** setting to 1. Minimums and maximums are calculated for numeric types, dates, and dates with times. For other columns, the default values are output.
 
@@ -145,13 +145,13 @@ In `JSON*` and `XML` formats, the extreme values are output in a separate 'extre
 
 Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. However, when using `LIMIT offset, size`, the rows before `offset` are included in `extremes`. In stream requests, the result may also include a small number of rows that passed through `LIMIT`.
 
-### Notes
+### Notes {#notes}
 
 You can use synonyms (`AS` aliases) in any part of a query.
 
 The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional arguments. To enable this, switch on the [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) setting. Then, for example, `ORDER BY 1,2` will be sorting rows in the table on the first and then the second column.
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
 If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN` and `JOIN` subqueries, the query will be completely stream processed, using O(1) amount of RAM. Otherwise, the query might consume a lot of RAM if the appropriate restrictions are not specified:
 
@@ -171,11 +171,11 @@ If the query omits the `DISTINCT`, `GROUP BY` and `ORDER BY` clauses and the `IN
 
 For more information, see the section "Settings". It is possible to use external sorting (saving temporary tables to a disk) and external aggregation.
 
-## SELECT modifiers
+## SELECT modifiers {#select-modifiers}
 
 You can use the following modifiers in `SELECT` queries.
 
-### APPLY
+### APPLY {#apply}
 
 Allows you to invoke some function for each row returned by an outer table expression of a query.
 
@@ -199,7 +199,7 @@ SELECT * APPLY(sum) FROM columns_transformers;
 └────────┴────────┴────────┘
 ```
 
-### EXCEPT
+### EXCEPT {#except}
 
 Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
 
@@ -222,7 +222,7 @@ SELECT * EXCEPT (i) from columns_transformers;
 └────┴─────┘
 ```
 
-### REPLACE
+### REPLACE {#replace}
 
 Specifies one or more [expression aliases](../../../sql-reference/syntax.md#syntax-expression_aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`.
 
@@ -247,7 +247,7 @@ SELECT * REPLACE(i + 1 AS i) from columns_transformers;
 └─────┴────┴─────┘
 ```
 
-### Modifier Combinations
+### Modifier Combinations {#modifier-combinations}
 
 You can use each modifier separately or combine them.
 
@@ -277,11 +277,11 @@ SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
 └─────────────────┴────────┘
 ```
 
-## SETTINGS in SELECT Query
+## SETTINGS in SELECT Query {#settings-in-select-query}
 
 You can specify the necessary settings right in the `SELECT` query. The setting value is applied only to this query and is reset to default or previous value after the query is executed.
 
-Other ways to make settings see [here](../../../operations/settings/index.md).
+Other ways to make settings see [here](/operations/settings/overview).
 
 **Example**
 
