@@ -158,7 +158,6 @@ String toString(const JoinCondition & condition);
     M(UInt64, max_block_size) \
     \
     M(Bool, join_use_nulls) \
-    M(Bool, any_join_distinct_right_table_keys) \
     \
     M(UInt64, max_rows_in_join) \
     M(UInt64, max_bytes_in_join) \
@@ -186,14 +185,6 @@ String toString(const JoinCondition & condition);
     M(Bool, collect_hash_table_stats_during_joins) \
     M(UInt64, max_size_to_preallocate_for_joins) \
     \
-    M(Bool, query_plan_convert_outer_join_to_inner_join) \
-    M(Bool, multiple_joins_try_to_keep_original_names) \
-    \
-    M(Bool, parallel_replicas_prefer_local_join) \
-    M(Bool, allow_experimental_join_condition) \
-    \
-    M(UInt64, cross_to_inner_join_rewrite) \
-    \
     M(UInt64, max_joined_block_size_rows) \
     M(String, temporary_files_codec) \
     M(UInt64, join_output_by_rowlist_perkey_rows_threshold) \
@@ -202,6 +193,8 @@ String toString(const JoinCondition & condition);
     M(Bool, allow_experimental_join_right_table_sorting) \
     M(UInt64, min_joined_block_size_bytes) \
     M(MaxThreads, max_threads) \
+    \
+    M(UInt64, default_max_bytes_in_join) \
 
 
 /// Subset of query settings that are relevant to join and used to configure join algorithms.
