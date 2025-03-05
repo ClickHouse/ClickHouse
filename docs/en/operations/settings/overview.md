@@ -1,14 +1,14 @@
 ---
 title: "Settings Overview"
 sidebar_position: 1
-slug: /en/operations/settings/overview
+slug: /operations/settings/overview
 description: "Overview page for settings."
 ---
 
 # Settings Overview
 
 :::note
-XML-based Settings Profiles and [configuration files](/docs/en/operations/configuration-files) are currently not supported for ClickHouse Cloud. To specify settings for your ClickHouse Cloud service, you must use [SQL-driven Settings Profiles](/docs/en/operations/access-rights#settings-profiles-management).
+XML-based Settings Profiles and [configuration files](/operations/configuration-files) are currently not supported for ClickHouse Cloud. To specify settings for your ClickHouse Cloud service, you must use [SQL-driven Settings Profiles](/operations/access-rights#settings-profiles-management).
 :::
 
 There are two main groups of ClickHouse settings:
@@ -18,9 +18,9 @@ There are two main groups of ClickHouse settings:
 
 The main distinction between both is that global server settings apply globally for the ClickHouse server, while session settings apply to user sessions or even individual queries.
 
-Read about [global server settings](/docs/en/operations/server-configuration-parameters/settings.md) to learn more about configuring your ClickHouse server at the global server level.
+Read about [global server settings](/operations/server-configuration-parameters/settings.md) to learn more about configuring your ClickHouse server at the global server level.
 
-Read about [session settings](/docs/en/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse server at the session level.
+Read about [session settings](/operations/settings/settings-query-level.md) to learn more about configuring your ClickHouse server at the session level.
 
 ## See non-default settings {#see-non-default-settings}
 

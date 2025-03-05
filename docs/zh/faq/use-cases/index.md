@@ -16,4 +16,4 @@ sidebar_label: 使用案例
 !!! info "没找到您所需要的内容?"
     请查看[其他常见问题类别](../../faq/index.md)或浏览左侧边栏中的主要文档文章。
 
-[原始文档](/docs/faq/use-cases/)
+[原始文档](/faq/use-cases/)

@@ -158,9 +158,9 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
 {
 }
 
-TableJoin::TableJoin(const JoinSettings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_, ContextPtr query_context)
+TableJoin::TableJoin(const JoinSettings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_, UInt64 max_bytes_in_join)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
-    , default_max_bytes(query_context ? query_context->getSettingsRef()[Setting::default_max_bytes_in_join] : settings.max_bytes_in_join)
+    , default_max_bytes(max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
     , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
     , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)

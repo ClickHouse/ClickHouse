@@ -1,7 +1,7 @@
 ---
-title : JSONStringsEachRowWithProgress
+title: JSONStringsEachRowWithProgress
 slug: /interfaces/formats/JSONStringsEachRowWithProgress
-keywords : [JSONStringsEachRowWithProgress]
+keywords: [JSONStringsEachRowWithProgress]
 ---
 
 ## Description {#description}

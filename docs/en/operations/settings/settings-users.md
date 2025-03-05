@@ -11,7 +11,7 @@ title: "Users and Roles Settings"
 The `users` section of the `users.xml` configuration file contains user settings.
 
 :::note
-ClickHouse also supports [SQL-driven workflow](../../guides/sre/user-management/index.md#access-control) for managing users. We recommend using it.
+ClickHouse also supports [SQL-driven workflow](/operations/access-rights#access-control-usage) for managing users. We recommend using it.
 :::
 
 Structure of the `users` section:
@@ -116,7 +116,7 @@ Substitute `ssh-ed25519` with `ssh-rsa` or `ecdsa-sha2-nistp256` for the other s
 
 ### access_management {#access_management-user-setting}
 
-This setting enables or disables using of SQL-driven [access control and account management](../../guides/sre/user-management/index.md#access-control) for the user.
+This setting enables or disables using of SQL-driven [access control and account management](/operations/access-rights#access-control-usage) for the user.
 
 Possible values:
 
@@ -199,7 +199,7 @@ You can assign a settings profile for the user. Settings profiles are configured
 Quotas allow you to track or limit resource usage over a period of time. Quotas are configured in the `quotas`
 section of the `users.xml` configuration file.
 
-You can assign a quotas set for the user. For a detailed description of quotas configuration, see [Quotas](../../operations/quotas.md#quotas).
+You can assign a quotas set for the user. For a detailed description of quotas configuration, see [Quotas](/operations/quotas).
 
 ### user_name/databases {#user-namedatabases}
 

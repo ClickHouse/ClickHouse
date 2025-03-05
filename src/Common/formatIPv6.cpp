@@ -165,9 +165,8 @@ void formatIPv6(const unsigned char * src, char *& dst, uint8_t zeroed_tail_byte
             uint8_t ipv4_buffer[IPV4_BINARY_LENGTH] = {0};
             memcpy(ipv4_buffer, src + 12, IPV4_BINARY_LENGTH);
             // Due to historical reasons formatIPv4() takes ipv4 in BE format, but inside ipv6 we store it in LE-format.
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-            std::reverse(std::begin(ipv4_buffer), std::end(ipv4_buffer));
-#endif
+            if constexpr (std::endian::native == std::endian::little)
+                std::ranges::reverse(ipv4_buffer);
             formatIPv4(ipv4_buffer, dst, std::min(zeroed_tail_bytes_count, static_cast<uint8_t>(IPV4_BINARY_LENGTH)), "0");
             // formatIPv4 has already added a null-terminator for us.
             return;

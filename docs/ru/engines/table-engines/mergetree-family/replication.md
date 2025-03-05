@@ -20,7 +20,7 @@ sidebar_label: "Репликация данных"
 
 Репликация не зависит от шардирования. На каждом шарде репликация работает независимо.
 
-Реплицируются сжатые данные запросов `INSERT`, `ALTER` (см. подробности в описании запроса [ALTER](../../../sql-reference/statements/alter/index.md#query_language_queries_alter)).
+Реплицируются сжатые данные запросов `INSERT`, `ALTER` (см. подробности в описании запроса [ALTER](/sql-reference/statements/alter)).
 
 Запросы `CREATE`, `DROP`, `ATTACH`, `DETACH` и `RENAME` выполняются на одном сервере и не реплицируются:
 

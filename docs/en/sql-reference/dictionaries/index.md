@@ -21,7 +21,7 @@ ClickHouse supports:
 
 
 :::tip Tutorial
-If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](/docs/tutorial.md).
+If you are getting started with Dictionaries in ClickHouse we have a tutorial that covers that topic.  Take a look [here](tutorial.md).
 :::
 
 You can add your own dictionaries from various data sources. The source for a dictionary can be a ClickHouse table, a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see "[Dictionary Sources](#dictionary-sources)".
@@ -2452,7 +2452,7 @@ clickhouse client \
     FORMAT CSV" < regexp_dict.csv
 ```
 
-You can see how to [Insert Local Files](/docs/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
+You can see how to [Insert Local Files](/integrations/data-ingestion/insert-local-files) for more details. After we initialize the source table, we can create a RegexpTree by table source:
 
 ``` sql
 CREATE DICTIONARY regexp_dict

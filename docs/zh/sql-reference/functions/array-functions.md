@@ -863,13 +863,13 @@ arrayDifference(array)
 
 **参数**
 
--   `array` –类型为[数组](/data_types/array/)。
+-   `array` –类型为[数组](/sql-reference/data-types/array)。
 
 **返回值**
 
 返回相邻元素之间的差异数组。
 
-类型: [UInt\*](/data_types/int_uint/#uint-ranges), [Int\*](/data_types/int_uint/#int-ranges), [Float\*](/data_types/float/)。
+类型: [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float)。
 
 **示例**
 
@@ -914,7 +914,7 @@ arrayDistinct(array)
 
 **参数**
 
--   `array` –类型为[数组](/data_types/array/)。
+-   `array` –类型为[数组](/sql-reference/data-types/array)。
 
 **返回值**
 

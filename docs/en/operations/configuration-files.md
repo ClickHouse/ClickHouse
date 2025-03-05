@@ -8,7 +8,7 @@ title: Configuration Files
 :::note
 Please note that XML-based Settings Profiles and configuration files are currently not supported for ClickHouse Cloud. Therefore, in ClickHouse Cloud, you won't find a config.xml file. Instead, you should use SQL commands to manage settings through Settings Profiles.
 
-For further details, see ["Configuring Settings"](/docs/manage/settings)
+For further details, see ["Configuring Settings"](/manage/settings)
 :::
 
 The ClickHouse server can be configured with configuration files in XML or YAML syntax.

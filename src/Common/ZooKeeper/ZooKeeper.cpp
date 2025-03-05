@@ -28,6 +28,8 @@
 #include <ranges>
 #include <vector>
 
+#include <fmt/ranges.h>
+
 
 namespace fs = std::filesystem;
 

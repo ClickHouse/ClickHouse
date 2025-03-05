@@ -301,7 +301,7 @@ The query execution order is optimized when running `ARRAY JOIN`. Although `ARRA
 
 ### Incompatibility with short-circuit function evaluation {#incompatibility-with-short-circuit-function-evaluation}
 
-[Short-circuit function evaluation](../../../operations/settings/overview#short-circuit-function-evaluation) is a feature that optimizes the execution of complex expressions in specific functions such as `if`, `multiIf`, `and`, and `or`. It prevents potential exceptions, such as division by zero, from occurring during the execution of these functions.
+[Short-circuit function evaluation](/operations/settings/settings#short_circuit_function_evaluation) is a feature that optimizes the execution of complex expressions in specific functions such as `if`, `multiIf`, `and`, and `or`. It prevents potential exceptions, such as division by zero, from occurring during the execution of these functions.
 
 `arrayJoin` is always executed and not supported for short circuit function evaluation. That's because it's a unique function processed separately from all other functions during query analysis and execution and requires additional logic that doesn't work with short circuit function execution. The reason is that the number of rows in the result depends on the arrayJoin result, and it's too complex and expensive to implement lazy execution of `arrayJoin`.
 

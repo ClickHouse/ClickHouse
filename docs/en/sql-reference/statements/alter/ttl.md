@@ -7,7 +7,7 @@ sidebar_label: TTL
 # Manipulations with Table TTL
 
 :::note
-If you are looking for details on using TTL for managing old data, check out the [Manage Data with TTL](/docs/guides/developer/ttl.md) user guide. The docs below demonstrate how to alter or remove an existing TTL rule.
+If you are looking for details on using TTL for managing old data, check out the [Manage Data with TTL](/guides/developer/ttl.md) user guide. The docs below demonstrate how to alter or remove an existing TTL rule.
 :::
 
 ## MODIFY TTL {#modify-ttl}

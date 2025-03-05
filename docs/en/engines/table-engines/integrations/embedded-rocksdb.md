@@ -224,5 +224,5 @@ ORDER BY key ASC
 ```
 
 ### More information on Joins {#more-information-on-joins}
-- [`join_algorithm` setting](/docs/operations/settings/settings.md#join_algorithm)
-- [JOIN clause](/docs/sql-reference/statements/select/join.md)
+- [`join_algorithm` setting](/operations/settings/settings.md#join_algorithm)
+- [JOIN clause](/sql-reference/statements/select/join.md)

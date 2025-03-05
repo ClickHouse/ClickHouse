@@ -47,6 +47,7 @@
 #include <optional>
 #include <unordered_map>
 
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {

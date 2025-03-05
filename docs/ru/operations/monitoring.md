@@ -34,7 +34,7 @@ ClickHouse собирает:
 -   Различные метрики того, как сервер использует вычислительные ресурсы.
 -   Общую статистику обработки запросов.
 
-Метрики находятся в таблицах [system.metrics](system-tables/metrics.md#system_tables-metrics), [system.events](system-tables/events.md#system_tables-events) и [system.asynchronous_metrics](system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics).
+Метрики находятся в таблицах [system.metrics](/operations/system-tables/metrics), [system.events](/operations/system-tables/events) и [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics).
 
 Можно настроить экспорт метрик из ClickHouse в [Graphite](https://github.com/graphite-project). Смотрите секцию [graphite](server-configuration-parameters/settings.md#server_configuration_parameters-graphite) конфигурационного файла ClickHouse. Перед настройкой экспорта метрик необходимо настроить Graphite, как указано в [официальном руководстве](https://graphite.readthedocs.io/en/latest/install.html).
 

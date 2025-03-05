@@ -1,7 +1,7 @@
 ---
-title : JSONStrings
+title: JSONStrings
 slug: /interfaces/formats/JSONStrings
-keywords : [JSONStrings]
+keywords: [JSONStrings]
 input_format: true
 output_format: true
 alias: []

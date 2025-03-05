@@ -1,7 +1,7 @@
 ---
 description: "System table showing which privileges are granted to ClickHouse user accounts."
 slug: /operations/system-tables/grants
-title: "grants"
+title: "system.grants"
 keywords: ["system table", "grants"]
 ---
 
@@ -20,8 +20,8 @@ Columns:
 
 - `column` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Name of a column to which access is granted.
 
-- `is_partial_revoke` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Logical value. It shows whether some privileges have been revoked. Possible values:
+- `is_partial_revoke` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Logical value. It shows whether some privileges have been revoked. Possible values:
 - `0` — The row describes a grant.
 - `1` — The row describes a partial revoke.
 
-- `grant_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Permission is granted `WITH GRANT OPTION`, see [GRANT](../../sql-reference/statements/grant.md#granting-privilege-syntax).
+- `grant_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Permission is granted `WITH GRANT OPTION`, see [GRANT](../../sql-reference/statements/grant.md#granting-privilege-syntax).

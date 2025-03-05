@@ -48,7 +48,7 @@ slug: /ru/operations/system-tables/tables
 -   `storage_policy` ([String](../../sql-reference/data-types/string.md)) - политика хранения данных:
 
     -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
-    -   [Distributed](../../engines/table-engines/special/distributed.md#distributed)
+    -   [Distributed](/engines/table-engines/special/distributed)
 
 -   `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - общее количество строк, если есть возможность быстро определить точное количество строк в таблице, в противном случае `NULL` (включая базовую таблицу `Buffer`).
 

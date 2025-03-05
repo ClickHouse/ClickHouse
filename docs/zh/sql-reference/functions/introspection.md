@@ -21,7 +21,7 @@ sidebar_label: "\u81EA\u7701"
 
         出于安全考虑，内省函数默认是关闭的。
 
-ClickHouse将探查器报告保存到 [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) 系统表. 确保正确配置了表和探查器。
+ClickHouse将探查器报告保存到 [trace_log](/operations/system-tables/trace_log) 系统表. 确保正确配置了表和探查器。
 
 ## addressToLine {#addresstoline}
 

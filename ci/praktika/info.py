@@ -1,5 +1,4 @@
 import json
-import os
 import urllib
 from pathlib import Path
 from typing import Optional
@@ -157,3 +156,20 @@ class Info:
         if key:
             return custom_data.get(key, None)
         return custom_data
+
+    @classmethod
+    def is_workflow_ok(cls):
+        """
+        Experimental function
+        :return:
+        """
+        from praktika.result import Result
+
+        result = Result.from_fs(cls.workflow_name)
+        for subresult in result.results:
+            if subresult.name == Settings.FINISH_WORKFLOW_JOB_NAME:
+                continue
+            if not subresult.is_ok():
+                print(f"Job [{subresult.name}] is not ok, status [{subresult.status}]")
+                return False
+        return True

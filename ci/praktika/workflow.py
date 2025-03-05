@@ -13,6 +13,7 @@ class Workflow:
         PUSH = "push"
         SCHEDULE = "schedule"
         DISPATCH = "dispatch"
+        MERGE_QUEUE = "merge_queue"
 
     @dataclass
     class Config:

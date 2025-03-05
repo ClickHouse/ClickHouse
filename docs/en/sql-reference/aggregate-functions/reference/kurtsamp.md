@@ -17,7 +17,7 @@ kurtSamp(expr)
 
 **Arguments**
 
-`expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
+`expr` — [Expression](/sql-reference/syntax#expressions) returning a number.
 
 **Returned value**
 

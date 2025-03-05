@@ -10,7 +10,7 @@ description: How to build Clickhouse and run benchmark with DEFLATE_QPL Codec
 - Make sure your host machine meet the QPL required [prerequisites](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)
 - deflate_qpl is enabled by default during cmake build. In case you accidentally change it, please double-check build flag: ENABLE_QPL=1
 
-- For generic requirements, please refer to Clickhouse generic [build instructions](/docs/development/build.md)
+- For generic requirements, please refer to Clickhouse generic [build instructions](/development/build.md)
 
 # Run Benchmark with DEFLATE_QPL
 
@@ -20,7 +20,7 @@ The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/C
 
 `client_scripts` contains python scripts for running typical benchmark, for example:
 - `client_stressing_test.py`: The python script for query stress test with [1~4] server instances.
-- `queries_ssb.sql`: The file lists all queries for [Star Schema Benchmark](/docs/getting-started/example-datasets/star-schema/)
+- `queries_ssb.sql`: The file lists all queries for [Star Schema Benchmark](/getting-started/example-datasets/star-schema/)
 - `allin1_ssb.sh`: This shell script executes benchmark workflow all in one automatically.
 
 `database_files` means it will store database files according to lz4/deflate/zstd codec.
@@ -73,7 +73,7 @@ $ cd ./benchmark_sample
 $ mkdir rawdata_dir && cd rawdata_dir
 ```
 
-Use [`dbgen`](/docs/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
+Use [`dbgen`](/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
 -s 20
 
 The files like `*.tbl` are expected to output under `./benchmark_sample/rawdata_dir/ssb-dbgen`:
@@ -90,7 +90,7 @@ $ [CLICKHOUSE_EXE] client
 
 Here you should see the message `Connected to ClickHouse server` from console which means client successfully setup connection with server.
 
-Complete below three steps mentioned in [Star Schema Benchmark](/docs/getting-started/example-datasets/star-schema)
+Complete below three steps mentioned in [Star Schema Benchmark](/getting-started/example-datasets/star-schema)
 - Creating tables in ClickHouse
 - Inserting data. Here should use `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl` as input data.
 - Converting "star schema" to de-normalized "flat schema"
@@ -324,4 +324,4 @@ Each time before launch new clickhouse server, please make sure no background cl
 $ ps -aux| grep clickhouse
 $ kill -9 [PID]
 ```
-By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](/docs/getting-started/example-datasets/star-schema), you will find 3 queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low < 10% for these queries which means cannot demonstrate performance differences.
+By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](/getting-started/example-datasets/star-schema), you will find 3 queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low < 10% for these queries which means cannot demonstrate performance differences.

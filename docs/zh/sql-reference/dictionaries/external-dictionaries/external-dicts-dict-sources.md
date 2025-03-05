@@ -94,7 +94,7 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 设置字段:
 
 -   `path` – The absolute path to the file.
--   `format` – The file format. All the formats described in “[格式](../../../interfaces/formats.md#formats)” 支持。
+-   `format` – The file format. All the formats described in “[格式](/interfaces/formats#formats-overview)” 支持。
 
 ## 可执行文件 {#dicts-external_dicts_dict_sources-executable}
 
@@ -120,7 +120,7 @@ SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
 设置字段:
 
 -   `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
--   `format` – The file format. All the formats described in “[格式](../../../interfaces/formats.md#formats)” 支持。
+-   `format` – The file format. All the formats described in “[格式](/interfaces/formats#formats-overview)” 支持。
 
 ## Http(s) {#dicts-external_dicts_dict_sources-http}
 
@@ -163,7 +163,7 @@ SOURCE(HTTP(
 设置字段:
 
 -   `url` – The source URL.
--   `format` – The file format. All the formats described in “[格式](../../../interfaces/formats.md#formats)” 支持。
+-   `format` – The file format. All the formats described in “[格式](/interfaces/formats#formats-overview)” 支持。
 -   `credentials` – Basic HTTP authentication. Optional parameter.
     -   `user` – Username required for the authentication.
     -   `password` – Password required for the authentication.

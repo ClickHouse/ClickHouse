@@ -1,6 +1,6 @@
 ---
 slug: /operations/system-tables/latency_log
-title: "latency_log"
+title: "system.latency_log"
 description: "Contains the history of all latency buckets, periodically flushed to disk."
 ---
 

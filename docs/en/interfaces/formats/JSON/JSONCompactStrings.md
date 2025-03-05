@@ -1,7 +1,7 @@
 ---
-title : JSONCompactStrings
+title: JSONCompactStrings
 slug: /interfaces/formats/JSONCompactStrings
-keywords : [JSONCompactStrings]
+keywords: [JSONCompactStrings]
 input_format: false
 output_format: true
 alias: []

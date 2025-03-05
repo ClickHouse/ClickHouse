@@ -1,7 +1,7 @@
 ---
-title : ProtobufList
+title: ProtobufList
 slug: /interfaces/formats/ProtobufList
-keywords : [ProtobufList]
+keywords: [ProtobufList]
 input_format: true
 output_format: true
 alias: []

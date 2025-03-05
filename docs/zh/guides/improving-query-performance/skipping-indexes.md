@@ -4,6 +4,9 @@ sidebar_label: 跳数索引
 sidebar_position: 2
 ---
 
+import SimpleSkip from '@site/static/images/guides/best-practices/simple_skip.svg';
+import BadSkip1 from '@site/static/images/guides/best-practices/bad_skip_1.svg';
+
 # 深入理解ClickHouse跳数索引
 
 ### 跳数索引
@@ -89,7 +92,7 @@ SELECT * FROM skip_table WHERE my_value IN (125, 700)
 
 下图是更直观的展示，这就是如何读取和选择my_value为125的4096行，以及如何跳过以下行而不从磁盘读取:
 
-![Simple Skip](../../../guides/best-practices/images/simple_skip.svg)
+<img src={SimpleSkip} alt="Example of skipping unnecessary data blocks using a skip index" class="image" />
 
 通过在执行查询时启用跟踪，用户可以看到关于跳数索引使用情况的详细信息。在clickhouse-client中设置send_logs_level:
 
@@ -150,8 +153,7 @@ Bloom filter是一种数据结构，它允许对集合成员进行高效的是�
 
 考虑以下数据分布：
 
-![Bad Skip!](../../../guides/best-practices/images/bad_skip_1.svg)
-
+<img src={BadSkip1} alt="Ineffective skip index example where visitor_id distribution is too scattered" class="image" />
 
 假设主键/顺序是时间戳，并且在visitor_id上有一个索引。考虑下面的查询:
 

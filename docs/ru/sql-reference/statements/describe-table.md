@@ -18,7 +18,7 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 -   `name` — имя столбца;
 -   `type` — тип столбца;
--   `default_type` — вид [выражения для значения по умолчанию](../../sql-reference/statements/create/table.md#create-default-values): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Если значение по умолчанию не задано, то возвращается пустая строка;
+-   `default_type` — вид [выражения для значения по умолчанию](/sql-reference/statements/create/table): `DEFAULT`, `MATERIALIZED` или `ALIAS`. Если значение по умолчанию не задано, то возвращается пустая строка;
 -   `default_expression` — значение, заданное в секции `DEFAULT`;
 -   `comment` — [комментарий](../../sql-reference/statements/alter/column.md#alter_comment-column);
 -   `codec_expression` — [кодек](../../sql-reference/statements/create/table.md#codecs), который применяется к столбцу;

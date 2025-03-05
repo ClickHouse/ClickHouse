@@ -19,12 +19,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password');
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 The table structure can differ from the original table structure:
 
 - Column names should be the same as in the original table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+- Column types may differ from those in the original table. ClickHouse tries to [cast](/sql-reference/functions/type-conversion-functions#cast) values to the ClickHouse data types.
 
 **Engine Parameters**
 

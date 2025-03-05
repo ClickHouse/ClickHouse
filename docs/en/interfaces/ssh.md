@@ -17,7 +17,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 ClickHouse server allows to connect to itself directly using the SSH protocol. Any client is allowed.
 
 
-After creating a [database user identified by an SSH key](/docs/knowledgebase/how-to-connect-to-ch-cloud-using-ssh-keys):
+After creating a [database user identified by an SSH key](/knowledgebase/how-to-connect-to-ch-cloud-using-ssh-keys):
 ```sql
 CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY '<REDACTED>' TYPE 'ssh-ed25519';
 ```

@@ -103,5 +103,5 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 ## See Also {#see-also}
 
-- [ODBC dictionaries](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-odbc)
-- [ODBC table engine](../../engines/table-engines/integrations/odbc.md).
+- [ODBC dictionaries](/sql-reference/dictionaries#dbms)
+- [ODBC table engine](/engines/table-engines/integrations/odbc).

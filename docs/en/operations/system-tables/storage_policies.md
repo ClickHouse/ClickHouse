@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about storage policies and volumes which are defined in server configuration."
 slug: /operations/system-tables/storage_policies
-title: "storage_policies"
+title: "system.storage_policies"
 keywords: ["system table", "storage_policies"]
 ---
 

@@ -27,7 +27,7 @@ quantileDD(relative_accuracy, [level])(expr)
 
 - Approximate quantile of the specified level.
 
-Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 

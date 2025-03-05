@@ -1,7 +1,7 @@
 ---
-title : JSONStringsEachRow
+title: JSONStringsEachRow
 slug: /interfaces/formats/JSONStringsEachRow
-keywords : [JSONStringsEachRow]
+keywords: [JSONStringsEachRow]
 input_format: false
 output_format: true
 alias: []

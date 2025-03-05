@@ -26,7 +26,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     query_id=$($CLICKHOUSE_CLIENT --query "select queryID() from ($query) limit 1" 2>&1)
 
     $CLICKHOUSE_CLIENT --multiline  --query """
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT ProfileEvents['CachedReadBufferReadFromCacheHits'] > 0 as remote_fs_cache_hit,
            ProfileEvents['CachedReadBufferReadFromCacheMisses'] > 0 as remote_fs_cache_miss,
            ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
@@ -48,7 +48,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     query_id=$($CLICKHOUSE_CLIENT --query "select queryID() from ($query) limit 1" 2>&1)
 
     $CLICKHOUSE_CLIENT --multiline  --query """
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT ProfileEvents['CachedReadBufferReadFromCacheHits'] > 0 as remote_fs_cache_hit,
            ProfileEvents['CachedReadBufferReadFromCacheMisses'] > 0 as remote_fs_cache_miss,
            ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,
@@ -70,7 +70,7 @@ for STORAGE_POLICY in 's3_cache' 'local_cache' 'azure_cache'; do
     query_id=$($CLICKHOUSE_CLIENT --query "select queryID() from ($query) limit 1")
 
     $CLICKHOUSE_CLIENT --multiline  --query """
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT ProfileEvents['CachedReadBufferReadFromCacheHits'] > 0 as remote_fs_cache_hit,
            ProfileEvents['CachedReadBufferReadFromCacheMisses'] > 0 as remote_fs_cache_miss,
            ProfileEvents['CachedReadBufferReadFromSourceBytes'] > 0 as remote_fs_read,

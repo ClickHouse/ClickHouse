@@ -5,15 +5,16 @@
 #include <memory>
 #include <unordered_map>
 
-#include <Parsers/ASTAlterQuery.h>
-#include <Storages/IStorage_fwd.h>
-#include <DataTypes/IDataType.h>
 #include <Core/Names.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
 
+class ASTAlterCommand;
 class Context;
 class WriteBuffer;
 class ReadBuffer;

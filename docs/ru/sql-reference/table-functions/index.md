@@ -14,7 +14,7 @@ sidebar_position: 34
 
         Это способ создания временной таблицы, которая доступна только в текущем запросе.
 
--   Запросе [CREATE TABLE AS \<table_function()\>](../statements/create/index.md#create-table-query).
+-   Запросе [CREATE TABLE AS \<table_function()\>](/sql-reference/statements/create/table).
 
         Это один из методов создания таблицы.
 

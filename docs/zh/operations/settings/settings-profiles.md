@@ -9,7 +9,7 @@ sidebar_label: "\u8BBE\u7F6E\u914D\u7F6E"
 设置配置是设置的集合，并按照相同的名称进行分组。
 
 :::info
-ClickHouse 还支持用 [SQL驱动的工作流](../../operations/access-rights.md#access-control) 管理设置配置。我们建议使用它。
+ClickHouse 还支持用 [SQL驱动的工作流](/operations/access-rights) 管理设置配置。我们建议使用它。
 :::
 
 设置配置可以任意命名。你可以为不同的用户指定相同的设置配置。您可以在设置配置中写入的最重要的内容是 `readonly=1`，这将确保只读访问。

@@ -1,7 +1,7 @@
 ---
 description: "System table containing a list of time zones that are supported by the ClickHouse server."
 slug: /operations/system-tables/time_zones
-title: "time_zones"
+title: "system.time_zones"
 keywords: ["system table", "time_zones"]
 ---
 

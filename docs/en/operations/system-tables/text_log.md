@@ -1,7 +1,7 @@
 ---
 description: "System table containing logging entries."
 slug: /operations/system-tables/text_log
-title: "text_log"
+title: "system.text_log"
 keywords: ["system table", "text_log"]
 ---
 

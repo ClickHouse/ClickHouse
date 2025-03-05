@@ -36,7 +36,7 @@ SELECT * FROM system.metrics LIMIT 10
 
 **另请参阅**
 
--   [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — 包含周期性的计算指标。
--   [system.events](../../operations/system-tables/events.md#system_tables-events) — 包含发生的一些事件。
--   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — 包含`system.metrics`表和`system.events`表的历史指标值。
+-   [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — 包含周期性的计算指标。
+-   [system.events](/operations/system-tables/events) — 包含发生的一些事件。
+-   [system.metric_log](/operations/system-tables/metric_log) — 包含`system.metrics`表和`system.events`表的历史指标值。
 -   [监控](../../operations/monitoring.md) — ClickHouse 监控的基本概念。

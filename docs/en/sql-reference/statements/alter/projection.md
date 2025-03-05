@@ -17,7 +17,7 @@ Projections will create internally a new hidden table, this means that more IO a
 Example, If the projection has defined a different primary key, all the data from the original table will be duplicated.
 :::
 
-You can see more technical details about how projections work internally on this [page](/docs/guides/best-practices/sparse-primary-indexes.md/#option-3-projections).
+You can see more technical details about how projections work internally on this [page](/guides/best-practices/sparse-primary-indexes.md/#option-3-projections).
 
 ## Example filtering without using primary keys {#example-filtering-without-using-primary-keys}
 
@@ -138,7 +138,7 @@ SELECT query, projections FROM system.query_log WHERE query_id='<query_id>'
 
 # Manipulating Projections
 
-The following operations with [projections](/docs/engines/table-engines/mergetree-family/mergetree.md/#projections) are available:
+The following operations with [projections](/engines/table-engines/mergetree-family/mergetree.md/#projections) are available:
 
 ## ADD PROJECTION {#add-projection}
 
@@ -146,15 +146,15 @@ The following operations with [projections](/docs/engines/table-engines/mergetre
 
 ## DROP PROJECTION {#drop-projection}
 
-`ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name` - Removes projection description from tables metadata and deletes projection files from disk. Implemented as a [mutation](/docs/sql-reference/statements/alter/index.md#mutations).
+`ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name` - Removes projection description from tables metadata and deletes projection files from disk. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
 ## MATERIALIZE PROJECTION {#materialize-projection}
 
-`ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - The query rebuilds the projection `name` in the partition `partition_name`. Implemented as a [mutation](/docs/sql-reference/statements/alter/index.md#mutations).
+`ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - The query rebuilds the projection `name` in the partition `partition_name`. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
 ## CLEAR PROJECTION {#clear-projection}
 
-`ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - Deletes projection files from disk without removing description. Implemented as a [mutation](/docs/sql-reference/statements/alter/index.md#mutations).
+`ALTER TABLE [db.]table [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN PARTITION partition_name]` - Deletes projection files from disk without removing description. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
 
 The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only change metadata or remove files.
@@ -162,5 +162,5 @@ The commands `ADD`, `DROP` and `CLEAR` are lightweight in a sense that they only
 Also, they are replicated, syncing projections metadata via ClickHouse Keeper or ZooKeeper.
 
 :::note
-Projection manipulation is supported only for tables with [`*MergeTree`](/docs/engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](/docs/engines/table-engines/mergetree-family/replication.md) variants).
+Projection manipulation is supported only for tables with [`*MergeTree`](/engines/table-engines/mergetree-family/mergetree.md) engine (including [replicated](/engines/table-engines/mergetree-family/replication.md) variants).
 :::

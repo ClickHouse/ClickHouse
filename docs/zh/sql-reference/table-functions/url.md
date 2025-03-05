@@ -48,4 +48,4 @@ SELECT * FROM test_table;
 
 **另请参阅**
 
--   [虚拟列](/operations/table_engines/#table_engines-virtual_columns)
+-   [虚拟列](/engines/table-engines#table_engines-virtual_columns)

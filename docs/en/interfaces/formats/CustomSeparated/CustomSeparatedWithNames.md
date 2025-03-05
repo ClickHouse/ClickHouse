@@ -1,7 +1,7 @@
 ---
-title : CustomSeparatedWithNames
+title: CustomSeparatedWithNames
 slug: /interfaces/formats/CustomSeparatedWithNames
-keywords : [CustomSeparatedWithNames]
+keywords: [CustomSeparatedWithNames]
 input_format: true
 output_format: true
 alias: []

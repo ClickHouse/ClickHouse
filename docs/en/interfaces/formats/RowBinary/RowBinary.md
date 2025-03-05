@@ -1,7 +1,7 @@
 ---
-title : RowBinary
+title: RowBinary
 slug: /interfaces/formats/RowBinary
-keywords : [RowBinary]
+keywords: [RowBinary]
 input_format: true
 output_format: true
 alias: []
@@ -41,7 +41,7 @@ For the following data types it is important to note that:
 - [FixedString](../../../sql-reference/data-types/fixedstring.md) is represented simply as a sequence of bytes.
 - [Arrays](../../../sql-reference/data-types/array.md) are represented as a variable-width integer (varint) (unsigned [LEB128](https://en.wikipedia.org/wiki/LEB128)), followed by successive elements of the array.
 
-For [NULL](/docs/sql-reference/syntax.md/#null-literal) support, an additional byte containing `1` or `0` is added before each [Nullable](/docs/sql-reference/data-types/nullable.md) value. 
+For [NULL](/sql-reference/syntax#null) support, an additional byte containing `1` or `0` is added before each [Nullable](/sql-reference/data-types/nullable.md) value. 
 - If `1`, then the value is `NULL` and this byte is interpreted as a separate value. 
 - If `0`, the value after the byte is not `NULL`.
 

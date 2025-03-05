@@ -74,7 +74,7 @@ Note that HTTP authentication cannot be used alongside with any other authentica
 
 ### Enabling HTTP authentication using SQL {#enabling-http-auth-using-sql}
 
-When [SQL-driven Access Control and Account Management](/docs/guides/sre/user-management/index.md#access-control) is enabled in ClickHouse, users identified by HTTP authentication can also be created using SQL statements.
+When [SQL-driven Access Control and Account Management](/operations/access-rights#access-control-usage) is enabled in ClickHouse, users identified by HTTP authentication can also be created using SQL statements.
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'Basic'

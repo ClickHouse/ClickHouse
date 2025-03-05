@@ -1,7 +1,7 @@
 ---
-title : TabSeparatedRawWithNames
+title: TabSeparatedRawWithNames
 slug: /interfaces/formats/TabSeparatedRawWithNames
-keywords : [TabSeparatedRawWithNames, TSVRawWithNames, RawWithNames]
+keywords: [TabSeparatedRawWithNames, TSVRawWithNames, RawWithNames]
 input_format: true
 output_format: true
 alias: ['TSVRawWithNames', 'RawWithNames']

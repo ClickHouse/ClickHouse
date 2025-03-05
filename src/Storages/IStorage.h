@@ -8,6 +8,7 @@
 #include <Interpreters/StorageID.h>
 #include <Storages/CheckResults.h>
 #include <Storages/ColumnDependency.h>
+#include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
@@ -65,22 +66,6 @@ class RestorerFromBackup;
 class ConditionSelectivityEstimator;
 
 class ActionsDAG;
-
-struct ColumnSize
-{
-    size_t marks = 0;
-    size_t data_compressed = 0;
-    size_t data_uncompressed = 0;
-
-    void add(const ColumnSize & other)
-    {
-        marks += other.marks;
-        data_compressed += other.data_compressed;
-        data_uncompressed += other.data_uncompressed;
-    }
-};
-
-using IndexSize = ColumnSize;
 
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;

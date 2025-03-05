@@ -18,6 +18,8 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/Pipe.h>
 
+#include <pcg_random.hpp>
+
 namespace DB
 {
 

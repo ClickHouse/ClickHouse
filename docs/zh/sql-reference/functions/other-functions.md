@@ -126,7 +126,7 @@ SELECT 'some-file-name' AS a, basename(a)
 如果表不存在，该函数将引发异常。
 对于嵌套数据结构中的元素，该函数检查是否存在列。 对于嵌套数据结构本身，函数返回0。
 
-## 酒吧 {#function-bar}
+## 酒吧 {#bar}
 
 使用unicode构建图表。
 

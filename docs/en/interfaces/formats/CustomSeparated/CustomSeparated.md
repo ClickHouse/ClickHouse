@@ -1,7 +1,7 @@
 ---
-title : CustomSeparated
+title: CustomSeparated
 slug: /interfaces/formats/CustomSeparated
-keywords : [CustomSeparated]
+keywords: [CustomSeparated]
 input_format: true
 output_format: true
 alias: []
@@ -15,12 +15,12 @@ alias: []
 
 Similar to [Template](../Template/Template.md), but it prints or reads all names and types of columns and uses escaping rule from [format_custom_escaping_rule](../../../operations/settings/settings-formats.md/#format_custom_escaping_rule) setting and delimiters from the following settings:
 
-- [format_custom_field_delimiter](/docs/operations/settings/settings-formats.md/#format_custom_field_delimiter)
-- [format_custom_row_before_delimiter](/docs/operations/settings/settings-formats.md/#format_custom_row_before_delimiter)
-- [format_custom_row_after_delimiter](/docs/operations/settings/settings-formats.md/#format_custom_row_after_delimiter)
-- [format_custom_row_between_delimiter](/docs/operations/settings/settings-formats.md/#format_custom_row_between_delimiter)
-- [format_custom_result_before_delimiter](/docs/operations/settings/settings-formats.md/#format_custom_result_before_delimiter)
-- [format_custom_result_after_delimiter](/docs/operations/settings/settings-formats.md/#format_custom_result_after_delimiter) 
+- [format_custom_field_delimiter](/operations/settings/settings-formats.md/#format_custom_field_delimiter)
+- [format_custom_row_before_delimiter](/operations/settings/settings-formats.md/#format_custom_row_before_delimiter)
+- [format_custom_row_after_delimiter](/operations/settings/settings-formats.md/#format_custom_row_after_delimiter)
+- [format_custom_row_between_delimiter](/operations/settings/settings-formats.md/#format_custom_row_between_delimiter)
+- [format_custom_result_before_delimiter](/operations/settings/settings-formats.md/#format_custom_result_before_delimiter)
+- [format_custom_result_after_delimiter](/operations/settings/settings-formats.md/#format_custom_result_after_delimiter) 
 
 note:::
 It does not use escaping rules settings and delimiters from format strings.

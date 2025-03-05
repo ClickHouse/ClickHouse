@@ -42,7 +42,7 @@ Engine arguments:
 Optional parameters:
 
 - `poll_timeout_ms` - Timeout for single poll from log file. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
-- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
+- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/operations/settings/settings#max_block_size).
 - `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `max_threads` - Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4).
 - `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.

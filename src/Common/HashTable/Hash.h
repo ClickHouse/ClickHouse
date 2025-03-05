@@ -137,53 +137,46 @@ inline UInt32 updateWeakHash32(const UInt8 * pos, size_t size, UInt32 updated_va
             case 0:
                 break;
             case 1:
-#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
-                __builtin_memcpy(&value, pos, 1);
-#else
-                reverseMemcpy(&value, pos, 1);
-#endif
+                if constexpr (std::endian::native == std::endian::little)
+                    __builtin_memcpy(&value, pos, 1);
+                else
+                    reverseMemcpy(&value, pos, 1);
                 break;
             case 2:
-#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
-                __builtin_memcpy(&value, pos, 2);
-#else
-                reverseMemcpy(&value, pos, 2);
-#endif
+                if constexpr (std::endian::native == std::endian::little)
+                    __builtin_memcpy(&value, pos, 2);
+                else
+                    reverseMemcpy(&value, pos, 2);
                 break;
             case 3:
-#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
-                __builtin_memcpy(&value, pos, 3);
-#else
-                reverseMemcpy(&value, pos, 3);
-#endif
+                if constexpr (std::endian::native == std::endian::little)
+                    __builtin_memcpy(&value, pos, 3);
+                else
+                    reverseMemcpy(&value, pos, 3);
                 break;
             case 4:
-#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
-                __builtin_memcpy(&value, pos, 4);
-#else
-                reverseMemcpy(&value, pos, 4);
-#endif
+                if constexpr (std::endian::native == std::endian::little)
+                    __builtin_memcpy(&value, pos, 4);
+                else
+                    reverseMemcpy(&value, pos, 4);
                 break;
             case 5:
-#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
-                __builtin_memcpy(&value, pos, 5);
-#else
-                reverseMemcpy(&value, pos, 5);
-#endif
+                if constexpr (std::endian::native == std::endian::little)
+                    __builtin_memcpy(&value, pos, 5);
+                else
+                    reverseMemcpy(&value, pos, 5);
                 break;
             case 6:
-#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
-                __builtin_memcpy(&value, pos, 6);
-#else
-                reverseMemcpy(&value, pos, 6);
-#endif
+                if constexpr (std::endian::native == std::endian::little)
+                    __builtin_memcpy(&value, pos, 6);
+                else
+                    reverseMemcpy(&value, pos, 6);
                 break;
             case 7:
-#if __BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__
-                __builtin_memcpy(&value, pos, 7);
-#else
-                reverseMemcpy(&value, pos, 7);
-#endif
+                if constexpr (std::endian::native == std::endian::little)
+                    __builtin_memcpy(&value, pos, 7);
+                else
+                    reverseMemcpy(&value, pos, 7);
                 break;
             default:
                 UNREACHABLE();

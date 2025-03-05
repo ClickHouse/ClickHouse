@@ -1,7 +1,7 @@
 ---
-title : One
+title: One
 slug: /interfaces/formats/One
-keywords : [One]
+keywords: [One]
 input_format: true
 output_format: false
 alias: []

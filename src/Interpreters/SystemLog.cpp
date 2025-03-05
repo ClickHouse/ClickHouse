@@ -4,7 +4,6 @@
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerSettings.h>

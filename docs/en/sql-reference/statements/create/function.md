@@ -60,6 +60,6 @@ Result:
 
 ## Related Content {#related-content}
 
-### [Executable UDFs](/docs/sql-reference/functions/udf.md). {#executable-udfs}
+### [Executable UDFs](/sql-reference/functions/udf.md). {#executable-udfs}
 
 ### [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs) {#user-defined-functions-in-clickhouse-cloud}

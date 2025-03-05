@@ -4,14 +4,17 @@
 #include <Common/Exception.h>
 
 #if USE_AZURE_BLOB_STORAGE
+
 #include <Backups/BackupIO_AzureBlobStorage.h>
 #include <Disks/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
 #include <Backups/BackupImpl.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #include <Interpreters/Context.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
-#include <filesystem>
+
+#include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
+
 #endif
 
 

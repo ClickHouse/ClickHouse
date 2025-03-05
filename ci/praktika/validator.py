@@ -22,6 +22,14 @@ class Validator:
                     f"Setting DISABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
+        if Settings.ENABLED_WORKFLOWS:
+            for file in Settings.ENABLED_WORKFLOWS:
+                cls.evaluate_check_simple(
+                    Path(file).is_file()
+                    or Path(f"{Settings.WORKFLOWS_DIRECTORY}/{file}").is_file(),
+                    f"Setting ENABLED_WORKFLOWS has non-existing workflow file [{file}]",
+                )
+
         if Settings.USE_CUSTOM_GH_AUTH:
             cls.evaluate_check_simple(
                 Settings.SECRET_GH_APP_ID and Settings.SECRET_GH_APP_PEM_KEY,

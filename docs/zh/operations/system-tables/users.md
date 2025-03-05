@@ -24,7 +24,7 @@ slug: /zh/operations/system-tables/users
 
 -    `host_names_like` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — 使用 LIKE 谓词设置允许连接到 ClickHouse 服务器的主机名称.
 
--    `default_roles_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 显示默认情况下为用户设置的所有授予的角色.
+-    `default_roles_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 显示默认情况下为用户设置的所有授予的角色.
 
 -    `default_roles_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — 默认提供的授权角色列表.
 
@@ -32,4 +32,4 @@ slug: /zh/operations/system-tables/users
 
 ## 另请参阅 {#see-also}
 
--   [查看用户信息](../../sql-reference/statements/show.md#show-users-statement)
+-   [查看用户信息](/sql-reference/statements/show#show-users)
