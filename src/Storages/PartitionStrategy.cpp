@@ -19,6 +19,7 @@ extern const SettingsBool use_hive_partitioning;
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int NOT_IMPLEMENTED;
 }
 
 
