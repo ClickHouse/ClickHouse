@@ -1,23 +1,27 @@
 #pragma once
 #include <IO/WriteSettings.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/WriteMode.h>
-#include <boost/core/noncopyable.hpp>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+
 #include <memory>
 #include <optional>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Disks/IDiskTransaction.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+
+#include <boost/core/noncopyable.hpp>
 
 namespace DB
 {
 struct ReadSettings;
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
+
+struct IDiskTransaction;
+using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
 
 struct CanRemoveDescription
 {
@@ -231,7 +235,6 @@ public:
         const NameSet & files_without_checksums,
         const String & path_in_backup,
         const BackupSettings & backup_settings,
-        const ReadSettings & read_settings,
         bool make_temporary_hard_links,
         BackupEntries & backup_entries,
         TemporaryFilesOnDisks * temp_dirs,

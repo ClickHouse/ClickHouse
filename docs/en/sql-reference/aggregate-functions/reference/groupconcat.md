@@ -1,8 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/groupconcat
+slug: /sql-reference/aggregate-functions/reference/groupconcat
 sidebar_position: 363
 sidebar_label: groupConcat
-title: groupConcat
+title: "groupConcat"
+description: "Calculates a concatenated string from a group of strings, optionally separated by a delimiter, and optionally limited by a maximum number of elements."
 ---
 
 Calculates a concatenated string from a group of strings, optionally separated by a delimiter, and optionally limited by a maximum number of elements.
@@ -15,8 +16,8 @@ groupConcat[(delimiter [, limit])](expression);
 
 **Arguments**
 
-- `delimiter` — A [string](../../../sql-reference/data-types/string.md) that will be used to separate concatenated values. This parameter is optional and defaults to an empty string or delimiter from parameters if not specified.
 - `expression` — The expression or column name that outputs strings to be concatenated.
+- `delimiter` — A [string](../../../sql-reference/data-types/string.md) that will be used to separate concatenated values. This parameter is optional and defaults to an empty string or delimiter from parameters if not specified.
 
 
 **Parameters**
@@ -69,6 +70,12 @@ Query:
 
 ``` sql
 SELECT groupConcat(', ')(Name)  FROM Employees;
+```
+
+or
+
+``` sql
+SELECT groupConcat(Name, ', ')  FROM Employees;
 ```
 
 Result:

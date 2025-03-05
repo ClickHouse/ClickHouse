@@ -28,7 +28,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
+#include <Interpreters/ExpressionActions.h>
+
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>
@@ -250,7 +253,7 @@ public:
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
-            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns, context);
+            filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate, virtual_columns);
 
         if (filter_dag)
         {
@@ -1646,6 +1649,7 @@ void registerStorageURL(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::URL,
+            .has_builtin_setting_fn = Settings::hasBuiltin,
         });
 }
 

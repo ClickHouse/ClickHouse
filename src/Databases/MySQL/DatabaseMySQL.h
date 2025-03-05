@@ -5,8 +5,6 @@
 
 #include <mysqlxx/Pool.h>
 
-#include <Core/MultiEnum.h>
-#include <Core/NamesAndTypes.h>
 #include <Common/ThreadPool.h>
 #include <Storages/ColumnsDescription.h>
 #include <Databases/DatabasesCommon.h>
@@ -103,6 +101,8 @@ private:
     mutable MySQLPool mysql_pool;
     mutable std::vector<StoragePtr> outdated_tables;
     mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
+
+    std::shared_ptr<IDisk> db_disk;
 
     std::unordered_set<String> remove_or_detach_tables;
 

@@ -34,15 +34,15 @@ void ASTRefreshStrategy::formatImpl(
     {
         case AFTER:
             ostr << "AFTER " << (f_settings.hilite ? hilite_none : "");
-            period->formatImpl(ostr, f_settings, state, frame);
+            period->format(ostr, f_settings, state, frame);
             break;
         case EVERY:
             ostr << "EVERY " << (f_settings.hilite ? hilite_none : "");
-            period->formatImpl(ostr, f_settings, state, frame);
+            period->format(ostr, f_settings, state, frame);
             if (offset)
             {
                 ostr << (f_settings.hilite ? hilite_keyword : "") << " OFFSET " << (f_settings.hilite ? hilite_none : "");
-                offset->formatImpl(ostr, f_settings, state, frame);
+                offset->format(ostr, f_settings, state, frame);
             }
             break;
         default:
@@ -53,17 +53,17 @@ void ASTRefreshStrategy::formatImpl(
     if (spread)
     {
         ostr << (f_settings.hilite ? hilite_keyword : "") << " RANDOMIZE FOR " << (f_settings.hilite ? hilite_none : "");
-        spread->formatImpl(ostr, f_settings, state, frame);
+        spread->format(ostr, f_settings, state, frame);
     }
     if (dependencies)
     {
         ostr << (f_settings.hilite ? hilite_keyword : "") << " DEPENDS ON " << (f_settings.hilite ? hilite_none : "");
-        dependencies->formatImpl(ostr, f_settings, state, frame);
+        dependencies->format(ostr, f_settings, state, frame);
     }
     if (settings)
     {
         ostr << (f_settings.hilite ? hilite_keyword : "") << " SETTINGS " << (f_settings.hilite ? hilite_none : "");
-        settings->formatImpl(ostr, f_settings, state, frame);
+        settings->format(ostr, f_settings, state, frame);
     }
     if (append)
         ostr << (f_settings.hilite ? hilite_keyword : "") << " APPEND" << (f_settings.hilite ? hilite_none : "");

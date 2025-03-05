@@ -386,7 +386,8 @@ private:
         bool is_column_const[3];
         const ColumnAggregateFunction * col_agg_func;
         const PaddedPODArray<AggregateDataPtr> * container0;
-        const PaddedPODArray<UInt64> * container1, * container2;
+        const PaddedPODArray<UInt64> * container1;
+        const PaddedPODArray<UInt64> * container2;
 
         ColumnPtr column_holder[2];
         for (size_t i = 0; i < 3; ++i)

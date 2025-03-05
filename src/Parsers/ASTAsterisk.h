@@ -18,6 +18,7 @@ public:
 
     ASTPtr expression;
     ASTPtr transformers;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };

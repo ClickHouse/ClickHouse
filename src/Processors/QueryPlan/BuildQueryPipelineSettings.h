@@ -17,18 +17,19 @@ using TemporaryFileLookupPtr = std::shared_ptr<ITemporaryFileLookup>;
 
 struct BuildQueryPipelineSettings
 {
-    bool enable_multiple_filters_transforms_for_and_chain = true;
+    explicit BuildQueryPipelineSettings(ContextPtr from);
+
+    bool enable_multiple_filters_transforms_for_and_chain;
 
     ExpressionActionsSettings actions_settings;
     QueryStatusPtr process_list_element;
-    ProgressCallback progress_callback = nullptr;
+    ProgressCallback progress_callback;
     TemporaryFileLookupPtr temporary_file_lookup;
 
     size_t max_threads;
     size_t aggregation_memory_efficient_merge_threads;
 
     const ExpressionActionsSettings & getActionsSettings() const { return actions_settings; }
-    static BuildQueryPipelineSettings fromContext(ContextPtr from);
 };
 
 }

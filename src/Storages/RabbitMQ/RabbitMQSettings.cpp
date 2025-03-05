@@ -135,4 +135,9 @@ SettingsChanges RabbitMQSettings::getFormatSettings() const
 
     return values;
 }
+
+bool RabbitMQSettings::hasBuiltin(std::string_view name)
+{
+    return RabbitMQSettingsImpl::hasBuiltin(name);
+}
 }

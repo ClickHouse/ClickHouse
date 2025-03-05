@@ -1,6 +1,7 @@
-#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -22,9 +23,10 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/VirtualColumnUtils.h>
-#include "Databases/LoadingStrictnessLevel.h"
-#include "Storages/ColumnsDescription.h"
-#include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
+#include <Common/parseGlobs.h>
+#include <Databases/LoadingStrictnessLevel.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
 #include <Poco/Logger.h>
 
@@ -35,6 +37,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool use_iceberg_partition_pruning;
 }
 
 namespace ErrorCodes
@@ -47,6 +50,7 @@ namespace ErrorCodes
 namespace StorageObjectStorageSetting
 {
 extern const StorageObjectStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
+extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -91,7 +95,8 @@ StorageObjectStorage::StorageObjectStorage(
     std::optional<FormatSettings> format_settings_,
     LoadingStrictnessLevel mode,
     bool distributed_processing_,
-    ASTPtr partition_by_)
+    ASTPtr partition_by_,
+    bool lazy_init)
     : IStorage(table_id_)
     , configuration(configuration_)
     , object_storage(object_storage_)
@@ -100,25 +105,35 @@ StorageObjectStorage::StorageObjectStorage(
     , distributed_processing(distributed_processing_)
     , log(getLogger(fmt::format("Storage{}({})", configuration->getEngineName(), table_id_.getFullTableName())))
 {
-    try
+    bool do_lazy_init = lazy_init && !columns_.empty() && !configuration->format.empty();
+    bool failed_init = false;
+    auto do_init = [&]()
     {
-        if (configuration->hasExternalDynamicMetadata())
-            configuration->updateAndGetCurrentSchema(object_storage, context);
-        else
-            configuration->update(object_storage, context);
-    }
-    catch (...)
-    {
-        // If we don't have format or schema yet, we can't ignore failed configuration update, because relevant configuration is crucial for format and schema inference
-        if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
+        try
         {
-            throw;
+            if (configuration->hasExternalDynamicMetadata())
+                configuration->updateAndGetCurrentSchema(object_storage, context);
+            else
+                configuration->update(object_storage, context);
         }
-        else
+        catch (...)
         {
-            tryLogCurrentException(log);
+            // If we don't have format or schema yet, we can't ignore failed configuration update,
+            // because relevant configuration is crucial for format and schema inference
+            if (mode <= LoadingStrictnessLevel::CREATE || columns_.empty() || (configuration->format == "auto"))
+            {
+                throw;
+            }
+            else
+            {
+                tryLogCurrentException(log);
+                failed_init = true;
+            }
         }
-    }
+    };
+
+    if (!do_lazy_init)
+        do_init();
 
     std::string sample_path;
     ColumnsDescription columns{columns_};
@@ -130,8 +145,26 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
 
-    if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
-        sample_path = getPathSample(context);
+    /// FIXME: We need to call getPathSample() lazily on select
+    /// in case it failed to be initialized in constructor.
+    if (!failed_init
+        && sample_path.empty()
+        && context->getSettingsRef()[Setting::use_hive_partitioning]
+        && !configuration->withPartitionWildcard())
+    {
+        if (do_lazy_init)
+            do_init();
+        try
+        {
+            sample_path = getPathSample(context);
+        }
+        catch (...)
+        {
+            LOG_WARNING(
+                log, "Failed to list object storage, cannot use hive partitioning. "
+                "Error: {}", getCurrentExceptionMessage(true));
+        }
+    }
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context, sample_path, format_settings));
     setInMemoryMetadata(metadata);
@@ -217,8 +250,14 @@ public:
     {
         SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
         const ActionsDAG::Node * predicate = nullptr;
-        if (filter_actions_dag)
+        if (filter_actions_dag.has_value())
+        {
             predicate = filter_actions_dag->getOutputs().at(0);
+            if (getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning])
+            {
+                configuration->implementPartitionPruning(*filter_actions_dag);
+            }
+        }
         createIterator(predicate);
     }
 
@@ -265,7 +304,7 @@ public:
 private:
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
-    std::shared_ptr<StorageObjectStorageSource::IIterator> iterator_wrapper;
+    std::shared_ptr<IObjectIterator> iterator_wrapper;
 
     const ReadFromFormatInfo info;
     const NamesAndTypesList virtual_columns;
@@ -329,7 +368,7 @@ void StorageObjectStorage::read(
     auto read_step = std::make_unique<ReadFromObjectStorageStep>(
         object_storage,
         configuration,
-        getName(),
+        fmt::format("{}({})", getName(), getStorageID().getFullTableName()),
         column_names,
         getVirtualsList(),
         query_info,
@@ -465,6 +504,7 @@ ColumnsDescription StorageObjectStorage::resolveSchemaFromData(
             configuration->updateAndGetCurrentSchema(object_storage, context);
         else
             configuration->update(object_storage, context);
+
         auto table_structure = configuration->tryGetTableStructureFromMetadata();
         if (table_structure)
         {
@@ -549,7 +589,7 @@ void StorageObjectStorage::Configuration::initialize(
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    std::unique_ptr<StorageObjectStorageSettings> settings)
+    StorageObjectStorageSettings * settings)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
         configuration.fromNamedCollection(*named_collection, local_context);
@@ -574,8 +614,12 @@ void StorageObjectStorage::Configuration::initialize(
         FormatFactory::instance().checkFormatName(configuration.format);
 
     if (settings)
+    {
         configuration.allow_dynamic_metadata_for_data_lakes
             = (*settings)[StorageObjectStorageSetting::allow_dynamic_metadata_for_data_lakes];
+        configuration.allow_experimental_delta_kernel_rs
+            = (*settings)[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs];
+    }
     configuration.initialized = true;
 }
 
@@ -589,7 +633,6 @@ StorageObjectStorage::Configuration::Configuration(const Configuration & other)
     format = other.format;
     compression_method = other.compression_method;
     structure = other.structure;
-    partition_columns = other.partition_columns;
 }
 
 bool StorageObjectStorage::Configuration::withPartitionWildcard() const

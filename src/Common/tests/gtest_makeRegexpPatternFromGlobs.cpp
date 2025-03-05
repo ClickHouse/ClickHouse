@@ -7,7 +7,6 @@ using namespace DB;
 
 TEST(Common, makeRegexpPatternFromGlobs)
 {
-
     EXPECT_EQ(makeRegexpPatternFromGlobs("?"), "[^/]");
     EXPECT_EQ(makeRegexpPatternFromGlobs("*"), "[^/]*");
     EXPECT_EQ(makeRegexpPatternFromGlobs("/?"), "/[^/]");

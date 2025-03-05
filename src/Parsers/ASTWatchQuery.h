@@ -48,12 +48,12 @@ protected:
 
         if (database)
         {
-            database->formatImpl(ostr, settings, state, frame);
+            database->format(ostr, settings, state, frame);
             ostr << '.';
         }
 
         chassert(table);
-        table->formatImpl(ostr, settings, state, frame);
+        table->format(ostr, settings, state, frame);
 
         if (is_watch_events)
         {
@@ -63,7 +63,7 @@ protected:
         if (limit_length)
         {
             ostr << (settings.hilite ? hilite_keyword : "") << settings.nl_or_ws << indent_str << "LIMIT " << (settings.hilite ? hilite_none : "");
-            limit_length->formatImpl(ostr, settings, state, frame);
+            limit_length->format(ostr, settings, state, frame);
         }
     }
 };

@@ -16,6 +16,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
 
+#include <Columns/ColumnAggregateFunction.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Storages/StorageDummy.h>
@@ -78,7 +79,7 @@ static AggregateProjectionInfo getAggregatingProjectionInfo(
     InterpreterSelectQuery interpreter(
         projection.query_ast,
         context,
-        Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlock())),
+        Pipe(std::make_shared<SourceFromSingleChunk>(metadata_snapshot->getSampleBlockWithSubcolumns())),
         SelectQueryOptions{QueryProcessingStage::WithMergeableState}.ignoreASTOptimizations().ignoreSettingConstraints());
 
     const auto & analysis_result = interpreter.getAnalysisResult();

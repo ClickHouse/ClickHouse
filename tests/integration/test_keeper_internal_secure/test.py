@@ -21,6 +21,7 @@ nodes = [
             "configs/WithPassPhrase.crt",
             "configs/WithPassPhrase.key",
             "configs/rootCA.pem",
+            "configs/logger.xml",
         ],
         stay_alive=True,
     ),
@@ -34,6 +35,7 @@ nodes = [
             "configs/WithPassPhrase.crt",
             "configs/WithPassPhrase.key",
             "configs/rootCA.pem",
+            "configs/logger.xml",
         ],
         stay_alive=True,
     ),
@@ -47,12 +49,11 @@ nodes = [
             "configs/WithPassPhrase.crt",
             "configs/WithPassPhrase.key",
             "configs/rootCA.pem",
+            "configs/logger.xml",
         ],
         stay_alive=True,
     ),
 ]
-
-from kazoo.client import KazooClient
 
 
 @pytest.fixture(scope="module")
@@ -67,11 +68,7 @@ def started_cluster():
 
 
 def get_fake_zk(nodename, timeout=30.0):
-    _fake_zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip(nodename) + ":9181", timeout=timeout
-    )
-    _fake_zk_instance.start()
-    return _fake_zk_instance
+    return ku.get_fake_zk(cluster, nodename, timeout=timeout)
 
 
 def run_test():

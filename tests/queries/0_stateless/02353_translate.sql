@@ -15,7 +15,9 @@ SELECT translateUTF8('abc', 'efg', '');
 SELECT translateUTF8('中文内码', '中文', '');
 SELECT translate('aAbBcC', 'abc', '12');
 
-SELECT translate('aAbBcC', 'abc', '1235');
+SELECT translate('aAbBcC', 'abc', '123');
 SELECT translate('aAbBcC', 'abc', '');
 SELECT translate('abc', 'abc', '');
 SELECT translate('aAbBcC', '中文内码', '12'); -- { serverError BAD_ARGUMENTS }
+
+SELECT translate('aAbBcC', 'ab', 'abc'); -- { serverError BAD_ARGUMENTS }

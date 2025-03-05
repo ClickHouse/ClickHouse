@@ -30,6 +30,7 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <fmt/core.h>
 
 using namespace std::literals;
 
@@ -325,9 +326,21 @@ bool ParserNotEmptyExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected 
     return nested_parser.parse(pos, node, expected) && !node->children.empty();
 }
 
+bool ParserStorageOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserStorageOrderByElement>(allow_order), std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
+}
+
 bool ParserOrderByExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserList(std::make_unique<ParserOrderByElement>(), std::make_unique<ParserToken>(TokenType::Comma), false)
+        .parse(pos, node, expected);
+}
+
+bool ParserAliasesExpressionList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(std::make_unique<ParserIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false)
         .parse(pos, node, expected);
 }
 
@@ -1605,7 +1618,10 @@ class TrimLayer : public Layer
 {
 public:
     TrimLayer(bool trim_left_, bool trim_right_)
-        : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true), trim_left(trim_left_), trim_right(trim_right_) {}
+        : Layer(/*allow_alias*/ true, /*allow_alias_without_as_keyword*/ true)
+        , trim_left(trim_left_)
+        , trim_right(trim_right_)
+    {}
 
     bool parse(IParser::Pos & pos, Expected & expected, Action & action) override
     {
@@ -1663,7 +1679,7 @@ public:
                 if (!mergeElement())
                     return false;
 
-                /// Trimming an empty string is a no-op.
+                /// Trimming an empty string is a no-op. (shortcut that works when we supply an empty string as the first argument)
                 ASTLiteral * ast_literal = typeid_cast<ASTLiteral *>(elements[0].get());
                 if (ast_literal && ast_literal->value.getType() == Field::Types::String && ast_literal->value.safeGet<String>().empty())
                 {
@@ -1671,7 +1687,7 @@ public:
                 }
                 else
                 {
-                    to_remove = makeASTFunction("regexpQuoteMeta", elements[0]);
+                    to_remove = std::move(elements[0]);
                     elements.clear();
                 }
 
@@ -1690,72 +1706,17 @@ public:
                 {
                     /// The operation does nothing.
                 }
-                if (char_override)
-                {
-                    ASTPtr pattern_node;
-
-                    auto pattern_func_node = std::make_shared<ASTFunction>();
-                    auto pattern_list_args = std::make_shared<ASTExpressionList>();
-                    if (trim_left && trim_right)
-                    {
-                        pattern_list_args->children =
-                        {
-                            std::make_shared<ASTLiteral>("^["),
-                            to_remove,
-                            std::make_shared<ASTLiteral>("]+|["),
-                            to_remove,
-                            std::make_shared<ASTLiteral>("]+$")
-                        };
-                        function_name = "replaceRegexpAll";
-                    }
-                    else
-                    {
-                        if (trim_left)
-                        {
-                            pattern_list_args->children =
-                            {
-                                std::make_shared<ASTLiteral>("^["),
-                                to_remove,
-                                std::make_shared<ASTLiteral>("]+")
-                            };
-                        }
-                        else
-                        {
-                            /// trim_right == false not possible
-                            pattern_list_args->children =
-                            {
-                                std::make_shared<ASTLiteral>("["),
-                                to_remove,
-                                std::make_shared<ASTLiteral>("]+$")
-                            };
-                        }
-                        function_name = "replaceRegexpOne";
-                    }
-
-                    pattern_func_node->name = "concat";
-                    pattern_func_node->arguments = std::move(pattern_list_args);
-                    pattern_func_node->children.push_back(pattern_func_node->arguments);
-
-                    pattern_node = std::move(pattern_func_node);
-
-                    elements.push_back(pattern_node);
-                    elements.push_back(std::make_shared<ASTLiteral>(""));
-                }
+                if (trim_left && trim_right)
+                    function_name = "trimBoth";
+                else if (trim_left)
+                    function_name = "trimLeft";
                 else
-                {
-                    if (trim_left && trim_right)
-                    {
-                        function_name = "trimBoth";
-                    }
-                    else
-                    {
-                        if (trim_left)
-                            function_name = "trimLeft";
-                        else
-                            function_name = "trimRight";
-                    }
-                }
+                    function_name = "trimRight";
 
+                if (char_override && to_remove)
+                {
+                    elements.push_back(std::move(to_remove));
+                }
                 finished = true;
             }
         }
@@ -2592,7 +2553,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         if (subquery_function_type != SubqueryFunctionType::NONE)
         {
             Operator prev_op;
-            ASTPtr function, argument;
+            ASTPtr function;
+            ASTPtr argument;
 
             if (!layers.back()->popOperator(prev_op))
                 return Action::NONE;

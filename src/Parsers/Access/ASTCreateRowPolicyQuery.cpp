@@ -68,7 +68,8 @@ namespace
         }
 
         boost::container::flat_set<std::string_view> commands;
-        String filter, check;
+        String filter;
+        String check;
 
         do
         {

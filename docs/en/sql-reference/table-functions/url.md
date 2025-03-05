@@ -1,10 +1,15 @@
 ---
-slug: /en/sql-reference/table-functions/url
+slug: /sql-reference/table-functions/url
 sidebar_position: 200
 sidebar_label: url
+title: "url"
+description: "Creates a table from the `URL` with given `format` and `structure`"
 ---
 
-# url
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+# url Table Function
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
@@ -43,15 +48,15 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-## Globs in URL
+## Globs in URL {#globs-in-url}
 
 Patterns in curly brackets `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements) setting.
 
-## Virtual Columns
+## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the `URL`. Type: `LowCardinalty(String)`.
-- `_file` — Resource name of the `URL`. Type: `LowCardinalty(String)`.
+- `_path` — Path to the `URL`. Type: `LowCardinality(String)`.
+- `_file` — Resource name of the `URL`. Type: `LowCardinality(String)`.
 - `_size` — Size of the resource in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 - `_headers` - HTTP response headers. Type: `Map(LowCardinality(String), LowCardinality(String))`.
@@ -65,15 +70,14 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ``` sql
-SET use_hive_partitioning = 1;
 SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 
 ## Storage Settings {#storage-settings}
 
-- [engine_url_skip_empty_files](/docs/en/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [enable_url_encoding](/docs/en/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
 
 **See Also**
 
-- [Virtual columns](/docs/en/engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/engines/table-engines/index.md#table_engines-virtual_columns)

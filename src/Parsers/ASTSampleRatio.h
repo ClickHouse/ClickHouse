@@ -31,6 +31,7 @@ public:
     static String toString(BigNum num);
     static String toString(Rational ratio);
 
+protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings &, FormatState &, FormatStateStacked) const override;
 };
 

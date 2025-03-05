@@ -1,8 +1,0 @@
-position: 300                                                                   
-label: 'Data visualization'                                                     
-collapsible: true                                                               
-collapsed: true                                                                 
-link:                                                                           
-  type: generated-index                                                         
-  title: Data visualization                                                     
-  slug: /ja/integrations/data-visualization

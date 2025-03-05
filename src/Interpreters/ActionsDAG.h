@@ -4,6 +4,7 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Names.h>
+#include <Common/SipHash.h>
 #include <Interpreters/Context_fwd.h>
 
 #include "config.h"
@@ -93,6 +94,9 @@ public:
         /// If result of this not is deterministic. Checks only this node, not a subtree.
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
+        size_t getHash() const;
+    private:
+        void updateHash(SipHash & hash_state) const;
     };
 
     /// NOTE: std::list is an implementation detail.
@@ -116,13 +120,10 @@ public:
 
     const Nodes & getNodes() const { return nodes; }
     static Nodes detachNodes(ActionsDAG && dag) { return std::move(dag.nodes); }
-    const NodeRawConstPtrs & getOutputs() const { return outputs; }
-    /** Output nodes can contain any column returned from DAG.
-      * You may manually change it if needed.
-      */
-    NodeRawConstPtrs & getOutputs() { return outputs; }
-
     const NodeRawConstPtrs & getInputs() const { return inputs; }
+    const NodeRawConstPtrs & getOutputs() const { return outputs; }
+    /// Output nodes can contain any column returned from DAG. You may manually change it if needed.
+    NodeRawConstPtrs & getOutputs() { return outputs; }
 
     NamesAndTypesList getRequiredColumns() const;
     Names getRequiredColumnsNames() const;

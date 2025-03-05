@@ -34,9 +34,6 @@
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
 	url = https://github.com/jemalloc/jemalloc
-[submodule "contrib/unixodbc"]
-	path = contrib/unixodbc
-	url = https://github.com/ClickHouse/UnixODBC
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
 	url = https://github.com/ClickHouse/google-protobuf.git
@@ -127,7 +124,7 @@
 	url = https://github.com/msgpack/msgpack-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
-	url = https://github.com/ClickHouse/libcpuid
+	url = https://github.com/anrieff/libcpuid
 [submodule "contrib/openldap"]
 	path = contrib/openldap
 	url = https://github.com/ClickHouse/openldap
@@ -176,9 +173,6 @@
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
-[submodule "contrib/nanodbc"]
-	path = contrib/nanodbc
-	url = https://github.com/ClickHouse/nanodbc
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/apache/datasketches-cpp
@@ -230,6 +224,12 @@
 [submodule "contrib/minizip-ng"]
 	path = contrib/minizip-ng
 	url = https://github.com/zlib-ng/minizip-ng
+[submodule "contrib/qpl"]
+	path = contrib/qpl
+	url = https://github.com/intel/qpl
+[submodule "contrib/idxd-config"]
+	path = contrib/idxd-config
+	url = https://github.com/ClickHouse/idxd-config.git
 [submodule "contrib/QAT-ZSTD-Plugin"]
 	path = contrib/QAT-ZSTD-Plugin
 	url = https://github.com/intel/QAT-ZSTD-Plugin
@@ -250,7 +250,7 @@
 	url = https://github.com/ClickHouse/llvm-project
 [submodule "contrib/corrosion"]
 	path = contrib/corrosion
-	url = https://github.com/corrosion-rs/corrosion
+	url = https://github.com/ClickHouse/corrosion
 [submodule "contrib/libssh"]
 	path = contrib/libssh
 	url = https://github.com/ClickHouse/libssh.git
@@ -308,9 +308,6 @@
 [submodule "contrib/crc32-vpmsum"]
 	path = contrib/crc32-vpmsum
 	url = https://github.com/antonblanchard/crc32-vpmsum.git
-[submodule "contrib/expected"]
-	path = contrib/expected
-	url = https://github.com/TartanLlama/expected
 [submodule "contrib/liburing"]
 	path = contrib/liburing
 	url = https://github.com/axboe/liburing
@@ -375,3 +372,6 @@
 [submodule "contrib/postgres"]
 	path = contrib/postgres
 	url = https://github.com/ClickHouse/postgres.git
+[submodule "contrib/delta-kernel-rs"]
+	path = contrib/delta-kernel-rs
+	url = https://github.com/ClickHouse/delta-kernel-rs.git

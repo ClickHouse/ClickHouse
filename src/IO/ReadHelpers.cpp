@@ -211,6 +211,20 @@ void readStringUntilCharsInto(Vector & s, ReadBuffer & buf)
     }
 }
 
+template <char... chars>
+void skipStringUntilChars(ReadBuffer & buf)
+{
+    while (!buf.eof())
+    {
+        char * next_pos = find_first_symbols<chars...>(buf.position(), buf.buffer().end());
+
+        buf.position() = next_pos;
+
+        if (buf.hasPendingData())
+            return;
+    }
+}
+
 template <typename Vector>
 void readStringInto(Vector & s, ReadBuffer & buf)
 {
@@ -245,6 +259,11 @@ void readStringUntilWhitespace(String & s, ReadBuffer & buf)
     readStringUntilWhitespaceInto(s, buf);
 }
 
+void skipStringUntilWhitespace(ReadBuffer & buf)
+{
+    skipStringUntilChars<' '>(buf);
+}
+
 void readStringUntilAmpersand(String & s, ReadBuffer & buf)
 {
     s.clear();
@@ -264,6 +283,13 @@ void readString(String & s, ReadBuffer & buf)
 {
     s.clear();
     readStringInto(s, buf);
+}
+
+void readString(String & s, ReadBuffer & buf, size_t n)
+{
+    s.resize(n);
+    if (n)
+        s.resize(buf.read(s.data(), n));
 }
 
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);

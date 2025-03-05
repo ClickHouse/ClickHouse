@@ -15,6 +15,7 @@ from helpers.wait_for_helpers import (
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
 
 
 @pytest.fixture(scope="module")
@@ -25,7 +26,6 @@ def cluster():
             "node",
             main_configs=[
                 "configs/config.xml",
-                "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
                 "configs/config.d/blob_log.xml",
             ],
@@ -39,11 +39,11 @@ def cluster():
         cluster.add_instance(
             "node_with_limited_disk",
             main_configs=[
-                "configs/config.d/storage_conf.xml",
                 "configs/config.d/bg_processing_pool_conf.xml",
                 "configs/config.d/blob_log.xml",
             ],
             with_minio=True,
+            stay_alive=True,
             tmpfs=[
                 "/jbod1:size=2M",
             ],
@@ -54,6 +54,13 @@ def cluster():
         logging.info("Cluster started")
         run_s3_mocks(cluster)
 
+        for _, node in cluster.instances.items():
+            node.stop_clickhouse()
+            node.copy_file_to_container(
+                os.path.join(CONFIG_DIR, "config.d", "storage_conf.xml"),
+                "/etc/clickhouse-server/config.d/storage_conf.xml",
+            )
+            node.start_clickhouse()
         yield cluster
     finally:
         cluster.shutdown()
@@ -789,6 +796,16 @@ def test_lazy_seek_optimization_for_async_read(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node_with_limited_disk"])
 def test_cache_with_full_disk_space(cluster, node_name):
     node = cluster.instances[node_name]
+    # Create a dummy file of 2M size to fill the disk space of cache disk
+    out = node.exec_in_container(
+        [
+            "/usr/bin/dd",
+            "if=/dev/zero",
+            "of=/jbod1/dummy",
+            "bs=1000",
+            "count=2000",
+        ]
+    )
     node.query("DROP TABLE IF EXISTS s3_test SYNC")
     node.query(
         "CREATE TABLE s3_test (key UInt32, value String) Engine=MergeTree() ORDER BY value SETTINGS storage_policy='s3_with_cache_and_jbod';"
@@ -871,8 +888,6 @@ def test_merge_canceled_by_s3_errors(cluster, broken_s3, node_name, storage_poli
     )
     assert "ExpectedError Message: mock s3 injected unretryable error" in error, error
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
-
     table_uuid = node.query(
         "SELECT uuid FROM system.tables WHERE database = 'default' AND name = 'test_merge_canceled_by_s3_errors' LIMIT 1"
     ).strip()
@@ -923,7 +938,10 @@ def test_merge_canceled_by_s3_errors_when_move(cluster, broken_s3, node_name):
 
     node.query("OPTIMIZE TABLE merge_canceled_by_s3_errors_when_move FINAL")
 
-    node.wait_for_log_line("ExpectedError Message: mock s3 injected unretryable error")
+    node.wait_for_log_line(
+        "ExpectedError Message: mock s3 injected unretryable error",
+        look_behind_lines=1000,
+    )
 
     count = node.query("SELECT count() FROM merge_canceled_by_s3_errors_when_move")
     assert int(count) == 2000, count

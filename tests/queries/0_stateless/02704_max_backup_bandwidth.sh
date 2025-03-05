@@ -14,7 +14,7 @@ $CLICKHOUSE_CLIENT -m -q "
 $CLICKHOUSE_CLIENT -q "insert into data select * from numbers(1e6)"
 
 query_id=$(random_str 10)
-$CLICKHOUSE_CLIENT --query_id "$query_id" -q "backup table data to Disk('backups', '$CLICKHOUSE_DATABASE/data/backup1')" --max_backup_bandwidth=1M > /dev/null
+$CLICKHOUSE_CLIENT --query_id "$query_id" -q "backup table data to Disk('backups', '$CLICKHOUSE_DATABASE/data/backup1') SETTINGS max_backup_bandwidth=1e6" > /dev/null
 $CLICKHOUSE_CLIENT -m -q "
     SYSTEM FLUSH LOGS;
     SELECT

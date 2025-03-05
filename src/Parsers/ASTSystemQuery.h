@@ -30,8 +30,10 @@ public:
         DROP_UNCOMPRESSED_CACHE,
         DROP_INDEX_MARK_CACHE,
         DROP_INDEX_UNCOMPRESSED_CACHE,
+        DROP_SKIPPING_INDEX_CACHE,
         DROP_MMAP_CACHE,
         DROP_QUERY_CACHE,
+        DROP_QUERY_CONDITION_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
         DROP_FILESYSTEM_CACHE,
         DROP_DISK_METADATA_CACHE,
@@ -153,6 +155,8 @@ public:
 
     std::vector<String> src_replicas;
 
+    Strings logs;
+
     ServerType server_type;
 
     /// For SYSTEM TEST VIEW <name> (SET FAKE TIME <time> | UNSET FAKE TIME).
@@ -181,7 +185,6 @@ public:
     QueryKind getQueryKind() const override { return QueryKind::System; }
 
 protected:
-
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 

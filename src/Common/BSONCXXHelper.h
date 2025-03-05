@@ -32,43 +32,43 @@ static bsoncxx::types::bson_value::value fieldAsBSONValue(const Field & field, c
         case TypeIndex::UInt8: {
             if (isBool(type))
                 return bsoncxx::types::b_bool{field.safeGet<UInt8>() != 0};
-            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt8 &>())};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt8>())};
         }
         case TypeIndex::UInt16:
-            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt16 &>())};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<UInt16>())};
         case TypeIndex::UInt32:
-            return bsoncxx::types::b_int64{static_cast<Int64>(field.safeGet<UInt32 &>())};
+            return bsoncxx::types::b_int64{static_cast<Int64>(field.safeGet<UInt32>())};
         case TypeIndex::UInt64:
-            return bsoncxx::types::b_double{static_cast<Float64>(field.safeGet<UInt64 &>())};
+            return bsoncxx::types::b_double{static_cast<Float64>(field.safeGet<UInt64>())};
         case TypeIndex::Int8:
-            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int8 &>())};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int8>())};
         case TypeIndex::Int16:
-            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int16 &>())};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int16>())};
         case TypeIndex::Int32:
-            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int32 &>())};
+            return bsoncxx::types::b_int32{static_cast<Int32>(field.safeGet<Int32>())};
         case TypeIndex::Int64:
-            return bsoncxx::types::b_int64{field.safeGet<Int64 &>()};
+            return bsoncxx::types::b_int64{field.safeGet<Int64>()};
         case TypeIndex::Float32:
-            return bsoncxx::types::b_double{field.safeGet<Float32 &>()};
+            return bsoncxx::types::b_double{field.safeGet<Float32>()};
         case TypeIndex::Float64:
-            return bsoncxx::types::b_double{field.safeGet<Float64 &>()};
+            return bsoncxx::types::b_double{field.safeGet<Float64>()};
         case TypeIndex::Date:
-            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt16 &>() * 86400}};
+            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt16>() * 86400}};
         case TypeIndex::Date32:
-            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<Int32 &>() * 86400}};
+            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<Int32>() * 86400}};
         case TypeIndex::DateTime:
-            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt32 &>()}};
+            return bsoncxx::types::b_date{std::chrono::seconds{field.safeGet<UInt32>()}};
         case TypeIndex::UUID:
-            return bsoncxx::types::b_string{static_cast<String>(formatUUID(field.safeGet<UUID &>()))};
+            return bsoncxx::types::b_string{String{formatUUID(field.safeGet<UUID>()).data()}};
         case TypeIndex::Tuple: {
             auto arr = array();
-            for (const auto & elem : field.safeGet<Tuple &>())
+            for (const auto & elem : field.safeGet<Tuple>())
                 arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem)));
             return arr.view();
         }
         case TypeIndex::Array: {
             auto arr = array();
-            for (const auto & elem : field.safeGet<Array &>())
+            for (const auto & elem : field.safeGet<Array>())
                 arr.append(fieldAsBSONValue(elem, applyVisitor(FieldToDataType(), elem)));
             return arr.view();
         }
@@ -354,16 +354,16 @@ static bsoncxx::types::bson_value::value fieldAsOID(const Field & field)
     switch (field.getType())
     {
         case Field::Types::String:
-            return bsoncxx::oid(field.safeGet<String &>());
+            return bsoncxx::oid(field.safeGet<String>());
         case Field::Types::Array: {
             auto arr = array();
-            for (const auto & elem : field.safeGet<Array &>())
+            for (const auto & elem : field.safeGet<Array>())
                 arr.append(fieldAsOID(elem));
             return arr.view();
         }
         case Field::Types::Tuple: {
             auto tuple = array();
-            for (const auto & elem : field.safeGet<Tuple &>())
+            for (const auto & elem : field.safeGet<Tuple>())
                 tuple.append(fieldAsOID(elem));
             return tuple.view();
         }

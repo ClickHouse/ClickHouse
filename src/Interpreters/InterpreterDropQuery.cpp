@@ -15,14 +15,11 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
 
 #include "config.h"
-
-#if USE_MYSQL
-#   include <Databases/MySQL/DatabaseMaterializedMySQL.h>
-#endif
 
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
@@ -171,7 +168,8 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
 
-        if (settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
+        bool secondary_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        if (!secondary_query && settings[Setting::ignore_drop_queries_probability] != 0 && ast_drop_query.kind == ASTDropQuery::Kind::Drop
             && std::uniform_real_distribution<>(0.0, 1.0)(thread_local_rng) <= settings[Setting::ignore_drop_queries_probability])
         {
             ast_drop_query.sync = false;
@@ -226,7 +224,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
 
             query_to_send.if_empty = false;
 
-            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_);
+            return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {});
         }
 
         if (query.kind == ASTDropQuery::Kind::Detach)
@@ -427,7 +425,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
         /// Flush should not be done if shouldBeEmptyOnDetach() == false,
         /// since in this case getTablesIterator() may do some additional work,
-        /// see DatabaseMaterializedMySQL::getTablesIterator()
+        /// see DatabaseMaterialized...SQL::getTablesIterator()
         auto table_context = Context::createCopy(getContext());
         table_context->setInternalQuery(true);
         /// Do not hold extra shared pointers to tables

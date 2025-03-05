@@ -1,7 +1,8 @@
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <QueryPipeline/ReadProgressCallback.h>
+#include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
-#include <Interpreters/OpenTelemetrySpanLog.h>
 
 namespace DB
 {
@@ -46,6 +47,9 @@ static void executeJob(ExecutingGraph::Node * node, ReadProgressCallback * read_
 {
     try
     {
+        if (node->processor->isSpillable() && CurrentThread::getGroup())
+            CurrentThread::getGroup()->memory_spill_scheduler.checkAndSpill(node->processor);
+
         node->processor->work();
 
         /// Update read progress only for source nodes.

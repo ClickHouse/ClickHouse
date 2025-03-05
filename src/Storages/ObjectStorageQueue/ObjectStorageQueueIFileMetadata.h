@@ -5,7 +5,14 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+}
 
+/// A base class to work with single file metadata in keeper.
+/// Metadata can have type Ordered or Unordered.
 class ObjectStorageQueueIFileMetadata
 {
 public:
@@ -49,26 +56,68 @@ public:
         const std::string & failed_node_path_,
         FileStatusPtr file_status_,
         size_t max_loading_retries_,
+        std::atomic<size_t> & metadata_ref_count_,
         LoggerPtr log_);
 
     virtual ~ObjectStorageQueueIFileMetadata();
 
-    bool setProcessing();
-    void setProcessed();
-    void resetProcessing();
-    void setFailed(const std::string & exception_message, bool reduce_retry_count, bool overwrite_status);
+    /// Get path from current file metadata.
+    const std::string & getPath() const { return path; }
+    /// Get maximum number of retries for file processing.
+    size_t getMaxTries() const { return max_loading_retries; }
+    /// Get file status.
+    /// File status is an in-memory processing info of the file, containing:
+    /// number of processed rows, processing time, exception, etc.
+    FileStatusPtr getFileStatus() { return file_status; }
 
-    virtual void setProcessedAtStartRequests(
+    virtual bool useBucketsForProcessing() const { return false; }
+    virtual size_t getBucket() const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets are not supported"); }
+
+    /// Try set file as Processing.
+    bool trySetProcessing();
+    /// Reset processing
+    /// (file will not be set neither as Failed nor Processed,
+    /// simply Processing state will be cancelled).
+    void resetProcessing();
+
+    /// Prepare keeper requests, required to set file as Processed.
+    void prepareProcessedRequests(Coordination::Requests & requests);
+    /// Prepare keeper requests, required to set file as Failed.
+    void prepareFailedRequests(
+        Coordination::Requests & requests,
+        const std::string & exception_message,
+        bool reduce_retry_count);
+
+    struct SetProcessingResponseIndexes
+    {
+        size_t processed_path_doesnt_exist_idx = 0;
+        size_t failed_path_doesnt_exist_idx = 0;
+        size_t create_processing_node_idx = 0;
+        size_t set_processing_id_node_idx = 0;
+    };
+    std::optional<SetProcessingResponseIndexes> prepareSetProcessingRequests(Coordination::Requests & requests);
+    void prepareResetProcessingRequests(Coordination::Requests & requests);
+
+    /// Do some work after prepared requests to set file as Processed succeeded.
+    void finalizeProcessed();
+    /// Do some work after prepared requests to set file as Failed succeeded.
+    void finalizeFailed(const std::string & exception_message);
+    /// Do some work after prepared requests to set file as Processing succeeded.
+    void finalizeProcessing(int processing_id_version_);
+
+    /// Set a starting point for processing.
+    /// Done on table creation, when we want to tell the table
+    /// that processing must be started from certain point,
+    /// instead of from scratch.
+    virtual void prepareProcessedAtStartRequests(
         Coordination::Requests & requests,
         const zkutil::ZooKeeperPtr & zk_client) = 0;
 
-    FileStatusPtr getFileStatus() { return file_status; }
-    const std::string & getPath() const { return path; }
-    size_t getMaxTries() const { return max_loading_retries; }
-
+    /// A struct, representing information stored in keeper for a single file.
     struct NodeMetadata
     {
-        std::string file_path; UInt64 last_processed_timestamp = 0;
+        std::string file_path;
+        UInt64 last_processed_timestamp = 0;
         std::string last_exception;
         UInt64 retries = 0;
         std::string processing_id; /// For ephemeral processing node.
@@ -79,15 +128,19 @@ public:
 
 protected:
     virtual std::pair<bool, FileStatus::State> setProcessingImpl() = 0;
-    virtual void setProcessedImpl() = 0;
-    virtual void resetProcessingImpl();
-    void setFailedNonRetriable();
-    void setFailedRetriable();
+    virtual void prepareProcessedRequestsImpl(Coordination::Requests & requests) = 0;
+
+    virtual SetProcessingResponseIndexes prepareProcessingRequestsImpl(Coordination::Requests &)
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method prepareProcesingRequestsImpl() is not implemented");
+    }
+    void prepareFailedRequestsImpl(Coordination::Requests & requests, bool retriable);
 
     const std::string path;
     const std::string node_name;
     const FileStatusPtr file_status;
     const size_t max_loading_retries;
+    const std::atomic<size_t> & metadata_ref_count;
 
     const std::string processing_node_path;
     const std::string processed_node_path;

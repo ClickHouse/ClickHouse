@@ -194,7 +194,7 @@ JSONAsObjectExternalSchemaReader::JSONAsObjectExternalSchemaReader(const FormatS
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN,
             "Cannot infer the data structure in JSONAsObject format because experimental JSON type is not allowed. Set setting "
-            "allow_experimental_json_type = 1 in order to allow it");
+            "enable_json_type = 1 in order to allow it");
 }
 
 void registerInputFormatJSONAsString(FormatFactory & factory)

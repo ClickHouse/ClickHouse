@@ -106,7 +106,7 @@ void registerStorageKeeperMap(StorageFactory & factory);
 
 void registerStorageObjectStorage(StorageFactory & factory);
 
-void registerStorages()
+void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
 {
     auto & factory = StorageFactory::instance();
 
@@ -149,7 +149,7 @@ void registerStorages()
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
 
-    #if USE_PARQUET
+    #if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerStorageDeltaLake(factory);
     #endif
 
@@ -169,7 +169,10 @@ void registerStorages()
     #endif
 
     #if USE_MONGODB
-    registerStorageMongoDB(factory);
+    if (use_legacy_mongodb_integration)
+        registerStorageMongoDBPocoLegacy(factory);
+    else
+        registerStorageMongoDB(factory);
     #endif
 
     registerStorageRedis(factory);

@@ -69,6 +69,9 @@ public:
     std::optional<UInt64> totalBytes(const Settings &) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings &) const override;
 
+    UInt64 getNumberOnFlyDataMutations() const override;
+    UInt64 getNumberOnFlyMetadataMutations() const override;
+
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     /** Perform the next step in combining the parts.
@@ -201,18 +204,17 @@ private:
     void setMutationCSN(const String & mutation_id, CSN csn) override;
 
     friend struct CurrentlyMergingPartsTagger;
+    friend class MergeTreeMergePredicate;
 
-    MergeMutateSelectedEntryPtr selectPartsToMerge(
+    std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> selectPartsToMerge(
         const StorageMetadataPtr & metadata_snapshot,
         bool aggressive,
         const String & partition_id,
         bool final,
-        PreformattedMessage & disable_reason,
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
-        bool optimize_skip_merged_partitions = false,
-        SelectPartsDecision * select_decision_out = nullptr);
+        bool optimize_skip_merged_partitions = false);
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,
@@ -222,7 +224,7 @@ private:
     /// with respect of mutations which would not change it.
     /// Returns 0 if there is no such mutation in active status.
     UInt64 getCurrentMutationVersion(
-        const DataPartPtr & part,
+        const MergeTreePartInfo & part_info,
         std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
     /// Returns the maximum level of all outdated parts in a range (left; right), or 0 in case if empty range.
@@ -230,11 +232,13 @@ private:
     /// When two parts all_1_1_0, all_3_3_0 are merged into all_1_3_1, the gap between those parts have to be verified.
     /// There should not be an unactive part all_1_1_1. Otherwise it is impossible to load parts after restart, they intersects.
     /// Therefore this function is used in merge predicate in order to prevent merges over the gaps with high level outdated parts.
-    UInt32 getMaxLevelInBetween(
-        const DataPartPtr & left,
-        const DataPartPtr & right) const;
+    UInt32 getMaxLevelInBetween(const PartProperties & left, const PartProperties & right) const;
 
     size_t clearOldMutations(bool truncate = false);
+
+    /// Delete irrelevant parts from memory and disk.
+    /// If 'force' - don't wait for old_parts_lifetime.
+    size_t clearOldPartsFromFilesystem(bool force = false, bool with_pause_fail_point = false);
 
     // Partition helpers
     void dropPartNoWaitNoThrow(const String & part_name) override;
@@ -249,7 +253,7 @@ private:
     /// Update mutation entries after part mutation execution. May reset old
     /// errors if mutation was successful. Otherwise update last_failed* fields
     /// in mutation entries.
-    void updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message);
+    void updateMutationEntriesErrors(FutureMergedMutatedPartPtr result_part, bool is_successful, const String & exception_message, const String & error_code_name);
 
     /// Return empty optional if mutation was killed. Otherwise return partially
     /// filled mutation status with information about error (latest_fail*) and
