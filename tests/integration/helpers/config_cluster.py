@@ -1,10 +1,6 @@
 # MYSQL CREDENTIALS
 mysql_user = "root"
-mysql_pass = "clickhouse"
-
-# MYSQL8 CREDENTIALS
-mysql8_user = "root"
-mysql8_pass = "clickhouse"
+mysql_pass = "ClickHouse_MySQL_P@ssw0rd"
 
 # POSTGRES CREDENTIALS
 pg_user = "postgres"
@@ -17,11 +13,10 @@ minio_secret_key = "ClickHouse_Minio_P@ssw0rd"
 
 # MONGODB CREDENTIALS
 mongo_user = "root"
-mongo_pass = "clickhouse"
+mongo_pass = "ClickHouse_MongoDB_P@ssw0rd"
 
 # ODBC CREDENTIALS
 odbc_mysql_uid = "root"
-odbc_mysql_pass = "clickhouse"
 odbc_mysql_db = "clickhouse"
 
 odbc_psql_db = "postgres"
