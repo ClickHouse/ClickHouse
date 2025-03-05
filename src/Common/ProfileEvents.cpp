@@ -970,6 +970,8 @@ The server successfully detected this situation and will download merged part fr
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
     \
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
+    M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
+    M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

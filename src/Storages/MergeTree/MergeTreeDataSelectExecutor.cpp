@@ -856,8 +856,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             log,
             "Index {} has dropped {}/{} granules.",
             backQuote(index_name),
-            stat.granules_dropped,
-            stat.total_granules);
+            stat.granules_dropped.load(),
+            stat.total_granules.load());
 
         std::string description
             = index_and_condition.index->index.type + " GRANULARITY " + std::to_string(index_and_condition.index->index.granularity);
@@ -877,7 +877,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         const auto & index_name = "Merged";
         LOG_DEBUG(log, "Index {} has dropped {}/{} granules.",
                     backQuote(index_name),
-                    stat.granules_dropped, stat.total_granules);
+                    stat.granules_dropped.load(), stat.total_granules.load());
 
         std::string description = "MERGED GRANULARITY " + std::to_string(index_and_condition.indices.at(0)->index.granularity);
 
@@ -997,7 +997,7 @@ std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const auto & settings = context->getSettingsRef();
     const auto data_settings = data.getSettings();
     auto max_partitions_to_read
-        = settings[Setting::max_partitions_to_read].changed ? settings[Setting::max_partitions_to_read] : (*data_settings)[MergeTreeSetting::max_partitions_to_read];
+        = settings[Setting::max_partitions_to_read].changed ? settings[Setting::max_partitions_to_read].value : (*data_settings)[MergeTreeSetting::max_partitions_to_read].value;
     if (max_partitions_to_read > 0)
     {
         std::set<String> partitions;

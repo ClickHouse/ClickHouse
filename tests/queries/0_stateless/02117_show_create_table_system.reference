@@ -340,6 +340,7 @@ CREATE TABLE system.merge_tree_settings
 (
     `name` String,
     `value` String,
+    `default` String,
     `changed` UInt8,
     `description` String,
     `min` Nullable(String),
@@ -935,6 +936,7 @@ CREATE TABLE system.replicated_merge_tree_settings
 (
     `name` String,
     `value` String,
+    `default` String,
     `changed` UInt8,
     `description` String,
     `min` Nullable(String),

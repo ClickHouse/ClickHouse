@@ -10,6 +10,12 @@
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
+namespace ProfileEvents
+{
+    extern const Event FilterTransformPassedRows;
+    extern const Event FilterTransformPassedBytes;
+}
+
 namespace DB
 {
 
@@ -22,6 +28,19 @@ bool FilterTransform::canUseType(const DataTypePtr & filter_type)
 {
     return filter_type->onlyNull() || isUInt8(removeLowCardinalityAndNullable(filter_type));
 }
+
+auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
+{
+    ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_rows);
+
+    size_t num_bytes = 0;
+    for (const auto & column : columns)
+    {
+        if (column)
+            num_bytes += column->byteSize();
+    }
+    ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_bytes);
+};
 
 Block FilterTransform::transformHeader(
     const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
@@ -149,6 +168,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true || on_totals)
     {
+        incrementProfileEvents(num_rows_before_filtration, columns);
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
@@ -167,17 +187,15 @@ void FilterTransform::doTransform(Chunk & chunk)
     if (constant_filter_description.always_false)
     {
         write_into_query_condition_cache();
+        incrementProfileEvents(0, {});
         return; /// Will finish at next prepare call
     }
 
-    if (constant_filter_description.always_true)
-    {
-        removeFilterIfNeed(columns);
-        chunk.setColumns(std::move(columns), num_rows_before_filtration);
-        return;
-    }
-
     std::unique_ptr<IFilterDescription> filter_description;
+
+    if (isColumnConst(*filter_column))
+        filter_column = filter_column->convertToFullColumnIfConst();
+
     if (filter_column->isSparse())
         filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
     else
@@ -212,6 +230,8 @@ void FilterTransform::doTransform(Chunk & chunk)
     }
     else
         num_filtered_rows = filter_description->countBytesInFilter();
+
+    incrementProfileEvents(num_filtered_rows, columns);
 
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
