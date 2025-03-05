@@ -29,6 +29,8 @@
 
 #include <boost/functional/hash.hpp>
 
+#include <fmt/ranges.h>
+
 using namespace DB;
 
 namespace

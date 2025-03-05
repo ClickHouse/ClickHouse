@@ -45,7 +45,7 @@ namespace DB
     ```
     )", 0) \
     DECLARE(UInt64, max_thread_pool_free_size, 1000, R"(
-    If the number of **idle** threads in the Global Thread pool is greater than [`max_thread_pool_free_size`](#max_thread_pool_free_size), then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
+    If the number of **idle** threads in the Global Thread pool is greater than [`max_thread_pool_free_size`](/operations/server-configuration-parameters/settings#max_thread_pool_free_size), then ClickHouse releases resources occupied by some threads and the pool size is decreased. Threads can be created again if necessary.
 
     **Example**
 
@@ -54,7 +54,7 @@ namespace DB
     ```
     )", 0) \
     DECLARE(UInt64, thread_pool_queue_size, 10000, R"(
-    The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [`max_thread_pool_size`](#max_thread_pool_size).
+    The maximum number of jobs that can be scheduled on the Global Thread pool. Increasing queue size leads to larger memory usage. It is recommended to keep this value equal to [`max_thread_pool_size`](/operations/server-configuration-parameters/settings#max_thread_pool_size).
 
     :::note
     A value of `0` means unlimited.
@@ -202,8 +202,8 @@ namespace DB
     :::
 
     See also:
-    - [`max_temporary_data_on_disk_size_for_user`](#max_temporary_data_on_disk_for_user)
-    - [`max_temporary_data_on_disk_size_for_query`](#max_temporary_data_on_disk_size_for_query)
+    - [`max_temporary_data_on_disk_size_for_user`](/operations/settings/settings#max_temporary_data_on_disk_size_for_user)
+    - [`max_temporary_data_on_disk_size_for_query`](/operations/settings/settings#max_temporary_data_on_disk_size_for_query)
     )", 0) \
     DECLARE(String, temporary_data_in_cache, "", R"(
     With this option, temporary data will be stored in the cache for the particular disk.
@@ -284,8 +284,8 @@ namespace DB
 
     **See also:**
 
-    - [max_memory_usage](../../operations/settings/query-complexity.md#settings_max_memory_usage)
-    - [merges_mutations_memory_usage_soft_limit](#merges_mutations_memory_usage_soft_limit)
+    - [max_memory_usage](/operations/settings/settings#max_memory_usage)
+    - [merges_mutations_memory_usage_soft_limit](/operations/server-configuration-parameters/settings#merges_mutations_memory_usage_soft_limit)
     )", 0) \
     DECLARE(Bool, allow_use_jemalloc_memory, true, R"(Allows to use jemalloc memory.)", 0) \
     DECLARE(UInt64, cgroups_memory_usage_observer_wait_time, 15, R"(
@@ -294,24 +294,24 @@ namespace DB
     To disable the cgroup observer, set this value to `0`.
 
     see settings:
-    - [`cgroup_memory_watcher_hard_limit_ratio`](#cgroup_memory_watcher_hard_limit_ratio)
-    - [`cgroup_memory_watcher_soft_limit_ratio`](#cgroup_memory_watcher_soft_limit_ratio).
+    - [`cgroup_memory_watcher_hard_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_hard_limit_ratio)
+    - [`cgroup_memory_watcher_soft_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_soft_limit_ratio).
     )", 0) \
     DECLARE(Double, cgroup_memory_watcher_hard_limit_ratio, 0.95, R"(
     Specifies the "hard" threshold of the memory consumption of the server process according to cgroups after which the server's
     maximum memory consumption is adjusted to the threshold value.
 
     See settings:
-    - [`cgroups_memory_usage_observer_wait_time`](#cgroups_memory_usage_observer_wait_time)
-    - [`cgroup_memory_watcher_soft_limit_ratio`](#cgroup_memory_watcher_soft_limit_ratio)
+    - [`cgroups_memory_usage_observer_wait_time`](/operations/server-configuration-parameters/settings#cgroups_memory_usage_observer_wait_time)
+    - [`cgroup_memory_watcher_soft_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_soft_limit_ratio)
     )", 0) \
     DECLARE(Double, cgroup_memory_watcher_soft_limit_ratio, 0.9, R"(
     Specifies the "soft" threshold of the memory consumption of the server process according to cgroups after which arenas in
     jemalloc are purged.
 
     See settings:
-    - [`cgroups_memory_usage_observer_wait_time`](#cgroups_memory_usage_observer_wait_time)
-    - [`cgroup_memory_watcher_hard_limit_ratio`](#cgroup_memory_watcher_hard_limit_ratio)
+    - [`cgroups_memory_usage_observer_wait_time`](/operations/server-configuration-parameters/settings#cgroups_memory_usage_observer_wait_time)
+    - [`cgroup_memory_watcher_hard_limit_ratio`](/operations/server-configuration-parameters/settings#cgroup_memory_watcher_hard_limit_ratio)
     )", 0) \
     DECLARE(UInt64, async_insert_threads, 16, R"(Maximum number of threads to actually parse and insert data in background. Zero means asynchronous mode is disabled)", 0) \
     DECLARE(Bool, async_insert_queue_flush_on_shutdown, true, R"(If true queue of asynchronous inserts is flushed on graceful shutdown)", 0) \
@@ -338,7 +338,7 @@ namespace DB
     DECLARE(UInt64, database_catalog_unused_dir_hide_timeout_sec, 60 * 60, R"(
     Parameter of a task that cleans up garbage from `store/` directory.
     If some subdirectory is not used by clickhouse-server and this directory was not modified for last
-    [`database_catalog_unused_dir_hide_timeout_sec`](#database_catalog_unused_dir_hide_timeout_sec) seconds, the task will "hide" this directory by
+    [`database_catalog_unused_dir_hide_timeout_sec`](/operations/server-configuration-parameters/settings#database_catalog_unused_dir_hide_timeout_sec) seconds, the task will "hide" this directory by
     removing all access rights. It also works for directories that clickhouse-server does not
     expect to see inside `store/`.
 
@@ -349,9 +349,9 @@ namespace DB
     DECLARE(UInt64, database_catalog_unused_dir_rm_timeout_sec, 30 * 24 * 60 * 60, R"(
     Parameter of a task that cleans up garbage from `store/` directory.
     If some subdirectory is not used by clickhouse-server and it was previously "hidden"
-    (see [database_catalog_unused_dir_hide_timeout_sec](#database_catalog_unused_dir_hide_timeout_sec))
+    (see [database_catalog_unused_dir_hide_timeout_sec](/operations/server-configuration-parameters/settings#database_catalog_unused_dir_hide_timeout_sec))
     and this directory was not modified for last
-    [`database_catalog_unused_dir_rm_timeout_sec`](#database_catalog_unused_dir_rm_timeout_sec) seconds, the task will remove this directory.
+    [`database_catalog_unused_dir_rm_timeout_sec`]/operations/server-configuration-parameters/settings#database_catalog_unused_dir_rm_timeout_sec) seconds, the task will remove this directory.
     It also works for directories that clickhouse-server does not
     expect to see inside `store/`.
 
@@ -375,9 +375,9 @@ namespace DB
     Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
     See also:
-    - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
-    - [`max_concurrent_select_queries`](#max_concurrent_select_queries)
-    - [`max_concurrent_queries_for_all_users`](#max_concurrent_queries_for_all_users)
+    - [`max_concurrent_insert_queries`](/operations/server-configuration-parameters/settings#max_concurrent_insert_queries)
+    - [`max_concurrent_select_queries`](/operations/server-configuration-parameters/settings#max_concurrent_select_queries)
+    - [`max_concurrent_queries_for_all_users`](/operations/settings/settings#max_concurrent_queries_for_all_users)
 
     :::note
 
@@ -408,16 +408,16 @@ namespace DB
     )", 0) \
     DECLARE(UInt64, max_waiting_queries, 0, R"(
     Limit on total number of concurrently waiting queries.
-    Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](#async_load_databases).
+    Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](/operations/server-configuration-parameters/settings#async_load_databases).
 
     :::note
     Waiting queries are not counted when limits controlled by the following settings are checked:
 
-    - [`max_concurrent_queries`](#max_concurrent_queries)
-    - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
-    - [`max_concurrent_select_queries`](#max_concurrent_select_queries)
-    - [`max_concurrent_queries_for_user`](#max_concurrent_queries_for_user)
-    - [`max_concurrent_queries_for_all_users`](#max_concurrent_queries_for_all_users)
+    - [`max_concurrent_queries`](/operations/server-configuration-parameters/settings#max_concurrent_queries)
+    - [`max_concurrent_insert_queries`](/operations/server-configuration-parameters/settings#max_concurrent_insert_queries)
+    - [`max_concurrent_select_queries`](/operations/server-configuration-parameters/settings#max_concurrent_select_queries)
+    - [`max_concurrent_queries_for_user`](/operations/settings/settings#max_concurrent_queries_for_user)
+    - [`max_concurrent_queries_for_all_users`](/operations/settings/settings#max_concurrent_queries_for_all_users)
 
     This correction is done to avoid hitting these limits just after server startup.
     :::
@@ -543,13 +543,13 @@ namespace DB
     DECLARE(UInt64, max_partition_size_to_drop, 50000000000lu, R"(
     Restriction on dropping partitions.
 
-    If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_partition_size_to_drop`](#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
+    If the size of a [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table exceeds [`max_partition_size_to_drop`](/operations/settings/settings#max_partition_size_to_drop) (in bytes), you can't drop a partition using a [DROP PARTITION](../../sql-reference/statements/alter/partition.md#drop-partitionpart) query.
     This setting does not require a restart of the ClickHouse server to apply. Another way to disable the restriction is to create the `<clickhouse-path>/flags/force_drop_table` file.
 
     :::note
     The value `0` means that you can drop partitions without any restrictions.
 
-    This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](#max-table-size-to-drop)
+    This limitation does not restrict drop table and truncate table, see [max_table_size_to_drop](/operations/settings/settings#max_table_size_to_drop)
     :::
 
     **Example**
@@ -726,12 +726,12 @@ namespace DB
     DECLARE(Float, background_merges_mutations_concurrency_ratio, 2, R"(
     Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently.
 
-    For example, if the ratio equals to 2 and [`background_pool_size`](#background_pool_size) is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority.
+    For example, if the ratio equals to 2 and [`background_pool_size`](/operations/server-configuration-parameters/settings#background_pool_size) is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority.
 
     :::note
     You can only increase this ratio at runtime. To lower it you have to restart the server.
 
-    As with the [`background_pool_size`](#background_pool_size) setting [`background_merges_mutations_concurrency_ratio`](#background_merges_mutations_concurrency_ratio) could be applied from the `default` profile for backward compatibility.
+    As with the [`background_pool_size`](/operations/server-configuration-parameters/settings#background_pool_size) setting [`background_merges_mutations_concurrency_ratio`](/operations/server-configuration-parameters/settings#background_merges_mutations_concurrency_ratio) could be applied from the `default` profile for backward compatibility.
     :::
     )", 0) \
     DECLARE(String, background_merges_mutations_scheduling_policy, "round_robin", R"(
@@ -796,7 +796,7 @@ namespace DB
     User wishing to see secrets must also have
     [`format_display_secrets_in_show_and_select` format setting](../settings/formats#format_display_secrets_in_show_and_select)
     turned on and a
-    [`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
+    [`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
 
     Possible values:
 
@@ -826,7 +826,7 @@ namespace DB
     DECLARE(Seconds, replicated_fetches_http_receive_timeout, 0, R"(HTTP receive timeout for fetch part requests. Inherited from default profile `http_receive_timeout` if not set explicitly.)", 0) \
     DECLARE(UInt64, total_memory_profiler_step, 0, R"(Whenever server memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stack trace. Zero means disabled memory profiler. Values lower than a few megabytes will slow down server.)", 0) \
     DECLARE(Double, total_memory_tracker_sample_probability, 0, R"(
-    Allows to collect random allocations and de-allocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](#total-memory-profiler-step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
+    Allows to collect random allocations and de-allocations and writes them in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `trace_type` equal to a `MemorySample` with the specified probability. The probability is for every allocation or deallocations, regardless of the size of the allocation. Note that sampling happens only when the amount of untracked memory exceeds the untracked memory limit (default value is `4` MiB). It can be lowered if [total_memory_profiler_step](/operations/server-configuration-parameters/settings#total_memory_profiler_step) is lowered. You can set `total_memory_profiler_step` equal to `1` for extra fine-grained sampling.
 
     Possible values:
 
@@ -968,7 +968,7 @@ namespace DB
 
     :::note
     The server will wait at startup until all the dictionaries finish their loading before receiving any connections
-    (exception: if [`wait_dictionaries_load_at_startup`](#wait_dictionaries_load_at_startup) is set to `false`).
+    (exception: if [`wait_dictionaries_load_at_startup`](/operations/server-configuration-parameters/settings#wait_dictionaries_load_at_startup) is set to `false`).
     :::
 
     **Example**
