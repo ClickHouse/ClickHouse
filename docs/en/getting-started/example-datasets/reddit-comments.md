@@ -17,7 +17,7 @@ This dataset contains publicly available comments on Reddit that go back to Dece
 
 A shoutout to Percona for the [motivation behind ingesting this dataset](https://www.percona.com/blog/big-data-set-reddit-comments-analyzing-clickhouse/), which we have downloaded and stored in an S3 bucket.
 
-## Creating a table
+## Creating a table {#creating-a-table}
 
 :::note
 The following commands were executed on a Production instance of ClickHouse Cloud with the minimum memory set to 720GB. To run this on your own cluster, replace `default` in the `s3Cluster` function call with the name of your cluster. If you do not have a cluster, then replace the `s3Cluster` function with the `s3` function.
@@ -76,7 +76,7 @@ The names of the files in S3 start with `RC_YYYY-MM` where `YYYY-MM` goes from `
 :::
 
 
-## Load data
+## Load data {#load-data}
 
 2. We are going to start with one month of data, but if you want to simply insert every row - skip ahead to step 8 below. The following file has 86M records from December, 2017:
 
@@ -118,7 +118,7 @@ FROM reddit;
 1 row in set. Elapsed: 1.572 sec. Processed 85.97 million rows, 367.43 MB (54.71 million rows/s., 233.80 MB/s.)
 ```
 
-## Example queries
+## Example queries {#example-queries}
 
 5. This query returns the top 10 subreddits (in terms of number of comments):
 
@@ -188,7 +188,7 @@ LIMIT 10;
 10 rows in set. Elapsed: 8.143 sec. Processed 85.97 million rows, 711.05 MB (10.56 million rows/s., 87.32 MB/s.)
 ```
 
-## Loading the entire dataset
+## Loading the entire dataset {#loading-the-entire-dataset}
 
 7.  We already inserted some data, but we will start over:
 
@@ -293,7 +293,7 @@ Notice the compression of disk storage is about 1/3 of the uncompressed size:
 1 row in set. Elapsed: 0.005 sec.
 ```
 
-## Example query - comments, authors and subreddits per month
+## Example query - comments, authors and subreddits per month {#example-query-comments}
 
 10. The following query shows how many comments, authors and subreddits we have for each month:
 
@@ -523,7 +523,7 @@ This is a substantial query that has to process all 14.69 billion rows, but we s
 203 rows in set. Elapsed: 48.492 sec. Processed 14.69 billion rows, 213.35 GB (302.91 million rows/s., 4.40 GB/s.)
 ```
 
-## More queries
+## More queries {#more-queries}
 
 11. Here are the top 10 subreddits of 2022:
 
@@ -643,7 +643,7 @@ It looks like memes and teenagers were busy on Reddit in 2019:
 50 rows in set. Elapsed: 10.680 sec. Processed 29.38 billion rows, 198.67 GB (2.75 billion rows/s., 18.60 GB/s.)
 ```
 
-## Other queries
+## Other queries {#other-queries}
 
 13. One more query: let's compare ClickHouse mentions to other technologies like Snowflake and Postgres. This query is a big one because it has to search all 14.69 billion comments three times for a substring, but the performance is actually quite impressive. (Unfortunately ClickHouse users are not very active on Reddit yet):
 
