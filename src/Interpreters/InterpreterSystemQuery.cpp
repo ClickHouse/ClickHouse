@@ -282,6 +282,21 @@ BlockIO InterpreterSystemQuery::execute()
 {
     auto & query = query_ptr->as<ASTSystemQuery &>();
 
+    // Check if running in clickhouse-local mode
+    if (getContext()->getApplicationType() == Context::ApplicationType::LOCAL)
+    {
+        using Type = ASTSystemQuery::Type;
+        switch (query.type)
+        {
+            case Type::RELOAD_CONFIG:
+            case Type::STOP_LISTEN:
+            case Type::START_LISTEN:
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "This SYSTEM query is not supported in clickhouse-local mode");
+            default:
+                break;
+        }
+    }
+
     if (!query.cluster.empty())
     {
         DDLQueryOnClusterParams params;
