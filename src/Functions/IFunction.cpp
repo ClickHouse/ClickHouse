@@ -136,7 +136,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
     const DataTypePtr & result_type,
     size_t input_rows_count,
     bool dry_run,
-    FunctionExecuteProfile * profile) const
+    FunctionExecutionProfile * profile) const
 {
     ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
 
@@ -195,7 +195,7 @@ ColumnPtr IExecutableFunction::defaultImplementationForNulls(
     const DataTypePtr & result_type,
     size_t input_rows_count,
     bool dry_run,
-    FunctionExecuteProfile * profile) const
+    FunctionExecutionProfile * profile) const
 {
     if (args.empty() || !useDefaultImplementationForNulls())
         return nullptr;
@@ -348,7 +348,7 @@ ColumnPtr IExecutableFunction::executeWithoutLowCardinalityColumns(
     const DataTypePtr & result_type,
     size_t input_rows_count,
     bool dry_run,
-    FunctionExecuteProfile * profile) const
+    FunctionExecutionProfile * profile) const
 {
     if (auto res = defaultImplementationForNothing(args, result_type, input_rows_count))
         return res;
@@ -395,7 +395,7 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
     const DataTypePtr & result_type,
     size_t input_rows_count,
     bool dry_run,
-    FunctionExecuteProfile * profile) const
+    FunctionExecutionProfile * profile) const
 {
     ColumnPtr result;
     if (useDefaultImplementationForLowCardinalityColumns())
@@ -447,14 +447,14 @@ ColumnPtr IExecutableFunction::executeImplWithProfile(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
     size_t input_rows_count,
-    FunctionExecuteProfile * profile) const
+    FunctionExecutionProfile * profile) const
 {
     if (profile)
     {
         Stopwatch watch;
         auto res = executeImpl(arguments, result_type, input_rows_count);
         profile->executed_rows = input_rows_count;
-        profile->executed_elapsed = watch.elapsed();
+        profile->execution_elapsed = watch.elapsed();
         return res;
     }
     else
@@ -468,7 +468,7 @@ ColumnPtr IExecutableFunction::execute(
     const DataTypePtr & result_type,
     size_t input_rows_count,
     bool dry_run,
-    FunctionExecuteProfile * profile) const
+    FunctionExecutionProfile * profile) const
 {
     checkFunctionArgumentSizes(arguments, input_rows_count);
 
@@ -552,7 +552,7 @@ ColumnPtr IFunctionBase::execute(
     const DB::DataTypePtr& result_type,
     size_t input_rows_count,
     bool dry_run,
-    FunctionExecuteProfile * profile) const
+    FunctionExecutionProfile * profile) const
 {
     checkFunctionArgumentSizes(arguments, input_rows_count);
     return prepare(arguments)->execute(arguments, result_type, input_rows_count, dry_run, profile);
@@ -663,14 +663,14 @@ ColumnPtr IFunction::executeImplWithProfile(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
     size_t input_rows_count,
-    FunctionExecuteProfile * profile) const
+    FunctionExecutionProfile * profile) const
 {
     if (profile)
     {
         Stopwatch watch;
         auto res = executeImpl(arguments, result_type, input_rows_count);
         profile->executed_rows = input_rows_count;
-        profile->executed_elapsed = watch.elapsed();
+        profile->execution_elapsed = watch.elapsed();
         return res;
     }
     else

@@ -31,24 +31,24 @@ class Field;
 struct FieldInterval;
 using FieldIntervalPtr = std::shared_ptr<FieldInterval>;
 
-struct FunctionExecuteProfile
+struct FunctionExecutionProfile
 {
     /// executed_rows records the number of rows processed by a function. In a short-circuit function,
     /// the executed_rows for lazily executed arguments can be less than the input rows, as some rows may
     /// be filtered out before the argument is executed.
     size_t executed_rows = 0;
 
-    /// The total executed elapsed, including short_circuit_side_elapsed.
-    size_t executed_elapsed = 0;
+    /// The total executed elapsed, including lazy_executed_additional_elapsed.
+    size_t execution_elapsed = 0;
 
     /// When executing a function lazily, we filter out unprocessed rows using a bitmap and expand the
-    /// result to the original size. The short_circuit_side_elapsed metric includes the time for these
-    /// operations, along with the short_circuit_side_elapsed times of its lazily executed arguments.
-    size_t short_circuit_side_elapsed = 0;
+    /// result to the original size. The lazy_executed_additional_elapsed metric includes the time for these
+    /// operations, along with the lazy_executed_additional_elapsed times of its lazily executed arguments.
+    size_t lazy_executed_additional_elapsed = 0;
 
-    /// For short-circuit arguments, their execution must be profiled, with the first element of the pair
-    /// indicating the argument's index.
-    std::vector<std::pair<size_t, FunctionExecuteProfile>> argument_profiles;
+    /// For short-circuit lazy executed arguments, their execution must be profiled, with the first element
+    /// of the pair indicating the argument's index.
+    std::vector<std::pair<size_t, FunctionExecutionProfile>> argument_profiles;
 };
 
 /// The simplest executable object.
@@ -67,13 +67,13 @@ public:
     virtual String getName() const = 0;
 
     // profile is optional. It helps to improve expression execution.
-    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run, FunctionExecuteProfile * profile = nullptr) const;
+    ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run, FunctionExecutionProfile * profile = nullptr) const;
 
 protected:
 
     virtual ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const = 0;
 
-    virtual ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecuteProfile * profile) const;
+    virtual ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecutionProfile * profile) const;
 
     virtual ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
@@ -129,14 +129,14 @@ private:
             const DataTypePtr & result_type,
             size_t input_rows_count,
             bool dry_run,
-            FunctionExecuteProfile * profile) const;
+            FunctionExecutionProfile * profile) const;
 
     ColumnPtr defaultImplementationForNulls(
             const ColumnsWithTypeAndName & args,
             const DataTypePtr & result_type,
             size_t input_rows_count,
             bool dry_run,
-            FunctionExecuteProfile * profile) const;
+            FunctionExecutionProfile * profile) const;
 
     ColumnPtr defaultImplementationForNothing(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const;
@@ -146,14 +146,14 @@ private:
             const DataTypePtr & result_type,
             size_t input_rows_count,
             bool dry_run,
-            FunctionExecuteProfile * profile) const;
+            FunctionExecutionProfile * profile) const;
 
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments,
             const DataTypePtr & result_type,
             size_t input_rows_count,
             bool dry_run,
-            FunctionExecuteProfile * profile) const;
+            FunctionExecutionProfile * profile) const;
 
     bool short_circuit_function_evaluation_for_nulls = false;
     double short_circuit_function_evaluation_for_nulls_threshold = 0.0;
@@ -181,7 +181,7 @@ public:
         const DataTypePtr & result_type,
         size_t input_rows_count,
         bool dry_run,
-        FunctionExecuteProfile * profile) const;
+        FunctionExecutionProfile * profile) const;
 
     /// Get the main function name.
     virtual String getName() const = 0;
@@ -487,7 +487,7 @@ public:
         const ColumnsWithTypeAndName & arguments,
         const DataTypePtr & result_type,
         size_t input_rows_count,
-        FunctionExecuteProfile * profile) const;
+        FunctionExecutionProfile * profile) const;
 
     virtual ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
     {
