@@ -139,7 +139,7 @@
 	url = https://github.com/ClickHouse/libuv
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
-	url = https://github.com/fmtlib/fmt
+	url = https://github.com/Algunenano/fmt
 [submodule "contrib/sentry-native"]
 	path = contrib/sentry-native
 	url = https://github.com/ClickHouse/sentry-native
