@@ -12,7 +12,6 @@
 #include <Common/quoteString.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/IDataType.h>

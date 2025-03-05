@@ -490,9 +490,6 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
-    auto target_analysis = machine->getTargetIRAnalysis();
-    fam.registerPass([&] { return target_analysis; });
-
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
 

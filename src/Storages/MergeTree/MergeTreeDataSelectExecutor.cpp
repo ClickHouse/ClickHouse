@@ -46,7 +46,6 @@
 #include <base/sleep.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -82,8 +81,6 @@ namespace Setting
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
-    extern const SettingsBool use_query_condition_cache;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool parallel_replicas_index_analysis_only_on_coordinator;
 }
@@ -891,103 +888,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     return parts_with_ranges;
 }
-
-void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
-    RangesInDataParts & parts_with_ranges,
-    const SelectQueryInfo & select_query_info,
-    const ContextPtr & context,
-    LoggerPtr log)
-{
-    const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::use_query_condition_cache] || !settings[Setting::allow_experimental_analyzer] ||
-        (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag))
-        return;
-
-    QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
-
-    struct Stat
-    {
-        size_t total_granules{0};
-        size_t granules_dropped{0};
-    };
-
-    auto drop_mark_ranges =[&](const ActionsDAG::Node * dag) -> Stat
-    {
-        size_t condition_hash = dag->getHash();
-        Stat stat;
-        for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
-        {
-            auto & part_with_ranges = *it;
-            stat.total_granules += part_with_ranges.getMarksCount();
-
-            auto & data_part = part_with_ranges.data_part;
-            auto storage_id = data_part->storage.getStorageID();
-            auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
-            if (!matching_marks_opt)
-            {
-                ++it;
-                continue;
-            }
-
-            auto & matching_marks = *matching_marks_opt;
-            MarkRanges ranges;
-            for (auto & mark_range : part_with_ranges.ranges)
-            {
-                size_t begin = mark_range.begin;
-                for (size_t mark_it = begin; mark_it < mark_range.end; ++mark_it)
-                {
-                    if (!matching_marks[mark_it])
-                    {
-                        ++stat.granules_dropped;
-                        if (mark_it == begin)
-                            ++begin;
-                        else
-                        {
-                            ranges.emplace_back(begin, mark_it);
-                            begin = mark_it + 1;
-                        }
-                    }
-                }
-
-                if (begin != mark_range.begin && begin != mark_range.end)
-                    ranges.emplace_back(begin, mark_range.end);
-                else if (begin == mark_range.begin)
-                    ranges.emplace_back(begin, mark_range.end);
-            }
-
-            if (ranges.empty())
-                it = parts_with_ranges.erase(it);
-            else
-            {
-                part_with_ranges.ranges = ranges;
-                ++it;
-            }
-        }
-
-        return stat;
-    };
-
-    if (const auto & prewhere_info = select_query_info.prewhere_info)
-    {
-        for (const auto * dag : prewhere_info->prewhere_actions.getOutputs())
-        {
-            if (dag->result_name == prewhere_info->prewhere_column_name)
-            {
-                auto stat = drop_mark_ranges(dag);
-                LOG_DEBUG(log, "PREWHERE contition {} by query condition cache has dropped {}/{} granules.", prewhere_info->prewhere_column_name, stat.granules_dropped, stat.total_granules);
-                break;
-            }
-        }
-    }
-
-    if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
-    {
-        const auto * dag = filter_actions_dag->getOutputs().front();
-        auto stat = drop_mark_ranges(dag);
-        LOG_DEBUG(log, "WHERE condition {} by query condition cache has dropped {}/{} granules.", filter_actions_dag->getOutputs().front()->result_name, stat.granules_dropped, stat.total_granules);
-    }
-}
-
 
 std::shared_ptr<QueryIdHolder> MergeTreeDataSelectExecutor::checkLimits(
     const MergeTreeData & data,

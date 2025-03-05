@@ -1,8 +1,6 @@
 #include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
-#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
-#include <Disks/IDiskTransaction.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>

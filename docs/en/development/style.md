@@ -788,7 +788,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
-**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](/development/contrib#adding-and-maintaining-third-party-libraries) for details.
+**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](contrib.md#adding-third-party-libraries) for details.
 
 **3.** Preference is always given to libraries that are already in use.
 

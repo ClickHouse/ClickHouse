@@ -39,8 +39,6 @@
 
 #include <base/range.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
-
 namespace DB
 {
 namespace Setting

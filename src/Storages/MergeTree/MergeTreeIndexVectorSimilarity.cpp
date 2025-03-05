@@ -3,7 +3,6 @@
 #if USE_USEARCH
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>

@@ -584,7 +584,7 @@ ClickHouse поддерживает [NULL](../sql-reference/syntax.md), кото
 
 В этом формате один объект JSON интерпретируется как одно строковое значение. Если входные данные имеют несколько объектов JSON, разделенных запятой, то они интерпретируются как отдельные строки таблицы. Если входные данные заключены в квадратные скобки, они интерпретируются как массив JSON-объектов.
 
-В этом формате парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как `DEFAULT` или `MATERIALIZED`(смотрите раздел [Значения по умолчанию](/sql-reference/statements/create/table)), либо отсутствовать. Для дальнейшей обработки объекта JSON, представленного в строке, вы можете использовать [функции для работы с JSON](../sql-reference/functions/json-functions.md).
+В этом формате парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как `DEFAULT` или `MATERIALIZED`(смотрите раздел [Значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values)), либо отсутствовать. Для дальнейшей обработки объекта JSON, представленного в строке, вы можете использовать [функции для работы с JSON](../sql-reference/functions/json-functions.md).
 
 **Пример**
 
@@ -1251,7 +1251,7 @@ message MessageType {
 }
 ```
 
-не применяются; вместо них используются определенные в таблице [значения по умолчанию](/sql-reference/statements/create/table).
+не применяются; вместо них используются определенные в таблице [значения по умолчанию](../sql-reference/statements/create/table.md#create-default-values).
 
 ClickHouse пишет и читает сообщения `Protocol Buffers` в формате `length-delimited`. Это означает, что перед каждым сообщением пишется его длина
 в формате [varint](https://developers.google.com/protocol-buffers/docs/encoding#varints). См. также [как читать и записывать сообщения Protocol Buffers в формате length-delimited в различных языках программирования](https://cwiki.apache.org/confluence/display/GEODE/Delimiting+Protobuf+Messages).
@@ -1486,7 +1486,7 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT ORC" > {filename.
 
 ## LineAsString {#lineasstring}
 
- В этом формате каждая строка импортируемых данных интерпретируется как одно строковое значение. Парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](/sql-reference/statements/create/table) или [MATERIALIZED](/sql-reference/statements/create/table), либо отсутствовать.
+ В этом формате каждая строка импортируемых данных интерпретируется как одно строковое значение. Парситься может только таблица с единственным полем типа [String](../sql-reference/data-types/string.md). Остальные столбцы должны быть заданы как [DEFAULT](../sql-reference/statements/create/table.md#create-default-values) или [MATERIALIZED](../sql-reference/statements/create/table.md#create-default-values), либо отсутствовать.
 
 **Пример**
 

@@ -474,10 +474,7 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         /// Wait for all tasks to be executed.
         std::exception_ptr exception;
         for (const auto & task : tasks)
-        {
-            if (auto e = task->wait())
-                exception = e;
-        }
+            exception = task->wait();
 
         /// Rethrow exception if any.
         if (exception)

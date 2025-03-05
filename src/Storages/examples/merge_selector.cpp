@@ -6,7 +6,6 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 
-#include <iomanip>
 #include <iostream>
 
 /** This program tests merge-selecting algorithm.

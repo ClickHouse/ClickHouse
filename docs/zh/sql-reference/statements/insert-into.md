@@ -175,4 +175,4 @@ SELECT * FROM simple_table;
 -   数据总是被实时的写入。
 -   写入的数据已经按照时间排序。
 
-也可以异步的、小规模的插入数据，这些数据会被合并成多个批次，然后安全地写入到表中，通过设置[async_insert](/operations/settings/settings#async_insert)，可以使用异步插入的方式，请注意，异步插入的方式只支持HTTP协议，并且不支持数据去重。
+也可以异步的、小规模的插入数据，这些数据会被合并成多个批次，然后安全地写入到表中，通过设置[async_insert](../../operations/settings/settings.md#async-insert)，可以使用异步插入的方式，请注意，异步插入的方式只支持HTTP协议，并且不支持数据去重。

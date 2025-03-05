@@ -5,7 +5,7 @@ sidebar_label: LIMIT BY
 
 # LIMIT BY子句 {#limit-by-clause}
 
-一个使用`LIMIT n BY expressions`从句的查询会以去重后的`expressions`结果分组，每一分组选择前`n`行。`LIMIT BY`指定的值可以是任意数量的[表达式](/sql-reference/syntax#expressions)。
+一个使用`LIMIT n BY expressions`从句的查询会以去重后的`expressions`结果分组，每一分组选择前`n`行。`LIMIT BY`指定的值可以是任意数量的[表达式](../../../sql-reference/syntax.md#syntax-expressions)。
 
 ClickHouse支持以下语法变体:
 

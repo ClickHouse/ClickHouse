@@ -2,7 +2,6 @@
 slug: /sql-reference/aggregate-functions/reference/quantileddsketch
 sidebar_position: 171
 title: quantileDD
-description: "Computes an approximate quantile of a sample with relative-error guarantees."
 ---
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample with relative-error guarantees. It works by building a [DD](https://www.vldb.org/pvldb/vol12/p2195-masson.pdf).
@@ -27,7 +26,7 @@ quantileDD(relative_accuracy, [level])(expr)
 
 - Approximate quantile of the specified level.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
 **Example**
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QueryPipeline/BlockIO.h>
-#include <IO/ReadBuffer.h>
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>

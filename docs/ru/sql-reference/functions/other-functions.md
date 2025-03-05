@@ -457,7 +457,7 @@ SELECT isConstant(number) FROM numbers(1)
 Функция кидает исключение, если таблица не существует.
 Для элементов вложенной структуры данных функция проверяет существование столбца. Для самой же вложенной структуры данных функция возвращает 0.
 
-## bar {#bar}
+## bar {#function-bar}
 
 Позволяет построить unicode-art диаграмму.
 
@@ -2097,7 +2097,7 @@ isDecimalOverflow(d, [p])
 **Аргументы**
 
 -   `d` — число. [Decimal](../../sql-reference/data-types/decimal.md).
--   `p` — точность. Необязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](/sql-reference/data-types/int-uint#integer-ranges).
+-   `p` — точность. Необязательный параметр. Если опущен, используется исходная точность первого аргумента. Использование этого параметра может быть полезно для извлечения данных в другую СУБД или файл. [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 **Возвращаемое значение**
 
@@ -2139,7 +2139,7 @@ countDigits(x)
 
 Количество цифр.
 
-Тип: [UInt8](/sql-reference/data-types/int-uint#integer-ranges).
+Тип: [UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges).
 
 :::note Примечание
 Для `Decimal` значений учитывается их масштаб: вычисляется результат по базовому целочисленному типу, полученному как `(value * scale)`. Например: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. То есть вы можете проверить десятичное переполнение для `Decimal64` с помощью `countDecimal(x) > 18`. Это медленный вариант [isDecimalOverflow](#is-decimal-overflow).
@@ -2225,7 +2225,7 @@ SELECT tcpPort();
 
 Возвращает список [профилей настроек](../../operations/access-rights.md#settings-profiles-management) для текущего пользователя.
 
-Для изменения текущего профиля настроек может быть использована команда SET PROFILE. Если команда `SET PROFILE` не применялась, функция возвращает профили, указанные при определении текущего пользователя (см. [CREATE USER](/sql-reference/statements/create/user)).
+Для изменения текущего профиля настроек может быть использована команда SET PROFILE. Если команда `SET PROFILE` не применялась, функция возвращает профили, указанные при определении текущего пользователя (см. [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
 
 **Синтаксис**
 
@@ -2257,7 +2257,7 @@ enabledProfiles()
 
 ## defaultProfiles {#default-profiles}
 
-Возвращает все профили, указанные при объявлении текущего пользователя (см. [CREATE USER](/sql-reference/statements/create/user))
+Возвращает все профили, указанные при объявлении текущего пользователя (см. [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement))
 
 **Синтаксис**
 

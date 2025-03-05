@@ -71,12 +71,7 @@ public:
     void setSwapInputs() { swap_inputs = true; }
     bool areInputsSwapped() const { return swap_inputs; }
 
-    JoinPtr convertToPhysical(
-        JoinActionRef & post_filter,
-        bool is_explain_logical,
-        UInt64 max_entries_for_hash_table_stats,
-        String initial_query_id,
-        std::chrono::milliseconds lock_acquire_timeout);
+    JoinPtr convertToPhysical(JoinActionRef & post_filter, bool is_explain_logical);
 
     JoinExpressionActions & getExpressionActions() { return expression_actions; }
 
@@ -105,6 +100,8 @@ protected:
 
     /// Add some information from convertToPhysical to description in explain output.
     std::vector<std::pair<String, String>> runtime_info_description;
+
+    ContextPtr query_context;
 };
 
 }

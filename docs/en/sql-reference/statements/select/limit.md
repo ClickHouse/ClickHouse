@@ -17,7 +17,7 @@ If there is no [ORDER BY](../../../sql-reference/statements/select/order-by.md) 
 The number of rows in the result set can also depend on the [limit](../../../operations/settings/settings.md#limit) setting.
 :::
 
-## LIMIT ... WITH TIES Modifier {#limit--with-ties-modifier}
+## LIMIT ... WITH TIES Modifier
 
 When you set `WITH TIES` modifier for `LIMIT n[,m]` and specify `ORDER BY expr_list`, you will get in result first `n` or `n,m` rows and all rows with same `ORDER BY` fields values equal to row at position `n` for `LIMIT n` and `m` for `LIMIT n,m`.
 

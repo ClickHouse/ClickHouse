@@ -254,7 +254,7 @@ String WriteBufferFromS3::getVerboseLogDetails() const
         multipart_upload_details = fmt::format(", upload id {}, upload has finished {}"
                                        , multipart_upload_id, multipart_upload_finished);
 
-    return fmt::format("Details: bucket {}, key {}, total size {}, count {}, hidden_size {}, offset {}, with pool: {}, prefinalized: {}, finalized: {}{}",
+    return fmt::format("Details: bucket {}, key {}, total size {}, count {}, hidden_size {}, offset {}, with pool: {}, prefinalized {}, finalized {}{}",
                        bucket, key, total_size, count(), hidden_size, offset(), task_tracker->isAsync(), is_prefinalized, finalized, multipart_upload_details);
 }
 
@@ -289,15 +289,12 @@ WriteBufferFromS3::~WriteBufferFromS3()
 
     if (canceled)
     {
-        if (!isEmpty())
-        {
-            LOG_INFO(
-                log,
-                "WriteBufferFromS3 was canceled."
-                "The file might not be written to S3. "
-                "{}.",
-                getVerboseLogDetails());
-        }
+        LOG_INFO(
+            log,
+            "WriteBufferFromS3 was canceled."
+            "The file might not be written to S3. "
+            "{}.",
+            getVerboseLogDetails());
     }
     else if (!finalized)
     {
@@ -461,10 +458,7 @@ void WriteBufferFromS3::abortMultipartUpload()
 {
     if (multipart_upload_id.empty())
     {
-        if (!isEmpty())
-        {
-            LOG_INFO(log, "Nothing to abort. {}", getVerboseLogDetails());
-        }
+        LOG_INFO(log, "Nothing to abort. {}", getVerboseLogDetails());
         return;
     }
 

@@ -53,9 +53,7 @@ public:
     using Buckets = std::vector<BucketPtr>;
 
     GraceHashJoin(
-        size_t initial_num_buckets_,
-        size_t max_num_buckets_,
-        std::shared_ptr<TableJoin> table_join_,
+        ContextPtr context_, std::shared_ptr<TableJoin> table_join_,
         const Block & left_sample_block_, const Block & right_sample_block_,
         TemporaryDataOnDiskScopePtr tmp_data_,
         bool any_take_last_row_ = false);
@@ -130,12 +128,12 @@ private:
     Block prepareRightBlock(const Block & block);
 
     LoggerPtr log;
+    ContextPtr context;
     std::shared_ptr<TableJoin> table_join;
     Block left_sample_block;
     Block right_sample_block;
     Block output_sample_block;
     bool any_take_last_row;
-    const size_t initial_num_buckets;
     const size_t max_num_buckets;
 
     Names left_key_names;

@@ -17,7 +17,7 @@ The `DESCRIBE` statement returns a row for each table column with the following 
 
 - `name` — A column name.
 - `type` — A column type.
-- `default_type` — A clause that is used in the column [default expression](/sql-reference/statements/create/table): `DEFAULT`, `MATERIALIZED` or `ALIAS`. If there is no default expression, then empty string is returned.
+- `default_type` — A clause that is used in the column [default expression](../../sql-reference/statements/create/table.md#create-default-values): `DEFAULT`, `MATERIALIZED` or `ALIAS`. If there is no default expression, then empty string is returned.
 - `default_expression` — An expression specified after the `DEFAULT` clause.
 - `comment` — A [column comment](../../sql-reference/statements/alter/column.md#alter_comment-column).
 - `codec_expression` — A [codec](../../sql-reference/statements/create/table.md#codecs) that is applied to the column.

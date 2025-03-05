@@ -9,7 +9,7 @@ Prewhere is an optimization to apply filtering more efficiently. It is enabled b
 
 With prewhere optimization, at first only the columns necessary for executing prewhere expression are read. Then the other columns are read that are needed for running the rest of the query, but only those blocks where the prewhere expression is `true` at least for some rows. If there are a lot of blocks where prewhere expression is `false` for all rows and prewhere needs less columns than other parts of query, this often allows to read a lot less data from disk for query execution.
 
-## Controlling Prewhere Manually {#controlling-prewhere-manually}
+## Controlling Prewhere Manually
 
 The clause has the same meaning as the `WHERE` clause. The difference is in which data is read from the table. When manually controlling `PREWHERE` for filtration conditions that are used by a minority of the columns in the query, but that provide strong data filtration. This reduces the volume of data to read.
 
@@ -23,11 +23,11 @@ If query has [FINAL](from.md#select-from-final) modifier, the `PREWHERE` optimiz
 The `PREWHERE` section is executed before `FINAL`, so the results of `FROM ... FINAL` queries may be skewed when using `PREWHERE` with fields not in the `ORDER BY` section of a table.
 :::
 
-## Limitations {#limitations}
+## Limitations
 
 `PREWHERE` is only supported by tables from the [*MergeTree](../../../engines/table-engines/mergetree-family/index.md) family.
 
-## Example {#example}
+## Example
 
 ```sql
 CREATE TABLE mydata

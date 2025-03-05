@@ -2,7 +2,6 @@
 slug: /engines/table-engines/integrations/mysql
 sidebar_position: 138
 sidebar_label: MySQL
-title: "The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server."
 ---
 
 # MySQL Table Engine
@@ -28,13 +27,13 @@ SETTINGS
 ;
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 The table structure can differ from the original MySQL table structure:
 
 - Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
 - Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
-- The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+- The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 :::note
 The MySQL Table Engine is currently not available on the ClickHouse builds for MacOS ([issue](https://github.com/ClickHouse/ClickHouse/issues/21191))
@@ -52,7 +51,7 @@ The MySQL Table Engine is currently not available on the ClickHouse builds for M
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the [MySQL documentation](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
     To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
-Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](/docs/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
@@ -100,7 +99,7 @@ CREATE TABLE mysql_table
 ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
 
-Or using [named collections](/operations/named-collections.md):
+Or using [named collections](/docs/operations/named-collections.md):
 
 ```sql
 CREATE NAMED COLLECTION creds AS
@@ -198,4 +197,4 @@ Default value: `300`.
 ## See Also {#see-also}
 
 - [The mysql table function](../../../sql-reference/table-functions/mysql.md)
-- [Using MySQL as a dictionary source](/sql-reference/dictionaries#mysql)
+- [Using MySQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)

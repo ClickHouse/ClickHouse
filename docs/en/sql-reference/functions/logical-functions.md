@@ -10,7 +10,7 @@ Below functions perform logical operations on arguments of arbitrary numeric typ
 
 Zero as an argument is considered `false`, non-zero values are considered `true`.
 
-## and {#and}
+## and
 
 Calculates the logical conjunction of two or more values. 
 
@@ -64,7 +64,7 @@ Result:
 └──────────────────────┘
 ```
 
-## or {#or}
+## or
 
 Calculates the logical disjunction of two or more values.
 
@@ -118,7 +118,7 @@ Result:
 └─────────────┘
 ```
 
-## not {#not}
+## not
 
 Calculates the logical negation of a value.
 
@@ -156,7 +156,7 @@ Result:
 └────────┘
 ```
 
-## xor {#xor}
+## xor
 
 Calculates the logical exclusive disjunction of two or more values. For more than two input values, the function first xor-s the first two values, then xor-s the result with the third value etc.
 

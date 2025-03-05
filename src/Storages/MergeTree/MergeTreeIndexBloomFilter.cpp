@@ -7,7 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/HashTable/ClearableHashMap.h>
 #include <Common/HashTable/Hash.h>
 #include <DataTypes/DataTypeArray.h>
@@ -18,7 +18,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/castColumn.h>
@@ -108,9 +107,9 @@ void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, Merg
     for (auto & filter : bloom_filters)
     {
         filter->resize(bytes_size);
-    if constexpr (std::endian::native == std::endian::big)
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
         read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-    else
+#endif
         istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
     }
 }
@@ -126,10 +125,10 @@ void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
     size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
     for (const auto & bloom_filter : bloom_filters)
     {
-        if constexpr (std::endian::native == std::endian::big)
-            write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        else
-            ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
+#endif
+        ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
     }
 }
 
@@ -625,7 +624,7 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
         }
 
         Field zero(0);
-        bool constant_equal_zero = accurateEquals(constant_value, zero);
+        bool constant_equal_zero = applyVisitor(FieldVisitorAccurateEquals(), constant_value, zero);
 
         if (function_name == "equals" && !constant_equal_zero)
         {
@@ -637,13 +636,13 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
             /// indexOf(...) != c, c = 0
             return true;
         }
-        if (function_name == (reversed ? "less" : "greater") && !accurateLess(constant_value, zero))
+        if (function_name == (reversed ? "less" : "greater") && !applyVisitor(FieldVisitorAccurateLess(), constant_value, zero))
         {
             /// indexOf(...) > c, c >= 0
             return true;
         }
         if (function_name == (reversed ? "lessOrEquals" : "greaterOrEquals")
-            && accurateLess(zero, constant_value))
+            && applyVisitor(FieldVisitorAccurateLess(), zero, constant_value))
         {
             /// indexOf(...) >= c, c > 0
             return true;

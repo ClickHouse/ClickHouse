@@ -1,12 +1,13 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
-
-#include <Columns/IColumn.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <Parsers/parseQuery.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Storages/MergeTree/IDataPartStorage.h>
-
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 #include <numeric>
+
+#include <boost/algorithm/string.hpp>
+
 
 namespace DB
 {
@@ -20,14 +21,6 @@ namespace ErrorCodes
 Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 {
     return index.expression->getRequiredColumns();
-}
-
-MergeTreeIndexFormat
-IMergeTreeIndex::getDeserializedFormat(const IDataPartStorage & data_part_storage, const std::string & relative_path_prefix) const
-{
-    if (data_part_storage.existsFile(relative_path_prefix + ".idx"))
-        return {1, ".idx"};
-    return {0 /*unknown*/, ""};
 }
 
 void MergeTreeIndexFactory::registerCreator(const std::string & index_type, Creator creator)

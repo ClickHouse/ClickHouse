@@ -256,6 +256,10 @@ def parse_env_variables(
         cmake_flags.append("-DCMAKE_INSTALL_LOCALSTATEDIR=/var")
         # Reduce linking and building time by avoid *install/all dependencies
         cmake_flags.append("-DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON")
+        # Add bridges to the build target
+        build_target = (
+            f"{build_target} clickhouse-odbc-bridge clickhouse-library-bridge"
+        )
         if is_release_build(debug_build, package_type, sanitizer, coverage):
             cmake_flags.append("-DSPLIT_DEBUG_SYMBOLS=ON")
             result.append("WITH_PERFORMANCE=1")

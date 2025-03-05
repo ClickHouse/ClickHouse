@@ -8,7 +8,7 @@ sidebar_label: Time Series
 
 Below functions are used for series data analysis.
 
-## seriesOutliersDetectTukey {#seriesoutliersdetecttukey}
+## seriesOutliersDetectTukey
 
 Detects outliers in series data using [Tukey Fences](https://en.wikipedia.org/wiki/Outlier#Tukey%27s_fences).
 
@@ -62,7 +62,7 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-## seriesPeriodDetectFFT {#seriesperioddetectfft}
+## seriesPeriodDetectFFT
 
 Finds the period of the given series data data using FFT
 FFT - [Fast Fourier transform](https://en.wikipedia.org/wiki/Fast_Fourier_transform)
@@ -109,7 +109,7 @@ Result:
 └─────────┘
 ```
 
-## seriesDecomposeSTL {#seriesdecomposestl}
+## seriesDecomposeSTL
 
 Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component. 
 

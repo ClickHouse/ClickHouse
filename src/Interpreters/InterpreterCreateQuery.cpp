@@ -2172,14 +2172,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (created && !renamed)
         {
             auto drop_context = make_drop_context();
-            try
-            {
-                InterpreterDropQuery(ast_drop, drop_context).execute();
-            }
-            catch (...)
-            {
-                tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
-            }
+            InterpreterDropQuery(ast_drop, drop_context).execute();
         }
         throw;
     }

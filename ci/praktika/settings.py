@@ -76,10 +76,8 @@ class _Settings:
     ######################################
     HTML_S3_PATH: str = ""
     HTML_PAGE_FILE: str = "./ci/praktika/json.html"
-    S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
     TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
-    # Compress if text file size exceeds this threshold (in MB, 0 - disable compression)
-    COMPRESS_THRESHOLD_MB: int = 0
+    S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
@@ -139,7 +137,6 @@ _USER_DEFINED_SETTINGS = [
     "PYTHONPATHS",
     "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
-    "COMPRESS_THRESHOLD_MB",
 ]
 
 

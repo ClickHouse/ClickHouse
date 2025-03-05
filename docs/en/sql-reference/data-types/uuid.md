@@ -80,11 +80,11 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-## Generating UUIDs {#generating-uuids}
+## Generating UUIDs
 
 ClickHouse provides the [generateUUIDv4](../../sql-reference/functions/uuid-functions.md) function to generate random UUID version 4 values.
 
-## Usage Example {#usage-example}
+## Usage Example
 
 **Example 1**
 
@@ -123,7 +123,7 @@ SELECT * FROM t_uuid
 └──────────────────────────────────────┴───────────┘
 ```
 
-## Restrictions {#restrictions}
+## Restrictions
 
 The UUID data type only supports functions which [String](../../sql-reference/data-types/string.md) data type also supports (for example, [min](../../sql-reference/aggregate-functions/reference/min.md#agg_function-min), [max](../../sql-reference/aggregate-functions/reference/max.md#agg_function-max), and [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count)).
 

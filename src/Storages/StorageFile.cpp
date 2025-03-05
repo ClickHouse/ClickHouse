@@ -68,8 +68,6 @@
 #include <shared_mutex>
 #include <algorithm>
 
-#include <Poco/Util/AbstractConfiguration.h>
-
 namespace ProfileEvents
 {
     extern const Event CreatedReadBufferOrdinary;

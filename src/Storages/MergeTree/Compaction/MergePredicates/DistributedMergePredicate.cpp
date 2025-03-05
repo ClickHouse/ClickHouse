@@ -1,12 +1,6 @@
 #include <Storages/MergeTree/Compaction/MergePredicates/DistributedMergePredicate.h>
 
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <IO/ReadHelpers.h>
 #include <base/defines.h>
-
-#include <filesystem>
-
-namespace fs = std::filesystem;
 
 namespace DB
 {

@@ -110,9 +110,9 @@ void StatementGenerator::addViewRelation(const String & rel_name, const SQLView 
 {
     SQLRelation rel(rel_name);
 
-    for (const auto & entry : v.cols)
+    for (uint32_t i = 0; i < v.ncols; i++)
     {
-        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(entry)}));
+        rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i)}));
     }
     if (rel_name.empty())
     {
@@ -815,14 +815,14 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         {
             const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(hasTableOrView<SQLTable>(b)));
 
-            te->add_params()->mutable_database()->set_database("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
+            te->add_params()->mutable_database()->set_database("d" + std::to_string(t.db->dname));
             te->add_params()->mutable_table()->set_table("t" + std::to_string(t.tname));
         }
         else
         {
             const SQLView & v = rg.pickRandomlyFromVector(filterCollection<SQLView>(hasTableOrView<SQLView>(b)));
 
-            te->add_params()->mutable_database()->set_database("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
+            te->add_params()->mutable_database()->set_database("d" + std::to_string(v.db->dname));
             te->add_params()->mutable_table()->set_table("v" + std::to_string(v.tname));
         }
         /// num_layers
@@ -1020,18 +1020,59 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
 }
 
-void StatementGenerator::addTableColumnInternal(
+void StatementGenerator::addTableColumn(
     RandomGenerator & rg,
     SQLTable & t,
     const uint32_t cname,
+    const bool staged,
     const bool modify,
     const bool is_pk,
     const ColumnSpecial special,
-    const uint32_t col_tp_mask,
-    SQLColumn & col,
     ColumnDef * cd)
 {
+    SQLColumn col;
     SQLType * tp = nullptr;
+    auto & to_add = staged ? t.staged_cols : t.cols;
+
+    this->next_type_mask = fc.type_mask;
+    if (t.isMySQLEngine() || t.hasMySQLPeer())
+    {
+        this->next_type_mask &= ~(
+            allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo
+            | set_no_decimal_limit);
+    }
+    if (t.isPostgreSQLEngine() || t.hasPostgreSQLPeer())
+    {
+        this->next_type_mask &= ~(
+            allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
+            | allow_geo);
+        if (t.hasPostgreSQLPeer())
+        {
+            /// Datetime must have 6 digits precision
+            this->next_type_mask &= ~(set_any_datetime_precision);
+        }
+    }
+    if (t.isSQLiteEngine() || t.hasSQLitePeer())
+    {
+        this->next_type_mask &= ~(
+            allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
+            | allow_nested | allow_geo);
+        if (t.hasSQLitePeer())
+        {
+            /// For bool it maps to int type, then it outputs 0 as default instead of false
+            /// For decimal it prints as text
+            this->next_type_mask &= ~(allow_bool | allow_decimals);
+        }
+    }
+    if (t.isMongoDBEngine())
+    {
+        this->next_type_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
+    }
+    if (t.hasDatabasePeer())
+    {
+        /// ClickHouse's UUID sorting order is different from other databases
+        this->next_type_mask &= ~(allow_uuid);
+    }
 
     col.cname = cname;
     cd->mutable_col()->set_column("c" + std::to_string(cname));
@@ -1043,37 +1084,29 @@ void StatementGenerator::addTableColumnInternal(
     }
     else if (special == ColumnSpecial::VERSION)
     {
-        if (((col_tp_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
+        if (((this->next_type_mask & (allow_dates | allow_datetimes)) == 0) || rg.nextBool())
         {
             Integers nint;
 
-            std::tie(tp, nint) = randomIntType(rg, col_tp_mask);
+            std::tie(tp, nint) = randomIntType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_integers(nint);
         }
-        else if (((col_tp_mask & allow_datetimes) == 0) || rg.nextBool())
+        else if (((this->next_type_mask & allow_datetimes) == 0) || rg.nextBool())
         {
             Dates dd;
 
-            std::tie(tp, dd) = randomDateType(rg, col_tp_mask);
+            std::tie(tp, dd) = randomDateType(rg, this->next_type_mask);
             cd->mutable_type()->mutable_type()->mutable_non_nullable()->set_dates(dd);
         }
         else
         {
-            const uint32_t type_mask_backup = this->next_type_mask;
-
-            this->next_type_mask = col_tp_mask;
             tp = randomDateTimeType(
                 rg, this->next_type_mask, cd->mutable_type()->mutable_type()->mutable_non_nullable()->mutable_datetimes());
-            this->next_type_mask = type_mask_backup;
         }
     }
     else
     {
-        const uint32_t type_mask_backup = this->next_type_mask;
-
-        this->next_type_mask = col_tp_mask;
         tp = randomNextType(rg, this->next_type_mask, t.col_counter, cd->mutable_type()->mutable_type());
-        this->next_type_mask = type_mask_backup;
     }
     col.tp = tp;
     col.special = special;
@@ -1131,62 +1164,6 @@ void StatementGenerator::addTableColumnInternal(
     {
         cd->set_comment(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
     }
-}
-
-void StatementGenerator::addTableColumn(
-    RandomGenerator & rg,
-    SQLTable & t,
-    const uint32_t cname,
-    const bool staged,
-    const bool modify,
-    const bool is_pk,
-    const ColumnSpecial special,
-    ColumnDef * cd)
-{
-    SQLColumn col;
-    auto & to_add = staged ? t.staged_cols : t.cols;
-
-    uint32_t col_tp_mask = fc.type_mask;
-    if (t.isMySQLEngine() || t.hasMySQLPeer())
-    {
-        col_tp_mask &= ~(
-            allow_int128 | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant | allow_nested | allow_geo
-            | set_no_decimal_limit);
-    }
-    if (t.isPostgreSQLEngine() || t.hasPostgreSQLPeer())
-    {
-        col_tp_mask &= ~(
-            allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_map | allow_tuple | allow_variant | allow_nested
-            | allow_geo);
-        if (t.hasPostgreSQLPeer())
-        {
-            /// Datetime must have 6 digits precision
-            col_tp_mask &= ~(set_any_datetime_precision);
-        }
-    }
-    if (t.isSQLiteEngine() || t.hasSQLitePeer())
-    {
-        col_tp_mask &= ~(
-            allow_int128 | allow_unsigned_int | allow_dynamic | allow_JSON | allow_array | allow_map | allow_tuple | allow_variant
-            | allow_nested | allow_geo);
-        if (t.hasSQLitePeer())
-        {
-            /// For bool it maps to int type, then it outputs 0 as default instead of false
-            /// For decimal it prints as text
-            col_tp_mask &= ~(allow_bool | allow_decimals);
-        }
-    }
-    if (t.isMongoDBEngine())
-    {
-        col_tp_mask &= ~(allow_dynamic | allow_map | allow_tuple | allow_variant | allow_nested);
-    }
-    if (t.hasDatabasePeer())
-    {
-        /// ClickHouse's UUID sorting order is different from other databases
-        col_tp_mask &= ~(allow_uuid);
-    }
-    addTableColumnInternal(rg, t, cname, modify, is_pk, special, col_tp_mask, col, cd);
-
     to_add[cname] = std::move(col);
 }
 
@@ -1317,7 +1294,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
     }
     if (rg.nextSmallNumber() < 7)
     {
-        uint32_t granularity = 1;
+        uint32_t granularity = 0;
         const uint32_t next_opt = rg.nextSmallNumber();
 
         if (next_opt < 4)
@@ -1325,7 +1302,7 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             std::uniform_int_distribution<uint32_t> next_dist(1, 4194304);
             granularity = next_dist(rg.generator);
         }
-        else if (next_opt < 8)
+        else if (next_opt < 10)
         {
             granularity = UINT32_C(1) << (rg.nextLargeNumber() % 21);
         }
@@ -1489,7 +1466,8 @@ const std::vector<TableEngineValues> like_engs
        TableEngineValues::Log,
        TableEngineValues::TinyLog,
        TableEngineValues::EmbeddedRocksDB,
-       TableEngineValues::Merge};
+       TableEngineValues::Merge,
+       TableEngineValues::Distributed};
 
 static const auto replace_table_lambda = [](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer(); };
 

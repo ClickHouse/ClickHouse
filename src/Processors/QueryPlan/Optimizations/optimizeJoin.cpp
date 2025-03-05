@@ -243,12 +243,7 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
     JoinActionRef post_filter(nullptr);
-    auto join_ptr = join_step->convertToPhysical(
-        post_filter,
-        keep_logical,
-        optimization_settings.max_entries_for_hash_table_stats,
-        optimization_settings.initial_query_id,
-        optimization_settings.lock_acquire_timeout);
+    auto join_ptr = join_step->convertToPhysical(post_filter, keep_logical);
 
     if (join_ptr->isFilled())
     {

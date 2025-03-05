@@ -1,7 +1,6 @@
 #include <Interpreters/DDLTask.h>
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/isLocalAddress.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
@@ -600,12 +599,6 @@ void ZooKeeperMetadataTransaction::commit()
     state = FAILED;
     current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
-
-    if (finalizer)
-    {
-        finalizer();
-        finalizer = FinalizerCallback();
-    }
 }
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)

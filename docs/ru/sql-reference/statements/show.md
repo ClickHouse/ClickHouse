@@ -246,7 +246,7 @@ SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
 
 ## SHOW CREATE USER {#show-create-user-statement}
 
-Выводит параметры, использованные при [создании пользователя](/sql-reference/statements/create/user).
+Выводит параметры, использованные при [создании пользователя](create/user.md#create-user-statement).
 
 `SHOW CREATE USER` не возвращает пароль пользователя.
 
@@ -258,7 +258,7 @@ SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
 
-Выводит параметры, использованные при [создании роли](/sql-reference/statements/create/role).
+Выводит параметры, использованные при [создании роли](create/role.md#create-role-statement).
 
 ### Синтаксис {#show-create-role-syntax}
 

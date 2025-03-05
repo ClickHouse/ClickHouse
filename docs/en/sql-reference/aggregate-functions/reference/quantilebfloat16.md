@@ -2,7 +2,6 @@
 slug: /sql-reference/aggregate-functions/reference/quantilebfloat16
 sidebar_position: 171
 title: quantileBFloat16
-description: "Computes an approximate quantile of a sample consisting of bfloat16 numbers."
 ---
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers. `bfloat16` is a floating-point data type with 1 sign bit, 8 exponent bits and 7 fraction bits.
@@ -29,7 +28,7 @@ Alias: `medianBFloat16`
 
 - Approximate quantile of the specified level.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
 **Example**
 

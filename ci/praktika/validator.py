@@ -2,7 +2,7 @@ import glob
 from itertools import chain
 from pathlib import Path
 
-from praktika import Artifact, Job
+from praktika import Job
 
 from . import Workflow
 from .mangle import _get_workflows
@@ -86,11 +86,6 @@ class Validator:
 
             if workflow.artifacts:
                 for artifact in workflow.artifacts:
-                    cls.evaluate_check(
-                        isinstance(artifact, Artifact.Config),
-                        f"Must be Artifact.Config type, not {type(artifact)}: [{artifact}]",
-                        workflow.name,
-                    )
                     if artifact.is_s3_artifact():
                         assert (
                             Settings.S3_ARTIFACT_PATH

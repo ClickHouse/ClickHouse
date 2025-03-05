@@ -2,8 +2,6 @@
 slug: /engines/table-engines/special/dictionary
 sidebar_position: 20
 sidebar_label: Dictionary
-title: "Dictionary Table Engine"
-description: "The `Dictionary` engine displays the dictionary data as a ClickHouse table."
 ---
 
 # Dictionary Table Engine
@@ -67,7 +65,7 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-You can use the [dictGet\*](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull) function to get the dictionary data in this format.
+You can use the [dictGet\*](../../../sql-reference/functions/ext-dict-functions.md#ext_dict_functions) function to get the dictionary data in this format.
 
 This view isn't helpful when you need to get raw data, or when performing a `JOIN` operation. For these cases, you can use the `Dictionary` engine, which displays the dictionary data in a table.
 
@@ -99,4 +97,4 @@ select * from products limit 1;
 
 **See Also**
 
-- [Dictionary function](/sql-reference/table-functions/dictionary)
+- [Dictionary function](../../../sql-reference/table-functions/dictionary.md#dictionary-function)

@@ -1,8 +1,6 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/uniq
 sidebar_position: 204
-title: "uniq"
-description: "Calculates the approximate number of different values of the argument."
 ---
 
 # uniq
@@ -38,5 +36,5 @@ We recommend using this function in almost all scenarios.
 - [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
 - [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
 - [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
-- [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
+- [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
 - [uniqTheta](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)

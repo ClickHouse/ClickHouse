@@ -253,9 +253,8 @@ public:
 struct SQLView : SQLBase
 {
 public:
-    bool is_materialized = false, is_refreshable = false, has_with_cols = false;
-    uint32_t staged_ncols = 0;
-    std::unordered_set<uint32_t> cols;
+    bool is_materialized = false, is_refreshable = false;
+    uint32_t ncols = 1, staged_ncols = 1;
 };
 
 struct SQLFunction

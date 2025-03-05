@@ -8,7 +8,6 @@
 #include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 
-#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
