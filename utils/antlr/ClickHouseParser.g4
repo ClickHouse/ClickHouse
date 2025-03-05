@@ -396,10 +396,10 @@ columnTypeExpr
     ;
 columnExprList: columnsExpr (COMMA columnsExpr)*;
 columnsExpr
-    : (tableIdentifier DOT)? ASTERISK  # ColumnsExprAsterisk
-    | LPAREN selectUnionStmt RPAREN    # ColumnsExprSubquery
+    : (tableIdentifier DOT)? ASTERISK columnExceptExpr?                                 # ColumnsExprAsterisk
+    | LPAREN selectUnionStmt RPAREN                                                     # ColumnsExprSubquery
     // NOTE: asterisk and subquery goes before |columnExpr| so that we can mark them as multi-column expressions.
-    | columnExpr                       # ColumnsExprColumn
+    | columnExpr                                                                        # ColumnsExprColumn
     ;
 columnExpr
     : CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END          # ColumnExprCase
@@ -464,6 +464,10 @@ columnLambdaExpr:
     ;
 columnIdentifier: (tableIdentifier DOT)? nestedIdentifier;
 nestedIdentifier: identifier (DOT identifier)?;
+columnExceptExpr
+    : EXCEPT (stringLiteral | (LPAREN stringLiteral RPAREN))                # columnExceptExprRegexp
+    | EXCEPT (identifier | (LPAREN identifier (COMMA identifier)* RPAREN))  # columnExceptExprIdentifiers
+    ;
 
 // Tables
 
