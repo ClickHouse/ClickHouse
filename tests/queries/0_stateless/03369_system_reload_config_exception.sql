@@ -6,6 +6,6 @@ CREATE DATABASE IF NOT EXISTS test_rgp9unmg;
 USE test_rgp9unmg;
 
 SELECT 'Test 1: Check exception in local mode';
-SYSTEM RELOAD CONFIG; -- { serverError 50 }
+SYSTEM RELOAD CONFIG; -- { serverError UNSUPPORTED_METHOD }
 
 DROP DATABASE IF EXISTS test_rgp9unmg; 
