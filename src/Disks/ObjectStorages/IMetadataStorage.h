@@ -183,6 +183,11 @@ public:
 
     virtual MetadataStorageType getType() const = 0;
 
+    /// Returns true if empty file can be created without any blobs in the corresponding object storage.
+    /// E.g. metadata storage can store the empty list of blobs corresponding to a file without actually storing any blobs.
+    /// But if the metadata storage just relies on for example local FS to store data under logical path, then a file has to be created even if it's empty.
+    virtual bool supportsEmptyFilesWithoutBlobs() const { return false; }
+
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
     virtual bool existsFile(const std::string & path) const = 0;
