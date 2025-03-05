@@ -109,6 +109,8 @@ public:
 
     UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) override;
 
+    Connection * getLastPacketConnection() override { return last_packet_connection; }
+
     void disconnect() override;
 
     void sendCancel() override;
@@ -198,6 +200,9 @@ private:
     /// (except cases when packet type is EndOfStream or Exception)
     /// to resume it's packet receiver when new packet is needed.
     std::optional<ReplicaLocation> replica_with_last_received_packet;
+
+    /// Connection that received last packet.
+    Connection * last_packet_connection = nullptr;
 
     Packet last_received_packet;
 

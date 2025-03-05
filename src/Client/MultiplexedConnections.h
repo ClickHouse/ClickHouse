@@ -44,6 +44,8 @@ public:
 
     Packet receivePacket() override;
 
+    Connection * getLastPacketConnection() override { return current_connection; }
+
     void disconnect() override;
 
     void sendCancel() override;

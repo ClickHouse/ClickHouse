@@ -496,6 +496,9 @@ Possible values:
 - 1 — `SELECT` returns empty result.
 - 0 — `SELECT` throws an exception.
 )", 0) \
+    DECLARE(Bool, object_storage_stable_cluster_task_distribution, false, R"(
+Use stable task distribution for object storage cluster table functions in order to better utilize filesystem cache.
+)", 0) \
     DECLARE(Bool, hdfs_ignore_file_doesnt_exist, false, R"(
 Ignore absence of file if it does not exist when reading certain keys.
 

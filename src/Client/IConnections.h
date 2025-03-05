@@ -37,6 +37,8 @@ public:
 
     virtual UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) = 0;
 
+    virtual Connection * getLastPacketConnection() = 0;
+
     /// Break all active connections.
     virtual void disconnect() = 0;
 
