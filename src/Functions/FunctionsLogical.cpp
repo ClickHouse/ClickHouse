@@ -730,6 +730,8 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
             // original argument positions.
             // The execution will stop early when all rows are filtered, the last few short-circuit arguments are skipped
             // and no profiles are generated for them.
+            if (profile->argument_profiles.size() > short_circuit_args_index.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid argument_profiles: {} {}", profile->argument_profiles.size(), short_circuit_args_index.size());
             for (size_t i = 0; i < profile->argument_profiles.size(); ++i)
                 profile->argument_profiles[i].first = short_circuit_args_index[i];
             return res;
