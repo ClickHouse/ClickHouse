@@ -9,48 +9,49 @@
 namespace DB
 {
 
-
 /// TODO: move
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(ContextPtr context);
 
+
 StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & serialized_query_plan, const DistributedQueryTask & task)
 {
+    ContextPtr context = Context::getGlobalContextInstance();
+    auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(context);
+
+    std::shared_ptr<std::promise<void>> task_promise = std::make_shared<std::promise<void>>();
+    auto task_state = std::make_shared<TaskState>();
+    task_state->completion_future = task_promise->get_future();
+
     {
-        ContextPtr context = Context::getGlobalContextInstance();
-
-        auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(context);
-
-
-        /// TODO: start the task asynchronously
-
-        doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, context);
+        std::lock_guard lock(tasks_mutex);
+        tasks[task.task_id] = task_state;
     }
 
+    auto task_function = [serialized_query_plan, task, object_storage, object_storage_path, context, task_promise]() mutable
+    {
+        doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, context);
+        task_promise->set_value();
+    };
 
-    std::lock_guard lock(tasks_mutex);
-
-    auto task_state = std::make_shared<TaskState>();
-    task_state->completion_future = std::future<void>();
-    tasks[task.task_id] = task_state;
-
-    /// TODO: start task in pool
-    (void)serialized_query_plan;
+    // TODO: use special pool
+    Context::getGlobalContextInstance()->getPrefetchThreadpool().scheduleOrThrow(std::move(task_function));
 
     return Result::Ok;
 }
 
-StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String & task_id)
+StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String & task_id, UInt64 wait_milliseconds)
 {
-    TaskStatePtr task_state;
+    /// Make a copy of task completion future to wait for it outside of the lock
+    std::shared_future<void> completion_future;
     {
         std::lock_guard lock(tasks_mutex);
         auto it = tasks.find(task_id);
         if (it == tasks.end())
             return TaskStatus{Result::UnknownTaskId, ""};
-        task_state = it->second;
+        completion_future = it->second->completion_future;
     }
 
-    if (task_state->completion_future.valid() && task_state->completion_future.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout)
+    if (completion_future.valid() && completion_future.wait_for(std::chrono::milliseconds(wait_milliseconds)) == std::future_status::timeout)
         return TaskStatus{Result::TaskRunnig, ""};
 
     return TaskStatus{Result::TaskFinished, ""};

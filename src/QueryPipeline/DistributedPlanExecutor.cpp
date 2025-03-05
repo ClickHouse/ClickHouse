@@ -150,16 +150,15 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(ContextPtr
     bool use_local_object_storage = true;
     ObjectStoragePtr object_storage;
     String object_storage_path;
+    object_storage_path = "distributed_query_temporary_files";
     if (use_local_object_storage)
     {
-        object_storage_path = "./local_object_storage/tmp";
         const auto & config = context->getConfigRef();
         String config_prefix = "storage_configuration.disks.local";
         object_storage = ObjectStorageFactory::instance().create("local", config, config_prefix, context, false);
     }
     else
     {
-        object_storage_path = "/tmp";
         const auto & config = context->getConfigRef();
         String config_prefix = "storage_configuration.disks.s3_disk_for_stateless_task";
         object_storage = ObjectStorageFactory::instance().create("s3", config, config_prefix, context, false);
@@ -200,7 +199,7 @@ std::future<void> startTask(const QueryPlan & query_plan, const DistributedQuery
     /// TODO: add task to the list of running tasks and check its status periodically
     while (true)
     {
-        auto task_status = getTaskStatus(stateless_worker_endpoint_uri, task.task_id, 100, context);
+        auto task_status = getTaskStatus(stateless_worker_endpoint_uri, task.task_id, 1000, context);
 
         if (task_status == "Finished\n")
         {

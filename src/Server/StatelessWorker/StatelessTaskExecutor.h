@@ -35,7 +35,7 @@ public:
     };
 
     Result startTask(const String & serialized_query_plan, const DistributedQueryTask & task);
-    TaskStatus getStatus(const String & task_id);
+    TaskStatus getStatus(const String & task_id, UInt64 wait_milliseconds);
     Result cancelTask(const String & task_id);
     Result forgetTask(const String & task_id);
 

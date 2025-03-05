@@ -102,8 +102,14 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
     }
     else if (operation == "get_status")
     {
+        UInt64 wait_milliseconds = 0;
+        if (params.has("wait_for_ms"))
+        {
+            wait_milliseconds = parse<UInt64>(params.get("wait_for_ms"));
+        }
+
         body.eof();
-        auto status = task_runner->getStatus(task_id);
+        auto status = task_runner->getStatus(task_id, wait_milliseconds);
         switch (status.result)
         {
             case StatelessTaskExecutor::TaskRunnig:
