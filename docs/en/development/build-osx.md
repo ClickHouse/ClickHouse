@@ -38,7 +38,7 @@ To build you must use Homebrew's Clang compiler:
 cd ClickHouse
 mkdir build
 export PATH=$(brew --prefix llvm)/bin:$PATH
-cmake -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ -S . -B build
+cmake -S . -B build
 cmake --build build
 # The resulting binary will be created at: build/programs/clickhouse
 ```
