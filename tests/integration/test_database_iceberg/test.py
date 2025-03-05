@@ -85,7 +85,7 @@ def load_catalog_impl(started_cluster):
             "type": "rest",
             "s3.endpoint": f"http://localhost:9002",
             "s3.access-key-id": "minio",
-            "s3.secret-access-key": "minio123",
+            "s3.secret-access-key": "ClickHouse_Minio_P@ssw0rd",
         },
     )
 
@@ -132,7 +132,7 @@ def create_clickhouse_iceberg_database(
         f"""
 DROP DATABASE IF EXISTS {name};
 SET allow_experimental_database_iceberg=true;
-CREATE DATABASE {name} ENGINE = Iceberg('{BASE_URL}', 'minio', 'minio123')
+CREATE DATABASE {name} ENGINE = Iceberg('{BASE_URL}', 'minio', 'ClickHouse_Minio_P@ssw0rd')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
@@ -142,7 +142,7 @@ def print_objects():
     minio_client = Minio(
         f"localhost:9002",
         access_key="minio",
-        secret_key="minio123",
+        secret_key="ClickHouse_Minio_P@ssw0rd",
         secure=False,
         http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
     )

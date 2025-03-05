@@ -168,7 +168,7 @@ def test_upload_s3_fail_create_multi_part_upload(cluster, broken_s3, compression
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_upload_s3_fail_create_multi_part_upload',
-                'minio', 'minio123',
+                'minio', 'ClickHouse_Minio_P@ssw0rd',
                 'CSV', auto, '{compression}'
             )
         SELECT
@@ -212,7 +212,7 @@ def test_upload_s3_fail_upload_part_when_multi_part_upload(
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_upload_s3_fail_upload_part_when_multi_part_upload',
-                'minio', 'minio123',
+                'minio', 'ClickHouse_Minio_P@ssw0rd',
                 'CSV', auto, '{compression}'
             )
         SELECT
@@ -267,7 +267,7 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_{action}_retried',
-                'minio', 'minio123',
+                'minio', 'ClickHouse_Minio_P@ssw0rd',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -296,7 +296,7 @@ def test_when_error_is_retried(cluster, broken_s3, action_and_message):
             INSERT INTO
                 TABLE FUNCTION s3(
                     'http://resolver:8083/root/data/test_when_{action}_retried',
-                    'minio', 'minio123',
+                    'minio', 'ClickHouse_Minio_P@ssw0rd',
                     'CSV', auto, 'none'
                 )
             SELECT
@@ -331,7 +331,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_s3_broken_pipe_at_upload_is_retried',
-                'minio', 'minio123',
+                'minio', 'ClickHouse_Minio_P@ssw0rd',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -365,7 +365,7 @@ def test_when_s3_broken_pipe_at_upload_is_retried(cluster, broken_s3):
                INSERT INTO
                    TABLE FUNCTION s3(
                        'http://resolver:8083/root/data/test_when_s3_broken_pipe_at_upload_is_retried',
-                       'minio', 'minio123',
+                       'minio', 'ClickHouse_Minio_P@ssw0rd',
                        'CSV', auto, 'none'
                    )
                SELECT
@@ -409,7 +409,7 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_upload_is_retried',
-                'minio', 'minio123',
+                'minio', 'ClickHouse_Minio_P@ssw0rd',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -446,7 +446,7 @@ def test_when_s3_connection_reset_by_peer_at_upload_is_retried(
                INSERT INTO
                    TABLE FUNCTION s3(
                        'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_upload_is_retried',
-                       'minio', 'minio123',
+                       'minio', 'ClickHouse_Minio_P@ssw0rd',
                        'CSV', auto, 'none'
                    )
                SELECT
@@ -491,7 +491,7 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_create_mpu_retried',
-                'minio', 'minio123',
+                'minio', 'ClickHouse_Minio_P@ssw0rd',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -529,7 +529,7 @@ def test_when_s3_connection_reset_by_peer_at_create_mpu_retried(
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_when_s3_connection_reset_by_peer_at_create_mpu_retried',
-                'minio', 'minio123',
+                'minio', 'ClickHouse_Minio_P@ssw0rd',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -567,7 +567,7 @@ def test_query_is_canceled_with_inf_retries(cluster, broken_s3):
         INSERT INTO
             TABLE FUNCTION s3(
                 'http://resolver:8083/root/data/test_query_is_canceled_with_inf_retries',
-                'minio', 'minio123',
+                'minio', 'ClickHouse_Minio_P@ssw0rd',
                 'CSV', auto, 'none'
             )
         SELECT
@@ -625,7 +625,7 @@ def test_adaptive_timeouts(cluster, broken_s3, node_name):
             INSERT INTO
                 TABLE FUNCTION s3(
                     'http://resolver:8083/root/data/adaptive_timeouts',
-                    'minio', 'minio123',
+                    'minio', 'ClickHouse_Minio_P@ssw0rd',
                     'CSV', auto, 'none'
                 )
             SELECT
