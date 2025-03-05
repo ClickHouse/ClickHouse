@@ -131,6 +131,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int CANNOT_WRITE_TO_FILE;
 }
 
 }
