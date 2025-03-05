@@ -212,8 +212,7 @@ existsStmt
 // EXPLAIN statement
 
 explainStmt
-    : EXPLAIN AST query     # ExplainASTStmt
-    | EXPLAIN SYNTAX query  # ExplainSyntaxStmt
+    : EXPLAIN (AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE)? settingExprList? selectUnionStmt
     ;
 
 // INSERT statement
