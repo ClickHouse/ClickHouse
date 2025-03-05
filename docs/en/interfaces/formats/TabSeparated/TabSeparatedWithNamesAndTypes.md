@@ -1,14 +1,14 @@
 ---
-title : TabSeparatedWithNamesAndTypes
+title: TabSeparatedWithNamesAndTypes
 slug: /interfaces/formats/TabSeparatedWithNamesAndTypes
-keywords : [TabSeparatedWithNamesAndTypes]
+keywords: [TabSeparatedWithNamesAndTypes]
 ---
 
 | Input | Output | Alias                                          |
 |-------|--------|------------------------------------------------|
 | 	✔    | 	✔     | `TSVWithNamesAndTypes`, `RawWithNamesAndTypes` |
 
-## Description
+## Description {#description}
 
 Differs from the [`TabSeparated`](./TabSeparated.md) format in that the column names are written to the first row, while the column types are in the second row.
 
@@ -20,6 +20,6 @@ Otherwise, the first row will be skipped.
 the types from input data will be compared with the types of the corresponding columns from the table. Otherwise, the second row will be skipped.
 :::
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}

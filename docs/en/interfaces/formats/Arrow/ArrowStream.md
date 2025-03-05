@@ -1,7 +1,7 @@
 ---
-title : ArrowStream
+title: ArrowStream
 slug: /interfaces/formats/ArrowStream
-keywords : [ArrowStream]
+keywords: [ArrowStream]
 input_format: true
 output_format: true
 alias: []
@@ -11,11 +11,11 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 `ArrowStream` is Apache Arrow's "stream mode" format. It is designed for in-memory stream processing.
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 

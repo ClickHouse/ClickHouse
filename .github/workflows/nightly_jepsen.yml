@@ -11,8 +11,7 @@ concurrency:
 
 env:
   PYTHONUNBUFFERED: 1
-  CHECKOUT_REF: ${{ github.head_ref }}
-
+  CHECKOUT_REF: ""
 
 jobs:
 
