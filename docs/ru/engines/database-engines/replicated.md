@@ -22,7 +22,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 -   `replica_name` — Имя реплики. Имена реплик должны быть разными для всех реплик одного и того же шарда.
 
 :::note Предупреждение
-Для таблиц [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) если аргументы не заданы, то используются аргументы по умолчанию: `/clickhouse/tables/{uuid}/{shard}` и `{replica}`. Они могут быть изменены в серверных настройках: [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) и [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Макрос `{uuid}` раскрывается в `UUID` таблицы, `{shard}` и `{replica}` — в значения из конфига сервера. В будущем появится возможность использовать значения `shard_name` и `replica_name` аргументов движка базы данных `Replicated`.
+Для таблиц [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) если аргументы не заданы, то используются аргументы по умолчанию: `/clickhouse/tables/{uuid}/{shard}` и `{replica}`. Они могут быть изменены в серверных настройках: [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) и [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Макрос `{uuid}` раскрывается в `UUID` таблицы, `{shard}` и `{replica}` — в значения из конфига сервера. В будущем появится возможность использовать значения `shard_name` и `replica_name` аргументов движка базы данных `Replicated`.
 :::
 ## Особенности и рекомендации {#specifics-and-recommendations}
 
@@ -33,7 +33,7 @@ DDL-запросы с базой данных `Replicated` работают по
 
 Поведение в случае ошибок регулируется настройкой [distributed_ddl_output_mode](../../operations/settings/settings.md#distributed_ddl_output_mode), для `Replicated` лучше выставлять её в `null_status_on_timeout` — т.е. если какие-то хосты не успели выполнить запрос за [distributed_ddl_task_timeout](../../operations/settings/settings.md#distributed_ddl_task_timeout), то вместо исключения для них будет показан статус `NULL` в таблице.
 
-В системной таблице [system.clusters](../../operations/system-tables/clusters.md) есть кластер с именем, как у реплицируемой базы, который состоит из всех реплик базы. Этот кластер обновляется автоматически при создании/удалении реплик, и его можно использовать для [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблиц.
+В системной таблице [system.clusters](../../operations/system-tables/clusters.md) есть кластер с именем, как у реплицируемой базы, который состоит из всех реплик базы. Этот кластер обновляется автоматически при создании/удалении реплик, и его можно использовать для [Distributed](/engines/table-engines/special/distributed) таблиц.
 
 При создании новой реплики базы, эта реплика сама создаёт таблицы. Если реплика долго была недоступна и отстала от лога репликации — она сверяет свои локальные метаданные с актуальными метаданными в ZooKeeper, перекладывает лишние таблицы с данными в отдельную нереплицируемую базу (чтобы случайно не удалить что-нибудь лишнее), создаёт недостающие таблицы, обновляет имена таблиц, если были переименования. Данные реплицируются на уровне `ReplicatedMergeTree`, т.е. если таблица не реплицируемая, то данные реплицироваться не будут (база отвечает только за метаданные).
 

@@ -1,6 +1,6 @@
 ---
 description: "Overview of what system tables are and why they are useful."
-slug: /en/operations/system-tables/overview
+slug: /operations/system-tables/overview
 sidebar_position: 52
 sidebar_label: Overview
 title: "System Tables Overview"
@@ -55,7 +55,7 @@ An example:
 </clickhouse>
 ```
 
-By default, table growth is unlimited. To control a size of a table, you can use [TTL](../../sql-reference/statements/alter/ttl.md#manipulations-with-table-ttl) settings for removing outdated log records. Also you can use the partitioning feature of `MergeTree`-engine tables.
+By default, table growth is unlimited. To control a size of a table, you can use [TTL](/sql-reference/statements/alter/ttl) settings for removing outdated log records. Also you can use the partitioning feature of `MergeTree`-engine tables.
 
 ## Sources of System Metrics {#system-tables-sources-of-system-metrics}
 

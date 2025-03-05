@@ -1,5 +1,6 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
+#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Interpreters/QueryLog.h>
 #include <Processors/QueryPlan/QueryPlan.h>

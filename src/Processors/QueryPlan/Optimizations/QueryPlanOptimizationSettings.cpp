@@ -38,6 +38,13 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
+    extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool allow_experimental_analyzer;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
 namespace ServerSetting
@@ -85,6 +92,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class
     keep_logical_steps = false;
+    use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     is_explain = false;
 
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;

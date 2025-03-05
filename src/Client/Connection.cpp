@@ -43,6 +43,8 @@
 #include <Core/Types.h>
 #include "config.h"
 
+#include <fmt/ranges.h>
+
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif

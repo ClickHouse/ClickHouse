@@ -7,7 +7,7 @@ sidebar_position: 200
 
 计算数字序列的近似[分位数](https://en.wikipedia.org/wiki/Quantile)。
 此函数应用[水塘抽样][reservoir sampling] (https://en.wikipedia.org/wiki/Reservoir_sampling)，使用高达8192的水塘大小和随机数发生器采样。
-结果是不确定的。要获得精确的分位数，使用 [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact) 函数。
+结果是不确定的。要获得精确的分位数，使用 [quantileExact](/sql-reference/aggregate-functions/reference/quantileexact#quantileexact) 函数。
 当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用 [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) 函数。
 
 **语法**
