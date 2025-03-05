@@ -758,10 +758,16 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         }
         case Type::STOP_LISTEN:
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated(
+                    "SYSTEM STOP LISTEN HTTP query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
             getContext()->stopServers(query.server_type);
             break;
         case Type::START_LISTEN:
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated(
+                    "SYSTEM START LISTEN HTTP query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_LISTEN);
             getContext()->startServers(query.server_type);
             break;
@@ -1663,6 +1669,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_LISTEN:
         case Type::START_LISTEN: {
+            if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception::createDeprecated(
+                    "SYSTEM STOP/START LISTEN HTTP query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             required_access.emplace_back(AccessType::SYSTEM_LISTEN);
             break;
         }
