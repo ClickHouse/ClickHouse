@@ -45,7 +45,7 @@ def setup_minio_users():
                     "root",
                     "http://minio1:9001",
                     "minio",
-                    "minio123",
+                    "ClickHouse_Minio_P@ssw0rd",
                 ],
             )
         )
@@ -100,7 +100,7 @@ def setup_minio_users():
         print(
             cluster.exec_in_container(
                 cluster.minio_docker_id,
-                ["mc", "admin", "user", "add", "root", user, "minio123"],
+                ["mc", "admin", "user", "add", "root", user, "ClickHouse_Minio_P@ssw0rd"],
             )
         )
         print(
@@ -342,7 +342,7 @@ def test_backup_to_s3():
     storage_policy = "default"
     backup_name = new_backup_name()
     backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     )
     (backup_events, _) = check_backup_and_restore(storage_policy, backup_destination)
     check_system_tables(backup_events["query_id"])
@@ -358,7 +358,7 @@ def test_backup_to_s3_named_collection():
 def test_backup_to_s3_multipart():
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     (backup_events, restore_events) = check_backup_and_restore(
         storage_policy,
         backup_destination,
@@ -439,7 +439,7 @@ def test_backup_to_s3_multipart():
 def test_backup_to_s3_native_copy(storage_policy):
     backup_name = new_backup_name()
     backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     )
     (backup_events, restore_events) = check_backup_and_restore(
         storage_policy, backup_destination
@@ -455,7 +455,7 @@ def test_backup_to_s3_native_copy(storage_policy):
 def test_backup_to_s3_native_copy_multipart():
     storage_policy = "policy_s3"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/multipart/{backup_name}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     (backup_events, restore_events) = check_backup_and_restore(
         storage_policy, backup_destination, size=1000000
     )
@@ -468,7 +468,7 @@ def test_backup_to_s3_native_copy_multipart():
 
 
 def test_incremental_backup_append_table_def():
-    backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', 'minio123')"
+    backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
 
     node.query(
         "CREATE TABLE data (x UInt32, y String) Engine=MergeTree() ORDER BY y PARTITION BY x%10 SETTINGS storage_policy='policy_s3'"
@@ -481,7 +481,7 @@ def test_incremental_backup_append_table_def():
 
     node.query("ALTER TABLE data MODIFY SETTING parts_to_throw_insert=100")
 
-    incremental_backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', 'minio123')"
+    incremental_backup_name = f"S3('http://minio1:9001/root/data/backups/{new_backup_name()}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
 
     node.query(
         f"BACKUP TABLE data TO {incremental_backup_name} SETTINGS base_backup = {backup_name}"
@@ -512,7 +512,7 @@ def test_backup_with_fs_cache(
 
     backup_name = new_backup_name()
     backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     )
 
     insert_settings = {
@@ -574,49 +574,49 @@ def test_backup_with_fs_cache(
 def test_backup_to_zip():
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.zip', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     check_backup_and_restore(storage_policy, backup_destination)
 
 
 def test_backup_to_tar():
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     check_backup_and_restore(storage_policy, backup_destination)
 
 
 def test_backup_to_tar_gz():
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.gz', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.gz', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     check_backup_and_restore(storage_policy, backup_destination)
 
 
 def test_backup_to_tar_bz2():
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.bz2', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.bz2', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     check_backup_and_restore(storage_policy, backup_destination)
 
 
 def test_backup_to_tar_lzma():
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.lzma', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.lzma', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     check_backup_and_restore(storage_policy, backup_destination)
 
 
 def test_backup_to_tar_zst():
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.zst', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.zst', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     check_backup_and_restore(storage_policy, backup_destination)
 
 
 def test_backup_to_tar_xz():
     storage_policy = "default"
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.xz', 'minio', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}.tar.xz', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     check_backup_and_restore(storage_policy, backup_destination)
 
 
@@ -777,7 +777,7 @@ def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_
     storage_policy = "policy_s3_restricted"
 
     backup_name = new_backup_name()
-    backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'minio123')"
+    backup_destination = f"S3('http://minio1:9001/root2/data/backups/{backup_name}', 'miniorestricted2', 'ClickHouse_Minio_P@ssw0rd')"
     settings = {"allow_s3_native_copy": allow_s3_native_copy}
     size = 1000
     if use_multipart_copy:
@@ -796,7 +796,7 @@ def test_backup_restore_system_tables_with_plain_rewritable_disk():
     instance = cluster.instances["node"]
     backup_name = new_backup_name()
     backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'minio123')"
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
     )
 
     instance.query("SYSTEM FLUSH LOGS")

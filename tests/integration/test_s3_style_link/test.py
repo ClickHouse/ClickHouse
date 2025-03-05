@@ -39,7 +39,7 @@ def test_s3_table_functions(started_cluster):
         """
             INSERT INTO FUNCTION s3
                 (
-                    'minio://data/test_file.tsv.gz', 'minio', 'minio123'
+                    'minio://data/test_file.tsv.gz', 'minio', 'ClickHouse_Minio_P@ssw0rd'
                 )
             SELECT * FROM numbers(1000000);
         """
@@ -50,7 +50,7 @@ def test_s3_table_functions(started_cluster):
             """
             SELECT count(*) FROM s3
             (
-                'minio://data/test_file.tsv.gz', 'minio', 'minio123'
+                'minio://data/test_file.tsv.gz', 'minio', 'ClickHouse_Minio_P@ssw0rd'
             );
         """
         )
@@ -63,7 +63,7 @@ def test_s3_table_functions_line_as_string(started_cluster):
         """
             INSERT INTO FUNCTION s3
                 (
-                    'minio://data/test_file_line_as_string.tsv.gz', 'minio', 'minio123'
+                    'minio://data/test_file_line_as_string.tsv.gz', 'minio', 'ClickHouse_Minio_P@ssw0rd'
                 )
             SELECT * FROM numbers(1000000);
         """
@@ -74,7 +74,7 @@ def test_s3_table_functions_line_as_string(started_cluster):
             """
             SELECT _file FROM s3
             (
-                'minio://data/*as_string.tsv.gz', 'minio', 'minio123', 'LineAsString'
+                'minio://data/*as_string.tsv.gz', 'minio', 'ClickHouse_Minio_P@ssw0rd', 'LineAsString'
             ) LIMIT 1;
         """
         )
@@ -82,7 +82,7 @@ def test_s3_table_functions_line_as_string(started_cluster):
             """
             SELECT _file FROM s3
             (
-                'http://minio1:9001/root/data/*as_string.tsv.gz', 'minio', 'minio123', 'LineAsString'
+                'http://minio1:9001/root/data/*as_string.tsv.gz', 'minio', 'ClickHouse_Minio_P@ssw0rd', 'LineAsString'
             ) LIMIT 1;
         """
         )

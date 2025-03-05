@@ -76,7 +76,7 @@ def test_backup_scheduler_settings(
 
     result = node.query(
         f"""
-            BACKUP TABLE {table_name} TO S3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data', 'minio', 'minio123')
+            BACKUP TABLE {table_name} TO S3('http://{cluster.minio_host}:{cluster.minio_port}/{cluster.minio_bucket}/data', 'minio', 'ClickHouse_Minio_P@ssw0rd')
             SETTINGS s3_storage_class='STANDARD', allow_s3_native_copy={allow_s3_native_copy} SETTINGS workload='backup';
         """,
         query_id=query_id,

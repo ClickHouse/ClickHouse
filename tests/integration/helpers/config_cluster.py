@@ -15,7 +15,7 @@ pg_db = "postgres"
 
 # MINIO CREDENTIALS
 minio_access_key = "minio"
-minio_secret_key = "minio123"
+minio_secret_key = "ClickHouse_Minio_P@ssw0rd"
 
 # MONGODB CREDENTIALS
 mongo_user = "root"

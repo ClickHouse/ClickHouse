@@ -38,7 +38,7 @@ def test_backup_s3_storage_class(started_cluster):
     )
     result = node.query(
         """
-            BACKUP TABLE test_s3_storage_class TO S3('http://minio1:9001/root/data', 'minio', 'minio123')
+            BACKUP TABLE test_s3_storage_class TO S3('http://minio1:9001/root/data', 'minio', 'ClickHouse_Minio_P@ssw0rd')
             SETTINGS s3_storage_class='STANDARD';
         """
     )

@@ -58,7 +58,7 @@ def test_s3_with_proxy_list(cluster):
     node.query(
         """
         INSERT INTO FUNCTION
-        s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'minio123', 'CSV', 'key String, value String')
+        s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'ClickHouse_Minio_P@ssw0rd', 'CSV', 'key String, value String')
         SETTINGS s3_truncate_on_insert=1
         VALUES ('color','red'),('size','10')
         """
@@ -68,7 +68,7 @@ def test_s3_with_proxy_list(cluster):
     date = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S %z")
     resource = "/root/data/ch-proxy-test/test.csv"
     get_sig_string = f"GET\n\n{content_type}\n{date}\n{resource}"
-    password = "minio123"
+    password = "ClickHouse_Minio_P@ssw0rd"
 
     get_digest = hmac.new(
         password.encode("utf-8"), get_sig_string.encode("utf-8"), hashlib.sha1

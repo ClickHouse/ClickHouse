@@ -80,21 +80,21 @@ def perform_simple_queries(node, minio_endpoint):
     node.query(
         f"""
             INSERT INTO FUNCTION
-            s3('{minio_endpoint}', 'minio', 'minio123', 'CSV', 'key String, value String')
+            s3('{minio_endpoint}', 'minio', 'ClickHouse_Minio_P@ssw0rd', 'CSV', 'key String, value String')
             VALUES ('color','red'),('size','10')
             """
     )
 
     assert (
         node.query(
-            f"SELECT * FROM s3('{minio_endpoint}', 'minio', 'minio123', 'CSV') FORMAT Values"
+            f"SELECT * FROM s3('{minio_endpoint}', 'minio', 'ClickHouse_Minio_P@ssw0rd', 'CSV') FORMAT Values"
         )
         == "('color','red'),('size','10')"
     )
 
     assert (
         node.query(
-            f"SELECT * FROM s3('{minio_endpoint}', 'minio', 'minio123', 'CSV') FORMAT Values"
+            f"SELECT * FROM s3('{minio_endpoint}', 'minio', 'ClickHouse_Minio_P@ssw0rd', 'CSV') FORMAT Values"
         )
         == "('color','red'),('size','10')"
     )
