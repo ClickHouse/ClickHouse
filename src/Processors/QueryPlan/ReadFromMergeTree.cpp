@@ -7,6 +7,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ExpressionActions.h>
@@ -30,6 +31,7 @@
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
@@ -4551,6 +4553,156 @@ Strings ReadFromMergeTree::getShardsForDistributedRead() const
         list_of_shards.push_back(std::to_string(i));
 
     return list_of_shards;
+}
+
+
+namespace
+{
+    void serializeRational(TableExpressionModifiers::Rational val, WriteBuffer & out)
+    {
+        writeIntBinary(val.numerator, out);
+        writeIntBinary(val.denominator, out);
+    }
+
+    TableExpressionModifiers::Rational deserializeRational(ReadBuffer & in)
+    {
+        TableExpressionModifiers::Rational val;
+        readIntBinary(val.numerator, in);
+        readIntBinary(val.denominator, in);
+        return val;
+    }
+}
+
+void ReadFromMergeTree::serialize(Serialization & ctx) const
+{
+    StorageID table_id = data.getStorageID();
+    writeStringBinary(table_id.getDatabaseName(), ctx.out);
+    writeStringBinary(table_id.getTableName(), ctx.out);
+    writeVarUInt(getAllColumnNames().size(), ctx.out);
+    for (const auto & column : getAllColumnNames())
+        writeStringBinary(column, ctx.out);
+
+    /// TODO: not sure that these fields should be serialized, maybe they should be recalculated at target
+    writeVarUInt(getMaxBlockSize(), ctx.out);
+    writeVarUInt(getNumStreams(), ctx.out);
+
+    const auto & table_expression_modifiers = query_info.table_expression_modifiers;
+
+    UInt8 flags = 0;
+    if (table_expression_modifiers && table_expression_modifiers->hasFinal())
+        flags |= 1;
+    if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
+        flags |= 2;
+    if (table_expression_modifiers && table_expression_modifiers->hasSampleOffsetRatio())
+        flags |= 4;
+    if (query_info.row_level_filter != nullptr)
+        flags |= 8;
+    if (query_info.prewhere_info != nullptr)
+        flags |= 16;
+
+    writeIntBinary(flags, ctx.out);
+    if (table_expression_modifiers && table_expression_modifiers->hasSampleSizeRatio())
+        serializeRational(*table_expression_modifiers->getSampleSizeRatio(), ctx.out);
+
+    if (table_expression_modifiers && table_expression_modifiers->hasSampleOffsetRatio())
+        serializeRational(*table_expression_modifiers->getSampleOffsetRatio(), ctx.out);
+
+    if (query_info.row_level_filter)
+        query_info.row_level_filter->serialize(ctx);
+
+    if (query_info.prewhere_info)
+        query_info.prewhere_info->serialize(ctx);
+
+    writeVarUInt(distributed_read_bucket_count, ctx.out);
+}
+
+std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization & ctx)
+{
+    String database_name;
+    String table_name;
+    readStringBinary(database_name, ctx.in);
+    readStringBinary(table_name, ctx.in);
+
+    size_t num_columns = 0;
+    readVarUInt(num_columns, ctx.in);
+    Names column_names;
+    column_names.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        String column_name;
+        readStringBinary(column_name, ctx.in);
+        column_names.push_back(column_name);
+    }
+
+    UInt64 max_block_size = 0;
+    readVarUInt(max_block_size, ctx.in);
+    size_t num_streams = 0;
+    readVarUInt(num_streams, ctx.in);
+
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+
+    const bool has_final = flags & 1;
+    const bool has_sample_size_ratio = flags & 2;
+    const bool has_sample_offset_ratio = flags & 4;
+    const bool has_row_level_filter = flags & 8;
+    const bool has_prewhere_info = flags & 16;
+
+    std::optional<TableExpressionModifiers::Rational> sample_size_ratio;
+    std::optional<TableExpressionModifiers::Rational> sample_offset_ratio;
+    if (has_sample_size_ratio)
+        sample_size_ratio = deserializeRational(ctx.in);
+    if (has_sample_offset_ratio)
+        sample_offset_ratio = deserializeRational(ctx.in);
+
+    SelectQueryInfo query_info;
+    query_info.table_expression_modifiers.emplace(has_final, sample_size_ratio, sample_offset_ratio);
+
+    if (has_row_level_filter)
+        query_info.row_level_filter = std::make_shared<FilterDAGInfo>(FilterDAGInfo::deserialize(ctx));
+    if (has_prewhere_info)
+        query_info.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
+
+    size_t distributed_read_bucket_count = 0;
+    readVarUInt(distributed_read_bucket_count, ctx.in);
+
+    StorageID table_id(database_name, table_name);
+    auto storage_ptr = DatabaseCatalog::instance().tryGetTable(table_id, ctx.context);
+    if (!storage_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table {}.{} not found in catalog", database_name, table_name);
+
+    MergeTreeData & table = dynamic_cast<MergeTreeData &>(*storage_ptr);
+    MergeTreeDataSelectExecutor executor(table);
+
+    StorageSnapshotPtr storage_snapshot = table.getStorageSnapshot(table.getInMemoryMetadataPtr(ctx.context, false), ctx.context);
+    const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+
+    auto step = executor.readFromParts(
+        snapshot_data.parts,
+        snapshot_data.mutations_snapshot,
+        column_names,
+        storage_snapshot,
+        query_info,
+        ctx.context,
+        max_block_size,
+        num_streams);
+
+    if (distributed_read_bucket_count)
+    {
+        auto * read_from_merge_tree_step = dynamic_cast<ReadFromMergeTree *>(step.get());
+        if (!read_from_merge_tree_step)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
+        read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
+    }
+
+    /// Need to keep shared pointer to MergeTree table till the end of plan execution
+    ctx.storage_holders.push_back(storage_ptr);
+    return step;
+}
+
+void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("ReadFromMergeTree", ReadFromMergeTree::deserialize);
 }
 
 }

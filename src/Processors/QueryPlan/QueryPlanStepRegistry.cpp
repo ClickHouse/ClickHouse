@@ -59,6 +59,7 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
 void registerReadFromTableFunctionStep(QueryPlanStepRegistry & registry);
+void registerReadFromMergeTreeStep(QueryPlanStepRegistry & registry);
 void registerBuildRuntimeFilterStep(QueryPlanStepRegistry & registry);
 void registerObjectFilterStep(QueryPlanStepRegistry & registry);
 
@@ -98,6 +99,7 @@ void QueryPlanStepRegistry::registerPlanSteps()
 
     registerReadFromTableStep(registry);
     registerReadFromTableFunctionStep(registry);
+    registerReadFromMergeTreeStep(registry);
     registerBuildRuntimeFilterStep(registry);
     registerObjectFilterStep(registry);
 

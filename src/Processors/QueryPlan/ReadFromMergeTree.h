@@ -408,6 +408,9 @@ public:
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
 
+    void serialize(Serialization & ctx) const override;
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
+
 private:
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
