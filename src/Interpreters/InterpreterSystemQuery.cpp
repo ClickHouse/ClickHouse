@@ -123,6 +123,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TOO_DEEP_RECURSION;
+    extern const int UNSUPPORTED_METHOD;
 }
 
 namespace ActionLocks
@@ -281,21 +282,7 @@ InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterSystemQuery::execute()
 {
     auto & query = query_ptr->as<ASTSystemQuery &>();
-
-    // Check if running in clickhouse-local mode
-    if (getContext()->getApplicationType() == Context::ApplicationType::LOCAL)
-    {
-        using Type = ASTSystemQuery::Type;
-        switch (query.type)
-        {
-            case Type::RELOAD_CONFIG:
-            case Type::STOP_LISTEN:
-            case Type::START_LISTEN:
-                throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "This SYSTEM query is not supported in clickhouse-local mode");
-            default:
-                break;
-        }
-    }
+    auto & context = getContext();
 
     if (!query.cluster.empty())
     {
@@ -648,9 +635,16 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->getEmbeddedDictionaries().reload();
             break;
         case Type::RELOAD_CONFIG:
-            getContext()->checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
-            system_context->reloadConfig();
+        {
+            if (context.getApplicationType() == Context::ApplicationType::LOCAL)
+                throw Exception("SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
+                
+            auto * config_reload_callback = context.getConfigReloadCallback();
+            if (!config_reload_callback)
+                throw Exception("Can't reload config because config_reload_callback is not set", ErrorCodes::LOGICAL_ERROR);
+            (*config_reload_callback)();
             break;
+        }
         case Type::RELOAD_USERS:
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_USERS);
             system_context->getAccessControl().reload(AccessControl::ReloadMode::ALL);
