@@ -644,13 +644,10 @@ public:
         return infos.contains(name);
     }
 
-    ActionLock getActionLock(StorageActionBlockType action_type)
+    ActionLock getActionLock()
     {
         std::lock_guard lock{mutex};
-        if (action_type == ActionLocks::ReloadExternalDictionaries)
-            return reload_blocker.cancel();
-
-        return {};
+        return reload_blocker.cancel();
     }
 
     /// Starts reloading all the object which update time is earlier than now.
@@ -1029,14 +1026,16 @@ private:
             if (forced_to_reload)
                 previous_version_as_base_for_loading = nullptr; /// Need complete reloading, cannot use the previous version.
 
-            /// If loading is blocked and there is no previous version then do not load the object
+            /// If reload is blocked and there is no previous version then do not load the object.
+            /// Loading can proceed with the previous version even if reload is blocked so that
+            /// a object that has already been loaded can be accessed.
             if (reload_blocked && !previous_version_as_base_for_loading)
             {
-              LOG_TRACE(log, "Could not load object '{}': Reload is blocked", name);
-              LoadingGuardForAsyncLoad lock(async, mutex);
-              finishLoadingSingleObject(name, loading_id, reload_blocked, lock);
-              event.notify_all();
-              return;
+                LOG_TRACE(log, "Could not load object '{}': Reload is blocked", name);
+                LoadingGuardForAsyncLoad lock(async, mutex);
+                finishLoadingSingleObject(name, loading_id, reload_blocked, lock);
+                event.notify_all();
+                return;
             }
 
             /// Loading.
@@ -1551,9 +1550,9 @@ void ExternalLoader::reloadConfig(const String & repository_name, const String &
     loading_dispatcher->setConfiguration(config_files_reader->read(repository_name, path));
 }
 
-ActionLock ExternalLoader::getActionLock(StorageActionBlockType action_type)
+ActionLock ExternalLoader::getActionLock()
 {
-    return loading_dispatcher->getActionLock(action_type);
+    return loading_dispatcher->getActionLock();
 }
 
 ExternalLoader::LoadableMutablePtr ExternalLoader::createOrCloneObject(

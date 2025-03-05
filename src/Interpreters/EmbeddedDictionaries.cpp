@@ -157,12 +157,9 @@ void EmbeddedDictionaries::reload()
         throw Exception(ErrorCodes::UNFINISHED, "Some embedded dictionaries were not successfully reloaded");
 }
 
-ActionLock EmbeddedDictionaries::getActionLock(StorageActionBlockType action_type)
+ActionLock EmbeddedDictionaries::getActionLock()
 {
-    if (action_type == ActionLocks::ReloadEmbeddedDictionaries)
-        return reload_blocker.cancel();
-
-    return {};
+    return reload_blocker.cancel();
 }
 
 }

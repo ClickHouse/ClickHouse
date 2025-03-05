@@ -213,7 +213,7 @@ public:
     /// Reload only a specified path in a specified config repository.
     void reloadConfig(const String & repository_name, const String & path) const;
 
-    ActionLock getActionLock(StorageActionBlockType action_type);
+    ActionLock getActionLock();
 
 protected:
     virtual LoadableMutablePtr createObject(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;

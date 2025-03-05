@@ -287,10 +287,10 @@ void InterpreterSystemQuery::startStopReloadDictionaries(bool start)
     }
 
     manager->add(ActionLocks::ReloadExternalDictionaries,
-                 getContext()->getExternalDictionariesLoader().getActionLock(ActionLocks::ReloadExternalDictionaries));
+                 getContext()->getExternalDictionariesLoader().getActionLock());
 
     manager->add(ActionLocks::ReloadEmbeddedDictionaries,
-                 getContext()->getEmbeddedDictionaries().getActionLock(ActionLocks::ReloadEmbeddedDictionaries));
+                 getContext()->getEmbeddedDictionaries().getActionLock());
 }
 
 InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)

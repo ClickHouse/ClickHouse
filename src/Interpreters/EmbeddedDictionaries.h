@@ -76,7 +76,7 @@ public:
     /// Forcibly reloads all dictionaries.
     void reload();
 
-    ActionLock getActionLock(StorageActionBlockType action_type);
+    ActionLock getActionLock();
 
     ~EmbeddedDictionaries();
 
