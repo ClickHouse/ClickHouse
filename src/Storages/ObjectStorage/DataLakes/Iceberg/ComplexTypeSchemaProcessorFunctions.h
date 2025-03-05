@@ -107,6 +107,7 @@ private:
 
     mutable std::vector<std::shared_ptr<IIcebergSchemaTransform>> transforms;
     mutable bool initialized = false;
+    mutable std::mutex mutex;
 };
 
 class EvolutionFunctionStruct : public IFunctionBase

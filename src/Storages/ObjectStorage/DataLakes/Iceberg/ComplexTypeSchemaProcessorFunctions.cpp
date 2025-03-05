@@ -220,10 +220,13 @@ private:
 ColumnPtr ExecutableEvolutionFunction::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const
 {
-    if (!initialized)
     {
-        lazyInitialize();
-        initialized = true;
+        std::lock_guard lock(mutex);
+        if (!initialized)
+        {
+            lazyInitialize();
+            initialized = true;
+        }
     }
 
     const auto & column = arguments[0].column;
