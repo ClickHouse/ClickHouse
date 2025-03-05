@@ -234,8 +234,18 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(c
             right_required_outputs.insert(post_join_input->result_name);
     }
 
-    removed_any_actions |= expression_actions.left_pre_join_actions->removeUnusedActions(left_required_outputs, remove_inputs);
-    removed_any_actions |= expression_actions.right_pre_join_actions->removeUnusedActions(right_required_outputs, remove_inputs);
+    const auto remove_unused_actions_from_pre_join_actions
+        = [remove_inputs](ActionsDAG & pre_join_actions, NameSet & pre_join_required_outputs)
+    {
+        // Pre-join actions also have to have at least one outputs
+        if (pre_join_required_outputs.empty())
+            pre_join_required_outputs.insert(pre_join_actions.getInputs().front()->result_name);
+
+        return pre_join_actions.removeUnusedActions(pre_join_required_outputs, remove_inputs);
+    };
+
+    removed_any_actions |= remove_unused_actions_from_pre_join_actions(*expression_actions.left_pre_join_actions, left_required_outputs);
+    removed_any_actions |= remove_unused_actions_from_pre_join_actions(*expression_actions.right_pre_join_actions, right_required_outputs);
 
     if (!removed_any_actions)
         return UnusedColumnRemovalResult{false, false};
