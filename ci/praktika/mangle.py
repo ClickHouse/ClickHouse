@@ -29,13 +29,22 @@ def _get_workflows(
     directory = Path(Settings.WORKFLOWS_DIRECTORY)
     for py_file in directory.glob("*.py"):
         if not default:
+            if Settings.ENABLED_WORKFLOWS:
+                if not any(
+                    py_file.name == Path(enabled_wf_file).name
+                    for enabled_wf_file in Settings.ENABLED_WORKFLOWS
+                ):
+                    print(
+                        f"NOTE: Workflow [{py_file.name}] is not enabled in Settings.ENABLED_WORKFLOWS - skip"
+                    )
+                    continue
             if Settings.DISABLED_WORKFLOWS:
                 if any(
                     py_file.name == Path(disabled_wf_file).name
                     for disabled_wf_file in Settings.DISABLED_WORKFLOWS
                 ):
                     print(
-                        f"NOTE: Workflow [{py_file.name}] disabled via Settings.DISABLED_WORKFLOWS - skip"
+                        f"NOTE: Workflow [{py_file.name}] is disabled via Settings.DISABLED_WORKFLOWS - skip"
                     )
                     continue
             if file and str(file) not in str(py_file):
