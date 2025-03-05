@@ -1,6 +1,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Interpreters/Squashing.h>
 #include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
 
 #include <Processors/Port.h>
 
@@ -9,6 +10,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace ProfileEvents
+ {
+    extern const ::ProfileEvents::Event InsertPipelineShrinking;
 }
 
 ResizeProcessor::Status BaseResizeProcessor::prepareRoundRobin()
@@ -178,7 +184,8 @@ IProcessor::Status BaseResizeProcessor::prepareWithQueues(const PortNumbers & up
     }
 
     /// 2) Possibly do concurrency logic (virtual call)
-    concurrencyControlLogic();
+    if (can_be_shrinked)
+        concurrencyControlLogic();
 
     /// 3) Check updated outputs
     for (const auto & output_number : updated_outputs)
@@ -511,6 +518,8 @@ void MemoryDependentResizeProcessor::concurrencyControlLogic()
                 to_disable--;
             }
         }
+        ::ProfileEvents::increment(ProfileEvents::InsertPipelineShrinking);
+        can_be_shrinked = false;
     }
 }
 

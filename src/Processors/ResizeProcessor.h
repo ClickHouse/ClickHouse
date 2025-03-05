@@ -42,6 +42,7 @@ protected:
     std::queue<UInt64> inputs_with_data;
     bool initialized = false;
     bool is_reading_started = false;
+    bool can_be_shrinked = outputs.size() != 1;
 
     enum class OutputStatus : uint8_t
     {
