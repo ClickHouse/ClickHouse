@@ -118,6 +118,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool use_const_adaptive_granularity;
     extern const MergeTreeSettingsUInt64 max_merge_delayed_streams_for_parallel_write;
+    extern const MergeTreeSettingsBool ttl_only_drop_parts;
 }
 
 namespace ErrorCodes
@@ -307,6 +308,13 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     if (key_columns.empty())
         key_columns.emplace(global_ctx->storage_columns.front().name);
 
+    /// Recalculate the min-max index for partition columns if the merge might reduce rows.
+    if (global_ctx->merge_may_reduce_rows)
+    {
+        auto minmax_columns = MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey());
+        key_columns.insert(minmax_columns.begin(), minmax_columns.end());
+    }
+
     const auto & skip_indexes = global_ctx->metadata_snapshot->getSecondaryIndices();
 
     for (const auto & index : skip_indexes)
@@ -446,6 +454,46 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     extendObjectColumns(global_ctx->storage_columns, object_columns, false);
     global_ctx->storage_snapshot = std::make_shared<StorageSnapshot>(*global_ctx->data, global_ctx->metadata_snapshot, std::move(object_columns));
 
+    ctx->need_remove_expired_values = false;
+    ctx->force_ttl = false;
+    for (const auto & part : global_ctx->future_part->parts)
+    {
+        global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
+
+        if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
+        {
+            LOG_INFO(ctx->log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
+            ctx->need_remove_expired_values = true;
+            ctx->force_ttl = true;
+        }
+    }
+
+    const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
+    if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
+        ctx->need_remove_expired_values = true;
+
+    if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
+    {
+        LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
+        ctx->need_remove_expired_values = false;
+    }
+
+    const auto & patch_parts = global_ctx->future_part->patch_parts;
+
+    /// Determine whether projections and minmax indexes need to be updated during merge,
+    /// which typically happens when the number of rows may be reduced.
+    ///
+    /// This is necessary in cases such as TTL expiration, cleanup merges, deduplication,
+    /// or special merge modes like Collapsing/Replacing.
+    global_ctx->merge_may_reduce_rows =
+        ctx->need_remove_expired_values ||
+        !patch_parts.empty() ||
+        global_ctx->cleanup ||
+        global_ctx->deduplicate ||
+        global_ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
+        global_ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
+        global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
+
     prepareProjectionsToMergeAndRebuild();
 
     extractMergingAndGatheringColumns();
@@ -459,16 +507,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
     global_ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
-    ctx->need_remove_expired_values = false;
-    ctx->force_ttl = false;
-
     if (enabledBlockNumberColumn(global_ctx))
         addGatheringColumn(global_ctx, BlockNumberColumn::name, BlockNumberColumn::type);
 
     if (enabledBlockOffsetColumn(global_ctx))
         addGatheringColumn(global_ctx, BlockOffsetColumn::name, BlockOffsetColumn::type);
-
-    const auto & patch_parts = global_ctx->future_part->patch_parts;
 
     MergeTreeData::IMutationsSnapshot::Params params
     {
@@ -506,15 +549,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     for (const auto & part : global_ctx->future_part->parts)
     {
-        global_ctx->new_data_part->ttl_infos.update(part->ttl_infos);
-
-        if (global_ctx->metadata_snapshot->hasAnyTTL() && !part->checkAllTTLCalculated(global_ctx->metadata_snapshot))
-        {
-            LOG_INFO(ctx->log, "Some TTL values were not calculated for part {}. Will calculate them forcefully during merge.", part->name);
-            ctx->need_remove_expired_values = true;
-            ctx->force_ttl = true;
-        }
-
         if (!info_settings.isAlwaysDefault())
         {
             auto part_infos = part->getSerializationInfos();
@@ -539,16 +573,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
-
-    const auto & local_part_min_ttl = global_ctx->new_data_part->ttl_infos.part_min_ttl;
-    if (local_part_min_ttl && local_part_min_ttl <= global_ctx->time_of_merge)
-        ctx->need_remove_expired_values = true;
-
-    if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
-    {
-        LOG_INFO(ctx->log, "Part {} has values with expired TTL, but merges with TTL are cancelled.", global_ctx->new_data_part->name);
-        ctx->need_remove_expired_values = false;
-    }
 
     ctx->sum_input_rows_upper_bound = global_ctx->merge_list_element_ptr->total_rows_count;
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
@@ -783,20 +807,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         && (mode == DeduplicateMergeProjectionMode::THROW || mode == DeduplicateMergeProjectionMode::DROP))
         return;
 
-    /// These merging modes may or may not reduce number of rows. It's not known until the horizontal stage is finished.
-    const bool merge_may_reduce_rows =
-        global_ctx->cleanup ||
-        global_ctx->deduplicate ||
-        global_ctx->merging_params.mode == MergeTreeData::MergingParams::Collapsing ||
-        global_ctx->merging_params.mode == MergeTreeData::MergingParams::Replacing ||
-        global_ctx->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing;
-
     const auto & projections = global_ctx->metadata_snapshot->getProjections();
 
     for (const auto & projection : projections)
     {
-        /// Checking IGNORE here is just for compatibility.
-        if (merge_may_reduce_rows && mode != DeduplicateMergeProjectionMode::IGNORE)
+        /// The IGNORE mode is checked here purely for backward compatibility.
+        /// However, if the projection contains `_parent_part_offset`, it must still be rebuilt,
+        /// since offset correctness cannot be ignored even in IGNORE mode.
+        if (global_ctx->merge_may_reduce_rows && (mode != DeduplicateMergeProjectionMode::IGNORE || projection.with_parent_part_offset))
         {
             global_ctx->projections_to_rebuild.push_back(&projection);
             continue;
@@ -950,6 +968,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
 
         global_ctx->rows_written += block.rows();
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
+
+        if (global_ctx->merge_may_reduce_rows)
+        {
+            global_ctx->new_data_part->minmax_idx->update(
+                block, MergeTreeData::getMinMaxColumnsNames(global_ctx->metadata_snapshot->getPartitionKey()));
+        }
 
         calculateProjections(block);
 
@@ -1316,14 +1340,17 @@ bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns() const
 
 bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() const
 {
-    for (const auto & part : global_ctx->future_part->parts)
+    if (!global_ctx->merge_may_reduce_rows)
     {
-        /// Skip empty parts,
-        /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
-        /// since they can incorrectly set min,
-        /// that will be changed after one more merge/OPTIMIZE.
-        if (!part->isEmpty())
-            global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
+        for (const auto & part : global_ctx->future_part->parts)
+        {
+            /// Skip empty parts,
+            /// (that can be created in StorageReplicatedMergeTree::createEmptyPartInsteadOfLost())
+            /// since they can incorrectly set min,
+            /// that will be changed after one more merge/OPTIMIZE.
+            if (!part->isEmpty())
+                global_ctx->new_data_part->minmax_idx->merge(*part->minmax_idx);
+        }
     }
 
     /// Print overall profiling info. NOTE: it may duplicates previous messages
@@ -1355,6 +1382,16 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
             projection_parts.size(),
             projection_parts.front()->name,
             projection_parts.back()->name);
+
+        /// Skip parts with empty parent parts.
+        chassert(global_ctx->future_part->parts.size() == projection_parts.size());
+        std::erase_if(
+            projection_parts,
+            [&](const auto & part)
+            {
+                size_t index = &part - projection_parts.data();
+                return global_ctx->future_part->parts[index]->isEmpty();
+            });
 
         auto projection_future_part = std::make_shared<FutureMergedMutatedPart>();
         projection_future_part->assign(std::move(projection_parts), /*patch_parts_=*/ {});
