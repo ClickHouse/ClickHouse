@@ -22,10 +22,13 @@ struct MaxComparator
     static ALWAYS_INLINE inline const T & cmp(const T & a, const T & b) { return std::max(a, b); }
 };
 
+namespace detail
+{
 template <class Comparator> struct NativeComparatorT { using Type = Comparator; };
 template <underlying_has_find_extreme_implementation T> struct NativeComparatorT<MinComparator<T>> { using Type = MinComparator<NativeType<T>>; };
 template <underlying_has_find_extreme_implementation T> struct NativeComparatorT<MaxComparator<T>> { using Type = MaxComparator<NativeType<T>>; };
 template <class Comparator> using NativeComparator = typename NativeComparatorT<Comparator>::Type;
+}
 
 MULTITARGET_FUNCTION_AVX2_SSE42(
     MULTITARGET_FUNCTION_HEADER(
@@ -142,7 +145,7 @@ static std::optional<T>
 findExtreme(const T * __restrict ptr, const UInt8 * __restrict condition_map [[maybe_unused]], size_t start, size_t end)
 {
     using U = NativeType<T>;
-    auto ret = findExtreme<U, NativeComparator<ComparatorClass>, add_all_elements, add_if_cond_zero>(
+    auto ret = findExtreme<U, detail::NativeComparator<ComparatorClass>, add_all_elements, add_if_cond_zero>(
         reinterpret_cast<const U *>(ptr), condition_map, start, end);
 
     if (ret.has_value())
