@@ -354,12 +354,38 @@ setStmt: SET settingExprList;
 // SHOW statements
 
 showStmt
-    : SHOW CREATE DATABASE databaseIdentifier                                                                     # showCreateDatabaseStmt
-    | SHOW CREATE DICTIONARY tableIdentifier                                                                      # showCreateDictionaryStmt
-    | SHOW CREATE TEMPORARY? TABLE? tableIdentifier                                                               # showCreateTableStmt
-    | SHOW DATABASES                                                                                              # showDatabasesStmt
-    | SHOW DICTIONARIES (FROM databaseIdentifier)?                                                                # showDictionariesStmt
-    | SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE stringLiteral | whereClause)? limitClause?   # showTablesStmt
+    : SHOW CREATE? DATABASE databaseIdentifier                                                                                                                                                        # showCreateDatabaseStmt
+    | SHOW CREATE DICTIONARY tableIdentifier                                                                                                                                                          # showCreateDictionaryStmt
+    | SHOW CREATE? VIEW tableIdentifier                                                                                                                                                               # showCreateViewStmt
+    | SHOW DATABASES ((NOT? (LIKE | ILIKE) stringLiteral) | WHERE columnExpr)? (LIMIT DECIMAL_LITERAL)?                                                                                               # showDatabasesStmt
+    | SHOW DICTIONARIES (FROM databaseIdentifier)? ((NOT? (LIKE | ILIKE) stringLiteral) | WHERE columnExpr)? (LIMIT DECIMAL_LITERAL)?                                                                 # showDictionariesStmt
+    | SHOW FULL? TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? ((NOT? (LIKE | ILIKE) stringLiteral) | WHERE columnExpr)? (LIMIT DECIMAL_LITERAL)?                                               # showTablesStmt
+    | SHOW EXTENDED? FULL? (COLUMNS | FIELDS) (FROM | IN) (tableIdentifier | (identifier (FROM | IN) identifier)) ((NOT? (LIKE | ILIKE) stringLiteral) | WHERE columnExpr)? (LIMIT DECIMAL_LITERAL)?  # showColumnsStmt
+    | SHOW EXTENDED? (INDEX | INDEXES | INDICES | KEYS) (FROM | IN) (tableIdentifier | (identifier (FROM | IN) identifier)) (WHERE columnExpr)?                                                       # showIndexStmt
+    | SHOW PROCESSLIST                                                                                                                                                                                # showProcessListStmt
+    | SHOW GRANTS (FOR identifier (COMMA identifier)*)? (WITH IMPLICIT)? (FINAL)?                                                                                                                     # showGrantsStmt
+    | SHOW CREATE USER ((identifier (COMMA identifier)*) | CURRENT_USER)?                                                                                                                             # showCreateUserStmt
+    | SHOW CREATE ROLE identifier (COMMA identifier)*                                                                                                                                                 # showCreateRoleStmt
+    | SHOW CREATE ROW? POLICY identifier ON tableIdentifier (COMMA tableIdentifier)*                                                                                                                  # showCreatePolicyStmt
+    | SHOW CREATE QUOTA ((identifier (COMMA identifier)*) | CURRENT)                                                                                                                                  # showCreateQuotaStmt
+    | SHOW CREATE SETTINGS? PROFILE identifier (COMMA identifier)*                                                                                                                                    # showCreateProfileStmt
+    | SHOW USERS                                                                                                                                                                                      # showUsersStmt
+    | SHOW (CURRENT | ENABLED)? ROLES                                                                                                                                                                 # showRolesStmt
+    | SHOW SETTINGS? PROFILES                                                                                                                                                                         # showProfilesStmt
+    | SHOW ROW? POLICIES (ON tableIdentifier)?                                                                                                                                                        # showPoliciesStmt
+    | SHOW QUOTAS                                                                                                                                                                                     # showQuotasStmt
+    | SHOW CURRENT? QUOTA                                                                                                                                                                             # showQuotaStmt
+    | SHOW ACCESS                                                                                                                                                                                     # showAccessStmt
+    | SHOW CLUSTER stringLiteral                                                                                                                                                                      # showClusterStmt
+    | SHOW CLUSTERS (NOT? (LIKE | ILIKE) stringLiteral)? (LIMIT DECIMAL_LITERAL)?                                                                                                                     # showClustersStmt
+    | SHOW CHANGED? SETTINGS (LIKE | ILIKE) stringLiteral                                                                                                                                             # showSettingsStmt
+    | SHOW SETTING stringLiteral                                                                                                                                                                      # showSettingStmt
+    | SHOW FILESYSTEM CACHES                                                                                                                                                                          # showFilesystemCaches
+    | SHOW ENGINES                                                                                                                                                                                    # showEnginesStmt
+    | SHOW FUNCTIONS ((LIKE | ILIKE) stringLiteral)?                                                                                                                                                  # showFunctionsStmt
+    | SHOW MERGES (NOT? (LIKE | ILIKE) stringLiteral)? (LIMIT DECIMAL_LITERAL)?                                                                                                                       # showMergesStmt
+    | SHOW PRIVILEGES                                                                                                                                                                                 # showPrivilegesStmt
+    | SHOW (TABLE | CREATE TEMPORARY? TABLE?)? tableIdentifier                                                                                                                                        # showCreateTableStmt
     ;
 
 // SYSTEM statements
