@@ -214,7 +214,7 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(c
             required_output_columns.push_back(residual_condition.getColumnName());
     };
 
-    collect_required_outputs_from_condition(*join_info.expression.condition);
+    collect_required_outputs_from_condition(join_info.expression.condition);
     for (const auto & condition : join_info.expression.disjunctive_conditions)
         collect_required_outputs_from_condition(condition);
 
