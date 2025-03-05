@@ -16,7 +16,7 @@ INSERT INTO table_with_single_pk SELECT number, toString(number % 10) FROM numbe
 
 ALTER TABLE table_with_single_pk DELETE WHERE key % 77 = 0 SETTINGS mutations_sync = 1;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 -- Memory usage for all mutations must be almost constant and less than
 -- read_bytes
@@ -45,7 +45,7 @@ INSERT INTO table_with_multi_pk SELECT number % 32, number, toDateTime('2019-10-
 
 ALTER TABLE table_with_multi_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations_sync = 1;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 -- Memory usage for all mutations must be almost constant and less than
 -- read_bytes
@@ -76,7 +76,7 @@ INSERT INTO table_with_function_pk SELECT number % 32, number, toDateTime('2019-
 
 ALTER TABLE table_with_function_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations_sync = 1;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 -- Memory usage for all mutations must be almost constant and less than
 -- read_bytes
@@ -105,7 +105,7 @@ INSERT INTO table_without_pk SELECT number % 32, number, toDateTime('2019-10-01 
 
 ALTER TABLE table_without_pk DELETE WHERE key1 % 77 = 0 SETTINGS mutations_sync = 1;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 -- Memory usage for all mutations must be almost constant and less than
 -- read_bytes

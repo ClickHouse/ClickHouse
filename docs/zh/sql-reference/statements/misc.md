@@ -59,7 +59,7 @@ CHECK TABLE [db.]name
 如果表已损坏，则可以将未损坏的数据复制到另一个表。 要做到这一点:
 
 1.  创建一个与损坏的表结构相同的新表。 请执行查询 `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  将 [max_threads](../../operations/settings/settings.md#settings-max_threads) 值设置为1，以在单个线程中处理下一个查询。 要这样做，请运行查询 `SET max_threads = 1`.
+2.  将 [max_threads](/operations/settings/settings#max_threads) 值设置为1，以在单个线程中处理下一个查询。 要这样做，请运行查询 `SET max_threads = 1`.
 3.  执行查询 `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. 此请求将未损坏的数据从损坏的表复制到另一个表。 只有损坏部分之前的数据才会被复制。
 4.  重新启动 `clickhouse-client` 以重置 `max_threads` 值。
 
