@@ -51,7 +51,6 @@ def test_simple_select(started_cluster):
     for i in range(0, 100):
         node.query(
             f"INSERT INTO FUNCTION mongodb('mongo1:27017', 'test', 'simple_table', 'root', '{mongo_pass}', structure='key UInt64, data String') (key, data) VALUES ({i}, '{hex(i * i)}')"
-            )
         )
     assert (
         node.query(

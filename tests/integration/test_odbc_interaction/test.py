@@ -104,9 +104,7 @@ def drop_mysql_table(conn, table_name):
 
 
 def get_postgres_conn(started_cluster):
-    conn_string = f"host={} port={} user='postgres' password='{pg_pass}'".format(
-        started_cluster.postgres_ip, started_cluster.postgres_port
-    )
+    conn_string = f"host={started_cluster.postgres_ip} port={started_cluster.postgres_port} user='postgres' password='{pg_pass}'"
     errors = []
     for _ in range(15):
         try:
