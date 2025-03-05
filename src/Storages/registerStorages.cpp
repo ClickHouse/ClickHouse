@@ -67,6 +67,9 @@ void registerStorageMySQL(StorageFactory & factory);
 #if USE_MONGODB
 void registerStorageMongoDB(StorageFactory & factory);
 #endif
+#if USE_YTSAURUS
+void registerStorageYtsaurus(StorageFactory & factory);
+#endif
 
 void registerStorageRedis(StorageFactory & factory);
 
@@ -169,6 +172,7 @@ void registerStorages()
     registerStorageMongoDB(factory);
 #endif
 
+    registerStorageYtsaurus(factory);
     registerStorageRedis(factory);
 
 #if USE_RDKAFKA
