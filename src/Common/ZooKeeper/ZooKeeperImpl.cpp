@@ -497,7 +497,7 @@ void ZooKeeper::connect(
         try
         {
             const Poco::Net::SocketAddress host_socket_addr{node.host};
-            LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority);
+            LOG_TRACE(log, "Adding ZooKeeper host {} ({}), az: {}, priority: {}", node.host, host_socket_addr.toString(), node.az_info, node.priority.value);
             node.address = host_socket_addr;
             ++resolved_count;
         }
