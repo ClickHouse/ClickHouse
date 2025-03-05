@@ -1863,7 +1863,7 @@ SELECT * FROM test_table
 
 Возможные значения:
 
--   [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniq](/sql-reference/aggregate-functions/reference/uniq)
 -   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
 -   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
 -   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
@@ -2063,7 +2063,7 @@ SELECT * FROM test_table
 
 Могут быть преобразованы следующие функции:
 
--   [length](../../sql-reference/functions/array-functions.md#array_functions-length) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [length](/sql-reference/functions/array-functions#length) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
 -   [empty](../../sql-reference/functions/array-functions.md#function-empty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
 -   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size).
 -   [isNull](../../sql-reference/operators/index.md#operator-is-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
@@ -2865,7 +2865,7 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 
 ## cast_keep_nullable {#cast_keep_nullable}
 
-Включает или отключает сохранение типа `Nullable` для аргумента функции [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast).
+Включает или отключает сохранение типа `Nullable` для аргумента функции [CAST](/sql-reference/functions/type-conversion-functions#cast).
 
 Если настройка включена, то когда в функцию `CAST` передается аргумент с типом `Nullable`, функция возвращает результат, также преобразованный к типу `Nullable`.
 Если настройка отключена, то функция `CAST` всегда возвращает результат строго указанного типа.
@@ -2911,7 +2911,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 **См. также**
 
--   Функция [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast)
+-   Функция [CAST](/sql-reference/functions/type-conversion-functions#cast)
 
 ## persistent {#persistent}
 
@@ -3417,7 +3417,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 ## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
-Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
+Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](/sql-reference/aggregate-functions/reference/sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
 
 Возможные значения:
 

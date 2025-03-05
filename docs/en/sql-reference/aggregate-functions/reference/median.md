@@ -11,7 +11,7 @@ The `median*` functions are the aliases for the corresponding `quantile*` functi
 
 Functions:
 
-- `median` — Alias for [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
+- `median` — Alias for [quantile](/sql-reference/aggregate-functions/reference/quantile).
 - `medianDeterministic` — Alias for [quantileDeterministic](../../../sql-reference/aggregate-functions/reference/quantiledeterministic.md#quantiledeterministic).
 - `medianExact` — Alias for [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact).
 - `medianExactWeighted` — Alias for [quantileExactWeighted](../../../sql-reference/aggregate-functions/reference/quantileexactweighted.md#quantileexactweighted).

@@ -73,7 +73,7 @@ sidebar_label: "Операторы"
 
 ## Операторы для работы с множествами {#operatory-dlia-raboty-s-mnozhestvami}
 
-Смотрите [операторы IN](../../sql-reference/operators/in.md#select-in-operators) и оператор [EXISTS](../../sql-reference/operators/exists.md).
+Смотрите [операторы IN](/sql-reference/operators/in) и оператор [EXISTS](../../sql-reference/operators/exists.md).
 
 `a IN ...` - функция `in(a, b)`
 
@@ -269,7 +269,7 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 6
 **Смотрите также**
 
 -   Тип данных [Interval](../../sql-reference/operators/index.md)
--   Функции преобразования типов [toInterval](../../sql-reference/operators/index.md#function-tointerval)
+-   Функции преобразования типов [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear)
 
 ## Оператор логического "И" {#logical-and-operator}
 

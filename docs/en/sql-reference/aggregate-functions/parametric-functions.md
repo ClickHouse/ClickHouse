@@ -20,7 +20,7 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
 
 **Arguments**
 
-`values` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in input values.
+`values` — [Expression](/sql-reference/syntax#expressions) resulting in input values.
 
 **Parameters**
 
@@ -568,7 +568,7 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 ## sumMapFiltered {#summapfiltered}
 
-This function behaves the same as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys.
+This function behaves the same as [sumMap](/sql-reference/aggregate-functions/reference/summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys.
 
 **Syntax**
 
@@ -618,7 +618,7 @@ Result:
 
 ## sumMapFilteredWithOverflow {#summapfilteredwithoverflow}
 
-This function behaves the same as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys. It differs from the [sumMapFiltered](#summapfiltered) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
+This function behaves the same as [sumMap](/sql-reference/aggregate-functions/reference/summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys. It differs from the [sumMapFiltered](#summapfiltered) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
 **Syntax**
 

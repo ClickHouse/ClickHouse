@@ -501,7 +501,7 @@ ilike(haystack, pattern)
 
 **Аргументы**
 
--   `haystack` — входная строка. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `haystack` — входная строка. [String](/sql-reference/syntax#string).
 -   `pattern` — если `pattern` не содержит процента или нижнего подчеркивания, тогда `pattern` представляет саму строку. Нижнее подчеркивание (`_`) в `pattern` обозначает любой отдельный символ. Знак процента (`%`) соответствует последовательности из любого количества символов: от нуля и более.
 
 Некоторые примеры `pattern`:
@@ -577,7 +577,7 @@ countMatches(haystack, pattern)
 
 **Аргументы**
 
--   `haystack` — строка, по которой выполняется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `haystack` — строка, по которой выполняется поиск. [String](/sql-reference/syntax#string).
 -   `pattern` — регулярное выражение, построенное по синтаксическим правилам [re2](https://github.com/google/re2/wiki/Syntax). [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
@@ -630,8 +630,8 @@ countSubstrings(haystack, needle[, start_pos])
 
 **Аргументы**
 
--   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `haystack` — строка, в которой ведется поиск. [String](/sql-reference/syntax#string).
+-   `needle` — искомая подстрока. [String](/sql-reference/syntax#string).
 -   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
@@ -696,8 +696,8 @@ countSubstringsCaseInsensitive(haystack, needle[, start_pos])
 
 **Аргументы**
 
--   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `haystack` — строка, в которой ведется поиск. [String](/sql-reference/syntax#string).
+-   `needle` — искомая подстрока. [String](/sql-reference/syntax#string).
 -   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
@@ -762,8 +762,8 @@ SELECT countSubstringsCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 **Аргументы**
 
--   `haystack` — строка, в которой ведется поиск. [String](../../sql-reference/syntax.md#syntax-string-literal).
--   `needle` — искомая подстрока. [String](../../sql-reference/syntax.md#syntax-string-literal).
+-   `haystack` — строка, в которой ведется поиск. [String](/sql-reference/syntax#string).
+-   `needle` — искомая подстрока. [String](/sql-reference/syntax#string).
 -   `start_pos` — позиция первого символа в строке, с которого начнется поиск. Необязательный параметр. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**

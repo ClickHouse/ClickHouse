@@ -275,7 +275,7 @@ Consider disabling `optimize_read_in_order` manually, when running queries that 
 
 Optimization is supported in the following table engines:
 
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) (including [materialized views](../../../sql-reference/statements/create/view.md#materialized-view)),
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) (including [materialized views](/sql-reference/statements/create/view#materialized-view)),
 - [Merge](../../../engines/table-engines/special/merge.md),
 - [Buffer](../../../engines/table-engines/special/buffer.md)
 

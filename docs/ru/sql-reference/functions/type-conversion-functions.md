@@ -1018,7 +1018,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 
 Преобразует входное значение `x` в указанный тип данных `T`.
 
-В отличие от функции [cast(x, T)](#type_conversion_function-cast), `accurateCast` не допускает переполнения при преобразовании числовых типов. Например, `accurateCast(-1, 'UInt8')` вызовет исключение.
+В отличие от функции [cast(x, T)](/sql-reference/functions/type-conversion-functions#cast), `accurateCast` не допускает переполнения при преобразовании числовых типов. Например, `accurateCast(-1, 'UInt8')` вызовет исключение.
 
 **Примеры**
 
@@ -1438,7 +1438,7 @@ FORMAT PrettyCompactMonoBlock;
 
 Преобразует входные данные в версию [LowCardinality](../data-types/lowcardinality.md) того же типа данных.
 
-Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
+Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](/sql-reference/functions/type-conversion-functions#cast). Например, `CAST(x as String)`.
 
 **Синтаксис**
 

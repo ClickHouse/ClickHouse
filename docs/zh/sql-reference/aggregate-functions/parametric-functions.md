@@ -496,4 +496,4 @@ FROM
 
 ## sumMapFiltered(keys_to_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
 
-和 [sumMap](./reference/summap.md#agg_functions-summap) 基本一致， 除了一个键数组作为参数传递。这在使用高基数key时尤其有用。
+和 [sumMap](/sql-reference/aggregate-functions/reference/summap) 基本一致， 除了一个键数组作为参数传递。这在使用高基数key时尤其有用。

@@ -19,18 +19,18 @@ ClickHouse supports the following syntaxes for `count`:
 The function can take:
 
 - Zero parameters.
-- One [expression](../../../sql-reference/syntax.md#syntax-expressions).
+- One [expression](..//sql-reference/syntax#expressions).
 
 **Returned value**
 
 - If the function is called without parameters it counts the number of rows.
-- If the [expression](../../../sql-reference/syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../../sql-reference/data-types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
+- If the [expression](..//sql-reference/syntax#expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../../sql-reference/data-types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
 
 In both cases the type of the returned value is [UInt64](../../../sql-reference/data-types/int-uint.md).
 
 **Details**
 
-ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../../operations/settings/settings.md#count_distinct_implementation) setting. It defines which of the [uniq\*](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) functions is used to perform the operation. The default is the [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact) function.
+ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count_distinct_implementation](../../../operations/settings/settings.md#count_distinct_implementation) setting. It defines which of the [uniq\*](/sql-reference/aggregate-functions/reference/uniq) functions is used to perform the operation. The default is the [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact) function.
 
 The `SELECT count() FROM table` query is optimized by default using metadata from MergeTree. If you need to use row-level security, disable optimization using the [optimize_trivial_count_query](../../../operations/settings/settings.md#optimize-trivial-count-query) setting.
 
