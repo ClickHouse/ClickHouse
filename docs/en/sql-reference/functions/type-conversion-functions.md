@@ -5512,7 +5512,7 @@ reinterpretAsUInt8(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt8. [UInt8](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
+- Reinterpreted value `x` as UInt8. [UInt8](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5550,7 +5550,7 @@ reinterpretAsUInt16(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt16. [UInt16](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
+- Reinterpreted value `x` as UInt16. [UInt16](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5588,7 +5588,7 @@ reinterpretAsUInt32(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt32. [UInt32](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
+- Reinterpreted value `x` as UInt32. [UInt32](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5626,7 +5626,7 @@ reinterpretAsUInt64(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt64. [UInt64](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
+- Reinterpreted value `x` as UInt64. [UInt64](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5664,7 +5664,7 @@ reinterpretAsUInt128(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt128. [UInt128](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
+- Reinterpreted value `x` as UInt128. [UInt128](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5702,7 +5702,7 @@ reinterpretAsUInt256(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as UInt256. [UInt256](../data-types/int-uint.md/#uint8-uint16-uint32-uint64-uint128-uint256-int8-int16-int32-int64-int128-int256).
+- Reinterpreted value `x` as UInt256. [UInt256](/sql-reference/data-types/int-uint).
 
 **Example**
 
@@ -5740,7 +5740,7 @@ reinterpretAsInt8(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int8. [Int8](../data-types/int-uint.md/#int-ranges).
+- Reinterpreted value `x` as Int8. [Int8](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -5778,7 +5778,7 @@ reinterpretAsInt16(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int16. [Int16](../data-types/int-uint.md/#int-ranges).
+- Reinterpreted value `x` as Int16. [Int16](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -5816,7 +5816,7 @@ reinterpretAsInt32(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int32. [Int32](../data-types/int-uint.md/#int-ranges).
+- Reinterpreted value `x` as Int32. [Int32](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -5854,7 +5854,7 @@ reinterpretAsInt64(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int64. [Int64](../data-types/int-uint.md/#int-ranges).
+- Reinterpreted value `x` as Int64. [Int64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -5892,7 +5892,7 @@ reinterpretAsInt128(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int128. [Int128](../data-types/int-uint.md/#int-ranges).
+- Reinterpreted value `x` as Int128. [Int128](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -5930,7 +5930,7 @@ reinterpretAsInt256(x)
 
 **Returned value**
 
-- Reinterpreted value `x` as Int256. [Int256](../data-types/int-uint.md/#int-ranges).
+- Reinterpreted value `x` as Int256. [Int256](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -6188,11 +6188,11 @@ reinterpretAsUUID(fixed_string)
 
 **Arguments**
 
-- `fixed_string` — Big-endian byte string. [FixedString](../data-types/fixedstring.md/#fixedstring).
+- `fixed_string` — Big-endian byte string. [FixedString](/sql-reference/data-types/fixedstring).
 
 **Returned value**
 
-- The UUID type value. [UUID](../data-types/uuid.md/#uuid-data-type).
+- The UUID type value. [UUID](/sql-reference/data-types/uuid).
 
 **Examples**
 
@@ -6927,7 +6927,7 @@ Result:
 
 Converts a [String](../data-types/string.md) to [DateTime](../data-types/datetime.md) according to a [MySQL format string](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format).
 
-This function is the opposite operation of function [formatDateTime](../functions/date-time-functions.md#date_time_functions-formatDateTime).
+This function is the opposite operation of function [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime).
 
 **Syntax**
 
@@ -6947,7 +6947,7 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 **Supported format specifiers**
 
-All format specifiers listed in [formatDateTime](../functions/date-time-functions.md#date_time_functions-formatDateTime) except:
+All format specifiers listed in [formatDateTime](/sql-reference/functions/date-time-functions#formatdatetime) except:
 - %Q: Quarter (1-4)
 
 **Example**
@@ -6976,7 +6976,7 @@ Alias: `str_to_date`.
 
 Similar to [parseDateTime](#parsedatetime), except that the format string is in [Joda](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) instead of MySQL syntax.
 
-This function is the opposite operation of function [formatDateTimeInJodaSyntax](../functions/date-time-functions.md#date_time_functions-formatDateTimeInJodaSyntax).
+This function is the opposite operation of function [formatDateTimeInJodaSyntax](/sql-reference/functions/date-time-functions#formatdatetimeinjodasyntax).
 
 **Syntax**
 
@@ -6996,7 +6996,7 @@ Return a [DateTime](../data-types/datetime.md) value parsed from the input strin
 
 **Supported format specifiers**
 
-All format specifiers listed in [formatDateTimeInJoda](../functions/date-time-functions.md#date_time_functions-formatDateTime) are supported, except:
+All format specifiers listed in [formatDateTimeInJoda](/sql-reference/functions/date-time-functions#formatdatetime) are supported, except:
 - S: fraction of second
 - z: time zone
 - Z: time zone offset/id
@@ -7080,7 +7080,7 @@ Same as for [parseDateTime64InJodaSyntax](#parsedatetime64injodasyntax) except t
 ## parseDateTimeBestEffort {#parsedatetimebesteffort}
 ## parseDateTime32BestEffort {#parsedatetime32besteffort}
 
-Converts a date and time in the [String](../data-types/string.md) representation to [DateTime](../data-types/datetime.md/#data_type-datetime) data type.
+Converts a date and time in the [String](../data-types/string.md) representation to [DateTime](/sql-reference/data-types/datetime) data type.
 
 The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14 RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
 
@@ -7241,7 +7241,7 @@ Same as [parseDateTimeBestEffortUS](#parsedatetimebesteffortus) function except 
 
 ## parseDateTime64BestEffort {#parsedatetime64besteffort}
 
-Same as [parseDateTimeBestEffort](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and returns [DateTime](../functions/type-conversion-functions.md/#data_type-datetime) data type.
+Same as [parseDateTimeBestEffort](#parsedatetimebesteffort) function but also parse milliseconds and microseconds and returns [DateTime](/sql-reference/data-types/datetime) data type.
 
 **Syntax**
 

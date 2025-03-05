@@ -34,8 +34,8 @@ position(needle IN haystack)
 
 **Аргументы**
 
--   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
--   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `haystack` — строка, по которой выполняется поиск. [Строка](/sql-reference/data-types/string).
+-   `needle` — подстрока, которую необходимо найти. [Строка](/sql-reference/data-types/string).
 -   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
@@ -123,8 +123,8 @@ positionCaseInsensitive(haystack, needle[, start_pos])
 
 **Аргументы**
 
--   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
--   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `haystack` — строка, по которой выполняется поиск. [Строка](/sql-reference/data-types/string).
+-   `needle` — подстрока, которую необходимо найти. [Строка](/sql-reference/data-types/string).
 -   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
@@ -166,8 +166,8 @@ positionUTF8(haystack, needle[, start_pos])
 
 **Аргументы**
 
--   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
--   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `haystack` — строка, по которой выполняется поиск. [Строка](/sql-reference/data-types/string).
+-   `needle` — подстрока, которую необходимо найти. [Строка](/sql-reference/data-types/string).
 -   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
@@ -239,8 +239,8 @@ positionCaseInsensitiveUTF8(haystack, needle[, start_pos])
 
 **Аргументы**
 
--   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
--   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `haystack` — строка, по которой выполняется поиск. [Строка](/sql-reference/data-types/string).
+-   `needle` — подстрока, которую необходимо найти. [Строка](/sql-reference/data-types/string).
 -   `start_pos` — опциональный параметр, позиция символа в строке, с которого начинается поиск. [UInt](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
@@ -284,8 +284,8 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Parameters**
 
--   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
--   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](/sql-reference/data-types/string).
+-   `needle` — substring to be searched. [String](/sql-reference/data-types/string).
 
 **Returned values**
 
@@ -815,8 +815,8 @@ hasSubsequence(haystack, needle)
 
 **Аргументы**
 
--   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
--   `needle` — подпоследовательность, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `haystack` — строка, по которой выполняется поиск. [Строка](/sql-reference/data-types/string).
+-   `needle` — подпоследовательность, которую необходимо найти. [Строка](/sql-reference/data-types/string).
 
 **Возвращаемые значения**
 

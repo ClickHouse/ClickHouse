@@ -23,7 +23,7 @@ ClickHouse和[C++](https://en.cppreference.com/w/cpp/language/implicit_conversio
 
 **参数**
 
--   `expr` — [表达式](../syntax.md#syntax-expressions)返回一个数字或者代表数值类型的字符串。不支持二进制、八进制、十六进制的数字形式，有效数字之前的0也会被忽略。
+-   `expr` — [表达式](/sql-reference/syntax#expressions)返回一个数字或者代表数值类型的字符串。不支持二进制、八进制、十六进制的数字形式，有效数字之前的0也会被忽略。
 
 **返回值**
 
@@ -87,7 +87,7 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 
 **参数**
 
--   `expr` — [表达式](../syntax.md#syntax-expressions)返回一个数字或者代表数值类型的字符串。不支持二进制、八进制、十六进制的数字形式，有效数字之前的0也会被忽略。
+-   `expr` — [表达式](/sql-reference/syntax#expressions)返回一个数字或者代表数值类型的字符串。不支持二进制、八进制、十六进制的数字形式，有效数字之前的0也会被忽略。
 
 **返回值**
 
@@ -151,7 +151,7 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 **参数**
 
--   `expr` — [表达式](../syntax.md#syntax-expressions)返回一个[String](../../sql-reference/data-types/string.md)类型的数据。 ClickHouse倾向于文本类型的表示带小数类型的数值，比如`'1.111'`。
+-   `expr` — [表达式](/sql-reference/syntax#expressions)返回一个[String](../../sql-reference/data-types/string.md)类型的数据。 ClickHouse倾向于文本类型的表示带小数类型的数值，比如`'1.111'`。
 -   `S` — 小数位的精度。
 
 **返回值**
@@ -195,7 +195,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 
 **参数**
 
--   `expr` — [表达式](../syntax.md#syntax-expressions)返回一个[String](../../sql-reference/data-types/string.md)类型的数据。 ClickHouse倾向于文本类型的表示带小数类型的数值，比如`'1.111'`。
+-   `expr` — [表达式](/sql-reference/syntax#expressions)返回一个[String](../../sql-reference/data-types/string.md)类型的数据。 ClickHouse倾向于文本类型的表示带小数类型的数值，比如`'1.111'`。
 -   `S` — 小数位的精度。
 
 **返回值**
@@ -525,7 +525,7 @@ toLowCardinality(expr)
 
 **参数**
 
-- `expr` — [表达式](../syntax.md#syntax-expressions)为[支持的数据类型](../data-types/index.md#data_types)的一种。
+- `expr` — [表达式](/sql-reference/syntax#expressions)为[支持的数据类型](/sql-reference/data-types)的一种。
 
 
 **返回值**

@@ -117,7 +117,7 @@ SELECT
 此函数的行为取决于 ClickHouse 版本：
 - 在 v24.3 以下的版本中，`locate` 是函数`position`的别名，参数为 `(haystack, needle[, start_pos])`。
 - 在 v24.3 及以上的版本中,, `locate` 是独立的函数 (以更好地兼容 MySQL) ,参数为 `(needle, haystack[, start_pos])`。 之前的行为
-  可以在设置中恢复 [function_locate_has_mysql_compatible_argument_order = false](../../operations/settings/settings.md#function-locate-has-mysql-compatible-argument-order);
+  可以在设置中恢复 [function_locate_has_mysql_compatible_argument_order = false](/operations/settings/settings#function_locate_has_mysql_compatible_argument_order);
 
 **语法**
 

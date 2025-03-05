@@ -343,7 +343,7 @@ ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL
     -   `0` в обратном случае.
 -   Для прочих значений оператор `IS NULL` всегда возвращает `0`.
 
-Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [null](../../sql-reference/data-types/nullable.md#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NULL FROM table` преобразуется к запросу `SELECT n.null FROM TABLE`.
+Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [null](../../sql-reference/data-types/nullable.md#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NULL FROM table` преобразуется к запросу `SELECT n.null FROM TABLE`.
 
 <!-- -->
 
@@ -364,7 +364,7 @@ SELECT x+100 FROM t_null WHERE y IS NULL
     -   `1`, в обратном случае.
 -   Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
 
-Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [null](../../sql-reference/data-types/nullable.md#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NOT NULL FROM table` преобразуется к запросу `SELECT NOT n.null FROM TABLE`.
+Оператор можно оптимизировать, если включить настройку [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns). При `optimize_functions_to_subcolumns = 1` читается только подстолбец [null](../../sql-reference/data-types/nullable.md#finding-null) вместо чтения и обработки данных всего столбца. Запрос `SELECT n IS NOT NULL FROM table` преобразуется к запросу `SELECT NOT n.null FROM TABLE`.
 
 <!-- -->
 
