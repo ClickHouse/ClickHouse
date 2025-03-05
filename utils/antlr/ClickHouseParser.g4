@@ -286,7 +286,12 @@ arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 windowClause: WINDOW identifier AS LPAREN windowExpr RPAREN;
 prewhereClause: PREWHERE columnExpr;
 whereClause: WHERE columnExpr;
-groupByClause: GROUP BY ((CUBE | ROLLUP) LPAREN columnExprList RPAREN | columnExprList);
+groupByClause
+  : GROUP BY ALL                                           # GroupByClauseAll
+  | GROUP BY (CUBE | ROLLUP) LPAREN columnExprList RPAREN  # GroupByClauseCubeOrRollup
+  | GROUP BY GROUPING SETS LPAREN columnExprList RPAREN    # GroupByClauseGroupingSets
+  | GROUP BY columnExprList                                # GroupByClauseSimple
+  ;
 havingClause: HAVING columnExpr;
 orderByClause: ORDER BY orderExprList;
 projectionOrderByClause: ORDER BY columnExprList;
