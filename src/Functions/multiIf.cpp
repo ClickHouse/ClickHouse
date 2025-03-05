@@ -167,7 +167,7 @@ public:
         return this->executeImplWithProfile(args, result_type, input_rows_count, nullptr);
     }
 
-    ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecuteProfile * profile) const override
+    ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecutionProfile * profile) const override
     {
         /// Fast path when data is empty
         if (input_rows_count == 0)
@@ -254,12 +254,12 @@ public:
                 break;
         }
 
-        auto take_profile = [](Stopwatch & watch_, size_t rows_, FunctionExecuteProfile * profile_)
+        auto take_profile = [](Stopwatch & watch_, size_t rows_, FunctionExecutionProfile * profile_)
         {
             if (profile_)
             {
                 profile_->executed_rows = rows_;
-                profile_->executed_elapsed = watch_.elapsed();
+                profile_->execution_elapsed = watch_.elapsed();
             }
         };
 
@@ -489,7 +489,7 @@ private:
     }
 
     template <bool with_profile>
-    static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments, FunctionExecuteProfile * profile)
+    static void executeShortCircuitArguments(ColumnsWithTypeAndName & arguments, FunctionExecutionProfile * profile)
     {
         int last_short_circuit_argument_index = checkShortCircuitArguments(arguments);
         if (last_short_circuit_argument_index < 0)
@@ -497,7 +497,7 @@ private:
 
         if (with_profile && checkAndGetShortCircuitArgument(arguments[0].column))
         {
-            profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecuteProfile()));
+            profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecutionProfile()));
             executeColumnIfNeeded(arguments[0], false, &(profile->argument_profiles.back().second));
         }
         else
@@ -537,7 +537,7 @@ private:
                 condition_mask_info = extractMask(condition_mask, cond_column);
                 if constexpr (with_profile)
                 {
-                    profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                    profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecutionProfile()));
                     auto & arg_profile = profile->argument_profiles.back().second;
                     maskedExecute(arguments[i], condition_mask, condition_mask_info, &arg_profile);
                 }
@@ -563,7 +563,7 @@ private:
 
             if constexpr (with_profile)
             {
-                profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecutionProfile()));
                 auto & arg_profile = profile->argument_profiles.back().second;
                 maskedExecute(arguments[i], mask, mask_info, &arg_profile);
 
@@ -579,7 +579,7 @@ private:
         {
             if (with_profile && checkAndGetShortCircuitArgument(arguments[i].column))
             {
-                profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecutionProfile()));
                 executeColumnIfNeeded(arguments[i], true, &(profile->argument_profiles.back().second));
             }
             else
@@ -591,9 +591,9 @@ private:
             size_t side_elapsed = 0;
             for (const auto & [_, arg_profile] : profile->argument_profiles)
             {
-                side_elapsed += arg_profile.short_circuit_side_elapsed;
+                side_elapsed += arg_profile.lazy_executed_additional_elapsed;
             }
-            profile->short_circuit_side_elapsed = side_elapsed;
+            profile->lazy_executed_additional_elapsed = side_elapsed;
         }
 
     }

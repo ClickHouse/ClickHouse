@@ -254,7 +254,7 @@ void inverseMask(PaddedPODArray<UInt8> & mask, MaskInfo & mask_info)
     std::swap(mask_info.has_ones, mask_info.has_zeros);
 }
 
-void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info, FunctionExecuteProfile * profile)
+void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> & mask, const MaskInfo & mask_info, FunctionExecutionProfile * profile)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
     if (!column_function)
@@ -284,8 +284,8 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
             auto mut_column = IColumn::mutate(std::move(filter_after_execution.column));
             mut_column->expand(mask, false);
             auto total_elapsed = watch.elapsed();
-            profile->short_circuit_side_elapsed = total_elapsed - profile->executed_elapsed + profile->short_circuit_side_elapsed;
-            profile->executed_elapsed = total_elapsed;
+            profile->lazy_executed_additional_elapsed = total_elapsed - profile->execution_elapsed + profile->lazy_executed_additional_elapsed;
+            profile->execution_elapsed = total_elapsed;
             column.column = std::move(mut_column);
         }
         else
@@ -303,7 +303,7 @@ void maskedExecute(ColumnWithTypeAndName & column, const PaddedPODArray<UInt8> &
     chassert(column.column->size() == original_size);
 }
 
-void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty, FunctionExecuteProfile * profile)
+void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty, FunctionExecutionProfile * profile)
 {
     const auto * column_function = checkAndGetShortCircuitArgument(column.column);
     if (!column_function)
