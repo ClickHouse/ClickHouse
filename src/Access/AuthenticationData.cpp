@@ -221,7 +221,7 @@ void AuthenticationData::setPasswordBcrypt(const String & password_, int workfac
 
 String AuthenticationData::getPassword() const
 {
-    if (type != AuthenticationType::PLAINTEXT_PASSWORD && type != AuthenticationType::SCRAM_SHA256_PASSWORD)
+    if (type != AuthenticationType::PLAINTEXT_PASSWORD)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot decode the password");
     return String(password_hash.data(), password_hash.data() + password_hash.size());
 }
@@ -638,13 +638,6 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
         }
 
         auth_data.setPasswordHashHex(value, validate);
-
-
-        if (query.type == AuthenticationType::SHA256_PASSWORD && args_size == 2)
-        {
-            String parsed_salt = checkAndGetLiteralArgument<String>(args[1], "salt");
-            auth_data.setSalt(parsed_salt);
-        }
     }
     else if (query.type == AuthenticationType::LDAP)
     {

@@ -119,10 +119,10 @@ namespace
                     type = AuthenticationType::SHA256_PASSWORD;
                     expect_hash = true;
                 }
-                if (ParserKeyword{Keyword::SCRAM_SHA256_HASH}.ignore(pos, expected))
+                else if (ParserKeyword{Keyword::SCRAM_SHA256_HASH}.ignore(pos, expected))
                 {
                     type = AuthenticationType::SCRAM_SHA256_PASSWORD;
-                    expect_password = true;
+                    expect_hash = true;
                 }
                 else if (ParserKeyword{Keyword::DOUBLE_SHA1_HASH}.ignore(pos, expected))
                 {
