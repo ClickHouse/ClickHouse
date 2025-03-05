@@ -104,11 +104,13 @@ public:
         return size;
     }
 
+    void updateConfiguration(ConfigurationPtr config) {configuration = config;}
+
 private:
     using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileIterator>;
 
     const ObjectStoragePtr object_storage;
-    const ConfigurationObserverPtr configuration;
+    ConfigurationObserverPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 

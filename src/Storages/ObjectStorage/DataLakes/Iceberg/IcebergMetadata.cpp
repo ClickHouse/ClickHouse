@@ -48,7 +48,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 
 namespace Setting
 {
-extern const SettingsInt64 use_datalake_metadata_cache;
+extern const SettingsBool use_datalake_metadata_cache;
 }
 
 using namespace Iceberg;
@@ -314,7 +314,7 @@ DataLakeMetadataPtr IcebergMetadata::create(
     const ContextPtr & local_context,
     bool)
 {
-    auto configuration_ptr = configuration.lock();
+    ConfigurationPtr configuration_ptr = configuration.lock();
 
     auto create_metadata = [&object_storage, &configuration_ptr, &local_context]()
     {
@@ -340,7 +340,9 @@ DataLakeMetadataPtr IcebergMetadata::create(
     DataLakeMetadataCachePtr metadata_cache = local_context->getDataLakeMetadataCache();
     if (local_context->getSettingsRef()[Setting::use_datalake_metadata_cache])
     {
-        return metadata_cache->getOrSet(configuration_ptr->getFullPath(), create_metadata);
+        LOG_DEBUG(getLogger("IcebergMetadata"), "Got cache by key {}", DataLakeMetadataCache::getKey(configuration_ptr));
+        auto metadata = metadata_cache->getOrSet(DataLakeMetadataCache::getKey(configuration_ptr), create_metadata);
+        std::static_pointer_cast<IcebergMetadata>(metadata)->updateConfiguration(configuration_ptr);
     }
     return create_metadata();
 }

@@ -48,7 +48,7 @@ public:
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
     }
 
-    size_t getSize() const override { return sizeof(*this) + sizeof(DeltaLake::TableSnapshot); }
+    size_t getMemoryBytes() const override { return sizeof(*this) + sizeof(DeltaLake::TableSnapshot); }
 
     bool supportsFileIterator() const override { return true; }
 

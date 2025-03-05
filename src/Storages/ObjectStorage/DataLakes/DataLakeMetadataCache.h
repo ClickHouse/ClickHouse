@@ -51,6 +51,11 @@ public:
         : Base(cache_policy, max_size_in_bytes, max_count, size_ratio)
     {}
 
+    static String getKey(StorageObjectStorage::ConfigurationPtr config)
+    {
+        return std::filesystem::path(config->getDataSourceDescription()) / config->getPath();
+    }
+
     template <typename LoadFunc>
     DataLakeMetadataPtr getOrSet(const Key & key, LoadFunc && load)
     {

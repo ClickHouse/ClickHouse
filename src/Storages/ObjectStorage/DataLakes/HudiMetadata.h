@@ -14,6 +14,7 @@ class HudiMetadata final : public IDataLakeMetadata, private WithContext
 {
 public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
+    using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     static constexpr auto name = "Hudi";
 
@@ -45,9 +46,11 @@ public:
         ContextPtr local_context,
         bool);
 
+    void updateConfiguration(ConfigurationPtr config) { configuration = config; }
+
 private:
     const ObjectStoragePtr object_storage;
-    const ConfigurationObserverPtr configuration;
+    ConfigurationObserverPtr configuration;
     mutable Strings data_files;
 
     Strings getDataFilesImpl() const;

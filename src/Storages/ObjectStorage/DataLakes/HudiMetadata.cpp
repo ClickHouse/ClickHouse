@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-extern const SettingsInt64 use_datalake_metadata_cache;
+extern const SettingsBool use_datalake_metadata_cache;
 }
 
 /**
@@ -116,8 +116,10 @@ DataLakeMetadataPtr HudiMetadata::create(
     if (local_context->getSettingsRef()[Setting::use_datalake_metadata_cache])
     {
         auto configuration_ptr = configuration.lock();
-        LOG_DEBUG(getLogger("hudi"), "getting metadata_cache {} {}", metadata_cache != nullptr, configuration_ptr->getFullPath());
-        return metadata_cache->getOrSet(configuration_ptr->getFullPath(), create_metadata);
+        LOG_DEBUG(getLogger("hudi"), "getting metadata_cache {}", DataLakeMetadataCache::getKey(configuration_ptr));
+        auto metadata = metadata_cache->getOrSet(DataLakeMetadataCache::getKey(configuration_ptr), create_metadata);
+        std::static_pointer_cast<HudiMetadata>(metadata)->updateConfiguration(configuration_ptr);
+        return metadata;
     }
     return create_metadata();
 }

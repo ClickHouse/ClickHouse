@@ -59,7 +59,7 @@ namespace ErrorCodes
 
 namespace Setting
 {
-extern const SettingsInt64 use_datalake_metadata_cache;
+extern const SettingsBool use_datalake_metadata_cache;
 }
 
 struct DeltaLakeMetadataImpl
