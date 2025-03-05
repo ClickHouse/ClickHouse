@@ -86,3 +86,12 @@ Header: a UInt64
       ReadFromSystemNumbers
       Header: number UInt64
 1
+Expression ((Project names + Projection))
+  CreatingSets (Create sets before main query execution)
+    Filter (WHERE)
+      Filter (Join filter)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (system.query_log)
+    CreatingSet (Create set for subquery)
+      Expression (Change column names to column identifiers)
+        ReadFromSystemOneBlock

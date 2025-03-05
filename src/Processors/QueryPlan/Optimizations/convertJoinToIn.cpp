@@ -86,30 +86,32 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (join_info.expression.condition.predicates.empty())
         return 0;
 
-    Header left_predicate_header;
-    Header right_predicate_header;
-    /// column in predicate is null, so get column here
-    for (const auto & predicate : join_info.expression.condition.predicates)
-    {
-        const Header & left_header = parent_node->children.front()->step->getOutputHeader();
-        const auto * left_column = left_header.findByName(predicate.left_node.getColumn().name);
-        if (!left_column)
-            return 0;
-        left_predicate_header.insert(*left_column);
+    // Header left_predicate_header;
+    // Header right_predicate_header;
+    // /// column in predicate is null, so get column here
+    // for (const auto & predicate : join_info.expression.condition.predicates)
+    // {
+    //     const Header & left_header = parent_node->children.front()->step->getOutputHeader();
+    //     const auto * left_column = left_header.findByName(predicate.left_node.getColumn().name);
+    //     if (!left_column)
+    //         return 0;
+    //     left_predicate_header.insert(*left_column);
 
-        const Header & right_header = parent_node->children.back()->step->getOutputHeader();
-        const auto * right_column = right_header.findByName(predicate.right_node.getColumn().name);
-        if (!right_column)
-            return 0;
-        right_predicate_header.insert(*right_column);
-    }
+    //     const Header & right_header = parent_node->children.back()->step->getOutputHeader();
+    //     const auto * right_column = right_header.findByName(predicate.right_node.getColumn().name);
+    //     if (!right_column)
+    //         return 0;
+    //     right_predicate_header.insert(*right_column);
+    // }
 
     /// Steps like ReadFromSystemColumns would build set in place, different from here, so return.
     /// TODO: might have stricter filter
     if (!findReadingStep(*parent_node->children.front()))
         return 0;
 
-    std::optional<ActionsDAG> dag = ActionsDAG(left_predicate_header.getColumnsWithTypeAndName());
+    const Header & left_header = parent_node->children.front()->step->getOutputHeader();
+    const Header & right_header = parent_node->children.back()->step->getOutputHeader();
+    std::optional<ActionsDAG> dag = ActionsDAG(/*left_predicate_header*/left_header.getColumnsWithTypeAndName());
 
     /// left parameter of IN function
     std::vector<const ActionsDAG::Node *> left_columns = dag->getOutputs();
@@ -124,7 +126,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     const auto & settings = context->getSettingsRef();
     auto future_set = std::make_shared<FutureSetFromSubquery>(
         CityHash_v1_0_2::uint128(),
-        right_predicate_header.getColumnsWithTypeAndName(),
+        /*right_predicate_header*/right_header.getColumnsWithTypeAndName(),
         settings[Setting::transform_null_in],
         PreparedSets::getSizeLimitsForSet(settings),
         settings[Setting::use_index_for_in_with_subqueries_max_values]);
@@ -140,7 +142,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     dag->getOutputs().push_back(&in_node);
 
     /// Attach IN to FilterStep
-    auto filter_step = std::make_unique<FilterStep>(left_input_header,
+    auto filter_step = std::make_unique<FilterStep>(/*left_input_header*/left_header,
         std::move(*dag),
         in_node.result_name,
         false);
@@ -152,7 +154,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     creating_sets_step->setStepDescription("Create sets before main query execution");
 
     /// creating_set_step as right subtree
-    auto creating_set_step = future_set->build(right_predicate_header, context);
+    auto creating_set_step = future_set->build(/*right_predicate_header*/right_header, context);
 
     QueryPlan::Node * left_tree = parent_node->children[0];
     QueryPlan::Node * right_tree = parent_node->children[1];
