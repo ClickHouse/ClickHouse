@@ -7,7 +7,7 @@ description: 'creates a temporary storage which fills columns with values.'
 keywords: ['values', 'table function']
 ---
 
-# Values Table Function
+# Values Table Function {#values-table-function}
 
 The `Values` table function allows you to create temporary storage which fills 
 columns with values. It is useful for quick testing or generating sample data.
@@ -16,7 +16,7 @@ columns with values. It is useful for quick testing or generating sample data.
 Values is a case-insensitive function. I.e. `VALUES` or `values` are both valid.
 :::
 
-## Syntax
+## Syntax {#syntax}
 
 The basic syntax of the `VALUES` table function is:
 
@@ -35,7 +35,8 @@ VALUES(
 )
 ```
 
-## Arguments
+## Arguments {#arguments}
+
 - `column1_name Type1, ...` (optional). [String](/sql-reference/data-types/string) 
   specifying the column names and types. If this argument is omitted columns will
   be named as `c1`, `c2`, etc.
@@ -48,11 +49,11 @@ each value is taken to be a new row. See the [examples](#examples) section for
 details.
 :::
 
-## Returned value
+## Returned value {#returned-value}
 
 - Returns a temporary table containing the provided values.
 
-## Examples
+## Examples {#examples}
 
 ```sql title="Query"
 SELECT *
