@@ -431,6 +431,9 @@ columnExpr
     | SUBSTRING LPAREN columnExpr FROM columnExpr (FOR columnExpr)? RPAREN                # ColumnExprSubstring
     | TIMESTAMP stringLiteral                                                             # ColumnExprTimestamp
     | TRIM LPAREN (BOTH | LEADING | TRAILING) stringLiteral  FROM columnExpr RPAREN       # ColumnExprTrim
+    // TODO(ilezhankin): `BETWEEN a AND b AND c` is parsed in a wrong way: `BETWEEN (a AND b) AND c`
+    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                                   # ColumnExprBetween
+    | NOT columnExpr                                                                      # ColumnExprNot
     | identifier (LPAREN columnExprList? RPAREN) OVER LPAREN windowExpr RPAREN            # ColumnExprWinFunction
     | identifier (LPAREN columnExprList? RPAREN) OVER identifier                          # ColumnExprWinFunctionTarget
     | identifier (LPAREN columnExprList? RPAREN)? LPAREN DISTINCT? columnArgList? RPAREN  # ColumnExprFunction
@@ -459,11 +462,8 @@ columnExpr
                  | NOT? (LIKE | ILIKE)                                                    // like, notLike, ilike, notILike
                  ) columnExpr                                                             # ColumnExprPrecedence3
     | columnExpr IS NOT? NULL_SQL                                                         # ColumnExprIsNull
-    | NOT columnExpr                                                                      # ColumnExprNot
     | columnExpr AND columnExpr                                                           # ColumnExprAnd
     | columnExpr OR columnExpr                                                            # ColumnExprOr
-    // TODO(ilezhankin): `BETWEEN a AND b AND c` is parsed in a wrong way: `BETWEEN (a AND b) AND c`
-    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                                   # ColumnExprBetween
     | <assoc=right> columnExpr QUERY columnExpr COLON columnExpr                          # ColumnExprTernaryOp
     | columnExpr (alias | AS identifier)                                                  # ColumnExprAlias
 
@@ -501,9 +501,9 @@ tableFunctionExpr: identifier LPAREN tableArgList? RPAREN;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr
-    : nestedIdentifier
-    | tableFunctionExpr
+    : tableFunctionExpr
     | literal
+    | nestedIdentifier
     ;
 
 // Databases
