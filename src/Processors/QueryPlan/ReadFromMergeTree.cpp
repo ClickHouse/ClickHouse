@@ -1573,8 +1573,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         // there is no reason to handle `is_deleted` using slow inorder reading. Faster to do it with prewhere
         if (no_merging_final && !data.merging_params.is_deleted_column.empty())
         {
-            auto equal_function = FunctionFactory::instance().get("equals", context);
-
             if (!prewhere_info)
             {
                 prewhere_info = std::make_shared<PrewhereInfo>();
@@ -1587,18 +1585,20 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 origin_column_names.push_back(data.merging_params.is_deleted_column);
             }
 
-            const auto * constant_node = &prewhere_info->prewhere_actions.addColumn(
-                ColumnWithTypeAndName{
-                    ColumnUInt8::create(0),
-                    std::make_shared<DataTypeUInt8>(),
-                    ""
-                });
-
+            // Keep rows where is_deleted is False
             const auto & input = &prewhere_info->prewhere_actions.addInput(data.merging_params.is_deleted_column, std::make_shared<DataTypeUInt8>());
 
-            ActionsDAG::NodeRawConstPtrs children = {input, constant_node};
+            ActionsDAG::NodeRawConstPtrs children = {input};
 
-            prewhere_info->prewhere_actions.getOutputs().push_back(&prewhere_info->prewhere_actions.addFunction(equal_function, std::move(children), data.merging_params.is_deleted_column));
+            auto not_function = FunctionFactory::instance().get("not", context);
+
+            prewhere_info->prewhere_actions.getOutputs().push_back(
+                &prewhere_info->prewhere_actions.addFunction(
+                    not_function,
+                    std::move(children),
+                    data.merging_params.is_deleted_column
+                    )
+            );
         }
 
         if (no_merging_final)
