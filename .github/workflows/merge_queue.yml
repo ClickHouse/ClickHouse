@@ -202,85 +202,9 @@ jobs:
             python3 -m praktika run 'Fast test' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  build_amd_binary:
-    runs-on: [self-hosted, builder]
-    needs: [config_workflow]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'QnVpbGQgKGFtZF9iaW5hcnkp') }}
-    name: "Build (amd_binary)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_mergequeueci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Build (amd_binary)' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Build (amd_binary)' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
-  unit_tests_binary:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_binary]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'VW5pdCB0ZXN0cyAoYmluYXJ5KQ==') }}
-    name: "Unit tests (binary)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp ./ci/tmp ./ci/tmp
-          mkdir -p ./ci/tmp ./ci/tmp ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-          cat > ./ci/tmp/workflow_config_mergequeueci.json << 'EOF'
-          ${{ needs.config_workflow.outputs.data }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          set -o pipefail
-          if command -v ts &> /dev/null; then
-            python3 -m praktika run 'Unit tests (binary)' --workflow "MergeQueueCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
-          else
-            python3 -m praktika run 'Unit tests (binary)' --workflow "MergeQueueCI" --ci |& tee ./ci/tmp/job.log
-          fi
-
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
-    needs: [config_workflow, dockers_build_arm, dockers_build_amd, style_check, fast_test, build_amd_binary, unit_tests_binary]
+    needs: [config_workflow, dockers_build_arm, dockers_build_amd, style_check, fast_test]
     if: ${{ !cancelled() }}
     name: "Finish Workflow"
     outputs:
