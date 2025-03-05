@@ -4431,7 +4431,7 @@ class ClickHouseInstance:
                     "DSN": "postgresql_odbc",
                     "Database": odbc_psql_db,
                     "UserName": odbc_psql_user,
-                    "Password": odbc_psql_pass,
+                    "Password": pg_pass,
                     "Port": str(self.cluster.postgres_port),
                     "Servername": self.cluster.postgres_host,
                     "Protocol": "9.3",

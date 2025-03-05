@@ -6,8 +6,13 @@
             <replace>[hidden]</replace>
         </rule>
         <rule>
-            <name>Minio password</name>
+            <name>Minio</name>
             <regexp>(?i)ClickHouse_Minio_P@ssw0rd</regexp>
+            <fail_on_match>true</fail_on_match>
+        </rule>
+        <rule>
+            <name>PostgreSQL</name>
+            <regexp>(?i)ClickHouse_PostreSQL_P@ssw0rd</regexp>
             <fail_on_match>true</fail_on_match>
         </rule>
     </query_masking_rules>

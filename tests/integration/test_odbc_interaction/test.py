@@ -8,6 +8,7 @@ import pytest
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import pg_pass
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -103,7 +104,7 @@ def drop_mysql_table(conn, table_name):
 
 
 def get_postgres_conn(started_cluster):
-    conn_string = "host={} port={} user='postgres' password='mysecretpassword'".format(
+    conn_string = f"host={} port={} user='postgres' password='{pg_pass}'".format(
         started_cluster.postgres_ip, started_cluster.postgres_port
     )
     errors = []
