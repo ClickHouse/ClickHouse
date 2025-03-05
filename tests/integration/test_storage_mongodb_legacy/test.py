@@ -6,6 +6,7 @@ import pytest
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import mongo_pass
 
 
 @pytest.fixture(scope="module")
@@ -47,13 +48,13 @@ def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
 def test_uuid(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     mongo_table = db["uuid_table"]
     mongo_table.insert({"key": 0, "data": UUID("f0e77736-91d1-48ce-8f01-15123ca1c7ed")})
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE TABLE uuid_mongo_table(key UInt64, data UUID) ENGINE = MongoDB('mongo1:27017', 'test', 'uuid_table', 'root', 'clickhouse')"
+        f"CREATE TABLE uuid_mongo_table(key UInt64, data UUID) ENGINE = MongoDB('mongo1:27017', 'test', 'uuid_table', 'root', '{mongo_pass}')"
     )
 
     assert node.query("SELECT COUNT() FROM uuid_mongo_table") == "1\n"
@@ -69,7 +70,7 @@ def test_uuid(started_cluster):
 def test_simple_select(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -78,7 +79,7 @@ def test_simple_select(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')"
+        f"CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', '{mongo_pass}')"
     )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
@@ -99,7 +100,7 @@ def test_simple_select(started_cluster):
 def test_simple_select_from_view(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -111,7 +112,7 @@ def test_simple_select_from_view(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table_view', 'root', 'clickhouse')"
+        f"CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table_view', 'root', '{mongo_pass}')"
     )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
@@ -133,7 +134,7 @@ def test_simple_select_from_view(started_cluster):
 def test_arrays(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     arrays_mongo_table = db["arrays_table"]
     data = []
     for i in range(0, 100):
@@ -207,7 +208,7 @@ def test_arrays(started_cluster):
         "arr_null Array(UInt64),"
         "arr_arr_null Array(Array(UInt64)),"
         "arr_nullable Array(Nullable(UInt64))"
-        ") ENGINE = MongoDB('mongo1:27017', 'test', 'arrays_table', 'root', 'clickhouse')"
+        f") ENGINE = MongoDB('mongo1:27017', 'test', 'arrays_table', 'root', '{mongo_pass}')"
     )
 
     assert node.query("SELECT COUNT() FROM arrays_mongo_table") == "100\n"
@@ -292,7 +293,7 @@ def test_arrays(started_cluster):
 def test_complex_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     incomplete_mongo_table = db["complex_table"]
     data = []
     for i in range(0, 100):
@@ -301,7 +302,7 @@ def test_complex_data_type(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE TABLE incomplete_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'complex_table', 'root', 'clickhouse')"
+        f"CREATE TABLE incomplete_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'complex_table', 'root', '{mongo_pass}')"
     )
 
     assert node.query("SELECT COUNT() FROM incomplete_mongo_table") == "100\n"
@@ -322,7 +323,7 @@ def test_complex_data_type(started_cluster):
 def test_incorrect_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     strange_mongo_table = db["strange_table"]
     data = []
     for i in range(0, 100):
@@ -331,7 +332,7 @@ def test_incorrect_data_type(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE TABLE strange_mongo_table(key String, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')"
+        f"CREATE TABLE strange_mongo_table(key String, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', '{mongo_pass}')"
     )
 
     with pytest.raises(QueryRuntimeException):
@@ -341,7 +342,7 @@ def test_incorrect_data_type(started_cluster):
         node.query("SELECT uniq(key) FROM strange_mongo_table")
 
     node.query(
-        "CREATE TABLE strange_mongo_table2(key UInt64, data String, bbbb String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', 'clickhouse')"
+        f"CREATE TABLE strange_mongo_table2(key UInt64, data String, bbbb String) ENGINE = MongoDB('mongo1:27017', 'test', 'strange_table', 'root', '{mongo_pass}')"
     )
 
     node.query("DROP TABLE strange_mongo_table")
@@ -353,7 +354,7 @@ def test_incorrect_data_type(started_cluster):
 def test_secure_connection(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -362,7 +363,7 @@ def test_secure_connection(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo_secure:27017', 'test', 'simple_table', 'root', 'clickhouse', 'ssl=true')"
+        f"CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo_secure:27017', 'test', 'simple_table', 'root', '{mongo_pass}', 'ssl=true')"
     )
 
     assert node.query("SELECT COUNT() FROM simple_mongo_table") == "100\n"
@@ -424,7 +425,7 @@ def test_auth_source(started_cluster):
     admin_db = mongo_connection["admin"]
     admin_db.add_user(
         "root",
-        "clickhouse",
+        mongo_pass,
         roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
     )
     simple_mongo_table_admin = admin_db["simple_table"]
@@ -442,11 +443,11 @@ def test_auth_source(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "create table simple_mongo_table_fail(key UInt64, data String) engine = MongoDB('mongo_no_cred:27017', 'test', 'simple_table', 'root', 'clickhouse')"
+        f"create table simple_mongo_table_fail(key UInt64, data String) engine = MongoDB('mongo_no_cred:27017', 'test', 'simple_table', 'root', '{mongo_pass}')"
     )
     node.query_and_get_error("SELECT count() FROM simple_mongo_table_fail")
     node.query(
-        "create table simple_mongo_table_ok(key UInt64, data String) engine = MongoDB('mongo_no_cred:27017', 'test', 'simple_table', 'root', 'clickhouse', 'authSource=admin')"
+        f"create table simple_mongo_table_ok(key UInt64, data String) engine = MongoDB('mongo_no_cred:27017', 'test', 'simple_table', 'root', '{mongo_pass}', 'authSource=admin')"
     )
     assert node.query("SELECT count() FROM simple_mongo_table_ok") == "100\n"
     simple_mongo_table.drop()
@@ -459,7 +460,7 @@ def test_auth_source(started_cluster):
 def test_missing_columns(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 10):
@@ -483,13 +484,13 @@ def test_missing_columns(started_cluster):
 def test_simple_insert_select(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
 
     node = started_cluster.instances["node"]
     node.query("DROP TABLE IF EXISTS simple_mongo_table")
     node.query(
-        "CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', 'clickhouse')"
+        f"CREATE TABLE simple_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'simple_table', 'root', '{mongo_pass}')"
     )
     node.query(
         "INSERT INTO simple_mongo_table SELECT number, 'kek' || toString(number) FROM numbers(10)"

@@ -8,7 +8,7 @@ import pytest
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import pg_pass
+from helpers.config_cluster import pg_pass, mysql_pass
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -285,8 +285,8 @@ def test_mysql_simple_select_works(started_cluster):
     )
 
     node1.query(
-        """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse');
+        f"""
+CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', '{mysql_pass}');
 """.format(
             table_name, table_name
         )

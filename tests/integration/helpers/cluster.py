@@ -2183,8 +2183,8 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
-                    user=mysql8_user,
-                    password=mysql8_pass,
+                    user=mysql_user,
+                    password=mysql_pass,
                     host=self.mysql8_ip,
                     port=self.mysql8_port,
                 )
@@ -4424,7 +4424,7 @@ class ClickHouseInstance:
                     "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libmyodbc.so",
                     "Database": odbc_mysql_db,
                     "Uid": odbc_mysql_uid,
-                    "Pwd": odbc_mysql_pass,
+                    "Pwd": mysql_pass,
                     "Server": self.cluster.mysql8_host,
                 },
                 "PostgreSQL": {
