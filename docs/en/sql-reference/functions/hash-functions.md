@@ -1972,7 +1972,7 @@ This cryptographic hash-function is used a lot in [EVM-based blockchains](https:
 
 **Example**
 
-Use function [hex](../functions/encoding-functions.md/#hex) to represent the result as a hex-encoded string.
+Use function [hex](../functions/encoding-functions.md/#hex) to format the result as a hex-encoded string.
 
 Query:
 ```sql
