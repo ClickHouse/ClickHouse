@@ -2,6 +2,8 @@
 #include <Client/ClientBase.h>
 #include <Client/ReplxxLineReader.h>
 #include "Common/Exception.h"
+#include "Common/Logger.h"
+#include "Common/QuillLoggerHelper.h"
 #include "Common/filesystemHelpers.h"
 #include <Common/Config/ConfigProcessor.h>
 #include "DisksClient.h"
@@ -21,9 +23,13 @@
 #include <Common/TerminalSize.h>
 
 #include <Common/logger_useful.h>
-#include "Loggers/OwnFormattingChannel.h"
 #include "Loggers/OwnPatternFormatter.h"
 #include "config.h"
+
+#include <quill/sinks/FileSink.h>
+#include <quill/sinks/ConsoleSink.h>
+#include <quill/Backend.h>
+
 
 #include "Utils.h"
 #include <Server/CloudPlacementInfo.h>
@@ -488,21 +494,22 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     config().keys(keys);
     initializeHistoryFile();
 
+    quill::Backend::start();
     if (config().has("save-logs"))
     {
         auto log_level = config().getString("log-level", "trace");
-        Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
-
-        Poco::AutoPtr<OwnPatternFormatter> pf = new OwnPatternFormatter;
-        Poco::AutoPtr<OwnFormattingChannel> log = new OwnFormattingChannel(pf, new Poco::FileChannel(log_path));
-        logger().setChannel(log);
+        auto logger = createLogger("root", {quill::Frontend::create_or_get_sink<quill::FileSink>(log_path)});
+        logger->getQuillLogger()->set_log_level(parseQuillLogLevel(log_level));
+        Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
     }
     else
     {
         auto log_level = config().getString("log-level", "none");
-        Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
+        auto logger = createLogger("root", {quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink")});
+        logger->getQuillLogger()->set_log_level(parseQuillLogLevel(log_level));
+        Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
     }
 
     PlacementInfo::PlacementInfo::instance().initialize(config());

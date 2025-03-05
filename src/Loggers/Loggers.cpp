@@ -386,7 +386,15 @@ size_t getLogFileMaxSize(const std::string & max_size_str)
     if (max_size_str == "never")
         return 0;
 
-    return DB::parse<size_t>(max_size_str);
+    std::string_view max_size_view{max_size_str};
+    size_t multiplier = 1;
+    if (max_size_view.ends_with('M'))
+    {
+        max_size_view.remove_suffix(1);
+        multiplier = 1_MiB;
+    }
+
+    return DB::parse<size_t>(max_size_view) * multiplier;
 }
 
 }
@@ -428,8 +436,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         RotatingSinkConfiguration file_config;
         file_config.compress = config.getBool("logger.compress", true);
         file_config.max_backup_files = config.getUInt64("logger.count", 1);
-        file_config.max_file_size
-            = getLogFileMaxSize(config.getString("logger.size", std::to_string(100_MiB))); /// TODO: support readable size like 100M
+        file_config.max_file_size = getLogFileMaxSize(config.getString("logger.size", "100M")); /// TODO: support readable size like 100M
 
         auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<RotatingSink<quill::FileSink>>(fs::weakly_canonical(log_path), file_config));
         sink->set_log_level_filter(log_level);
@@ -457,8 +464,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         RotatingSinkConfiguration file_config;
         file_config.compress = config.getBool("logger.compress", true);
         file_config.max_backup_files = config.getUInt64("logger.count", 1);
-        file_config.max_file_size
-            = getLogFileMaxSize(config.getString("logger.size", std::to_string(100_MiB))); /// TODO: support readable size like 100M
+        file_config.max_file_size = getLogFileMaxSize(config.getString("logger.size", "100M")); /// TODO: support readable size like 100M
 
         auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<RotatingSink<quill::FileSink>>(fs::weakly_canonical(errorlog_path), file_config));
         sink->set_log_level_filter(errorlog_level);

@@ -9,13 +9,14 @@ namespace DB
     template <typename> class SystemLogQueue;
     struct TextLogElement;
     using TextLogQueue = SystemLogQueue<TextLogElement>;
-
-    class ExtendedLogMessage;
 }
 #endif
 
 namespace DB
 {
+
+class ExtendedLogMessage;
+
 /// Works as Poco::SplitterChannel, but performs additional work:
 ///  passes logs to Client via TCP interface
 ///  tries to use extended logging interface of child for more comprehensive logging

@@ -377,4 +377,4 @@
 	url = https://github.com/ClickHouse/delta-kernel-rs.git
 [submodule "contrib/quill"]
 	path = contrib/quill
-	url = https://github.com/odygrd/quill.git
+	url = https://github.com/ClickHouse/quill.git
