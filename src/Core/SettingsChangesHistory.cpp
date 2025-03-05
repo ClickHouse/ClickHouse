@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
+            {"use_page_cache_with_distributed_cache", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
