@@ -688,6 +688,9 @@ void Pipe::resize(size_t num_streams, bool strict)
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");
 
+    if (strict && num_streams == numOutputPorts())
+        return;
+
     /// We need to not add the resize in case of 1-1 because in case
     /// it is not force resize and we have n outputs (look at the code above),
     /// and one of the outputs is dead, we can push all data to n-1 outputs,
