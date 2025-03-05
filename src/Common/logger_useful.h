@@ -250,7 +250,7 @@ namespace impl
             _formatter->formatExtended(_msg_ext, _text); \
             if (::impl::shouldLog(_logger, level, &_poco_message)) \
             { \
-                QUILL_DEFINE_MACRO_METADATA(__FUNCTION__, "{}", nullptr, quill::LogLevel::Dynamic); \
+                QUILL_DEFINE_MACRO_METADATA(__PRETTY_FUNCTION__, "{}", nullptr, quill::LogLevel::Dynamic); \
                 ::impl::getQuillLogger(_logger)->template log_statement<QUILL_IMMEDIATE_FLUSH, true>( \
                     ::impl::logLevelToQuillLogLevel(level), &macro_metadata, _text); \
             } \
