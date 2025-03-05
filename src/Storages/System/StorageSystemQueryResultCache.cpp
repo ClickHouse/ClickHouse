@@ -1,16 +1,16 @@
-#include "StorageSystemQueryCache.h"
+#include "StorageSystemQueryResultCache.h"
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
 
 
 namespace DB
 {
 
-ColumnsDescription StorageSystemQueryCache::getColumnsDescription()
+ColumnsDescription StorageSystemQueryResultCache::getColumnsDescription()
 {
     return ColumnsDescription
     {
@@ -26,19 +26,19 @@ ColumnsDescription StorageSystemQueryCache::getColumnsDescription()
     };
 }
 
-StorageSystemQueryCache::StorageSystemQueryCache(const StorageID & table_id_)
+StorageSystemQueryResultCache::StorageSystemQueryResultCache(const StorageID & table_id_)
     : IStorageSystemOneBlock(table_id_, getColumnsDescription())
 {
 }
 
-void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
+void StorageSystemQueryResultCache::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    QueryCachePtr query_cache = context->getQueryCache();
+    QueryResultCachePtr query_result_cache = context->getQueryResultCache();
 
-    if (!query_cache)
+    if (!query_result_cache)
         return;
 
-    std::vector<QueryCache::Cache::KeyMapped> content = query_cache->dump();
+    std::vector<QueryResultCache::Cache::KeyMapped> content = query_result_cache->dump();
 
     const String & user_name = context->getUserName();
     std::optional<UUID> user_id = context->getUserID();
@@ -54,7 +54,7 @@ void StorageSystemQueryCache::fillData(MutableColumns & res_columns, ContextPtr 
 
         res_columns[0]->insert(key.query_string); /// approximates the original query string
         res_columns[1]->insert(key.query_id);
-        res_columns[2]->insert(QueryCache::QueryCacheEntryWeight()(*query_result));
+        res_columns[2]->insert(QueryResultCache::QueryResultCacheEntryWeight()(*query_result));
         res_columns[3]->insert(key.tag);
         res_columns[4]->insert(key.expires_at < std::chrono::system_clock::now());
         res_columns[5]->insert(key.is_shared);

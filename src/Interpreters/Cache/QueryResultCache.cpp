@@ -1,4 +1,4 @@
-#include "Interpreters/Cache/QueryCache.h"
+#include "Interpreters/Cache/QueryResultCache.h"
 
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
@@ -160,12 +160,12 @@ bool astContainsSystemTables(ASTPtr ast, ContextPtr context)
 namespace
 {
 
-bool isQueryCacheRelatedSetting(const String & setting_name)
+bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
     return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
 }
 
-class RemoveQueryCacheSettingsMatcher
+class RemoveQueryResultCacheSettingsMatcher
 {
 public:
     struct Data {};
@@ -180,7 +180,7 @@ public:
 
             auto is_query_cache_related_setting = [](const auto & change)
             {
-                return isQueryCacheRelatedSetting(change.name);
+                return isQueryResultCacheRelatedSetting(change.name);
             };
 
             std::erase_if(set_clause->changes, is_query_cache_related_setting);
@@ -193,7 +193,7 @@ public:
     /// currently don't match.
 };
 
-using RemoveQueryCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryCacheSettingsMatcher, true>;
+using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResultCacheSettingsMatcher, true>;
 
 /// Consider
 ///   (1) SET use_query_cache = true;
@@ -206,19 +206,19 @@ using RemoveQueryCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryCacheSetti
 /// cache. However, query results are indexed by their query ASTs and therefore no result will be found. Insert and retrieval behave overall
 /// more natural if settings related to the query cache are erased from the AST key. Note that at this point the settings themselves
 /// have been parsed already, they are not lost or discarded.
-ASTPtr removeQueryCacheSettings(ASTPtr ast)
+ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 {
     ASTPtr transformed_ast = ast->clone();
 
-    RemoveQueryCacheSettingsMatcher::Data visitor_data;
-    RemoveQueryCacheSettingsVisitor(visitor_data).visit(transformed_ast);
+    RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
+    RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(transformed_ast);
 
     return transformed_ast;
 }
 
 IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const Settings & settings)
 {
-    ast = removeQueryCacheSettings(ast);
+    ast = removeQueryResultCacheSettings(ast);
 
     /// Hash the AST, we must consider aliases (issue #56258)
     SipHash hash;
@@ -236,7 +236,7 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
     for (const auto & change : changed_settings)
     {
         const String & name = change.name;
-        if (!isQueryCacheRelatedSetting(name)) /// see removeQueryCacheSettings() why this is a good idea
+        if (!isQueryResultCacheRelatedSetting(name)) /// see removeQueryResultCacheSettings() why this is a good idea
             changed_settings_sorted.push_back({name, Settings::valueToStringUtil(change.name, change.value)});
     }
     std::sort(changed_settings_sorted.begin(), changed_settings_sorted.end(), [](auto & lhs, auto & rhs) { return lhs.first < rhs.first; });
@@ -258,7 +258,7 @@ String queryStringFromAST(ASTPtr ast)
 
 }
 
-QueryCache::Key::Key(
+QueryResultCache::Key::Key(
     ASTPtr ast_,
     const String & current_database,
     const Settings & settings,
@@ -282,29 +282,29 @@ QueryCache::Key::Key(
 {
 }
 
-QueryCache::Key::Key(
+QueryResultCache::Key::Key(
     ASTPtr ast_,
     const String & current_database,
     const Settings & settings,
     const String & query_id_,
     std::optional<UUID> user_id_,
     const std::vector<UUID> & current_user_roles_)
-    : QueryCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
+    : QueryResultCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
     /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }
 
-bool QueryCache::Key::operator==(const Key & other) const
+bool QueryResultCache::Key::operator==(const Key & other) const
 {
     return ast_hash == other.ast_hash;
 }
 
-size_t QueryCache::KeyHasher::operator()(const Key & key) const
+size_t QueryResultCache::KeyHasher::operator()(const Key & key) const
 {
     return key.ast_hash.low64;
 }
 
-size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const
+size_t QueryResultCache::QueryResultCacheEntryWeight::operator()(const Entry & entry) const
 {
     size_t res = 0;
     for (const auto & chunk : entry.chunks)
@@ -314,14 +314,14 @@ size_t QueryCache::QueryCacheEntryWeight::operator()(const Entry & entry) const
     return res;
 }
 
-bool QueryCache::IsStale::operator()(const Key & key) const
+bool QueryResultCache::IsStale::operator()(const Key & key) const
 {
     return (key.expires_at < std::chrono::system_clock::now());
 };
 
-QueryCacheWriter::QueryCacheWriter(
+QueryResultCacheWriter::QueryResultCacheWriter(
     Cache & cache_,
-    const QueryCache::Key & key_,
+    const QueryResultCache::Key & key_,
     size_t max_entry_size_in_bytes_,
     size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
@@ -335,14 +335,14 @@ QueryCacheWriter::QueryCacheWriter(
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
 {
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryCache::IsStale()(entry->key))
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
     {
         skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
     }
 }
 
-QueryCacheWriter::QueryCacheWriter(const QueryCacheWriter & other)
+QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & other)
     : cache(other.cache)
     , key(other.key)
     , max_entry_size_in_bytes(other.max_entry_size_in_bytes)
@@ -353,7 +353,7 @@ QueryCacheWriter::QueryCacheWriter(const QueryCacheWriter & other)
 {
 }
 
-void QueryCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
+void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
 {
     if (skip_insert)
         return;
@@ -397,7 +397,7 @@ void QueryCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     }
 }
 
-void QueryCacheWriter::finalizeWrite()
+void QueryResultCacheWriter::finalizeWrite()
 {
     if (skip_insert)
         return;
@@ -415,7 +415,7 @@ void QueryCacheWriter::finalizeWrite()
         return;
     }
 
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryCache::IsStale()(entry->key))
+    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
     {
         /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
@@ -486,7 +486,7 @@ void QueryCacheWriter::finalizeWrite()
 
     /// Check more reasons why the entry must not be cached.
 
-    auto count_rows_in_chunks = [](const QueryCache::Entry & entry)
+    auto count_rows_in_chunks = [](const QueryResultCache::Entry & entry)
     {
         size_t res = 0;
         for (const auto & chunk : entry.chunks)
@@ -496,7 +496,7 @@ void QueryCacheWriter::finalizeWrite()
         return res;
     };
 
-    size_t new_entry_size_in_bytes = QueryCache::QueryCacheEntryWeight()(*query_result);
+    size_t new_entry_size_in_bytes = QueryResultCache::QueryResultCacheEntryWeight()(*query_result);
     size_t new_entry_size_in_rows = count_rows_in_chunks(*query_result);
 
     if ((new_entry_size_in_bytes > max_entry_size_in_bytes) || (new_entry_size_in_rows > max_entry_size_in_rows))
@@ -514,7 +514,7 @@ void QueryCacheWriter::finalizeWrite()
 }
 
 /// Creates a source processor which serves result chunks stored in the query cache, and separate sources for optional totals/extremes.
-void QueryCacheReader::buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
+void QueryResultCacheReader::buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
 {
     source_from_chunks = std::make_unique<SourceFromChunks>(header, std::move(chunks));
 
@@ -533,7 +533,7 @@ void QueryCacheReader::buildSourceFromChunks(Block header, Chunks && chunks, con
     }
 }
 
-QueryCacheReader::QueryCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
+QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
 {
     auto entry = cache_.getWithKey(key);
 
@@ -554,7 +554,7 @@ QueryCacheReader::QueryCacheReader(Cache & cache_, const Cache::Key & key, const
         return;
     }
 
-    if (QueryCache::IsStale()(entry_key))
+    if (QueryResultCache::IsStale()(entry_key))
     {
         LOG_TRACE(logger, "Stale query result found for query {}", doubleQuoteString(key.query_string));
         return;
@@ -597,7 +597,7 @@ QueryCacheReader::QueryCacheReader(Cache & cache_, const Cache::Key & key, const
     LOG_TRACE(logger, "Query result found for query {}", doubleQuoteString(key.query_string));
 }
 
-bool QueryCacheReader::hasCacheEntryForKey() const
+bool QueryResultCacheReader::hasCacheEntryForKey() const
 {
     bool has_entry = (source_from_chunks != nullptr);
 
@@ -609,29 +609,29 @@ bool QueryCacheReader::hasCacheEntryForKey() const
     return has_entry;
 }
 
-std::unique_ptr<SourceFromChunks> QueryCacheReader::getSource()
+std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSource()
 {
     return std::move(source_from_chunks);
 }
 
-std::unique_ptr<SourceFromChunks> QueryCacheReader::getSourceTotals()
+std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceTotals()
 {
     return std::move(source_from_chunks_totals);
 }
 
-std::unique_ptr<SourceFromChunks> QueryCacheReader::getSourceExtremes()
+std::unique_ptr<SourceFromChunks> QueryResultCacheReader::getSourceExtremes()
 {
     return std::move(source_from_chunks_extremes);
 }
 
-QueryCache::QueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
-    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryCacheEntryWeight, IsStale>>(
+QueryResultCache::QueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+    : cache(std::make_unique<TTLCachePolicy<Key, Entry, KeyHasher, QueryResultCacheEntryWeight, IsStale>>(
           std::make_unique<PerUserTTLCachePolicyUserQuota>()))
 {
     updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes_, max_entry_size_in_rows_);
 }
 
-void QueryCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
+void QueryResultCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes_, size_t max_entry_size_in_rows_)
 {
     std::lock_guard lock(mutex);
     cache.setMaxSizeInBytes(max_size_in_bytes);
@@ -640,32 +640,32 @@ void QueryCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entrie
     max_entry_size_in_rows = max_entry_size_in_rows_;
 }
 
-QueryCacheReader QueryCache::createReader(const Key & key)
+QueryResultCacheReader QueryResultCache::createReader(const Key & key)
 {
     std::lock_guard lock(mutex);
-    return QueryCacheReader(cache, key, lock);
+    return QueryResultCacheReader(cache, key, lock);
 }
 
-QueryCacheWriter QueryCache::createWriter(
+QueryResultCacheWriter QueryResultCache::createWriter(
     const Key & key,
     std::chrono::milliseconds min_query_runtime,
     bool squash_partial_results,
     size_t max_block_size,
-    size_t max_query_cache_size_in_bytes_quota,
-    size_t max_query_cache_entries_quota)
+    size_t max_query_result_cache_size_in_bytes_quota,
+    size_t max_query_result_cache_entries_quota)
 {
     /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
     /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
     /// users.xml change.
     /// user_id == std::nullopt is the internal user for which no quota can be configured
     if (key.user_id.has_value())
-        cache.setQuotaForUser(*key.user_id, max_query_cache_size_in_bytes_quota, max_query_cache_entries_quota);
+        cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
     std::lock_guard lock(mutex);
-    return QueryCacheWriter(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    return QueryResultCacheWriter(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
 }
 
-void QueryCache::clear(const std::optional<String> & tag)
+void QueryResultCache::clear(const std::optional<String> & tag)
 {
     if (tag)
     {
@@ -681,17 +681,17 @@ void QueryCache::clear(const std::optional<String> & tag)
     times_executed.clear();
 }
 
-size_t QueryCache::sizeInBytes() const
+size_t QueryResultCache::sizeInBytes() const
 {
     return cache.sizeInBytes();
 }
 
-size_t QueryCache::count() const
+size_t QueryResultCache::count() const
 {
     return cache.count();
 }
 
-size_t QueryCache::recordQueryRun(const Key & key)
+size_t QueryResultCache::recordQueryRun(const Key & key)
 {
     std::lock_guard lock(mutex);
     size_t times = ++times_executed[key];
@@ -702,7 +702,7 @@ size_t QueryCache::recordQueryRun(const Key & key)
     return times;
 }
 
-std::vector<QueryCache::Cache::KeyMapped> QueryCache::dump() const
+std::vector<QueryResultCache::Cache::KeyMapped> QueryResultCache::dump() const
 {
     return cache.dump();
 }

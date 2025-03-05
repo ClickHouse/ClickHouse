@@ -6,7 +6,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 
 #include <Common/PageCache.h>
@@ -136,10 +136,10 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
             " The files opened with `mmap` are kept in the cache to avoid costly TLB flushes."};
     }
 
-    if (auto query_cache = getContext()->getQueryCache())
+    if (auto query_result_cache = getContext()->getQueryResultCache())
     {
-        new_values["QueryCacheBytes"] = { query_cache->sizeInBytes(), "Total size of the query cache in bytes." };
-        new_values["QueryCacheEntries"] = { query_cache->count(), "Total number of entries in the query cache." };
+        new_values["QueryCacheBytes"] = { query_result_cache->sizeInBytes(), "Total size of the query cache in bytes." };
+        new_values["QueryCacheEntries"] = { query_result_cache->count(), "Total number of entries in the query cache." };
     }
 
     {

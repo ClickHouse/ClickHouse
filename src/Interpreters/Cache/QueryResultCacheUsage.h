@@ -5,7 +5,7 @@
 namespace DB
 {
 
-enum class QueryCacheUsage : uint8_t
+enum class QueryResultCacheUsage : uint8_t
 {
     Unknown,  /// we don't know what what happened
     None,     /// query result neither written nor read into/from query cache
