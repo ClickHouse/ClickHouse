@@ -306,6 +306,7 @@ ARROW: '->';
 ASTERISK: '*';
 BACKQUOTE: '`';
 BACKSLASH: '\\';
+DOUBLE_COLON: '::';
 COLON: ':';
 COMMA: ',';
 CONCAT: '||';

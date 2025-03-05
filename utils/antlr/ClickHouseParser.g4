@@ -398,6 +398,7 @@ columnsExpr
 columnExpr
     : CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END          # ColumnExprCase
     | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                                     # ColumnExprCast
+    | columnExpr DOUBLE_COLON columnTypeExpr                                              # ColumnExprCastSymbol
     | DATE stringLiteral                                                                  # ColumnExprDate
     | EXTRACT LPAREN interval FROM columnExpr RPAREN                                      # ColumnExprExtract
     | INTERVAL columnExpr interval                                                        # ColumnExprInterval
