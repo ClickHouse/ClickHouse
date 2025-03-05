@@ -1,9 +1,9 @@
 #pragma once
 
 #include <atomic>
-
 #include <Core/Names.h>
 #include <Storages/NATS/NATSConnection.h>
+#include <Storages/NATS/NATSHandler.h>
 #include <Storages/IMessageProducer.h>
 #include <Common/ConcurrentBoundedQueue.h>
 
@@ -13,11 +13,7 @@ namespace DB
 class NATSProducer : public AsynchronousMessageProducer
 {
 public:
-    NATSProducer(
-        const NATSConfiguration & configuration_,
-        const String & subject_,
-        std::atomic<bool> & shutdown_called_,
-        LoggerPtr log_);
+    NATSProducer(NATSConnectionPtr connection_, const String & subject_, std::atomic<bool> & shutdown_called_, LoggerPtr log_);
 
     void produce(const String & message, size_t rows_in_message, const Columns & columns, size_t last_row) override;
     void cancel() noexcept override;
@@ -25,23 +21,16 @@ public:
 private:
     String getProducingTaskName() const override { return "NatsProducingTask"; }
 
-    void initialize() override;
     void stopProducingTask() override;
     void finishImpl() override;
 
     void startProducingTaskLoop() override;
 
-    void iterateEventLoop();
     void publish();
 
-    static void publishThreadFunc(void * arg);
-
-    NATSConnectionManager connection;
+    NATSConnectionPtr connection;
     const String subject;
 
-    /* false: when shutdown is called
-     * true: in all other cases
-     */
     std::atomic<bool> & shutdown_called;
 
     /* payloads.queue:
