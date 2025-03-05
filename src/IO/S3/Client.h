@@ -216,6 +216,9 @@ public:
 
     bool isS3ExpressBucket() const { return client_settings.is_s3express_bucket; }
 
+    // Whether or not checksum is enabled for this S3 Client
+    bool isChecksumEnabled() const { return !client_settings.disable_checksum; }
+
     bool isClientForDisk() const
     {
         return client_configuration.for_disk_s3;

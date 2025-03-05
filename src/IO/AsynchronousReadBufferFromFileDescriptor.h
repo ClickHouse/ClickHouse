@@ -29,6 +29,7 @@ protected:
     size_t bytes_to_ignore = 0;           /// How many bytes should we ignore upon a new read request.
     int fd;
     ThrottlerPtr throttler;
+    ThrottlerPtr getThrottler();
 
     bool nextImpl() override;
 
