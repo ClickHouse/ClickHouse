@@ -5,16 +5,16 @@
 
 #include <Processors/Port.h>
 
+namespace ProfileEvents
+{
+    extern const ::ProfileEvents::Event InsertPipelineShrinking;
+}
+
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace ProfileEvents
- {
-    extern const ::ProfileEvents::Event InsertPipelineShrinking;
 }
 
 ResizeProcessor::Status BaseResizeProcessor::prepareRoundRobin()
