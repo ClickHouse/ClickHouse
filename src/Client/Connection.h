@@ -50,6 +50,7 @@ class NativeWriter;
 class Connection : public IServerConnection
 {
     friend class MultiplexedConnections;
+    friend class HedgedConnections;
 
 public:
     Connection(const String & host_, UInt16 port_,
@@ -175,6 +176,10 @@ public:
     {
         format_settings = settings;
     }
+
+    String getHost() { return host; }
+    UInt16 getPort() { return port; }
+    String getCluster() { return cluster; }
 
 private:
     String host;

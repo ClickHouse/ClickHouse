@@ -45,10 +45,10 @@ public:
 protected:
     virtual void updateBeforeRead(const ContextPtr &) {}
     virtual void updateQueryToSendIfNeeded(ASTPtr & /*query*/, const StorageSnapshotPtr & /*storage_snapshot*/, const ContextPtr & /*context*/) {}
+    String cluster_name;
 
 private:
     LoggerPtr log;
-    String cluster_name;
 };
 
 

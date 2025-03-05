@@ -70,6 +70,8 @@ private:
 
     UInt64 receivePacketTypeUnlocked(AsyncCallback async_callback) override;
 
+    Connection * getLastPacketConnection() override;
+
     /// Internal version of `dumpAddresses` function without locking.
     std::string dumpAddressesUnlocked() const;
 

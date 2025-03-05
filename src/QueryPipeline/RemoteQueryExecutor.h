@@ -28,7 +28,7 @@ class RemoteQueryExecutorReadContext;
 class ParallelReplicasReadingCoordinator;
 
 /// This is the same type as StorageS3Source::IteratorWrapper
-using TaskIterator = std::function<String()>;
+using TaskIterator = std::function<String(Connection*)>;
 
 /// This class allows one to launch queries on remote replicas of one shard and get results
 class RemoteQueryExecutor

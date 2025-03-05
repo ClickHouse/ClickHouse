@@ -421,6 +421,10 @@ Packet MultiplexedConnections::receivePacketUnlocked(AsyncCallback async_callbac
     return packet;
 }
 
+Connection * MultiplexedConnections::getLastPacketConnection() {
+    return current_connection;
+}
+
 MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForReading()
 {
     if (replica_states.size() == 1)

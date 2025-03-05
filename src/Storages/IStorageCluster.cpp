@@ -42,8 +42,8 @@ IStorageCluster::IStorageCluster(
     const StorageID & table_id_,
     LoggerPtr log_)
     : IStorage(table_id_)
-    , log(log_)
     , cluster_name(cluster_name_)
+    , log(log_)
 {
 }
 
