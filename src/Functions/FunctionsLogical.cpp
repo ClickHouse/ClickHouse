@@ -575,7 +575,7 @@ static void applyTernaryLogic(const IColumn::Filter & mask, IColumn::Filter & nu
 
 template <typename Impl, typename Name>
 template <bool with_profile>
-ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, FunctionExecuteProfile * profile [[maybe_unused]]) const
+ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, FunctionExecutionProfile * profile [[maybe_unused]]) const
 {
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
@@ -583,7 +583,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     Stopwatch watch;
     if (with_profile && checkAndGetShortCircuitArgument(arguments[0].column))
     {
-        profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecuteProfile()));
+        profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecutionProfile()));
         executeColumnIfNeeded(arguments[0], false, &(profile->argument_profiles.back().second));
     }
     else
@@ -636,7 +636,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
         if constexpr (with_profile)
         {
-            profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+            profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecutionProfile()));
             auto & arg_profile = profile->argument_profiles.back().second;
             maskedExecute(arguments[i], mask, mask_info, &arg_profile);
         }
@@ -655,14 +655,14 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
     if constexpr (with_profile)
     {
-        profile->executed_elapsed = watch.elapsed();
+        profile->execution_elapsed = watch.elapsed();
         profile->executed_rows = res->size();
         size_t side_elapsed = 0;
         for (const auto & [i, arg_profile] : profile->argument_profiles)
         {
-            side_elapsed += arg_profile.short_circuit_side_elapsed;
+            side_elapsed += arg_profile.lazy_executed_additional_elapsed;
         }
-        profile->short_circuit_side_elapsed = side_elapsed;
+        profile->lazy_executed_additional_elapsed = side_elapsed;
     }
 
     if (!nulls)
@@ -681,7 +681,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
 
 template <typename Impl, typename Name>
 ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
-    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecuteProfile * profile) const
+    const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecutionProfile * profile) const
 {
     ColumnsWithTypeAndName arguments = args;
 
@@ -699,7 +699,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
         Stopwatch watch;
 
         // When the function is invoked from ColumnFunction::reduce, the profile->argument_profiles might already contain data
-        size_t before_arg_profiles_count = profile != nullptr ? profile->argument_profiles.size() : 0;
+        size_t existing_arg_profiles_num = profile != nullptr ? profile->argument_profiles.size() : 0;
 
         for (size_t i = 0, n = args.size(); i < n; ++i)
         {
@@ -728,15 +728,13 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
         {
             auto coalesce_elapsed = watch.elapsed();
             auto res = executeShortCircuit<true>(new_args, result_type, profile);
-            profile->executed_elapsed += coalesce_elapsed;
+            profile->execution_elapsed += coalesce_elapsed;
             // Profiles are only available for short-circuit arguments, and their positions need to be mapped back to the
             // original argument positions.
             // The execution will stop early when all rows are filtered, the last few short-circuit arguments are skipped
             // and no profiles are generated for them.
-            if (profile->argument_profiles.size() -  before_arg_profiles_count > short_circuit_args_index.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid argument_profiles {}: {} {}", fmt::ptr(profile), profile->argument_profiles.size(), short_circuit_args_index.size());
-            for (size_t i = before_arg_profiles_count; i < profile->argument_profiles.size(); ++i)
-                profile->argument_profiles[i].first = short_circuit_args_index[i - before_arg_profiles_count];
+            for (size_t i = existing_arg_profiles_num; i < profile->argument_profiles.size(); ++i)
+                profile->argument_profiles[i].first = short_circuit_args_index[i - existing_arg_profiles_num];
             return res;
         }
         return executeShortCircuit<false>(new_args, result_type, profile);
@@ -755,7 +753,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
     if (profile)
     {
         profile->executed_rows = input_rows_count;
-        profile->executed_elapsed = watch.elapsed();
+        profile->execution_elapsed = watch.elapsed();
     }
     return result_col;
 }

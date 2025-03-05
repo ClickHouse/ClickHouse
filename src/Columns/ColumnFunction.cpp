@@ -327,7 +327,7 @@ DataTypePtr ColumnFunction::getResultType() const
     return function->getResultType();
 }
 
-ColumnWithTypeAndName ColumnFunction::reduce(FunctionExecuteProfile * profile) const
+ColumnWithTypeAndName ColumnFunction::reduce(FunctionExecutionProfile * profile) const
 {
     if (profile)
         return reduceImpl<true>(profile);
@@ -336,7 +336,7 @@ ColumnWithTypeAndName ColumnFunction::reduce(FunctionExecuteProfile * profile) c
 }
 
 template <bool with_profile>
-ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profile [[maybe_unused]]) const
+ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecutionProfile * profile [[maybe_unused]]) const
 {
     auto args = function->getArgumentTypes().size();
     auto captured = captured_columns.size();
@@ -363,7 +363,7 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
                 {
                     if constexpr (with_profile)
                     {
-                        profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                        profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecutionProfile()));
                         auto & arg_profile = profile->argument_profiles.back().second;
                         columns[i] = arg->reduceImpl<with_profile>(&arg_profile);
                     }
@@ -381,7 +381,7 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
                 {
                     if constexpr (with_profile)
                     {
-                        profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecuteProfile()));
+                        profile->argument_profiles.emplace_back(std::make_pair(i, FunctionExecutionProfile()));
                         auto & arg_profile = profile->argument_profiles.back().second;
                         columns[i] = arg->reduceImpl<with_profile>(&arg_profile);
                     }
@@ -406,10 +406,10 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(FunctionExecuteProfile * profil
         size_t side_elapsed = 0;
         for (const auto & arg_profile : profile->argument_profiles)
         {
-            side_elapsed += arg_profile.second.short_circuit_side_elapsed;
+            side_elapsed += arg_profile.second.lazy_executed_additional_elapsed;
         }
-        profile->short_circuit_side_elapsed = side_elapsed;
-        profile->executed_elapsed = total_elapsed;
+        profile->lazy_executed_additional_elapsed = side_elapsed;
+        profile->execution_elapsed = total_elapsed;
     }
 
     if (res.column->getDataType() != res.type->getColumnType())

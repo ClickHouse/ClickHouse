@@ -15,7 +15,7 @@ namespace DB
 template <typename T>
 void expandDataByMask(PaddedPODArray<T> & data, const PaddedPODArray<UInt8> & mask, bool inverted, T default_value = T());
 
-struct FunctionExecuteProfile;
+struct FunctionExecutionProfile;
 
 struct MaskInfo
 {
@@ -67,11 +67,11 @@ void maskedExecute(
     ColumnWithTypeAndName & column,
     const PaddedPODArray<UInt8> & mask,
     const MaskInfo & mask_info = {true, true},
-    FunctionExecuteProfile * profile = nullptr);
+    FunctionExecutionProfile * profile = nullptr);
 
 /// If given column is lazy executed argument, reduce it. If empty is true,
 /// create an empty column with the execution result type.
-void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty = false, FunctionExecuteProfile * profile = nullptr);
+void executeColumnIfNeeded(ColumnWithTypeAndName & column, bool empty = false, FunctionExecutionProfile * profile = nullptr);
 
 /// Check if arguments contain lazy executed argument. If contain, return index of the last one,
 /// otherwise return -1.
