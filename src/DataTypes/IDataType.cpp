@@ -26,7 +26,23 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+IDataType::IDataType() = default;
+
 IDataType::~IDataType() = default;
+
+String IDataType::getName() const
+{
+    if (custom_name)
+        return custom_name->getName();
+    return doGetName();
+}
+
+String IDataType::getPrettyName(size_t indent) const
+{
+    if (custom_name)
+        return custom_name->getName();
+    return doGetPrettyName(indent);
+}
 
 void IDataType::updateAvgValueSizeHint(const IColumn & column, double & avg_value_size_hint)
 {

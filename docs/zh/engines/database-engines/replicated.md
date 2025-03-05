@@ -19,7 +19,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 -   `shard_name` — 分片的名字。数据库副本按`shard_name`分组到分片中。
 -   `replica_name` — 副本的名字。同一分片的所有副本的副本名称必须不同。
 
-对于[ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication)表，如果没有提供参数，则使用默认参数:`/clickhouse/tables/{uuid}/{shard}`和`{replica}`。这些可以在服务器设置[default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path)和[default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name)中更改。宏`{uuid}`被展开到表的uuid， `{shard}`和`{replica}`被展开到服务器配置的值，而不是数据库引擎参数。但是在将来，可以使用Replicated数据库的`shard_name`和`replica_name`。
+对于[ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication)表，如果没有提供参数，则使用默认参数:`/clickhouse/tables/{uuid}/{shard}`和`{replica}`。这些可以在服务器设置[default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path)和[default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name)中更改。宏`{uuid}`被展开到表的uuid， `{shard}`和`{replica}`被展开到服务器配置的值，而不是数据库引擎参数。但是在将来，可以使用Replicated数据库的`shard_name`和`replica_name`。
 
 ## 使用方式 {#specifics-and-recommendations}
 
@@ -29,7 +29,7 @@ CREATE DATABASE testdb ENGINE = Replicated('zoo_path', 'shard_name', 'replica_na
 
 错误情况下的行为是由[distributed_ddl_output_mode](../../operations/settings/settings.md#distributed_ddl_output_mode)设置调节的，对于`Replicated`数据库，最好将其设置为`null_status_on_timeout` - 例如，如果一些主机没有时间执行[distributed_ddl_task_timeout](../../operations/settings/settings.md#distributed_ddl_task_timeout)的请求，那么不要抛出异常，但在表中显示它们的`NULL`状态。
 
-[system.clusters](../../operations/system-tables/clusters.md)系统表包含一个名为复制数据库的集群，它包含数据库的所有副本。当创建/删除副本时，这个集群会自动更新，它可以用于[Distributed](../../engines/table-engines/special/distributed.md#distributed)表。
+[system.clusters](../../operations/system-tables/clusters.md)系统表包含一个名为复制数据库的集群，它包含数据库的所有副本。当创建/删除副本时，这个集群会自动更新，它可以用于[Distributed](/engines/table-engines/special/distributed)表。
 
 当创建数据库的新副本时，该副本会自己创建表。如果副本已经不可用很长一段时间，并且已经滞后于复制日志-它用ZooKeeper中的当前元数据检查它的本地元数据，将带有数据的额外表移动到一个单独的非复制数据库(以免意外地删除任何多余的东西)，创建缺失的表，如果表名已经被重命名，则更新表名。数据在`ReplicatedMergeTree`级别被复制，也就是说，如果表没有被复制，数据将不会被复制(数据库只负责元数据)。
 

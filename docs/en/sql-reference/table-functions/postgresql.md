@@ -2,9 +2,11 @@
 slug: /sql-reference/table-functions/postgresql
 sidebar_position: 160
 sidebar_label: postgresql
+title: "postgresql"
+description: "Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server."
 ---
 
-# postgresql
+# postgresql Table Function
 
 Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server.
 
@@ -24,7 +26,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 - `schema` — Non-default table schema. Optional.
 - `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional.
 
-Arguments also can be passed using [named collections](/docs/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 **Returned Value**
 
@@ -95,7 +97,7 @@ Selecting data from ClickHouse using plain arguments:
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
 ```
 
-Or using [named collections](/docs/operations/named-collections.md):
+Or using [named collections](operations/named-collections.md):
 
 ```sql
 CREATE NAMED COLLECTION mypg AS

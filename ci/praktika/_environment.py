@@ -143,6 +143,27 @@ class _Environment(MetaClasses.Serializable):
                     github_event["repository"]["html_url"] + "/commit/" + SHA
                 )  # commit url
                 COMMIT_URL = CHANGE_URL
+            elif "merge_group" in github_event:
+                EVENT_TYPE = Workflow.Event.MERGE_QUEUE
+                PR_NUMBER = 0
+                SHA = os.getenv(
+                    "GITHUB_SHA", "0000000000000000000000000000000000000000"
+                )
+                # try fetching pr number and assembling pr url:
+                #  gh data example: {"head_ref": "refs/heads/gh-readonly-queue/master/pr-77098-5d68c83601f17ecf401ca738e50fe4a52110aad9"}
+                head_ref = github_event.get("merge_group", {}).get("head_ref", "")
+                pr_number = ""
+                parts = head_ref.split("/pr-")
+                if len(parts) > 1:
+                    pr_number_part = parts[1].split("-")[0]
+                    pr_number = pr_number_part if pr_number_part.isdigit() else ""
+                if pr_number:
+                    CHANGE_URL = (
+                        github_event["repository"]["html_url"] + f"/pull/{pr_number}"
+                    )
+                else:
+                    CHANGE_URL = ""
+                COMMIT_URL = CHANGE_URL
             else:
                 assert False, "TODO: not supported"
             INSTANCE_TYPE = (
