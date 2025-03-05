@@ -1,8 +1,10 @@
 #pragma once
 
+#include <memory>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
+#include <Columns/IBuffer.h>
 #include <Common/TargetSpecific.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
@@ -45,16 +47,16 @@ private:
 
 public:
     using ValueType = T;
-    using Container = PaddedPODArray<ValueType>;
+    using Container = PaddedBuffer<ValueType>;
 
 private:
     ColumnVector() = default;
-    explicit ColumnVector(const size_t n) : data(n) {}
-    ColumnVector(const size_t n, const ValueType x) : data(n, x) {}
-    ColumnVector(const ColumnVector & src) : data(src.data.begin(), src.data.end()) {}
+    explicit ColumnVector(const size_t n) : data(std::make_shared<OwningBuffer<T>>(n)) {}
+    ColumnVector(const size_t n, const ValueType x) : data(std::make_shared<OwningBuffer<T>>(n, x)) {}
+    ColumnVector(const ColumnVector & src) : data(std::make_shared<OwningBuffer<T>>(src.data.begin(), src.data.end())) {}
 
     /// Sugar constructor.
-    ColumnVector(std::initializer_list<T> il) : data{il} {}
+    ColumnVector(std::initializer_list<T> il) : data{std::make_shared<OwningBuffer<T>>(il)} {}
 
 public:
     bool isNumeric() const override { return is_arithmetic_v<T>; }
@@ -260,7 +262,7 @@ public:
     ColumnPtr index(const IColumn & indexes, size_t limit) const override;
 
     template <typename Type>
-    ColumnPtr indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const;
+    ColumnPtr indexImpl(const PaddedBuffer<Type> & indexes, size_t limit) const;
 
     ColumnPtr replicate(const IColumn::Offsets & offsets) const override;
 
@@ -316,12 +318,12 @@ public:
     }
 
 protected:
-    Container data;
+    std::shared_ptr<Container> data;
 };
 
 DECLARE_DEFAULT_CODE(
 template <typename Container, typename Type>
-inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
+inline void vectorIndexImpl(const Container & data, const PaddedBuffer<Type> & indexes, size_t limit, Container & res_data)
 {
     for (size_t i = 0; i < limit; ++i)
         res_data[i] = data[indexes[i]];
@@ -330,7 +332,7 @@ inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> &
 
 DECLARE_AVX512VBMI_SPECIFIC_CODE(
 template <typename Container, typename Type>
-inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> & indexes, size_t limit, Container & res_data)
+inline void vectorIndexImpl(const Container & data, const PaddedBuffer<Type> & indexes, size_t limit, Container & res_data)
 {
     static constexpr UInt64 MASK64 = 0xffffffffffffffff;
     const size_t limit64 = limit & ~63;
@@ -442,7 +444,7 @@ inline void vectorIndexImpl(const Container & data, const PaddedPODArray<Type> &
 
 template <typename T>
 template <typename Type>
-ColumnPtr ColumnVector<T>::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
+ColumnPtr ColumnVector<T>::indexImpl(const PaddedBuffer<Type> & indexes, size_t limit) const
 {
     assert(limit <= indexes.size());
 

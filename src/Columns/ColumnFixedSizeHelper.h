@@ -1,7 +1,8 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Common/PODArray.h>
+// #include <Common/PODArray.h>
+#include <Columns/IBuffer.h>
 
 
 namespace DB
@@ -25,18 +26,18 @@ namespace DB
 class ColumnFixedSizeHelper : public IColumn
 {
 public:
-    template <size_t ELEMENT_SIZE>
+    template <typename T>
     const char * getRawDataBegin() const
     {
-        return reinterpret_cast<const PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> *>(
+        return reinterpret_cast<const IBuffer<T, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> *>(
                    reinterpret_cast<const char *>(this) + sizeof(*this))
             ->raw_data();
     }
 
-    template <size_t ELEMENT_SIZE>
+    template <typename T>
     void insertRawData(const char * ptr)
     {
-        return reinterpret_cast<PODArrayBase<ELEMENT_SIZE, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> *>(
+        return reinterpret_cast<IBuffer<T, 4096, Allocator<false>, PADDING_FOR_SIMD - 1, PADDING_FOR_SIMD> *>(
                    reinterpret_cast<char *>(this) + sizeof(*this))
             ->push_back_raw(ptr);
     }

@@ -4,7 +4,8 @@
 #include <base/StringRef.h>
 #include <Common/COW.h>
 #include <Common/Exception.h>
-#include <Common/PODArray_fwd.h>
+// #include <Common/PODArray_fwd.h>
+#include <Columns/BufferFWD.h>
 #include <Common/typeid_cast.h>
 
 #include "config.h"
@@ -316,7 +317,7 @@ public:
     /// If `is_null` is not nullptr, also take null bit into account.
     /// This is currently used to facilitate the allocation of memory for an entire continuous row
     /// in a single step. For more details, refer to the HashMethodSerialized implementation.
-    virtual void collectSerializedValueSizes(PaddedPODArray<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
+    virtual void collectSerializedValueSizes(PaddedBuffer<UInt64> & /* sizes */, const UInt8 * /* is_null */) const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method collectSerializedValueSizes is not supported for {}", getName());
     }
@@ -348,7 +349,7 @@ public:
       * if 0, then don't makes reserve(),
       * otherwise (i.e. < 0), makes reserve() using size of source column.
       */
-    using Filter = PaddedPODArray<UInt8>;
+    using Filter = PaddedBuffer<UInt8>;
     [[nodiscard]] virtual Ptr filter(const Filter & filt, ssize_t result_size_hint) const = 0;
 
     /** Expand column by mask inplace. After expanding column will
@@ -361,7 +362,7 @@ public:
 
     /// Permutes elements using specified permutation. Is used in sorting.
     /// limit - if it isn't 0, puts only first limit elements in the result.
-    using Permutation = PaddedPODArray<size_t>;
+    using Permutation = std::shared_ptr<PaddedBuffer<size_t>>;
     [[nodiscard]] virtual Ptr permute(const Permutation & perm, size_t limit) const = 0;
 
     /// Creates new column with values column[indexes[:limit]]. If limit is 0, all indexes are used.
@@ -414,7 +415,7 @@ public:
     /// row_indexes (if not ignored) will contain row numbers for which compare result is 0
     /// see compareImpl for default implementation.
     virtual void compareColumn(const IColumn & rhs, size_t rhs_row_num,
-                               PaddedPODArray<UInt64> * row_indexes, PaddedPODArray<Int8> & compare_results,
+                               PaddedBuffer<UInt64> * row_indexes, PaddedBuffer<Int8> & compare_results,
                                int direction, int nan_direction_hint) const = 0;
 
     /// Check if all elements in the column have equal values. Return true if column is empty.
@@ -480,7 +481,7 @@ public:
       * It is necessary in ARRAY JOIN operation.
       */
     using Offset = UInt64;
-    using Offsets = PaddedPODArray<Offset>;
+    using Offsets = std::shared_ptr<PaddedBuffer<Offset>>;
     [[nodiscard]] virtual Ptr replicate(const Offsets & offsets) const = 0;
 
     /** Split column to smaller columns. Each value goes to column index, selected by corresponding element of 'selector'.
@@ -488,7 +489,7 @@ public:
       * For default implementation, see scatterImpl.
       */
     using ColumnIndex = UInt64;
-    using Selector = PaddedPODArray<ColumnIndex>;
+    using Selector = std::shared_ptr<PaddedBuffer<ColumnIndex>>;
     [[nodiscard]] virtual std::vector<MutablePtr> scatter(ColumnIndex num_columns, const Selector & selector) const = 0;
 
     /// Insert data from several other columns according to source mask (used in vertical merge).
@@ -825,8 +826,8 @@ class IColumnHelper : public Parent
     void compareColumn(
         const IColumn & rhs_base,
         size_t rhs_row_num,
-        PaddedPODArray<UInt64> * row_indexes,
-        PaddedPODArray<Int8> & compare_results,
+        PaddedBuffer<UInt64> * row_indexes,
+        PaddedBuffer<Int8> & compare_results,
         int direction,
         int nan_direction_hint) const override;
 
@@ -843,7 +844,7 @@ class IColumnHelper : public Parent
     void getIndicesOfNonDefaultRows(IColumn::Offsets & indices, size_t from, size_t limit) const override;
 
     /// Devirtualize byteSizeAt.
-    void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+    void collectSerializedValueSizes(PaddedBuffer<UInt64> & sizes, const UInt8 * is_null) const override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;

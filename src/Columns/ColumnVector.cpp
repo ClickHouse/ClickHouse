@@ -55,8 +55,10 @@ namespace ErrorCodes
 
 template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
-{
-    data.emplace_back(unalignedLoad<T>(pos));
+{   
+    auto mutable_data = data->getOwningBuffer();
+    mutable_data->emplace_back(unalignedLoad<T>(pos));
+    data = mutable_data;
     return pos + sizeof(T);
 }
 
@@ -75,10 +77,10 @@ void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 template <typename T>
 WeakHash32 ColumnVector<T>::getWeakHash32() const
 {
-    auto s = data.size();
+    auto s = data->size();
     WeakHash32 hash(s);
 
-    const T * begin = data.data();
+    const T * begin = data->data();
     const T * end = begin + s;
     UInt32 * hash_data = hash.getData().data();
 
@@ -95,7 +97,7 @@ WeakHash32 ColumnVector<T>::getWeakHash32() const
 template <typename T>
 void ColumnVector<T>::updateHashFast(SipHash & hash) const
 {
-    hash.update(reinterpret_cast<const char *>(data.data()), size() * sizeof(data[0]));
+    hash.update(reinterpret_cast<const char *>(data->data()), size() * sizeof(data[0]));
 }
 
 template <typename T>
@@ -104,7 +106,7 @@ struct ColumnVector<T>::less
     const Self & parent;
     int nan_direction_hint;
     less(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
-    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::less(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
+    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::less((*parent.data)[lhs], (*parent.data)[rhs], nan_direction_hint); }
 };
 
 template <typename T>
@@ -126,7 +128,7 @@ struct ColumnVector<T>::less_stable
             }
         }
 
-        return CompareHelper<T>::less(parent.data[lhs], parent.data[rhs], nan_direction_hint);
+        return CompareHelper<T>::less((*parent.data)[lhs], (*parent.data)[rhs], nan_direction_hint);
     }
 };
 
@@ -136,7 +138,7 @@ struct ColumnVector<T>::greater
     const Self & parent;
     int nan_direction_hint;
     greater(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
-    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
+    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::greater((*parent.data)[lhs], (*parent.data)[rhs], nan_direction_hint); }
 };
 
 template <typename T>
@@ -158,7 +160,7 @@ struct ColumnVector<T>::greater_stable
             }
         }
 
-        return CompareHelper<T>::greater(parent.data[lhs], parent.data[rhs], nan_direction_hint);
+        return CompareHelper<T>::greater((*parent.data)[lhs], (*parent.data)[rhs], nan_direction_hint);
     }
 };
 
@@ -168,7 +170,7 @@ struct ColumnVector<T>::equals
     const Self & parent;
     int nan_direction_hint;
     equals(const Self & parent_, int nan_direction_hint_) : parent(parent_), nan_direction_hint(nan_direction_hint_) {}
-    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals(parent.data[lhs], parent.data[rhs], nan_direction_hint); }
+    bool operator()(size_t lhs, size_t rhs) const { return CompareHelper<T>::equals((*parent.data)[lhs], (*parent.data)[rhs], nan_direction_hint); }
 };
 
 #if USE_EMBEDDED_COMPILER
@@ -211,10 +213,11 @@ llvm::Value * ColumnVector<T>::compileComparator(llvm::IRBuilderBase & builder, 
 
 template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
-                                    size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
+                                    size_t limit, int nan_direction_hint, IColumn::Permutation & result) const
 {
-    size_t data_size = data.size();
-    res.resize_exact(data_size);
+    size_t data_size = data->size();
+    auto res = result->getOwningBuffer();
+    res->resize_exact(data_size);
 
     if (data_size == 0)
         return;
@@ -222,7 +225,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
     if (limit >= data_size)
         limit = 0;
 
-    iota(res.data(), data_size, IColumn::Permutation::value_type(0));
+    iota(res->data(), data_size, IColumn::Permutation::element_type::value_type(0));
 
     if constexpr (has_find_extreme_implementation<T> && !std::is_floating_point_v<T>)
     {
@@ -233,12 +236,12 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
         {
             std::optional<size_t> index;
             if (direction == IColumn::PermutationSortDirection::Ascending)
-                index = findExtremeMinIndex(data.data(), 0, data.size());
+                index = findExtremeMinIndex(data->data(), 0, data->size());
             else
-                index = findExtremeMaxIndex(data.data(), 0, data.size());
+                index = findExtremeMaxIndex(data->data(), 0, data->size());
             if (index)
             {
-                res.data()[0] = *index;
+                res->data()[0] = *index;
                 return;
             }
         }
@@ -264,22 +267,22 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
                 bool try_sort = false;
 
                 if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-                    try_sort = trySort(res.begin(), res.end(), less(*this, nan_direction_hint));
+                    try_sort = trySort(res->begin(), res->end(), less(*this, nan_direction_hint));
                 else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-                    try_sort = trySort(res.begin(), res.end(), less_stable(*this, nan_direction_hint));
+                    try_sort = trySort(res->begin(), res->end(), less_stable(*this, nan_direction_hint));
                 else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-                    try_sort = trySort(res.begin(), res.end(), greater(*this, nan_direction_hint));
+                    try_sort = trySort(res->begin(), res->end(), greater(*this, nan_direction_hint));
                 else
-                    try_sort = trySort(res.begin(), res.end(), greater_stable(*this, nan_direction_hint));
+                    try_sort = trySort(res->begin(), res->end(), greater_stable(*this, nan_direction_hint));
 
                 if (try_sort)
                     return;
 
                 PaddedPODArray<ValueWithIndex<T>> pairs(data_size);
                 for (UInt32 i = 0; i < static_cast<UInt32>(data_size); ++i)
-                    pairs[i] = {data[i], i};
+                    pairs[i] = {(*data)[i], i};
 
-                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
+                RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res->data());
 
                 /// Radix sort treats all NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
@@ -289,7 +292,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                     for (size_t i = 0; i < data_size; ++i)
                     {
-                        if (isNaN(data[res[reverse ? i : data_size - 1 - i]]))
+                        if (isNaN((*data)[(*res)[reverse ? i : data_size - 1 - i]]))
                             ++nans_to_move;
                         else
                             break;
@@ -297,7 +300,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                     if (nans_to_move)
                     {
-                        std::rotate(std::begin(res), std::begin(res) + (reverse ? nans_to_move : data_size - nans_to_move), std::end(res));
+                        std::rotate(std::begin(*res), std::begin(*res) + (reverse ? nans_to_move : data_size - nans_to_move), std::end(*res));
                     }
                 }
 
@@ -306,14 +309,16 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
         }
     }
 
+    result = res;
+
     if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Unstable)
-        this->getPermutationImpl(limit, res, less(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+        this->getPermutationImpl(limit, result, less(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Ascending && stability == IColumn::PermutationSortStability::Stable)
-        this->getPermutationImpl(limit, res, less_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+        this->getPermutationImpl(limit, result, less_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Unstable)
-        this->getPermutationImpl(limit, res, greater(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+        this->getPermutationImpl(limit, result, greater(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
     else
-        this->getPermutationImpl(limit, res, greater_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
+        this->getPermutationImpl(limit, result, greater_stable(*this, nan_direction_hint), DefaultSort(), DefaultPartialSort());
 }
 
 template <typename T>
@@ -425,7 +430,7 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
     bool inserted = false;
     for (size_t i = equal_range.from; i < equal_range.to; ++i)
     {
-        size_t permuted_i = permutation[i];
+        size_t permuted_i = (*permutation)[i];
         StringRef value = getDataAt(permuted_i);
         elements.emplace(value, inserted);
     }
@@ -433,7 +438,7 @@ size_t ColumnVector<T>::estimateCardinalityInPermutedRange(const IColumn::Permut
 }
 
 template <typename T>
-MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
+MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const // TODO: remove or remake as we dont need COW anymore
 {
     auto res = this->create(size);
 
@@ -465,7 +470,7 @@ template <typename T>
 inline Float64 ColumnVector<T>::getFloat64(size_t n [[maybe_unused]]) const
 {
     if constexpr (is_arithmetic_v<T>)
-        return static_cast<Float64>(data[n]);
+        return static_cast<Float64>((*data)[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float64", TypeName<T>);
 }
@@ -474,7 +479,7 @@ template <typename T>
 Float32 ColumnVector<T>::getFloat32(size_t n [[maybe_unused]]) const
 {
     if constexpr (is_arithmetic_v<T>)
-        return static_cast<Float32>(data[n]);
+        return static_cast<Float32>((*data)[n]);
     else
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot get the value of {} as Float32", TypeName<T>);
 }
@@ -491,13 +496,17 @@ bool ColumnVector<T>::tryInsert(const DB::Field & x)
             bool boolean_value;
             if (x.tryGet<bool>(boolean_value))
             {
-                data.push_back(static_cast<T>(boolean_value));
+                auto mutable_data = data->getOwningBuffer();
+                mutable_data->push_back(static_cast<T>(boolean_value));
+                data = mutable_data;
                 return true;
             }
         }
         return false;
     }
-    data.push_back(static_cast<T>(value));
+    auto mutable_data = data->getOwningBuffer();
+    mutable_data->push_back(static_cast<T>(value));
+    data = mutable_data;
     return true;
 }
 
@@ -510,15 +519,19 @@ void ColumnVector<T>::doInsertRangeFrom(const IColumn & src, size_t start, size_
 {
     const ColumnVector & src_vec = assert_cast<const ColumnVector &>(src);
 
-    if (start + length > src_vec.data.size())
+    if (start + length > src_vec.data->size())
         throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
                         "Parameters start = {}, length = {} are out of bound "
                         "in ColumnVector<T>::insertRangeFrom method (data.size() = {}).",
-                        toString(start), toString(length), toString(src_vec.data.size()));
+                        toString(start), toString(length), toString(src_vec.data->size()));
 
-    size_t old_size = data.size();
-    data.resize(old_size + length);
-    memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
+    // TODO: make method for getting owner reallocated buffer and fix this
+
+    size_t old_size = data->size();
+    auto mutable_data = data->getOwningBuffer();
+    mutable_data->resize(old_size + length);
+    memcpy(mutable_data->data() + old_size, &(*src_vec.data)[start], length * sizeof(data[0]));
+    data = mutable_data;
 }
 
 static inline UInt64 blsr(UInt64 mask)
