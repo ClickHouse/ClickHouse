@@ -33,22 +33,21 @@ using FieldIntervalPtr = std::shared_ptr<FieldInterval>;
 
 struct FunctionExecuteProfile
 {
-    /// executed_rows keeps track of the number of rows that have been processed by the function.
-    /// For a short-circuit function, the executed rows of its lazily executed arguments may be less than
-    /// the input rows if some rows are filtered out before the lazy execution of the argument.
+    /// executed_rows records the number of rows processed by a function. In a short-circuit function,
+    /// the executed_rows for lazily executed arguments can be less than the input rows, as some rows may
+    /// be filtered out before the argument is executed.
     size_t executed_rows = 0;
 
     /// The total executed elapsed, including short_circuit_side_elapsed.
     size_t executed_elapsed = 0;
 
-    /// For a lazily executed function, we need to filter out the rows that are not executed using a bitmap,
-    /// and then expand the result to the original size. `short_circuit_side_elapsed` contains the
-    /// execution time of these two steps. It also includes all `short_circuit_side_elapsed` times of its
-    /// lazily executed arguments.
+    /// When executing a function lazily, we filter out unprocessed rows using a bitmap and expand the
+    /// result to the original size. The short_circuit_side_elapsed metric includes the time for these
+    /// operations, along with the short_circuit_side_elapsed times of its lazily executed arguments.
     size_t short_circuit_side_elapsed = 0;
 
-    /// If one argument is ColumnFunction, we need to profile its execution.
-    /// The first element of the pair is the index of the argument.
+    /// For short-circuit arguments, their execution must be profiled, with the first element of the pair
+    /// indicating the argument's index.
     std::vector<std::pair<size_t, FunctionExecuteProfile>> argument_profiles;
 };
 
