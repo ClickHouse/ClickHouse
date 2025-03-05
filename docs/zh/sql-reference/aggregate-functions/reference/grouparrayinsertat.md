@@ -29,7 +29,7 @@ groupArrayInsertAt(default_x, size)(x, pos);
 
 -   具有插入值的数组。
 
-类型: [阵列](../../../sql-reference/data-types/array.md#data-type-array)。
+类型: [阵列](/sql-reference/data-types/array)。
 
 **示例**
 

@@ -600,6 +600,12 @@ void ZooKeeperMetadataTransaction::commit()
     state = FAILED;
     current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
+
+    if (finalizer)
+    {
+        finalizer();
+        finalizer = FinalizerCallback();
+    }
 }
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)

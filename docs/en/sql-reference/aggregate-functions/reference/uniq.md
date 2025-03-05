@@ -38,5 +38,6 @@ We recommend using this function in almost all scenarios.
 - [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined)
 - [uniqCombined64](/sql-reference/aggregate-functions/reference/uniqcombined64)
 - [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
-- [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+- [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
 - [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)
+

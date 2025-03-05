@@ -69,5 +69,6 @@ See the example section of [uniqCombined64](/sql-reference/aggregate-functions/r
 - [uniq](/sql-reference/aggregate-functions/reference/uniq)
 - [uniqCombined64](/sql-reference/aggregate-functions/reference/uniqcombined64)
 - [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
-- [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+- [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
 - [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)
+

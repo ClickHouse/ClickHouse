@@ -36,4 +36,4 @@ uniqHLL12(x[, ...])
 
 -   [uniq](/sql-reference/aggregate-functions/reference/uniq)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
--   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+-   [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)

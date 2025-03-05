@@ -12,7 +12,7 @@ Contains information about async inserts. Each entry represents an insert query 
 
 To start logging configure parameters in the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#asynchronous_insert_log) section.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#asynchronous_insert_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [asynchronous_insert_log](../../operations/server-configuration-parameters/settings.md#asynchronous_insert_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](/operations/system-tables/overview#system-tables-introduction) for more details.
 

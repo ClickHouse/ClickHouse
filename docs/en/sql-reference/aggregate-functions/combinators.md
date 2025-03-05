@@ -104,7 +104,7 @@ Please notice, that -MapState is not an invariant for the same data due to the f
 To work with these states, use:
 
 - [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
-- [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
+- [finalizeAggregation](/sql-reference/functions/other-functions#finalizeaggregation) function.
 - [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
 - [-Merge](#-merge) combinator.
 - [-MergeState](#-mergestate) combinator.

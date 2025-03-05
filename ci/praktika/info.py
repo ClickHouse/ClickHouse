@@ -24,6 +24,14 @@ class Info:
         return self.env.PR_NUMBER
 
     @property
+    def linked_pr_number(self):
+        """
+        PR associated with the merge commit for Push or Merge Queue workflow
+        :return: PR number or 0 if not applicable or not found
+        """
+        return self.env.LINKED_PR_NUMBER
+
+    @property
     def workflow_name(self):
         return self.env.WORKFLOW_NAME
 

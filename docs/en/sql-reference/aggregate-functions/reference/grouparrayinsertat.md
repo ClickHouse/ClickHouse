@@ -31,7 +31,7 @@ If in one query several values are inserted into the same position, the function
 
 - Array with inserted values.
 
-Type: [Array](../../../sql-reference/data-types/array.md#data-type-array).
+Type: [Array](/sql-reference/data-types/array).
 
 **Example**
 

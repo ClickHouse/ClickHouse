@@ -78,7 +78,8 @@ Result:
 **See Also**
 
 - [uniq](/sql-reference/aggregate-functions/reference/uniq)
-- [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md)
+- [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined)
 - [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
-- [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+- [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
 - [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)
+
