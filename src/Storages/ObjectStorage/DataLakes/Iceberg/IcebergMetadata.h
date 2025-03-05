@@ -91,6 +91,22 @@ public:
 
     bool supportsPartitionPruning() override { return true; }
 
+    size_t getMemoryBytes() const override
+    {
+        size_t size = sizeof(*this);
+        if (current_snapshot.has_value())
+            size += sizeof(*current_snapshot);
+        if (cached_unprunned_files_for_current_snapshot.has_value())
+        {
+            size += sizeof(*cached_unprunned_files_for_current_snapshot);
+            for (const String & str: *cached_unprunned_files_for_current_snapshot)
+                size += str.size();
+        }
+        size += manifest_entry_by_data_file.size() * sizeof(std::pair<String, Iceberg::ManifestFileEntry>);
+        size += manifest_entry_by_data_file.bucket_count() * sizeof(void*);
+        return size;
+    }
+
 private:
     using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileEntry>;
 

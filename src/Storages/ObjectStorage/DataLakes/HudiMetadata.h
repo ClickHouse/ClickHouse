@@ -31,14 +31,19 @@ public:
             && data_files == hudi_metadata->data_files;
     }
 
+    size_t getMemoryBytes() const override
+    {
+        size_t size = sizeof(*this);
+        for (const String & data_file : data_files)
+            size += data_file.size();
+        return size;
+    }
+
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
         ContextPtr local_context,
-        bool)
-    {
-        return std::make_unique<HudiMetadata>(object_storage, configuration, local_context);
-    }
+        bool);
 
 private:
     const ObjectStoragePtr object_storage;

@@ -231,6 +231,10 @@ namespace ServerSetting
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
+    extern const ServerSettingsString datalake_metadata_cache_policy;
+    extern const ServerSettingsUInt64 datalake_metadata_cache_size;
+    extern const ServerSettingsUInt64 datalake_metadata_cache_max_entries;
+    extern const ServerSettingsDouble datalake_metadata_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsSeconds keep_alive_timeout;
     extern const ServerSettingsString mark_cache_policy;
@@ -1711,6 +1715,17 @@ try
         LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_cache_max_size_in_bytes));
     }
     global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
+
+    String datalake_metadata_cache_policy = server_settings[ServerSetting::datalake_metadata_cache_policy];
+    size_t datalake_metadata_cache_size = server_settings[ServerSetting::datalake_metadata_cache_size];
+    size_t datalake_metadata_cache_max_entries = server_settings[ServerSetting::datalake_metadata_cache_max_entries];
+    double datalake_metadata_cache_size_ratio = server_settings[ServerSetting::datalake_metadata_cache_size_ratio];
+    if (datalake_metadata_cache_size > max_cache_size)
+    {
+        datalake_metadata_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered datalake metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(datalake_metadata_cache_size));
+    }
+    global_context->setDataLakeMetadataCache(datalake_metadata_cache_policy, datalake_metadata_cache_size, datalake_metadata_cache_max_entries, datalake_metadata_cache_size_ratio);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];

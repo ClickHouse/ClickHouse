@@ -463,6 +463,10 @@ namespace DB
     DECLARE(UInt64, skipping_index_cache_size, DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE, "Size of cache for secondary index in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, skipping_index_cache_max_entries, DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES, "Size of cache for secondary index in entries. Zero means disabled.", 0) \
     DECLARE(Double, skipping_index_cache_size_ratio, DEFAULT_SKIPPING_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the skipping index cache relative to the cache's total size.", 0) \
+    DECLARE(String, datalake_metadata_cache_policy, DEFAULT_DATALAKE_METADATA_CACHE_POLICY, "DataLake metadata cache policy name.", 0) \
+    DECLARE(UInt64, datalake_metadata_cache_size, DEFAULT_DATALAKE_METADATA_CACHE_MAX_SIZE, "Size of cache for datalake metadata in bytes. Zero means disabled.", 0) \
+    DECLARE(UInt64, datalake_metadata_cache_max_entries, DEFAULT_DATALAKE_METADATA_CACHE_MAX_ENTRIES, "Size of cache for datalake metadata in entries. Zero means disabled.", 0) \
+    DECLARE(Double, datalake_metadata_cache_size_ratio, DEFAULT_DATALAKE_METADATA_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the datalake metadata cache relative to the cache's total size.", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
     Maximum size of cache for uncompressed blocks of `MergeTree` indices.

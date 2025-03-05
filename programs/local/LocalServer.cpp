@@ -99,6 +99,10 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsString datalake_metadata_cache_policy;
+    extern const ServerSettingsUInt64 datalake_metadata_cache_size;
+    extern const ServerSettingsUInt64 datalake_metadata_cache_max_entries;
+    extern const ServerSettingsDouble datalake_metadata_cache_size_ratio;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
@@ -829,6 +833,17 @@ void LocalServer::processConfig()
 
     /// Initialize a dummy query cache.
     global_context->setQueryCache(0, 0, 0, 0);
+
+    String datalake_metadata_cache_policy = server_settings[ServerSetting::datalake_metadata_cache_policy];
+    size_t datalake_metadata_cache_size = server_settings[ServerSetting::datalake_metadata_cache_size];
+    size_t datalake_metadata_cache_max_entries = server_settings[ServerSetting::datalake_metadata_cache_max_entries];
+    double datalake_metadata_cache_size_ratio = server_settings[ServerSetting::datalake_metadata_cache_size_ratio];
+    if (datalake_metadata_cache_size > max_cache_size)
+    {
+        datalake_metadata_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered datalake metadata cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(datalake_metadata_cache_size));
+    }
+    global_context->setDataLakeMetadataCache(datalake_metadata_cache_policy, datalake_metadata_cache_size, datalake_metadata_cache_max_entries, datalake_metadata_cache_size_ratio);
 
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);

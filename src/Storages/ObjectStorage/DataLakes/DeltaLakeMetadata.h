@@ -56,16 +56,22 @@ public:
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
         ContextPtr local_context,
-        [[maybe_unused]] bool allow_experimental_delta_kernel_rs)
+        [[maybe_unused]] bool allow_experimental_delta_kernel_rs);
+
+    size_t getMemoryBytes() const override
     {
-#if USE_DELTA_KERNEL_RS
-        if (allow_experimental_delta_kernel_rs)
-            return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
-        else
-            return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-#else
-        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-#endif
+        size_t size = sizeof(*this);
+        for (const String & data_file : data_files)
+        {
+            size += data_file.size();
+        }
+        for (const auto & [key, value] : partition_columns)
+        {
+            size += key.size();
+            size += value.size() * sizeof(DeltaLakePartitionColumn);
+        }
+        size += schema.size() * sizeof(NameAndTypePair);
+        return size;
     }
 
 private:

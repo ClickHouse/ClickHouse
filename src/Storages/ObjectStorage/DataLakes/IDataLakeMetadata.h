@@ -13,7 +13,7 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
-class IDataLakeMetadata : boost::noncopyable
+class IDataLakeMetadata : boost::noncopyable, public std::enable_shared_from_this<IDataLakeMetadata>
 {
 public:
     virtual ~IDataLakeMetadata() = default;
@@ -50,6 +50,8 @@ public:
     /// Whether schema evolution is supported.
     virtual bool supportsExternalMetadataChange() const { return false; }
 
+    virtual size_t getMemoryBytes() const = 0;
+
 protected:
     [[noreturn]] void throwNotImplemented(std::string_view method) const
     {
@@ -57,6 +59,6 @@ protected:
     }
 };
 
-using DataLakeMetadataPtr = std::unique_ptr<IDataLakeMetadata>;
+using DataLakeMetadataPtr = std::shared_ptr<IDataLakeMetadata>;
 
 }

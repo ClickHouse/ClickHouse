@@ -1,4 +1,3 @@
-#include "Core/NamesAndTypes.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -7,21 +6,23 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/IColumn.h>
 #include <Core/Settings.h>
+#include <Core/NamesAndTypes.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeMetadataCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/ExpressionActions.h>
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -39,6 +40,12 @@ extern const int FILE_DOESNT_EXIST;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+}
+
+
+namespace Setting
+{
+extern const SettingsInt64 use_datalake_metadata_cache;
 }
 
 using namespace Iceberg;
@@ -298,28 +305,33 @@ DataLakeMetadataPtr IcebergMetadata::create(
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+    auto create_metadata = [&object_storage, &configuration_ptr, &local_context]()
+    {
+        const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
 
-    auto log = getLogger("IcebergMetadata");
+        ObjectInfo object_info(metadata_file_path);
+        auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, getLogger("IcebergMetadata"));
 
-    ObjectInfo object_info(metadata_file_path);
-    auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
+        String json_str;
+        readJSONObjectPossiblyInvalid(json_str, *buf);
 
-    String json_str;
-    readJSONObjectPossiblyInvalid(json_str, *buf);
+        Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
+        Poco::Dynamic::Var json = parser.parse(json_str);
+        const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-    Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
+        auto format_version_ = object->getValue<int>("format-version");
 
-    IcebergSchemaProcessor schema_processor;
+        auto ptr
+            = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version_, object);
 
-    auto format_version = object->getValue<int>("format-version");
-
-    auto ptr
-        = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object);
-
-    return ptr;
+        return ptr;
+    };
+    DataLakeMetadataCachePtr metadata_cache = local_context->getDataLakeMetadataCache();
+    if (local_context->getSettingsRef()[Setting::use_datalake_metadata_cache])
+    {
+        return metadata_cache->getOrSet(configuration_ptr->getPath(), std::move(create_metadata));
+    }
+    return create_metadata();
 }
 
 ManifestList IcebergMetadata::initializeManifestList(const String & manifest_list_file) const
