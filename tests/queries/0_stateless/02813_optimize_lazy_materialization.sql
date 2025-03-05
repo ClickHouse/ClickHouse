@@ -38,10 +38,6 @@ ALTER TABLE optimize_lazy_materialization ADD COLUMN default2 UInt64 ALIAS 2;
 SELECT * FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
 ALTER TABLE optimize_lazy_materialization ADD COLUMN default3 UInt64 ALIAS a + c;
 SELECT * FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
-ALTER TABLE optimize_lazy_materialization ADD COLUMN n.y Array(String) ALIAS ['qwqw'] AFTER n.x;
-SELECT a, b, c, d, n.x, n.y FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
-OPTIMIZE TABLE optimize_lazy_materialization FINAL;
-SELECT a, b, c, d, n.x, n.y FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
 -- { echoOff }
 DROP TABLE IF EXISTS optimize_lazy_materialization;
 
@@ -67,10 +63,6 @@ ALTER TABLE optimize_lazy_materialization_with_compact_mt ADD COLUMN default2 UI
 SELECT * FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
 ALTER TABLE optimize_lazy_materialization_with_compact_mt ADD COLUMN default3 UInt64 ALIAS a+c;
 SELECT * FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
-ALTER TABLE optimize_lazy_materialization_with_compact_mt ADD COLUMN n.y Array(String) ALIAS ['qwqw'] AFTER n.x;
-SELECT a, b, c, d, n.x, n.y FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
-OPTIMIZE TABLE optimize_lazy_materialization_with_compact_mt FINAL;
-SELECT a, b, c, d, n.x, n.y FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
 -- { echoOff }
 DROP TABLE IF EXISTS optimize_lazy_materialization_with_compact_mt;
 

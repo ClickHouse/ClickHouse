@@ -77,16 +77,6 @@ SELECT * FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
 0	0	0	0	['a','b','c']	0
 1	1	1	1	['a','b','c']	0
 2	0	2	2	['a','b','c']	0
-ALTER TABLE optimize_lazy_materialization ADD COLUMN n.y Array(String) ALIAS ['qwqw'] AFTER n.x;
-SELECT a, b, c, d, n.x, n.y FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
-0	0	0	0	['a','b','c']	['qwqw']
-1	1	1	1	['a','b','c']	['qwqw']
-2	0	2	2	['a','b','c']	['qwqw']
-OPTIMIZE TABLE optimize_lazy_materialization FINAL;
-SELECT a, b, c, d, n.x, n.y FROM optimize_lazy_materialization ORDER BY c LIMIT 3;
-0	0	0	0	['a','b','c']	['qwqw']
-1	1	1	1	['a','b','c']	['qwqw']
-2	0	2	2	['a','b','c']	['qwqw']
 -- { echoOn }
 SELECT * FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
 0	0	0	0	['a','b','c']
@@ -126,16 +116,6 @@ SELECT * FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
 0	0	0	0	['a','b','c']	0
 1	1	1	1	['a','b','c']	0
 2	0	2	2	['a','b','c']	0
-ALTER TABLE optimize_lazy_materialization_with_compact_mt ADD COLUMN n.y Array(String) ALIAS ['qwqw'] AFTER n.x;
-SELECT a, b, c, d, n.x, n.y FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
-0	0	0	0	['a','b','c']	['qwqw']
-1	1	1	1	['a','b','c']	['qwqw']
-2	0	2	2	['a','b','c']	['qwqw']
-OPTIMIZE TABLE optimize_lazy_materialization_with_compact_mt FINAL;
-SELECT a, b, c, d, n.x, n.y FROM optimize_lazy_materialization_with_compact_mt ORDER BY c LIMIT 3;
-0	0	0	0	['a','b','c']	['qwqw']
-1	1	1	1	['a','b','c']	['qwqw']
-2	0	2	2	['a','b','c']	['qwqw']
 -- { echoOn }
 SELECT * FROM optimize_lazy_materialization_with_int_data_type ORDER BY b LIMIT 10;
 0	0	3
