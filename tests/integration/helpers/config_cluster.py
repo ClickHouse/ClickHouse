@@ -2,7 +2,6 @@
 mysql_user = "root"
 mysql_pass = "clickhouse"
 
-
 # MYSQL8 CREDENTIALS
 mysql8_user = "root"
 mysql8_pass = "clickhouse"
@@ -11,7 +10,6 @@ mysql8_pass = "clickhouse"
 pg_user = "postgres"
 pg_pass = "mysecretpassword"
 pg_db = "postgres"
-
 
 # MINIO CREDENTIALS
 minio_access_key = "minio"
