@@ -23,7 +23,7 @@ struct PartitionStrategy
 
 protected:
     ASTPtr partition_by;
-    const Block & sample_block;
+    Block sample_block;
     ContextPtr context;
 };
 
