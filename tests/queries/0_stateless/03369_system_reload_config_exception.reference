@@ -1,2 +1,6 @@
 Test 1: Check exception in local mode
+OK
+Test 2: Check STOP LISTEN HTTP exception in local mode
+OK
+Test 3: Check START LISTEN HTTP exception in local mode
 OK 
