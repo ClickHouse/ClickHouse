@@ -518,7 +518,7 @@ def test_backup_restore(
     backup_name = new_backup_name()
     if backup_type == "S3":
         backup_destination = (
-            f"S3('http://minio1:9001/root/backups/{backup_name}', 'minio', 'ClickHouse_Minio_P@ssw0rd')"
+            f"S3('http://minio1:9001/root/backups/{backup_name}', 'minio', '{minio_secret_key}')"
         )
     elif backup_type == "File":
         backup_destination = f"File('/backups/{backup_name}/')"

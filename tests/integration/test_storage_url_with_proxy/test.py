@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 
 
 @pytest.fixture(scope="module")
@@ -56,9 +57,9 @@ def test_s3_with_proxy_list(cluster):
 
     # insert into function url uses POST and minio expects PUT
     node.query(
-        """
+        f"""
         INSERT INTO FUNCTION
-        s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', 'ClickHouse_Minio_P@ssw0rd', 'CSV', 'key String, value String')
+        s3('http://minio1:9001/root/data/ch-proxy-test/test.csv', 'minio', '{minio_secret_key}', 'CSV', 'key String, value String')
         SETTINGS s3_truncate_on_insert=1
         VALUES ('color','red'),('size','10')
         """
