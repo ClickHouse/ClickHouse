@@ -339,7 +339,7 @@ static String dumpStatistics(const ReadStepsPerformanceCounters & counters)
     const auto & all_counters = counters.getCounters();
     for (size_t i = 0; i < all_counters.size(); ++i)
     {
-        out << fmt::format("step {} rows_read: {}", i, all_counters[i]->rows_read);
+        out << fmt::format("step {} rows_read: {}", i, all_counters[i]->rows_read.load());
         if (i + 1 < all_counters.size())
             out << ", ";
     }

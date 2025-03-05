@@ -54,6 +54,8 @@
 #include <memory>
 #include <unordered_map>
 
+#include <fmt/ranges.h>
+
 #include "config.h"
 
 using namespace DB;
@@ -1970,7 +1972,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
             "max_number_of_partitions_for_independent_aggregation (current value is {}) or set "
             "force_aggregate_partitions_independently to suppress this check",
             partitions_cnt,
-            settings[Setting::max_number_of_partitions_for_independent_aggregation]);
+            settings[Setting::max_number_of_partitions_for_independent_aggregation].value);
         return false;
     }
 
