@@ -644,11 +644,21 @@ void QueryOracle::replaceQueryWithTablePeers(
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
         jtf->set_final(t.supportsFinal());
-        gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+        gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {
+            auto * etc = colRef.path.size() > 1 ? sel->add_result_columns()
+                                                      ->mutable_eca()
+                                                      ->mutable_expr()
+                                                      ->mutable_comp_expr()
+                                                      ->mutable_array()
+                                                      ->add_values()
+                                                      ->mutable_comp_expr()
+                                                      ->mutable_expr_stc()
+                                                : sel->add_result_columns()->mutable_etc();
+
             gen.columnPathRef(colRef, ins->add_cols());
-            gen.columnPathRef(colRef, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
+            gen.columnPathRef(colRef, etc->mutable_col()->mutable_path());
         }
         gen.entries.clear();
         peer_queries.emplace_back(next);
