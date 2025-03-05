@@ -72,7 +72,7 @@ FROM VALUES(
 )
 ```
 
-```response
+```response title="Response"
     ┌─person───┬─place─────┐
  1. │ Noah     │ Paris     │
  2. │ Emma     │ Tokyo     │
@@ -156,7 +156,7 @@ FROM VALUES(
 )
 ```
 
-```response
+```response title="Response"
     ┌─c1───────┬─c2────────┐
  1. │ Noah     │ Paris     │
  2. │ Emma     │ Tokyo     │
