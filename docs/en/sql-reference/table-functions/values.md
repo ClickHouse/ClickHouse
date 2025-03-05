@@ -2,8 +2,9 @@
 slug: /sql-reference/table-functions/values
 sidebar_position: 210
 sidebar_label: values
-title: "values"
-description: "creates a temporary storage which fills columns with values."
+title: 'values'
+description: 'creates a temporary storage which fills columns with values.'
+keywords: ['values', 'table function']
 ---
 
 # Values Table Function
