@@ -349,10 +349,11 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
 #if USE_AVRO
     registerTableFunctionIceberg(factory);
 #endif
-#if USE_AWS_S3
+
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
     registerTableFunctionDeltaLake(factory);
 #endif
+#if USE_AWS_S3
     registerTableFunctionHudi(factory);
 #endif
 }
