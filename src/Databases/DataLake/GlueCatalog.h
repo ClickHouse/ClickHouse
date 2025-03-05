@@ -19,6 +19,7 @@ public:
         const String & access_key_id,
         const String & secret_access_key,
         const String & region,
+        const String & endpoint,
         DB::ContextPtr context_);
 
     ~GlueCatalog() override = default;
@@ -39,7 +40,10 @@ public:
         const std::string & table_name,
         TableMetadata & result) const override;
 
-    std::optional<StorageType> getStorageType() const override { return std::nullopt; }
+    std::optional<StorageType> getStorageType() const override
+    {
+        return StorageType::S3;
+    }
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {

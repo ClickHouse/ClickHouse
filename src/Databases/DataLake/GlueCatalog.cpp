@@ -74,14 +74,14 @@ std::vector<String> splitTypeArguments(const String & type_str) {
 }
 
 // Recursive function to parse types
-DB::DataTypePtr getType(const String & type_name, const String & prefix = "")
+DB::DataTypePtr getType(const String & type_name, bool nullable, const String & prefix = "")
 {
     String name = trim(type_name);
 
     if (name.starts_with("array<") && name.ends_with(">"))
     {
         String inner = name.substr(6, name.size() - 7);
-        return std::make_shared<DB::DataTypeArray>(getType(inner));
+        return std::make_shared<DB::DataTypeArray>(getType(inner, nullable));
     }
 
     if (name.starts_with("map<") && name.ends_with(">"))
@@ -91,7 +91,7 @@ DB::DataTypePtr getType(const String & type_name, const String & prefix = "")
         if (args.size() != 2)
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid data type {}", type_name);
 
-        return std::make_shared<DB::DataTypeMap>(getType(args[0]), getType(args[1]));
+        return std::make_shared<DB::DataTypeMap>(getType(args[0], false), getType(args[1], nullable));
     }
 
     if (name.starts_with("struct<") && name.ends_with(">"))
@@ -113,13 +113,12 @@ DB::DataTypePtr getType(const String & type_name, const String & prefix = "")
             String full_field_name = prefix.empty() ? field_name : prefix + "." + field_name;
 
             field_names.push_back(full_field_name);
-            field_types.push_back(getType(field_type, full_field_name));
+            field_types.push_back(getType(field_type, nullable, full_field_name));
         }
         return std::make_shared<DB::DataTypeTuple>(field_types, field_names);
     }
 
-    // Base case: Simple type
-    return DB::IcebergSchemaProcessor::getSimpleType(name);
+    return nullable ? DB::makeNullable(DB::IcebergSchemaProcessor::getSimpleType(name)) : DB::IcebergSchemaProcessor::getSimpleType(name);
 }
 
 }
@@ -131,6 +130,7 @@ GlueCatalog::GlueCatalog(
     const String & access_key_id,
     const String & secret_access_key,
     const String & region_,
+    const String & endpoint,
     DB::ContextPtr context_)
     : ICatalog("")
     , DB::WithContext(context_)
@@ -141,8 +141,8 @@ GlueCatalog::GlueCatalog(
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
 
-    const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
 
+    const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
 
     int s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
     int s3_retry_attempts = static_cast<int>(global_settings[DB::Setting::s3_retry_attempts]);
@@ -163,9 +163,31 @@ GlueCatalog::GlueCatalog(
     client_configuration.connectTimeoutMs = 10 * 1000;
     client_configuration.requestTimeoutMs = 30 * 1000;
     client_configuration.region = region;
+    auto endpoint_provider = std::make_shared<Aws::Glue::GlueEndpointProvider>();
 
-    std::shared_ptr<DB::S3::S3CredentialsProviderChain> chain = std::make_shared<DB::S3::S3CredentialsProviderChain>(poco_config, credentials, creds_config);
-    glue_client = std::make_unique<Aws::Glue::GlueClient>(chain, client_configuration);
+    /// Only for testing when we are mocking glue
+    if (!endpoint.empty())
+    {
+        client_configuration.endpointOverride = endpoint;
+        endpoint_provider->OverrideEndpoint(endpoint);
+        Aws::Auth::AWSCredentials fake_credentials_for_fake_catalog;
+        if (credentials.IsEmpty())
+        {
+            fake_credentials_for_fake_catalog.SetAWSAccessKeyId("testing");
+            fake_credentials_for_fake_catalog.SetAWSSecretKey("testing");
+        }
+        else
+            fake_credentials_for_fake_catalog = credentials;
+
+        glue_client = std::make_unique<Aws::Glue::GlueClient>(fake_credentials_for_fake_catalog, endpoint_provider, client_configuration);
+    }
+    else
+    {
+        LOG_TEST(log, "Creating AWS glue client with credentials empty {}, region '{}', endpoint '{}'", credentials.IsEmpty(), region, endpoint);
+        std::shared_ptr<DB::S3::S3CredentialsProviderChain> chain = std::make_shared<DB::S3::S3CredentialsProviderChain>(poco_config, credentials, creds_config);
+        glue_client = std::make_unique<Aws::Glue::GlueClient>(chain, endpoint_provider, client_configuration);
+    }
+
 }
 
 
@@ -176,6 +198,7 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
     if (limit != 0)
         request.SetMaxResults(limit);
 
+    LOG_TEST(log, "Getting databases for prefix '{}'", prefix);
     std::string next_token;
     do
     {
@@ -185,12 +208,13 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
         {
             const auto & databases_result = outcome.GetResult();
             const std::vector<Aws::Glue::Model::Database> & dbs = databases_result.GetDatabaseList();
+            LOG_TEST(log, "Success getting databases for prefix '{}', total dbs {}", prefix, dbs.size());
             for (const auto & db : dbs)
             {
-                auto db_name = db.GetName();
+                const auto & db_name = db.GetName();
                 if (!db_name.starts_with(prefix))
                     continue;
-                result.push_back(db.GetName());
+                result.push_back(db_name);
                 if (limit != 0 && result.size() >= limit)
                     break;
             }
@@ -213,6 +237,7 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
 
 DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t limit) const
 {
+    LOG_TEST(log, "Getting tables for database '{}' with limit {}", db_name, limit);
     DB::Names result;
     Aws::Glue::Model::GetTablesRequest request;
     request.SetDatabaseName(db_name);
@@ -229,6 +254,7 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
         {
             const auto & tables_result = outcome.GetResult();
             const std::vector<Aws::Glue::Model::Table> & tables = tables_result.GetTableList();
+            LOG_TEST(log, "Success getting table for database '{}', total tables {}", db_name, tables.size());
             for (const auto & table : tables)
             {
                 if (limit != 0 && result.size() >= limit)
@@ -301,7 +327,7 @@ void GlueCatalog::getTableMetadata(
 
         std::string table_type;
         if (table_outcome.GetParameters().contains("table_type"))
-            table_type = table_outcome.GetTableType();
+            table_type = table_outcome.GetParameters().at("table_type");
 
         if (table_type != "ICEBERG")
         {
@@ -330,7 +356,11 @@ void GlueCatalog::getTableMetadata(
             DB::NamesAndTypesList schema;
             auto columns = table_outcome.GetStorageDescriptor().GetColumns();
             for (const auto & column : columns)
-                schema.push_back({column.GetName(), getType(column.GetType())});
+            {
+                const auto column_params = column.GetParameters();
+                bool can_be_nullable = column_params.contains("iceberg.field.optional") && column_params.at("iceberg.field.optional") == "true";
+                schema.push_back({column.GetName(), getType(column.GetType(), can_be_nullable)});
+            }
             result.setSchema(schema);
         }
 

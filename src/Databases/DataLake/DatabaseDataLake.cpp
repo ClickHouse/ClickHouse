@@ -43,8 +43,8 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsBool vended_credentials;
 
 
-    extern const DatabaseDataLakeSettingsString access_key_id;
-    extern const DatabaseDataLakeSettingsString secret_access_key;
+    extern const DatabaseDataLakeSettingsString aws_access_key_id;
+    extern const DatabaseDataLakeSettingsString aws_secret_access_key;
     extern const DatabaseDataLakeSettingsString region;
 }
 namespace Setting
@@ -136,9 +136,10 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
         case DB::DatabaseDataLakeCatalogType::GLUE:
         {
             catalog_impl = std::make_shared<DataLake::GlueCatalog>(
-                settings[DatabaseDataLakeSetting::access_key_id].value,
-                settings[DatabaseDataLakeSetting::secret_access_key].value,
+                settings[DatabaseDataLakeSetting::aws_access_key_id].value,
+                settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
                 settings[DatabaseDataLakeSetting::region].value,
+                url,
                 Context::getGlobalContextInstance());
             break;
         }

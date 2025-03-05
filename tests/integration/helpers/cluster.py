@@ -536,6 +536,7 @@ class ClickHouseCluster:
 
         self.spark_session = None
         self.with_iceberg_catalog = False
+        self.with_glue_catalog = False
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"

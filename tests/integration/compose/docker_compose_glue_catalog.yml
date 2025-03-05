@@ -1,10 +1,11 @@
 services:
   glue:
     image: motoserver/moto
+    container_name: glue
     ports:
       - 3000:3000
     environment:
-        MOTO_PORT=3000
+      - MOTO_PORT=3000
     healthcheck:
       test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/3000"]
       interval: 1s

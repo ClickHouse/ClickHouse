@@ -22,8 +22,8 @@ namespace ErrorCodes
     DECLARE(String, oauth_server_uri, "", "OAuth server uri", 0)             \
     DECLARE(String, warehouse, "", "Warehouse name inside the catalog", 0)             \
     DECLARE(String, auth_header, "", "Authorization header of format 'Authorization: <scheme> <auth_info>'", 0)           \
-    DECLARE(String, access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
-    DECLARE(String, secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
+    DECLARE(String, aws_access_key_id, "", "Key for AWS connection for Glue catalog", 0)           \
+    DECLARE(String, aws_secret_access_key, "", "Key for AWS connection for Glue Catalog'", 0)           \
     DECLARE(String, region, "", "Region for Glue catalog", 0)           \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
 
