@@ -10,7 +10,7 @@
 #include <Common/Stopwatch.h>
 
 
-int main(int, char **)
+int main(int argc, char ** argv)
 try
 {
     std::cout << std::fixed << std::setprecision(2);
@@ -18,11 +18,14 @@ try
     size_t n = 10000000;
     Stopwatch stopwatch;
 
+    int compression_level = 3;
+    if (argc > 1)
+        compression_level = atoi(argv[1]);
 
     {
         auto buf
             = std::make_unique<DB::WriteBufferFromFile>("test_zstd_buffers.zst", DB::DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_CREAT | O_TRUNC);
-        DB::ZstdDeflatingWriteBuffer zstd_buf(std::move(buf), /*compression level*/ 3);
+        DB::ZstdDeflatingWriteBuffer zstd_buf(std::move(buf), /*compression level*/ compression_level);
 
         stopwatch.restart();
         for (size_t i = 0; i < n; ++i)
