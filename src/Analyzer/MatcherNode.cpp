@@ -13,6 +13,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTColumnsTransformers.h>
 
+#include <fmt/ranges.h>
 
 namespace DB
 {

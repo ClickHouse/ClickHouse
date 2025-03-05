@@ -90,7 +90,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 LOG_WARNING(log, "Database got stuck at processing task {}: it failed {} times in a row with the same error. "
                                  "Will reset digest to mark our replica as lost, and trigger recovery from the most up-to-date metadata "
                                  "from ZooKeeper. See max_retries_before_automatic_recovery setting. The error: {}",
-                            current_task, subsequent_errors_count, last_unexpected_error);
+                            current_task, subsequent_errors_count.load(), last_unexpected_error);
 
                 String digest_str;
                 zookeeper->tryGet(database->replica_path + "/digest", digest_str);

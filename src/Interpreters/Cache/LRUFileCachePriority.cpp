@@ -95,7 +95,7 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(EntryPtr entry, cons
 
     LOG_TEST(
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
-        entry->key, entry->offset, entry->size);
+        entry->key, entry->offset, entry->size.load());
 
     return LRUIterator(this, iterator);
 }
@@ -113,7 +113,7 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Lo
 
     LOG_TEST(
         log, "Removed entry from LRU queue, key: {}, offset: {}, size: {}",
-        entry.key, entry.offset, entry.size);
+        entry.key, entry.offset, entry.size.load());
 
     return queue.erase(it);
 }
@@ -124,7 +124,7 @@ void LRUFileCachePriority::updateSize(int64_t size)
     chassert(size > 0 || state->current_size >= size_t(-size));
 
     LOG_TEST(log, "Updating size with {}, current is {}",
-             size, state->current_size);
+             size, state->current_size.load());
 
     state->current_size += size;
     CurrentMetrics::add(CurrentMetrics::FilesystemCacheSize, size);
@@ -215,7 +215,7 @@ void LRUFileCachePriority::iterate(IterateFunc && func, const CachePriorityGuard
                 ErrorCodes::LOGICAL_ERROR,
                 "Mismatch of file segment size in file segment metadata "
                 "and priority queue: {} != {} ({})",
-                entry.size, metadata->size(), metadata->file_segment->getInfoForLog());
+                entry.size.load(), metadata->size(), metadata->file_segment->getInfoForLog());
         }
 
         auto result = func(*locked_key, metadata);
@@ -447,13 +447,13 @@ bool LRUFileCachePriority::modifySizeLimits(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot modify size limits to {} in size and {} in elements: "
                         "not enough space freed. Current size: {}/{}, elements: {}/{} ({})",
-                        max_size_, max_elements_, state->current_size, max_size,
-                        state->current_elements_num, max_elements, description);
+                        max_size_, max_elements_, state->current_size.load(), max_size.load(),
+                        state->current_elements_num.load(), max_elements.load(), description);
     }
 
     LOG_INFO(log, "Modifying size limits from {} to {} in size, "
              "from {} to {} in elements count",
-             max_size, max_size_, max_elements, max_elements_);
+             max_size.load(), max_size_, max_elements.load(), max_elements_);
 
     max_size = max_size_;
     max_elements = max_elements_;
@@ -560,13 +560,13 @@ void LRUFileCachePriority::shuffle(const CachePriorityGuard::Lock &)
 std::string LRUFileCachePriority::getStateInfoForLog(const CachePriorityGuard::Lock & lock) const
 {
     return fmt::format("size: {}/{}, elements: {}/{} (description: {})",
-                       getSize(lock), max_size, getElementsCount(lock), max_elements, description);
+                       getSize(lock), max_size.load(), getElementsCount(lock), max_elements.load(), description);
 }
 
 std::string LRUFileCachePriority::getApproxStateInfoForLog() const
 {
     return fmt::format("size: {}/{}, elements: {}/{} (description: {})",
-                       getSizeApprox(), max_size, getElementsCountApprox(), max_elements, description);
+                       getSizeApprox(), max_size.load(), getElementsCountApprox(), max_elements.load(), description);
 }
 
 void LRUFileCachePriority::holdImpl(
@@ -581,8 +581,8 @@ void LRUFileCachePriority::holdImpl(
         throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Cannot take space {} in size and {} in elements. "
                         "Current state {}/{} in size, {}/{} in elements",
-                        size, elements, state->current_size, max_size,
-                        state->current_elements_num, max_elements);
+                        size, elements, state->current_size.load(), max_size.load(),
+                        state->current_elements_num.load(), max_elements.load());
     }
 
     state->current_size += size;
