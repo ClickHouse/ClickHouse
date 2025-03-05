@@ -1,5 +1,6 @@
 import datetime
 import json
+import uuid
 
 import bson
 import pymongo
@@ -178,8 +179,14 @@ def test_arrays(started_cluster):
                 ],
                 "arr_string": [str(i + 1), str(i + 2), str(i + 3)],
                 "arr_uuid": [
-                    "f0e77736-91d1-48ce-8f01-15123ca1c7ed",
-                    "93376a07-c044-4281-a76e-ad27cf6973c5",
+                    bson.Binary(
+                        uuid.UUID("f0e77736-91d1-48ce-8f01-15123ca1c7ed").bytes,
+                        subtype=4,
+                    ),
+                    bson.Binary(
+                        uuid.UUID("93376a07-c044-4281-a76e-ad27cf6973c5").bytes,
+                        subtype=4,
+                    ),
                 ],
                 "arr_arr_bool": [
                     [True, False, True],
@@ -738,26 +745,10 @@ def test_order_by(started_cluster):
 
     assert node.query("SELECT COUNT() FROM sort_table") == "900\n"
     assert node.query("SELECT keyInt FROM sort_table ORDER BY keyInt LIMIT 1") == "1\n"
-    assert (
-        node.query("SELECT keyInt FROM sort_table ORDER BY keyInt DESC LIMIT 1")
-        == "30\n"
-    )
-    assert (
-        node.query(
-            "SELECT keyInt, keyFloat FROM sort_table ORDER BY keyInt, keyFloat DESC LIMIT 1"
-        )
-        == "1\t1.03\n"
-    )
-    assert (
-        node.query(
-            "SELECT keyDateTime FROM sort_table ORDER BY keyDateTime DESC LIMIT 1"
-        )
-        == "1999-12-30 11:23:16\n"
-    )
-    assert (
-        node.query("SELECT keyDate FROM sort_table ORDER BY keyDate DESC LIMIT 1")
-        == "1999-12-30\n"
-    )
+    assert node.query("SELECT keyInt FROM sort_table ORDER BY keyInt DESC LIMIT 1") == "30\n"
+    assert node.query("SELECT keyInt, keyFloat FROM sort_table ORDER BY keyInt, keyFloat DESC LIMIT 1") == "1\t1.03\n"
+    assert node.query("SELECT keyDateTime FROM sort_table ORDER BY keyDateTime DESC LIMIT 1") == "1999-12-30 11:23:16\n"
+    assert node.query("SELECT keyDate FROM sort_table ORDER BY keyDate DESC LIMIT 1") == "1999-12-30\n"
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM sort_table ORDER BY keyInt WITH FILL")
@@ -790,6 +781,10 @@ def test_where(started_cluster):
                     "keyDateTime": datetime.datetime(1999, d, i, 11, 23, 16),
                     "keyDate": datetime.datetime(1999, d, i, 11, 23, 16),
                     "keyNull": None,
+                    "keyUuid": bson.Binary(
+                        uuid.UUID("8d9c5028-3371-4941-943f-84a0c90c5149").bytes,
+                        subtype=4,
+                    ),
                 }
             )
     where_mongo_table.insert_many(data)
@@ -804,96 +799,42 @@ def test_where(started_cluster):
              keyDateTime  DateTime,
              keyDate      Date,
              keyNull      Nullable(UInt8),
-             keyNotExists Nullable(Int)
+             keyNotExists Nullable(Int),
+             keyUuid      UUID
         ) ENGINE = MongoDB('mongo1:27017', 'test', 'where_table', 'root', 'clickhouse')"""
     )
 
     assert node.query("SELECT COUNT() FROM where_table") == "4\n"
 
-    assert (
-        node.query("SELECT keyString FROM where_table WHERE id = '11'") == "1string\n"
-    )
+    assert node.query("SELECT keyString FROM where_table WHERE id = '11'") == "1string\n"
     assert (
         node.query(
             "SELECT keyString FROM where_table WHERE id != '11' ORDER BY keyFloat"
         )
         == "2string\n1string\n2string\n"
     )
-    assert (
-        node.query(
-            "SELECT keyString FROM where_table WHERE id = '11' AND keyString = '1string'"
-        )
-        == "1string\n"
-    )
-    assert (
-        node.query("SELECT id FROM where_table WHERE keyInt = 1 AND keyFloat = 1.001")
-        == "11\n"
-    )
-    assert (
-        node.query("SELECT id FROM where_table WHERE keyInt = 0 OR keyFloat = 1.001")
-        == "11\n"
-    )
+    assert node.query("SELECT keyString FROM where_table WHERE id = '11' AND keyString = '1string'") == "1string\n"
+    assert node.query("SELECT id FROM where_table WHERE keyInt = 1 AND keyFloat = 1.001") == "11\n"
+    assert node.query("SELECT id FROM where_table WHERE keyInt = 0 OR keyFloat = 1.001") == "11\n"
 
-    assert (
-        node.query("SELECT id FROM where_table WHERE keyInt BETWEEN 1 AND 2")
-        == "11\n12\n21\n22\n"
-    )
+    assert node.query("SELECT id FROM where_table WHERE keyInt BETWEEN 1 AND 2") == "11\n12\n21\n22\n"
     assert node.query("SELECT id FROM where_table WHERE keyInt > 10") == ""
-    assert (
-        node.query("SELECT id FROM where_table WHERE keyInt < 10.1 ORDER BY keyFloat")
-        == "11\n12\n21\n22\n"
-    )
+    assert node.query("SELECT id FROM where_table WHERE keyInt < 10.1 ORDER BY keyFloat") == "11\n12\n21\n22\n"
 
     assert node.query("SELECT id FROM where_table WHERE id IN ('11')") == "11\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ['11']") == "11\n"
     assert node.query("SELECT id FROM where_table WHERE id IN ('11', 100)") == "11\n"
-    assert (
-        node.query(
-            "SELECT id FROM where_table WHERE id IN ('11', '22') ORDER BY keyFloat"
-        )
-        == "11\n22\n"
-    )
-    assert (
-        node.query(
-            "SELECT id FROM where_table WHERE id IN ['11', '22'] ORDER BY keyFloat"
-        )
-        == "11\n22\n"
-    )
+    assert node.query("SELECT id FROM where_table WHERE id IN ('11', '22') ORDER BY keyFloat") == "11\n22\n"
+    assert node.query("SELECT id FROM where_table WHERE id IN ['11', '22'] ORDER BY keyFloat") == "11\n22\n"
 
-    assert (
-        node.query(
-            "SELECT id FROM where_table WHERE id NOT IN ('11') ORDER BY keyFloat"
-        )
-        == "12\n21\n22\n"
-    )
-    assert (
-        node.query(
-            "SELECT id FROM where_table WHERE id NOT IN ['11'] ORDER BY keyFloat"
-        )
-        == "12\n21\n22\n"
-    )
-    assert (
-        node.query(
-            "SELECT id FROM where_table WHERE id NOT IN ('11', 100) ORDER BY keyFloat"
-        )
-        == "12\n21\n22\n"
-    )
-    assert (
-        node.query("SELECT id FROM where_table WHERE id NOT IN ('11') AND id IN ('12')")
-        == "12\n"
-    )
-    assert (
-        node.query("SELECT id FROM where_table WHERE id NOT IN ['11'] AND id IN ('12')")
-        == "12\n"
-    )
+    assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11') ORDER BY keyFloat") == "12\n21\n22\n"
+    assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11'] ORDER BY keyFloat") == "12\n21\n22\n"
+    assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11', 100) ORDER BY keyFloat") == "12\n21\n22\n"
+    assert node.query("SELECT id FROM where_table WHERE id NOT IN ('11') AND id IN ('12')") == "12\n"
+    assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11'] AND id IN ('12')") == "12\n"
 
     with pytest.raises(QueryRuntimeException):
-        assert (
-            node.query(
-                "SELECT id FROM where_table WHERE id NOT IN ['11', 100] ORDER BY keyFloat"
-            )
-            == "12\n21\n22\n"
-        )
+        assert node.query("SELECT id FROM where_table WHERE id NOT IN ['11', 100] ORDER BY keyFloat") == "12\n21\n22\n"
 
     assert node.query("SELECT id FROM where_table WHERE keyDateTime > now()") == ""
     assert (
@@ -902,24 +843,20 @@ def test_where(started_cluster):
         )
         == "1\n2\n"
     )
+    assert (
+        node.query(
+            "SELECT keyUuid FROM where_table WHERE keyUuid = toUUID('8d9c5028-3371-4941-943f-84a0c90c5149') LIMIT 1"
+        )
+        == "8d9c5028-3371-4941-943f-84a0c90c5149\n"
+    )
 
     assert node.query("SELECT count() FROM where_table WHERE isNotNull(id)") == "4\n"
-    assert (
-        node.query("SELECT count() FROM where_table WHERE isNotNull(keyNull)") == "0\n"
-    )
+    assert node.query("SELECT count() FROM where_table WHERE isNotNull(keyNull)") == "0\n"
     assert node.query("SELECT count() FROM where_table WHERE isNull(keyNull)") == "4\n"
-    assert (
-        node.query("SELECT count() FROM where_table WHERE isNotNull(keyNotExists)")
-        == "0\n"
-    )
-    assert (
-        node.query("SELECT count() FROM where_table WHERE isNull(keyNotExists)")
-        == "4\n"
-    )
+    assert node.query("SELECT count() FROM where_table WHERE isNotNull(keyNotExists)") == "0\n"
+    assert node.query("SELECT count() FROM where_table WHERE isNull(keyNotExists)") == "4\n"
     assert node.query("SELECT count() FROM where_table WHERE keyNotExists = 0") == "0\n"
-    assert (
-        node.query("SELECT count() FROM where_table WHERE keyNotExists != 0") == "0\n"
-    )
+    assert node.query("SELECT count() FROM where_table WHERE keyNotExists != 0") == "0\n"
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM where_table WHERE keyInt = keyFloat")
@@ -1043,14 +980,12 @@ def test_oid(started_cluster):
     oid_mongo_table = db["oid_table"]
     inserted_result = oid_mongo_table.insert_many(
         [
-            {"key": "a"},
-            {"key": "b"},
-            {"key": "c"},
-            {"key": "d"},
-            {"key": "e"},
+            {"key": "oid1"},
+            {"key": "oid2"},
+            {"key": "oid3"},
         ]
     )
-    oid = inserted_result.inserted_ids
+    ids = inserted_result.inserted_ids
 
     node = started_cluster.instances["node"]
     node.query(
@@ -1062,42 +997,53 @@ def test_oid(started_cluster):
         """
     )
 
-    assert node.query("SELECT COUNT() FROM oid_table") == "5\n"
+    assert node.query(f"SELECT COUNT() FROM oid_table") == "3\n"
 
-    assert node.query(f"SELECT key FROM oid_table WHERE _id = '{oid[0]}'") == "a\n"
-    assert (
-        node.query(f"SELECT * FROM oid_table WHERE _id = '{oid[2]}'")
-        == f"{oid[2]}\tc\n"
-    )
-    assert node.query(f"SELECT COUNT() FROM oid_table WHERE _id != '{oid[0]}'") == "4\n"
-
-    assert (
-        node.query(
-            f"SELECT key FROM oid_table WHERE _id in ('{oid[0]}', '{oid[1]}') ORDER BY key"
-        )
-        == "a\nb\n"
-    )
-    assert (
-        node.query(
-            f"SELECT key FROM oid_table WHERE _id in ['{oid[0]}', '{oid[1]}'] ORDER BY key"
-        )
-        == "a\nb\n"
-    )
-    assert (
-        node.query(f"SELECT key FROM oid_table WHERE _id in ('{oid[0]}') ORDER BY key")
-        == "a\n"
-    )
-    assert (
-        node.query(f"SELECT key FROM oid_table WHERE _id in ['{oid[1]}'] ORDER BY key")
-        == "b\n"
-    )
+    assert node.query(f"SELECT _id FROM oid_table WHERE _id = '{str(ids[0])}'") == f"{str(ids[0])}\n"
+    assert node.query(f"SELECT key FROM oid_table WHERE _id = '{str(ids[0])}'") == "oid1\n"
+    assert (node.query(f"SELECT key FROM oid_table WHERE _id != '{str(ids[0])}' ORDER BY key") ==
+            "oid2\noid3\n")
+    assert node.query(f"SELECT key FROM oid_table WHERE _id in ['{ids[0]}', '{ids[1]}'] ORDER BY key") == "oid1\noid2\n"
+    assert node.query(f"SELECT key FROM oid_table WHERE _id not in ['{ids[0]}', '{ids[1]}'] ORDER BY key") == "oid3\n"
 
     with pytest.raises(QueryRuntimeException):
-        node.query("SELECT * FROM oid_table WHERE _id = 'invalidOID'")
+        node.query(f"SELECT * FROM oid_table WHERE _id = 'not-oid'")
     with pytest.raises(QueryRuntimeException):
-        node.query("SELECT * FROM oid_table WHERE _id = 123123")
+        node.query(f"SELECT * FROM oid_table WHERE _id != 'not-oid'")
     with pytest.raises(QueryRuntimeException):
-        node.query("SELECT * FROM oid_table WHERE _id in (123123, 123)")
+        node.query(f"SELECT * FROM oid_table WHERE _id = 1234567")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM oid_table WHERE _id != 1234567")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT key FROM oid_table WHERE _id in ['{ids[0]}', 'not-oid']")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT key FROM oid_table WHERE _id not in ['{ids[0]}', 'not-oid']")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT key FROM oid_table WHERE _id in ['nope', 'not-oid']")
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT key FROM oid_table WHERE _id not in ['nope', 'not-oid']")
+
+    node.query(
+        """
+        CREATE OR REPLACE TABLE oid_table(
+        _id  String,
+        key  String
+        ) ENGINE = MongoDB('mongo1:27017', 'test', 'oid_table', 'root', 'clickhouse', '', 'key')
+        """
+    )
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM oid_table WHERE key = 'not-oid'")
+
+    node.query(
+        """
+        CREATE OR REPLACE TABLE oid_table(
+        _id  String,
+        key  String
+        ) ENGINE = MongoDB('mongodb://mongo1:27017/test', 'oid_table', 'key')
+        """
+    )
+    with pytest.raises(QueryRuntimeException):
+        node.query(f"SELECT * FROM oid_table WHERE key = 'not-oid'")
 
     node.query("DROP TABLE oid_table")
     oid_mongo_table.drop()
@@ -1111,8 +1057,19 @@ def test_uuid(started_cluster):
     uuid_mongo_table = db["uuid_table"]
     uuid_mongo_table.insert_many(
         [
-            {"isValid": 0, "kUUID": "bad_uuid"},
-            {"isValid": 1, "kUUID": "f0e77736-91d1-48ce-8f01-15123ca1c7ed"},
+            {"isValid": 0, "kUUID": "bad_uuid_string"},
+            {
+                "isValid": 1,
+                "kUUID": bson.Binary(
+                    uuid.UUID("f0e77736-91d1-48ce-8f01-15123ca1c7ed").bytes, subtype=0
+                ),
+            },
+            {
+                "isValid": 2,
+                "kUUID": bson.Binary(
+                    uuid.UUID("f0e77736-91d1-48ce-8f01-15123ca1c7ed").bytes, subtype=4
+                ),
+            },
         ]
     )
 
@@ -1126,13 +1083,12 @@ def test_uuid(started_cluster):
         """
     )
 
-    assert (
-        node.query(f"SELECT kUUID FROM uuid_table WHERE isValid = 1")
-        == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
-    )
+    assert node.query(f"SELECT kUUID FROM uuid_table WHERE isValid = 2") == "f0e77736-91d1-48ce-8f01-15123ca1c7ed\n"
 
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM uuid_table WHERE isValid = 0")
+    with pytest.raises(QueryRuntimeException):
+        node.query("SELECT * FROM uuid_table WHERE isValid = 1")
     with pytest.raises(QueryRuntimeException):
         node.query("SELECT * FROM uuid_table")
 
