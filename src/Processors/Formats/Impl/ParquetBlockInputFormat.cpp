@@ -1188,6 +1188,7 @@ void ParquetBlockInputFormat::resetParser()
     metadata.reset();
     column_indices.clear();
     row_group_batches.clear();
+    new_native_reader.reset();
     while (!pending_chunks.empty())
         pending_chunks.pop();
     row_group_batches_completed = 0;
