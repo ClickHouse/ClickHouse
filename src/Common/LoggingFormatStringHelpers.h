@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 #include <base/types.h>
-#include <fmt/base.h>
 #include <mutex>
 #include <optional>
 #include <type_traits>
@@ -11,6 +10,8 @@
 #include <Poco/Message.h>
 #include <base/EnumReflection.h>
 #include <Common/Logger.h>
+
+import fmt;
 
 struct PreformattedMessage;
 consteval void formatStringCheckArgsNumImpl(std::string_view str, size_t nargs);

@@ -3,7 +3,7 @@
 #include <base/defines.h>
 #include <base/types.h>
 
-#include <fmt/format.h>
+import fmt;
 
 template <>
 struct fmt::formatter<Int8> : fmt::formatter<int8_t>

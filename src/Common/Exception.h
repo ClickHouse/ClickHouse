@@ -10,8 +10,9 @@
 #include <exception>
 #include <vector>
 
-#include <fmt/format.h>
 #include <Poco/Exception.h>
+
+import fmt;
 
 
 namespace Poco

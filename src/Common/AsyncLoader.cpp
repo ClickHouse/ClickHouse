@@ -6,7 +6,6 @@
 #include <base/EnumReflection.h>
 #include <base/defines.h>
 #include <base/scope_guard.h>
-#include <fmt/format.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
@@ -17,7 +16,7 @@
 #include <Common/noexcept_scope.h>
 #include <Common/setThreadName.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 
 namespace ProfileEvents

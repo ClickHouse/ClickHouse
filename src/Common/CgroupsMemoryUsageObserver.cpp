@@ -10,10 +10,10 @@
 #include <IO/ReadHelpers.h>
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
-#include <base/sleep.h>
-#include <fmt/ranges.h>
 
 #include <cstdint>
+
+import fmt;
 
 using namespace DB;
 

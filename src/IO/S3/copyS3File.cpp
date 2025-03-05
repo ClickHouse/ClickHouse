@@ -14,7 +14,7 @@
 
 #include <IO/S3/Requests.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace ProfileEvents
 {

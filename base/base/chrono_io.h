@@ -4,7 +4,8 @@
 #include <string>
 #include <sstream>
 #include <cctz/time_zone.h>
-#include <fmt/core.h>
+
+import fmt;
 
 
 inline std::string to_string(const std::time_t & time)

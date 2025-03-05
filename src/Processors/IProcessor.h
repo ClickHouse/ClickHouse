@@ -6,7 +6,8 @@
 #include <list>
 #include <memory>
 #include <vector>
-#include <fmt/format.h>
+
+import fmt;
 
 class EventCounter;
 

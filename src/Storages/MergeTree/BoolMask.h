@@ -1,6 +1,6 @@
 #pragma once
 
-#include <fmt/format.h>
+import fmt;
 
 /// Multiple Boolean values. That is, two Boolean values: can it be true, can it be false.
 struct BoolMask

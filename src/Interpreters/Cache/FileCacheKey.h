@@ -1,6 +1,7 @@
 #pragma once
 #include <Core/Types.h>
-#include <fmt/format.h>
+
+import fmt;
 
 namespace DB
 {

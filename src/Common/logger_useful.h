@@ -2,8 +2,6 @@
 
 /// Macros for convenient usage of Poco logger.
 #include <unistd.h>
-#include <fmt/args.h>
-#include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <Common/AtomicLogger.h>
@@ -12,6 +10,8 @@
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
+
+import fmt;
 
 
 #define LogToStr(x, y) LogToStrImpl(x, y)

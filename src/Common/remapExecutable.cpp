@@ -11,8 +11,8 @@
 
 #include <Common/getMappedArea.h>
 #include <Common/Exception.h>
-#include <fmt/format.h>
 
+import fmt;
 
 namespace DB
 {

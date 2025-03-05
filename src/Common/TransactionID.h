@@ -1,8 +1,9 @@
 #pragma once
 #include <Core/Types.h>
 #include <Core/UUID.h>
-#include <fmt/format.h>
 #include <IO/WriteHelpers.h>
+
+import fmt;
 
 namespace DB
 {

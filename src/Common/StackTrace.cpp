@@ -22,9 +22,10 @@
 #include <shared_mutex>
 #include <unordered_map>
 #include <libunwind.h>
-#include <fmt/format.h>
 
 #include <boost/algorithm/string/split.hpp>
+
+import fmt;
 
 #if defined(OS_DARWIN)
 /// This header contains functions like `backtrace` and `backtrace_symbols`

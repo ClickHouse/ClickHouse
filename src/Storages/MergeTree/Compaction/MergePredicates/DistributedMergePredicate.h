@@ -5,7 +5,7 @@
 
 #include <base/defines.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace DB
 {

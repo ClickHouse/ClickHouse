@@ -3,7 +3,7 @@
 #include <vector>
 #include <string>
 
-#include <fmt/format.h>
+import fmt;
 
 namespace DB
 {
