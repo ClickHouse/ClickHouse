@@ -6,7 +6,11 @@ options {
 
 // Top-level statements
 
-queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)? (SEMICOLON)? | insertStmt;
+queryStmt
+    : query (INTO OUTFILE stringLiteral)? (FORMAT identifierOrNull)? (SEMICOLON)?  # QueryStmtQuery
+    | insertStmt                                                                   # QueryStmtInsert
+    ;
+
 query
     : alterStmt     // DDL
     | attachStmt    // DDL
@@ -56,7 +60,7 @@ alterTableClause
     | CLEAR COLUMN (IF EXISTS)? nestedIdentifier (IN partitionClause)?                # AlterTableClauseClearColumn
     | CLEAR INDEX (IF EXISTS)? nestedIdentifier (IN partitionClause)?                 # AlterTableClauseClearIndex
     | CLEAR PROJECTION (IF EXISTS)? nestedIdentifier (IN partitionClause)?            # AlterTableClauseClearProjection
-    | COMMENT COLUMN (IF EXISTS)? nestedIdentifier STRING_LITERAL                     # AlterTableClauseComment
+    | COMMENT COLUMN (IF EXISTS)? nestedIdentifier stringLiteral                      # AlterTableClauseComment
     | DELETE WHERE columnExpr                                                         # AlterTableClauseDelete
     | DETACH partitionClause                                                          # AlterTableClauseDetach
     | DROP COLUMN (IF EXISTS)? nestedIdentifier                                       # AlterTableClauseDropColumn
@@ -67,13 +71,13 @@ alterTableClause
     | MATERIALIZE INDEX (IF EXISTS)? nestedIdentifier (IN partitionClause)?           # AlterTableClauseMaterializeIndex
     | MATERIALIZE PROJECTION (IF EXISTS)? nestedIdentifier (IN partitionClause)?      # AlterTableClauseMaterializeProjection
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier codecExpr                           # AlterTableClauseModifyCodec
-    | MODIFY COLUMN (IF EXISTS)? nestedIdentifier COMMENT STRING_LITERAL              # AlterTableClauseModifyComment
+    | MODIFY COLUMN (IF EXISTS)? nestedIdentifier COMMENT stringLiteral               # AlterTableClauseModifyComment
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier REMOVE tableColumnPropertyType      # AlterTableClauseModifyRemove
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                                      # AlterTableClauseModify
     | MODIFY ORDER BY columnExpr                                                      # AlterTableClauseModifyOrderBy
     | MODIFY ttlClause                                                                # AlterTableClauseModifyTTL
-    | MOVE partitionClause ( TO DISK STRING_LITERAL
-                           | TO VOLUME STRING_LITERAL
+    | MOVE partitionClause ( TO DISK stringLiteral
+                           | TO VOLUME stringLiteral
                            | TO TABLE tableIdentifier
                            )                                                          # AlterTableClauseMovePartition
     | REMOVE TTL                                                                      # AlterTableClauseRemoveTTL
@@ -89,7 +93,7 @@ tableColumnPropertyType: ALIAS | CODEC | COMMENT | DEFAULT | MATERIALIZED | TTL;
 
 partitionClause
     : PARTITION columnExpr         // actually we expect here any form of tuple of literals
-    | PARTITION ID STRING_LITERAL
+    | PARTITION ID stringLiteral
     ;
 
 // ATTACH statement
@@ -144,8 +148,8 @@ layoutClause: LAYOUT LPAREN identifier LPAREN dictionaryArgExpr* RPAREN RPAREN;
 rangeClause: RANGE LPAREN (MIN identifier MAX identifier | MAX identifier MIN identifier) RPAREN;
 dictionarySettingsClause: SETTINGS LPAREN settingExprList RPAREN;
 
-clusterClause: ON CLUSTER (identifier | STRING_LITERAL);
-uuidClause: UUID STRING_LITERAL;
+clusterClause: ON CLUSTER (identifier | stringLiteral);
+uuidClause: UUID stringLiteral;
 destinationClause: TO tableIdentifier;
 subqueryClause: AS selectUnionStmt;
 tableSchemaClause
@@ -177,15 +181,15 @@ tableElementExpr
     | PROJECTION tableProjectionDfnt                                               # TableElementExprProjection
     ;
 tableColumnDfnt
-    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? (COMMENT STRING_LITERAL)? codecExpr? (TTL columnExpr)?
-    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr (COMMENT STRING_LITERAL)? codecExpr? (TTL columnExpr)?
+    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? (COMMENT stringLiteral)? codecExpr? (TTL columnExpr)?
+    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr (COMMENT stringLiteral)? codecExpr? (TTL columnExpr)?
     ;
 tableColumnPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
 tableIndexDfnt: nestedIdentifier columnExpr TYPE columnTypeExpr GRANULARITY DECIMAL_LITERAL;
 tableProjectionDfnt: nestedIdentifier projectionSelectStmt;
 codecExpr: CODEC LPAREN codecArgExpr (COMMA codecArgExpr)* RPAREN;
 codecArgExpr: identifier (LPAREN columnExprList? RPAREN)?;
-ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)?;
+ttlExpr: columnExpr (DELETE | TO DISK stringLiteral | TO VOLUME stringLiteral)?;
 
 // DESCRIBE statement
 
@@ -317,7 +321,7 @@ joinConstraintClause
 sampleClause: SAMPLE ratioExpr (OFFSET ratioExpr)?;
 limitExpr: columnExpr ((COMMA | OFFSET) columnExpr)?;
 orderExprList: orderExpr (COMMA orderExpr)*;
-orderExpr: columnExpr (ASCENDING | DESCENDING | DESC)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;
+orderExpr: columnExpr (ASCENDING | DESCENDING | DESC)? (NULLS (FIRST | LAST))? (COLLATE stringLiteral)?;
 ratioExpr: numberLiteral (SLASH numberLiteral)?;
 settingExprList: settingExpr (COMMA settingExpr)*;
 settingExpr: identifier EQ_SINGLE literal;
@@ -346,7 +350,7 @@ showStmt
     | SHOW CREATE TEMPORARY? TABLE? tableIdentifier                                                               # showCreateTableStmt
     | SHOW DATABASES                                                                                              # showDatabasesStmt
     | SHOW DICTIONARIES (FROM databaseIdentifier)?                                                                # showDictionariesStmt
-    | SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE STRING_LITERAL | whereClause)? limitClause?  # showTablesStmt
+    | SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE stringLiteral | whereClause)? limitClause?   # showTablesStmt
     ;
 
 // SYSTEM statements
@@ -394,12 +398,12 @@ columnsExpr
 columnExpr
     : CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END          # ColumnExprCase
     | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                                     # ColumnExprCast
-    | DATE STRING_LITERAL                                                                 # ColumnExprDate
+    | DATE stringLiteral                                                                  # ColumnExprDate
     | EXTRACT LPAREN interval FROM columnExpr RPAREN                                      # ColumnExprExtract
     | INTERVAL columnExpr interval                                                        # ColumnExprInterval
     | SUBSTRING LPAREN columnExpr FROM columnExpr (FOR columnExpr)? RPAREN                # ColumnExprSubstring
-    | TIMESTAMP STRING_LITERAL                                                            # ColumnExprTimestamp
-    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN       # ColumnExprTrim
+    | TIMESTAMP stringLiteral                                                             # ColumnExprTimestamp
+    | TRIM LPAREN (BOTH | LEADING | TRAILING) stringLiteral  FROM columnExpr RPAREN       # ColumnExprTrim
     | identifier (LPAREN columnExprList? RPAREN) OVER LPAREN windowExpr RPAREN            # ColumnExprWinFunction
     | identifier (LPAREN columnExprList? RPAREN) OVER identifier                          # ColumnExprWinFunctionTarget
     | identifier (LPAREN columnExprList? RPAREN)? LPAREN DISTINCT? columnArgList? RPAREN  # ColumnExprFunction
@@ -486,9 +490,9 @@ numberLiteral: (PLUS | DASH)? (floatingLiteral | OCTAL_LITERAL | DECIMAL_LITERAL
 stringLiteral: HEXADECIMAL_STRING_LITERAL | BINARY_STRING_LITERAL | STRING_LITERAL;
 literal
     : numberLiteral
-    | STRING_LITERAL
     | JSON_FALSE
     | JSON_TRUE
+    | stringLiteral
     | NULL_SQL
     ;
 interval: NANOSECOND | MICROSECOND | MILLISECOND | SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
@@ -522,4 +526,4 @@ keywordForAlias
 alias: IDENTIFIER | keywordForAlias;  // |interval| can't be an alias, otherwise 'INTERVAL 1 SOMETHING' becomes ambiguous.
 identifier: IDENTIFIER | interval | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
-enumValue: STRING_LITERAL EQ_SINGLE numberLiteral;
+enumValue: stringLiteral EQ_SINGLE numberLiteral;
