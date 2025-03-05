@@ -290,31 +290,25 @@ void ReplxxLineReader::setLastIsDelimiter(bool flag)
     replxx_last_is_delimiter = flag;
 }
 
-ReplxxLineReader::ReplxxLineReader(
-    Suggest & suggest,
-    const String & history_file_path_,
-    UInt32 history_max_entries_,
-    bool multiline_,
-    bool ignore_shell_suspend,
-    Patterns extenders_,
-    Patterns delimiters_,
-    const char word_break_characters_[],
-    replxx::Replxx::highlighter_callback_t highlighter_,
-    std::istream & input_stream_,
-    std::ostream & output_stream_,
-    int in_fd_,
-    int out_fd_,
-    int err_fd_
-)
-    : LineReader(history_file_path_, multiline_, std::move(extenders_), std::move(delimiters_), input_stream_, output_stream_, in_fd_)
-    , rx(input_stream_, output_stream_, in_fd_, out_fd_, err_fd_)
-    , highlighter(std::move(highlighter_))
-    , word_break_characters(word_break_characters_)
+ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
+    : LineReader
+    (
+        options.history_file_path,
+        options.multiline,
+        std::move(options.extenders),
+        std::move(options.delimiters),
+        options.input_stream,
+        options.output_stream,
+        options.in_fd
+    )
+    , rx(options.input_stream, options.output_stream, options.in_fd, options.out_fd, options.err_fd)
+    , highlighter(std::move(options.highlighter))
+    , word_break_characters(options.word_break_characters.data())
     , editor(getEditor())
 {
     using Replxx = replxx::Replxx;
 
-    rx.set_max_history_size(static_cast<int>(history_max_entries_));
+    rx.set_max_history_size(static_cast<int>(options.history_max_entries));
 
     if (!history_file_path.empty())
     {
@@ -348,7 +342,7 @@ ReplxxLineReader::ReplxxLineReader(
 
     rx.install_window_change_handler();
 
-    auto callback = [&suggest, this] (const String & context, size_t context_size)
+    auto callback = [&suggest = options.suggest, this] (const String & context, size_t context_size)
     {
         return suggest.getCompletions(context, context_size, word_break_characters);
     };
@@ -368,7 +362,7 @@ ReplxxLineReader::ReplxxLineReader(
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
-    if (ignore_shell_suspend)
+    if (options.ignore_shell_suspend)
         rx.bind_key_internal(replxx::Replxx::KEY::control('Z'), "insert_character");
 
     auto commit_action = [this](char32_t code)
@@ -394,7 +388,9 @@ ReplxxLineReader::ReplxxLineReader(
     /// By default C-w is KILL_TO_BEGINING_OF_WORD, while in readline it is unix-word-rubout
     rx.bind_key(Replxx::KEY::control('W'), [this](char32_t code) { return rx.invoke(Replxx::ACTION::KILL_TO_WHITESPACE_ON_LEFT, code); });
 
-    rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
+    /// We don't want to allow opening EDITOR in the embedded mode.
+    if (!options.embedded_mode)
+        rx.bind_key(Replxx::KEY::meta('E'), [this](char32_t) { openEditor(); return Replxx::ACTION_RESULT::CONTINUE; });
 
     /// readline insert-comment
     auto insert_comment_action = [this](char32_t code)
