@@ -7,7 +7,6 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <QueryPipeline/BlockIO.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTDropQuery.h>
 
 
 namespace DB

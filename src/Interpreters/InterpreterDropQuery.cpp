@@ -14,7 +14,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
@@ -410,18 +409,17 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
     if (!truncate && database->hasReplicationThread())
         database->stopReplication();
 
-    ASTDropQuery query_for_table;
-    query_for_table.kind = query.kind;
-    // For truncate operation on database, drop the tables
-    if (truncate)
-        query_for_table.kind = query.has_all_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
-
     if (database->shouldBeEmptyOnDetach())
     {
         /// Cancel restarting replicas in that database, wait for remaining RESTART queries to finish.
         /// So it will not startup tables concurrently with the flushAndPrepareForShutdown call below.
         auto restart_replica_lock = DatabaseCatalog::instance().getLockForDropDatabase(database_name);
 
+        ASTDropQuery query_for_table;
+        query_for_table.kind = query.kind;
+        // For truncate operation on database, drop the tables
+        if (truncate)
+            query_for_table.kind = query.has_all_tables ? ASTDropQuery::Kind::Truncate : ASTDropQuery::Kind::Drop;
         query_for_table.if_exists = true;
         query_for_table.if_empty = false;
         query_for_table.setDatabase(database_name);
