@@ -3,6 +3,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -190,7 +191,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     {
         std::lock_guard lock{database->metadata_mutex};
-        if (!database->checkDigestValid(context, false))
+        if (!database->checkDigestValid(context))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
     }
 

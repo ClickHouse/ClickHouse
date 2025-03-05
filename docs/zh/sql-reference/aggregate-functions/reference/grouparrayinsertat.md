@@ -20,16 +20,16 @@ groupArrayInsertAt(default_x, size)(x, pos);
 
 **参数**
 
--   `x` — 要插入的值。生成所[支持的数据类型](../../../sql-reference/data-types/index.md)(数据)的[表达式](../../../sql-reference/syntax.md#syntax-expressions)。
--   `pos` — 指定元素 `x` 将被插入的位置。 数组中的索引编号从零开始。 [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges).
--   `default_x` — 在空位置替换的默认值。可选参数。生成 `x` 数据类型 (数据) 的[表达式](../../../sql-reference/syntax.md#syntax-expressions)。  如果 `default_x` 未定义，则 [默认值](../../../sql-reference/statements/create.md#create-default-values) 被使用。
--   `size`— 结果数组的长度。可选参数。如果使用该参数，必须指定默认值 `default_x` 。 [UInt32](../../../sql-reference/data-types/int-uint.md#uint-ranges)。
+-   `x` — 要插入的值。生成所[支持的数据类型](../../../sql-reference/data-types/index.md)(数据)的[表达式](/sql-reference/syntax#expressions)。
+-   `pos` — 指定元素 `x` 将被插入的位置。 数组中的索引编号从零开始。 [UInt32](/sql-reference/data-types/int-uint#integer-ranges).
+-   `default_x` — 在空位置替换的默认值。可选参数。生成 `x` 数据类型 (数据) 的[表达式](/sql-reference/syntax#expressions)。  如果 `default_x` 未定义，则 [默认值](../../../sql-reference/statements/create.md#create-default-values) 被使用。
+-   `size`— 结果数组的长度。可选参数。如果使用该参数，必须指定默认值 `default_x` 。 [UInt32](/sql-reference/data-types/int-uint#integer-ranges)。
 
 **返回值**
 
 -   具有插入值的数组。
 
-类型: [阵列](../../../sql-reference/data-types/array.md#data-type-array)。
+类型: [阵列](/sql-reference/data-types/array)。
 
 **示例**
 

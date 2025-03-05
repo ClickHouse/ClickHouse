@@ -1,7 +1,7 @@
 ---
-title : TabSeparatedWithNames
+title: TabSeparatedWithNames
 slug: /interfaces/formats/TabSeparatedWithNames
-keywords : [TabSeparatedWithNames]
+keywords: [TabSeparatedWithNames]
 input_format: true
 output_format: true
 alias: ['TSVWithNames']

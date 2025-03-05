@@ -17,14 +17,14 @@ rankCorr(x, y)
 
 **Arguments**
 
-- `x` — Arbitrary value. [Float32](../../../sql-reference/data-types/float.md#float32-float64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64).
-- `y` — Arbitrary value. [Float32](../../../sql-reference/data-types/float.md#float32-float64) or [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+- `x` — Arbitrary value. [Float32](/sql-reference/data-types/float) or [Float64](/sql-reference/data-types/float).
+- `y` — Arbitrary value. [Float32](/sql-reference/data-types/float) or [Float64](/sql-reference/data-types/float).
 
 **Returned value(s)**
 
 - Returns a rank correlation coefficient of the ranks of x and y. The value of the correlation coefficient ranges from -1 to +1. If less than two arguments are passed, the function will return an exception. The value close to +1 denotes a high linear relationship, and with an increase of one random variable, the second random variable also increases. The value close to -1 denotes a high linear relationship, and with an increase of one random variable, the second random variable decreases. The value close or equal to 0 denotes no relationship between the two random variables.
 
-Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 

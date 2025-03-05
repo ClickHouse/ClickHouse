@@ -419,7 +419,7 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
-        report_url = Info().get_job_report_url()
+        report_url = Info().get_job_report_url(latest=False)
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
