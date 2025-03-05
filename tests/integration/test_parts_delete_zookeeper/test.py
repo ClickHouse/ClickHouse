@@ -4,7 +4,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, get_retry_number
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -23,15 +23,10 @@ def start_cluster():
         cluster.shutdown()
 
 
-id_counter = 0
-
-
 # Test that outdated parts are not removed when they cannot be removed from zookeeper
-def test_merge_doesnt_work_without_zookeeper(start_cluster):
-    global id_counter
-    id_counter += 1
-
-    table = f"test_table_{id_counter}"
+def test_merge_doesnt_work_without_zookeeper(start_cluster, request):
+    retry_number = get_retry_number(request)
+    table = f"test_table_{retry_number}"
 
     node1.query(
         f"""
