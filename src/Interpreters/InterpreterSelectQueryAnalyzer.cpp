@@ -7,6 +7,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 
