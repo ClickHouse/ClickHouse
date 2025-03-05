@@ -19,6 +19,9 @@ CREATE TABLE t1
 ENGINE = MergeTree
 PRIMARY KEY (id, rev);
 
+INSERT INTO TABLE t0 VALUES (1,1,'1');
+INSERT INTO TABLE t1 VALUES (1,1,'1');
+
 SELECT SUM(t1.rev) AS aggr
 FROM t1
 INNER JOIN t0 AS right_0 ON t1.id = right_0.id
