@@ -7,6 +7,7 @@
 namespace DB
 {
 //
+// 
 /** Tuple data type.
   * Used as an intermediate result when evaluating expressions.
   * Also can be used as a column - the result of the query execution.
