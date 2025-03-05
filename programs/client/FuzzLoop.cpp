@@ -195,10 +195,10 @@ bool Client::processWithFuzzing(const String & full_query)
 #if USE_BUZZHOUSE
     BuzzHouse::PerformanceResult res1;
     BuzzHouse::PerformanceResult res2;
-    const bool has_buzzhouse_settings
-        = fuzz_config && (fuzz_config->measure_performance || fuzz_config->compare_success_results) && external_integrations;
-    const bool try_measure_performance_in_loop = has_buzzhouse_settings && fuzz_config->measure_performance
-        && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>());
+    const bool can_compare = fuzz_config && (fuzz_config->measure_performance || fuzz_config->compare_success_results)
+        && external_integrations && external_integrations->hasClickHouseExtraServerConnection();
+    const bool try_measure_performance_in_loop
+        = can_compare && fuzz_config->measure_performance && (orig_ast->as<ASTSelectQuery>() || orig_ast->as<ASTSelectWithUnionQuery>());
     auto insert_into = std::make_shared<ASTInsertQuery>();
     insert_into->table_function = makeASTFunction("file", std::make_shared<ASTLiteral>("/dev/null"), std::make_shared<ASTLiteral>("CSV"));
 #endif
@@ -355,13 +355,13 @@ bool Client::processWithFuzzing(const String & full_query)
             /// Replicate settings, so both servers have same configuration
             external_integrations->replicateSettings(BuzzHouse::PeerTableDatabase::ClickHouse);
         }
-        if (has_buzzhouse_settings)
+        if (can_compare)
         {
             /// Always run query on peer server
             fmt::print(stdout, "Running query on peer server\n");
             peer_success &= external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
         }
-        if (has_buzzhouse_settings && fuzz_config->compare_success_results && peer_success != !have_error)
+        if (can_compare && fuzz_config->compare_success_results && peer_success != !have_error)
         {
             throw DB::Exception(DB::ErrorCodes::BUZZHOUSE, "AST Fuzzer: The peer server got a different success result");
         }
@@ -444,7 +444,7 @@ bool Client::processWithFuzzing(const String & full_query)
             have_error = false;
         }
 #if USE_BUZZHOUSE
-        if (fuzz_config && fuzz_config->measure_performance && external_integrations)
+        if (can_compare)
         {
             auto u = external_integrations->performQuery(BuzzHouse::PeerTableDatabase::ClickHouse, query_to_execute);
             UNUSED(u);
