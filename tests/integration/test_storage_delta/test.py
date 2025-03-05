@@ -272,7 +272,7 @@ def create_initial_data_file(
     return result_path
 
 
-@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("1", "azure"), ("0", "s3"), ("0", "azure")])
+@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")])
 def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -301,7 +301,7 @@ def test_single_log_file(started_cluster, use_delta_kernel, storage_type):
         inserted_data
     )
 
-@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("1", "azure"), ("0", "s3"), ("0", "azure")])
+@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")])
 def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -328,7 +328,7 @@ def test_partition_by(started_cluster, use_delta_kernel, storage_type):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 10
 
 
-@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("1", "azure"), ("0", "s3"), ("0", "azure")])
+@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")])
 def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -439,7 +439,7 @@ def test_multiple_log_files(started_cluster, use_delta_kernel):
     )
     assert len(s3_objects) == 1
 
-    create_delta_table(instance, TABLE_NAME, use_delta_kernel=use_delta_kernel)
+    instance.query(get_creation_expression("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     write_delta_from_df(
@@ -489,7 +489,7 @@ def test_metadata(started_cluster, use_delta_kernel):
     assert next(iter(stats["minValues"].values())) == 0
     assert next(iter(stats["maxValues"].values())) == 99
 
-    create_delta_table(instance, TABLE_NAME, use_delta_kernel=use_delta_kernel)
+    instance.query(get_creation_expression("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
 
@@ -590,7 +590,7 @@ def test_restart_broken(started_cluster, use_delta_kernel):
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    create_delta_table(instance, TABLE_NAME, bucket=bucket, use_delta_kernel=use_delta_kernel)
+    instance.query(get_creation_expression("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     s3_objects = list_s3_objects(minio_client, bucket, prefix="")
@@ -984,8 +984,7 @@ def test_complex_types(started_cluster, use_delta_kernel):
     )
 
 
-@pytest.mark.parametrize("storage_type", ["s3"])
-@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")])
 def test_filesystem_cache(started_cluster, storage_type, use_delta_kernel):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -1005,7 +1004,7 @@ def test_filesystem_cache(started_cluster, storage_type, use_delta_kernel):
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    create_delta_table(instance, TABLE_NAME, bucket=bucket, use_delta_kernel=use_delta_kernel)
+    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(

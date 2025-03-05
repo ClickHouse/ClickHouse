@@ -108,7 +108,7 @@ struct DeltaLakeS3Definition
 struct DeltaLakeAzureDefinition
 {
     static constexpr auto name = "deltaLakeAzure";
-    static constexpr auto storage_type_name = "S3";
+    static constexpr auto storage_type_name = "Azure";
 };
 
 struct HudiDefinition
