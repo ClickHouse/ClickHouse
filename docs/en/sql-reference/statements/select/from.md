@@ -35,7 +35,7 @@ It is applicable when selecting data from from tables using the following table 
 - `CollapsingMergeTree`
 - `VersionedCollapsingMergeTree`
 
-`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](../../../operations/settings/settings.md#max-final-threads) setting limits the number of threads used.
+`SELECT` queries with `FINAL` are executed in parallel. The [max_final_threads](/operations/settings/settings#max_final_threads) setting limits the number of threads used.
 
 ### Drawbacks {#drawbacks}
 

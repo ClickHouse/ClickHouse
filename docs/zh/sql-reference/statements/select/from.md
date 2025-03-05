@@ -26,7 +26,7 @@ sidebar_label: FROM
 -   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) 版本 `MergeTree` 引擎
 -   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md)，和 [MaterializedView](../../../engines/table-engines/special/materializedview.md) 在其他引擎上运行的引擎，只要是它们底层是 `MergeTree`-引擎表即可。
 
-现在使用 `FINAL` 修饰符 的 `SELECT` 查询启用了并发执行, 这会快一点。但是仍然存在缺陷 (见下)。  [max_final_threads](../../../operations/settings/settings.md#max-final-threads) 设置使用的最大线程数限制。
+现在使用 `FINAL` 修饰符 的 `SELECT` 查询启用了并发执行, 这会快一点。但是仍然存在缺陷 (见下)。  [max_final_threads](/operations/settings/settings#max_final_threads) 设置使用的最大线程数限制。
 
 ### 缺点 {#drawbacks}
 

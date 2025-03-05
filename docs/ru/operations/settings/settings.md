@@ -650,19 +650,6 @@ ClickHouse может парсить только базовый формат `Y
 -   0 — пустые ячейки заполняются значением по умолчанию соответствующего типа поля.
 -   1 — `JOIN` ведёт себя как в стандартном SQL. Тип соответствующего поля преобразуется в [Nullable](/sql-reference/data-types/nullable), а пустые ячейки заполняются значениями [NULL](../../sql-reference/syntax.md).
 
-## partial_merge_join_optimizations {#partial_merge_join_optimizations}
-
-Отключает все оптимизации для запросов [JOIN](../../sql-reference/statements/select/join.md) с частичным MergeJoin алгоритмом.
-
-По умолчанию оптимизации включены, что может привести к неправильным результатам. Если вы видите подозрительные результаты в своих запросах, отключите оптимизацию с помощью этого параметра. В различных версиях сервера ClickHouse, оптимизация может отличаться.
-
-Возможные значения:
-
--   0 — Оптимизация отключена.
--   1 — Оптимизация включена.
-
-Значение по умолчанию: 1.
-
 ## partial_merge_join_rows_in_right_blocks {#partial_merge_join_rows_in_right_blocks}
 
 Устанавливает предельные размеры блоков данных «правого» соединения, для запросов [JOIN](../../sql-reference/statements/select/join.md) с частичным MergeJoin алгоритмом.
@@ -3049,7 +3036,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 ## allow_nullable_key {#allow-nullable-key}
 
-Включает или отключает поддержку типа [Nullable](/sql-reference/data-types/nullable) для ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
+Включает или отключает поддержку типа [Nullable](/sql-reference/data-types/nullable) для ключей таблиц [MergeTree](/engines/table-engines/mergetree-family/mergetree).
 
 Возможные значения:
 

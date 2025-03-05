@@ -396,7 +396,7 @@ INDEX b (u64 * length(str), i32 + f64 * 100, date, str) TYPE set(100) GRANULARIT
 
 Проекции — это экспериментальная возможность. Чтобы включить поддержку проекций, установите настройку [optimize_use_projections](../../../operations/settings/settings.md#allow-experimental-projection-optimization) в значение `1`. См. также настройку [force_optimize_projection ](../../../operations/settings/settings.md#optimize_use_projections).
 
-Проекции не поддерживаются для запросов `SELECT` с модификатором [FINAL](../../../sql-reference/statements/select/from.md#select-from-final).
+Проекции не поддерживаются для запросов `SELECT` с модификатором [FINAL](/sql-reference/statements/select/from#final-modifier).
 
 ### Запрос проекции {#projection-query}
 Запрос проекции — это то, что определяет проекцию. Такой запрос неявно выбирает данные из родительской таблицы.
