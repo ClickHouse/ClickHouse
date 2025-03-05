@@ -4,7 +4,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import *
+from helpers.config_cluster import minio_secret_key
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -24,7 +24,7 @@ def start_cluster():
 
 
 s3_disk_def = f"""disk(type=s3_plain,
-    endpoint='http://minio1:9001/root/data/disks/disk_s3_plain/{}/',
+    endpoint='http://minio1:9001/root/data/disks/disk_s3_plain/{{}}/',
     access_key_id='minio',
     secret_access_key='{minio_secret_key}');"""
 
