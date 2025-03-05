@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
+            {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
@@ -90,7 +91,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
             /// Release closed. Please use 25.3
-            {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
