@@ -9,7 +9,7 @@ sidebar_label: FROM
 
 -   [表](../../../engines/table-engines/index.md)
 -   [子查询](../../../sql-reference/statements/select/index.md)
--   [表函数](../../../sql-reference/table-functions/index.md#table-functions)
+-   [表函数](/sql-reference/table-functions)
 
 [JOIN](../../../sql-reference/statements/select/join.md) 和 [ARRAY JOIN](../../../sql-reference/statements/select/array-join.md) 子句也可以用来扩展 `FROM` 的功能
 

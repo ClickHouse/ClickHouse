@@ -25,7 +25,7 @@ For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.
 
 `a * b` – The `multiply (a, b)` function.
 
-For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arraydotproduct).
 
 `a / b` – The `divide(a, b)` function.
 
@@ -289,15 +289,15 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 
 ## Logical AND Operator {#logical-and-operator}
 
-Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
+Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](/sql-reference/functions/logical-functions#and).
 
 ## Logical OR Operator {#logical-or-operator}
 
-Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with the function [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
+Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with the function [or](/sql-reference/functions/logical-functions#or).
 
 ## Logical Negation Operator {#logical-negation-operator}
 
-Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
+Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](/sql-reference/functions/logical-functions#not).
 
 ## Conditional Operator {#conditional-operator}
 

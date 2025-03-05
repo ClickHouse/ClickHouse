@@ -25,7 +25,7 @@ sidebar_label: "Операторы"
 
 `a * b` - функция `multiply(a, b)`
 
-Для умножения кортежа на число также может быть использована [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), для скалярного произведения: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
+Для умножения кортежа на число также может быть использована [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), для скалярного произведения: [dotProduct](/sql-reference/functions/array-functions#arraydotproduct).
 
 `a / b` - функция `divide(a, b)`
 
@@ -273,15 +273,15 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Europe/Moscow') AS time, time + 60 * 6
 
 ## Оператор логического "И" {#logical-and-operator}
 
-Синтаксис `SELECT a AND b` — вычисляет логическую конъюнкцию между `a` и `b` функцией [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
+Синтаксис `SELECT a AND b` — вычисляет логическую конъюнкцию между `a` и `b` функцией [and](/sql-reference/functions/logical-functions#and).
 
 ## Оператор логического "ИЛИ" {#logical-or-operator}
 
-Синтаксис `SELECT a OR b` — вычисляет логическую дизъюнкцию между `a` и `b` функцией [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
+Синтаксис `SELECT a OR b` — вычисляет логическую дизъюнкцию между `a` и `b` функцией [or](/sql-reference/functions/logical-functions#or).
 
 ## Оператор логического отрицания {#logical-negation-operator}
 
-Синтаксис `SELECT NOT a` — вычисляет логическое отрицание `a` функцией [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
+Синтаксис `SELECT NOT a` — вычисляет логическое отрицание `a` функцией [not](/sql-reference/functions/logical-functions#not).
 
 ## Условный оператор {#uslovnyi-operator}
 
