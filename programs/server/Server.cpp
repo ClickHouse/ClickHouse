@@ -1831,7 +1831,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio]);
+                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio].value);
             }
             else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
             {
@@ -1840,7 +1840,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio]);
+                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio].value);
             }
 
             LOG_INFO(log, "Merges and mutations memory limit is set to {}",
