@@ -58,7 +58,7 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadB
     : BufferWithOwnMemory<ReadBuffer>(0)
     , p_file_in(std::move(buf))
     , file_in(*p_file_in)
-    , log(getLogger("CompressedReadBufferFromFile"))
+    , log(getLogger("CompressedReadBufferFromFile"), /* allowed_count */ 1, /* interval */ 1)
 {
     compressed_in = &file_in;
     allow_different_codecs = allow_different_codecs_;

@@ -76,5 +76,5 @@ In ClickHouse Cloud users should use the `PERMANENTLY` clause e.g. `DETACH TABLE
 
 **See Also**
 
-- [Materialized View](../../sql-reference/statements/create/view.md#materialized)
+- [Materialized View](/sql-reference/statements/create/view#materialized-view)
 - [Dictionaries](../../sql-reference/dictionaries/index.md)
