@@ -744,8 +744,9 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         const auto & setting_name = setting.getName();
         res_columns[0]->insert(setting_name);
         res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.isValueChanged());
-        res_columns[3]->insert(setting.getDescription());
+        res_columns[2]->insert(setting.getDefaultValueString());
+        res_columns[3]->insert(setting.isValueChanged());
+        res_columns[4]->insert(setting.getDescription());
 
         Field min;
         Field max;
@@ -758,12 +759,12 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         if (!max.isNull())
             max = MergeTreeSettings::valueToStringUtil(setting_name, max);
 
-        res_columns[4]->insert(min);
-        res_columns[5]->insert(max);
-        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[7]->insert(setting.getTypeName());
-        res_columns[8]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[9]->insert(setting.getTier());
+        res_columns[5]->insert(min);
+        res_columns[6]->insert(max);
+        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[8]->insert(setting.getTypeName());
+        res_columns[9]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[10]->insert(setting.getTier());
     }
 }
 
