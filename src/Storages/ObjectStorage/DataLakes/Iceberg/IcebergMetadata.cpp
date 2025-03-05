@@ -330,10 +330,10 @@ DataLakeMetadataPtr IcebergMetadata::create(
         Poco::Dynamic::Var json = parser.parse(json_str);
         const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-        auto format_version = object->getValue<int>(FIELD_FORMAT_VERSION_NAME);
+        auto format_version_ = object->getValue<int>(FIELD_FORMAT_VERSION_NAME);
 
         auto ptr
-            = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version, object);
+            = std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, local_context, metadata_version, format_version_, object);
 
         return ptr;
     };

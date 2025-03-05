@@ -99,8 +99,8 @@ public:
             for (const String & str: *cached_unprunned_files_for_current_snapshot)
                 size += str.size();
         }
-        size += manifest_entry_by_data_file.size() * sizeof(std::pair<String, Iceberg::ManifestFileEntry>);
-        size += manifest_entry_by_data_file.bucket_count() * sizeof(void*);
+        size += manifest_file_by_data_file.size() * sizeof(std::pair<String, Iceberg::ManifestFileEntry>);
+        size += manifest_file_by_data_file.bucket_count() * sizeof(void*);
         return size;
     }
 
