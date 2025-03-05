@@ -274,6 +274,7 @@ selectStmt:
     groupByClause? (WITH (CUBE | ROLLUP))? (WITH TOTALS)?
     havingClause?
     orderByClause?
+    interpolateClause?
     limitByClause?
     limitClause?
     settingsClause?
@@ -294,6 +295,7 @@ groupByClause
   ;
 havingClause: HAVING columnExpr;
 orderByClause: ORDER BY orderExprList;
+interpolateClause: INTERPOLATE LPAREN columnExprList RPAREN;
 projectionOrderByClause: ORDER BY columnExprList;
 limitByClause: LIMIT limitExpr BY columnExprList;
 limitClause: LIMIT limitExpr (WITH TIES)?;
