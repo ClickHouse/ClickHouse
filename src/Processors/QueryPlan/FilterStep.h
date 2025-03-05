@@ -34,7 +34,8 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
     bool canRemoveUnusedColumns() const override { return true; }
-    bool removeUnusedColumns(const Names & required_outputs) override;
+    UnusedColumnRemovalResult removeUnusedColumns(const Names & required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
 
 private:
     void updateOutputHeader() override;

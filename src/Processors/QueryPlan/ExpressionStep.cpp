@@ -98,30 +98,50 @@ std::unique_ptr<IQueryPlanStep> ExpressionStep::deserialize(Deserialization & ct
     return std::make_unique<ExpressionStep>(ctx.input_headers.front(), std::move(actions_dag));
 }
 
-
-bool ExpressionStep::removeUnusedColumns(const Names & required_outputs)
+IQueryPlanStep::UnusedColumnRemovalResult ExpressionStep::removeUnusedColumns(const Names & required_outputs, bool remove_inputs)
 {
-    const auto removed_any_actions = actions_dag.removeUnusedActions(required_outputs);
+    const auto split_results = actions_dag.splitPossibleOutputNames(required_outputs);
+    const auto actions_dag_input_count_before = actions_dag.getInputs().size();
+    const auto removed_any_actions = actions_dag.removeUnusedActions(split_results.output_names, remove_inputs);
 
-    if (!removed_any_actions)
-        return false;
+    if (!removed_any_actions && output_header.has_value() && output_header->columns() == required_outputs.size())
+        return UnusedColumnRemovalResult{false, false};
 
-    std::unordered_set<String> required_inputs_set;
+    auto & input_header = input_headers.front();
+    // Number of columns that are not changed/removed by actions
+    const auto pass_through_inputs = input_header.columns() - actions_dag_input_count_before;
+    const auto update_inputs = remove_inputs
+        && (actions_dag.getInputs().size() < actions_dag_input_count_before || pass_through_inputs > split_results.not_output_names.size());
 
-    for (const auto* input_node : actions_dag.getInputs())
-        required_inputs_set.insert(input_node->result_name);
+    if (update_inputs)
+    {
+        std::unordered_set<String> required_inputs_set;
 
-    auto& input_header = input_headers.front();
+        for (const auto * input_node : actions_dag.getInputs())
+            required_inputs_set.insert(input_node->result_name);
 
-    Header new_input_header{};
+        for (const auto & pass_through_input : split_results.not_output_names)
+            required_inputs_set.insert(pass_through_input);
 
-    for(const auto& col_type_and_name: input_header)
-        if (required_inputs_set.contains(col_type_and_name.name))
-            new_input_header.insert(col_type_and_name);
+        Header new_input_header{};
 
-    updateInputHeader(std::move(new_input_header), 0);
+        for (const auto & col_type_and_name : input_header)
+            if (required_inputs_set.contains(col_type_and_name.name))
+                new_input_header.insert(col_type_and_name);
 
-    return true;
+        updateInputHeader(std::move(new_input_header), 0);
+
+        return UnusedColumnRemovalResult{true, true};
+    }
+
+    updateOutputHeader();
+
+    return UnusedColumnRemovalResult{true, false};
+}
+
+bool ExpressionStep::canRemoveColumnsFromOutput() const
+{
+    return output_header.has_value() ? output_header->columns() > 0 : false;
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry)

@@ -2,6 +2,7 @@
 
 #include <Processors/QueryPlan/JoinStep.h>
 
+#include <algorithm>
 #include <ranges>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -181,12 +182,8 @@ static ActionsDAG::NodeRawConstPtrs getAnyColumn(const ActionsDAG::NodeRawConstP
     return result_nodes;
 }
 
-bool JoinStepLogical::removeUnusedColumns(const Names & required_outputs)
+IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(const Names & required_outputs, bool remove_inputs)
 {
-    // In case we already have the same number of outputs or we only have a single output, then we cannot remove anything more
-    if (required_outputs.size() == required_output_columns.size() || required_output_columns.size() == 1U)
-        return false;
-
     required_output_columns = required_outputs;
     Names left_required_outputs{};
     Names right_required_outputs{};
@@ -207,41 +204,63 @@ bool JoinStepLogical::removeUnusedColumns(const Names & required_outputs)
     for (const auto & condition : join_info.expression.disjunctive_conditions)
         collect_required_outputs_from_condition(condition);
 
-    // Join needs to have at least one output
+    // Join needs to have at least one output and calculateOutputHeader will produce a deterministic result
     if (required_output_columns.empty())
+        required_output_columns = calculateOutputHeader({}).getNames();
+
+    // We can always remove inputs from post join actions, that doesn't affect the inputs of this step
+    bool removed_any_actions = expression_actions.post_join_actions.removeUnusedActions(required_output_columns);
+
+    // TODO(antaljanosbenjamin): can it happen that post join actions needs some output from any of the prejoin actions that are not in a JoinCondition?
+    removed_any_actions |= expression_actions.left_pre_join_actions.removeUnusedActions(left_required_outputs, remove_inputs);
+    removed_any_actions |= expression_actions.right_pre_join_actions.removeUnusedActions(right_required_outputs, remove_inputs);
+
+    if (!removed_any_actions)
+        return UnusedColumnRemovalResult{false, false};
+
+    if (remove_inputs
+        && (expression_actions.left_pre_join_actions.getInputs().size() < getInputHeaders().at(0).columns()
+            || expression_actions.right_pre_join_actions.getInputs().size() < getInputHeaders().at(1).columns()))
     {
-        const auto & left_node = join_info.expression.condition.predicates.front().left_node;
-        expression_actions.post_join_actions.addOrReplaceInOutputs(expression_actions.post_join_actions.addInput(left_node.getColumn()));
-        required_output_columns.push_back(left_node.column_name);
+        Headers new_input_headers;
+
+        const auto get_input_columns = [](const ActionsDAG & actions)
+        {
+            Header result;
+            for (const auto * input_node : actions.getInputs())
+                result.insert(ColumnWithTypeAndName{input_node->column, input_node->result_type, input_node->result_name});
+
+            return result;
+        };
+
+        new_input_headers.push_back(get_input_columns(expression_actions.left_pre_join_actions));
+        new_input_headers.push_back(get_input_columns(expression_actions.right_pre_join_actions));
+        updateInputHeaders(std::move(new_input_headers));
+
+        return UnusedColumnRemovalResult{true, true};
     }
 
-    expression_actions.post_join_actions.removeUnusedActions(required_output_columns);
-    expression_actions.left_pre_join_actions.removeUnusedActions(left_required_outputs);
-    expression_actions.right_pre_join_actions.removeUnusedActions(right_required_outputs);
+    updateOutputHeader();
 
-    Headers new_input_headers;
-
-    const auto get_input_columns = [](const ActionsDAG & actions)
-    {
-        Header result;
-        for (const auto * input_node : actions.getInputs())
-            result.insert(ColumnWithTypeAndName{input_node->column, input_node->result_type, input_node->result_name});
-
-        return result;
-    };
-
-    new_input_headers.push_back(get_input_columns(expression_actions.left_pre_join_actions));
-    new_input_headers.push_back(get_input_columns(expression_actions.right_pre_join_actions));
-    updateInputHeaders(std::move(new_input_headers));
-
-    return true;
+    return UnusedColumnRemovalResult{true, false};
 }
 
-void JoinStepLogical::updateOutputHeader()
+bool JoinStepLogical::canRemoveColumnsFromOutput() const
 {
-    Header & header = output_header.emplace();
-    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
+    if (!output_header.has_value())
+        return false;
 
+    const auto minimal_output_header = calculateOutputHeader({});
+
+    chassert(minimal_output_header.columns() <= output_header->columns());
+
+    return !blocksHaveEqualStructure(*output_header, minimal_output_header);
+}
+
+
+Header JoinStepLogical::calculateOutputHeader(const NameSet & required_output_columns_set) const
+{
+    Header header;
     for (const auto * node : expression_actions.post_join_actions.getInputs())
     {
         const auto & column_type = node->result_type;
@@ -259,6 +278,14 @@ void JoinStepLogical::updateOutputHeader()
             header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
         }
     }
+
+    return header;
+}
+
+void JoinStepLogical::updateOutputHeader()
+{
+    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
+    output_header = calculateOutputHeader(required_output_columns_set);
 }
 
 /// We may have expressions like `a and b` that work even if `a` and `b` are non-boolean and expression return boolean or nullable.

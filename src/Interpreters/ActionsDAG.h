@@ -161,6 +161,15 @@ public:
     /// Same, but for the list of names.
     NodeRawConstPtrs findInOutputs(const Names & names) const;
 
+    struct SplitPossibleOutputNamesResult
+    {
+        Names output_names;
+        Names not_output_names;
+    };
+
+    /// Returns the names from possible_result_names that are among the outputs.
+    SplitPossibleOutputNamesResult splitPossibleOutputNames(const Names & possible_output_names) const;
+
     /// Find first node with the same name in output nodes and replace it.
     /// If was not found, add node to outputs end.
     void addOrReplaceInOutputs(const Node & node);
@@ -182,16 +191,24 @@ public:
     /// Return true if column was removed from inputs.
     bool removeUnusedResult(const std::string & column_name);
 
-    /// Remove actions that are not needed to compute output nodes
+    /// Remove actions that are not needed to compute output nodes.
+    /// Returns true if any of the actions were removed.
+    /// Outputs might be changed even if actions are not removed.
     bool removeUnusedActions(bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
     /// Remove actions that are not needed to compute output nodes. Keep inputs from used_inputs.
+    /// Returns true if any of the actions were removed.
+    /// Outputs might be changed even if actions are not removed.
     bool removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding = true);
 
-    /// Remove actions that are not needed to compute output nodes with required names
+    /// Remove actions that are not needed to compute output nodes with required names.
+    /// Returns true if any of the actions were removed or if the outputs are changed.
+    /// Outputs might be changed even if actions are not removed.
     bool removeUnusedActions(const Names & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
-    /// Remove actions that are not needed to compute output nodes with required names
+    /// Remove actions that are not needed to compute output nodes with required names.
+    /// Returns true if any of the actions were removed or if the outputs are changed.
+    /// Outputs might be changed even if actions are not removed.
     bool removeUnusedActions(const NameSet & required_names, bool allow_remove_inputs = true, bool allow_constant_folding = true);
 
     void removeAliasesForFilter(const std::string & filter_name);

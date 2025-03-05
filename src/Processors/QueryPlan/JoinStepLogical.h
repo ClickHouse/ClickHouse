@@ -76,9 +76,11 @@ public:
     ContextPtr getContext() const { return query_context; }
 
     bool canRemoveUnusedColumns() const override { return true; }
-    bool removeUnusedColumns(const Names & required_outputs) override;
+    UnusedColumnRemovalResult removeUnusedColumns(const Names & required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
 
 protected:
+    Header calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
 
     JoinExpressionActions expression_actions;

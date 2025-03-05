@@ -35,9 +35,14 @@ void IQueryPlanStep::updateInputHeader(Header input_header, size_t idx)
     updateOutputHeader();
 }
 
-bool IQueryPlanStep::removeUnusedColumns(const Names & /*required_outputs*/)
+IQueryPlanStep::UnusedColumnRemovalResult IQueryPlanStep::removeUnusedColumns(const Names & /*required_outputs*/, bool /*remove_inputs*/)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "removeUnusedColumns is not implemented for step {}", getName());
+}
+
+bool IQueryPlanStep::canRemoveColumnsFromOutput() const
+{
+    return false;
 }
 
 const Header & IQueryPlanStep::getOutputHeader() const

@@ -426,6 +426,23 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) cons
     return required_nodes;
 }
 
+ActionsDAG::SplitPossibleOutputNamesResult ActionsDAG::splitPossibleOutputNames(const Names & possible_output_names) const
+{
+    std::unordered_set<std::string_view> output_names_set;
+    for (const auto * node : outputs)
+        output_names_set.insert(node->result_name);
+
+    SplitPossibleOutputNamesResult result;
+    for (const auto & name : possible_output_names)
+    {
+        if (output_names_set.contains(name))
+            result.output_names.push_back(name);
+        else
+            result.not_output_names.push_back(name);
+    }
+    return result;
+}
+
 void ActionsDAG::addOrReplaceInOutputs(const Node & node)
 {
     bool replaced = false;
@@ -529,14 +546,35 @@ bool ActionsDAG::removeUnusedActions(const NameSet & required_names, bool allow_
     }
 
     outputs.swap(required_nodes);
-    return removeUnusedActions(allow_remove_inputs, allow_constant_folding);
+
+    if (removeUnusedActions(allow_remove_inputs, allow_constant_folding))
+        return true;
+
+    if (required_nodes.size() != outputs.size())
+        return true;
+
+    for (auto old_it = required_nodes.begin(), new_it = outputs.begin(); new_it != outputs.end(); ++old_it, ++new_it)
+        if (*old_it != *new_it)
+            return true;
+
+    return false;
 }
 
 bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_remove_inputs, bool allow_constant_folding)
 {
     auto required_nodes = findInOutputs(required_names);
     outputs.swap(required_nodes);
-    return removeUnusedActions(allow_remove_inputs, allow_constant_folding);
+    if (removeUnusedActions(allow_remove_inputs, allow_constant_folding))
+        return true;
+
+    if (required_nodes.size() != outputs.size())
+        return true;
+
+    for (auto old_it = required_nodes.begin(), new_it = outputs.begin(); new_it != outputs.end(); ++old_it, ++new_it)
+        if (*old_it != *new_it)
+            return true;
+
+    return false;
 }
 
 bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding)

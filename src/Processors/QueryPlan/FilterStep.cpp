@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FilterStep.h>
+
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -286,34 +287,62 @@ std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
     return std::make_unique<FilterStep>(ctx.input_headers.front(), std::move(actions_dag), std::move(filter_column_name), remove_filter_column);
 }
 
-bool FilterStep::removeUnusedColumns(const Names & required_outputs)
+IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(const Names & required_outputs, bool remove_inputs)
 {
-    auto required_columns = required_outputs;
+    const auto split_results = actions_dag.splitPossibleOutputNames(required_outputs);
+    const auto actions_dag_input_count_before = actions_dag.getInputs().size();
+
+    auto required_columns = split_results.output_names;
     required_columns.push_back(filter_column_name);
 
-    const auto removed_any_actions = actions_dag.removeUnusedActions(required_columns);
+    const auto removed_any_actions = actions_dag.removeUnusedActions(required_columns, remove_inputs);
 
-    if (!removed_any_actions)
-        return false;
+    if (!removed_any_actions && output_header.has_value() && output_header->columns() == required_outputs.size())
+        return UnusedColumnRemovalResult{false, false};
 
-    std::unordered_set<String> required_inputs_set;
+    // There cannot be more inputs in the DAG than columns in the input header
+    chassert(actions_dag.getInputs().size() <= getInputHeaders().at(0).columns());
 
-    for (const auto* input_node : actions_dag.getInputs())
-        required_inputs_set.insert(input_node->result_name);
+    auto & input_header = input_headers.front();
+    // Number of columns that are not changed/removed by actions
+    const auto pass_through_inputs = input_header.columns() - actions_dag_input_count_before;
+    const auto update_inputs = remove_inputs
+        && (actions_dag.getInputs().size() < actions_dag_input_count_before || pass_through_inputs > split_results.not_output_names.size());
 
-    auto& input_header = input_headers.front();
-
-    Header new_input_header{};
-
-    for(const auto& col_type_and_name: input_header)
+    if (update_inputs)
     {
-        if (required_inputs_set.contains(col_type_and_name.name))
-            new_input_header.insert(col_type_and_name);
+        std::unordered_set<String> required_inputs_set;
+
+        for (const auto * input_node : actions_dag.getInputs())
+            required_inputs_set.insert(input_node->result_name);
+
+        for (const auto & pass_through_input : split_results.not_output_names)
+            required_inputs_set.insert(pass_through_input);
+
+        Header new_input_header{};
+
+        for (const auto & col_type_and_name : input_header)
+        {
+            if (required_inputs_set.contains(col_type_and_name.name))
+                new_input_header.insert(col_type_and_name);
+        }
+
+        updateInputHeader(std::move(new_input_header), 0);
+        return UnusedColumnRemovalResult{true, true};
     }
 
-    updateInputHeader(std::move(new_input_header), 0);
+    updateOutputHeader();
 
-    return true;
+    return UnusedColumnRemovalResult{true, false};
+}
+
+bool FilterStep::canRemoveColumnsFromOutput() const
+{
+    if (!output_header.has_value())
+        return true;
+
+    const auto minimum_column_count = remove_filter_column ? 0u : 1u;
+    return output_header->columns() > minimum_column_count;
 }
 
 void registerFilterStep(QueryPlanStepRegistry & registry)
