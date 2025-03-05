@@ -30,20 +30,6 @@ query
     | truncateStmt  // DDL
     | useStmt
     | watchStmt
-    | ctes? selectStmt
-    ;
-
-// CTE statement
-ctes
-    : WITH namedQuery (',' namedQuery)*
-    ;
-
-namedQuery
-    : name=identifier (columnAliases)? AS '(' query ')'
-    ;
-
-columnAliases
-    : '(' identifier (',' identifier)* ')'
     ;
 
 // ALTER statement
@@ -283,7 +269,12 @@ selectStmt:
     settingsClause?
     ;
 
-withClause: WITH columnExprList;
+withClause: WITH withExprList;
+withExprList: withExpr (COMMA withExpr)*;
+withExpr
+    : RECURSIVE? identifier AS LPAREN selectUnionStmt RPAREN  # WithExprSubquery
+    | columnExpr AS identifier                                # WithExprExpression
+    ;
 topClause: TOP DECIMAL_LITERAL (WITH TIES)?;
 fromClause: FROM joinExpr;
 arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
