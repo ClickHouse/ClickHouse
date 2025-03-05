@@ -1228,23 +1228,23 @@ std::unordered_map<Context::WarningType, Context::Warning> Context::getWarnings(
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
             common_warnings[Context::WarningType::MAX_ATTACHED_TABLES] = Context::Warning{
-                .message = fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn),
+                .message = fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn.load()),
                 .message_format_string = "The number of attached tables is more than {}."};
         if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
             common_warnings[Context::WarningType::MAX_ATTACHED_VIEWS] = Context::Warning{
-                .message = fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn),
+                .message = fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn.load()),
                 .message_format_string = "The number of attached views is more than {}."};
         if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
             common_warnings[Context::WarningType::MAX_ATTACHED_DICTIONARIES] = Context::Warning{
-                .message = fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn),
+                .message = fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn.load()),
                 .message_format_string = "The number of attached dictionaries is more than {}."};
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
             common_warnings[Context::WarningType::MAX_ATTACHED_DATABASES] = Context::Warning{
-                .message = fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn),
+                .message = fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn.load()),
                 .message_format_string = "The number of attached databases is more than {}."};
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
             common_warnings[Context::WarningType::MAX_ACTIVE_PARTS] = Context::Warning{
-                .message = fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn),
+                .message = fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn.load()),
                 .message_format_string = "The number of active parts is more than {}."};
     }
     /// Make setting's name ordered
