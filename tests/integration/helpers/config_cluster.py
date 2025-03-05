@@ -8,7 +8,7 @@ mysql8_pass = "clickhouse"
 
 # POSTGRES CREDENTIALS
 pg_user = "postgres"
-pg_pass = "mysecretpassword"
+pg_pass = "ClickHouse_PostreSQL_P@ssw0rd"
 pg_db = "postgres"
 
 # MINIO CREDENTIALS
@@ -26,4 +26,3 @@ odbc_mysql_db = "clickhouse"
 
 odbc_psql_db = "postgres"
 odbc_psql_user = "postgres"
-odbc_psql_pass = "mysecretpassword"
