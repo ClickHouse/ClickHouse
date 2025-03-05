@@ -1377,7 +1377,7 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
-    def setup_iceberg_catalog_cmd(
+    def setup_glue_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
         self.base_cmd.extend(
@@ -1396,7 +1396,7 @@ class ClickHouseCluster:
         )
         return self.base_iceberg_catalog_cmd
 
-    def setup_glue_catalog_cmd(
+    def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
         self.base_cmd.extend(
