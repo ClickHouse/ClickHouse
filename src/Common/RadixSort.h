@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <string.h>
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
@@ -13,10 +12,16 @@
 #include <type_traits>
 #include <memory>
 
+#include <Core/Defines.h>
 #include <base/bit_cast.h>
 #include <base/extended_types.h>
 #include <base/sort.h>
-#include <Core/Defines.h>
+#include <Common/TargetSpecific.h>
+#include <Common/PODArray.h>
+
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
 
 
 /** Radix sort, has the following functionality:
@@ -259,6 +264,11 @@ private:
         return getPart(N, keyToBits(Traits::extractKey(elem)));
     }
 
+    static ALWAYS_INLINE KeyBits extractPartFromKey(size_t N, Key & key)
+    {
+        return getPart(N, keyToBits(key));
+    }
+
     static void insertionSortInternal(Element * arr, size_t size)
     {
         Element * end = arr + size;
@@ -276,9 +286,9 @@ private:
         }
     }
 
-
+    /*
     template <bool DIRECT_WRITE_TO_DESTINATION>
-    static NO_INLINE void radixSortLSDInternal(Element * arr, size_t size, bool reverse, Result * destination)
+    static NO_INLINE void radixSortLSDInternalWithSOA(Key * arr, UInt32 * indices, size_t size, bool reverse, Result * destination)
     {
         /// If the array is smaller than 256, then it is better to use another algorithm.
 
@@ -290,33 +300,184 @@ private:
         typename Traits::Allocator allocator;
 
         /// We will do several passes through the array. On each pass, the data is transferred to another array. Let's allocate this temporary array.
-        Element * swap_buffer = reinterpret_cast<Element *>(allocator.allocate(size * sizeof(Element)));
+        Key * swap_arr_buffer = reinterpret_cast<Key *>(allocator.allocate(size * sizeof(Key)));
+        UInt32 * swap_indices_buffer = reinterpret_cast<UInt32 *>(allocator.allocate(size * sizeof(UInt32)));
 
         /// Transform the array and calculate the histogram.
         /// NOTE This is slightly suboptimal. Look at https://github.com/powturbo/TurboHist
-        for (size_t i = 0; i < size; ++i)
+        if constexpr (!Traits::Transform::transform_is_simple)
         {
-            if (!Traits::Transform::transform_is_simple)
-                Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
+            for (size_t i = 0; i < size; ++i)
+                arr[i] = bitsToKey(Traits::Transform::forward(keyToBits(arr[i])));
+        }
 
-            for (size_t pass = 0; pass < NUM_PASSES; ++pass)
-                ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
+        for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+        {
+            size_t base = pass * HISTOGRAM_SIZE;
+            for (size_t i = 0; i < size; ++i)
+            {
+                histograms[base + extractPartFromKey(pass, arr[i])]++;
+            }
         }
 
         {
             /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
-            CountType sums[NUM_PASSES] = {0};
-
-            for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
+            for (size_t pass = 0; pass < NUM_PASSES; ++pass)
             {
-                for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+                CountType sum = 0;
+                size_t base = pass * HISTOGRAM_SIZE;
+                for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
                 {
-                    CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
-                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass] - 1;
-                    sums[pass] = tmp;
+                    CountType new_sum = histograms[base + i] + sum;
+                    histograms[pass * HISTOGRAM_SIZE + i] = sum;
+                    sum = new_sum;
                 }
             }
         }
+
+        /// Move the elements in the order starting from the least bit piece, and then do a few passes on the number of pieces.
+        for (size_t pass = 0; pass < NUM_PASSES - DIRECT_WRITE_TO_DESTINATION; ++pass)
+        {
+            Key * arr_writer = pass % 2 ? arr : swap_arr_buffer;
+            UInt32 * indices_writer = pass % 2 ? indices : swap_indices_buffer;
+
+            Key * arr_reader = pass % 2 ? swap_arr_buffer : arr;
+            UInt32 * indices_reader = pass % 2 ? swap_indices_buffer : indices;
+
+            for (size_t i = 0; i < size; ++i)
+            {
+                size_t pos = extractPartFromKey(pass, arr_reader[i]);
+
+                /// Place the element on the next free position.
+                size_t hist_idx = pass * HISTOGRAM_SIZE + pos;
+                size_t sorted_idx = histograms[hist_idx]++;
+                indices_writer[sorted_idx] = indices_reader[i];
+
+                /// On the last pass, we do the reverse transformation.
+                if constexpr (!Traits::Transform::transform_is_simple)
+                {
+                    if (pass == NUM_PASSES - 1)
+                        arr_writer[sorted_idx] = bitsToKey(Traits::Transform::backward(keyToBits(arr_reader[i])));
+                    else
+                        arr_writer[sorted_idx] = arr_reader[i];
+                }
+                else
+                    arr_writer[sorted_idx] = arr_reader[i];
+            }
+        }
+
+        if (DIRECT_WRITE_TO_DESTINATION)
+        {
+            constexpr size_t pass = NUM_PASSES - 1;
+            Result * result_writer = destination;
+            Key * arr_reader = pass % 2 ? swap_arr_buffer : arr;
+            UInt32 * indices_reader = pass % 2 ? swap_indices_buffer : indices;
+
+            if (reverse)
+            {
+                for (size_t i = 0; i < size; ++i)
+                {
+                    size_t pos = extractPartFromKey(pass, arr_reader[i]);
+                    result_writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + pos]++] = indices_reader[i];
+                }
+            }
+            else
+            {
+                for (size_t i = 0; i < size; ++i)
+                {
+                    size_t pos = extractPartFromKey(pass, arr_reader[i]);
+                    result_writer[histograms[pass * HISTOGRAM_SIZE + pos]++] = indices_reader[i];
+                }
+            }
+        }
+        else
+        {
+            /// If the number of passes is odd, the result array is in a temporary buffer. Copy it to the place of the original array.
+            if (NUM_PASSES % 2)
+            {
+                memcpy(arr, swap_arr_buffer, size * sizeof(Key));
+                memcpy(indices, swap_indices_buffer, size * sizeof(UInt32));
+            }
+
+            /// TODO This is suboptimal, we can embed it to the last pass.
+            if (reverse)
+            {
+                std::reverse(arr, arr + size);
+                std::reverse(indices, indices + size);
+            }
+        }
+
+        allocator.deallocate(swap_arr_buffer, size * sizeof(Key));
+        allocator.deallocate(swap_indices_buffer, size * sizeof(UInt32));
+    }
+    */
+
+
+    template <bool DIRECT_WRITE_TO_DESTINATION>
+    static NO_INLINE void radixSortLSDInternal(Element * arr, size_t size, bool reverse, Result * destination)
+    {
+        /// If the array is smaller than 256, then it is better to use another algorithm.
+
+        /// There are loops of NUM_PASSES. It is very important that they are unfolded at compile-time.
+
+        /// For each of the NUM_PASSES bit ranges of the key, consider how many times each value of this bit range met.
+        std::unique_ptr<CountType[]> histograms{new CountType[HISTOGRAM_SIZE * NUM_PASSES]};
+
+        typename Traits::Allocator allocator;
+
+        /// We will do several passes through the array. On each pass, the data is transferred to another array. Let's allocate this temporary array.
+        Element * swap_buffer = reinterpret_cast<Element *>(allocator.allocate(size * sizeof(Element)));
+
+        if constexpr (!Traits::Transform::transform_is_simple)
+        {
+            for (size_t i = 0; i < size; ++i)
+                Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
+        }
+
+        for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+        {
+            /// Initialize histograms
+            for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
+                histograms[pass * HISTOGRAM_SIZE + i] = 0;
+
+            /// Transform the array and calculate the histogram.
+            /// NOTE This is slightly suboptimal. Look at https://github.com/powturbo/TurboHist
+            for (size_t i = 0; i < size; ++i)
+                ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
+
+            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
+            CountType sum = 0;
+            for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
+            {
+                CountType new_sum = histograms[pass * HISTOGRAM_SIZE + i] + sum;
+                histograms[pass * HISTOGRAM_SIZE + i] = sum;
+                sum = new_sum;
+            }
+        }
+
+        // for (size_t i = 0; i < size; ++i)
+        // {
+        //     if (!Traits::Transform::transform_is_simple)
+        //         Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
+
+        //     for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+        //         ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
+        // }
+
+        // {
+        //     /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
+        //     CountType sums[NUM_PASSES] = {0};
+
+        //     for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
+        //     {
+        //         for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+        //         {
+        //             CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
+        //             histograms[pass * HISTOGRAM_SIZE + i] = sums[pass];
+        //             sums[pass] = tmp;
+        //         }
+        //     }
+        // }
 
         /// Move the elements in the order starting from the least bit piece, and then do a few passes on the number of pieces.
         for (size_t pass = 0; pass < NUM_PASSES - DIRECT_WRITE_TO_DESTINATION; ++pass)
@@ -328,8 +489,14 @@ private:
             {
                 size_t pos = extractPart(pass, reader[i]);
 
+                if (i + 1 < size)
+                {
+                    size_t next_pos = extractPart(pass, reader[i + 1]);
+                    __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
+                }
+
                 /// Place the element on the next free position.
-                auto & dest = writer[++histograms[pass * HISTOGRAM_SIZE + pos]];
+                auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + pos]++];
                 dest = reader[i];
 
                 /// On the last pass, we do the reverse transformation.
@@ -349,7 +516,13 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = extractPart(pass, reader[i]);
-                    writer[size - 1 - (++histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(reader[i]);
+                    if (i + 1 < size)
+                    {
+                        size_t next_pos = extractPart(pass, reader[i + 1]);
+                        __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
+                    }
+
+                    writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos]++)] = Traits::extractResult(reader[i]);
                 }
             }
             else
@@ -357,7 +530,13 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = extractPart(pass, reader[i]);
-                    writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(reader[i]);
+                    if (i + 1 < size)
+                    {
+                        size_t next_pos = extractPart(pass, reader[i + 1]);
+                        __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
+                    }
+
+                    writer[histograms[pass * HISTOGRAM_SIZE + pos]++] = Traits::extractResult(reader[i]);
                 }
             }
         }
@@ -579,6 +758,13 @@ public:
         radixSortLSDInternal<true>(arr, size, reverse, destination);
     }
 
+    /*
+    static void executeLSDWithSOA(Key * arr, UInt32 * indices, size_t size, bool reverse, Result * destination)
+    {
+        radixSortLSDInternalWithSOA<true>(arr, indices, size, reverse, destination);
+    }
+    */
+
     /** Tries to fast sort elements for common sorting patterns (unstable).
       * If fast sort cannot be performed, execute least significant digit radix sort.
       */
@@ -663,3 +849,136 @@ void radixSortMSD(T * arr, size_t size, size_t limit)
 {
     RadixSort<RadixSortNumTraits<T>>::executeMSD(arr, size, limit);
 }
+
+/*
+DECLARE_AVX512F_SPECIFIC_CODE(
+
+using namespace DB;
+
+template <typename T, bool DIRECT_WRITE_TO_DESTINATION>
+requires(std::is_integral_v<T> || std::is_floating_point_v<T>)
+void radixSortLSDInternalWithSOA(
+    typename RadixSortNumTraits<T>::Key * arr,
+    UInt32 * indices,
+    size_t size,
+    bool reverse,
+    size_t * destination)
+{
+    // RadixSort<RadixSortNumTraits<T>>::radixSortLSDInternalWithSOA<DIRECT_WRITE_TO_DESTINATION>(arr, indices, size, reverse, destination);
+
+    using K = typename RadixSortNumTraits<T>::Key;
+    using C = typename RadixSortNumTraits<T>::CountType;
+
+    constexpr size_t key_bytes = sizeof(K);
+    constexpr bool is_signed = std::is_signed_v<K>;
+    constexpr bool is_floating_point = std::is_floating_point_v<K>;
+    constexpr size_t step = sizeof(__m512i) / sizeof(K);
+
+    PaddedPODArray<K> temp_arr(size);
+    PaddedPODArray<UInt32> temp_indices(size);
+
+    for (int k = 0; k < key_bytes; ++k)
+    {
+        alignas(64) int histogram[256] = {0};
+
+        size_t i = 0;
+        for (; i + step - 1 < size; i += step)
+        {
+            __m512i values = _mm512_loadu_si512(&arr[i]);
+            for (int b = 0; b < step; ++b)
+            {
+                uint8_t byte = (reinterpret_cast<T *>(&values)[b] >> (k * 8)) & 0xFF;
+                histogram[byte]++;
+            }
+        }
+
+        // 处理剩余元素
+        for (; i < size; ++i)
+        {
+            uint8_t byte = (temp_arr[i] >> (k * 8)) & 0xFF;
+            count[byte]++;
+        }
+
+        // 计算前缀和
+        int prefix[256];
+        prefix[0] = count[0];
+        for (int j = 1; j < 256; ++j)
+        {
+            prefix[j] = prefix[j - 1] + count[j];
+        }
+
+        // 根据reverse参数决定排序顺序
+        std::vector<T> next_arr(size);
+        std::vector<uint32_t> next_indices(size);
+        if (reverse)
+        {
+            for (int i = size - 1; i >= 0; --i)
+            {
+                uint8_t byte = (temp_arr[i] >> (k * 8)) & 0xFF;
+                int pos = prefix[255 - byte] - 1;
+                next_arr[pos] = temp_arr[i];
+                next_indices[pos] = temp_indices[i];
+                prefix[255 - byte]--;
+            }
+        }
+        else
+        {
+            for (int i = size - 1; i >= 0; --i)
+            {
+                uint8_t byte = (temp_arr[i] >> (k * 8)) & 0xFF;
+                int pos = prefix[byte] - 1;
+                next_arr[pos] = temp_arr[i];
+                next_indices[pos] = temp_indices[i];
+                prefix[byte]--;
+            }
+        }
+        temp_arr = next_arr;
+        temp_indices = next_indices;
+    }
+
+    // 复制结果到输出数组
+    memcpy(out_arr, temp_arr.data(), size * sizeof(T));
+    memcpy(out_indices, temp_indices.data(), size * sizeof(uint32_t));
+}
+
+)
+
+
+
+template <typename T, bool DIRECT_WRITE_TO_DESTINATION>
+void radixSortLSDInternalWithSOA(
+    typename RadixSortNumTraits<T>::Key * arr,
+    UInt32 * indices,
+    size_t size,
+    bool reverse,
+    size_t * destination)
+{
+    // RadixSort<RadixSortNumTraits<T>>::radixSortLSDInternalWithSOA<DIRECT_WRITE_TO_DESTINATION>(arr, indices, size, reverse, destination);
+}
+
+template <typename T>
+void radixSortLSDWithSOA(
+    typename RadixSortNumTraits<T>::Key * arr,
+    UInt32 * indices,
+    size_t size,
+    bool reverse,
+    size_t * destination)
+{
+    radixSortLSDInternalWithSOA<T, true>(arr, indices, size, reverse, destination);
+}
+
+template <typename T>
+void radixSortLSDWithSOA(
+    typename RadixSortNumTraits<T>::Key * arr,
+    UInt32 * indices,
+    size_t size)
+{
+    radixSortLSDInternalWithSOA<T, true>(arr, indices, size, false, nullptr);
+}
+
+template <typename T>
+void radixSortLSDWithSOA(typename RadixSortNumTraits<T>::Key * arr, UInt32 * indices, size_t size, bool reverse)
+{
+    radixSortLSDInternalWithSOA<T, true>(arr, indices, size, reverse, nullptr);
+}
+*/
