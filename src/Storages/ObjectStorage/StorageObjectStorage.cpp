@@ -420,8 +420,9 @@ SinkToStoragePtr StorageObjectStorage::write(
 
         if (partition_by_ast)
         {
+            auto partition_strategy = PartitionStrategyProvider::get(partition_by_ast, sample_block, local_context, configuration->format);
             return std::make_shared<PartitionedStorageObjectStorageSink>(
-                object_storage, configuration, format_settings, sample_block, local_context, partition_by_ast);
+                partition_strategy, object_storage, configuration, format_settings, sample_block, local_context);
         }
     }
 

@@ -46,22 +46,6 @@ namespace
 
         PartitionedSink::validatePartitionKey(str, false);
     }
-
-    std::string getFilePath(const String & partition_id, PartitionedStorageObjectStorageSink::ConfigurationPtr configuration)
-    {
-        if (!configuration->withPartitionWildcard())
-        {
-            return configuration->getPath() + "/" + partition_id;
-        }
-
-        auto partition_bucket = PartitionedSink::replaceWildcards(configuration->getNamespace(), partition_id);
-        validateNamespace(partition_bucket, configuration);
-
-        auto partition_key = PartitionedSink::replaceWildcards(configuration->getPath(), partition_id);
-        validateKey(partition_key);
-
-        return partition_key;
-    }
 }
 
 StorageObjectStorageSink::StorageObjectStorageSink(
@@ -141,13 +125,13 @@ void StorageObjectStorageSink::cancelBuffers()
 }
 
 PartitionedStorageObjectStorageSink::PartitionedStorageObjectStorageSink(
+    std::shared_ptr<PartitionStrategy> partition_strategy_,
     ObjectStoragePtr object_storage_,
     ConfigurationPtr configuration_,
     std::optional<FormatSettings> format_settings_,
     const Block & sample_block_,
-    ContextPtr context_,
-    const ASTPtr & partition_by)
-    : PartitionedSink(partition_by, context_, sample_block_, configuration_->format)
+    ContextPtr context_)
+    : PartitionedSink(partition_strategy_, context_, sample_block_)
     , object_storage(object_storage_)
     , configuration(configuration_)
     , query_settings(configuration_->getQuerySettings(context_))
@@ -165,7 +149,10 @@ StorageObjectStorageSink::~StorageObjectStorageSink()
 
 SinkPtr PartitionedStorageObjectStorageSink::createSinkForPartition(const String & partition_id)
 {
-    auto file_path = getFilePath(partition_id, configuration);
+    auto file_path = getPartitionStrategy()->getPath(configuration->getPath(), partition_id);
+
+    validateNamespace(configuration->getNamespace(), configuration);
+    validateKey(file_path);
 
     if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
             *object_storage, *configuration, query_settings, file_path, /* sequence_number */1))

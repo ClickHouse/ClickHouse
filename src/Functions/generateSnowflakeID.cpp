@@ -1,3 +1,4 @@
+#include <Functions/generateSnowflakeID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsRandom.h>
@@ -145,6 +146,13 @@ struct Data
     }
 };
 
+}
+
+uint64_t generateSnowflakeID()
+{
+    Data data;
+    SnowflakeId snowflake_id = data.reserveRange(getMachineId(), 1);
+    return fromSnowflakeId(snowflake_id);
 }
 
 class FunctionGenerateSnowflakeID : public IFunction
