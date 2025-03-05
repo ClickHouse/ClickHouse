@@ -189,7 +189,10 @@ tableIndexDfnt: nestedIdentifier columnExpr TYPE columnTypeExpr GRANULARITY DECI
 tableProjectionDfnt: nestedIdentifier projectionSelectStmt;
 codecExpr: CODEC LPAREN codecArgExpr (COMMA codecArgExpr)* RPAREN;
 codecArgExpr: identifier (LPAREN columnExprList? RPAREN)?;
-ttlExpr: columnExpr (DELETE | TO DISK stringLiteral | TO VOLUME stringLiteral)?;
+ttlExpr
+    : columnExpr (DELETE whereClause? | TO DISK stringLiteral | TO VOLUME stringLiteral)?
+    | columnExpr groupByClause SET ttlSetExpr (COMMA ttlSetExpr)*;
+ttlSetExpr: columnExpr EQ_SINGLE columnExpr;
 
 // DESCRIBE statement
 
