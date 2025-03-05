@@ -204,7 +204,7 @@ using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResu
 ///
 /// The SELECT queries in (1) and (2) are basically the same and the user expects that the second invocation is served from the query
 /// cache. However, query results are indexed by their query ASTs and therefore no result will be found. Insert and retrieval behave overall
-/// more natural if settings related to the query cache are erased from the AST key. Note that at this point the settings themselves
+/// more natural if settings related to the query result cache are erased from the AST key. Note that at this point the settings themselves
 /// have been parsed already, they are not lost or discarded.
 ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 {
@@ -358,12 +358,11 @@ void QueryResultCacheWriter::buffer(Chunk && chunk, ChunkType chunk_type)
     if (skip_insert)
         return;
 
-    /// Reading from the query cache is implemented using processor `SourceFromChunks` which inherits from `ISource`.
-    /// The latter has logic which finishes processing (= calls `.finish()` on the output port + returns `Status::Finished`)
-    /// when the derived class returns an empty chunk. If this empty chunk is not the last chunk,
-    /// i.e. if it is followed by non-empty chunks, the query result will be incorrect.
-    /// This situation should theoretically never occur in practice but who knows...
-    /// To be on the safe side, writing into the query cache now rejects empty chunks and thereby avoids this scenario.
+    /// Reading from the query result cache is implemented using processor `SourceFromChunks` which inherits from `ISource`. The latter has
+    /// logic which finishes processing (= calls `.finish()` on the output port + returns `Status::Finished`) when the derived class returns
+    /// an empty chunk. If this empty chunk is not the last chunk, i.e. if it is followed by non-empty chunks, the query result will be
+    /// incorrect. This situation should theoretically never occur in practice but who knows... To be on the safe side, writing into the
+    /// query result cache now rejects empty chunks and thereby avoids this scenario.
     if (chunk.empty())
         return;
 
@@ -426,7 +425,7 @@ void QueryResultCacheWriter::finalizeWrite()
     {
         /// Squash partial result chunks to chunks of size 'max_block_size' each. This costs some performance but provides a more natural
         /// compression of neither too small nor big blocks. Also, it will look like 'max_block_size' is respected when the query result is
-        /// served later on from the query cache.
+        /// served later on from the query result cache.
 
         Chunks squashed_chunks;
         size_t rows_remaining_in_squashed = 0; /// how many further rows can the last squashed chunk consume until it reaches max_block_size
@@ -513,7 +512,7 @@ void QueryResultCacheWriter::finalizeWrite()
     was_finalized = true;
 }
 
-/// Creates a source processor which serves result chunks stored in the query cache, and separate sources for optional totals/extremes.
+/// Creates a source processor which serves result chunks stored in the query result cache, and separate sources for optional totals/extremes.
 void QueryResultCacheReader::buildSourceFromChunks(Block header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes)
 {
     source_from_chunks = std::make_unique<SourceFromChunks>(header, std::move(chunks));

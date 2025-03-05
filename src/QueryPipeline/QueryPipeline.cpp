@@ -623,10 +623,10 @@ void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultC
 {
     assert(pulling());
 
-    /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is
-    /// to write each chunk into the query cache. All transforms hold a refcounted reference to the same query cache writer object.
-    /// This ensures that all transforms write to the single same cache entry. The writer object synchronizes internally, the
-    /// expensive stuff like cloning chunks happens outside lock scopes).
+    /// Attach a special transform to all output ports (result + possibly totals/extremes). The only purpose of the transform is to write
+    /// each chunk into the query result cache. All transforms hold a refcounted reference to the same query result cache writer object.
+    /// This ensures that all transforms write to the single same cache entry. The writer object synchronizes internally, the expensive
+    /// stuff like cloning chunks happens outside lock scopes).
 
     auto add_stream_in_query_result_cache_transform = [&](OutputPort *& out_port, QueryResultCacheWriter::ChunkType chunk_type)
     {
@@ -652,8 +652,8 @@ void QueryPipeline::finalizeWriteInQueryResultCache()
         processors->begin(), processors->end(),
         [](ProcessorPtr processor){ return dynamic_cast<StreamInQueryResultCacheTransform *>(&*processor); });
 
-    /// The pipeline can contain up to three StreamInQueryResultCacheTransforms which all point to the same query cache writer object.
-    /// We can call finalize() on any of them.
+    /// The pipeline can contain up to three StreamInQueryResultCacheTransforms which all point to the same query result cache writer
+    /// object. We can call finalize() on any of them.
     if (it != processors->end())
         dynamic_cast<StreamInQueryResultCacheTransform &>(**it).finalizeWriteInQueryResultCache();
 }
@@ -663,8 +663,8 @@ void QueryPipeline::readFromQueryResultCache(
         std::unique_ptr<SourceFromChunks> source_totals,
         std::unique_ptr<SourceFromChunks> source_extremes)
 {
-    /// Construct the pipeline from the input source processors. The processors are provided by the query cache to produce chunks of a
-    /// previous query result.
+    /// Construct the pipeline from the input source processors. The processors are provided by the query result cache to produce chunks of
+    /// a previous query result.
 
     auto add_stream_from_query_result_cache_source = [&](OutputPort *& out_port, std::unique_ptr<SourceFromChunks> source_)
     {

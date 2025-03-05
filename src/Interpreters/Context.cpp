@@ -3687,7 +3687,7 @@ void Context::clearCaches() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
     shared->mmap_cache->clear();
 
-    /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
+    /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
 
     if (!shared->query_condition_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");

@@ -62,7 +62,7 @@ public:
         /// These members are necessary to ensure that a (non-shared, see below) entry can only be written and read by the same user with
         /// the same roles. Example attack scenarios:
         /// - after DROP USER, it must not be possible to create a new user with with the dropped user name and access the dropped user's
-        ///   query cache entries
+        ///   query result cache entries
         /// - different roles of the same user may be tied to different row-level policies. It must not be possible to switch role and
         ///   access another role's cache entries
         std::optional<UUID> user_id;
@@ -93,7 +93,7 @@ public:
         /// compute the tag from the query AST.
         const String tag;
 
-        /// Ctor to construct a Key for writing into query cache.
+        /// Ctor to construct a Key for writing into query result cache.
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
@@ -104,7 +104,7 @@ public:
             std::chrono::time_point<std::chrono::system_clock> expires_at_,
             bool is_compressed);
 
-        /// Ctor to construct a Key for reading from query cache (this operation only needs the AST + user name).
+        /// Ctor to construct a Key for reading from query result cache (this operation only needs the AST + user name).
         Key(ASTPtr ast_,
             const String & current_database,
             const Settings & settings,
@@ -186,12 +186,12 @@ private:
 /// Buffers multiple partial query result chunks (buffer()) and eventually stores them as cache entry (finalizeWrite()).
 ///
 /// Implementation note: Queries may throw exceptions during runtime, e.g. out-of-memory errors. In this case, no query result must be
-/// written into the query cache. Unfortunately, neither the Writer nor the special transform added on top of the query pipeline which
-/// holds the Writer know whether they are destroyed because the query ended successfully or because of an exception (otherwise, we
+/// written into the query result cache. Unfortunately, neither the Writer nor the special transform added on top of the query pipeline
+/// which holds the Writer know whether they are destroyed because the query ended successfully or because of an exception (otherwise, we
 /// could simply implement a check in their destructors). To handle exceptions correctly nevertheless, we do the actual insert in
-/// finalizeWrite() as opposed to the Writer destructor. This function is then called only for successful queries in finish_callback()
-/// which runs before the transform and the Writer are destroyed, whereas for unsuccessful queries we do nothing (the Writer is
-/// destroyed w/o inserting anything).
+/// finalizeWrite() as opposed to the Writer destructor. This function is then called only for successful queries in finish_callback() which
+/// runs before the transform and the Writer are destroyed, whereas for unsuccessful queries we do nothing (the Writer is destroyed w/o
+/// inserting anything).
 /// Queries may also be cancelled by the user, in which case IProcessor's cancel bit is set. FinalizeWrite() is only called if the
 /// cancel bit is not set.
 class QueryResultCacheWriter
