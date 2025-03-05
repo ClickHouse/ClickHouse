@@ -134,7 +134,8 @@ Cluster::Address::Address(
     is_local = isLocal(config.getInt(port_type, 0));
 
     /// if bind_host is set, then force is_local to false for easier testing
-    if (!bind_host.empty()) {
+    if (!bind_host.empty())
+    {
         is_local = false;
     }
 
