@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
-#include <base/int8_to_string.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
 #include <Common/Logger_fwd.h>
@@ -12,7 +11,6 @@
 #include <exception>
 #include <vector>
 
-#include <fmt/core.h>
 #include <fmt/format.h>
 #include <Poco/Exception.h>
 
