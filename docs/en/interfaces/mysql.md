@@ -4,6 +4,11 @@ sidebar_position: 20
 sidebar_label: MySQL Interface
 ---
 
+import mysql0 from '@site/static/images/interfaces/mysql0.png';
+import mysql1 from '@site/static/images/interfaces/mysql1.png';
+import mysql2 from '@site/static/images/interfaces/mysql2.png';
+import mysql3 from '@site/static/images/interfaces/mysql3.png';
+
 # MySQL Interface
 
 ClickHouse supports the MySQL wire protocol. This allows certain clients that do not have native ClickHouse connectors leverage the MySQL protocol instead, and it has been validated with the following BI tools:
@@ -32,23 +37,23 @@ This cannot be turned off and it can lead in rare edge cases to different behavi
 
 <br/>
 
-![Credentials screen - Prompt](./images/mysql0.png)
+<img src={mysql0} alt="Credentials screen - Prompt" />
 
 2. Change the `Connect with` drop-down to `MySQL`. 
 
 <br/>
 
-![Credentials screen - Prompt](./images/mysql1.png)
+<img src={mysql1} alt="Credentials screen - MySQL selected" />
 
 3. Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
 
 <br/>
 
-![Credentials screen - Enabled MySQL](./images/mysql2.png)
+<img src={mysql2} alt="Credentials screen - Enabled MySQL" />
 
 Copy the MySQL connection string shown.
 
-![Credentials screen - Connection String](./images/mysql3.png)
+<img src={mysql3} alt="Credentials screen - Connection String" />
 
 ## Creating multiple MySQL users in ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 

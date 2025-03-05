@@ -653,4 +653,4 @@ An internal metric of the low-level memory allocator (jemalloc). See https://jem
 - [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
 - [system.metrics](/operations/system-tables/metrics) — Contains instantly calculated metrics.
 - [system.events](/operations/system-tables/events) — Contains a number of events that have occurred.
-- [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
+- [system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.

@@ -45,7 +45,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 - [WHERE clause](../../../sql-reference/statements/select/where.md)
 - [WINDOW clause](../../../sql-reference/window-functions/index.md)
-- [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
+- [GROUP BY clause](/sql-reference/statements/select/group-by)
 - [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 - [HAVING clause](../../../sql-reference/statements/select/having.md)
 - [QUALIFY clause](../../../sql-reference/statements/select/qualify.md)
@@ -59,7 +59,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 
 ## SELECT Clause {#select-clause}
 
-[Expressions](../../../sql-reference/syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](../../../sql-reference/statements/select/group-by.md) aggregation.
+[Expressions](/sql-reference/syntax#expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](/sql-reference/statements/select/group-by) aggregation.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 

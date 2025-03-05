@@ -738,7 +738,7 @@ ClickHouse может парсить только базовый формат `Y
 
 Из таблицы не всегда загружаются блоки размера `max_block_size`. Если ясно, что нужно прочитать меньше данных, то будет считан блок меньшего размера.
 
-## preferred_block_size_bytes {#preferred-block-size-bytes}
+## preferred_block_size_bytes {#preferred_block_size_bytes}
 
 Служит для тех же целей что и `max_block_size`, но задает рекомендуемый размер блоков в байтах, выбирая адаптивное количество строк в блоке.
 При этом размер блока не может быть более `max_block_size` строк.
@@ -892,7 +892,7 @@ ClickHouse использует этот параметр при чтении д
 
 Установка логирования запроса.
 
-Запросы, переданные в ClickHouse с этой настройкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log).
+Запросы, переданные в ClickHouse с этой настройкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../../operations/server-configuration-parameters/settings.md/operations/server-configuration-parameters/settings#query-log).
 
 Пример:
 
@@ -1063,7 +1063,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: 0.
 
-Параллельный `INSERT SELECT` действует только в том случае, если часть SELECT выполняется параллельно, см. настройку [max_threads](#settings-max_threads).
+Параллельный `INSERT SELECT` действует только в том случае, если часть SELECT выполняется параллельно, см. настройку [max_threads](/operations/settings/settings#max_threads).
 Чем больше значение `max_insert_threads`, тем больше потребление оперативной памяти.
 
 ## max_compress_block_size {#max-compress-block-size}
@@ -1231,7 +1231,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 Считать ли экстремальные значения (минимумы и максимумы по столбцам результата запроса). Принимает 0 или 1. По умолчанию - 0 (выключено).
 Подробнее смотрите раздел «Экстремальные значения».
 
-## kafka_max_wait_ms {#kafka-max-wait-ms}
+## kafka_max_wait_ms {#kafka_max_wait_ms}
 
 Время ожидания в миллисекундах для чтения сообщений из [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) перед повторной попыткой.
 
@@ -1707,7 +1707,7 @@ echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --in
 
 Использовать в качестве разделителя строк для TSV формата CRLF (DOC/Windows стиль) вместо LF (Unix стиль).
 
-## insert_quorum {#settings-insert_quorum}
+## insert_quorum {#insert_quorum
 
 Включает кворумную запись.
 
@@ -1743,7 +1743,7 @@ ClickHouse генерирует исключение:
 
 См. также:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
@@ -1760,7 +1760,7 @@ ClickHouse генерирует исключение:
 
 См. также:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
@@ -1783,7 +1783,7 @@ ClickHouse генерирует исключение:
 
 См. также:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 
@@ -2576,7 +2576,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
 
-Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_message_broker_schedule_pool_size).
+Параметр перенесен в [серверную конфигурацию](/operations/server-configuration-parameters/settings#background_message_broker_schedule_pool_size).
 
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
@@ -2661,7 +2661,7 @@ SELECT * FROM a;
 
 ## optimize_aggregation_in_order {#optimize_aggregation_in_order}
 
-Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [GROUP BY](../../sql-reference/statements/select/group-by.md) при наличии подходящих ключей сортировки. Используется при работе с таблицами [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [GROUP BY](/sql-reference/statements/select/group-by) при наличии подходящих ключей сортировки. Используется при работе с таблицами [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
 Возможные значения:
 
@@ -3212,7 +3212,7 @@ SELECT * FROM test2;
 └─────────────┘
 ```
 
-Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized).
+Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](/sql-reference/statements/create/view#materialized-view).
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 
@@ -3788,7 +3788,7 @@ Exception: Total regexp lengths too large.
 
 ## enable_positional_arguments {#enable-positional-arguments}
 
-Включает и отключает поддержку позиционных аргументов для [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md).
+Включает и отключает поддержку позиционных аргументов для [GROUP BY](/sql-reference/statements/select/group-by), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md).
 
 Возможные значения:
 
@@ -3974,7 +3974,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 ## alter_partition_verbose_result {#alter-partition-verbose-result}
 
-Включает или отключает вывод информации о кусках, к которым были успешно применены операции манипуляции с партициями и кусками. Применимо к [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) и к [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)
+Включает или отключает вывод информации о кусках, к которым были успешно применены операции манипуляции с партициями и кусками. Применимо к [ATTACH PARTITION|PART](/sql-reference/statements/alter/partition#attach-partitionpart) и к [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)
 
 Возможные значения:
 

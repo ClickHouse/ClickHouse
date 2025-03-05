@@ -691,6 +691,13 @@ void Pipe::resize(size_t num_streams, bool force, bool strict)
     if (!force && num_streams == numOutputPorts())
         return;
 
+    /// We need to not add the resize in case of 1-1 because in case
+    /// it is not force resize and we have n outputs (look at the code above),
+    /// and one of the outputs is dead, we can push all data to n-1 outputs,
+    /// which doesn't make sense for 1-1 scenario
+    if (numOutputPorts() == 1 && num_streams == 1)
+        return;
+
     ProcessorPtr resize;
 
     if (strict)

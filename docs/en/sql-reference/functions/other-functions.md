@@ -1593,7 +1593,7 @@ normalizedQueryHash(x)
 
 **Returned value**
 
-- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
+- Hash value. [UInt64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -1628,7 +1628,7 @@ normalizedQueryHashKeepNames(x)
 
 **Returned value**
 
-- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
+- Hash value. [UInt64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -3114,7 +3114,7 @@ isDecimalOverflow(d, [p])
 **Arguments**
 
 - `d` — value. [Decimal](../data-types/decimal.md).
-- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. This parameter can be helpful to migrate data from/to another database or file. [UInt8](../data-types/int-uint.md#uint-ranges).
+- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. This parameter can be helpful to migrate data from/to another database or file. [UInt8](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Returned values**
 
@@ -3154,7 +3154,7 @@ countDigits(x)
 
 **Returned value**
 
-- Number of digits. [UInt8](../data-types/int-uint.md#uint-ranges).
+- Number of digits. [UInt8](/sql-reference/data-types/int-uint#integer-ranges).
 
 :::note
 For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#isdecimaloverflow).

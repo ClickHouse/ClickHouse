@@ -20,7 +20,7 @@ deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure]
 
 - `url` — Bucket url with path to existing Delta Lake table in S3.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. These parameters are optional. If credentials are not specified, they are used from the ClickHouse configuration. For more information see [Using S3 for Data Storage](engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-s3).
-- `format` — The [format](interfaces/formats.md/#formats) of the file.
+- `format` — The [format](/interfaces/formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 - `compression` — Parameter is optional. Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, compression will be autodetected by the file extension.
 

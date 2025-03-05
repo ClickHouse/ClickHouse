@@ -10,7 +10,7 @@ Each row describes one data part.
 
 Columns:
 
-- `partition` ([String](../../sql-reference/data-types/string.md)) – The partition name. To learn what a partition is, see the description of the [ALTER](../../sql-reference/statements/alter/index.md#query_language_queries_alter) query.
+- `partition` ([String](../../sql-reference/data-types/string.md)) – The partition name. To learn what a partition is, see the description of the [ALTER](/sql-reference/statements/alter) query.
 
     Formats:
 
@@ -103,11 +103,11 @@ Columns:
 
 - `disk_name` ([String](../../sql-reference/data-types/string.md)) – Name of a disk that stores the data part.
 
-- `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md/#hash_functions-siphash128) of compressed files.
+- `hash_of_all_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of compressed files.
 
-- `hash_of_uncompressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md/#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
+- `hash_of_uncompressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of uncompressed files (files with marks, index file etc.).
 
-- `uncompressed_hash_of_compressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](../../sql-reference/functions/hash-functions.md/#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
+- `uncompressed_hash_of_compressed_files` ([String](../../sql-reference/data-types/string.md)) – [sipHash128](/sql-reference/functions/hash-functions#siphash128) of data in the compressed files as if they were uncompressed.
 
 - `delete_ttl_info_min` ([DateTime](../../sql-reference/data-types/datetime.md)) — The minimum value of the date and time key for [TTL DELETE rule](../../engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-ttl).
 

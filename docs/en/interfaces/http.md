@@ -4,6 +4,8 @@ sidebar_position: 19
 sidebar_label: HTTP Interface
 ---
 
+import PlayUI from '@site/static/images/play.png';
+
 # HTTP Interface
 
 The HTTP interface lets you use ClickHouse on any platform from any programming language in a form of REST API. The HTTP interface is more limited than the native interface, but it has better language support.
@@ -29,7 +31,7 @@ It has a secret feature for displaying charts and graphs for query pipelines.
 
 Web UI is designed for professionals like you.
 
-![Web UI](../images/play.png)
+<img src={PlayUI} alt="ClickHouse Web UI screenshot" />
 
 In health-check scripts use `GET /ping` request. This handler always returns "Ok." (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 

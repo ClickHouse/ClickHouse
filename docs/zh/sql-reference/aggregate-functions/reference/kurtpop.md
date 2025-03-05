@@ -15,7 +15,7 @@ kurtPop(expr)
 
 **参数**
 
-`expr` —  结果为数字的 [表达式](../../../sql-reference/syntax.md#syntax-expressions)。
+`expr` —  结果为数字的 [表达式](/sql-reference/syntax#expressions)。
 
 **返回值**
 

@@ -24,13 +24,13 @@ Columns:
     - `'MultiPartUploadComplete'`
     - `'MultiPartUploadAbort'`
 - `query_id` ([String](../../sql-reference/data-types/string.md)) — Identifier of the query associated with the event, if any.
-- `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Identifier of the thread performing the operation.
+- `thread_id` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Identifier of the thread performing the operation.
 - `thread_name` ([String](../../sql-reference/data-types/string.md)) — Name of the thread performing the operation.
 - `disk_name` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Name of the associated disk.
 - `bucket` ([String](../../sql-reference/data-types/string.md)) — Name of the bucket.
 - `remote_path` ([String](../../sql-reference/data-types/string.md)) — Path to the remote resource.
 - `local_path` ([String](../../sql-reference/data-types/string.md)) — Path to the metadata file on the local system, which references the remote resource.
-- `data_size` ([UInt32](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Size of the data involved in the upload event.
+- `data_size` ([UInt32](/sql-reference/data-types/int-uint#integer-ranges)) — Size of the data involved in the upload event.
 - `error` ([String](../../sql-reference/data-types/string.md)) — Error message associated with the event, if any.
 
 **Example**

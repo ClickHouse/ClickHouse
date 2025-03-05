@@ -208,7 +208,7 @@ clickhouse-client # or "clickhouse-client --password" if you set up a password.
 #### Install standalone ClickHouse Keeper {#install-standalone-clickhouse-keeper-1}
 
 :::tip
-In production environment we [strongly recommend](/operations/tips.md#L143-L144) running ClickHouse Keeper on dedicated nodes.
+In production environment we strongly recommend running ClickHouse Keeper on dedicated nodes.
 In test environments, if you decide to run ClickHouse Server and ClickHouse Keeper on the same server,  you do not need to install ClickHouse Keeper as it is included with ClickHouse server.
 This command is only needed on standalone ClickHouse Keeper servers.
 :::

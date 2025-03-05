@@ -41,7 +41,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 -   [Секция JOIN](join.md)
 -   [Секция PREWHERE](prewhere.md)
 -   [Секция WHERE](where.md)
--   [Секция GROUP BY](group-by.md)
+-   [Секция GROUP BY](/sql-reference/statements/select/group-by)
 -   [Секция LIMIT BY](limit-by.md)
 -   [Секция HAVING](having.md)
 -   [Секция LIMIT](limit.md)

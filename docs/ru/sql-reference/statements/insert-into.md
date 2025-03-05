@@ -195,7 +195,7 @@ SELECT * FROM simple_table;
 
 -   [async_insert](/operations/settings/settings#async_insert)
 -   [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
--   [wait_for_async_insert](../../operations/settings/settings.md#wait-for-async-insert)
+-   [wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
 -   [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
 -   [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
 -   [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)

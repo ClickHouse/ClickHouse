@@ -16,7 +16,7 @@ Columns:
 - `name` ([String](../../sql-reference/data-types/string.md)) — Server setting name.
 - `value` ([String](../../sql-reference/data-types/string.md)) — Server setting value.
 - `default` ([String](../../sql-reference/data-types/string.md)) — Server setting default value.
-- `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting was specified in `config.xml`
+- `changed` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Shows whether a setting was specified in `config.xml`
 - `description` ([String](../../sql-reference/data-types/string.md)) — Short server setting description.
 - `type` ([String](../../sql-reference/data-types/string.md)) — Server setting value type.
 - `changeable_without_restart` ([Enum8](../../sql-reference/data-types/enum.md)) — Whether the setting can be changed at server runtime. Values:
@@ -24,7 +24,7 @@ Columns:
     - `'IncreaseOnly'`
     - `'DecreaseOnly'`
     - `'Yes'`
-- `is_obsolete` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) - Shows whether a setting is obsolete.
+- `is_obsolete` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) - Shows whether a setting is obsolete.
 
 **Example**
 

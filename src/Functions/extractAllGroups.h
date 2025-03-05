@@ -159,7 +159,7 @@ public:
         else
         {
             /// Additional limit to fail fast on supposedly incorrect usage.
-            const auto max_matches_per_row = context->getSettingsRef()[Setting::regexp_max_matches_per_row];
+            const auto max_matches_per_row = context->getSettingsRef()[Setting::regexp_max_matches_per_row].value;
 
             PODArray<std::string_view, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.

@@ -9,7 +9,7 @@ description: "Exactly computes the quantile of a numeric data sequence, taking i
 
 Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence, taking into account the weight of each element.
 
-To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Each value is counted with its weight, as if it is present `weight` times. A hash table is used in the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than [quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact). You can use this function instead of `quantileExact` and specify the weight 1.
+To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Each value is counted with its weight, as if it is present `weight` times. A hash table is used in the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than [quantileExact](/sql-reference/aggregate-functions/reference/quantileexact#quantileexact). You can use this function instead of `quantileExact` and specify the weight 1.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
 

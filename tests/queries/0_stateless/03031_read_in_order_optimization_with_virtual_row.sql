@@ -1,5 +1,6 @@
 
 SET read_in_order_use_virtual_row = 1;
+SET use_query_condition_cache = 0;
 
 DROP TABLE IF EXISTS t;
 
