@@ -174,47 +174,10 @@ void executeTask(const String & serialized_query_plan, const DistributedQueryTas
     doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, context);
 }
 
+#if 0
 std::future<void> startTask(const QueryPlan & query_plan, const DistributedQueryTask & task, ContextPtr context)
 {
     const String serialized_query_plan = serializeQueryPlan(query_plan);
-
-#if 1
-    String stateless_worker_endpoint_uri;
-    if (context->getConfigRef().getBool("stateless_worker_client.enabled", true))
-    {
-        String host = context->getConfigRef().getString("stateless_worker_client.host", "localhost");
-        auto default_port = context->getInterserverIOAddress().second;
-        auto port = context->getConfigRef().getUInt("stateless_worker_client.port", default_port);
-        String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
-        auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
-        Poco::URI stateless_worker_uri;
-        stateless_worker_uri.setScheme("http");
-        stateless_worker_uri.setHost(host);
-        stateless_worker_uri.setPort(port);
-        stateless_worker_uri.addQueryParameter("endpoint", endpoint);
-        stateless_worker_endpoint_uri = stateless_worker_uri.toString();
-    }
-    sendTask(stateless_worker_endpoint_uri, serialized_query_plan, task, context);
-
-    /// TODO: add task to the list of running tasks and check its status periodically
-    while (true)
-    {
-        auto task_status = getTaskStatus(stateless_worker_endpoint_uri, task.task_id, 1000, context);
-
-        if (task_status == "Finished\n")
-        {
-            /// Return ready future
-            std::promise<void> task_promise;
-            task_promise.set_value();
-            return task_promise.get_future();
-        }
-        else if (task_status == "Running\n")
-            continue;
-        else
-            break;
-    }
-#endif
-
 
     std::promise<void> task_promise;
     std::future<void> future = task_promise.get_future();
@@ -250,6 +213,65 @@ void executeStage(const DistributedQueryStage & stage, ContextPtr context)
     for (auto & task : started_tasks)
         task.get();
 }
+#else
+
+struct RunningTaskInfo
+{
+    String endpoint_uri;
+    String task_id;
+};
+
+RunningTaskInfo startTask(const QueryPlan & query_plan, const DistributedQueryTask & task, ContextPtr context)
+{
+    const String serialized_query_plan = serializeQueryPlan(query_plan);
+
+    String stateless_worker_endpoint_uri;
+    if (context->getConfigRef().getBool("stateless_worker_client.enabled", true))
+    {
+        String host = context->getConfigRef().getString("stateless_worker_client.host", "localhost");
+        auto default_port = context->getInterserverIOAddress().second;
+        auto port = context->getConfigRef().getUInt("stateless_worker_client.port", default_port);
+        String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
+        auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
+        Poco::URI stateless_worker_uri;
+        stateless_worker_uri.setScheme("http");
+        stateless_worker_uri.setHost(host);
+        stateless_worker_uri.setPort(port);
+        stateless_worker_uri.addQueryParameter("endpoint", endpoint);
+        stateless_worker_endpoint_uri = stateless_worker_uri.toString();
+    }
+
+    sendTask(stateless_worker_endpoint_uri, serialized_query_plan, task, context);
+
+    return { stateless_worker_endpoint_uri, task.task_id};
+}
+
+void executeStage(const DistributedQueryStage & stage, ContextPtr context)
+{
+    std::deque<RunningTaskInfo> started_tasks;
+    for (const auto & task : stage.tasks)
+        started_tasks.emplace_back(startTask(stage.query_plan_fragment, task, context));
+
+    /// TODO: periodically check for cancellation
+    String error_message;
+    while (!started_tasks.empty())
+    {
+        auto & task = started_tasks.front();
+        auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, 1000, context);
+
+        if (task_status == "Running\n")
+            continue;
+
+        started_tasks.pop_front();
+        if (task_status != "Finished\n")
+            error_message += " Task " + task.task_id + " error: " + task_status;
+    }
+
+    if (!error_message.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failures: {}", error_message);
+}
+
+#endif
 
 void executeDistributedQuery(const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
 {
