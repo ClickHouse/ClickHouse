@@ -45,8 +45,7 @@ private:
     DetachedPartsStats detached_parts_stats{};
     MutationStats mutation_stats{};
 
-    void updateDetachedPartsStats();
-    void updateMutationStats();
+    void updateMutationAndDetachedPartsStats();
     void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
 

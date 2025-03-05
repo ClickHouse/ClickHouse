@@ -737,15 +737,13 @@ void AsynchronousMetrics::applyNormalizedCPUMetricsUpdate(
 }
 #endif
 
-// Warnings for pending and stuck mutations
+// Warnings for pending mutations
 void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetricValues & new_values) const
 {
     // The following warnings are base on asynchronous metrics, and they are populated into the system.warnings table
     // Warnings for part mutations
     auto num_pending_mutations = tryGetMetricValue(new_values, "NumberOfPendingMutations");
-    auto num_stuck_mutations = tryGetMetricValue(new_values, "NumberOfStuckMutations");
     auto max_pending_mutations_to_warn = context->getMaxPendingMutationsToWarn();
-    auto max_stuck_mutations_to_warn = context->getMaxStuckMutationsToWarn();
 
     if (num_pending_mutations > max_pending_mutations_to_warn)
     {
@@ -758,18 +756,6 @@ void AsynchronousMetrics::processWarningForMutationStats(const AsynchronousMetri
     }
     if (num_pending_mutations <= max_pending_mutations_to_warn)
         context->removeWarningMessage(Context::WarningType::MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT);
-
-    if (num_stuck_mutations > max_stuck_mutations_to_warn)
-    {
-        constexpr auto message_format_string = "The number of stuck mutations is more than {}.";
-        context->addOrUpdateWarningMessage(
-            Context::WarningType::MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT,
-            Context::Warning{
-                .message = fmt::format(message_format_string, max_pending_mutations_to_warn),
-                .message_format_string = message_format_string});
-    }
-    if (num_stuck_mutations <= max_stuck_mutations_to_warn)
-        context->removeWarningMessage(Context::WarningType::MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT);
 }
 
 void AsynchronousMetrics::update(TimePoint update_time, bool force_update)

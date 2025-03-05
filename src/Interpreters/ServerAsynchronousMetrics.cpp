@@ -437,9 +437,10 @@ void ServerAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
         asynchronous_metric_log->addValues(new_values);
 }
 
-void ServerAsynchronousMetrics::updateDetachedPartsStats()
+void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 {
     DetachedPartsStats current_values{};
+    MutationStats current_mutation_stats{};
 
     for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
@@ -464,46 +465,18 @@ void ServerAsynchronousMetrics::updateDetachedPartsStats()
 
                     ++current_values.count;
                 }
-            }
-        }
-    }
 
-    detached_parts_stats = current_values;
-}
-
-
-void ServerAsynchronousMetrics::updateMutationStats()
-{
-    MutationStats current_mutation_stats{};
-
-    for (const auto & db : DatabaseCatalog::instance().getDatabases())
-    {
-        if (!db.second->canContainMergeTreeTables())
-            continue;
-
-        for (const auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
-        {
-            const auto & table = iterator->table();
-            if (!table)
-                continue;
-
-            if (const MergeTreeData * table_merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
-            {
+                // mutation status
                 for (const auto & mutation_status : table_merge_tree->getMutationsStatus())
                 {
                     if (!mutation_status.is_done)
-                    {
                         ++current_mutation_stats.pending_mutations;
-
-                        auto parts_to_do = mutation_status.parts_to_do_names.size();
-                        if (parts_to_do > 0)
-                            ++current_mutation_stats.stuck_mutations;
-                    }
                 }
             }
         }
     }
 
+    detached_parts_stats = current_values;
     mutation_stats = current_mutation_stats;
 }
 
@@ -522,9 +495,7 @@ void ServerAsynchronousMetrics::updateHeavyMetricsIfNeeded(TimePoint current_tim
             heavy_update_interval = std::chrono::duration_cast<std::chrono::microseconds>(time_since_previous_update).count() / 1e6;
 
         /// Test shows that listing 100000 entries consuming around 0.15 sec.
-        updateDetachedPartsStats();
-        /// TODO: Test how heavy this operation is
-        updateMutationStats();
+        updateMutationAndDetachedPartsStats();
 
         watch.stop();
 

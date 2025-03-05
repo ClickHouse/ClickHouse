@@ -570,22 +570,13 @@ namespace DB
     <max_table_num_to_warn>400</max_table_num_to_warn>
     ```
     )", 0) \
-    DECLARE(UInt64, max_pending_mutations_to_warn, 5000lu, R"(
+    DECLARE(UInt64, max_pending_mutations_to_warn, 500lu, R"(
     If the number of pending mutations exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
 
     **Example**
 
     ``` xml
     <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
-    ```
-    )", 0) \
-    DECLARE(UInt64, max_stuck_mutations_to_warn, 5000lu, R"(
-    If the number of stuck mutations exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
-
-    **Example**
-
-    ``` xml
-    <max_stuck_mutations_to_warn>400</max_stuck_mutations_to_warn>
     ```
     )", 0) \
     DECLARE(UInt64, max_view_num_to_warn, 10000lu, R"(
