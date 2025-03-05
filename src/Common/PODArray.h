@@ -236,13 +236,6 @@ public:
     }
 
     template <typename ... TAllocatorParams>
-    void resize_exact(size_t n, TAllocatorParams &&... allocator_params) /// NOLINT
-    {
-        reserve_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
-        resize_assume_reserved(n);
-    }
-
-    template <typename ... TAllocatorParams>
     void shrink_to_fit(TAllocatorParams &&... allocator_params)
     {
         realloc(PODArrayDetails::minimum_memory_for_elements(size(), ELEMENT_SIZE, pad_left, pad_right), std::forward<TAllocatorParams>(allocator_params)...);

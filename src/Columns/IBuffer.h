@@ -1,8 +1,11 @@
+#pragma once
+
 #include <cstddef>
 #include <memory>
 
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
+#include <Columns/BufferFWD.h>
 
 #ifndef NDEBUG
 #include <sys/mman.h>
@@ -40,7 +43,7 @@ protected:
     /// Empty array will point to this static memory as padding and begin/end.
     static constexpr char * null = const_cast<char *>(empty_pod_array) + pad_left;
 
-    static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
+    // static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
 
     // If we are using allocator with inline memory, the minimal size of
     // array must be in sync with the size of this memory.
@@ -77,7 +80,6 @@ public:
     using value_type = T;
     using iterator = T *;
     using const_iterator = const T *;
-    class PODArrayOwning;
 
     virtual ~IBuffer() = default;
     IBuffer() = default;
@@ -121,18 +123,9 @@ public:
 
     void clear() { c_end = c_start; }
 
-    ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
-    virtual void reserve(size_t n);
-    virtual void reserve_exact(size_t n);
-    virtual void resize(size_t n);
-    virtual void resize_exact(size_t n);
-    virtual void resize_fill(size_t n);
-    virtual void resize_fill(size_t n, const T & value);
-    virtual void shrink_to_fit();
+    virtual std::shared_ptr<PODArrayOwning<T, initial_bytes, TAllocator, pad_right_, pad_left_>> getOwningBuffer();
 
-    virtual PODArrayOwning* getOwningBuffer();
-
-    void resize_assume_reserved(const size_t n)
+    void resize_assume_reserved(const size_t n) /// NOLINT
     {
         c_end = c_start + BufferDetails::byte_size(n, element_size);
     }

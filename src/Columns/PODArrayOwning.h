@@ -1,4 +1,6 @@
+#include <memory>
 #include "IBuffer.h"
+#include "IO/BufferBase.h"
 
 /** Whether we can use memcpy instead of a loop with assignment to T from U.
   * It is Ok if types are the same. And if types are integral and of the same size,
@@ -14,7 +16,7 @@ namespace DB
 {
 
 template <typename T, size_t initial_bytes, typename TAllocator, size_t pad_right, size_t pad_left>
-class PODArrayOwning : public IBuffer<T, initial_bytes, TAllocator, pad_right, pad_left>
+class PODArrayOwning : public IBuffer<T, initial_bytes, TAllocator, pad_right, pad_left>, public std::enable_shared_from_this<PODArrayOwning<T, initial_bytes, TAllocator, pad_right, pad_left>>
 {
 protected:
     using Base = IBuffer<T, initial_bytes, TAllocator, pad_right, pad_left>;
@@ -62,6 +64,68 @@ public:
     {
         this->swap(other);
         return *this;
+    }
+
+    std::shared_ptr<PODArrayOwning<T, initial_bytes, TAllocator, pad_right, pad_left>> getOwningBuffer() final {
+        return Base::shared_from_this();
+    }
+
+    template <typename ... TAllocatorParams>
+    ALWAYS_INLINE /// Better performance in clang build, worse performance in gcc build.
+    void reserve(size_t n, TAllocatorParams &&... allocator_params)
+    {
+        if (n > Base::capacity())
+            realloc(roundUpToPowerOfTwoOrZero(BufferDetails::minimum_memory_for_elements(n, Base::element_size, pad_left, pad_right)), std::forward<TAllocatorParams>(allocator_params)...);
+    }
+
+    template <typename ... TAllocatorParams>
+    void reserve_exact(size_t n, TAllocatorParams &&... allocator_params) /// NOLINT
+    {
+        if (n > Base::capacity())
+            realloc(BufferDetails::minimum_memory_for_elements(n, Base::element_size, pad_left, pad_right), std::forward<TAllocatorParams>(allocator_params)...);
+    }
+
+    template <typename ... TAllocatorParams>
+    void resize(size_t n, TAllocatorParams &&... allocator_params)
+    {
+        reserve(n, std::forward<TAllocatorParams>(allocator_params)...);
+        Base::resize_assume_reserved(n);
+    }
+
+    template <typename ... TAllocatorParams>
+    void resize_exact(size_t n, TAllocatorParams &&... allocator_params) /// NOLINT
+    {
+        reserve_exact(n, std::forward<TAllocatorParams>(allocator_params)...);
+        Base::resize_assume_reserved(n);
+    }
+
+    /// Same as resize, but zeroes new elements.
+    void resize_fill(size_t n) /// NOLINT
+    {
+        size_t old_size = this->size();
+        if (n > old_size)
+        {
+            this->reserve(n);
+            memset(this->c_end, 0, BufferDetails::byte_size(n - old_size, sizeof(T)));
+        }
+        this->c_end = this->c_start + BufferDetails::byte_size(n, sizeof(T));
+    }
+
+    void resize_fill(size_t n, const T & value) /// NOLINT
+    {
+        size_t old_size = this->size();
+        if (n > old_size)
+        {
+            this->reserve(n);
+            std::fill(Base::t_end(), Base::t_end() + n - old_size, value);
+        }
+        this->c_end = this->c_start + BufferDetails::byte_size(n, sizeof(T));
+    }
+
+    template <typename ... TAllocatorParams>
+    void shrink_to_fit(TAllocatorParams &&... allocator_params) /// NOLINT
+    {
+        realloc(BufferDetails::minimum_memory_for_elements(Base::size(), Base::element_size, pad_left, pad_right), std::forward<TAllocatorParams>(allocator_params)...);
     }
 
     template <typename U, typename ... TAllocatorParams>
