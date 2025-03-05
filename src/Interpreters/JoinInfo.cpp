@@ -19,7 +19,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
-    extern const SettingsInt64 max_block_size;
+    extern const SettingsUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 max_bytes_in_join;
     extern const SettingsOverflowMode join_overflow_mode;
@@ -30,8 +30,8 @@ namespace Setting
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
     extern const SettingsUInt64 join_on_disk_max_files_to_merge;
 
-    extern const SettingsUInt64 grace_hash_join_initial_buckets;
-    extern const SettingsUInt64 grace_hash_join_max_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_initial_buckets;
+    extern const SettingsNonZeroUInt64 grace_hash_join_max_buckets;
 
     extern const SettingsUInt64 max_rows_in_set_to_optimize_join;
 
@@ -45,7 +45,7 @@ namespace Setting
     extern const SettingsUInt64 join_to_sort_maximum_table_rows;
     extern const SettingsBool allow_experimental_join_right_table_sorting;
     extern const SettingsUInt64 min_joined_block_size_bytes;
-    extern const SettingsUInt64 max_threads;
+    extern const SettingsMaxThreads max_threads;
 
     extern const SettingsUInt64 default_max_bytes_in_join;
 }
