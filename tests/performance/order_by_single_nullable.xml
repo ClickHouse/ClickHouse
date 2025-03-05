@@ -7,8 +7,8 @@
         <compile_sort_description>0</compile_sort_description>
     </settings>
 
-    <query>select a from t order by a</query>
-    <query>select b from t order by b</query>
+    <query>select a from t_opt_orderby order by a</query>
+    <query>select b from t_opt_orderby order by b</query>
 
     <drop_query>DROP TABLE IF EXISTS t_opt_orderby</drop_query>
 </test>

@@ -12,3 +12,8 @@ clickhouse_add_executable(orc_string_dictionary orc_string_dictionary.cpp)
 target_link_libraries (orc_string_dictionary PRIVATE
     ch_contrib::gbenchmark_all
     dbms)
+
+clickhouse_add_executable(radix_sort radix_sort.cpp)
+target_link_libraries (radix_sort PRIVATE
+    ch_contrib::gbenchmark_all
+    dbms)

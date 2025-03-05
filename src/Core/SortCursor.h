@@ -603,9 +603,10 @@ private:
 
         /// Linear detection at most 8 elements to quickly find a small batch size.
         /// This heuristic helps to avoid the overhead of binary search for small batches.
+        constexpr size_t max_linear_detection = 16;
         size_t i = 0;
-        constexpr size_t max_linear_detection = 8;
-        while (min_cursor_pos + batch_size < min_cursor_size && i < max_linear_detection && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
+        while (i < max_linear_detection && min_cursor_pos + batch_size < min_cursor_size
+               && next_child_cursor.greaterWithOffset(begin_cursor, 0, batch_size))
         {
             ++batch_size;
             ++i;
