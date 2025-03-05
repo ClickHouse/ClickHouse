@@ -421,63 +421,61 @@ private:
         /// There are loops of NUM_PASSES. It is very important that they are unfolded at compile-time.
 
         /// For each of the NUM_PASSES bit ranges of the key, consider how many times each value of this bit range met.
-        std::unique_ptr<CountType[]> histograms{new CountType[HISTOGRAM_SIZE * NUM_PASSES]};
+        std::unique_ptr<CountType[]> histograms{new CountType[HISTOGRAM_SIZE * NUM_PASSES]{}};
 
         typename Traits::Allocator allocator;
 
         /// We will do several passes through the array. On each pass, the data is transferred to another array. Let's allocate this temporary array.
         Element * swap_buffer = reinterpret_cast<Element *>(allocator.allocate(size * sizeof(Element)));
 
-        if constexpr (!Traits::Transform::transform_is_simple)
-        {
-            for (size_t i = 0; i < size; ++i)
-                Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
-        }
-
-        for (size_t pass = 0; pass < NUM_PASSES; ++pass)
-        {
-            /// Initialize histograms
-            for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
-                histograms[pass * HISTOGRAM_SIZE + i] = 0;
-
-            /// Transform the array and calculate the histogram.
-            /// NOTE This is slightly suboptimal. Look at https://github.com/powturbo/TurboHist
-            for (size_t i = 0; i < size; ++i)
-                ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
-
-            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
-            CountType sum = 0;
-            for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
-            {
-                CountType new_sum = histograms[pass * HISTOGRAM_SIZE + i] + sum;
-                histograms[pass * HISTOGRAM_SIZE + i] = sum;
-                sum = new_sum;
-            }
-        }
-
-        // for (size_t i = 0; i < size; ++i)
+        // if constexpr (!Traits::Transform::transform_is_simple)
         // {
-        //     if (!Traits::Transform::transform_is_simple)
+        //     for (size_t i = 0; i < size; ++i)
         //         Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
-
-        //     for (size_t pass = 0; pass < NUM_PASSES; ++pass)
-        //         ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
         // }
 
+        // CountType sums[NUM_PASSES] = {0};
+        // for (size_t pass = 0; pass < NUM_PASSES; ++pass)
         // {
-        //     /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
-        //     CountType sums[NUM_PASSES] = {0};
+        //     /// Transform the array and calculate the histogram.
+        //     /// NOTE This is slightly suboptimal. Look at https://github.com/powturbo/TurboHist
+        //     for (size_t i = 0; i < size; ++i)
+        //         ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
 
+        //     /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
         //     for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
         //     {
-        //         for (size_t pass = 0; pass < NUM_PASSES; ++pass)
-        //         {
-        //             CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
-        //             histograms[pass * HISTOGRAM_SIZE + i] = sums[pass];
-        //             sums[pass] = tmp;
-        //         }
+        //         CountType new_sum = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
+        //         histograms[pass * HISTOGRAM_SIZE + i] = sums[pass];
+        //         sums[pass] = new_sum;
         //     }
         // }
+
+        /// Transform the array and calculate the histogram.
+        /// NOTE This is slightly suboptimal. Look at https://github.com/powturbo/TurboHist
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (!Traits::Transform::transform_is_simple)
+                Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
+
+            for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+                ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
+        }
+
+        {
+            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
+            CountType sums[NUM_PASSES] = {0};
+
+            for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
+            {
+                for (size_t pass = 0; pass < NUM_PASSES; ++pass)
+                {
+                    CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
+                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass];
+                    sums[pass] = tmp;
+                }
+            }
+        }
 
         /// Move the elements in the order starting from the least bit piece, and then do a few passes on the number of pieces.
         for (size_t pass = 0; pass < NUM_PASSES - DIRECT_WRITE_TO_DESTINATION; ++pass)
