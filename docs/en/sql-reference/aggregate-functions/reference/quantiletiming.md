@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/quantiletiming
+slug: /sql-reference/aggregate-functions/reference/quantiletiming
 sidebar_position: 180
+title: "quantileTiming"
+description: "With the determined precision computes the quantile of a numeric data sequence."
 ---
 
 # quantileTiming
@@ -23,7 +25,7 @@ Alias: `medianTiming`.
 
 - `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
 
-- `expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) over a column values returning a [Float\*](../../../sql-reference/data-types/float.md)-type number.
+- `expr` — [Expression](/sql-reference/syntax#expressions) over a column values returning a [Float\*](../../../sql-reference/data-types/float.md)-type number.
 
     - If negative values are passed to the function, the behavior is undefined.
     - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.

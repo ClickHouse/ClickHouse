@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/table-engines/special/url
+slug: /engines/table-engines/special/url
 sidebar_position: 80
 sidebar_label:  URL
+title: "URL Table Engine"
+description: "Queries data to/from a remote HTTP/HTTPS server. This engine is similar to the File engine."
 ---
 
 # URL Table Engine
@@ -12,7 +14,7 @@ Syntax: `URL(URL [,Format] [,CompressionMethod])`
 
 - The `URL` parameter must conform to the structure of a Uniform Resource Locator. The specified URL must point to a server that uses HTTP or HTTPS. This does not require any additional headers for getting a response from the server.
 
-- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](../../../interfaces/formats.md#formats).
+- The `Format` must be one that ClickHouse can use in `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see [Formats](/interfaces/formats#formats-overview).
 
     If this argument is not specified, ClickHouse detects the format automatically from the suffix of the `URL` parameter. If the suffix of `URL` parameter does not match any supported formats, it fails to create table. For example, for engine expression `URL('http://localhost/test.json')`, `JSON` format is applied.
 
@@ -42,7 +44,7 @@ For example, for engine expression `URL('http://localhost/test.gzip')`, `gzip` c
 respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects) setting.
+You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/operations/settings/settings#max_http_get_redirects) setting.
 
 ## Example {#example}
 
@@ -107,5 +109,5 @@ SELECT * FROM url_engine_table
 
 ## Storage Settings {#storage-settings}
 
-- [engine_url_skip_empty_files](/docs/en/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [enable_url_encoding](/docs/en/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.

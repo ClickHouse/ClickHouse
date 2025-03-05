@@ -158,6 +158,28 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
 {
 }
 
+TableJoin::TableJoin(const JoinSettings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_, UInt64 max_bytes_in_join)
+    : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
+    , default_max_bytes(max_bytes_in_join)
+    , join_use_nulls(settings.join_use_nulls)
+    , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
+    , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
+    , max_joined_block_rows(settings.max_joined_block_size_rows)
+    , join_algorithms(settings.join_algorithm)
+    , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
+    , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
+    , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
+    , temporary_files_codec(settings.temporary_files_codec)
+    , output_by_rowlist_perkey_rows_threshold(settings.join_output_by_rowlist_perkey_rows_threshold)
+    , sort_right_minimum_perkey_rows(settings.join_to_sort_minimum_perkey_rows)
+    , sort_right_maximum_table_rows(settings.join_to_sort_maximum_table_rows)
+    , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
+    , max_memory_usage(settings.max_bytes_in_join)
+    , tmp_volume(tmp_volume_)
+    , tmp_data(tmp_data_)
+    , enable_analyzer(true)
+{
+}
 
 TableJoin::TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness, const Names & key_names_right)
     : size_limits(limits)

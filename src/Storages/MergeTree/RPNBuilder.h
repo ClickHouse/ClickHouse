@@ -3,11 +3,18 @@
 #include <Core/Block.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/PreparedSets.h>
 #include <Interpreters/ActionsDAG.h>
 
 namespace DB
 {
+
+class IAST;
+class Field;
+class FutureSet;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
+class PreparedSets;
+using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
+struct Settings;
 
 /** Context of RPNBuilderTree.
   *
