@@ -279,6 +279,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 page_cache_chunk_size;
     extern const ServerSettingsUInt64 page_cache_mmap_size;
     extern const ServerSettingsUInt64 page_cache_size;
+    extern const ServerSettingsString query_condition_cache_policy;
+    extern const ServerSettingsUInt64 query_condition_cache_size;
+    extern const ServerSettingsDouble query_condition_cache_size_ratio;
     extern const ServerSettingsBool page_cache_use_madv_free;
     extern const ServerSettingsBool page_cache_use_transparent_huge_pages;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
@@ -1715,6 +1718,16 @@ try
     }
     global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
 
+    String query_condition_cache_policy = server_settings[ServerSetting::query_condition_cache_policy];
+    size_t query_condition_cache_size = server_settings[ServerSetting::query_condition_cache_size];
+    double query_condition_cache_size_ratio = server_settings[ServerSetting::query_condition_cache_size_ratio];
+    if (query_condition_cache_size > max_cache_size)
+    {
+        query_condition_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered query condition cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_condition_cache_size));
+    }
+    global_context->setQueryConditionCache(query_condition_cache_policy, query_condition_cache_size, query_condition_cache_size_ratio);
+
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
     size_t compiled_expression_cache_max_elements = server_settings[ServerSetting::compiled_expression_cache_elements_size];
@@ -2010,6 +2023,7 @@ try
             global_context->updateSkippingIndexCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
             global_context->updateQueryCacheConfiguration(*config);
+            global_context->updateQueryConditionCacheConfiguration(*config);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL

@@ -35,4 +35,4 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 -   [监控](../../operations/monitoring.md) — ClickHouse监控的基本概念。
 -   [system.metrics](/operations/system-tables/metrics) — 包含即时计算的指标。
 -   [system.events](/operations/system-tables/events) — 包含已发生的事件数。
--   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — 包含 `system.metrics` 和 `system.events` 表中的指标的历史值。
+-   [system.metric_log](/operations/system-tables/metric_log) — 包含 `system.metrics` 和 `system.events` 表中的指标的历史值。
