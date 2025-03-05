@@ -1147,8 +1147,14 @@ void AdaptiveExpressionActions::onNewFunctionBatchProfile(ExpressionActions::Act
     for (const auto & arg_profile : profile.argument_profiles)
     {
         const auto & func_arg_pos = arg_profile.first;
-        chassert(func_arg_pos < action.arguments.size());
-        chassert(action.arguments[func_arg_pos].actions_pos < actions.size());
+        if (func_arg_pos >= action.arguments.size())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid func_arg_pos: {} {}", func_arg_pos, action.arguments.size());
+        }
+        if (action.arguments[func_arg_pos].actions_pos >= actions.size())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid action pos: {} {}", action.arguments[func_arg_pos].actions_pos, actions.size());
+        }
         auto & arg_action = actions[action.arguments[func_arg_pos].actions_pos];
         onNewFunctionBatchProfile(arg_action, arg_profile.second);
     }
