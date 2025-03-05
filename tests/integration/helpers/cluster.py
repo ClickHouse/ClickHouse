@@ -528,6 +528,7 @@ class ClickHouseCluster:
         self.with_nginx = False
         self.with_hive = False
         self.with_coredns = False
+        self.with_ytsaurus = False
 
         # available when with_minio == True
         self.with_minio = False
@@ -730,6 +731,8 @@ class ClickHouseCluster:
         self.prometheus_remote_read_handler_host = None
         self.prometheus_remote_read_handler_port = 9092
         self.prometheus_remote_read_handler_path = "/read"
+
+        self.ytsaurus_port = 80
 
         self.docker_client: docker.DockerClient = None
         self.is_up = False
@@ -1573,6 +1576,21 @@ class ClickHouseCluster:
         )
         return self.base_hive_cmd
 
+    def setup_ytsaurus(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_ytsaurus = True
+        env_variables["YTSAURUS_PROXY_PORT"] = str(self.ytsaurus_port)
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml")]
+        )
+        self.base_ytsaurus_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_ytsaurus.yml"),
+        )
+        return self.base_ytsaurus_cmd
+
     def setup_prometheus_cmd(self, instance, env_variables, docker_compose_yml_dir):
         env_variables["PROMETHEUS_WRITER_HOST"] = self.prometheus_writer_host
         env_variables["PROMETHEUS_WRITER_PORT"] = str(self.prometheus_writer_port)
@@ -1649,6 +1667,7 @@ class ClickHouseCluster:
         with_iceberg_catalog=False,
         with_glue_catalog=False,
         with_hms_catalog=False,
+        with_ytsaurus=False,
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
@@ -2019,6 +2038,11 @@ class ClickHouseCluster:
                 self.setup_hive(instance, env_variables, docker_compose_yml_dir)
             )
 
+        if with_ytsaurus:
+            cmds.append(
+                self.setup_ytsaurus(instance, env_variables, docker_compose_yml_dir)
+            )
+
         if with_prometheus:
             if handle_prometheus_remote_write:
                 self.prometheus_remote_write_handler_host = instance.hostname
@@ -2350,6 +2374,11 @@ class ClickHouseCluster:
         run_and_check(["docker", "ps", "--all"])
         logging.error("Can't connect to MySQL:{}".format(errors))
         raise Exception("Cannot wait MySQL container")
+
+    def wait_ytsaurus_to_start(self):
+        self.wait_for_url(
+            url=f"http://localhost:{self.ytsaurus_port}/ping", timeout=300
+        )
 
     def wait_postgres_to_start(self, timeout=260):
         self.postgres_ip = self.get_instance_ip(self.postgres_host)
@@ -3245,6 +3274,11 @@ class ClickHouseCluster:
                 self.up_called = True
                 logging.info("Trying to connect to Prometheus...")
                 self.wait_prometheus_to_start()
+
+            if self.with_ytsaurus and self.base_ytsaurus_cmd:
+                ytsarurus_start_cmd = self.base_ytsaurus_cmd + common_opts
+                run_and_check(ytsarurus_start_cmd)
+                self.wait_ytsaurus_to_start()
 
             clickhouse_start_cmd = self.base_cmd + ["up", "-d", "--no-recreate"]
             logging.debug(

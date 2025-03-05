@@ -6740,6 +6740,12 @@ Possible values:
     DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
 Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
+Experimental table engine for integration with ytsaurus.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_ytsaurus_table_function, false, R"(
+Experimental table engine for integration with ytsaurus.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

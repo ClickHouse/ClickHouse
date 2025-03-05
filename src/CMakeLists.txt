@@ -135,6 +135,10 @@ add_headers_and_sources(dbms Storages/ObjectStorage/DataLakes/DeltaLake)
 add_headers_and_sources(dbms Common/NamedCollections)
 add_headers_and_sources(dbms Common/Scheduler/Workload)
 
+
+add_headers_and_sources(dbms Core/Ytsaurus)
+add_headers_and_sources(dbms Storages/Ytsaurus)
+
 if (TARGET ch_contrib::amqp_cpp)
     add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
