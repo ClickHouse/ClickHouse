@@ -261,7 +261,7 @@ projectionSelectStmt:
 
 // SELECT statement
 
-selectUnionStmt: selectStmtWithParens (UNION ALL selectStmtWithParens)*;
+selectUnionStmt: selectStmtWithParens (UNION (ALL | DISTINCT) selectStmtWithParens)*;
 selectStmtWithParens: selectStmt | LPAREN selectUnionStmt RPAREN;
 selectStmt:
     withClause?
