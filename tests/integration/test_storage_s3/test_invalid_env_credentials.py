@@ -113,7 +113,7 @@ def test_with_invalid_environment_credentials(started_cluster):
     instance = started_cluster.instances["s3_with_invalid_environment_credentials"]
 
     for bucket, auth in [
-        (started_cluster.minio_restricted_bucket, "'minio', 'ClickHouse_Minio_P@ssw0rd'"),
+        (started_cluster.minio_restricted_bucket, "'minio', '{minio_secret_key}'"),
         (started_cluster.minio_bucket, "NOSIGN"),
     ]:
         instance.query(

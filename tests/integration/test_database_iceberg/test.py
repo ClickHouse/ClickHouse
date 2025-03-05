@@ -30,6 +30,7 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.config_cluster import minio_secret_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
+from helpers.config_cluster import minio_secret_key
 
 BASE_URL = "http://rest:8181/v1"
 BASE_URL_LOCAL = "http://localhost:8182/v1"
