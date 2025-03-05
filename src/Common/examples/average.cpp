@@ -1,13 +1,13 @@
 #include <string>
 #include <bit>
 
-#include <fmt/format.h>
-
 #include <base/types.h>
 #include <Common/PODArray.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/Arena.h>
 #include <Common/Stopwatch.h>
+
+import fmt;
 
 /** This test program evaluates different solutions for a simple degenerate task:
   * Aggregate data by UInt8 key, calculate "avg" function on Float values.

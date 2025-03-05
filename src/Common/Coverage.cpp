@@ -11,7 +11,7 @@
 #include <Common/IO.h>
 #include <base/coverage.h>
 
-#include <fmt/format.h>
+import fmt;
 
 /// Macros to avoid using strlen(), since it may fail if SSE is not supported.
 #define writeError(data) do \

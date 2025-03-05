@@ -3,7 +3,8 @@
 #include <Common/re2.h>
 
 #include <base/hex.h>
-#include <fmt/core.h>
+
+import fmt;
 
 
 namespace DB

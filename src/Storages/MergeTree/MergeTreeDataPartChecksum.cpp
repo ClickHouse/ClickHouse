@@ -12,7 +12,7 @@
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <optional>
 
-#include <fmt/ranges.h>
+import fmt;
 
 
 namespace DB

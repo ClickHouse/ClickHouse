@@ -1,8 +1,8 @@
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
-#include <fmt/format.h>
 
+import fmt;
 
 namespace DB
 {

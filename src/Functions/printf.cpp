@@ -11,8 +11,8 @@
 
 #include <memory>
 #include <vector>
-#include <fmt/format.h>
-#include <fmt/printf.h>
+
+import fmt;
 
 namespace DB
 {

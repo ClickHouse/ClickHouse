@@ -29,7 +29,7 @@
 
 #include <boost/functional/hash.hpp>
 
-#include <fmt/ranges.h>
+import fmt;
 
 using namespace DB;
 

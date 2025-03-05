@@ -1,4 +1,3 @@
-#include <fmt/ranges.h>
 #include <Storages/Kafka/KafkaConsumer.h>
 #include <IO/ReadBufferFromMemory.h>
 
@@ -13,6 +12,8 @@
 #include <Storages/Kafka/StorageKafkaUtils.h>
 #include <Common/ProfileEvents.h>
 #include <base/defines.h>
+
+import fmt;
 
 namespace CurrentMetrics
 {

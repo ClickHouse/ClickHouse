@@ -28,7 +28,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 
 namespace fs = std::filesystem;

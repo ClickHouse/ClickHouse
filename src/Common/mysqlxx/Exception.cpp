@@ -4,7 +4,8 @@
 #include <mysql/mysql.h>
 #endif
 #include <mysqlxx/Exception.h>
-#include <fmt/format.h>
+
+import fmt;
 
 
 namespace mysqlxx

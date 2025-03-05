@@ -1,6 +1,6 @@
 #include <Backups/BackupCoordinationStage.h>
-#include <fmt/format.h>
 
+import fmt;
 
 namespace DB
 {

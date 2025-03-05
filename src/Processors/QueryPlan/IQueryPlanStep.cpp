@@ -3,7 +3,7 @@
 #include <Processors/Port.h>
 #include <IO/Operators.h>
 
-#include <fmt/format.h>
+import fmt;
 
 namespace DB
 {

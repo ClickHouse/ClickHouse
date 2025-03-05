@@ -14,7 +14,7 @@
 #include "getSchemaFromSnapshot.h"
 #include "KernelUtils.h"
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace fs = std::filesystem;
 

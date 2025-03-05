@@ -1,6 +1,6 @@
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 
-#include <fmt/format.h>
+import fmt;
 
 namespace BuzzHouse
 {

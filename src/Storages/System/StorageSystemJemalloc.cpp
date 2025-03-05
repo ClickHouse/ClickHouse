@@ -6,13 +6,14 @@
 #include <Core/NamesAndTypes.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
-#include <fmt/core.h>
 
 #include "config.h"
 
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #endif
+
+import fmt;
 
 
 namespace DB

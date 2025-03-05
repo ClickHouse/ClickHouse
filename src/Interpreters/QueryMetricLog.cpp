@@ -18,7 +18,8 @@
 #include <Parsers/parseQuery.h>
 
 #include <chrono>
-#include <fmt/chrono.h>
+
+import fmt;
 
 
 namespace DB

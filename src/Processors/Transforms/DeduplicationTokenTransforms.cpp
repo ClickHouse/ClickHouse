@@ -8,8 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 
-
-#include <fmt/core.h>
+import fmt;
 
 
 namespace DB

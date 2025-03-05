@@ -11,7 +11,6 @@
 #include <parquet/statistics.h>
 #include <orc/Statistics.hh>
 
-#include <fmt/core.h>
 #include <Core/Types.h>
 #include <Common/Exception.h>
 #include <Common/typeid_cast.h>
@@ -20,6 +19,8 @@
 #include <Storages/Hive/HiveSettings.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/KeyCondition.h>
+
+import fmt;
 
 namespace DB
 {

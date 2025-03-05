@@ -1,14 +1,19 @@
+#include "config.h"
+
+#if USE_KRB5
+
 #include <Access/KerberosInit.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Poco/Logger.h>
 #include <Loggers/Loggers.h>
-#include <filesystem>
+
 #include <boost/core/noncopyable.hpp>
-#include <fmt/format.h>
-#if USE_KRB5
+#include <filesystem>
 #include <krb5.h>
 #include <mutex>
+
+import fmt;
 
 using namespace DB;
 

@@ -36,7 +36,6 @@
 
 #include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
-#include <fmt/ranges.h>
 
 #include "config.h"
 
@@ -44,6 +43,8 @@
 #    include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
 #    include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
+
+import fmt;
 
 namespace CurrentMetrics
 {

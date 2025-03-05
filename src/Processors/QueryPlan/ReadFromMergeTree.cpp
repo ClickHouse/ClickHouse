@@ -1,5 +1,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
+#include "config.h"
+
 #include <Core/Settings.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
@@ -54,9 +56,7 @@
 #include <memory>
 #include <unordered_map>
 
-#include <fmt/ranges.h>
-
-#include "config.h"
+import fmt;
 
 using namespace DB;
 

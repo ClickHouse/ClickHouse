@@ -1,11 +1,9 @@
 #include <Storages/Kafka/KafkaConsumer2.h>
 
-#include <fmt/ranges.h>
 #include <cppkafka/exceptions.h>
 #include <cppkafka/topic_partition.h>
 #include <cppkafka/cppkafka.h>
 #include <cppkafka/topic_partition_list.h>
-#include <fmt/ostream.h>
 #include <boost/algorithm/string/join.hpp>
 
 #include <IO/ReadBufferFromMemory.h>
@@ -18,6 +16,7 @@
 #include <algorithm>
 #include <iterator>
 
+import fmt;
 
 namespace CurrentMetrics
 {

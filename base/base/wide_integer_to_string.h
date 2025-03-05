@@ -38,8 +38,23 @@ extern std::ostream & operator<<(std::ostream & out, const UInt256 & value);
 template <size_t Bits, typename Signed>
 struct fmt::formatter<wide::integer<Bits, Signed>>
 {
-    constexpr auto parse(format_parse_context& ctx) -> format_parse_context::iterator;
-    auto format(const wide::integer<Bits, Signed> & value, format_context & ctx) const -> format_context::iterator;
+    constexpr auto parse(format_parse_context & ctx)
+    {
+        const auto * it = ctx.begin();
+        const auto * end = ctx.end();
+
+        /// Only support {}.
+        if (it != end && *it != '}')
+            throw format_error("invalid format");
+
+        return it;
+    }
+
+    template <typename FormatContext>
+    auto format(const wide::integer<Bits, Signed> & value, FormatContext & ctx) const
+    {
+        return fmt::format_to(ctx.out(), "{}", to_string(value));
+    }
 };
 
 extern template struct fmt::formatter<Int128>;

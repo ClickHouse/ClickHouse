@@ -16,15 +16,13 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <boost/algorithm/string/split.hpp>
-#include <fmt/core.h>
-#include <fmt/format.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 using namespace DB;
 

@@ -14,7 +14,8 @@
 
 #include <numeric>
 #include <shared_mutex>
-#include <fmt/format.h>
+
+import fmt;
 
 
 namespace CurrentMetrics

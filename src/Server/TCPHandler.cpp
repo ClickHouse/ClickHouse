@@ -72,10 +72,9 @@
 
 #include <Common/config_version.h>
 
-#include <fmt/format.h>
-
-#include <fmt/ostream.h>
 #include <Common/StringUtils.h>
+
+import fmt;
 
 using namespace std::literals;
 using namespace DB;

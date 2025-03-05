@@ -44,7 +44,7 @@
 #include <string>
 
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
-#include <fmt/chrono.h>
+import fmt;
 
 #include <libnuraft/req_msg.hxx>
 

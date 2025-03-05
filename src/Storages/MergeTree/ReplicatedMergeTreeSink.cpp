@@ -19,7 +19,8 @@
 #include <DataTypes/ObjectUtils.h>
 #include <Core/Block.h>
 #include <IO/Operators.h>
-#include <fmt/core.h>
+
+import fmt;
 
 
 namespace ProfileEvents

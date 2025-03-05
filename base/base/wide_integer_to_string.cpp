@@ -49,25 +49,6 @@ std::ostream & operator<<(std::ostream & out, const wide::integer<128, unsigned>
 std::ostream & operator<<(std::ostream & out, const wide::integer<256, signed> & value);
 std::ostream & operator<<(std::ostream & out, const wide::integer<256, unsigned> & value);
 
-template <size_t Bits, typename Signed>
-constexpr auto fmt::formatter<wide::integer<Bits, Signed>>::parse(format_parse_context & ctx) -> format_parse_context::iterator
-{
-    const auto * it = ctx.begin();
-    const auto * end = ctx.end();
-
-    /// Only support {}.
-    if (it != end && *it != '}')
-        throw format_error("invalid format");
-
-    return it;
-}
-
-template <size_t Bits, typename Signed>
-auto fmt::formatter<wide::integer<Bits, Signed>>::format(const wide::integer<Bits, Signed> & value, format_context & ctx) const -> format_context::iterator
-{
-    return fmt::format_to(ctx.out(), "{}", to_string(value));
-}
-
 template struct fmt::formatter<wide::integer<128, signed>>;
 template struct fmt::formatter<wide::integer<128, unsigned>>;
 template struct fmt::formatter<wide::integer<256, signed>>;

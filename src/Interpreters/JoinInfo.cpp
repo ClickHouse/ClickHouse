@@ -4,7 +4,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 
 namespace DB

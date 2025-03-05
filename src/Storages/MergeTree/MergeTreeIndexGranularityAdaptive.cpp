@@ -2,7 +2,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace DB
 {

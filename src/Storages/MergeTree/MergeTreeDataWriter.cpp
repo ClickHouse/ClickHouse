@@ -36,7 +36,7 @@
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace ProfileEvents
 {

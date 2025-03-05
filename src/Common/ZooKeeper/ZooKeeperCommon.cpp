@@ -8,8 +8,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
-#include <fmt/format.h>
 #include <Common/logger_useful.h>
+
+import fmt;
 
 
 namespace Coordination
