@@ -152,15 +152,12 @@ void NATSConnection::disconnectImpl(const Lock & connection_lock)
 
 void NATSConnection::reconnectedCallback(natsConnection *, void * connection)
 {
-    char buffer[CONNECTED_TO_BUFFER_SIZE];
-    buffer[0] = '\0';
-    natsConnection_GetConnectedUrl(nc, buffer, sizeof(buffer));
-    LOG_DEBUG(static_cast<Logger *>(log), "Connection {} got reconnected to NATS server", static_cast<void*>(connection));
+    LOG_DEBUG(callback_logger, "Connection {} got reconnected to NATS server", static_cast<void*>(connection));
 }
 
 void NATSConnection::disconnectedCallback(natsConnection *, void * connection)
 {
-    LOG_DEBUG(static_cast<Logger *>(log), "Connection {} got disconnected from NATS server", connection);
+    LOG_DEBUG(callback_logger, "Connection {} got disconnected from NATS server", connection);
 }
 
 }
