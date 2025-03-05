@@ -82,3 +82,40 @@ Result:
 
 - [Map combinator for Map datatype](../combinators.md#-map)
 - [sumMapWithOverflow](../reference/summapwithoverflow.md)
+
+## Combinators
+
+The following combinators can be applied to the `sumMap` function:
+
+### sumMapIf
+Totals map values only for rows that match the given condition.
+
+### sumMapArray
+Totals map values from elements in the array of maps.
+
+### sumMapMap
+Creates a map of maps by applying sumMap to each key in the outer map.
+
+### sumMapSimpleState
+Returns the map totals with SimpleAggregateFunction type.
+
+### sumMapState
+Returns the intermediate state of map totals calculation.
+
+### sumMapMerge
+Combines intermediate map states to get the final totals.
+
+### sumMapMergeState
+Combines intermediate map states but returns an intermediate state.
+
+### sumMapForEach
+Totals corresponding map values from multiple arrays of maps.
+
+### sumMapDistinct
+Totals map values only for distinct key-value combinations.
+
+### sumMapOrDefault
+Returns a map with zero values if there are no rows to total.
+
+### sumMapOrNull
+Returns NULL if there are no rows to total.

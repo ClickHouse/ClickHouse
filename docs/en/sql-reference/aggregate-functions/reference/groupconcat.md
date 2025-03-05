@@ -102,3 +102,40 @@ John, Jane
 ```
 
 This query limits the output to the first two names, even though there are more names in the table.
+
+## Combinators
+
+The following combinators can be applied to the `groupConcat` function:
+
+### groupConcatIf
+Concatenates strings only from rows that match the given condition.
+
+### groupConcatArray
+Concatenates strings from elements in the array.
+
+### groupConcatMap
+Concatenates strings for each key in the map separately.
+
+### groupConcatSimpleState
+Returns the concatenated string with SimpleAggregateFunction type.
+
+### groupConcatState
+Returns the intermediate state of string concatenation.
+
+### groupConcatMerge
+Combines intermediate concatenation states to get the final string.
+
+### groupConcatMergeState
+Combines intermediate concatenation states but returns an intermediate state.
+
+### groupConcatForEach
+Concatenates strings from corresponding elements in multiple arrays.
+
+### groupConcatDistinct
+Concatenates distinct strings only.
+
+### groupConcatOrDefault
+Returns an empty string if there are no rows to concatenate.
+
+### groupConcatOrNull
+Returns NULL if there are no rows to concatenate.

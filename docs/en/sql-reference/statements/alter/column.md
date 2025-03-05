@@ -326,7 +326,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 **See Also**
 
-- [MATERIALIZED](/sql-reference/statements/create/table.md/#materialized).
+- [MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
 
 ## Limitations {#limitations}
 

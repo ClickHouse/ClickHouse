@@ -54,3 +54,42 @@ Result:
 │                   6.485648 │
 └────────────────────────────┘
 ```
+
+## Combinators
+
+The following combinators can be applied to the `covarPop` function:
+
+### covarPopIf
+Calculates the population covariance only for rows that match the given condition.
+
+### covarPopArray
+Calculates the population covariance between elements in two arrays.
+
+### covarPopMap
+Calculates the population covariance for each key in the map separately.
+
+### covarPopSimpleState
+Returns the covariance value with SimpleAggregateFunction type.
+
+### covarPopState
+Returns the intermediate state of covariance calculation.
+
+### covarPopMerge
+Combines intermediate covariance states to get the final result.
+
+### covarPopMergeState
+Combines intermediate covariance states but returns an intermediate state.
+
+### covarPopForEach
+Calculates population covariance for corresponding elements in multiple arrays.
+
+### covarPopDistinct
+Calculates the population covariance using distinct value pairs only.
+
+### covarPopOrDefault
+Returns 0 if there are not enough rows to calculate covariance.
+
+### covarPopOrNull
+Returns NULL if there are not enough rows to calculate covariance.
+
+Note: These combinators can also be applied to the covarPopStable function with the same behavior but using the numerically stable algorithm.

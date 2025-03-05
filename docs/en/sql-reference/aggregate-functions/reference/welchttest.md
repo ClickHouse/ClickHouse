@@ -71,3 +71,40 @@ Result:
 
 - [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
 - [studentTTest function](studentttest.md#studentttest)
+
+## Combinators
+
+The following combinators can be applied to the `welchTTest` function:
+
+### welchTTestIf
+Applies Welch's t-test only to rows that match the given condition.
+
+### welchTTestArray
+Applies Welch's t-test to elements in the array.
+
+### welchTTestMap
+Applies Welch's t-test for each key in the map separately.
+
+### welchTTestSimpleState
+Returns the t-test results with SimpleAggregateFunction type.
+
+### welchTTestState
+Returns the intermediate state of t-test calculation.
+
+### welchTTestMerge
+Combines intermediate t-test states to get the final results.
+
+### welchTTestMergeState
+Combines intermediate t-test states but returns an intermediate state.
+
+### welchTTestForEach
+Applies Welch's t-test to corresponding elements in multiple arrays.
+
+### welchTTestDistinct
+Applies Welch's t-test using distinct values only.
+
+### welchTTestOrDefault
+Returns (0, 1) if there are not enough samples to perform the test.
+
+### welchTTestOrNull
+Returns NULL if there are not enough samples to perform the test.

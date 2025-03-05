@@ -51,3 +51,42 @@ FROM ontime
 - [topKWeighted](../../../sql-reference/aggregate-functions/reference/topkweighted.md)
 - [approx_top_k](../../../sql-reference/aggregate-functions/reference/approxtopk.md)
 - [approx_top_sum](../../../sql-reference/aggregate-functions/reference/approxtopsum.md)
+
+## Combinators
+
+The following combinators can be applied to the `topK` function:
+
+### topKIf
+Returns an array of the most frequent values only from rows that match the given condition.
+
+### topKArray
+Returns an array of the most frequent values among elements in the array.
+
+### topKMap
+Returns an array of the most frequent values for each key in the map separately.
+
+### topKSimpleState
+Returns the top-K state with SimpleAggregateFunction type.
+
+### topKState
+Returns the intermediate state of top-K calculation.
+
+### topKMerge
+Combines intermediate top-K states to get the final array of most frequent values.
+
+### topKMergeState
+Combines intermediate top-K states but returns an intermediate state.
+
+### topKForEach
+Returns arrays of most frequent values for corresponding elements in multiple arrays.
+
+### topKDistinct
+Returns an array of the most frequent distinct values only.
+
+### topKOrDefault
+Returns an empty array if there are no rows to analyze.
+
+### topKOrNull
+Returns NULL if there are no rows to analyze.
+
+Note: These combinators can also be applied to the topKWeighted function with similar behavior but taking weights into account.

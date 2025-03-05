@@ -290,3 +290,42 @@ Result:
 
 - [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 - [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+
+## Combinators
+
+The following combinators can be applied to all quantileExact functions (`quantileExact`, `quantileExactLow`, `quantileExactHigh`, `quantileExactExclusive`, `quantileExactInclusive`):
+
+### quantileExactIf
+Calculates the exact quantile only for rows that match the given condition.
+
+### quantileExactArray
+Calculates the exact quantile of elements in the array.
+
+### quantileExactMap
+Calculates the exact quantile for each key in the map separately.
+
+### quantileExactSimpleState
+Returns the quantile state with SimpleAggregateFunction type.
+
+### quantileExactState
+Returns the intermediate state of quantile calculation.
+
+### quantileExactMerge
+Combines intermediate quantile states to get the final quantile.
+
+### quantileExactMergeState
+Combines intermediate quantile states but returns an intermediate state.
+
+### quantileExactForEach
+Calculates exact quantiles for corresponding elements in multiple arrays.
+
+### quantileExactDistinct
+Calculates the exact quantile using distinct values only.
+
+### quantileExactOrDefault
+Returns 0 if there are no rows to calculate the quantile.
+
+### quantileExactOrNull
+Returns NULL if there are no rows to calculate the quantile.
+
+Note: These combinators work similarly for all variants of the quantileExact function family (Low, High, Exclusive, Inclusive). For example, `quantileExactLowIf`, `quantileExactHighArray`, etc.

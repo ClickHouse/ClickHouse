@@ -55,3 +55,40 @@ Result:
 │    14.4 │
 └─────────┘
 ```
+
+## Combinators
+
+The following combinators can be applied to the `varPop` function:
+
+### varPopIf
+Calculates the population variance only for rows that match the given condition.
+
+### varPopArray
+Calculates the population variance of elements in the array.
+
+### varPopMap
+Calculates the population variance for each key in the map separately.
+
+### varPopSimpleState
+Returns the population variance value with SimpleAggregateFunction type.
+
+### varPopState
+Returns the intermediate state of population variance calculation.
+
+### varPopMerge
+Combines intermediate population variance states to get the final result.
+
+### varPopMergeState
+Combines intermediate population variance states but returns an intermediate state.
+
+### varPopForEach
+Calculates the population variance for corresponding elements in multiple arrays.
+
+### varPopDistinct
+Calculates the population variance of distinct values only.
+
+### varPopOrDefault
+Returns 0 if there are no rows to calculate population variance.
+
+### varPopOrNull
+Returns NULL if there are no rows to calculate population variance.

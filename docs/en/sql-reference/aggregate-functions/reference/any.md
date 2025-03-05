@@ -71,3 +71,42 @@ SELECT any(city), anyRespectNulls(city) FROM tab;
 │ Amsterdam │ ᴺᵁᴸᴸ                  │
 └───────────┴───────────────────────┘
 ```
+
+## Combinators
+
+The following combinators can be applied to the `any` function:
+
+### anyIf
+Selects the first encountered value only from rows that match the given condition.
+
+### anyArray
+Selects the first encountered array element from each array.
+
+### anyMap
+Selects the first encountered value for each key in the map separately.
+
+### anySimpleState
+Returns the first encountered value with SimpleAggregateFunction type.
+
+### anyState
+Returns the intermediate state of first value selection.
+
+### anyMerge
+Combines intermediate states to get the final first value.
+
+### anyMergeState
+Combines intermediate states but returns an intermediate state.
+
+### anyForEach
+Selects the first encountered value for corresponding elements in multiple arrays.
+
+### anyDistinct
+Selects the first encountered value among distinct values only.
+
+### anyOrDefault
+Returns the default value for the column type if there are no rows.
+
+### anyOrNull
+Returns NULL if there are no rows.
+
+Note: These combinators can also be applied to all any variants (anyRespectNulls, any_value, etc.) with their respective prefixes.

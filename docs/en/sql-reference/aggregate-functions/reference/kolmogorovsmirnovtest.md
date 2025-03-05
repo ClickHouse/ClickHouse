@@ -118,3 +118,40 @@ P-value is less than 0.05 (for confidence level of 95%), so null hypothesis is r
 **See Also**
 
 - [Kolmogorov-Smirnov'test](https://en.wikipedia.org/wiki/Kolmogorov%E2%80%93Smirnov_test)
+
+## Combinators
+
+The following combinators can be applied to the `kolmogorovSmirnovTest` function:
+
+### kolmogorovSmirnovTestIf
+Applies Kolmogorov-Smirnov test only to rows that match the given condition.
+
+### kolmogorovSmirnovTestArray
+Applies Kolmogorov-Smirnov test to elements in the array.
+
+### kolmogorovSmirnovTestMap
+Applies Kolmogorov-Smirnov test for each key in the map separately.
+
+### kolmogorovSmirnovTestSimpleState
+Returns the test results with SimpleAggregateFunction type.
+
+### kolmogorovSmirnovTestState
+Returns the intermediate state of test calculation.
+
+### kolmogorovSmirnovTestMerge
+Combines intermediate test states to get the final results.
+
+### kolmogorovSmirnovTestMergeState
+Combines intermediate test states but returns an intermediate state.
+
+### kolmogorovSmirnovTestForEach
+Applies Kolmogorov-Smirnov test to corresponding elements in multiple arrays.
+
+### kolmogorovSmirnovTestDistinct
+Applies Kolmogorov-Smirnov test using distinct values only.
+
+### kolmogorovSmirnovTestOrDefault
+Returns (0, 1) if there are not enough samples to perform the test.
+
+### kolmogorovSmirnovTestOrNull
+Returns NULL if there are not enough samples to perform the test.

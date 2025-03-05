@@ -204,3 +204,40 @@ ORDER BY time ASC;
 │    10 │ 2020-01-01 09:00:00 │ 9.990234375 │   438297 │
 └───────┴─────────────────────┴─────────────┴──────────┘
 ```
+
+## Combinators
+
+The following combinators can be applied to the `exponentialMovingAverage` function:
+
+### exponentialMovingAverageIf
+Calculates the exponential moving average only for rows that match the given condition.
+
+### exponentialMovingAverageArray
+Calculates the exponential moving average of elements in the array.
+
+### exponentialMovingAverageMap
+Calculates the exponential moving average for each key in the map separately.
+
+### exponentialMovingAverageSimpleState
+Returns the EMA value with SimpleAggregateFunction type.
+
+### exponentialMovingAverageState
+Returns the intermediate state of EMA calculation.
+
+### exponentialMovingAverageMerge
+Combines intermediate EMA states to get the final average.
+
+### exponentialMovingAverageMergeState
+Combines intermediate EMA states but returns an intermediate state.
+
+### exponentialMovingAverageForEach
+Calculates EMA for corresponding elements in multiple arrays.
+
+### exponentialMovingAverageDistinct
+Calculates EMA using distinct values only.
+
+### exponentialMovingAverageOrDefault
+Returns 0 if there are no rows to calculate EMA.
+
+### exponentialMovingAverageOrNull
+Returns NULL if there are no rows to calculate EMA.

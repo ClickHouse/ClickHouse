@@ -73,3 +73,40 @@ Result:
 
 - [Mann–Whitney U test](https://en.wikipedia.org/wiki/Mann%E2%80%93Whitney_U_test)
 - [Stochastic ordering](https://en.wikipedia.org/wiki/Stochastic_ordering)
+
+## Combinators
+
+The following combinators can be applied to the `mannWhitneyUTest` function:
+
+### mannWhitneyUTestIf
+Applies Mann-Whitney U test only to rows that match the given condition.
+
+### mannWhitneyUTestArray
+Applies Mann-Whitney U test to elements in the array.
+
+### mannWhitneyUTestMap
+Applies Mann-Whitney U test for each key in the map separately.
+
+### mannWhitneyUTestSimpleState
+Returns the test results with SimpleAggregateFunction type.
+
+### mannWhitneyUTestState
+Returns the intermediate state of test calculation.
+
+### mannWhitneyUTestMerge
+Combines intermediate test states to get the final results.
+
+### mannWhitneyUTestMergeState
+Combines intermediate test states but returns an intermediate state.
+
+### mannWhitneyUTestForEach
+Applies Mann-Whitney U test to corresponding elements in multiple arrays.
+
+### mannWhitneyUTestDistinct
+Applies Mann-Whitney U test using distinct values only.
+
+### mannWhitneyUTestOrDefault
+Returns (0, 1) if there are not enough samples to perform the test.
+
+### mannWhitneyUTestOrNull
+Returns NULL if there are not enough samples to perform the test.

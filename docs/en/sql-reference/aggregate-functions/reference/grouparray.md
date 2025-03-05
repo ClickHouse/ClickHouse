@@ -48,3 +48,40 @@ Result:
 The groupArray function will remove ᴺᵁᴸᴸ value based on the above results.
 
 - Alias: `array_agg`.
+
+## Combinators
+
+The following combinators can be applied to the `groupArray` function:
+
+### groupArrayIf
+Creates an array of values only for rows that match the given condition.
+
+### groupArrayArray
+Creates an array of arrays by concatenating input arrays.
+
+### groupArrayMap
+Creates an array of values for each key in the map separately.
+
+### groupArraySimpleState
+Returns the array with SimpleAggregateFunction type.
+
+### groupArrayState
+Returns the intermediate state of array collection.
+
+### groupArrayMerge
+Combines intermediate array states to get the final array.
+
+### groupArrayMergeState
+Combines intermediate array states but returns an intermediate state.
+
+### groupArrayForEach
+Creates arrays by collecting corresponding elements from multiple input arrays.
+
+### groupArrayDistinct
+Creates an array of distinct values only.
+
+### groupArrayOrDefault
+Returns an empty array if there are no rows to collect.
+
+### groupArrayOrNull
+Returns NULL if there are no rows to collect.
