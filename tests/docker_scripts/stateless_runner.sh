@@ -451,22 +451,6 @@ do
     fi
 done
 
-# Also export trace log in flamegraph-friendly format.
-for trace_type in CPU Memory Real
-do
-    clickhouse-local "$data_path_config" --only-system-tables -q "
-            select
-                arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
-                count(*) AS samples
-            from system.trace_log
-            where trace_type = '$trace_type'
-            group by trace
-            order by samples desc
-            settings allow_introspection_functions = 1
-            format TabSeparated" \
-        | zstd --threads=0 > "/test_output/trace-log-$trace_type-flamegraph.tsv.zst" ||:
-done
-
 # Grep logs for sanitizer asserts, crashes and other critical errors
 check_logs_for_critical_errors
 
