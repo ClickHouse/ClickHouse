@@ -282,7 +282,6 @@ InterpreterSystemQuery::InterpreterSystemQuery(const ASTPtr & query_ptr_, Contex
 BlockIO InterpreterSystemQuery::execute()
 {
     auto & query = query_ptr->as<ASTSystemQuery &>();
-    auto & context = getContext();
 
     if (!query.cluster.empty())
     {
@@ -637,7 +636,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_CONFIG:
         {
             if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
-                throw Exception("SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
+                throw Exception::createDeprecated("SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context->reloadConfig();
             break;
