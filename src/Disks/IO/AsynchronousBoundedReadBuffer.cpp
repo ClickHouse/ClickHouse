@@ -50,11 +50,15 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     size_t min_bytes_for_seek_,
     AsyncReadCountersPtr async_read_counters_,
     FilesystemReadPrefetchesLogPtr prefetches_log_)
-    : ReadBufferFromFileBase(0, nullptr, 0)
+    : ReadBufferFromFileBase(0, nullptr, 0, impl_->getFileSize())
     , impl(std::move(impl_))
     , read_settings(settings_)
     , buffer_size(buffer_size_)
     , min_bytes_for_seek(min_bytes_for_seek_)
+    /// Avoid calling thread-unsafe impl->getFileName() while prefetch is in progress.
+    /// If impl's getFileName() can change on the fly, our getFileName() won't reflect that.
+    /// That is ok, it's not used for anything important.
+    , file_name(impl->getFileName())
     , reader(reader_)
     , query_id(CurrentThread::isInitialized() && CurrentThread::get().getQueryContext() != nullptr ? CurrentThread::getQueryId() : "")
     , current_reader_id(getRandomASCIIString(8))
@@ -65,6 +69,13 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 }
 
+String AsynchronousBoundedReadBuffer::getInfoForLog()
+{
+    if (prefetch_future.valid())
+        prefetch_future.wait();
+    return impl->getInfoForLog();
+}
+
 bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
 {
     if (read_until_position)
@@ -73,10 +84,15 @@ bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
             return false;
 
         if (file_offset_of_buffer_end > *read_until_position)
+        {
+            /// Avoid race condition on impl->getInfoForLog().
+            if (prefetch_future.valid())
+                prefetch_future.wait();
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Read beyond last offset ({} > {}): file size = {}, info: {}",
-                file_offset_of_buffer_end, *read_until_position, impl->getFileSize(), impl->getInfoForLog());
+                file_offset_of_buffer_end, *read_until_position, getFileSize(), impl->getInfoForLog());
+        }
     }
 
     return true;
@@ -137,6 +153,8 @@ void AsynchronousBoundedReadBuffer::setReadUntilPosition(size_t position)
             }
             else
             {
+                if (prefetch_future.valid())
+                    prefetch_future.wait();
                 /// new read until position is before the current position in the working buffer
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR,
@@ -189,7 +207,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     if (!hasPendingDataToRead())
         return false;
 
-    chassert(file_offset_of_buffer_end <= impl->getFileSize());
+    chassert(file_offset_of_buffer_end <= getFileSize());
     size_t old_file_offset_of_buffer_end = file_offset_of_buffer_end;
 
     IAsynchronousReader::Result result;
@@ -240,7 +258,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
 
     file_offset_of_buffer_end = impl->getFileOffsetOfBufferEnd();
 
-    chassert(file_offset_of_buffer_end <= impl->getFileSize());
+    chassert(file_offset_of_buffer_end <= getFileSize());
 
     if (read_until_position && (file_offset_of_buffer_end > *read_until_position))
     {
