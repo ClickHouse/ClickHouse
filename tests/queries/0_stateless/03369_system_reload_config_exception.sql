@@ -2,10 +2,10 @@
 SET send_logs_level = 'none';
 
 -- Test local mode (should throw exception)
-CREATE DATABASE IF NOT EXISTS test_02500;
-USE test_02500;
+CREATE DATABASE IF NOT EXISTS test_rgp9unmg;
+USE test_rgp9unmg;
 
 SELECT 'Test 1: Check exception in local mode';
-SYSTEM RELOAD CONFIG; -- { serverError UNSUPPORTED_METHOD }
+SYSTEM RELOAD CONFIG; -- { serverError 50 }
 
-DROP DATABASE IF EXISTS test_02500; 
+DROP DATABASE IF EXISTS test_rgp9unmg; 
