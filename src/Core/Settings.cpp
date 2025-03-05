@@ -4297,7 +4297,7 @@ Possible values:
 - `'save'` - Cache the query result.
 - `'ignore'` - Don't cache the query result and don't throw an exception.
 )", 0) \
-    DECLARE(QueryResultCacheSystemTableHandling, query_cache_system_table_handling, QueryResultCacheSystemTableHandling::Throw, R"(
+    DECLARE(QueryResultCacheSystemTableHandling, query_result_cache_system_table_handling, QueryResultCacheSystemTableHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
 
 Possible values:
