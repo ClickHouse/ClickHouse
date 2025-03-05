@@ -1992,7 +1992,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    if (!internal)
+    bool is_secondary = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+    if (!internal && !is_secondary)
         throwIfTooManyEntities(create, res);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
