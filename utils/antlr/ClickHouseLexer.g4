@@ -239,8 +239,8 @@ WINDOW: W I N D O W;
 WITH: W I T H;
 YEAR: Y E A R | Y Y Y Y;
 
-JSON_FALSE: 'false';
-JSON_TRUE: 'true';
+JSON_FALSE: F A L S E;
+JSON_TRUE: T R U E;
 
 // Tokens
 
