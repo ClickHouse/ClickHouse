@@ -726,13 +726,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
             auto coalesce_elapsed = watch.elapsed();
             auto res = executeShortCircuit<true>(new_args, result_type, profile);
             profile->executed_elapsed += coalesce_elapsed;
-            if (profile->argument_profiles.size() != short_circuit_args_index.size())
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx profiles size not matched. {} ~ {}", profile->argument_profiles.size(), short_circuit_args_index.size());
-            }
             // Only the ColumnFunction arguments have profiles. Need to transform the profile's position back to
             // the original argument's position.
-            for (size_t i = 0; i < short_circuit_args_index.size(); ++i)
+            // The execution will stop early when all rows are filted, the last few short circuit arguments are not
+            // executed and there is no profile for them.
+            for (size_t i = 0; i < profile->argument_profiles.size(); ++i)
                 profile->argument_profiles[i].first = short_circuit_args_index[i];
             return res;
         }
