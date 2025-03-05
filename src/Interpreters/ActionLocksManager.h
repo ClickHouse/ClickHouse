@@ -25,7 +25,7 @@ public:
     void add(const StoragePtr & table, StorageActionBlockType action_type);
 
     /// Add a new global lock
-    void add(StorageActionBlockType action_type, ActionLock&& action_lock);
+    void add(StorageActionBlockType action_type, ActionLock && action_lock);
 
     /// Removes a lock for a table if it exists
     void remove(const StorageID & table_id, StorageActionBlockType action_type);

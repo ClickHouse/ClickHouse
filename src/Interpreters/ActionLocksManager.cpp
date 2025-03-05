@@ -48,7 +48,7 @@ void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType ac
     }
 }
 
-void ActionLocksManager::add(StorageActionBlockType action_type, ActionLock&& action_lock)
+void ActionLocksManager::add(StorageActionBlockType action_type, ActionLock && action_lock)
 {
     std::lock_guard lock(mutex);
     global_locks[action_type] = std::move(action_lock);
