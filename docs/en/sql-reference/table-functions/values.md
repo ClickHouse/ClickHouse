@@ -26,7 +26,7 @@ VALUES([structure,] values...)
 It is commonly used as:
 
 ```sql
-SELECT * FROM VALUES(
+VALUES(
     ['column1_name Type1, column2_name Type2, ...'],
     (value1_row1, value2_row1, ...),
     (value1_row2, value2_row2, ...),
@@ -35,9 +35,11 @@ SELECT * FROM VALUES(
 ```
 
 ## Arguments
-- `column1_name Type1, ...` (optional). String specifying the column names and types.
-  If this argument is omitted columns will be named as `c1`, `c2`, etc.
-- `(value1_row1, value2_row1)`. Tuples containing values of any type.
+- `column1_name Type1, ...` (optional). [String](/sql-reference/data-types/string) 
+  specifying the column names and types. If this argument is omitted columns will
+  be named as `c1`, `c2`, etc.
+- `(value1_row1, value2_row1)`. [Tuples](/sql-reference/data-types/tuple) 
+   containing values of any type.
 
 :::note
 Comma separated tuples can be replaced by single values as well. In this case
@@ -183,4 +185,3 @@ FROM VALUES(
 ## See also
 
 - [Values format](/interfaces/formats/Values)
-- 
