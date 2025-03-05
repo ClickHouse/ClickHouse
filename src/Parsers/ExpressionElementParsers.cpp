@@ -1724,7 +1724,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             if (!parser_string_literal.parse(pos, ast_prefix_name, expected))
                 return false;
 
-            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<const String &>();
+            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         if (with_open_round_bracket)
@@ -2451,7 +2451,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
 
-        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<const String &>();
+        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<String>();
     }
     else if (mode == TTLMode::GROUP_BY)
     {

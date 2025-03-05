@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/special-data-types/interval
+slug: /sql-reference/data-types/special-data-types/interval
 sidebar_position: 61
 sidebar_label: Interval
 ---
@@ -39,7 +39,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## Usage Remarks
+## Usage Remarks {#usage-remarks}
 
 You can use `Interval`-type values in arithmetical operations with [Date](../../../sql-reference/data-types/date.md) and [DateTime](../../../sql-reference/data-types/datetime.md)-type values. For example, you can add 4 days to the current time:
 
@@ -77,7 +77,7 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## See Also
+## See Also {#see-also}
 
 - [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator
 - [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions

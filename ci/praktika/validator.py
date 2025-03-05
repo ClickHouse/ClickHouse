@@ -2,7 +2,7 @@ import glob
 from itertools import chain
 from pathlib import Path
 
-from praktika import Job
+from praktika import Artifact, Job
 
 from . import Workflow
 from .mangle import _get_workflows
@@ -86,6 +86,11 @@ class Validator:
 
             if workflow.artifacts:
                 for artifact in workflow.artifacts:
+                    cls.evaluate_check(
+                        isinstance(artifact, Artifact.Config),
+                        f"Must be Artifact.Config type, not {type(artifact)}: [{artifact}]",
+                        workflow.name,
+                    )
                     if artifact.is_s3_artifact():
                         assert (
                             Settings.S3_ARTIFACT_PATH
@@ -101,11 +106,6 @@ class Validator:
                             assert not any(
                                 [r in GHRunners for r in job.runs_on]
                             ), f"GH runners [{job.name}:{job.runs_on}] must not be used with S3 as artifact storage"
-
-                if job.allow_merge_on_failure:
-                    assert (
-                        workflow.enable_merge_ready_status
-                    ), f"Job property allow_merge_on_failure must be used only with enabled workflow.enable_merge_ready_status, workflow [{workflow.name}], job [{job.name}]"
 
             if workflow.enable_cache:
                 assert (

@@ -48,12 +48,6 @@
 #include "Core/Names.h"
 #include <IO/SharedThreadPools.h>
 
-namespace CurrentMetrics
-{
-    extern const Metric ActiveDataMutations;
-    extern const Metric ActiveMetadataMutations;
-}
-
 namespace DB
 {
 
@@ -251,9 +245,6 @@ void StorageMergeTree::shutdown(bool)
 StorageMergeTree::~StorageMergeTree()
 {
     shutdown(false);
-
-    CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
-    CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
 }
 
 void StorageMergeTree::read(
@@ -1622,7 +1613,7 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
         // All parts which are dropped in that operations are not removed until failpoint is released
         // If we would set this failpoint before grabOldParts, it leads us to a case when
         // background thread already passed the failpoint but did not reach grabOldParts yet
-        // if failpoint is enabled at that time, background thead could grab parts from those operations and remove them regardless enabled failpoint
+        // if failpoint is enabled at that time, background thread could grab parts from those operations and remove them regardless enabled failpoint
         FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
     }
 
@@ -2699,6 +2690,18 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
     }
 
     return res;
+}
+
+UInt64 StorageMergeTree::getNumberOnFlyDataMutations() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return num_data_mutations_to_apply;
+}
+
+UInt64 StorageMergeTree::getNumberOnFlyMetadataMutations() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return num_metadata_mutations_to_apply;
 }
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()

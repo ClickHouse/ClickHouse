@@ -1,8 +1,10 @@
 option(ENABLE_IDNA "Enable idna support" ${ENABLE_LIBRARIES})
+
 if ((NOT ENABLE_IDNA))
     message (STATUS "Not using idna")
     return()
 endif()
+
 set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/idna")
 
 set (SRCS

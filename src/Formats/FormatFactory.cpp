@@ -1,6 +1,5 @@
 #include <Formats/FormatFactory.h>
 
-#include <algorithm>
 #include <unistd.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>

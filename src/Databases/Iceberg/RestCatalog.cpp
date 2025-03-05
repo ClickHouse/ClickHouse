@@ -469,6 +469,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
 DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
 {
     const std::string endpoint = std::filesystem::path(NAMESPACES_ENDPOINT) / base_namespace / "tables";
+
     auto buf = createReadBuffer(config.prefix / endpoint);
     return parseTables(*buf, base_namespace, limit);
 }
@@ -618,19 +619,25 @@ bool RestCatalog::getTableMetadataImpl(
                 static constexpr auto access_key_id_str = "s3.access-key-id";
                 static constexpr auto secret_access_key_str = "s3.secret-access-key";
                 static constexpr auto session_token_str = "s3.session-token";
+                static constexpr auto storage_endpoint_str = "s3.endpoint";
 
                 std::string access_key_id;
                 std::string secret_access_key;
                 std::string session_token;
+                std::string storage_endpoint;
                 if (config_object->has(access_key_id_str))
                     access_key_id = config_object->get(access_key_id_str).extract<String>();
                 if (config_object->has(secret_access_key_str))
                     secret_access_key = config_object->get(secret_access_key_str).extract<String>();
                 if (config_object->has(session_token_str))
                     session_token = config_object->get(session_token_str).extract<String>();
+                if (config_object->has(storage_endpoint_str))
+                    storage_endpoint = config_object->get(storage_endpoint_str).extract<String>();
 
                 result.setStorageCredentials(
                     std::make_shared<S3Credentials>(access_key_id, secret_access_key, session_token));
+
+                result.setEndpoint(storage_endpoint);
                 break;
             }
             default:

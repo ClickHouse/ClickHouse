@@ -20,6 +20,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -45,6 +46,7 @@
 #include <base/sleep.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -803,11 +805,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                 pool.scheduleOrThrow(
                     [&, part_index, thread_group = CurrentThread::getGroup()]
                     {
-                        setThreadName("MergeTreeIndex");
-
-                        SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-                        if (thread_group)
-                            CurrentThread::attachToGroupIfDetached(thread_group);
+                        ThreadGroupSwitcher switcher(thread_group, "MergeTreeIndex");
 
                         process_part(part_index);
                     },
@@ -1071,6 +1069,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         exact_ranges = nullptr;
 
     const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto & sorting_key = metadata_snapshot->getSortingKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     std::vector<bool> reverse_flags;
     const auto & key_indices = key_condition.getKeyIndices();
@@ -1084,7 +1083,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             if (i < index->size())
             {
                 index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-                reverse_flags.push_back(!primary_key.reverse_flags.empty() && primary_key.reverse_flags[i]);
+                reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
             }
             else
             {

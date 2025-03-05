@@ -1,7 +1,8 @@
 ---
-slug: /en/operations/system-tables/parts
+slug: /operations/system-tables/parts
+title: "system.parts"
+keywords: ["system table", "parts"]
 ---
-# parts {#system_tables-parts}
 
 Contains information about parts of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 
@@ -18,7 +19,7 @@ Columns:
 
 - `name` ([String](../../sql-reference/data-types/string.md)) – Name of the data part. The part naming structure can be used to determine many aspects of the data, ingest, and merge patterns. The part naming format is the following:
 
-```
+```text
 <partition_id>_<minimum_block_number>_<maximum_block_number>_<level>_<data_version>
 ```
 
@@ -90,7 +91,7 @@ Columns:
 
 - `primary_key_bytes_in_memory_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The amount of memory (in bytes) reserved for primary key values.
 
-- `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md/#alter_freeze-partition)
+- `is_frozen` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup does not exist. For more details, see [FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition)
 
 - `database` ([String](../../sql-reference/data-types/string.md)) – Name of the database.
 
