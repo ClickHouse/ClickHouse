@@ -119,6 +119,9 @@ static constexpr auto DEFAULT_DATALAKE_METADATA_CACHE_POLICY = "SLRU";
 static constexpr auto DEFAULT_DATALAKE_METADATA_CACHE_MAX_SIZE = 1_GiB;
 static constexpr auto DEFAULT_DATALAKE_METADATA_CACHE_SIZE_RATIO = 1_GiB;
 static constexpr auto DEFAULT_DATALAKE_METADATA_CACHE_MAX_ENTRIES = 1000;
+static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_POLICY = "SLRU";
+static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE = 100_MiB;
+static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO = 0.5l;
 
 /// Query profiler cannot work with sanitizers.
 /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)

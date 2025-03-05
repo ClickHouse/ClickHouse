@@ -107,6 +107,7 @@ struct Progress;
 struct FileProgress;
 class Clusters;
 class QueryCache;
+class QueryConditionCache;
 class ISystemLog;
 class QueryLog;
 class QueryMetricLog;
@@ -597,6 +598,8 @@ public:
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
+
+    // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
@@ -1131,6 +1134,11 @@ public:
     void updateDataLakeMetadataCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<DataLakeMetadataCache> getDataLakeMetadataCache() const;
     void clearDataLakeMetadataCache() const;
+
+    void setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
+    void clearQueryConditionCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.

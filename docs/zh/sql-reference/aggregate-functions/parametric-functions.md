@@ -53,7 +53,7 @@ FROM (
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-您可以使用 [bar](../../sql-reference/functions/other-functions.md#function-bar) 功能，例如:
+您可以使用 [bar](/sql-reference/functions/other-functions#bar) 功能，例如:
 
 ``` sql
 WITH histogram(5)(rand() % 100) AS hist

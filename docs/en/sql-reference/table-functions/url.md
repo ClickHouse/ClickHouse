@@ -2,12 +2,14 @@
 slug: /sql-reference/table-functions/url
 sidebar_position: 200
 sidebar_label: url
+title: "url"
+description: "Creates a table from the `URL` with given `format` and `structure`"
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
-# url
+# url Table Function
 
 `url` function creates a table from the `URL` with given `format` and `structure`.
 
@@ -73,9 +75,9 @@ SELECT * from url('http://data/path/date=*/country=*/code=*/*.parquet') where _d
 
 ## Storage Settings {#storage-settings}
 
-- [engine_url_skip_empty_files](/docs/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [enable_url_encoding](/docs/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
+- [engine_url_skip_empty_files](/operations/settings/settings.md#engine_url_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [enable_url_encoding](/operations/settings/settings.md#enable_url_encoding) - allows to enable/disable decoding/encoding path in uri. Enabled by default.
 
 **See Also**
 
-- [Virtual columns](/docs/engines/table-engines/index.md#table_engines-virtual_columns)
+- [Virtual columns](/engines/table-engines/index.md#table_engines-virtual_columns)

@@ -39,6 +39,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/UseSSL.h>
 #include <IO/SharedThreadPools.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
@@ -845,6 +846,9 @@ void LocalServer::processConfig()
     }
     global_context->setDataLakeMetadataCache(datalake_metadata_cache_policy, datalake_metadata_cache_size, datalake_metadata_cache_max_entries, datalake_metadata_cache_size_ratio);
 
+    /// Initialize a dummy query condition cache.
+    global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
+
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
 
@@ -955,7 +959,7 @@ void LocalServer::printHelpMessage(const OptionsDescription & options_descriptio
     output_stream << getHelpHeader() << "\n";
     if (options_description.main_description.has_value())
         output_stream << options_description.main_description.value() << "\n";
-    output_stream << "All settings are documented at https://clickhouse.com/docs/en/operations/settings/settings.\n\n";
+    output_stream << "All settings are documented at https://clickhouse.com/docs/operations/settings/settings.\n\n";
     output_stream << getHelpFooter() << "\n";
     output_stream << "In addition, --param_name=value can be specified for substitution of parameters for parametrized queries.\n";
     output_stream << "\nSee also: https://clickhouse.com/docs/en/operations/utilities/clickhouse-local/\n";

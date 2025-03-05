@@ -70,7 +70,7 @@ IN子句中的子查询始终只在单个服务器上运行一次。 没有依�
 
 ## 空处理 {#in-null-processing}
 
-在请求处理过程中， `IN` 运算符假定运算的结果 [NULL](../../sql-reference/syntax.md#null-literal) 总是等于 `0`，无论是否 `NULL` 位于操作员的右侧或左侧。 `NULL` 值不包含在任何数据集中，彼此不对应，并且在以下情况下无法进行比较 [transform_null_in=0](../../operations/settings/settings.md#transform_null_in).
+在请求处理过程中， `IN` 运算符假定运算的结果 [NULL](/operations/settings/formats#input_format_null_as_default) 总是等于 `0`，无论是否 `NULL` 位于操作员的右侧或左侧。 `NULL` 值不包含在任何数据集中，彼此不对应，并且在以下情况下无法进行比较 [transform_null_in=0](../../operations/settings/settings.md#transform_null_in).
 
 下面是一个例子 `t_null` 表:
 

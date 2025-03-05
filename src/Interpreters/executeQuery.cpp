@@ -81,6 +81,7 @@
 #include <memory>
 #include <random>
 
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace ProfileEvents
 {
@@ -1496,7 +1497,7 @@ static BlockIO executeQueryImpl(
                             {
                                 LOG_TRACE(getLogger("QueryCache"),
                                         "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                                        num_query_runs, settings[Setting::query_cache_min_query_runs]);
+                                        num_query_runs, settings[Setting::query_cache_min_query_runs].value);
                             }
                             else
                             {

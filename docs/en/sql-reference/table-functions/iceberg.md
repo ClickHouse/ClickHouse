@@ -2,6 +2,8 @@
 slug: /sql-reference/table-functions/iceberg
 sidebar_position: 90
 sidebar_label: iceberg
+title: "iceberg"
+description: "Provides a read-only table-like interface to Apache Iceberg tables in Amazon S3, Azure, HDFS or locally stored."
 ---
 
 # iceberg Table Function
@@ -83,5 +85,5 @@ Table function `iceberg` is an alias to `icebergS3` now.
 
 **See Also**
 
-- [Iceberg engine](/docs/engines/table-engines/integrations/iceberg.md)
-- [Iceberg cluster table function](/docs/sql-reference/table-functions/icebergCluster.md)
+- [Iceberg engine](/engines/table-engines/integrations/iceberg.md)
+- [Iceberg cluster table function](/sql-reference/table-functions/icebergCluster.md)
