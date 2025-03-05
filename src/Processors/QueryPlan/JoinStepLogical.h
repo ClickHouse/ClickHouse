@@ -104,6 +104,8 @@ protected:
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
 
+    ContextPtr query_context;
+
     /// Add some information from convertToPhysical to description in explain output.
     std::vector<std::pair<String, String>> runtime_info_description;
 };

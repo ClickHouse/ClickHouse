@@ -110,6 +110,7 @@ JoinStepLogical::JoinStepLogical(
     , tmp_volume(query_context_->getGlobalTemporaryVolume())
     , tmp_data(query_context_->getTempDataOnDisk())
 {
+    query_context = query_context_;
     updateInputHeaders({left_header_, right_header_});
 }
 
