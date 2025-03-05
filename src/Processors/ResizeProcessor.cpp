@@ -7,7 +7,7 @@
 
 namespace ProfileEvents
 {
-    extern const ProfileEvents::Event InsertPipelineShrinking;
+    extern const Event InsertPipelineShrinking;
 }
 
 namespace DB
