@@ -639,10 +639,7 @@ BlockIO InterpreterSystemQuery::execute()
             if (system_context->getApplicationType() == Context::ApplicationType::LOCAL)
                 throw Exception("SYSTEM RELOAD CONFIG query is not supported in clickhouse-local", ErrorCodes::UNSUPPORTED_METHOD);
             getContext()->checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
-            auto * config_reload_callback = system_context>getConfigReloadCallback();
-            if (!config_reload_callback)
-                throw Exception("Can't reload config because config_reload_callback is not set", ErrorCodes::LOGICAL_ERROR);
-            (*config_reload_callback)();
+            system_context->reloadConfig();
             break;
         }
         case Type::RELOAD_USERS:
