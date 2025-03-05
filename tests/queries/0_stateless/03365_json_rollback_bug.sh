@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long, no-asan, no-tsan, no-ubsan, no-msan
+# Too slow for sanitizers
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
