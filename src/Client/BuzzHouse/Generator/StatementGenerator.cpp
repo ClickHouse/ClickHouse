@@ -3747,14 +3747,14 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             {
                 const uint32_t dname = static_cast<uint32_t>(std::stoul(bre.bobject().object().database().database().substr(1)));
 
-                for (auto & [key, val] : this->tables)
+                for (const auto & [key, val] : this->tables)
                 {
                     if (val.db && val.db->dname == dname)
                     {
                         newb.tables[key] = this->tables[key];
                     }
                 }
-                for (auto & [key, val] : this->views)
+                for (const auto & [key, val] : this->views)
                 {
                     if (val.db && val.db->dname == dname)
                     {
@@ -3769,15 +3769,15 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
         {
             const CatalogBackup & backup = backups.at(br.backup_number());
 
-            for (auto & [key, _] : backup.tables)
+            for (const auto & [key, _] : backup.tables)
             {
                 this->tables[key] = backup.tables.at(key);
             }
-            for (auto & [key, _] : backup.views)
+            for (const auto & [key, _] : backup.views)
             {
                 this->views[key] = backup.views.at(key);
             }
-            for (auto & [key, _] : backup.databases)
+            for (const auto & [key, _] : backup.databases)
             {
                 this->databases[key] = backup.databases.at(key);
             }
