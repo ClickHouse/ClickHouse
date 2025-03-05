@@ -199,16 +199,16 @@ static ActionsDAG::NodeRawConstPtrs getAnyColumn(const ActionsDAG::NodeRawConstP
 IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(const Names & required_outputs, bool remove_inputs)
 {
     required_output_columns = required_outputs;
-    Names left_required_outputs{};
-    Names right_required_outputs{};
+    NameSet left_required_outputs{};
+    NameSet right_required_outputs{};
 
     auto collect_required_outputs_from_condition
         = [this, &left_required_outputs, &right_required_outputs](const JoinCondition & condition) mutable
     {
         for (const auto & predicate : condition.predicates)
         {
-            left_required_outputs.push_back(predicate.left_node.getColumnName());
-            right_required_outputs.push_back(predicate.right_node.getColumnName());
+            left_required_outputs.insert(predicate.left_node.getColumnName());
+            right_required_outputs.insert(predicate.right_node.getColumnName());
         }
         for (const auto & residual_condition : condition.residual_conditions)
             required_output_columns.push_back(residual_condition.getColumnName());
@@ -224,8 +224,16 @@ IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(c
 
     // We can always remove inputs from post join actions, that doesn't affect the inputs of this step
     bool removed_any_actions = expression_actions.post_join_actions->removeUnusedActions(required_output_columns);
+    const auto & new_post_join_inputs = expression_actions.post_join_actions->getInputs();
 
-    // TODO(antaljanosbenjamin): can it happen that post join actions needs some output from any of the prejoin actions that are not in a JoinCondition?
+    for (const auto * post_join_input: new_post_join_inputs)
+    {
+        if (const auto * left_output = expression_actions.left_pre_join_actions->tryFindInOutputs(post_join_input->result_name); nullptr != left_output)
+            left_required_outputs.insert(post_join_input->result_name);
+        else
+            right_required_outputs.insert(post_join_input->result_name);
+    }
+
     removed_any_actions |= expression_actions.left_pre_join_actions->removeUnusedActions(left_required_outputs, remove_inputs);
     removed_any_actions |= expression_actions.right_pre_join_actions->removeUnusedActions(right_required_outputs, remove_inputs);
 
