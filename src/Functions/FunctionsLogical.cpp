@@ -726,10 +726,10 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
             auto coalesce_elapsed = watch.elapsed();
             auto res = executeShortCircuit<true>(new_args, result_type, profile);
             profile->executed_elapsed += coalesce_elapsed;
-            // Only the ColumnFunction arguments have profiles. Need to transform the profile's position back to
-            // the original argument's position.
-            // The execution will stop early when all rows are filted, the last few short circuit arguments are not
-            // executed and there is no profile for them.
+            // Profiles are only available for short-circuit arguments, and their positions need to be mapped back to the
+            // original argument positions.
+            // The execution will stop early when all rows are filtered, the last few short-circuit arguments are skipped
+            // and no profiles are generated for them.
             for (size_t i = 0; i < profile->argument_profiles.size(); ++i)
                 profile->argument_profiles[i].first = short_circuit_args_index[i];
             return res;
