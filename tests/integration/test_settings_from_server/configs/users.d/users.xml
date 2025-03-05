@@ -8,11 +8,11 @@
             <output_format_json_array_of_rows>1</output_format_json_array_of_rows>
         </second_profile>
         <no_apply_profile>
-            <output_format_json_quote_64bit_integers>0</output_format_json_quote_64bit_integers>
+            <output_format_json_quote_64bit_integers>1</output_format_json_quote_64bit_integers>
             <apply_settings_from_server>0</apply_settings_from_server>
         </no_apply_profile>
         <compat_profile>
-            <output_format_json_quote_64bit_integers>0</output_format_json_quote_64bit_integers>
+            <output_format_json_quote_64bit_integers>1</output_format_json_quote_64bit_integers>
             <compatibility>24.11</compatibility>
         </compat_profile>
     </profiles>
