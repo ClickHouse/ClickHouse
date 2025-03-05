@@ -297,13 +297,19 @@ std::unique_ptr<IQueryPlanStep> FilterStep::deserialize(Deserialization & ctx)
 
 IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(const Names & required_outputs, bool remove_inputs)
 {
-    const auto split_results = actions_dag.splitPossibleOutputNames(required_outputs);
+    auto split_results = actions_dag.splitPossibleOutputNames(required_outputs);
     const auto actions_dag_input_count_before = actions_dag.getInputs().size();
 
-    auto required_columns = split_results.output_names;
-    required_columns.push_back(filter_column_name);
 
-    const auto removed_any_actions = actions_dag.removeUnusedActions(required_columns, remove_inputs);
+    const auto required_columns_contains_filter = std::any_of(
+        split_results.output_names.begin(),
+        split_results.output_names.end(),
+        [this](const String & required_column) { return required_column == filter_column_name; });
+
+    if (!required_columns_contains_filter)
+        split_results.output_names.push_back(filter_column_name);
+
+    const auto removed_any_actions = actions_dag.removeUnusedActions(split_results.output_names, remove_inputs);
 
     if (!removed_any_actions && output_header.has_value() && output_header->columns() == required_outputs.size())
         return UnusedColumnRemovalResult{false, false};
