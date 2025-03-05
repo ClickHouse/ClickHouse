@@ -698,6 +698,9 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
         ColumnsWithTypeAndName new_args;
         Stopwatch watch;
 
+        // When the function is invoked from ColumnFunction::reduce, the profile->argument_profiles might already contain data
+        size_t before_arg_profiles_count = profile != nullptr ? profile->argument_profiles.size() : 0;
+
         for (size_t i = 0, n = args.size(); i < n; ++i)
         {
             if (checkAndGetShortCircuitArgument(arguments[i].column))
@@ -730,10 +733,10 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
             // original argument positions.
             // The execution will stop early when all rows are filtered, the last few short-circuit arguments are skipped
             // and no profiles are generated for them.
-            if (profile->argument_profiles.size() > short_circuit_args_index.size())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid argument_profiles: {} {}", profile->argument_profiles.size(), short_circuit_args_index.size());
-            for (size_t i = 0; i < profile->argument_profiles.size(); ++i)
-                profile->argument_profiles[i].first = short_circuit_args_index[i];
+            if (profile->argument_profiles.size() -  before_arg_profiles_count > short_circuit_args_index.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid argument_profiles {}: {} {}", fmt::ptr(profile), profile->argument_profiles.size(), short_circuit_args_index.size());
+            for (size_t i = before_arg_profiles_count; i < profile->argument_profiles.size(); ++i)
+                profile->argument_profiles[i].first = short_circuit_args_index[i - before_arg_profiles_count];
             return res;
         }
         return executeShortCircuit<false>(new_args, result_type, profile);
