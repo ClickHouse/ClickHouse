@@ -2,9 +2,11 @@
 slug: /sql-reference/table-functions/numbers
 sidebar_position: 145
 sidebar_label: numbers
+title: "numbers"
+description: "Returns tables with a single 'number' column that contains specifiable integers."
 ---
 
-# numbers
+# numbers Table Function
 
 `numbers(N)` – Returns a table with the single 'number' column (UInt64) that contains integers from 0 to N-1.
 `numbers(N, M)` - Returns a table with the single 'number' column (UInt64) that contains integers from N to (N + M - 1).

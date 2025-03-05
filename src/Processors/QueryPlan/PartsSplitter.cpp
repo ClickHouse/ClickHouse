@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <Core/Field.h>
+#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -16,14 +17,17 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
+
+#include <boost/functional/hash.hpp>
 
 using namespace DB;
 
@@ -109,10 +113,10 @@ int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
     {
         for (size_t i = 0; i < size; ++i)
         {
-            if (applyVisitor(FieldVisitorAccurateLess(), rhs[i], lhs[i]))
+            if (accurateLess(rhs[i], lhs[i]))
                 return -1;
 
-            if (!applyVisitor(FieldVisitorAccurateEquals(), rhs[i], lhs[i]))
+            if (!accurateEquals(rhs[i], lhs[i]))
                 return 1;
         }
     }
@@ -120,10 +124,10 @@ int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
     {
         for (size_t i = 0; i < size; ++i)
         {
-            if (applyVisitor(FieldVisitorAccurateLess(), lhs[i], rhs[i]))
+            if (accurateLess(lhs[i], rhs[i]))
                 return -1;
 
-            if (!applyVisitor(FieldVisitorAccurateEquals(), lhs[i], rhs[i]))
+            if (!accurateEquals(lhs[i], rhs[i]))
                 return 1;
         }
     }
@@ -304,7 +308,7 @@ struct PartsRangesIterator
             return false;
 
         for (size_t i = 0; i < value.size(); ++i)
-            if (!applyVisitor(FieldVisitorAccurateEquals(), value[i], other.value[i]))
+            if (!accurateEquals(value[i], other.value[i]))
                 return false;
 
         return range == other.range && part_index == other.part_index && event == other.event;
@@ -928,6 +932,7 @@ static void reorderColumns(ActionsDAG & dag, const Block & header, const std::st
 
 SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     const KeyDescription & primary_key,
+    const KeyDescription & sorting_key,
     ExpressionActionsPtr sorting_expr,
     RangesInDataParts parts,
     size_t max_layers,
@@ -962,14 +967,16 @@ SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     }
 
     bool in_reverse_order = false;
-    if (!primary_key.reverse_flags.empty())
+    size_t num_primary_keys = primary_key.expression_list_ast->children.size();
+    if (!sorting_key.reverse_flags.empty())
     {
-        in_reverse_order = primary_key.reverse_flags[0];
-        for (size_t i = 1; i < primary_key.reverse_flags.size(); ++i)
+        chassert(sorting_key.reverse_flags.size() >= num_primary_keys);
+        in_reverse_order = sorting_key.reverse_flags[0];
+        for (size_t i = 1; i < num_primary_keys; ++i)
         {
             /// It's not possible to split parts when some keys are in ascending
             /// order while others are in descending order.
-            if (in_reverse_order != primary_key.reverse_flags[i])
+            if (in_reverse_order != sorting_key.reverse_flags[i])
             {
                 result.merging_pipes.emplace_back(create_merging_pipe(intersecting_parts_ranges));
                 return result;

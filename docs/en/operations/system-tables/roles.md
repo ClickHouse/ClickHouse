@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about configured roles."
 slug: /operations/system-tables/roles
-title: "roles"
+title: "system.roles"
 keywords: ["system table", "roles"]
 ---
 
