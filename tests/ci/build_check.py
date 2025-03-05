@@ -39,6 +39,15 @@ def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
     return False
 
 
+def with_performance_artifacts(build_config: CI.BuildConfig) -> bool:
+    return (
+        not build_config.debug_build
+        and build_config.package_type == "deb"
+        and build_config.sanitizer == ""
+        and not build_config.coverage
+    )
+
+
 def get_packager_cmd(
     build_config: CI.BuildConfig,
     packager_path: Path,
@@ -75,6 +84,9 @@ def get_packager_cmd(
     cmd += " --with-profiler"
     cmd += " --with-buzzhouse"
     cmd += f" --version={build_version}"
+
+    if with_performance_artifacts(build_config):
+        cmd += " --with-performance-artifacts"
 
     if _can_export_binaries(build_config):
         cmd += " --with-binaries=tests"
@@ -162,8 +174,9 @@ def main():
     pr_info = PRInfo()
 
     if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
-        print("Unshallow repo")
-        unshallow()
+        thin_unshallow = not with_performance_artifacts(build_config)
+        print(f"Unshallow repo (thin: {thin_unshallow})")
+        unshallow(thin_unshallow)
 
     print("Fetch submodules")
     # TODO: test sparse checkout: update-submodules.sh?
