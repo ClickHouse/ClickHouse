@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
+            {"enable_adaptive_short_circuit_lazy_execution", false, false, "Enable dynamic evaluation of whether a short-circuit function's argument should be lazily executed."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {

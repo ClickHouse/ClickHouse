@@ -8,6 +8,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_aggregate_partitions_independently;
+    extern const SettingsBool enable_adaptive_short_circuit_lazy_execution;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -95,6 +96,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     lock_acquire_timeout = from[Setting::lock_acquire_timeout];
 
     max_threads = from[Setting::max_threads];
+    enable_adaptive_short_circuit_execution = from[Setting::enable_adaptive_short_circuit_lazy_execution];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
