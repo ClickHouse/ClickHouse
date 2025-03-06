@@ -386,7 +386,11 @@ StorageKafka::StorageKafka(
     });
 }
 
-StorageKafka::~StorageKafka() = default;
+StorageKafka::~StorageKafka()
+{
+    if (!shutdown_called)
+        shutdown(false);
+}
 
 VirtualColumnsDescription StorageKafka::createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
