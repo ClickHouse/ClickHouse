@@ -1,11 +1,14 @@
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Processors/Sources/RemoteSource.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/StreamLocalLimits.h>
-#include <Processors/Transforms/AggregatingTransform.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
+#include "Columns/ColumnBlob.h"
+
+#include <Processors/ISimpleTransform.h>
 
 namespace DB
 {
@@ -287,6 +290,26 @@ Chunk RemoteExtremesSource::generate()
     return {};
 }
 
+struct ConvertBlobColumnsTransform : ISimpleTransform
+{
+public:
+    explicit ConvertBlobColumnsTransform(const Block & header_)
+        : ISimpleTransform(header_, header_, false)
+    {
+    }
+
+    String getName() const override { return "ConvertBlobColumnsTransform"; }
+
+    void transform(Chunk & chunk) override
+    {
+        auto columns = chunk.getColumns();
+        for (auto & column : columns)
+        {
+            if (const auto * col = typeid_cast<const ColumnBlob *>(column.get()))
+                column = col->convertFrom();
+        }
+    }
+};
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
@@ -299,6 +322,10 @@ Pipe createRemoteSourcePipe(
 
     if (add_extremes)
         pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
+
+    pipe.resize(8);
+    pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<ConvertBlobColumnsTransform>(header); });
+    pipe.resize(1);
 
     return pipe;
 }

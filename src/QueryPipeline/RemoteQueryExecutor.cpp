@@ -645,7 +645,9 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
             /// We can actually return it, and the first call to RemoteQueryExecutor::read
             /// will return earlier. We should consider doing it.
             if (packet.block && (packet.block.rows() > 0))
-                return ReadResult(adaptBlockStructure(packet.block, header));
+                // TODO(nickitat): pls do smth about this
+                return ReadResult(packet.block);
+            // return ReadResult(adaptBlockStructure(packet.block, header));
             break;  /// If the block is empty - we will receive other packets before EndOfStream.
 
         case Protocol::Server::Exception:

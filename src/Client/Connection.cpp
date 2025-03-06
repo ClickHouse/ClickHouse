@@ -1364,30 +1364,48 @@ Block Connection::receiveDataImpl(NativeReader & reader)
 
     // initBlockQueue();
     // Block block;
+    // bool first = true;
+    // bool has = false;
     // do
     // {
-    //     block = reader.read();
-    //     if (!block_queue->enqueueForProcessing(block, /*wait=*/false))
+    //     if (reader.eof())
     //         break;
+    //
+    //     block = reader.read();
+    //     has = true;
+    //
+    //     if (!block_queue->enqueueForProcessing(block, /*wait=*/first))
+    //         break;
+    //     else
+    //     {
+    //         LOG_DEBUG(
+    //             &Poco::Logger::get("debug"),
+    //             "__PRETTY_FUNCTION__={}, __LINE__={}, block={}",
+    //             __PRETTY_FUNCTION__,
+    //             __LINE__,
+    //             block.dumpStructure());
+    //         has = false;
+    //     }
+    //     first = false;
     // } while (reader.hasPendingData());
     //
-    // if (res)
-    // {
-    //     res = block_queue->dequeueNextProcessed();
-    // }
+    // Block res = block_queue->dequeueNextProcessed(/*wait=*/false);
+    // LOG_DEBUG(
+    //     &Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}, block={}", __PRETTY_FUNCTION__, __LINE__, block.dumpStructure());
     //
-    // if (block)
+    // if (has)
     // {
-    //     // Everything that was possible to push without waiting is pushed. Now we have to push the last block regardless of the queue state
     //     block_queue->enqueueForProcessing(block, /*wait=*/true);
+    //     LOG_DEBUG(
+    //         &Poco::Logger::get("debug"),
+    //         "__PRETTY_FUNCTION__={}, __LINE__={}, block={}",
+    //         __PRETTY_FUNCTION__,
+    //         __LINE__,
+    //         block.dumpStructure());
     // }
 
     Block res = reader.read();
-    initBlockQueue();
-    block_queue->enqueueForProcessing(res);
-    res = block_queue->dequeueNextProcessed();
 
-    // TODO(nickitat): fix
     if (throttler)
         throttler->add(in->count() - prev_bytes);
 
