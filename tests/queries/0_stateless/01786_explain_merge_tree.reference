@@ -1,4 +1,4 @@
-    ReadFromMergeTree (test.test_index)
+    ReadFromMergeTree (default.test_index)
     Indexes:
       MinMax
         Keys: 
@@ -30,7 +30,7 @@
 -----------------
               "Node Type": "ReadFromMergeTree",
               "Node Id": "ReadFromMergeTree_0",
-              "Description": "test.test_index",
+              "Description": "default.test_index",
               "Indexes": [
                 {
                   "Type": "MinMax",
@@ -83,7 +83,7 @@
   }
 ]
 -----------------
-        ReadFromMergeTree (test.test_index)
+        ReadFromMergeTree (default.test_index)
         ReadType: InOrder
         Parts: 1
         Granules: 3
@@ -91,14 +91,14 @@
         Actions: INPUT :: 0 -> x UInt32 : 0
         Positions: 0
 -----------------
-        ReadFromMergeTree (test.test_index)
+        ReadFromMergeTree (default.test_index)
         ReadType: InReverseOrder
         Parts: 1
         Granules: 3
         Virtual row conversions
         Actions: INPUT :: 0 -> x UInt32 : 0
         Positions: 0
-    ReadFromMergeTree (test.idx)
+    ReadFromMergeTree (default.idx)
     Indexes:
       PrimaryKey
         Keys: 
@@ -107,7 +107,7 @@
         Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))
         Parts: 1/1
         Granules: 1/1
-    ReadFromMergeTree (test.test_index)
+    ReadFromMergeTree (default.test_index)
     Indexes:
       MinMax
         Keys: 
@@ -139,7 +139,7 @@
 -----------------
               "Node Type": "ReadFromMergeTree",
               "Node Id": "ReadFromMergeTree_0",
-              "Description": "test.test_index",
+              "Description": "default.test_index",
               "Indexes": [
                 {
                   "Type": "MinMax",
@@ -192,7 +192,7 @@
   }
 ]
 -----------------
-        ReadFromMergeTree (test.test_index)
+        ReadFromMergeTree (default.test_index)
         ReadType: InOrder
         Parts: 1
         Granules: 3
@@ -201,7 +201,7 @@
                  ALIAS x :: 0 -> __table1.x UInt32 : 1
         Positions: 1
 -----------------
-        ReadFromMergeTree (test.test_index)
+        ReadFromMergeTree (default.test_index)
         ReadType: InReverseOrder
         Parts: 1
         Granules: 3
@@ -209,7 +209,7 @@
         Actions: INPUT : 0 -> x UInt32 : 0
                  ALIAS x :: 0 -> __table1.x UInt32 : 1
         Positions: 1
-    ReadFromMergeTree (test.idx)
+    ReadFromMergeTree (default.idx)
     Indexes:
       PrimaryKey
         Keys: 
