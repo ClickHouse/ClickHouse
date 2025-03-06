@@ -9,7 +9,7 @@ namespace DB
 
 struct DistributedQueryPlan;
 
-void executeDistributedQuery(const DistributedQueryPlan & distributed_query_plan, ContextPtr context);
+void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context);
 
 struct DistributedQueryTask;
 

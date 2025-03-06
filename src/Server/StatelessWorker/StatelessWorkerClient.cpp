@@ -10,7 +10,7 @@
 namespace DB
 {
 
-String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const ContextPtr & context)
+String doSendTask(const String & endpoint_uri, const String & task_id, std::function<void(WriteBuffer&)> task_serializer, const String & unique_temp_file_path, const ContextPtr & context)
 {
     auto credentials = context->getInterserverCredentials();
     Poco::Net::HTTPBasicCredentials creds{};
@@ -33,6 +33,7 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
     uri.addQueryParameter("operation",   "start");
     uri.addQueryParameter("compress",    "false");
     uri.addQueryParameter("task_id",     task_id);
+    uri.addQueryParameter("temp_path",   unique_temp_file_path);
 
     auto write_body_callback = [&task_serializer] (std::ostream & os)
     {
@@ -59,14 +60,14 @@ String doSendTask(const String & endpoint_uri, const String & task_id, std::func
 void serializeTask(const DistributedQueryTask & task, const String & serialized_query_plan, WriteBuffer & out);
 
 
-String sendTask(const String & endpoint_uri, const String & serialized_query_plan, const DistributedQueryTask & task, const ContextPtr & context)
+String sendTask(const String & endpoint_uri, const String & unique_task_id, const String & serialized_query_plan, const DistributedQueryTask & task, const String & unique_temp_file_path, const ContextPtr & context)
 {
     auto task_serializer = [serialized_query_plan, task] (WriteBuffer & buf)
     {
         serializeTask(task, serialized_query_plan, buf);
     };
 
-    return doSendTask(endpoint_uri, task.task_id, task_serializer, context);
+    return doSendTask(endpoint_uri, unique_task_id, task_serializer, unique_temp_file_path, context);
 }
 
 /// Get task status by its id.

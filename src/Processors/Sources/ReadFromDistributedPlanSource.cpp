@@ -11,7 +11,7 @@ Chunk ReadFromDistributedPlanSource::generate()
 {
     if (!executed)
     {
-        executeDistributedQuery(distributed_query_plan, Context::getGlobalContextInstance());
+        executeDistributedQuery(unique_query_id, distributed_query_plan, Context::getGlobalContextInstance());
         executed = true;
     }
 

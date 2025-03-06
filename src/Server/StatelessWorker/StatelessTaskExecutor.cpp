@@ -10,13 +10,13 @@ namespace DB
 {
 
 /// TODO: move
-std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(ContextPtr context);
+std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);
 
 
-StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & serialized_query_plan, const DistributedQueryTask & task)
+StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & unique_task_id, const String & serialized_query_plan, const DistributedQueryTask & task, const String & unique_temp_file_path)
 {
     ContextPtr context = Context::getGlobalContextInstance();
-    auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(context);
+    auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, context);
 
     std::shared_ptr<std::promise<void>> task_promise = std::make_shared<std::promise<void>>();
     auto task_state = std::make_shared<TaskState>();
@@ -24,7 +24,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & se
 
     {
         std::lock_guard lock(tasks_mutex);
-        tasks[task.task_id] = task_state;
+        tasks[unique_task_id] = task_state;
     }
 
     auto task_function = [serialized_query_plan, task, object_storage, object_storage_path, context, task_promise]() mutable

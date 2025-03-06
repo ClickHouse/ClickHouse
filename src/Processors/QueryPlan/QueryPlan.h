@@ -236,8 +236,6 @@ std::string debugExplainStep(IQueryPlanStep & step);
 std::string debugExplainPlan(const QueryPlan & plan);
 
 
-
-
 /// Stores named paramaters for query plan.
 /// This is aimed to share the same plan with different values of parameters like bucket id for shuffle.
 struct QueryPlanParamaters
@@ -262,7 +260,6 @@ struct DistributedQueryStage
     std::vector<DistributedQueryTask> tasks;   /// Individual set of parameter values for each task
 };
 
-
 /// Represents a graph of stages
 /// A stage typically contains a fragment of the query plan that can be executed by multiple workers in parallel on different partitions of data
 struct DistributedQueryPlan
@@ -270,6 +267,5 @@ struct DistributedQueryPlan
     std::unordered_map<String, DistributedQueryStage> stages;
     std::unordered_map<String, std::unordered_set<String>> stage_depends_on;    /// Maps stage name to stages it depends on
 };
-
 
 }

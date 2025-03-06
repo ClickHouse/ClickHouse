@@ -89,16 +89,15 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBuffer &
 
     if (operation == "start")
     {
+        auto unique_temp_file_path = params.get("temp_path");
         /// Deserialize task fields from the request body
         DistributedQueryTask task_parameters;
         String serialized_query_plan;
         deserializeTask(task_parameters, serialized_query_plan, body);
         body.eof();
-        if (task_parameters.task_id != task_id)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Task id mismatch: '{}' and '{}'", task_parameters.task_id, task_id);
 
         /// Pass it to the runner to start execution
-        task_runner->startTask(serialized_query_plan, task_parameters);
+        task_runner->startTask(task_id, serialized_query_plan, task_parameters, unique_temp_file_path);
     }
     else if (operation == "get_status")
     {

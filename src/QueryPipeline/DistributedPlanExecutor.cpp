@@ -145,12 +145,12 @@ void doExecuteTask(const String & serialized_query_plan, const DistributedQueryT
 String sendTask(const String & endpoint_uri, const String & serialized_query_plan, const DistributedQueryTask & task, const ContextPtr & context);
 
 
-std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(ContextPtr context)
+std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context)
 {
     bool use_local_object_storage = true;
     ObjectStoragePtr object_storage;
     String object_storage_path;
-    object_storage_path = "distributed_query_temporary_files";
+    object_storage_path = "distributed_query_temporary_files/" + unique_temp_file_path;
     if (use_local_object_storage)
     {
         const auto & config = context->getConfigRef();
@@ -167,26 +167,26 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(ContextPtr
     return {object_storage, object_storage_path};
 }
 
-void executeTask(const String & serialized_query_plan, const DistributedQueryTask & task, ContextPtr context)
+void executeTask(const UUID & unique_query_id, const String & serialized_query_plan, const DistributedQueryTask & task, ContextPtr context)
 {
-    auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(context);
+    auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(toString(unique_query_id), context);
 
     doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, context);
 }
 
 #if 0
-std::future<void> startTask(const QueryPlan & query_plan, const DistributedQueryTask & task, ContextPtr context)
+std::future<void> startTask(const UUID & unique_query_id, const QueryPlan & query_plan, const DistributedQueryTask & task, ContextPtr context)
 {
     const String serialized_query_plan = serializeQueryPlan(query_plan);
 
     std::promise<void> task_promise;
     std::future<void> future = task_promise.get_future();
 
-    std::thread([promise = std::move(task_promise), serialized_query_plan, task, context]() mutable
+    std::thread([promise = std::move(task_promise), unique_query_id, serialized_query_plan, task, context]() mutable
     {
         try
         {
-            executeTask(serialized_query_plan, task, context);
+            executeTask(unique_query_id, serialized_query_plan, task, context);
             promise.set_value();
         }
         catch (...)
@@ -198,12 +198,12 @@ std::future<void> startTask(const QueryPlan & query_plan, const DistributedQuery
     return future;
 }
 
-void executeStage(const DistributedQueryStage & stage, ContextPtr context)
+void executeStage(const UUID & initial_query_id, const DistributedQueryStage & stage, ContextPtr context)
 {
     std::vector<std::future<void>> started_tasks;
     started_tasks.reserve(stage.tasks.size());
     for (const auto & task : stage.tasks)
-        started_tasks.emplace_back(startTask(stage.query_plan_fragment, task, context));
+        started_tasks.emplace_back(startTask(initial_query_id, stage.query_plan_fragment, task, context));
 
     /// TODO: periodically check for cancellation
     for (const auto & task : started_tasks)
@@ -221,7 +221,7 @@ struct RunningTaskInfo
     String task_id;
 };
 
-RunningTaskInfo startTask(const QueryPlan & query_plan, const DistributedQueryTask & task, ContextPtr context)
+RunningTaskInfo startTask(const UUID & unique_query_id, const QueryPlan & query_plan, const DistributedQueryTask & task, ContextPtr context)
 {
     const String serialized_query_plan = serializeQueryPlan(query_plan);
 
@@ -241,16 +241,19 @@ RunningTaskInfo startTask(const QueryPlan & query_plan, const DistributedQueryTa
         stateless_worker_endpoint_uri = stateless_worker_uri.toString();
     }
 
-    sendTask(stateless_worker_endpoint_uri, serialized_query_plan, task, context);
+    String unique_task_id = toString(unique_query_id) + "::" + task.task_id;
+    String unique_temp_file_path = toString(unique_query_id);
 
-    return { stateless_worker_endpoint_uri, task.task_id};
+    sendTask(stateless_worker_endpoint_uri, unique_task_id, serialized_query_plan, task, unique_temp_file_path, context);
+
+    return {stateless_worker_endpoint_uri, unique_task_id};
 }
 
-void executeStage(const DistributedQueryStage & stage, ContextPtr context)
+void executeStage(const UUID & unique_query_id, const DistributedQueryStage & stage, ContextPtr context)
 {
     std::deque<RunningTaskInfo> started_tasks;
     for (const auto & task : stage.tasks)
-        started_tasks.emplace_back(startTask(stage.query_plan_fragment, task, context));
+        started_tasks.emplace_back(startTask(unique_query_id, stage.query_plan_fragment, task, context));
 
     /// TODO: periodically check for cancellation
     String error_message;
@@ -273,9 +276,12 @@ void executeStage(const DistributedQueryStage & stage, ContextPtr context)
 
 #endif
 
-void executeDistributedQuery(const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
+void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
 {
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
+
+    LOG_DEBUG(logger, "Executing distributed query, unique id: {}", toString(unique_query_id));
+
     /// Execute stages in topological order
     std::unordered_set<String> executed_stages;
     std::function<void(const String &)> execute_stage = [&](const String & stage_name)
@@ -295,7 +301,7 @@ void executeDistributedQuery(const DistributedQueryPlan & distributed_query_plan
             "plan:\n{}\n"
             "==========================================================================",
             stage_name, dumpQueryPlan(stage.query_plan_fragment));
-        executeStage(stage, context);
+        executeStage(unique_query_id, stage, context);
         executed_stages.insert(stage_name);
     };
 

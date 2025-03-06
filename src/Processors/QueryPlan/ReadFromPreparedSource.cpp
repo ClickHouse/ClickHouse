@@ -12,6 +12,7 @@
 #include <Storages/System/StorageSystemOne.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
