@@ -147,22 +147,11 @@ String sendTask(const String & endpoint_uri, const String & serialized_query_pla
 
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context)
 {
-    bool use_local_object_storage = true;
-    ObjectStoragePtr object_storage;
-    String object_storage_path;
-    object_storage_path = "distributed_query_temporary_files/" + unique_temp_file_path;
-    if (use_local_object_storage)
-    {
-        const auto & config = context->getConfigRef();
-        String config_prefix = "storage_configuration.disks.local";
-        object_storage = ObjectStorageFactory::instance().create("local", config, config_prefix, context, false);
-    }
-    else
-    {
-        const auto & config = context->getConfigRef();
-        String config_prefix = "storage_configuration.disks.s3_disk_for_stateless_task";
-        object_storage = ObjectStorageFactory::instance().create("s3", config, config_prefix, context, false);
-    }
+    const auto & config = context->getConfigRef();
+    String config_prefix = "distributed_query.temporary_files_storage";
+    ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, false);
+
+    String object_storage_path = "distributed_query_temporary_files/" + unique_temp_file_path;
 
     return {object_storage, object_storage_path};
 }
