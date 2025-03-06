@@ -657,20 +657,17 @@ size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id
     auto code = zk_client->tryRemove(table_path);
     const size_t remaining_nodes_num = zk_client->getChildren(registry_path).size();
 
+    const auto self = Info::create(storage_id);
     if (code == Coordination::Error::ZOK)
     {
-        LOG_TRACE(
-            log,
-            "Table '{}' has been removed from the active registry (remaining nodes: {})",
-            storage_id.getFullTableName(),
-            remaining_nodes_num);
+        LOG_TRACE(log, "Table '{}' has been removed from the active registry (remaining nodes: {})", self.table_id, remaining_nodes_num);
     }
     else
     {
         LOG_DEBUG(
             log,
             "Cannot remove table '{}' from the active registry, reason: {} (remaining nodes: {})",
-            storage_id.getFullTableName(),
+            self.table_id,
             Coordination::errorMessage(code),
             remaining_nodes_num);
     }
