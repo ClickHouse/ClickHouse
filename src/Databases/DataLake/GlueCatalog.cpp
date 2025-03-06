@@ -141,7 +141,6 @@ GlueCatalog::GlueCatalog(
     DB::S3::CredentialsConfiguration creds_config;
     creds_config.use_environment_credentials = true;
 
-
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
 
     int s3_max_redirects = static_cast<int>(global_settings[DB::Setting::s3_max_redirects]);
@@ -183,7 +182,7 @@ GlueCatalog::GlueCatalog(
     }
     else
     {
-        LOG_TEST(log, "Creating AWS glue client with credentials empty {}, region '{}', endpoint '{}'", credentials.IsEmpty(), region, endpoint);
+        LOG_TRACE(log, "Creating AWS glue client with credentials empty {}, region '{}', endpoint '{}'", credentials.IsEmpty(), region, endpoint);
         std::shared_ptr<DB::S3::S3CredentialsProviderChain> chain = std::make_shared<DB::S3::S3CredentialsProviderChain>(poco_config, credentials, creds_config);
         glue_client = std::make_unique<Aws::Glue::GlueClient>(chain, endpoint_provider, client_configuration);
     }

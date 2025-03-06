@@ -51,6 +51,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_database_iceberg;
     extern const SettingsBool allow_experimental_database_unity_catalog;
+    extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool use_hive_partitioning;
 }
 
@@ -96,7 +97,14 @@ DatabaseDataLake::DatabaseDataLake(
 
 void DatabaseDataLake::validateSettings()
 {
-    if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
+    if (settings[DatabaseDataLakeSetting::catalog_type].value == DB::DatabaseDataLakeCatalogType::GLUE)
+    {
+        if (settings[DatabaseDataLakeSetting::region].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for catalog glue. "
+                "Please specify 'SETTINGS region=<region_name>' in the CREATE DATABASE query");
+    }
+    else if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
     {
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty. "
@@ -300,7 +308,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         return nullptr;
 
     /// Take database engine definition AST as base.
-    ASTStorage * storage = database_engine_definition->as<ASTStorage>();
+    ASTStorage * storage = table_engine_definition->as<ASTStorage>();
     ASTs args = storage->engine->arguments->children;
 
     if (!lightweight || table_metadata.hasLocation())
@@ -310,7 +318,10 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
         if (table_endpoint.starts_with(DataLake::FILE_PATH_PREFIX))
             table_endpoint = table_endpoint.substr(DataLake::FILE_PATH_PREFIX.length());
-        args[0] = std::make_shared<ASTLiteral>(table_endpoint);
+        if (args.empty())
+            args.emplace_back(std::make_shared<ASTLiteral>(table_endpoint));
+        else
+            args[0] = std::make_shared<ASTLiteral>(table_endpoint);
     }
 
 
@@ -505,30 +516,42 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         const auto * database_engine_define = args.create_query.storage;
         const auto & database_engine_name = args.engine_name;
 
-        const ASTFunction * function_define = database_engine_define->engine;
-        if (!function_define->arguments)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
-
-        ASTs & engine_args = function_define->arguments->children;
-        if (engine_args.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
-
-        for (auto & engine_arg : engine_args)
-            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
-
-        const auto url = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
-
         DatabaseDataLakeSettings database_settings;
         if (database_engine_define->settings)
             database_settings.loadFromQuery(*database_engine_define);
 
+        auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
+        const ASTFunction * function_define = database_engine_define->engine;
+        ASTs engine_args;
+        if (!function_define->arguments && catalog_type != DatabaseDataLakeCatalogType::GLUE)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
+        }
+
+        if (function_define->arguments)
+        {
+            engine_args = function_define->arguments->children;
+            if (engine_args.empty() && catalog_type != DatabaseDataLakeCatalogType::GLUE)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
+        }
+
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
+
+        std::string url;
+        if (!engine_args.empty())
+            url = engine_args[0]->as<ASTLiteral>()->value.safeGet<String>();
+
         auto engine_for_tables = database_engine_define->clone();
         ASTFunction * engine_func = engine_for_tables->as<ASTStorage &>().engine;
+        if (engine_func->arguments == nullptr)
+        {
+            engine_func->arguments = std::make_shared<ASTExpressionList>();
+        }
 
-        switch (database_settings[DB::DatabaseDataLakeSetting::catalog_type].value)
+        switch (catalog_type)
         {
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
-            case DatabaseDataLakeCatalogType::GLUE:
             {
                 if (!args.create_query.attach
                     && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
@@ -536,6 +559,19 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Icerberg Rest catalog is experimental. "
                                     "To allow its usage, enable setting allow_experimental_database_iceberg");
+                }
+
+                engine_func->name = "Iceberg";
+                break;
+            }
+            case DatabaseDataLakeCatalogType::GLUE:
+            {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_glue_catalog])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DatabaseDataLake with Glue catalog is experimental. "
+                                    "To allow its usage, enable setting allow_experimental_database_glue_catalog");
                 }
 
                 engine_func->name = "Iceberg";
