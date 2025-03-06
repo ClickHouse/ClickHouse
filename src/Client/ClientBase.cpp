@@ -151,6 +151,10 @@ String handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const Stri
     if (!query_with_output->is_outfile_truncate)
         return {};
 
+    // Skip atomic rename for special files
+    if (out_file == "/dev/null" || out_file == "/dev/stdout" || out_file == "/dev/stderr")
+        return {};
+
     // Create a temporary file with unique suffix
     String tmp_file = out_file + ".tmp." + DB::toString(randomSeed());
 
