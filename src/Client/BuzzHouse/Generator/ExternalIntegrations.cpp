@@ -202,16 +202,17 @@ String MySQLIntegration::truncateStatement()
 
 bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
 {
-    bool success = true;
-
     chassert(t.hasDatabasePeer());
     if (is_clickhouse && t.isMergeTreeFamily())
     {
-        success &= performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
-        success &= performQueryOnServerOrRemote(
+        /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
+        auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
+        auto v = performQueryOnServerOrRemote(
             pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
+        UNUSED(u);
+        UNUSED(v);
     }
-    return success;
+    return true;
 }
 
 bool MySQLIntegration::performQuery(const String & query)
