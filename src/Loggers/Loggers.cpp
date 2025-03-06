@@ -428,7 +428,9 @@ private:
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & /*_root*/, const std::string & /*cmd_name*/)
 {
-    quill::Backend::start();
+    if (!config.getBool("remap_executable", false))
+        quill::Backend::start();
+
     std::vector<std::shared_ptr<quill::Sink>> sinks;
 
     auto current_logger = config.getString("logger", "");

@@ -120,6 +120,7 @@
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
+#include <quill/Backend.h>
 #include <filesystem>
 #include <unordered_set>
 
@@ -1417,6 +1418,7 @@ try
         {
             LOG_DEBUG(log, "Will remap executable in memory.");
             size_t size = remapExecutable();
+            quill::Backend::start();
             LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
         }
 
