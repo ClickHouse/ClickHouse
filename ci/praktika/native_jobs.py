@@ -428,7 +428,7 @@ def _finish_workflow(workflow, job_name):
     failed_results = []
 
     if results and any(not result.is_ok() for result in results):
-        failed_results.append(["Workflow Post Hook"])
+        failed_results.append("Workflow Post Hook")
 
     for result in workflow_result.results:
         if result.name == job_name or result.status in (
@@ -451,10 +451,10 @@ def _finish_workflow(workflow, job_name):
             print(
                 f"NOTE: Result for [{result.name}] has not ok status [{result.status}]"
             )
-            ready_for_merge_status = Result.Status.FAILED
             failed_results.append(result.name)
 
     if failed_results:
+        ready_for_merge_status = Result.Status.FAILED
         failed_jobs_csv = ",".join(failed_results)
         if len(failed_jobs_csv) < 80:
             ready_for_merge_description = f"Failed: {failed_jobs_csv}"
