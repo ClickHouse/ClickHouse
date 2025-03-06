@@ -5,6 +5,10 @@ from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.should_skip_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
 
+REQUIRED_STATELESS_TESTS_JOB_NAMES = [
+    job.name for job in JobConfigs.functional_tests_jobs_required
+]
+
 workflow = Workflow.Config(
     name="PR",
     event=Workflow.Event.PULL_REQUEST,
@@ -30,16 +34,31 @@ workflow = Workflow.Config(
         *JobConfigs.compatibility_test_jobs,
         *JobConfigs.functional_tests_jobs_required,
         *JobConfigs.functional_tests_jobs_non_required,
-        *JobConfigs.functional_tests_jobs_azure_master_only,
+        *[
+            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
+            for job in JobConfigs.functional_tests_jobs_coverage
+        ],
         JobConfigs.bugfix_validation_job,
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_jobs_required,
-        *JobConfigs.integration_test_jobs_non_required,
-        *JobConfigs.integration_test_asan_flaky_pr_jobs,
-        *JobConfigs.stress_test_jobs,
-        *JobConfigs.upgrade_test_jobs,
+        *[
+            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
+            for job in JobConfigs.integration_test_jobs_non_required
+        ],
+        JobConfigs.integration_test_asan_flaky_pr_job,
+        *[
+            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
+            for job in JobConfigs.stress_test_jobs
+        ],
+        *[
+            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
+            for job in JobConfigs.upgrade_test_jobs
+        ],
         *JobConfigs.ast_fuzzer_jobs,
-        *JobConfigs.buzz_fuzzer_jobs,
+        *[
+            job.set_dependency(REQUIRED_STATELESS_TESTS_JOB_NAMES)
+            for job in JobConfigs.buzz_fuzzer_jobs
+        ],
         *JobConfigs.performance_comparison_amd_jobs,
         *JobConfigs.performance_comparison_arm_jobs,
     ],
