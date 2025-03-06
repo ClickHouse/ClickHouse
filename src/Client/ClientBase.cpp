@@ -1271,10 +1271,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
 
             // After successful query execution, perform atomic rename for TRUNCATE mode
-            if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
-            {
-                performAtomicRename(parsed_query);
-            }
+            performAtomicRename(parsed_query);
 
             break;
         }
