@@ -108,17 +108,30 @@ std::unordered_map<String, CHSetting> serverSettings = {
     /// {"describe_compact_output", CHSetting(trueOrFalse, {}, false)},
     {"describe_extend_object_types", CHSetting(trueOrFalse, {}, false)},
     {"describe_include_subcolumns", CHSetting(trueOrFalse, {}, false)},
+    {"describe_include_virtual_columns", CHSetting(trueOrFalse, {}, false)},
     {"dictionary_use_async_executor", CHSetting(trueOrFalse, {}, false)},
+    {"dictionary_validate_primary_key_type", CHSetting(trueOrFalse, {}, false)},
     {"distributed_aggregation_memory_efficient", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"distributed_background_insert_batch", CHSetting(trueOrFalse, {}, false)},
     {"distributed_background_insert_split_batch_on_failure", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_bypass_connection_pool", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_discard_connection_if_unread_data", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_fetch_metrics_only_from_current_az", CHSetting(trueOrFalse, {}, false)},
+    {"distributed_cache_min_bytes_for_seek", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"distributed_cache_throw_on_error", CHSetting(trueOrFalse, {}, false)},
     {"distributed_foreground_insert", CHSetting(trueOrFalse, {}, false)},
     {"distributed_group_by_no_merge", CHSetting(zeroOneTwo, {}, false)},
     {"distributed_insert_skip_read_only_replicas", CHSetting(trueOrFalse, {}, false)},
+    {"distributed_product_mode",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"'deny'", "'local'", "'global'", "'allow'"};
+             return rg.pickRandomlyFromVector(choices);
+         },
+         {},
+         false)},
+    {"distributed_push_down_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"do_not_merge_across_partitions_select_final", CHSetting(trueOrFalse, {}, false)},
     {"empty_result_for_aggregation_by_constant_keys_on_empty_set", CHSetting(trueOrFalse, {}, false)},
     {"enable_adaptive_memory_spill_scheduler", CHSetting(trueOrFalse, {"0", "1"}, false)},
