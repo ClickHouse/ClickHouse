@@ -349,7 +349,7 @@ void consumerGracefulStop(
     }
 
     // let's also remove disable forwarding for toppar queues, as they are not needed anymore anyway
-    for (const auto& partition : customer.get_assignment())
+    for (const auto& partition : consumer.get_assignment())
     {
         // that call disables the forwarding of the messages to the customer queue
         consumer.get_partition_queue(partition);
@@ -371,7 +371,7 @@ void consumerGracefulStop(
         });
 
     consumer.set_revocation_callback(
-        [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
+        [](const cppkafka::TopicPartitionList &)
         {
             // we don't care during the destruction
         });
