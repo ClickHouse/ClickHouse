@@ -110,9 +110,6 @@ protected:
 
     bool swap_inputs = false;
 
-    PreparedJoinStorage prepared_join_storage;
-    IQueryTreeNode::HashState hash_table_key_hash;
-
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
 

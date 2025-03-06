@@ -122,7 +122,7 @@ void calculateHashTableCacheKeys(QueryPlan::Node & root)
             // `HashTablesStatistics` is used currently only for `parallel_hash_join`, i.e. the following calculation doesn't make sense for other join algorithms.
             const bool calculate = frame.hash
                 || allowParallelHashJoin(
-                                       join_step->getJoinSettings().join_algorithm,
+                                       join_step->getJoinSettings().join_algorithms,
                                        join_step->getJoinInfo().kind,
                                        join_step->getJoinInfo().strictness,
                                        join_step->hasPreparedJoinStorage(),
