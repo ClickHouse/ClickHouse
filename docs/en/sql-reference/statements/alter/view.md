@@ -6,7 +6,7 @@ sidebar_label: VIEW
 
 # ALTER TABLE ... MODIFY QUERY Statement
 
-You can modify `SELECT` query that was specified when a [materialized view](../create/view.md#materialized) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
+You can modify `SELECT` query that was specified when a [materialized view](/sql-reference/statements/create/view#materialized-view) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
 
 This command is created to change materialized view created with `TO [db.]name` clause. It does not change the structure of the underlying storage table and it does not change the columns' definition of the materialized view, because of this the application of this command is very limited for materialized views are created without `TO [db.]name` clause.
 

@@ -5,6 +5,7 @@
 #if USE_MONGODB
 #include <Common/Base64.h>
 #include <DataTypes/FieldToDataType.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {

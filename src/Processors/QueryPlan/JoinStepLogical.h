@@ -74,6 +74,7 @@ public:
     JoinPtr convertToPhysical(
         JoinActionRef & post_filter,
         bool is_explain_logical,
+        UInt64 max_threads,
         UInt64 max_entries_for_hash_table_stats,
         String initial_query_id,
         std::chrono::milliseconds lock_acquire_timeout);
@@ -82,6 +83,7 @@ public:
 
     ContextPtr getContext() const { return query_context; }
     const JoinSettings & getSettings() const { return join_settings; }
+    bool useNulls() const { return use_nulls; }
 
 protected:
     void updateOutputHeader() override;
@@ -91,15 +93,18 @@ protected:
     JoinExpressionActions expression_actions;
     JoinInfo join_info;
 
-    bool swap_inputs = false;
     Names required_output_columns;
 
-    PreparedJoinStorage prepared_join_storage;
-    IQueryTreeNode::HashState hash_table_key_hash;
+    bool use_nulls;
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
     ExpressionActionsSettings expression_actions_settings;
+
+    bool swap_inputs = false;
+
+    PreparedJoinStorage prepared_join_storage;
+    IQueryTreeNode::HashState hash_table_key_hash;
 
     VolumePtr tmp_volume;
     TemporaryDataOnDiskScopePtr tmp_data;
