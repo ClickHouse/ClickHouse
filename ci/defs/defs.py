@@ -281,7 +281,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_RELEASE = "arm_release"
     ARM_ASAN = "arm_asan"
 
-    AMD_COVERAGE = "amd_coverage"
+    ARM_COVERAGE = "arm_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     AMD_DARWIN = "amd_darwin"
@@ -344,7 +344,7 @@ class ArtifactNames:
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
-    CH_AMD_COV_BIN = "CH_AMDCOV_BIN"
+    CH_ARM_COV_BIN = "CH_COV_BIN"
     CH_ARM_BIN = "CH_ARM_BIN"
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
@@ -367,7 +367,7 @@ class ArtifactNames:
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_AMD_COV = "DEB_AMD_COV"
+    DEB_COV = "DEB_COV"
     DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
     DEB_AMD_MSAM = "DEB_AMD_MSAM"
@@ -410,7 +410,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
-            ArtifactNames.CH_AMD_COV_BIN,
+            ArtifactNames.CH_ARM_COV_BIN,
             ArtifactNames.CH_ARM_BIN,
             ArtifactNames.CH_TIDY_BIN,
             ArtifactNames.CH_AMD_DARWIN_BIN,
@@ -437,7 +437,7 @@ class ArtifactConfigs:
             ArtifactNames.DEB_AMD_TSAN,
             ArtifactNames.DEB_AMD_MSAM,
             ArtifactNames.DEB_AMD_UBSAN,
-            ArtifactNames.DEB_AMD_COV,
+            ArtifactNames.DEB_COV,
             ArtifactNames.DEB_ARM_RELEASE,
             ArtifactNames.DEB_ARM_ASAN,
         ]
@@ -575,7 +575,7 @@ class Jobs:
             BuildTypes.ARM_RELEASE,
             BuildTypes.ARM_ASAN,
             # special builds
-            BuildTypes.AMD_COVERAGE,
+            BuildTypes.ARM_COVERAGE,
             BuildTypes.ARM_BINARY,
             BuildTypes.AMD_TIDY,
             BuildTypes.AMD_DARWIN,
@@ -636,7 +636,7 @@ class Jobs:
                 ArtifactNames.DEB_ARM_ASAN,
             ],
             # special builds
-            [ArtifactNames.CH_AMD_COV_BIN],
+            [ArtifactNames.CH_ARM_COV_BIN],
             [ArtifactNames.CH_ARM_BIN],
             [ArtifactNames.CH_TIDY_BIN],
             [ArtifactNames.CH_AMD_DARWIN_BIN],
@@ -662,7 +662,7 @@ class Jobs:
             RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
             # special builds
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COVERAGE
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_COVERAGE
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_BINARY
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_TIDY,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
