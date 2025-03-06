@@ -327,13 +327,12 @@ We also test some cases automatically with integrational tests:
 
 ## Help from the Compiler {#help-from-the-compiler}
 
-Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings.
+Main ClickHouse code (that is located in `src` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings.
 Although these options are not enabled for third-party libraries.
 
 Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
 
-For production builds, clang is used, but we also test make gcc builds.
-For development, clang is usually more convenient to use.
+We always use clang to build ClickHouse, both for development and production.
 You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis.
 When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
 

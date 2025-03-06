@@ -434,7 +434,7 @@ GRANT INSERT(x,y) ON db.table TO john
 
 ### 数据源 {#grant-sources}
 
-允许在 [table engines](../../engines/table-engines/index.md) 和 [table functions](../../sql-reference/table-functions/index.md#table-functions)中使用外部数据源。
+允许在 [table engines](../../engines/table-engines/index.md) 和 [table functions](/sql-reference/table-functions)中使用外部数据源。
 
 -   `SOURCES`. 级别: `GROUP`
     -   `AZURE`. 级别: `GLOBAL`

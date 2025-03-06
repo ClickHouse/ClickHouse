@@ -5,7 +5,7 @@ sidebar_label: DICTIONARY
 title: "CREATE DICTIONARY"
 ---
 
-Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with given [structure](../../../sql-reference/dictionaries/index.md#dictionary-key-and-fields), [source](../../../sql-reference/dictionaries/index.md#dictionary-sources), [layout](/sql-reference/dictionaries#storing-dictionaries-in-memory) and [lifetime](../../../sql-reference/dictionaries/index.md#dictionary-updates).
+Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with given [structure](../../../sql-reference/dictionaries/index.md#dictionary-key-and-fields), [source](../../../sql-reference/dictionaries/index.md#dictionary-sources), [layout](/sql-reference/dictionaries#storing-dictionaries-in-memory) and [lifetime](/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime).
 
 ## Syntax {#syntax}
 
@@ -154,7 +154,7 @@ LAYOUT(HASHED())
 
 ### Create a dictionary from another database {#create-a-dictionary-from-another-database}
 
-Please see the details in [Dictionary sources](/sql-reference/dictionaries/index.md#dictionary-sources/#dbms).
+Please see the details in [Dictionary sources](/sql-reference/dictionaries#dbms).
 
 **See Also**
 
