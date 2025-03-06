@@ -145,7 +145,8 @@ std::unique_ptr<WriteBufferFromFileBase> MetadataStorageFromPlainObjectStorageMo
 
         std::string data;
         auto read_settings = getReadSettings();
-        read_settings.remote_fs_method = RemoteFSReadMethod::read;
+        read_settings.remote_fs_method = RemoteFSReadMethod::prefetch;
+        read_settings.remote_fs_prefetch = 0;
         read_settings.remote_fs_buffer_size = 1024;
 
         auto read_buf = object_storage->readObject(metadata_object, read_settings);
