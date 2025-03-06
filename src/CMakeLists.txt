@@ -706,6 +706,7 @@ if (ENABLE_TESTS)
         clickhouse_parsers
         clickhouse_storages_system
         dbms
+        clickhouse_common_io
         clickhouse_common_zookeeper_base
         clickhouse_common_config
         clickhouse_common_zookeeper

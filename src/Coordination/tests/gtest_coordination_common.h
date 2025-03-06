@@ -13,8 +13,9 @@
 
 #include <Disks/DiskLocal.h>
 
-#include <Poco/Logger.h>
-#include <Poco/ConsoleChannel.h>
+#include <quill/Frontend.h>
+#include <quill/sinks/ConsoleSink.h>
+#include <Loggers/OwnPatternFormatter.h>
 
 #include <libnuraft/log_entry.hxx>
 #include <libnuraft/log_store.hxx>
@@ -73,9 +74,11 @@ public:
 
     void SetUp() override
     {
-        Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
-        Poco::Logger::root().setChannel(channel);
-        Poco::Logger::root().setLevel("trace");
+        Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
+        auto logger = createLogger(
+            "root",
+            {quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink", quill::ConsoleSink::ColourMode::Never, "stderr")});
+        logger->getQuillLogger()->set_log_level(quill::LogLevel::TraceL1);
 
         auto settings = std::make_shared<DB::CoordinationSettings>();
 #if USE_ROCKSDB
