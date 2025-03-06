@@ -40,7 +40,7 @@ The calculation is accurate if:
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
 :::note    
-For calculating page loading time quantiles, this function is more effective and accurate than [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile).
+For calculating page loading time quantiles, this function is more effective and accurate than [quantile](/sql-reference/aggregate-functions/reference/quantile).
 :::
 
 **Returned value**
@@ -50,7 +50,7 @@ For calculating page loading time quantiles, this function is more effective and
 Type: `Float32`.
 
 :::note    
-If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../../sql-reference/data-types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../../../sql-reference/statements/select/order-by.md#select-order-by) for notes on sorting `NaN` values.
+If no values are passed to the function (when using `quantileTimingIf`), [NaN](/sql-reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/sql-reference/statements/select/order-by) for notes on sorting `NaN` values.
 :::
 
 **Example**
@@ -87,5 +87,5 @@ Result:
 
 **See Also**
 
-- [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+- [median](/sql-reference/aggregate-functions/reference/median)
 - [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
