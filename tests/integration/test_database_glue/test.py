@@ -157,6 +157,10 @@ def print_objects():
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
+        # We must add some credentials, otherwise moto (AWS Mock)
+        # will reject boto connection
+        os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+        os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
