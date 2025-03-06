@@ -772,7 +772,7 @@ Result:
 Returns 1 if at least one key-value pair in `map` exists for which `func(key, value)` returns something other than 0. Otherwise, it returns 0.
 
 :::note
-`mapExists` is a [higher-order function](/docs/sql-reference/functions/overview#higher-order-functions).
+`mapExists` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
 You can pass a lambda function to it as the first argument.
 :::
 
@@ -797,7 +797,7 @@ Result:
 Returns 1 if `func(key, value)` returns something other than 0 for all key-value pairs in `map`. Otherwise, it returns 0.
 
 :::note
-Note that the `mapAll` is a [higher-order function](/docs/sql-reference/functions/overview#higher-order-functions).
+Note that the `mapAll` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
 You can pass a lambda function to it as the first argument.
 :::
 

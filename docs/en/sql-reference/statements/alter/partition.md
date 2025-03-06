@@ -45,7 +45,7 @@ Read about setting the partition expression in a section [How to set the partiti
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
-This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](/docs/operations/system-tables/replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
+This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](/operations/system-tables/replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
 
 ## DROP PARTITION\|PART {#drop-partitionpart}
 
