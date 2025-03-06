@@ -319,6 +319,7 @@ void SignalListener::run()
         {
             LOG_DEBUG(log, "Received signal to close logs.");
             BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
+            log->getQuillLogger()->flush_log();
             LOG_INFO(log, "Opened new log file after received signal.");
         }
         else if (sig == StdTerminate)

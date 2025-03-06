@@ -14,6 +14,7 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <base/demangle.h>
 
+#include <Common/logger_useful.h>
 namespace DB
 {
     namespace ErrorCodes

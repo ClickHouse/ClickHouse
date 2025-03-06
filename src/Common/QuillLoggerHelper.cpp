@@ -1,3 +1,4 @@
+#include <boost/algorithm/string/predicate.hpp>
 #include <Common/QuillLoggerHelper.h>
 
 #include <Common/Exception.h>
@@ -13,25 +14,25 @@ namespace ErrorCodes
 
 quill::LogLevel parseQuillLogLevel(std::string_view level)
 {
-    if (level == "none")
+    if (boost::iequals(level, "none"))
         return quill::LogLevel::None;
-    else if (level == "fatal")
+    else if (boost::iequals(level, "fatal"))
         return quill::LogLevel::Critical;
-    else if (level == "critical")
+    else if (boost::iequals(level, "critical"))
         return quill::LogLevel::Critical;
-    else if (level == "error")
+    else if (boost::iequals(level, "error"))
         return quill::LogLevel::Error;
-    else if (level == "warning")
+    else if (boost::iequals(level, "warning"))
         return quill::LogLevel::Warning;
-    else if (level == "notice")
+    else if (boost::iequals(level, "notice"))
         return quill::LogLevel::Notice;
-    else if (level == "information")
+    else if (boost::iequals(level, "information"))
         return quill::LogLevel::Info;
-    else if (level == "debug")
+    else if (boost::iequals(level, "debug"))
         return quill::LogLevel::Debug;
-    else if (level == "trace")
+    else if (boost::iequals(level, "trace"))
         return quill::LogLevel::TraceL1;
-    else if (level == "test")
+    else if (boost::iequals(level, "test"))
         return quill::LogLevel::TraceL2;
     else
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Not a valid log level {}", level);

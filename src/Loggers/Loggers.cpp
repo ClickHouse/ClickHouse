@@ -4,8 +4,10 @@
 #include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/TextLogSink.h>
 
+#include <atomic>
 #include <exception>
 #include <iostream>
+#include <memory>
 #include <sstream>
 
 #include <IO/ReadHelpers.h>
@@ -111,14 +113,54 @@ public:
     size_t max_backup_files = 0;
     bool compress = false;
     std::optional<quill::LogLevel> log_level_filter;
+    bool rotate_on_open = false;
 };
 
-template<typename TBase>
-class RotatingSink : public TBase
+
+// TODO: move to libcommon
+std::string createDirectory(const std::string & file)
 {
-    using Base = TBase;
+    auto path = fs::path(file).parent_path();
+    if (path.empty())
+        return "";
+    fs::create_directories(path);
+    return path;
+}
+
+std::string renderFileNameTemplate(time_t now, const std::string & file_path)
+{
+    fs::path path{file_path};
+    std::tm buf;
+    localtime_r(&now, &buf); /// NOLINT(cert-err33-c)
+    std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    ss << std::put_time(&buf, path.filename().c_str());
+    return path.replace_filename(ss.str());
+}
+
+size_t getLogFileMaxSize(const std::string & max_size_str)
+{
+    if (max_size_str == "never")
+        return 0;
+
+    std::string_view max_size_view{max_size_str};
+    size_t multiplier = 1;
+    if (max_size_view.ends_with('M'))
+    {
+        max_size_view.remove_suffix(1);
+        multiplier = 1_MiB;
+    }
+
+    return DB::parse<size_t>(max_size_view) * multiplier;
+}
+
+}
+
+
+class RotatingFileSink : public quill::FileSink
+{
+    using Base = quill::FileSink;
 public:
-    explicit RotatingSink(const fs::path & filename, RotatingSinkConfiguration config_)
+    explicit RotatingFileSink(const fs::path & filename, RotatingSinkConfiguration config_)
         : Base(filename, static_cast<const quill::FileSinkConfig &>(config_), quill::FileEventNotifier{}, /*do_fopen=*/false)
         , config(config_)
     {
@@ -136,6 +178,9 @@ public:
                 CurrentMetrics::LogCompressionActiveThreads,
                 CurrentMetrics::LogCompressionScheduledThreads,
                 /*max_threads_=*/1);
+
+        if (config.rotate_on_open)
+            rotateFiles();
     }
 
     QUILL_ATTRIBUTE_HOT void write_log(
@@ -192,6 +237,19 @@ public:
             log_statement);
 
         current_log_size += log_statement.size();
+    }
+
+    QUILL_ATTRIBUTE_HOT void flush_sink() override
+    {
+        if (close_current_file.exchange(false, std::memory_order_relaxed))
+            rotateFiles();
+
+        Base::flush_sink();
+    }
+
+    void closeFile()
+    {
+        close_current_file.store(true, std::memory_order_relaxed);
     }
 private:
     void recoverFiles()
@@ -357,47 +415,11 @@ private:
     size_t current_log_size{0};
     RotatingSinkConfiguration config;
 
-    std::optional<ThreadPool> pool;
+    std::optional<FreeThreadPool> pool;
     std::optional<std::future<bool>> compression_result;
+
+    std::atomic<bool> close_current_file{false};
 };
-
-// TODO: move to libcommon
-std::string createDirectory(const std::string & file)
-{
-    auto path = fs::path(file).parent_path();
-    if (path.empty())
-        return "";
-    fs::create_directories(path);
-    return path;
-}
-
-std::string renderFileNameTemplate(time_t now, const std::string & file_path)
-{
-    fs::path path{file_path};
-    std::tm buf;
-    localtime_r(&now, &buf); /// NOLINT(cert-err33-c)
-    std::ostringstream ss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    ss << std::put_time(&buf, path.filename().c_str());
-    return path.replace_filename(ss.str());
-}
-
-size_t getLogFileMaxSize(const std::string & max_size_str)
-{
-    if (max_size_str == "never")
-        return 0;
-
-    std::string_view max_size_view{max_size_str};
-    size_t multiplier = 1;
-    if (max_size_view.ends_with('M'))
-    {
-        max_size_view.remove_suffix(1);
-        multiplier = 1_MiB;
-    }
-
-    return DB::parse<size_t>(max_size_view) * multiplier;
-}
-
-}
 
 /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
@@ -437,11 +459,11 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         file_config.compress = config.getBool("logger.compress", true);
         file_config.max_backup_files = config.getUInt64("logger.count", 1);
         file_config.max_file_size = getLogFileMaxSize(config.getString("logger.size", "100M")); /// TODO: support readable size like 100M
+        file_config.rotate_on_open = config.getBool("logger.rotateOnOpen", false);
 
-        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<RotatingSink<quill::FileSink>>(fs::weakly_canonical(log_path), file_config));
-        sink->set_log_level_filter(log_level);
+        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<RotatingFileSink>(fs::weakly_canonical(log_path), file_config));
 
-        // log_file->setProperty(Poco::FileChannel::PROP_ROTATEONOPEN, config.getRawString("logger.rotateOnOpen", "false"));
+        log_file = std::static_pointer_cast<RotatingFileSink>(sink);
     }
 
     const auto errorlog_path_prop = config.getString("logger.errorlog", "");
@@ -466,8 +488,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         file_config.max_backup_files = config.getUInt64("logger.count", 1);
         file_config.max_file_size = getLogFileMaxSize(config.getString("logger.size", "100M")); /// TODO: support readable size like 100M
 
-        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<RotatingSink<quill::FileSink>>(fs::weakly_canonical(errorlog_path), file_config));
+        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<RotatingFileSink>(fs::weakly_canonical(errorlog_path), file_config));
         sink->set_log_level_filter(errorlog_level);
+        error_log_file = std::static_pointer_cast<RotatingFileSink>(sink);
     }
 
     // if (config.getBool("logger.use_syslog", false))
@@ -700,9 +723,9 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
 void Loggers::closeLogs(Poco::Logger & logger)
 {
     if (log_file)
-        log_file->close();
+        log_file->closeFile();
     if (error_log_file)
-        error_log_file->close();
+        error_log_file->closeFile();
     // Shouldn't syslog_channel be closed here too?
 
     if (!log_file)
