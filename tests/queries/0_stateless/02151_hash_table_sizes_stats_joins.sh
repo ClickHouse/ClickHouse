@@ -72,7 +72,7 @@ run_new_query "SELECT * FROM t2 AS x INNER JOIN t3 AS y ON x.a = y.a"
 
 ##################################
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 for i in "${!queries_without_preallocation[@]}"; do
   $CLICKHOUSE_CLIENT --param_query_id="${queries_without_preallocation[$i]}" -q "

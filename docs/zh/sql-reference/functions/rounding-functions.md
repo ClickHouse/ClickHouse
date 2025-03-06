@@ -64,7 +64,7 @@ SELECT trunc(123.499, 1) as res；
 
 **参数：**
 
--   `expression` — 要进行取整的数字。可以是任何返回数字[类型](../../sql-reference/functions/rounding-functions.md#data_types)的[表达式](../syntax.md#syntax-expressions)。
+-   `expression` — 要进行取整的数字。可以是任何返回数字[类型](../../sql-reference/functions/rounding-functions.md#data_types)的[表达式](/sql-reference/syntax#expressions)。
 -   `decimal-places` — 整数类型。
     -   如果`decimal-places > 0`，则该函数将值舍入小数点右侧。
     -   如果`decimal-places < 0`，则该函数将小数点左侧的值四舍五入。

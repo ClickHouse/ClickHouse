@@ -39,6 +39,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
 #include <base/chrono_io.h>
+#include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
@@ -853,15 +854,15 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
             }
             else if (local_ast_ptr != nullptr && zk_ast_ptr != nullptr && queryToString(local_ast_ptr) != queryToString(zk_ast_ptr))
             {
-                LOG_DEBUG(log, "AST differs for table {}, local {}, in zookeeper {}", table_name, queryToString(local_ast_ptr), queryToString(zk_ast_ptr));
+                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper {}", table_name, queryToString(local_ast_ptr), queryToString(zk_ast_ptr));
             }
             else if (local_ast_ptr == nullptr)
             {
-                LOG_DEBUG(log, "AST differs for table {}, local nullptr, in zookeeper {}", table_name, queryToString(zk_ast_ptr));
+                LOG_ERROR(log, "AST differs for table {}, local nullptr, in zookeeper {}", table_name, queryToString(zk_ast_ptr));
             }
             else if (zk_ast_ptr == nullptr)
             {
-                LOG_DEBUG(log, "AST differs for table {}, local {}, in zookeeper nullptr", table_name, queryToString(local_ast_ptr));
+                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper nullptr", table_name, queryToString(local_ast_ptr));
             }
             else
             {
@@ -871,9 +872,9 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
         else
         {
             if (local_ast_ptr == nullptr)
-                LOG_DEBUG(log, "Table {} exists locally, but missing in ZK", table_name);
+                LOG_ERROR(log, "Table {} exists locally, but missing in ZK", table_name);
             else
-                LOG_DEBUG(log, "Table {} exists locally with AST {}, but missing in ZK", table_name, queryToString(local_ast_ptr));
+                LOG_ERROR(log, "Table {} exists locally with AST {}, but missing in ZK", table_name, queryToString(local_ast_ptr));
         }
     }
     for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk)
@@ -882,9 +883,9 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
         {
             auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(table_name, table_metadata);
             if (zk_ast_ptr == nullptr)
-                LOG_DEBUG(log, "Table {} exists in ZK with AST {}, but missing locally", table_name, queryToString(zk_ast_ptr));
+                LOG_ERROR(log, "Table {} exists in ZK with AST {}, but missing locally", table_name, queryToString(zk_ast_ptr));
             else
-                LOG_DEBUG(log, "Table {} exists in ZK, but missing locally", table_name);
+                LOG_ERROR(log, "Table {} exists in ZK, but missing locally", table_name);
         }
     }
 }
@@ -958,15 +959,62 @@ void DatabaseReplicated::checkTableEngine(const ASTCreateQuery & query, ASTStora
                     "to distinguish different shards and replicas");
 }
 
-bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context, bool debug_check /* = true */) const
+void DatabaseReplicated::assertDigestWithProbability(const ContextPtr & local_context) const
 {
-    if (debug_check)
-    {
-        /// Reduce number of debug checks
-        if (thread_local_rng() % 16)
-            return true;
-    }
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    /// Reduce number of debug checks
+    if (thread_local_rng() % 16)
+        return;
 
+    if (!checkDigestValid(local_context))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Digest does not match");
+#else
+    UNUSED(local_context);
+#endif
+}
+
+void DatabaseReplicated::assertDigest(const ContextPtr & local_context)
+{
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    if (local_context->isInternalQuery())
+    {
+        if (auto txn = local_context->getZooKeeperMetadataTransaction())
+        {
+            txn->addFinalizer([this, local_context]()
+            {
+                std::lock_guard lock{metadata_mutex};
+                assertDigestWithProbability(local_context);
+            });
+        }
+    }
+    else
+        assertDigestWithProbability(local_context);
+#else
+    UNUSED(local_context);
+#endif
+}
+
+void DatabaseReplicated::assertDigestInTransactionOrInline(const ContextPtr & local_context, const ZooKeeperMetadataTransactionPtr & txn)
+{
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    if (txn)
+    {
+        txn->addFinalizer([this, local_context]()
+        {
+            std::lock_guard lock{metadata_mutex};
+            assertDigestWithProbability(local_context);
+        });
+    }
+    else
+        assertDigestWithProbability(local_context);
+#else
+    UNUSED(local_context);
+    UNUSED(txn);
+#endif
+}
+
+bool DatabaseReplicated::checkDigestValid(const ContextPtr & local_context) const
+{
     LOG_TEST(log, "Current in-memory metadata digest: {}", tables_metadata_digest);
 
     /// Database is probably being dropped
@@ -1077,7 +1125,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
         throw Exception(ErrorCodes::INCORRECT_QUERY, "It's not initial query. ON CLUSTER is not allowed for Replicated database.");
 
     checkQueryValid(query, query_context);
-    LOG_DEBUG(log, "Proposing query: {}", queryToString(query));
+    LOG_DEBUG(log, "Proposing query: {}", query->formatForLogging());
 
     DDLLogEntry entry;
     entry.query = queryToString(query);
@@ -1293,7 +1341,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             new_digest -= getMetadataHash(broken_table_name);
             DatabaseAtomic::renameTable(make_query_context(), broken_table_name, *to_db_ptr, to_name, /* exchange */ false, /* dictionary */ false);
             tables_metadata_digest = new_digest;
-            assert(checkDigestValid(getContext()));
+            assertDigest(getContext());
             ++moved_tables;
         };
 
@@ -1317,9 +1365,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
             std::lock_guard lock{metadata_mutex};
             UInt64 new_digest = tables_metadata_digest;
             new_digest -= getMetadataHash(table_name);
+
             DatabaseAtomic::dropTableImpl(make_query_context(), table_name, /* sync */ true);
+
             tables_metadata_digest = new_digest;
-            assert(checkDigestValid(getContext()));
+            assertDigest(getContext());
         }
         else if (!table->supportsReplication())
         {
@@ -1351,9 +1401,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
         String statement = readMetadataFile(from);
         new_digest -= DB::getMetadataHash(from, statement);
         new_digest += DB::getMetadataHash(to, statement);
+
         DatabaseAtomic::renameTable(make_query_context(), from, *this, to, false, false);
+
         tables_metadata_digest = new_digest;
-        assert(checkDigestValid(getContext()));
+        assertDigest(getContext());
     };
 
     LOG_DEBUG(log, "Starting first stage of renaming process. Will rename tables to intermediate names");
@@ -1454,7 +1506,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     }
 
     std::lock_guard lock{metadata_mutex};
-    chassert(checkDigestValid(getContext()));
+    assertDigest(getContext());
     current_zookeeper->set(replica_path + "/digest", toString(tables_metadata_digest));
 }
 
@@ -1667,9 +1719,9 @@ void DatabaseReplicated::dropTable(ContextPtr local_context, const String & tabl
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::dropTableImpl(local_context, table_name, sync);
-    tables_metadata_digest = new_digest;
 
-    assert(checkDigestValid(local_context));
+    tables_metadata_digest = new_digest;
+    assertDigest(local_context);
 }
 
 void DatabaseReplicated::renameTable(ContextPtr local_context, const String & table_name, IDatabase & to_database,
@@ -1723,8 +1775,9 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
     DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
+
     tables_metadata_digest = new_digest;
-    assert(checkDigestValid(local_context));
+    assertDigest(local_context);
 }
 
 void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
@@ -1750,7 +1803,9 @@ void DatabaseReplicated::commitCreateTable(const ASTCreateQuery & query, const S
 
     DatabaseAtomic::commitCreateTable(query, table, table_metadata_tmp_path, table_metadata_path, query_context);
     tables_metadata_digest = new_digest;
-    assert(checkDigestValid(query_context));
+
+    /// commitCreateTable() commits the txn, so no need to try to attach it to txn
+    assertDigest(query_context);
 }
 
 void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
@@ -1774,7 +1829,9 @@ void DatabaseReplicated::commitAlterTable(const StorageID & table_id,
 
     DatabaseAtomic::commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path, statement, query_context);
     tables_metadata_digest = new_digest;
-    assert(checkDigestValid(query_context));
+
+    /// commitCreateTable() commits the txn, so no need to try to attach it to txn
+    assertDigest(query_context);
 }
 
 
@@ -1813,7 +1870,7 @@ void DatabaseReplicated::detachTablePermanently(ContextPtr local_context, const 
 
     DatabaseAtomic::detachTablePermanently(local_context, table_name);
     tables_metadata_digest = new_digest;
-    assert(checkDigestValid(local_context));
+    assertDigestInTransactionOrInline(local_context, txn);
 }
 
 void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context, const String & table_name, const String & table_metadata_path, bool attach)
@@ -1840,7 +1897,12 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 
     DatabaseAtomic::removeDetachedPermanentlyFlag(local_context, table_name, table_metadata_path, attach);
     tables_metadata_digest = new_digest;
-    assert(checkDigestValid(local_context));
+
+    /// In case of create it is called from the DatabaseReplicated::commitCreateTable() when lock already held
+    if (attach)
+    {
+        assertDigestInTransactionOrInline(local_context, txn);
+    }
 }
 
 

@@ -261,6 +261,7 @@ struct JoinAlgorithmSettings
 
     JoinAlgorithmSettings(
         const JoinSettings & join_settings,
+        UInt64 max_threads_,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         std::chrono::milliseconds lock_acquire_timeout_);

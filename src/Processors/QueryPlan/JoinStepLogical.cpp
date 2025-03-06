@@ -37,6 +37,7 @@ namespace Setting
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool join_any_take_last_row;
     extern const SettingsUInt64 default_max_bytes_in_join;
+    extern const SettingsBool join_use_nulls;
 }
 
 namespace ErrorCodes
@@ -105,6 +106,7 @@ JoinStepLogical::JoinStepLogical(
     : expression_actions(std::move(join_expression_actions_))
     , join_info(std::move(join_info_))
     , required_output_columns(std::move(required_output_columns_))
+    , use_nulls(query_context_->getSettingsRef()[Setting::join_use_nulls])
     , join_settings(JoinSettings::create(query_context_->getSettingsRef()))
     , sorting_settings(*query_context_)
     , expression_actions_settings(query_context_->getSettingsRef())
@@ -514,11 +516,12 @@ static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolve
 JoinPtr JoinStepLogical::convertToPhysical(
     JoinActionRef & post_filter,
     bool is_explain_logical,
+    UInt64 max_threads,
     UInt64 max_entries_for_hash_table_stats,
     String initial_query_id,
     std::chrono::milliseconds lock_acquire_timeout)
 {
-    auto table_join = std::make_shared<TableJoin>(join_settings, tmp_volume, tmp_data, join_settings.default_max_bytes_in_join);
+    auto table_join = std::make_shared<TableJoin>(join_settings, use_nulls, tmp_volume, tmp_data);
 
     auto & join_expression = join_info.expression;
 
@@ -549,7 +552,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
 
         if (!has_keys)
         {
-            if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithm, JoinAlgorithm::HASH))
+            if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH))
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot convert JOIN ON expression to CROSS JOIN, because hash join is disabled");
 
             table_join_clauses.pop_back();
@@ -639,7 +642,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
     bool need_add_nullable = join_info.kind == JoinKind::Left
         || join_info.kind == JoinKind::Right
         || join_info.kind == JoinKind::Full;
-    if (need_add_nullable && join_settings.join_use_nulls)
+    if (need_add_nullable && use_nulls)
     {
         if (residual_filter_condition)
         {
@@ -727,6 +730,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
 
     JoinAlgorithmSettings algo_settings(
         join_settings,
+        max_threads,
         max_entries_for_hash_table_stats,
         std::move(initial_query_id),
         lock_acquire_timeout);

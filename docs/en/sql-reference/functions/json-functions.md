@@ -33,8 +33,8 @@ Alias: `visitParamHas`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name` — The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
+- `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
@@ -77,8 +77,8 @@ Alias: `visitParamExtractUInt`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name` — The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
+- `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
@@ -128,8 +128,8 @@ Alias: `visitParamExtractInt`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name` — The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
+- `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
@@ -179,12 +179,12 @@ Alias: `visitParamExtractFloat`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name` — The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
+- `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
-- Returns the number parsed from the field if the field exists and contains a number, `0` otherwise. [Float64](../data-types/float.md/#float32-float64).
+- Returns the number parsed from the field if the field exists and contains a number, `0` otherwise. [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -230,8 +230,8 @@ Alias: `visitParamExtractBool`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name` — The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
+- `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
@@ -281,12 +281,12 @@ Alias: `visitParamExtractRaw`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name` — The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
+- `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
-- Returns the value of the field as a string, including separators if the field exists, or an empty string otherwise. [`String`](../data-types/string.md#string)
+- Returns the value of the field as a string, including separators if the field exists, or an empty string otherwise. [`String`](/sql-reference/data-types/string)
 
 **Example**
 
@@ -332,8 +332,8 @@ Alias: `visitParamExtractString`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
-- `field_name` — The name of the field to search for. [String literal](../syntax#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
+- `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
@@ -1063,8 +1063,8 @@ String
 ### toJSONString {#tojsonstring}
 
 Serializes a value to its JSON representation. Various data types and nested structures are supported.
-64-bit [integers](../data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) controls this behavior.
-Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals) setting to show them.
+64-bit [integers](../data-types/int-uint.md) or bigger (like `UInt64` or `Int128`) are enclosed in quotes by default. [output_format_json_quote_64bit_integers](/operations/settings/formats#output_format_json_quote_64bit_integers) controls this behavior.
+Special values `NaN` and `inf` are replaced with `null`. Enable [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals) setting to show them.
 When serializing an [Enum](../data-types/enum.md) value, the function outputs its name.
 
 **Syntax**
@@ -1102,8 +1102,8 @@ Result:
 
 **See Also**
 
-- [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
-- [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
+- [output_format_json_quote_64bit_integers](/operations/settings/formats#output_format_json_quote_64bit_integers)
+- [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals)
 
 
 ### JSONArrayLength {#jsonarraylength}
