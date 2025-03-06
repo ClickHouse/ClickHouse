@@ -80,7 +80,7 @@
                         "min": "0",
                         "max": "999"
                     },
-                    "bloom_filter_bytes": "0"
+                    "bloom_filter_bytes": 0
                 },
                 {
                     "name": "str",
@@ -95,7 +95,7 @@
                         "min": "Hello0",
                         "max": "Hello999"
                     },
-                    "bloom_filter_bytes": "0"
+                    "bloom_filter_bytes": 0
                 },
                 {
                     "name": "mod",
@@ -110,7 +110,7 @@
                         "min": "0",
                         "max": "8"
                     },
-                    "bloom_filter_bytes": "0"
+                    "bloom_filter_bytes": 0
                 }
             ]
         },
@@ -134,7 +134,7 @@
                         "min": "0",
                         "max": "999"
                     },
-                    "bloom_filter_bytes": "0"
+                    "bloom_filter_bytes": 0
                 },
                 {
                     "name": "str",
@@ -149,7 +149,7 @@
                         "min": "Hello0",
                         "max": "Hello999"
                     },
-                    "bloom_filter_bytes": "0"
+                    "bloom_filter_bytes": 0
                 },
                 {
                     "name": "mod",
@@ -164,7 +164,7 @@
                         "min": "0",
                         "max": "8"
                     },
-                    "bloom_filter_bytes": "0"
+                    "bloom_filter_bytes": 0
                 }
             ]
         }
@@ -278,7 +278,7 @@
                         "min": "27 32 150 125 17 250 66 31 157 44 75 218 51 50 19 144 ",
                         "max": "154 31 90 141 15 7 68 47 190 29 121 145 188 162 234 154 "
                     },
-                    "bloom_filter_bytes": "1048594"
+                    "bloom_filter_bytes": 1048594
                 }
             ]
         }
