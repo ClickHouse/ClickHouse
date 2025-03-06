@@ -6,7 +6,7 @@ sidebar_label: Interval
 
 # Interval {#data-type-interval}
 
-Семейство типов данных, представляющих интервалы дат и времени. Оператор [INTERVAL](../../../sql-reference/data-types/special-data-types/interval.md#operator-interval) возвращает значения этих типов.
+Семейство типов данных, представляющих интервалы дат и времени. Оператор [INTERVAL](/sql-reference/operators#interval) возвращает значения этих типов.
 
 :::danger Внимание
 Нельзя использовать типы данных `Interval` для хранения данных в таблице.
@@ -80,5 +80,5 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 
 ## Смотрите также {#smotrite-takzhe}
 
--   Оператор [INTERVAL](../../../sql-reference/data-types/special-data-types/interval.md#operator-interval)
--   Функция приведения типа [toInterval](../../../sql-reference/data-types/special-data-types/interval.md#function-tointerval)
+-   Оператор [INTERVAL](/sql-reference/operators#interval)
+-   Функция приведения типа [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear)

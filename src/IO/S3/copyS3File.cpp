@@ -14,6 +14,8 @@
 
 #include <IO/S3/Requests.h>
 
+#include <fmt/ranges.h>
+
 namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;

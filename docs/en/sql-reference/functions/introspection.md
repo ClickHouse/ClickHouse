@@ -164,7 +164,7 @@ WHERE
     query_id = '5e173544-2020-45de-b645-5deebe2aae54';
 ```
 
-The [arrayJoin](../../sql-reference/functions/array-functions.md#array-functions-join) functions will split array to rows.
+The [arrayJoin](/sql-reference/functions/array-join) functions will split array to rows.
 
 ``` text
 ┌────────ta─┬─addressToLineWithInlines(arrayJoin(trace))───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐

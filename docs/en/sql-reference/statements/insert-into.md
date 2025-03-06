@@ -14,7 +14,7 @@ Inserts data into a table.
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-You can specify a list of columns to insert using  the `(c1, c2, c3)`. You can also use an expression with column [matcher](../../sql-reference/statements/select/index.md#asterisk) such as `*` and/or [modifiers](../../sql-reference/statements/select/index.md#select-modifiers) such as [APPLY](../../sql-reference/statements/select/index.md#apply-modifier), [EXCEPT](../../sql-reference/statements/select/index.md#except-modifier), [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier).
+You can specify a list of columns to insert using  the `(c1, c2, c3)`. You can also use an expression with column [matcher](../../sql-reference/statements/select/index.md#asterisk) such as `*` and/or [modifiers](../../sql-reference/statements/select/index.md#select-modifiers) such as [APPLY](/sql-reference/statements/select#apply), [EXCEPT](/sql-reference/statements/select#except), [REPLACE](/sql-reference/statements/select#replace).
 
 For example, consider the table:
 
@@ -67,7 +67,7 @@ If a list of columns does not include all existing columns, the rest of the colu
 - The values calculated from the `DEFAULT` expressions specified in the table definition.
 - Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
-Data can be passed to the INSERT in any [format](/interfaces/formats.md#formats) supported by ClickHouse. The format must be specified explicitly in the query:
+Data can be passed to the INSERT in any [format](/sql-reference/formats) supported by ClickHouse. The format must be specified explicitly in the query:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
@@ -199,7 +199,7 @@ INSERT INTO [TABLE] FUNCTION table_func ...
 
 **Example**
 
-The [remote](../../sql-reference/table-functions/index.md#remote) table function is used in the following queries:
+The [remote](/sql-reference/table-functions/remote) table function is used in the following queries:
 
 ``` sql
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
@@ -262,7 +262,7 @@ When you are inserting large amounts of data, ClickHouse will optimize write per
 
 - [async_insert](/operations/settings/settings#async_insert)
 - [wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
-- [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
-- [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
-- [async_insert_busy_timeout_ms](../../operations/settings/settings.md#async-insert-busy-timeout-ms)
-- [async_insert_stale_timeout_ms](../../operations/settings/settings.md#async-insert-stale-timeout-ms)
+- [wait_for_async_insert_timeout](/operations/settings/settings#wait_for_async_insert_timeout)
+- [async_insert_max_data_size](/operations/settings/settings#async_insert_max_data_size)
+- [async_insert_busy_timeout_ms](/operations/settings/settings#async_insert_busy_timeout_max_ms)
+- [async_insert_stale_timeout_ms](/operations/settings/settings#async_insert_max_data_size)

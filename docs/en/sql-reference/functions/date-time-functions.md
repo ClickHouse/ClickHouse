@@ -857,7 +857,7 @@ from_date32:     1509840000
 ```
 
 :::note
-The return type of `toStartOf*`, `toLastDayOf*`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](../../operations/settings/settings.md#enable-extended-results-for-datetime-functions) which is `0` by default.
+The return type of `toStartOf*`, `toLastDayOf*`, `toMonday`, `timeSlot` functions described below is determined by the configuration parameter [enable_extended_results_for_datetime_functions](/operations/settings/settings#enable_extended_results_for_datetime_functions) which is `0` by default.
 
 Behavior for
 * `enable_extended_results_for_datetime_functions = 0`:
@@ -2379,7 +2379,7 @@ Alias: `dateTrunc`.
 
 **Arguments**
 
-- `unit` — The type of interval to truncate the result. [String Literal](../syntax.md#syntax-string-literal).
+- `unit` — The type of interval to truncate the result. [String Literal](/sql-reference/syntax#string).
     Possible values:
 
     - `nanosecond` - Compatible only with DateTime64
@@ -4337,7 +4337,7 @@ Formats a Time according to the given Format string. Format is a constant expres
 
 formatDateTime uses MySQL datetime format style, refer to https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format.
 
-The opposite operation of this function is [parseDateTime](../functions/type-conversion-functions.md#type_conversion_functions-parseDateTime).
+The opposite operation of this function is [parseDateTime](/sql-reference/functions/type-conversion-functions#parsedatetime).
 
 Alias: `DATE_FORMAT`.
 
@@ -4464,7 +4464,7 @@ LIMIT 10
 
 Similar to formatDateTime, except that it formats datetime in Joda style instead of MySQL style. Refer to https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html.
 
-The opposite operation of this function is [parseDateTimeInJodaSyntax](../functions/type-conversion-functions.md#type_conversion_functions-parseDateTimeInJodaSyntax).
+The opposite operation of this function is [parseDateTimeInJodaSyntax](/sql-reference/functions/type-conversion-functions#parsedatetimeinjodasyntax).
 
 **Replacement fields**
 
