@@ -205,9 +205,10 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
         return;
     }
 
+    auto cloned_filter_actions_dag = cloneActionsDAGWithRecalculatedConstantsNames(*filter_actions_dag);
     rpn = std::move(
             RPNBuilder<RPNElement>(
-                    filter_actions_dag->getOutputs().at(0), context_,
+                    cloned_filter_actions_dag.getOutputs().at(0), context_,
                     [&](const RPNBuilderTreeNode & node, RPNElement & out)
                     {
                         return this->traverseAtomAST(node, out);

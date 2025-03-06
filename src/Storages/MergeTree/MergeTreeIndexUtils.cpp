@@ -3,6 +3,9 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTLiteral.h>
+#include <Columns/ColumnConst.h>
+#include <iostream>
 
 namespace DB
 {
@@ -42,6 +45,81 @@ ASTPtr buildFilterNode(const ASTPtr & select_query, ASTs additional_filters)
     }
 
     return filter_node;
+}
+
+namespace
+{
+
+const ActionsDAG::Node & cloneActionsDAGNodeWithRecalculatedConstantsNames(
+    const ActionsDAG::Node & node,
+    ActionsDAG & new_dag,
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> cloned_nodes)
+{
+    auto it = cloned_nodes.find(&node);
+    if (it != cloned_nodes.end())
+        return *it->second;
+
+    const ActionsDAG::Node * res;
+    switch (node.type)
+    {
+        case (ActionsDAG::ActionType::INPUT):
+        {
+            res = &new_dag.addInput({node.column, node.result_type, node.result_name});
+            break;
+        }
+        case (ActionsDAG::ActionType::COLUMN):
+        {
+            String name;
+            if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
+                column_const && column_const->getDataType() != TypeIndex::Function)
+            {
+                /// Re-generate column name for constant.
+                name = ASTLiteral(column_const->getField()).getColumnName();
+            }
+            else
+                name = node.result_name;
+
+            res = &new_dag.addColumn({node.column, node.result_type, name});
+            break;
+        }
+        case (ActionsDAG::ActionType::ALIAS):
+        {
+            auto arg = cloneActionsDAGNodeWithRecalculatedConstantsNames(*node.children.front(), new_dag, cloned_nodes);
+            res = &new_dag.addAlias(arg, node.result_name);
+            break;
+        }
+        case (ActionsDAG::ActionType::ARRAY_JOIN):
+        {
+            auto arg = cloneActionsDAGNodeWithRecalculatedConstantsNames(*node.children.front(), new_dag, cloned_nodes);
+            res = &new_dag.addArrayJoin(arg, {});
+            break;
+        }
+        case (ActionsDAG::ActionType::FUNCTION):
+        {
+            ActionsDAG::NodeRawConstPtrs children(node.children);
+            for (auto & arg : children)
+                arg = &cloneActionsDAGNodeWithRecalculatedConstantsNames(*arg, new_dag, cloned_nodes);
+            res = &new_dag.addFunction(node.function_base, children, "");
+            break;
+        }
+    }
+
+    cloned_nodes[&node] = res;
+    return *res;
+}
+
+}
+
+ActionsDAG cloneActionsDAGWithRecalculatedConstantsNames(const ActionsDAG & dag)
+{
+    ActionsDAG new_dag;
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> cloned_nodes;
+    ActionsDAG::NodeRawConstPtrs outputs = dag.getOutputs();
+    for (auto & node : outputs)
+        node = &cloneActionsDAGNodeWithRecalculatedConstantsNames(*node, new_dag, cloned_nodes);
+
+    new_dag.getOutputs().swap(outputs);
+    return new_dag;
 }
 
 }

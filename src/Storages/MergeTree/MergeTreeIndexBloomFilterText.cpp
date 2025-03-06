@@ -162,8 +162,9 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
         return;
     }
 
+    auto cloned_filter_actions_dag = cloneActionsDAGWithRecalculatedConstantsNames(*filter_actions_dag);
     RPNBuilder<RPNElement> builder(
-        filter_actions_dag->getOutputs().at(0),
+        cloned_filter_actions_dag.getOutputs().at(0),
         context,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
     rpn = std::move(builder).extractRPN();

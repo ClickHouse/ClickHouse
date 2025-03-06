@@ -301,15 +301,15 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     if (!filter_dag)
         return;
 
+    auto filter_actions_dag = cloneActionsDAGWithRecalculatedConstantsNames(*filter_dag);
     std::vector<FutureSetPtr> sets_to_prepare;
-    if (checkDAGUseless(*filter_dag->getOutputs().at(0), context, sets_to_prepare))
+    if (checkDAGUseless(*filter_actions_dag.getOutputs().at(0), context, sets_to_prepare))
         return;
     /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
     for (auto & set : sets_to_prepare)
         if (!set->buildOrderedSetInplace(context))
             return;
 
-    auto filter_actions_dag = filter_dag->clone();
     const auto * filter_actions_dag_node = filter_actions_dag.getOutputs().at(0);
 
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> node_to_result_node;
