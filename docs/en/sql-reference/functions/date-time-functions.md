@@ -4530,7 +4530,7 @@ dateName(date_part, date)
 
 **Returned value**
 
-- The specified part of date. [String](../data-types/string.md#string)
+- The specified part of date. [String](/sql-reference/data-types/string)
 
 **Example**
 
@@ -4566,7 +4566,7 @@ monthName(date)
 
 **Returned value**
 
-- The name of the month. [String](../data-types/string.md#string)
+- The name of the month. [String](/sql-reference/data-types/string)
 
 **Example**
 
@@ -4607,7 +4607,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-When given two or three arguments where the first argument is a value of type [Integer](../data-types/int-uint.md), [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [String](../data-types/string.md#string), i.e. it behaves like [formatDateTime](#formatdatetime). In this case, [MySQL's datetime format style](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format) is used.
+When given two or three arguments where the first argument is a value of type [Integer](../data-types/int-uint.md), [Date](../data-types/date.md), [Date32](../data-types/date32.md), [DateTime](../data-types/datetime.md) or [DateTime64](../data-types/datetime64.md), the second argument is a constant format string and the third argument is an optional constant time zone string, the function returns a value of type [String](/sql-reference/data-types/string), i.e. it behaves like [formatDateTime](#formatdatetime). In this case, [MySQL's datetime format style](https://dev.mysql.com/doc/refman/8.0/en/date-and-time-functions.html#function_date-format) is used.
 
 **Example:**
 

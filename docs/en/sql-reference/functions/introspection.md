@@ -443,7 +443,7 @@ logTrace('message')
 
 **Arguments**
 
-- `message` — Message that is emitted to server log. [String](../data-types/string.md#string).
+- `message` — Message that is emitted to server log. [String](/sql-reference/data-types/string).
 
 **Returned value**
 

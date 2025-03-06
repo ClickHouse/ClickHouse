@@ -33,7 +33,7 @@ Alias: `visitParamHas`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
@@ -77,7 +77,7 @@ Alias: `visitParamExtractUInt`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
@@ -128,7 +128,7 @@ Alias: `visitParamExtractInt`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
@@ -179,7 +179,7 @@ Alias: `visitParamExtractFloat`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
@@ -230,7 +230,7 @@ Alias: `visitParamExtractBool`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
@@ -281,12 +281,12 @@ Alias: `visitParamExtractRaw`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**
 
-- Returns the value of the field as a string, including separators if the field exists, or an empty string otherwise. [`String`](../data-types/string.md#string)
+- Returns the value of the field as a string, including separators if the field exists, or an empty string otherwise. [`String`](/sql-reference/data-types/string)
 
 **Example**
 
@@ -332,7 +332,7 @@ Alias: `visitParamExtractString`.
 
 **Parameters**
 
-- `json` — The JSON in which the field is searched for. [String](../data-types/string.md#string)
+- `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](../syntax#string)
 
 **Returned value**

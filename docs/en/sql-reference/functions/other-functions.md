@@ -37,7 +37,7 @@ getMacro(name);
 
 **Arguments**
 
-- `name` — Macro name to retrieve from the `<macros>` section. [String](../data-types/string.md#string).
+- `name` — Macro name to retrieve from the `<macros>` section. [String](/sql-reference/data-types/string).
 
 **Returned value**
 
@@ -3329,7 +3329,7 @@ getServerPort(port_name)
 
 **Arguments**
 
-- `port_name` — The name of the server port. [String](../data-types/string.md#string). Possible values:
+- `port_name` — The name of the server port. [String](/sql-reference/data-types/string). Possible values:
 
   - 'tcp_port'
   - 'tcp_port_secure'
