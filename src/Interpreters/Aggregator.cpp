@@ -1604,7 +1604,6 @@ bool Aggregator::executeOnBlock(Columns columns,
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes, params.use_sharding_by_keys);
-    LOG_DEBUG(getLogger(__func__), "Use sharding: {}", params.use_sharding_by_keys);
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
