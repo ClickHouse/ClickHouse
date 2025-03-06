@@ -11,6 +11,7 @@
 #include <IO/Operators.h>
 #include <Core/NamesAndTypes.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
+#include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
 {
