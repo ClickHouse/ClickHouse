@@ -2,6 +2,7 @@
 #include <memory>
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/printPipeline.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -18,6 +19,7 @@
 #include <Poco/URI.h>
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
 #include <Interpreters/Context.h>
+#include <Common/Logger.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
@@ -92,6 +94,56 @@ private:
     std::vector<std::unique_ptr<WriteBuffer>> write_buffers;
     LoggerPtr logger = getLogger("TemporaryFilesInObjectStorage");
 };
+
+/// Cleans up temporary files produced by distributed query execution.
+class TemporaryFilesInObjectStorageCleaner : public ICustomResourceHolder
+{
+public:
+    TemporaryFilesInObjectStorageCleaner(ObjectStoragePtr object_storage_, const String & object_storage_path_,
+        const Strings & temporary_files_)
+        : object_storage(std::move(object_storage_))
+        , object_storage_path(object_storage_path_)
+        , temporary_files(temporary_files_.begin(), temporary_files_.end())
+    {
+    }
+
+    ~TemporaryFilesInObjectStorageCleaner() override
+    {
+        /// TODO: add them to some backgroud cleanup queue to avoid garbage in case of exceptions?
+        try
+        {
+            cleanup();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    void cleanup()
+    {
+        StoredObjects all_objects;
+        for (const auto & file_name : temporary_files)
+        {
+            StoredObject object(object_storage_path + "/" + file_name, file_name);
+            all_objects.emplace_back(std::move(object));
+        }
+        LOG_TRACE(getLogger("TemporaryFilesInObjectStorageCleaner"), "Removing temporary files at path {} : [{}]",
+            object_storage_path, fmt::join(temporary_files, ", "));
+        object_storage->removeObjectsIfExist(all_objects);
+    }
+
+private:
+    ObjectStoragePtr object_storage;
+    const String object_storage_path;
+    const std::unordered_set<String> temporary_files;
+};
+
+std::shared_ptr<ICustomResourceHolder> makeTemporaryFilesCleaner(ObjectStoragePtr object_storage_, const String & object_storage_path_, const Strings & temporary_files_)
+{
+    return std::make_shared<TemporaryFilesInObjectStorageCleaner>(object_storage_, object_storage_path_, temporary_files_);
+}
+
 
 /// Implements distributed query plan execution logic by executing stages according to dependencies between them.
 class DistributedQueryPlanExecutor
