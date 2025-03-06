@@ -12,8 +12,7 @@
 	url = https://github.com/lz4/lz4
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
-	# TODO: Use ClickHouse fork of librdkafka (need to move patches to the new branch in ClickHouse/librdkafka)
-	url = https://github.com/filimonov/librdkafka
+	url = https://github.com/ClickHouse/librdkafka
 [submodule "contrib/cctz"]
 	path = contrib/cctz
 	url = https://github.com/ClickHouse/cctz
