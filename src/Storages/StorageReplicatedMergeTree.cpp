@@ -4114,11 +4114,11 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     return AttemptStatus::NeedRetry;
                 }
 
-                bool cleanup = select_merge_result.value().final
-                    && (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
-                    && (*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
-                    && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
-                    && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
+                bool cleanup = future_merged_part->final
+                    && (*storage_settings_ptr)[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
+                    && (*storage_settings_ptr)[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
+                    && (*storage_settings_ptr)[MergeTreeSetting::min_age_to_force_merge_seconds]
+                    && (*storage_settings_ptr)[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
 
                 create_result = createLogEntryToMergeParts(
                     zookeeper,
