@@ -191,8 +191,8 @@ StorageRabbitMQ::StorageRabbitMQ(
 
     if (!columns_.getMaterialized().empty() || !columns_.getAliases().empty() || !columns_.getDefaults().empty() || !columns_.getEphemeral().empty())
     {
-        String message_format_string = "RabbitMQ table engine doesn't support ALIAS, DEFAULT or MATERIALIZED columns. They will be ignored and filled with default values";
-        context_->addOrUpdateWarningMessage(Context::WarningType::RABBITMQ_UNSUPPORTED_COLUMNS, Context::Warning{.message = message_format_string, .message_format_string = message_format_string});
+        String message = "RabbitMQ table engine doesn't support ALIAS, DEFAULT or MATERIALIZED columns. They will be ignored and filled with default values";
+        context_->addOrUpdateWarningMessage(Context::WarningType::RABBITMQ_UNSUPPORTED_COLUMNS, PreformattedMessage::create(message));
     }
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
