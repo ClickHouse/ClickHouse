@@ -236,7 +236,7 @@ std::string debugExplainStep(IQueryPlanStep & step);
 std::string debugExplainPlan(const QueryPlan & plan);
 
 
-/// Stores named paramaters for query plan.
+/// Stores named parameters for query plan.
 /// This is aimed to share the same plan with different values of parameters like bucket id for shuffle.
 struct QueryPlanParamaters
 {

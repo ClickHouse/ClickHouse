@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
 {
     /// Add calculation of hash of key columns and bucket id based on the hash
@@ -38,7 +43,7 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
     pipeline.setSinks([&](const Block & header, Pipe::StreamType stream_type)
     {
         chassert(stream_type == Pipe::StreamType::Main);
-        String file_name = fileNameForExchange(exchange_id,  shard_id, bucket);
+        String file_name = fileNameForExchange(exchange_id, shard_id, bucket);
         ++bucket;   /// TODO: this is a hack. Find a better way to assigning bucket id to each sink.
         return std::make_shared<NativeCompressedSink>(header, settings.temporary_file_lookup->getTemporaryFileForWriting(file_name));
     });

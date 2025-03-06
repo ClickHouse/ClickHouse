@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Base class for logical exchange steps.
-/// Derived classes impement createSinkAndSourcePair method that is used to create a pair of send-recieve steps when converting
+/// Derived classes implement createSinkAndSourcePair method that is used to create a pair of send-recieve steps when converting
 /// logical plan to a distributed plan.
 class LogicalExchangeStep : public ITransformingStep
 {
@@ -30,7 +30,7 @@ public:
 
 /// TODO: move to proper place
 template <typename SourceBucketId, typename DestinationBucketId>
-String fileNameForExchange(const String & exchange_id, const SourceBucketId & source_bucket , const DestinationBucketId & destination_bucket)
+String fileNameForExchange(const String & exchange_id, const SourceBucketId & source_bucket, const DestinationBucketId & destination_bucket)
 {
     return exchange_id + "__" + toString(source_bucket) + "_" + toString(destination_bucket);
 }

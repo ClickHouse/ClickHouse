@@ -32,6 +32,12 @@ namespace Setting
     extern const SettingsBool execute_distributed_plan_locally;
 }
 
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+    extern const int LOGICAL_ERROR;
+}
+
 class TaskParameters : public IParameterLookup
 {
 public:
@@ -109,7 +115,7 @@ public:
 
     ~TemporaryFilesInObjectStorageCleaner() override
     {
-        /// TODO: add them to some backgroud cleanup queue to avoid garbage in case of exceptions?
+        /// TODO: add them to some background cleanup queue to avoid garbage in case of exceptions?
         try
         {
             cleanup();

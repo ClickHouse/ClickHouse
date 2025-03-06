@@ -11,11 +11,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 StatelessWorkerEndpoint::StatelessWorkerEndpoint()
     : endpoint_name("stateless_worker/")
     , log(Poco::Logger::getShared("StatelessWorkerEndpoint"))
