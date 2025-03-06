@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
@@ -261,11 +262,10 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     const auto hash_size = hash_data.size();
     result.resize(hash_size * 2);
     for (size_t i = 0; i < hash_size; ++i)
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        writeHexByteLowercase(hash_data[hash_size - 1 - i], &result[2 * i]);
-#else
-        writeHexByteLowercase(hash_data[i], &result[2 * i]);
-#endif
+        if constexpr (std::endian::native == std::endian::big)
+            writeHexByteLowercase(hash_data[hash_size - 1 - i], &result[2 * i]);
+        else
+            writeHexByteLowercase(hash_data[i], &result[2 * i]);
     return result;
 }
 

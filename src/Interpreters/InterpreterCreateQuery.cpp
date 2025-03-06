@@ -20,6 +20,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -133,6 +134,7 @@ namespace Setting
     extern const SettingsDefaultTableEngine default_temporary_table_engine;
     extern const SettingsString default_view_definer;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
+    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsBool flatten_nested;
     extern const SettingsBool fsync_metadata;
@@ -204,7 +206,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception(ErrorCodes::DATABASE_ALREADY_EXISTS, "Database {} already exists.", database_name);
     }
 
-    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw];
+    auto db_num_limit = getContext()->getGlobalContext()->getServerSettings()[ServerSetting::max_database_num_to_throw].value;
     if (db_num_limit > 0 && !internal)
     {
         size_t db_count = DatabaseCatalog::instance().getDatabases().size();
@@ -641,6 +643,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
     bool sanity_check_compression_codecs = !skip_checks && !context_->getSettingsRef()[Setting::allow_suspicious_codecs];
     bool allow_experimental_codecs = skip_checks || context_->getSettingsRef()[Setting::allow_experimental_codecs];
+    bool enable_deflate_qpl_codec = skip_checks || context_->getSettingsRef()[Setting::enable_deflate_qpl_codec];
     bool enable_zstd_qat_codec = skip_checks || context_->getSettingsRef()[Setting::enable_zstd_qat_codec];
 
     ColumnsDescription res;
@@ -702,7 +705,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             if (col_decl.default_specifier == "ALIAS")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot specify codec for column type ALIAS");
             column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_zstd_qat_codec);
+                col_decl.codec, column.type, sanity_check_compression_codecs, allow_experimental_codecs, enable_deflate_qpl_codec, enable_zstd_qat_codec);
         }
 
         if (col_decl.statistics_desc)
@@ -829,7 +832,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// We should not copy them for other storages.
         if (create.storage && endsWith(create.storage->engine->name, "MergeTree"))
         {
-            properties.indices = as_storage_metadata->getSecondaryIndices();
+            /// Copy secondary indexes but only the ones which were not implicitly created. These will be re-generated later again and need
+            /// not be copied.
+            const auto & indices = as_storage_metadata->getSecondaryIndices();
+            for (const auto & index : indices)
+                if (!index.isImplicitlyCreated())
+                    properties.indices.push_back(index);
+
+            /// Copy projections.
             properties.projections = as_storage_metadata->getProjections().clone();
 
             /// CREATE TABLE AS should copy PRIMARY KEY, ORDER BY, and similar clauses.
@@ -1211,6 +1221,16 @@ namespace
 
         return &engine_def.arguments->children;
     }
+
+    bool hasDynamicSubcolumns(const ColumnsDescription & columns)
+    {
+        return std::any_of(columns.begin(), columns.end(),
+            [](const auto & column)
+            {
+               return column.type->hasDynamicSubcolumns();
+            });
+    }
+
 }
 
 void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
@@ -1312,6 +1332,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_table_name = create.as_table;
 
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
+
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
@@ -1644,7 +1665,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Check type compatible for materialized dest table and select columns
     if (create.select && create.is_materialized_view && mode <= LoadingStrictnessLevel::CREATE)
+    {
+        // An MV with a flattened nested column in an inner table can never be filled
+        if (create.is_materialized_view_with_inner_table())
+            getContext()->setSetting("flatten_nested", false);
         validateMaterializedViewColumnsAndEngine(create, properties, database);
+    }
 
     bool is_storage_replicated = false;
     if (create.storage && isReplicated(*create.storage))
@@ -1929,6 +1955,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             res->getName());
     }
 
+    if (!res->supportsDynamicSubcolumns() && hasDynamicSubcolumns(res->getInMemoryMetadataPtr()->getColumns()) && mode <= LoadingStrictnessLevel::CREATE)
+    {
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+            "Cannot create table with column of type Dynamic or JSON, "
+            "because storage {} doesn't support dynamic subcolumns",
+            res->getName());
+    }
+
     if (!create.attach && getContext()->getSettingsRef()[Setting::database_replicated_allow_only_replicated_engine])
     {
         bool is_replicated_storage = typeid_cast<const StorageReplicatedMergeTree *>(res.get()) != nullptr;
@@ -2138,7 +2172,14 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         if (created && !renamed)
         {
             auto drop_context = make_drop_context();
-            InterpreterDropQuery(ast_drop, drop_context).execute();
+            try
+            {
+                InterpreterDropQuery(ast_drop, drop_context).execute();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("InterpreterCreateQuery", "Cannot DROP temporary table");
+            }
         }
         throw;
     }
@@ -2221,7 +2262,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     if (cluster->maybeCrossReplication())
     {
-        auto on_cluster_version = local_context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
+        auto on_cluster_version = local_context->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
         if (DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION <= on_cluster_version)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Value {} of setting distributed_ddl_entry_format_version "
                                                          "is incompatible with cross-replication", on_cluster_version);

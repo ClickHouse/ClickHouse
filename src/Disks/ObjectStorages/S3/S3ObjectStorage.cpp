@@ -349,6 +349,7 @@ std::optional<ObjectMetadata> S3ObjectStorage::tryGetObjectMetadata(const std::s
     ObjectMetadata result;
     result.size_bytes = object_info.size;
     result.last_modified = Poco::Timestamp::fromEpochTime(object_info.last_modification_time);
+    result.etag = object_info.etag;
     result.attributes = object_info.metadata;
 
     return result;

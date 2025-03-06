@@ -14,11 +14,13 @@
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
+#include <IO/Operators.h>
 #include <IO/ReadHelpers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -562,11 +564,26 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
 
         DataTypes nested_types;
         if (type_info.is_array)
-            nested_types = { assert_cast<const DataTypeArray &>(*collection_type).getNestedType() };
+        {
+            const auto * array_type = typeid_cast<const DataTypeArray *>(collection_type.get());
+            if (!array_type)
+                return false;
+            nested_types = {array_type->getNestedType()};
+        }
         else if (type_info.is_tuple)
-            nested_types = assert_cast<const DataTypeTuple &>(*collection_type).getElements();
+        {
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(collection_type.get());
+            if (!tuple_type)
+                return false;
+            nested_types = tuple_type->getElements();
+        }
         else
-            nested_types = assert_cast<const DataTypeMap &>(*collection_type).getKeyValueTypes();
+        {
+            const auto * map_type = typeid_cast<const DataTypeMap *>(collection_type.get());
+            if (!map_type)
+                return false;
+            nested_types = map_type->getKeyValueTypes();
+        }
 
         for (size_t i = 0; i < nested_types.size(); ++i)
         {

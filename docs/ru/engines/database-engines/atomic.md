@@ -48,7 +48,7 @@ EXCHANGE TABLES new_table AND old_table;
 
 ### ReplicatedMergeTree in Atomic Database {#replicatedmergetree-in-atomic-database}
 
-Для таблиц [ReplicatedMergeTree](../table-engines/mergetree-family/replication.md#table_engines-replication) рекомендуется не указывать параметры движка - путь в ZooKeeper и имя реплики. В этом случае будут использоваться параметры конфигурации: [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) и [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Если вы хотите определить параметры движка явно, рекомендуется использовать макрос `{uuid}`. Это удобно, так как автоматически генерируются уникальные пути для каждой таблицы в ZooKeeper.
+Для таблиц [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) рекомендуется не указывать параметры движка - путь в ZooKeeper и имя реплики. В этом случае будут использоваться параметры конфигурации: [default_replica_path](../../operations/server-configuration-parameters/settings.md#default_replica_path) и [default_replica_name](../../operations/server-configuration-parameters/settings.md#default_replica_name). Если вы хотите определить параметры движка явно, рекомендуется использовать макрос `{uuid}`. Это удобно, так как автоматически генерируются уникальные пути для каждой таблицы в ZooKeeper.
 
 ## Смотрите также
 

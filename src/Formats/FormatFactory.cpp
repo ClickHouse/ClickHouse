@@ -1,6 +1,5 @@
 #include <Formats/FormatFactory.h>
 
-#include <algorithm>
 #include <unistd.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
@@ -509,7 +508,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             getLogger("FormatFactory"),
             "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
             max_download_threads,
-            settings[Setting::max_download_buffer_size]);
+            settings[Setting::max_download_buffer_size].value);
 
         res = wrapInParallelReadBufferIfSupported(
             buf,

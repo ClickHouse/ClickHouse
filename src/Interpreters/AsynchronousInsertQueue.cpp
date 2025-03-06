@@ -2,6 +2,8 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
+#include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -9,6 +11,7 @@
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/copyData.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/AsynchronousInsertLog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>

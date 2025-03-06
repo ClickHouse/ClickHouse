@@ -4,9 +4,11 @@
 
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
+#include <Common/SettingsChanges.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
+#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>

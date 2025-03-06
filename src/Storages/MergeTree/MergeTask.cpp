@@ -43,6 +43,7 @@
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -1271,7 +1272,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         double elapsed_seconds = global_ctx->merge_list_element_ptr->watch.elapsedSeconds();
         LOG_DEBUG(ctx->log,
             "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
-            global_ctx->merge_list_element_ptr->rows_read,
+            global_ctx->merge_list_element_ptr->rows_read.load(),
             global_ctx->storage_columns.size(),
             global_ctx->merging_columns.size(),
             global_ctx->gathering_columns.size(),

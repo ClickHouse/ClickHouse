@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 
 project(ClickHouse LANGUAGES C CXX ASM)
 
@@ -47,7 +47,7 @@ if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/sysroot/README.md")
 endif ()
 
 # Take care to add prlimit in command line before ccache, or else ccache thinks that
-# prlimit is compiler, and clang++ is its input file, and refuses to work  with
+# prlimit is compiler, and clang++ is its input file, and refuses to work with
 # multiple inputs, e.g in ccache log:
 # [2021-03-31T18:06:32.655327 36900] Command line: /usr/bin/ccache prlimit --as=10000000000 --data=5000000000 --cpu=600 /usr/bin/clang++-11 - ...... std=gnu++2a -MD -MT src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -MF src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o.d -o src/CMakeFiles/dbms.dir/Storages/MergeTree/IMergeTreeDataPart.cpp.o -c ../src/Storages/MergeTree/IMergeTreeDataPart.cpp
 #
@@ -102,7 +102,6 @@ if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
-    set (ENABLE_CLICKHOUSE_ODBC_BRIDGE OFF)
     set (ENABLE_LIBRARIES 0)
     set (ENABLE_SSL 1)
     set (ENABLE_EXAMPLES 0)
@@ -177,8 +176,6 @@ if (OS_LINUX)
     # We should not export dynamic symbols, because:
     # - The main clickhouse binary does not use dlopen,
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
-    # - The clickhouse-odbc-bridge and clickhouse-library-bridge binaries
-    #   should not expose their symbols to ODBC drivers and libraries.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
 endif ()
 
@@ -431,11 +428,31 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-if (NOT SANITIZE)
-    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+# We enable position independent encoding for all build types except build with -flto=thin:
+# 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
+# multiple sophisticated problems like linking with sanitizers or linking of rust.
+# 2. Position independent binaries and libraries are a little bit slower, than position dependent. We consider
+# build with -flto=thin as trully "production" build where each % of performance is important.
+# 3. For some unknow reason -flto=thin lead to some other way of linkage. For example for rust libraries build
+# we don't see any relocation-related errors without -fPIC, but with enabled -flto=thin. While without
+# -flto=thin we have relocation errors like:
+# rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
+#
+# NOTE: -fno-pie disables -fPIC, so that is why we check ENABLE_THINLTO in the branch bellow
+#
+# For some sophisticated platforms we have different issues with fPIC:
+# For example riscv toolchain itself compiled without fPIC
+if (NOT ENABLE_THINLTO AND (ARCH_AMD64 OR ARCH_AARCH64))
+    set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 endif()
 
-if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE)
+if (ENABLE_POSITION_INDEPENDENT_BINARY)
+    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+endif()
+
+if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENABLE_POSITION_INDEPENDENT_BINARY)
     # Using '-no-pie' builds executables with fixed addresses, resulting in slightly more efficient code
     # and keeping binary addresses constant even with ASLR enabled.
     # Disabled on Android as it requires PIE: https://source.android.com/docs/security/enhancements#android-5
@@ -493,7 +510,7 @@ macro (clickhouse_add_executable target)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # disabled for TSAN and gcc since libtsan.a provides overrides too
+        # Disabled if memory tracking is disabled
         if (TARGET clickhouse_new_delete)
             # operator::new/delete for executables (MemoryTracker stuff)
             target_link_libraries (${target} PRIVATE clickhouse_new_delete)
@@ -537,7 +554,7 @@ include (cmake/print_flags.cmake)
 if (ENABLE_RUST)
     add_subdirectory (rust)
 
-    # With LTO Rust adds few symbols with global visiblity, the most common is
+    # With LTO Rust adds few symbols with global visibility, the most common is
     # rust_eh_personality. And this leads to linking errors because multiple
     # Rust libraries contains the same symbol.
     #

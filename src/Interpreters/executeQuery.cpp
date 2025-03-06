@@ -4,8 +4,8 @@
 #include <Common/formatReadable.h>
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
+#include <Common/thread_local_rng.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
@@ -75,9 +75,12 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
 
+#include <Poco/Net/SocketAddress.h>
+
 #include <memory>
 #include <random>
 
+#include <boost/algorithm/string/predicate.hpp>
 
 namespace ProfileEvents
 {
@@ -224,7 +227,7 @@ static void logQuery(const String & query, ContextPtr context, bool internal, Qu
             transaction_info = fmt::format(" (TID: {}, TIDH: {})", txn->tid, txn->tid.getHash());
 
         LOG_DEBUG(getLogger("executeQuery"), "(from {}{}{}){}{}{} {} (stage: {})",
-            client_info.current_address.toString(),
+            client_info.current_address->toString(),
             (current_user != "default" ? ", user: " + current_user : ""),
             (!initial_query_id.empty() && current_query_id != initial_query_id ? ", initial_query_id: " + initial_query_id : std::string()),
             transaction_info,
@@ -282,7 +285,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
 
     if (elem.stack_trace.empty() || !log_error)
         message.text = fmt::format("{} (from {}){}{} (in query: {})", elem.exception,
-                        context->getClientInfo().current_address.toString(),
+                        context->getClientInfo().current_address->toString(),
                         comment,
                         line_info,
                         toOneLineQuery(elem.query));
@@ -290,7 +293,7 @@ static void logException(ContextPtr context, QueryLogElement & elem, bool log_er
         message.text = fmt::format(
             "{} (from {}){}{} (in query: {}), Stack trace (when copying this message, always include the lines below):\n\n{}",
             elem.exception,
-            context->getClientInfo().current_address.toString(),
+            context->getClientInfo().current_address->toString(),
             comment,
             line_info,
             toOneLineQuery(elem.query),
@@ -1493,7 +1496,7 @@ static BlockIO executeQueryImpl(
                             {
                                 LOG_TRACE(getLogger("QueryCache"),
                                         "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                                        num_query_runs, settings[Setting::query_cache_min_query_runs]);
+                                        num_query_runs, settings[Setting::query_cache_min_query_runs].value);
                             }
                             else
                             {

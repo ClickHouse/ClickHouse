@@ -1,5 +1,6 @@
 import dataclasses
 import json
+import os
 from pathlib import Path
 from typing import List
 
@@ -18,9 +19,9 @@ from .utils import Utils
 
 @dataclasses.dataclass
 class GitCommit:
-    # date: str
-    # message: str
     sha: str
+    message: str = ""
+    # date: str
 
     @staticmethod
     def from_json(file) -> List["GitCommit"]:
@@ -31,7 +32,7 @@ class GitCommit:
                 json_data = json.load(f)
             commits = [
                 GitCommit(
-                    # message=commit["messageHeadline"],
+                    message=commit["message"],
                     sha=commit["sha"],
                     # date=commit["committedDate"],
                 )
@@ -58,7 +59,17 @@ class GitCommit:
                     f"INFO: Sha already present in commits data [{sha}] - skip data update"
                 )
                 return
-        commits.append(GitCommit(sha=sha))
+        # TODO: fetch and store commit message in RunConfig (to be available from every job) and use it here
+        if os.environ.get("DISABLE_CI_MERGE_COMMIT", "0") == "1":
+            commit_message = Shell.get_output(
+                f"git log -1 --pretty=%s {sha}", verbose=True
+            )
+        else:
+            commit_message = Shell.get_output(
+                f"gh api repos/{env.REPOSITORY}/commits/{sha} --jq '.commit.message'",
+                verbose=True,
+            )
+        commits.append(GitCommit(sha=sha, message=commit_message))
         commits = commits[
             -20:
         ]  # limit maximum number of commits from the past to show in the report
@@ -136,14 +147,13 @@ class HtmlRunnerHooks:
         summary_result.links.append(env.RUN_URL)
         summary_result.start_time = Utils.timestamp()
         info = Info()
-        summary_result.set_info(
-            f"{info.pr_title}  |  {info.git_branch}  |  {info.git_sha}"
-            if info.pr_number
-            else f"{info.git_branch}  |  {Shell.get_output('git log -1 --pretty=%s | head -n1')}  |  {info.git_sha}"
-        )
+        summary_result.add_ext_key_value("pr_title", info.pr_title).add_ext_key_value(
+            "git_branch", info.git_branch
+        ).dump()
         assert _ResultS3.copy_result_to_s3_with_version(summary_result, version=0)
-        page_url = Info().get_report_url(latest=bool(info.pr_number))
-        print(f"CI Status page url [{page_url}]")
+        report_url_latest_sha = Info().get_report_url(latest=True)
+        report_url_current_sha = Info().get_report_url(latest=False)
+        print(f"CI Status page url [{report_url_current_sha}]")
 
         if Settings.USE_CUSTOM_GH_AUTH:
             from praktika.gh_auth_deprecated import GHAuth
@@ -153,14 +163,14 @@ class HtmlRunnerHooks:
             GHAuth.auth(app_key=pem, app_id=app_id)
 
         res2 = not bool(env.PR_NUMBER) or GH.post_pr_comment(
-            comment_body=f"Workflow [[{_workflow.name}]({page_url})], commit [{_Environment.get().SHA[:8]}]",
+            comment_body=f"Workflow [[{_workflow.name}]({report_url_latest_sha})], commit [{_Environment.get().SHA[:8]}]",
             or_update_comment_with_substring=f"Workflow [[{_workflow.name}]",
         )
         res1 = GH.post_commit_status(
             name=_workflow.name,
             status=Result.Status.PENDING,
             description="",
-            url=page_url,
+            url=report_url_current_sha,
         )
         if not (res1 or res2):
             Utils.raise_with_error(
@@ -172,15 +182,29 @@ class HtmlRunnerHooks:
     def configure(cls, _workflow):
         # generate pending Results for all jobs in the workflow
         if _workflow.enable_cache:
-            skip_jobs = RunConfig.from_fs(_workflow.name).cache_success
+            workflow_config = RunConfig.from_fs(_workflow.name)
+            skipped_jobs = workflow_config.cache_success
+            filtered_job_and_reason = workflow_config.filtered_jobs
             job_cache_records = RunConfig.from_fs(_workflow.name).cache_jobs
             results = []
-            for job in _workflow.jobs:
-                if job.name in skip_jobs:
-                    result = Result.generate_skipped(
-                        job.name, job_cache_records[job.name]
+            info = Info()
+            for skipped_job in skipped_jobs:
+                if skipped_job not in filtered_job_and_reason:
+                    cache_record = job_cache_records[skipped_job]
+                    report_link = info.get_specific_report_url(
+                        pr_number=cache_record.pr_number,
+                        branch=cache_record.branch,
+                        sha=cache_record.sha,
+                        job_name=skipped_job,
                     )
-                    results.append(result)
+                    result = Result.generate_skipped(
+                        skipped_job, [report_link], "reused from cache"
+                    )
+                else:
+                    result = Result.generate_skipped(
+                        skipped_job, info=filtered_job_and_reason[skipped_job]
+                    )
+                results.append(result)
             if results:
                 assert _ResultS3.update_workflow_results(
                     _workflow.name, new_sub_results=results
@@ -273,5 +297,5 @@ class HtmlRunnerHooks:
                 name=_workflow.name,
                 status=GH.convert_to_gh_status(updated_status),
                 description="",
-                url=Info().get_report_url(latest=True),
+                url=Info().get_report_url(latest=False),
             )

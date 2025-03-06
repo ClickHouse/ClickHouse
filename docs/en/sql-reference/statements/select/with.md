@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/with
+slug: /sql-reference/statements/select/with
 sidebar_label: WITH
 ---
 
@@ -27,7 +27,7 @@ If CTEs were to pass exactly the results and not just a piece of code, you would
 
 However, due to the fact that we are referring `cte_numbers` twice, random numbers are generated each time and, accordingly, we see different random results, `280501, 392454, 261636, 196227` and so on...
 
-## Syntax
+## Syntax {#syntax}
 
 ``` sql
 WITH <expression> AS <identifier>
@@ -37,7 +37,7 @@ or
 WITH <identifier> AS <subquery expression>
 ```
 
-## Examples
+## Examples {#examples}
 
 **Example 1:** Using constant expression as "variable"
 
@@ -88,7 +88,7 @@ WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
 SELECT * FROM test1;
 ```
 
-## Recursive Queries
+## Recursive Queries {#recursive-queries}
 
 The optional RECURSIVE modifier allows for a WITH query to refer to its own output. Example:
 
@@ -110,7 +110,7 @@ SELECT sum(number) FROM test_table;
 ```
 
 :::note
-Recursive CTEs rely on the [new query analyzer](https://clickhouse.com/docs/en/operations/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception, it suggests that the new analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the setting **`allow_experimental_analyzer`** or update the **`compatibility`** setting to a more recent version.
+Recursive CTEs rely on the [new query analyzer](/operations/analyzer) introduced in version **`24.3`**. If you're using version **`24.3+`** and encounter a **`(UNKNOWN_TABLE)`** or **`(UNSUPPORTED_METHOD)`** exception, it suggests that the new analyzer is disabled on your instance, role, or profile. To activate the analyzer, enable the setting **`allow_experimental_analyzer`** or update the **`compatibility`** setting to a more recent version.
 Starting from version `24.8` the new analyzer has been fully promoted to production, and the setting `allow_experimental_analyzer` has been renamed to `enable_analyzer`.
 :::
 
@@ -164,7 +164,7 @@ SELECT * FROM search_tree;
 └────┴───────────┴───────────┘
 ```
 
-### Search order
+### Search order {#search-order}
 
 To create a depth-first order, we compute for each result row an array of rows that we have already visited:
 
@@ -216,7 +216,7 @@ SELECT * FROM search_tree ORDER BY depth;
 └────┴──────┴───────────┴─────────┴───────┘
 ```
 
-### Cycle detection
+### Cycle detection {#cycle-detection}
 
 First let's create graph table:
 
@@ -296,7 +296,7 @@ SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
 └──────┴────┴────────┴──────────┴───────────────────────────┘
 ```
 
-### Infinite queries
+### Infinite queries {#infinite-queries}
 
 It is also possible to use infinite recursive CTE queries if `LIMIT` is used in outer query:
 
