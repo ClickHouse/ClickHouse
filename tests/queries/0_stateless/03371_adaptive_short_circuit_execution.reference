@@ -1,0 +1,70 @@
+-- { echoOn }
+SET short_circuit_function_evaluation= 'force_enable';
+select sum(flag) from (select and(a % 2 = 1, b % 3 = 1) as flag from (select number as a, number + 1 as b from numbers(30000)));
+5000
+select sum(flag) from (select and(a % 2 = 1, b % 3 = 1, c % 5 = 1) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+1000
+select sum(flag) from (select or(a % 2 = 1, b % 3 = 1) as flag from (select number as a, number + 1 as b from numbers(30000)));
+20000
+select sum(flag) from (select or(a % 2 = 1, b % 3 = 1, c % 5 = 1) as flag from (select number as a, number + 1 as b, number + 2 as c  from numbers(30000)));
+22000
+-- nested short-circuit functions
+select sum(flag) from (select and(a % 2 = 1, or(b % 3 = 1, c % 5 = 1)) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+7000
+select sum(flag) from (select and(or(a % 2 = 1, b % 3 = 2), or(b % 3 = 1, c % 5 = 1)) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+8000
+select sum(flag) from (select and(or(a % 2 = 1, b % 3 = 2), or(b % 3 = 1, and(c % 5 = 1, a % 3 = 1))) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+7000
+-- common subexpression
+select sum(flag) from (select and(a % 2 = 2, or(b % 3 = 1, or(a % 2 = 1, c % 5 = 1))) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+0
+select sum(val) from (select multiIf(a%7=1, 1, b % 5 = 1 , 2, c % 3 = 1, 3, 4) as val from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+89999
+SET short_circuit_function_evaluation= 'enable';
+select sum(flag) from (select and(a % 2 = 1, b % 3 = 1) as flag from (select number as a, number + 1 as b from numbers(30000)));
+5000
+select sum(flag) from (select and(a % 2 = 1, b % 3 = 1, c % 5 = 1) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+1000
+select sum(flag) from (select or(a % 2 = 1, b % 3 = 1) as flag from (select number as a, number + 1 as b from numbers(30000)));
+20000
+select sum(flag) from (select or(a % 2 = 1, b % 3 = 1, c % 5 = 1) as flag from (select number as a, number + 1 as b, number + 2 as c  from numbers(30000)));
+22000
+-- nested short-circuit functions
+select sum(flag) from (select and(a % 2 = 1, or(b % 3 = 1, c % 5 = 1)) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+7000
+select sum(flag) from (select and(or(a % 2 = 1, b % 3 = 2), or(b % 3 = 1, c % 5 = 1)) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+8000
+select sum(flag) from (select and(or(a % 2 = 1, b % 3 = 2), or(b % 3 = 1, and(c % 5 = 1, a % 3 = 1))) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+7000
+-- common subexpression
+select sum(flag) from (select and(a % 2 = 2, or(b % 3 = 1, or(a % 2 = 1, c % 5 = 1))) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+0
+select sum(val) from (select multiIf(a%7=1, 1, b % 5 = 1 , 2, c % 3 = 1, 3, 4) as val from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+89999
+SET short_circuit_function_evaluation= 'disable';
+select sum(flag) from (select and(a % 2 = 1, b % 3 = 1) as flag from (select number as a, number + 1 as b from numbers(30000)));
+5000
+select sum(flag) from (select and(a % 2 = 1, b % 3 = 1, c % 5 = 1) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+1000
+select sum(flag) from (select or(a % 2 = 1, b % 3 = 1) as flag from (select number as a, number + 1 as b from numbers(30000)));
+20000
+select sum(flag) from (select or(a % 2 = 1, b % 3 = 1, c % 5 = 1) as flag from (select number as a, number + 1 as b, number + 2 as c  from numbers(30000)));
+22000
+-- nested short-circuit functions
+select sum(flag) from (select and(a % 2 = 1, or(b % 3 = 1, c % 5 = 1)) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+7000
+select sum(flag) from (select and(or(a % 2 = 1, b % 3 = 2), or(b % 3 = 1, c % 5 = 1)) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+8000
+select sum(flag) from (select and(or(a % 2 = 1, b % 3 = 2), or(b % 3 = 1, and(c % 5 = 1, a % 3 = 1))) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+7000
+-- common subexpression
+select sum(flag) from (select and(a % 2 = 2, or(b % 3 = 1, or(a % 2 = 1, c % 5 = 1))) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+0
+select sum(val) from (select multiIf(a%7=1, 1, b % 5 = 1 , 2, c % 3 = 1, 3, 4) as val from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+89999
+SET short_circuit_function_evaluation= 'force_enable';
+select sum(flag) from (select and(a != 1, intDiv(4, b) > 0) as flag from (select (number + 1) % 2 as a, number % 2 as b from numbers(30000)));
+15000
+SET short_circuit_function_evaluation= 'enable';
+select sum(flag) from (select and(a != 1, intDiv(4, b) > 0) as flag from (select (number + 1) % 2 as a, number % 2 as b from numbers(30000)));
+15000

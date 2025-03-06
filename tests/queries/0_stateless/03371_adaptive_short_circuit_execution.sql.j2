@@ -1,0 +1,35 @@
+SET enable_adaptive_short_circuit_lazy_execution = true;
+SET max_threads=1;
+
+-- { echoOn }
+{% for short_circuit_mode in ['force_enable', 'enable', 'disable']-%}
+SET short_circuit_function_evaluation= '{{ short_circuit_mode }}';
+
+
+select sum(flag) from (select and(a % 2 = 1, b % 3 = 1) as flag from (select number as a, number + 1 as b from numbers(30000)));
+select sum(flag) from (select and(a % 2 = 1, b % 3 = 1, c % 5 = 1) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+select sum(flag) from (select or(a % 2 = 1, b % 3 = 1) as flag from (select number as a, number + 1 as b from numbers(30000)));
+select sum(flag) from (select or(a % 2 = 1, b % 3 = 1, c % 5 = 1) as flag from (select number as a, number + 1 as b, number + 2 as c  from numbers(30000)));
+
+
+-- nested short-circuit functions
+select sum(flag) from (select and(a % 2 = 1, or(b % 3 = 1, c % 5 = 1)) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+select sum(flag) from (select and(or(a % 2 = 1, b % 3 = 2), or(b % 3 = 1, c % 5 = 1)) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+select sum(flag) from (select and(or(a % 2 = 1, b % 3 = 2), or(b % 3 = 1, and(c % 5 = 1, a % 3 = 1))) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+
+-- common subexpression
+select sum(flag) from (select and(a % 2 = 2, or(b % 3 = 1, or(a % 2 = 1, c % 5 = 1))) as flag from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+
+
+select sum(val) from (select multiIf(a%7=1, 1, b % 5 = 1 , 2, c % 3 = 1, 3, 4) as val from (select number as a, number + 1 as b, number + 2 as c from numbers(30000)));
+
+
+
+{% endfor -%}
+
+{% for short_circuit_mode in ['force_enable', 'enable']-%}
+SET short_circuit_function_evaluation= '{{ short_circuit_mode }}';
+select sum(flag) from (select and(a != 1, intDiv(4, b) > 0) as flag from (select (number + 1) % 2 as a, number % 2 as b from numbers(30000)));
+{% endfor -%}
+
+-- { echoOff }
