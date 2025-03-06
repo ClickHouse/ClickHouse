@@ -332,6 +332,13 @@ String getDefaultClientId(const StorageID & table_id)
 void consumerGracefulStop(
     cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
 {
+    // poll after unsubscribe do destruction of the internal toppar queues (since they are not needed anymore)
+    // and if the queues are connected (default forwarding) it may lead to lock inversion and consumer hanging on destruction
+    // when cascading locks of the queues are acquired.
+
+    // but we still may need to drain the queue, as it can have some unprocessed callbacks, which again may cause issues with
+    // destruction
+
     try
     {
         consumer.pause();
@@ -341,23 +348,33 @@ void consumerGracefulStop(
         LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
     }
 
-    try
+    // let's also remove disable forwarding for toppar queues, as they are not needed anymore anyway
+    for (const auto& partition : customer.get_assignment())
     {
-        consumer.unsubscribe();
-    }
-    catch (const cppkafka::HandleException & e)
-    {
-        LOG_ERROR(log, "Error during unsubscribe (consumerGracefulStop): {}", e.what());
+        // that call disables the forwarding of the messages to the customer queue
+        consumer.get_partition_queue(partition);
     }
 
-    try
-    {
-        consumer.unassign();
-    }
-    catch (const cppkafka::HandleException & e)
-    {
-        LOG_ERROR(log, "Error during unassign (consumerGracefulStop): {}", e.what());
-    }
+
+    // the pause works only on the list of partitions, and during the drain we may have a rebalance which will change the list
+
+    consumer.set_assignment_callback(
+        [this](const cppkafka::TopicPartitionList & topic_partitions)
+        {
+            consumer.pause_partitions(topic_partitions);
+            consumer.assign(topic_partitions); // cppkafka does it anyway
+            for (const auto& partition : topic_partitions)
+            {
+                consumer.get_partition_queue(partition);
+            }
+
+        });
+
+    consumer->set_revocation_callback(
+        [this](const cppkafka::TopicPartitionList & topic_partitions)
+        {
+            // we don't care during the destruction
+        });
 
     drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
 }

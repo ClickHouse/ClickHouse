@@ -1,4 +1,5 @@
 <clickhouse>
+    <background_message_broker_schedule_pool_size>128</background_message_broker_schedule_pool_size>
     <kafka>
         <!-- Debugging of possible issues, like:
              - https://github.com/edenhill/librdkafka/issues/2077

@@ -151,9 +151,11 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
 
 ConsumerPtr && KafkaConsumer::moveConsumer()
 {
-    cleanUnprocessed();
-
     StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
+
+    // messages & assignment should be destroyed before consumer
+    cleanUnprocessed();
+    assignment.reset();
 
     return std::move(consumer);
 }
@@ -162,8 +164,6 @@ KafkaConsumer::~KafkaConsumer()
 {
     if (!consumer)
         return;
-
-    cleanUnprocessed();
 
     StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
 }
