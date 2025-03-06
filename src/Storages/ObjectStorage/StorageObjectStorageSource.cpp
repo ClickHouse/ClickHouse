@@ -28,6 +28,8 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 
+#include <fmt/ranges.h>
+
 
 namespace fs = std::filesystem;
 namespace ProfileEvents

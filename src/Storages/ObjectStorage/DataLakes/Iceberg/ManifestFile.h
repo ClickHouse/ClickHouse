@@ -2,11 +2,13 @@
 
 #include "config.h"
 
-#include <cstdint>
 #if USE_AVRO
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IteratorWrapper.h>
+
+#include <cstdint>
+#include <variant>
 
 namespace Iceberg
 {

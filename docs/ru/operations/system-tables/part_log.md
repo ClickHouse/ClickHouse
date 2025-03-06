@@ -14,7 +14,7 @@ slug: /ru/operations/system-tables/part_log
     -   `NEW_PART` — вставка нового куска.
     -   `MERGE_PARTS` — слияние кусков.
     -   `DOWNLOAD_PART` — загрузка с реплики.
-    -   `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../../sql-reference/statements/alter/partition.md#alter_detach-partition).
+    -   `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](/sql-reference/statements/alter/partition#detach-partitionpart).
     -   `MUTATE_PART` — изменение куска.
     -   `MOVE_PART` — перемещение куска между дисками.
 -   `merge_reason` ([Enum8](../../sql-reference/data-types/enum.md)) — Причина события с типом `MERGE_PARTS`. Может принимать одно из следующих значений:
