@@ -2,6 +2,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -565,6 +566,9 @@ void StorageKafka::threadFunc(size_t idx)
                 }
             }
         }
+        else
+            LOG_DEBUG(log, "No attached views");
+
     }
     catch (...)
     {
