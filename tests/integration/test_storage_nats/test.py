@@ -707,6 +707,70 @@ def test_nats_insert(nats_cluster):
     nats_check_result(result, True)
 
 
+def test_fetching_messages_without_mv(nats_cluster):
+    instance.query(
+        """
+        CREATE TABLE test.nats (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_subjects = 'insert',
+                     nats_queue_group = 'consumers_group',
+                     nats_format = 'TSV',
+                     nats_row_delimiter = '\\n';
+    """
+    )
+    while not check_table_is_ready(instance, "test.nats"):
+        logging.debug("Table test.nats is not yet ready")
+        time.sleep(0.5)
+
+    values = []
+    for i in range(50):
+        values.append("({i}, {i})".format(i=i))
+    values = ",".join(values)
+
+    insert_messages = []
+
+    async def sub_to_nats():
+        nc = await nats_connect_ssl(
+            nats_cluster.nats_port,
+            user="click",
+            password="house",
+            ssl_ctx=nats_cluster.nats_ssl_context,
+        )
+        sub = await nc.subscribe("insert", "consumers_group")
+        
+        try:
+            for i in range(50):
+                msg = await sub.next_msg(120)
+                insert_messages.append(msg.data.decode())
+        except asyncio.exceptions.TimeoutError as ex:
+            logging.debug("recieve message timeout: " + str(ex))
+
+        await sub.drain()
+        await nc.drain()
+
+    def run_sub():
+        asyncio.run(sub_to_nats())
+
+    thread = threading.Thread(target=run_sub)
+    thread.start()
+    time.sleep(1)
+
+    while True:
+        try:
+            instance.query("INSERT INTO test.nats VALUES {}".format(values))
+            break
+        except QueryRuntimeException as e:
+            if "Local: Timed out." in str(e):
+                continue
+            else:
+                raise
+    thread.join()
+
+    result = "\n".join(insert_messages)
+    nats_check_result(result, True)
+
+
 def test_nats_many_subjects_insert_wrong(nats_cluster):
     instance.query(
         """
