@@ -20,7 +20,7 @@ urlCluster(cluster_name, URL, format, structure)
 
 -   `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
 - `URL` — HTTP or HTTPS server address, which can accept `GET` requests. Type: [String](../../sql-reference/data-types/string.md).
-- `format` — [Format](../../interfaces/formats.md#formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
+- `format` — [Format](/sql-reference/formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
 - `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
 
 **Returned value**

@@ -25,7 +25,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Interpreters/convertFieldToType.h>
@@ -480,9 +480,9 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
             if (null_as_default)
             {
                 /// Make sure the range contains the default value.
-                if (!min.isNull() && applyVisitor(FieldVisitorAccurateLess(), default_value, min))
+                if (!min.isNull() && accurateLess(default_value, min))
                     min = default_value;
-                if (!max.isNull() && applyVisitor(FieldVisitorAccurateLess(), max, default_value))
+                if (!max.isNull() && accurateLess(max, default_value))
                     max = default_value;
             }
             else
@@ -1178,7 +1178,8 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
         *schema,
         "Parquet",
         format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference,
-        format_settings.schema_inference_make_columns_nullable != 0);
+        format_settings.schema_inference_make_columns_nullable != 0,
+        format_settings.parquet.case_insensitive_column_matching);
     if (format_settings.schema_inference_make_columns_nullable == 1)
         return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();

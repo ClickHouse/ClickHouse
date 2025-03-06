@@ -68,7 +68,7 @@ SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
 
 ## RELOAD FUNCTIONS {#reload-functions}
 
-Reloads all registered [executable user defined functions](../functions/overview#executable-user-defined-functions) or one of them from a configuration file.
+Reloads all registered [executable user defined functions](/sql-reference/functions/udf#executable-user-defined-functions) or one of them from a configuration file.
 
 **Syntax**
 
@@ -329,7 +329,7 @@ SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
 
 ### SYSTEM UNFREEZE {#query_language-system-unfreeze}
 
-Clears freezed backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](alter/partition.md#alter_unfreeze-partition)
+Clears freezed backup with the specified name from all the disks. See more about unfreezing separate parts in [ALTER TABLE table_name UNFREEZE WITH NAME ](/sql-reference/statements/alter/partition#unfreeze-partition)
 
 ``` sql
 SYSTEM UNFREEZE WITH NAME <backup_name>
@@ -345,7 +345,7 @@ SYSTEM WAIT LOADING PARTS [ON CLUSTER cluster_name] [db.]merge_tree_family_table
 
 ## Managing ReplicatedMergeTree Tables {#managing-replicatedmergetree-tables}
 
-ClickHouse can manage background replication related processes in [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md#table_engines-replication) tables.
+ClickHouse can manage background replication related processes in [ReplicatedMergeTree](/engines/table-engines/mergetree-family/replication) tables.
 
 ### STOP FETCHES {#stop-fetches}
 
@@ -434,7 +434,7 @@ After running this statement the `[db.]replicated_merge_tree_family_table_name` 
 
 ### SYNC DATABASE REPLICA {#sync-database-replica}
 
-Waits until the specified [replicated database](/docs/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
+Waits until the specified [replicated database](/engines/database-engines/replicated) applies all schema changes from the DDL queue of that database.
 
 **Syntax**
 ```sql

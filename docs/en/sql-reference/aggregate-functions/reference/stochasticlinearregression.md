@@ -25,7 +25,7 @@ stochasticLinearRegression(0.00001, 0.1, 15, 'Adam')
 ### Usage {#usage}
 
 `stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage, we use the `-State` combinator, which saves the state (e.g. model weights).
-To predict, we use the function [evalMLMethod](../../../sql-reference/functions/machine-learning-functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
+To predict, we use the function [evalMLMethod](/sql-reference/functions/machine-learning-functions#evalmlmethod), which takes a state as an argument as well as features to predict on.
 
 <a name="stochasticlinearregression-usage-fitting"></a>
 
@@ -74,5 +74,5 @@ The query will return a column of predicted values. Note that first argument of 
 
 **See Also**
 
-- [stochasticLogisticRegression](../../../sql-reference/aggregate-functions/reference/stochasticlogisticregression.md#stochasticlogisticregression)
+- [stochasticLogisticRegression](/sql-reference/aggregate-functions/reference/stochasticlogisticregression)
 - [Difference between linear and logistic regressions](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)

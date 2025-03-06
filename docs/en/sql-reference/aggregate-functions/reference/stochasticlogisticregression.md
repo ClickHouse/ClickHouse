@@ -23,7 +23,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 <!-- -->
 
-    See the `Fitting` section in the [stochasticLinearRegression](/docs/sql-reference/aggregate-functions/reference/stochasticlinearregression) description.
+    See the `Fitting` section in the [stochasticLinearRegression](/sql-reference/aggregate-functions/reference/stochasticlinearregression) description.
 
     Predicted labels have to be in \[-1, 1\].
 
@@ -54,5 +54,5 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 **See Also**
 
-- [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlinearregression)
+- [stochasticLinearRegression](/sql-reference/aggregate-functions/reference/stochasticlogisticregression)
 - [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)

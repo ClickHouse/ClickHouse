@@ -126,7 +126,7 @@ SELECT 'some-file-name' AS a, basename(a)
 如果表不存在，该函数将引发异常。
 对于嵌套数据结构中的元素，该函数检查是否存在列。 对于嵌套数据结构本身，函数返回0。
 
-## 酒吧 {#function-bar}
+## 酒吧 {#bar}
 
 使用unicode构建图表。
 
@@ -345,7 +345,7 @@ FROM
 
 ## 运行差异启动与第一值 {#runningdifferencestartingwithfirstvalue}
 
-与[运行差异](./other-functions.md#other_functions-runningdifference)相同，区别在于第一行返回第一行的值，后续每个后续行返回与上一行的差值。
+与[运行差异](/sql-reference/functions/other-functions#runningDifference)相同，区别在于第一行返回第一行的值，后续每个后续行返回与上一行的差值。
 
 ## MACNumToString(num) {#macnumtostringnum}
 

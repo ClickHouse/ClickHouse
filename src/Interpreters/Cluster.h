@@ -220,7 +220,7 @@ public:
         ShardInfoInsertPathForInternalReplication insert_path_for_internal_replication;
         /// Number of the shard, the indexation begins with 1
         UInt32 shard_num = 0;
-        String shard_name;
+        String name;
         UInt32 weight = 1;
         Addresses local_addresses;
         /// nullptr if there are no remote addresses

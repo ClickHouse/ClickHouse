@@ -13,6 +13,8 @@
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <boost/algorithm/string/join.hpp>
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 
