@@ -332,7 +332,7 @@ String getDefaultClientId(const StorageID & table_id)
 void consumerGracefulStop(
     cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
 {
-    // Note: librdkafka is very sensetive to the proper temination sequence and have some race conditions there.
+    // Note: librdkafka is very sensitive to the proper termination sequence and have some race conditions there.
     // Before destruction, our objectives are:
     //   (1) Process all outstanding callbacks by polling the event queue.
     //   (2) Ensure that only special events (e.g. callbacks, rebalances) are polled (we don't want to poll regular messages).
