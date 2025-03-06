@@ -112,13 +112,15 @@ struct Quantize16BitImpl
 
 struct Quantize8BitImpl
 {
-    static uint32_t float32ToFloat8(float f)
+    static uint32_t float32ToFloat8(float input_f)
     {
         constexpr uint32_t k_mask_m = 0x007FFFFFu;
         uint32_t binary32;
-        __builtin_memcpy(&binary32, &f, sizeof(float));
+        __builtin_memcpy(&binary32, &input_f, sizeof(float));
         const uint32_t s = (binary32 >> 24) & 0x80;
         binary32 &= 0x7FFFFFFF;
+
+        float f;
         __builtin_memcpy(&f, &binary32, sizeof(uint32_t));
 
         bool large_e = (f >= 0.007568359375f);
@@ -148,7 +150,7 @@ struct Quantize8BitImpl
     {
         for (size_t i = 0; i < size; ++i)
         {
-            output[i] = static_cast<uint8_t>(float32ToFloat8(input[i]));
+            output[i] = static_cast<uint8_t>(float32ToFloat8(input[i]) & 0xFF);
         }
     }
 
@@ -156,7 +158,7 @@ struct Quantize8BitImpl
     {
         for (size_t i = 0; i < size; ++i)
         {
-            output[i] = static_cast<uint8_t>(float32ToFloat8(static_cast<float>(input[i])));
+            output[i] = static_cast<uint8_t>(float32ToFloat8(static_cast<float>(input[i])) & 0xFF);
         }
     }
 };
