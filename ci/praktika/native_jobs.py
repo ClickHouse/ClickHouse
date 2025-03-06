@@ -251,7 +251,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
 
         results.append(
-            Result.create_from(name="Pre Checks", results=res_, stopwatch=sw_)
+            Result.create_from(name="Pre Hooks", results=res_, stopwatch=sw_)
         )
 
     # checks:
@@ -420,12 +420,16 @@ def _finish_workflow(workflow, job_name):
             )
 
         results.append(
-            Result.create_from(name="Post Checks", results=results_, stopwatch=sw_)
+            Result.create_from(name="Post Hooks", results=results_, stopwatch=sw_)
         )
 
     ready_for_merge_status = Result.Status.SUCCESS
     ready_for_merge_description = ""
     failed_results = []
+
+    if results and any(not result.is_ok() for result in results):
+        failed_results.append(["Workflow Post Hook"])
+
     for result in workflow_result.results:
         if result.name == job_name or result.status in (
             Result.Status.SUCCESS,
