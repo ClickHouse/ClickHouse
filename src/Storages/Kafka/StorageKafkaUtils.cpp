@@ -332,12 +332,24 @@ String getDefaultClientId(const StorageID & table_id)
 void consumerGracefulStop(
     cppkafka::Consumer & consumer, const std::chrono::milliseconds drain_timeout, const LoggerPtr & log, ErrorHandler error_handler)
 {
-    // poll after unsubscribe do destruction of the internal toppar queues (since they are not needed anymore)
-    // and if the queues are connected (default forwarding) it may lead to lock inversion and consumer hanging on destruction
-    // when cascading locks of the queues are acquired.
-
-    // but we still may need to drain the queue, as it can have some unprocessed callbacks, which again may cause issues with
-    // destruction
+    // Note: librdkafka is very sensetive to the proper temination sequence and have some race conditions there.
+    // Before destruction, our objectives are:
+    //   (1) Process all outstanding callbacks by polling the event queue.
+    //   (2) Ensure that only special events (e.g. callbacks, rebalances) are polled (we don't want to poll regular messages).
+    //
+    // Previously, we performed an unsubscribe to stop message consumption and clear 'read' messages.
+    // However, unsubscribe triggers a rebalance that schedules additional background tasks, such as locking
+    // and removal of internal toppar queues. Meanwhile, polling to release callbacks may concurrently
+    // cause those same queues to be destroyed.
+    // This can lead to a situation where the background thread doing rebalance and the current thread doing polling access
+    // the toppar queues simultaneously, potentially locking them in a different order, which risks a deadlock.
+    //
+    // To mitigate this, we now:
+    //   (1) Avoid calling unsubscribe (letting rebalance occur naturally via consumer group timeout).
+    //   (2) Pause the consumer to stop processing new messages.
+    //   (3) Disconnect the toppar queues to reduce the risk of lock inversion (less cascading locks).
+    //   (4) Set up different rebalance callbacks to repeat (2) if a rebalance will occur before consumer destruction.
+    //   (4) Poll the event queue to process any remaining callbacks.
 
     try
     {
@@ -347,7 +359,6 @@ void consumerGracefulStop(
         {
             consumer.pause_partitions(assignment);
 
-            // let's also remove disable forwarding for toppar queues, as they are not needed anymore anyway
             for (const auto& partition : assignment)
             {
                 // that call disables the forwarding of the messages to the customer queue
@@ -360,17 +371,17 @@ void consumerGracefulStop(
         LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
     }
 
-    // the pause works only on the list of partitions, and during the drain we may have a rebalance which will change the list
-
     consumer.set_assignment_callback(
         [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
         {
-            consumer.pause_partitions(topic_partitions);
-            consumer.assign(topic_partitions); // cppkafka does it anyway
-            for (const auto& partition : topic_partitions)
+            if (!topic_partitions.empty())
             {
-                consumer.get_partition_queue(partition);
+                consumer.pause_partitions(topic_partitions);
             }
+
+            // it's not clear if get_partition_queue will work in that context
+            // as just after processing the callback cppkafka will call run assign
+            // and that can reset the queues
 
         });
 

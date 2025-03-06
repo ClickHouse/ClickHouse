@@ -151,11 +151,11 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
 
 ConsumerPtr && KafkaConsumer::moveConsumer()
 {
-    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
-
     // messages & assignment should be destroyed before consumer
     cleanUnprocessed();
     assignment.reset();
+
+    StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
 
     return std::move(consumer);
 }
@@ -164,6 +164,9 @@ KafkaConsumer::~KafkaConsumer()
 {
     if (!consumer)
         return;
+
+    cleanUnprocessed();
+    assignment.reset();
 
     StorageKafkaUtils::consumerGracefulStop(*consumer, DRAIN_TIMEOUT_MS, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
 }
@@ -327,7 +330,11 @@ void KafkaConsumer::rejoin_consumer_group()
     LOG_TRACE(log, "Re-joining claimed consumer after failure");
 
     cleanUnprocessed();
+
+    // if you call subscribe while keeping old topicpartitions struct in memory
+    // it may lead to leaks (reported by asan).
     assignment.reset();
+
     waited_for_assignment = 0;
 
     // it should not raise exception as used in destructor
@@ -340,6 +347,8 @@ void KafkaConsumer::rejoin_consumer_group()
         // to close the consumer safely after unsubscribe
         // see https://github.com/edenhill/librdkafka/issues/2077
         //     https://github.com/confluentinc/confluent-kafka-go/issues/189 etc.
+
+
     }
     catch (const cppkafka::HandleException & e)
     {
