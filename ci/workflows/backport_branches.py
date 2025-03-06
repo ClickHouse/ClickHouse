@@ -48,7 +48,6 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         *ArtifactConfigs.performance_packages,
     ],
-    # dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,
