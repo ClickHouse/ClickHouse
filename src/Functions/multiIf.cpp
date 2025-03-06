@@ -169,10 +169,6 @@ public:
 
     ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecutionProfile * profile) const override
     {
-        /// Fast path when data is empty
-        if (input_rows_count == 0)
-            return result_type->createColumn();
-
         Stopwatch watch;
         ColumnsWithTypeAndName arguments = args;
         if (profile)
