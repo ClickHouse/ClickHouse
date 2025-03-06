@@ -16,7 +16,7 @@ format(format_name, data)
 
 **Parameters**
 
--   `format_name` — The [format](../../interfaces/formats.md#formats) of the data.
+-   `format_name` — The [format](/sql-reference/formats) of the data.
 -   `data` — String literal or constant expression that returns a string containing data in specified format
 
 **Returned value**

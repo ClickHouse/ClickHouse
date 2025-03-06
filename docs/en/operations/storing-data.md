@@ -744,7 +744,7 @@ configuration file.
 :::
 
 :::tip
-A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/operations/storing-data.md/#storing-data-on-webserver)
+A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/operations/utilities/static-files-disk-uploader)
 :::
 
 In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.

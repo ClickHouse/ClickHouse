@@ -105,7 +105,7 @@ class Macros;
 struct Progress;
 struct FileProgress;
 class Clusters;
-class QueryCache;
+class QueryResultCache;
 class QueryConditionCache;
 class ISystemLog;
 class QueryLog;
@@ -1089,9 +1089,12 @@ public:
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void clearUncompressedCache() const;
 
-    void setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages);
+    void setPageCache(
+        size_t default_block_size, size_t default_lookahead_blocks,
+        std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
+        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio);
     std::shared_ptr<PageCache> getPageCache() const;
-    void dropPageCache() const;
+    void clearPageCache() const;
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1124,10 +1127,10 @@ public:
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void clearMMappedFileCache() const;
 
-    void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
-    void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<QueryCache> getQueryCache() const;
-    void clearQueryCache(const std::optional<String> & tag) const;
+    void setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
+    void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<QueryResultCache> getQueryResultCache() const;
+    void clearQueryResultCache(const std::optional<String> & tag) const;
 
     void setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
