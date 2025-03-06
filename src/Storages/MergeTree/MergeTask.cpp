@@ -480,6 +480,27 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
+    /// Skip fully expired columns manually, since in case of
+    /// need_remove_expired_values is not set, TTLTransform will not be used,
+    /// and columns that had been removed by TTL (via TTLColumnAlgorithm) will
+    /// be added again with default values.
+    ///
+    /// Also note, that it is better to do this here, since in other places it
+    /// will be too late (i.e. they will be written, and we will burn CPU/disk
+    /// resources for this).
+    NameSet columns_to_remove;
+    if (!ctx->need_remove_expired_values)
+    {
+        for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
+        {
+            if (ttl.finished())
+            {
+                global_ctx->new_data_part->expired_columns.insert(column_name);
+                LOG_TRACE(ctx->log, "Adding expired column {} for part {}", column_name, global_ctx->new_data_part->name);
+            }
+        }
+    }
+
     /// Determine whether projections and minmax indexes need to be updated during merge,
     /// which typically happens when the number of rows may be reduced.
     ///
@@ -497,6 +518,22 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     prepareProjectionsToMergeAndRebuild();
 
     extractMergingAndGatheringColumns();
+
+    const auto & expired_columns = global_ctx->new_data_part->expired_columns;
+    if (!expired_columns.empty())
+    {
+        auto part_serialization_infos = global_ctx->new_data_part->getSerializationInfos();
+        for (const auto & expired_column : expired_columns)
+            part_serialization_infos.erase(expired_column);
+
+        global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(expired_columns);
+        global_ctx->merging_columns = global_ctx->merging_columns.eraseNames(expired_columns);
+        global_ctx->storage_columns = global_ctx->storage_columns.eraseNames(expired_columns);
+        global_ctx->new_data_part->setColumns(
+            global_ctx->storage_columns,
+            part_serialization_infos,
+            global_ctx->metadata_snapshot->getMetadataVersion());
+    }
 
     global_ctx->new_data_part->uuid = global_ctx->future_part->uuid;
     global_ctx->new_data_part->partition.assign(global_ctx->future_part->getPartition());
@@ -639,43 +676,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// Merged stream will be created and available as merged_stream variable
     createMergedStream();
 
-    /// Skip fully expired columns manually, since in case of
-    /// need_remove_expired_values is not set, TTLTransform will not be used,
-    /// and columns that had been removed by TTL (via TTLColumnAlgorithm) will
-    /// be added again with default values.
-    ///
-    /// Also note, that it is better to do this here, since in other places it
-    /// will be too late (i.e. they will be written, and we will burn CPU/disk
-    /// resources for this).
-    if (!ctx->need_remove_expired_values)
-    {
-        auto part_serialization_infos = global_ctx->new_data_part->getSerializationInfos();
-
-        NameSet columns_to_remove;
-        for (auto & [column_name, ttl] : global_ctx->new_data_part->ttl_infos.columns_ttl)
-        {
-            if (ttl.finished())
-            {
-                global_ctx->new_data_part->expired_columns.insert(column_name);
-                LOG_TRACE(ctx->log, "Adding expired column {} for part {}", column_name, global_ctx->new_data_part->name);
-                columns_to_remove.insert(column_name);
-                part_serialization_infos.erase(column_name);
-            }
-        }
-
-        if (!columns_to_remove.empty())
-        {
-            global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(columns_to_remove);
-            global_ctx->merging_columns = global_ctx->merging_columns.eraseNames(columns_to_remove);
-            global_ctx->storage_columns = global_ctx->storage_columns.eraseNames(columns_to_remove);
-
-            global_ctx->new_data_part->setColumns(
-                global_ctx->storage_columns,
-                part_serialization_infos,
-                global_ctx->metadata_snapshot->getMetadataVersion());
-        }
-    }
-
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         ctx->sum_input_rows_upper_bound,
         ctx->sum_uncompressed_bytes_upper_bound,
@@ -811,10 +811,21 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
 
     for (const auto & projection : projections)
     {
+        const auto & required_columns = projection.getRequiredColumns();
+        bool some_source_column_expired = std::any_of(
+            required_columns.begin(),
+            required_columns.end(),
+            [&](const String & name) { return global_ctx->new_data_part->expired_columns.contains(name); });
+
         /// The IGNORE mode is checked here purely for backward compatibility.
         /// However, if the projection contains `_parent_part_offset`, it must still be rebuilt,
         /// since offset correctness cannot be ignored even in IGNORE mode.
         if (global_ctx->merge_may_reduce_rows && (mode != DeduplicateMergeProjectionMode::IGNORE || projection.with_parent_part_offset))
+        {
+            global_ctx->projections_to_rebuild.push_back(&projection);
+            continue;
+        }
+        else if (some_source_column_expired && mode != DeduplicateMergeProjectionMode::IGNORE)
         {
             global_ctx->projections_to_rebuild.push_back(&projection);
             continue;
