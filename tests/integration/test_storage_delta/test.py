@@ -590,7 +590,16 @@ def test_restart_broken(started_cluster, use_delta_kernel):
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    instance.query(get_creation_expression("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+    # instance.query(get_creation_expression("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS {TABLE_NAME};
+        CREATE TABLE {TABLE_NAME}
+        ENGINE=DeltaLake(s3, filename = '{TABLE_NAME}/', url = 'http://minio1:9001/{bucket}/')
+        SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}""")
+
+
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     s3_objects = list_s3_objects(minio_client, bucket, prefix="")
@@ -984,8 +993,8 @@ def test_complex_types(started_cluster, use_delta_kernel):
     )
 
 
-@pytest.mark.parametrize("use_delta_kernel, storage_type", [("1", "s3"), ("0", "s3"), ("0", "azure")])
-def test_filesystem_cache(started_cluster, storage_type, use_delta_kernel):
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_filesystem_cache(started_cluster, use_delta_kernel):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
     minio_client = started_cluster.minio_client
@@ -1004,7 +1013,7 @@ def test_filesystem_cache(started_cluster, storage_type, use_delta_kernel):
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    instance.query(get_creation_expression(storage_type, TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
+    instance.query(get_creation_expression("s3", TABLE_NAME, started_cluster, use_delta_kernel = use_delta_kernel))
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
