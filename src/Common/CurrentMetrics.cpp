@@ -374,6 +374,12 @@
     \
     M(SharedDatabaseCatalogTablesInLocalDropDetachQueue, "Number of tables in the queue for local drop or detach in Shared Catalog.") \
     \
+    M(SharedCatalogDropDetachLocalTablesErrors, "Number of errors that occurred when attempting to drop or detach local tables in Shared Catalog.") \
+    \
+    M(MetadataFromKeeperCacheObjects, "Number of objects in disk metadata cache.") \
+    \
+    M(LicenseRemainingSeconds, "Remaining seconds of the license validity period.") \
+    \
     M(StartupScriptsExecutionState, "State of startup scripts execution: 0 = not finished, 1 = success, 2 = failure.") \
     \
     M(IsServerShuttingDown, "Indicates if the server is shutting down: 0 = no, 1 = yes") \

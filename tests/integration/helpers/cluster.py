@@ -50,7 +50,7 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from kazoo.client import KazooClient
+from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
@@ -2476,7 +2476,7 @@ class ClickHouseCluster:
                         )
                         errors = minio_client.remove_objects(bucket, delete_object_list)
                         for error in errors:
-                            logging.error(f"Error occured when deleting object {error}")
+                            logging.error(f"Error occurred when deleting object {error}")
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
@@ -3166,22 +3166,38 @@ class ClickHouseCluster:
         if fatal_log is not None:
             raise Exception("Fatal messages found: {}".format(fatal_log))
 
-    def pause_container(self, instance_name):
+    def _pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
 
-    def unpause_container(self, instance_name):
+    def _unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+
+    @contextmanager
+    def pause_container(self, instance_name):
+        '''Use it as following:
+        with cluster.pause_container(name):
+            useful_stuff()
+        '''
+        self._pause_container(instance_name)
+        try:
+            yield
+        finally:
+            self._unpause_container(instance_name)
 
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
 
-    def get_kazoo_client(self, zoo_instance_name, timeout: float = 30.0, retries=10):
+    def get_kazoo_client(
+        self, zoo_instance_name, timeout: float = 30.0, retries=10, external_port=None
+    ):
         use_ssl = False
         if self.with_zookeeper_secure:
             port = self.zookeeper_secure_port
             use_ssl = True
         elif self.with_zookeeper:
             port = self.zookeeper_port
+        elif external_port is not None:
+            port = external_port
         else:
             raise Exception("Cluster has no ZooKeeper")
 
@@ -3192,7 +3208,7 @@ class ClickHouseCluster:
         kazoo_retry = {
             "max_tries": retries,
         }
-        zk = KazooClient(
+        zk = KazooClientWithImplicitRetries(
             hosts=f"{ip}:{port}",
             timeout=timeout,
             connection_retry=kazoo_retry,
@@ -3277,6 +3293,7 @@ services:
             - {env_file}
         security_opt:
             - label:disable
+            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1

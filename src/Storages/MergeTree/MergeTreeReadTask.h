@@ -8,7 +8,6 @@
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 #include <Storages/MergeTree/AlterConversions.h>
 #include <Storages/MergeTree/MergeTreeReadersChain.h>
-#include <Storages/MergeTree/DeserializationPrefixesCache.h>
 
 namespace DB
 {
@@ -24,6 +23,8 @@ using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 using VirtualFields = std::unordered_map<String, Field>;
 
+class DeserializationPrefixesCache;
+using DeserializationPrefixesCachePtr = std::shared_ptr<DeserializationPrefixesCache>;
 
 enum class MergeTreeReadType : uint8_t
 {
@@ -117,6 +118,7 @@ public:
     struct BlockAndProgress
     {
         Block block;
+        MarkRanges read_mark_ranges;
         size_t row_count = 0;
         size_t num_read_rows = 0;
         size_t num_read_bytes = 0;
@@ -138,6 +140,9 @@ public:
     const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
 
+    void addPreWhereUnmatchedMarks(MarkRanges & mark_ranges_);
+    const MarkRanges & getPreWhereUnmatchedMarks() { return prewhere_unmatched_marks; }
+
     Readers releaseReaders() { return std::move(readers); }
 
     static Readers createReaders(const MergeTreeReadTaskInfoPtr & read_info, const Extras & extras, const MarkRanges & ranges);
@@ -158,6 +163,9 @@ private:
 
     /// Ranges to read from data_part
     MarkRanges mark_ranges;
+
+    /// There is no mark matching a row of data under the prewhere condition.
+    MarkRanges prewhere_unmatched_marks;
 
     BlockSizeParams block_size_params;
 

@@ -1,8 +1,8 @@
 from praktika import Workflow
 
+from ci.defs.defs import BASE_BRANCH, SECRETS, ArtifactConfigs
+from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.should_skip_job import should_skip_job
-from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, SECRETS
-from ci.workflows.job_configs import JobConfigs
 
 workflow = Workflow.Config(
     name="MasterCI",
@@ -10,6 +10,7 @@ workflow = Workflow.Config(
     branches=[BASE_BRANCH],
     jobs=[
         *JobConfigs.build_jobs,
+        *JobConfigs.special_build_jobs,
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
         JobConfigs.docker_keeper,
@@ -29,7 +30,18 @@ workflow = Workflow.Config(
         *JobConfigs.sqlancer_master_jobs,
         JobConfigs.sqltest_master_job,
     ],
-    artifacts=ARTIFACTS,
+    artifacts=[
+        *ArtifactConfigs.unittests_binaries,
+        *ArtifactConfigs.clickhouse_binaries,
+        ArtifactConfigs.fast_test,
+        *ArtifactConfigs.clickhouse_debians,
+        *ArtifactConfigs.clickhouse_rpms,
+        *ArtifactConfigs.clickhouse_tgzs,
+        ArtifactConfigs.fuzzers,
+        ArtifactConfigs.fuzzers_corpus,
+        *ArtifactConfigs.performance_packages,
+        *ArtifactConfigs.performance_reports,
+    ],
     # dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
@@ -39,6 +51,7 @@ workflow = Workflow.Config(
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/merge_sync_pr.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],
