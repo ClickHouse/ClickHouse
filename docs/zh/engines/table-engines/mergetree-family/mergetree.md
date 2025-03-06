@@ -351,7 +351,7 @@ WHERE 子句中的条件可以包含对某列数据进行运算的函数表达�
 | ------------------------------------------------------------ | ----------- | ------ | ---------- | ---------- | ------------ |
 | [equals (=, ==)](../../../sql-reference/functions/comparison-functions.md#equals) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [notEquals(!=, &lt;&gt;)](../../../sql-reference/functions/comparison-functions.md#notequals) | ✔           | ✔      | ✔          | ✔          | ✔            |
-| [like](../../../sql-reference/functions/string-search-functions.md#function-like) | ✔           | ✔      | ✔          | ✔          | ✔            |
+| [like](/sql-reference/functions/string-search-functions#like) | ✔           | ✔      | ✔          | ✔          | ✔            |
 | [notLike](../../../sql-reference/functions/string-search-functions.md#function-notlike) | ✔           | ✔      | ✗          | ✗          | ✗            |
 | [startsWith](../../../sql-reference/functions/string-functions.md#startswith) | ✔           | ✔      | ✔          | ✔          | ✗            |
 | [endsWith](../../../sql-reference/functions/string-functions.md#endswith) | ✗           | ✗      | ✔          | ✔          | ✗            |

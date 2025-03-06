@@ -6,7 +6,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ThreadProfileEvents.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
@@ -1497,7 +1496,7 @@ static BlockIO executeQueryImpl(
                             {
                                 LOG_TRACE(getLogger("QueryCache"),
                                         "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                                        num_query_runs, settings[Setting::query_cache_min_query_runs]);
+                                        num_query_runs, settings[Setting::query_cache_min_query_runs].value);
                             }
                             else
                             {

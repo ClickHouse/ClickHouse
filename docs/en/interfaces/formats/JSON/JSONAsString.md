@@ -20,7 +20,7 @@ If the input data is enclosed in square brackets, it is interpreted as an array 
 
 :::note
 This format can only be parsed for a table with a single field of type [String](/sql-reference/data-types/string.md). 
-The remaining columns must be set to either [`DEFAULT`](/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/sql-reference/statements/create/table.md/#materialized), 
+The remaining columns must be set to either [`DEFAULT`](/sql-reference/statements/create/table.md/#default) or [`MATERIALIZED`](/sql-reference/statements/create/view#materialized-view), 
 or be omitted. 
 :::
 
