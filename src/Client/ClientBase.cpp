@@ -146,14 +146,14 @@ namespace
 {
 constexpr UInt64 THREAD_GROUP_ID = 0;
 
-String handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const String & out_file, String & query)
+void handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const String & out_file, String & query)
 {
     if (!query_with_output->is_outfile_truncate)
-        return {};
+        return;
 
     // Skip atomic rename for special files
     if (out_file == "/dev/null" || out_file == "/dev/stdout" || out_file == "/dev/stderr")
-        return {};
+        return;
 
     // Create a temporary file with unique suffix
     String tmp_file = out_file + ".tmp." + DB::toString(randomSeed());
@@ -164,7 +164,6 @@ String handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const Stri
 
     // Update the query string after modifying the AST
     query = serializeAST(*query_with_output);
-    return tmp_file;
 }
 
 void cleanupTempFile(const DB::ASTPtr & parsed_query)
@@ -175,6 +174,11 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query)
         {
             const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
             String tmp_file = tmp_file_node.value.safeGet<std::string>();
+
+            // Skip cleanup for special files
+            if (tmp_file == "/dev/null" || tmp_file == "/dev/stdout" || tmp_file == "/dev/stderr")
+                return;
+
             if (fs::exists(tmp_file))
                 fs::remove(tmp_file);
         }
@@ -189,6 +193,11 @@ void performAtomicRename(const DB::ASTPtr & parsed_query)
         {
             const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
             String tmp_file = tmp_file_node.value.safeGet<std::string>();
+
+            // Skip rename for special files
+            if (tmp_file == "/dev/null" || tmp_file == "/dev/stdout" || tmp_file == "/dev/stderr")
+                return;
+
             String out_file = tmp_file.substr(0, tmp_file.find(".tmp."));
 
             try
@@ -1167,7 +1176,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
     {
         String out_file;
-        String tmp_file;
 
         if (query_with_output->out_file)
         {
@@ -1229,7 +1237,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
             if (query_with_output->is_outfile_truncate)
             {
-                tmp_file = handleTruncateMode(const_cast<ASTQueryWithOutput *>(query_with_output), out_file, query);
+                handleTruncateMode(const_cast<ASTQueryWithOutput *>(query_with_output), out_file, query);
             }
         }
     }
