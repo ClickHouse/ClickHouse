@@ -1,12 +1,9 @@
 #pragma once
 
-#include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <future>
 #include <memory>
 #include <optional>
-#include <stdexcept>
 #include <Poco/Net/TCPServerConnection.h>
 
 #include <Core/Protocol.h>
@@ -23,18 +20,17 @@
 #include <Interpreters/ProfileEventsExt.h>
 #include <QueryPipeline/BlockIO.h>
 #include <base/getFQDNOrHostName.h>
-#include "Common/CurrentThread.h"
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 
 #include <IO/WriteBuffer.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
+#include <Server/TCPProtocolStackData.h>
+#include <Storages/MergeTree/RequestResponse.h>
+
 #include "IServer.h"
-#include "Interpreters/AsynchronousInsertQueue.h"
-#include "Server/TCPProtocolStackData.h"
-#include "Storages/MergeTree/RequestResponse.h"
-#include "base/defines.h"
-#include "base/types.h"
 
 
 namespace CurrentMetrics
@@ -191,9 +187,12 @@ public:
             }
             catch (...)
             {
-                first_exception = std::current_exception();
+                {
+                    std::unique_lock lock(mutex);
+                    first_exception = std::current_exception();
+                    failure = true;
+                }
                 task.promise.set_exception(first_exception);
-                failure = true;
                 pop_condition.notify_all();
                 push_condition.notify_all();
             }
