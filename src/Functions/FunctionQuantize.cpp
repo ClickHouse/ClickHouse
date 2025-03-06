@@ -93,19 +93,19 @@ struct Quantize16BitImpl
 
     static void execute(const Float32 * input, UInt8 * output, size_t size)
     {
-        uint16_t * out = reinterpret_cast<uint16_t *>(output);
         for (size_t i = 0; i < size; ++i)
         {
-            out[i] = float32ToFloat16(input[i]);
+            uint16_t value = float32ToFloat16(input[i]);
+            memcpy(output + i * sizeof(uint16_t), &value, sizeof(value));
         }
     }
 
     static void execute(const Float64 * input, UInt8 * output, size_t size)
     {
-        uint16_t * out = reinterpret_cast<uint16_t *>(output);
         for (size_t i = 0; i < size; ++i)
         {
-            out[i] = float32ToFloat16(static_cast<float>(input[i]));
+            uint16_t value = float32ToFloat16(static_cast<float>(input[i]));
+            memcpy(output + i * sizeof(uint16_t), &value, sizeof(value));
         }
     }
 };
