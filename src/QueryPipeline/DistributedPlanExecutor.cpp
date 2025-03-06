@@ -15,14 +15,20 @@
 #include <Core/ProtocolDefines.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
-#include <Interpreters/Context.h>
 #include <Poco/URI.h>
-#include <Common/logger_useful.h>
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
+#include <Interpreters/Context.h>
+#include <Common/logger_useful.h>
+#include <Core/Settings.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool execute_distributed_plan_locally;
+}
 
 class TaskParameters : public IParameterLookup
 {
@@ -87,6 +93,31 @@ private:
     LoggerPtr logger = getLogger("TemporaryFilesInObjectStorage");
 };
 
+/// Implements distributed query plan execution logic by executing stages according to dependencies between them.
+class DistributedQueryPlanExecutor
+{
+public:
+    virtual ~DistributedQueryPlanExecutor() = default;
+
+    void execute();
+
+protected:
+    DistributedQueryPlanExecutor(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
+        : unique_query_id(unique_query_id_)
+        , distributed_query_plan(distributed_query_plan_)
+        , context(std::move(context_))
+    {
+    }
+
+    virtual void executeStage(const DistributedQueryStage & stage) = 0;
+
+    const UUID unique_query_id;
+    const DistributedQueryPlan & distributed_query_plan;
+    ContextPtr context;
+    LoggerPtr logger = getLogger("DistributedQueryPlanExecutor");
+};
+
+
 TemporaryFileLookupPtr createTemporaryFilesLookup(ObjectStoragePtr object_storage_, const String & object_storage_path_,
     const Strings & input_temporary_files_, const Strings & output_temporary_files_)
 {
@@ -142,9 +173,6 @@ void doExecuteTask(const String & serialized_query_plan, const DistributedQueryT
     executor.execute();
 }
 
-String sendTask(const String & endpoint_uri, const String & serialized_query_plan, const DistributedQueryTask & task, const ContextPtr & context);
-
-
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context)
 {
     const auto & config = context->getConfigRef();
@@ -163,112 +191,137 @@ void executeTask(const UUID & unique_query_id, const String & serialized_query_p
     doExecuteTask(serialized_query_plan, task, object_storage, object_storage_path, context);
 }
 
-#if 0
-std::future<void> startTask(const UUID & unique_query_id, const QueryPlan & query_plan, const DistributedQueryTask & task, ContextPtr context)
+/// Runs tasks in local threads. Useful for testing and debugging.
+class DistributedQueryPlanExecutorLocal final : public DistributedQueryPlanExecutor
 {
-    const String serialized_query_plan = serializeQueryPlan(query_plan);
-
-    std::promise<void> task_promise;
-    std::future<void> future = task_promise.get_future();
-
-    std::thread([promise = std::move(task_promise), unique_query_id, serialized_query_plan, task, context]() mutable
+public:
+    DistributedQueryPlanExecutorLocal(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
+        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, makeContextForLocalExecution(context_))
     {
-        try
+    }
+
+protected:
+    static ContextPtr makeContextForLocalExecution(ContextPtr ctx)
+    {
+        auto new_context = Context::createCopy(ctx);
+        /// We will execute tasks with local plan fragments. They should not be converted into distributed plan themselves.
+        new_context->setSetting("make_distributed_plan", false);
+        return new_context;
+    }
+
+    std::future<void> startTask(const QueryPlan & query_plan, const DistributedQueryTask & task)
+    {
+        const String serialized_query_plan = serializeQueryPlan(query_plan);
+
+        std::promise<void> task_promise;
+        std::future<void> future = task_promise.get_future();
+
+        std::thread([promise = std::move(task_promise), query_id = unique_query_id, serialized_query_plan, task, ctx = context]() mutable
         {
-            executeTask(unique_query_id, serialized_query_plan, task, context);
-            promise.set_value();
-        }
-        catch (...)
-        {
-            promise.set_exception(std::current_exception());
-        }
-    }).detach();
+            try
+            {
+                executeTask(query_id, serialized_query_plan, task, ctx);
+                promise.set_value();
+            }
+            catch (...)
+            {
+                promise.set_exception(std::current_exception());
+            }
+        }).detach();
 
-    return future;
-}
+        return future;
+    }
 
-void executeStage(const UUID & initial_query_id, const DistributedQueryStage & stage, ContextPtr context)
-{
-    std::vector<std::future<void>> started_tasks;
-    started_tasks.reserve(stage.tasks.size());
-    for (const auto & task : stage.tasks)
-        started_tasks.emplace_back(startTask(initial_query_id, stage.query_plan_fragment, task, context));
+    void executeStage(const DistributedQueryStage & stage) override
+    {
+        std::vector<std::future<void>> started_tasks;
+        started_tasks.reserve(stage.tasks.size());
+        for (const auto & task : stage.tasks)
+            started_tasks.emplace_back(startTask(stage.query_plan_fragment, task));
 
-    /// TODO: periodically check for cancellation
-    for (const auto & task : started_tasks)
-        task.wait();
+        /// TODO: periodically check for cancellation
+        for (const auto & task : started_tasks)
+            task.wait();
 
-    /// Throw exception if any task failed
-    for (auto & task : started_tasks)
-        task.get();
-}
-#else
-
-struct RunningTaskInfo
-{
-    String endpoint_uri;
-    String task_id;
+        /// Throw exception if any task failed
+        for (auto & task : started_tasks)
+            task.get();
+    }
 };
 
-RunningTaskInfo startTask(const UUID & unique_query_id, const QueryPlan & query_plan, const DistributedQueryTask & task, ContextPtr context)
-{
-    const String serialized_query_plan = serializeQueryPlan(query_plan);
 
-    String stateless_worker_endpoint_uri;
-    if (context->getConfigRef().getBool("stateless_worker_client.enabled", true))
+/// Sends tasks to remote nodes.
+class DistributedQueryPlanExecutorRemote final : public DistributedQueryPlanExecutor
+{
+public:
+    DistributedQueryPlanExecutorRemote(const UUID & unique_query_id_, const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
+        : DistributedQueryPlanExecutor(unique_query_id_, distributed_query_plan_, std::move(context_))
     {
-        String host = context->getConfigRef().getString("stateless_worker_client.host", "localhost");
-        auto default_port = context->getInterserverIOAddress().second;
-        auto port = context->getConfigRef().getUInt("stateless_worker_client.port", default_port);
-        String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
-        auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
-        Poco::URI stateless_worker_uri;
-        stateless_worker_uri.setScheme("http");
-        stateless_worker_uri.setHost(host);
-        stateless_worker_uri.setPort(port);
-        stateless_worker_uri.addQueryParameter("endpoint", endpoint);
-        stateless_worker_endpoint_uri = stateless_worker_uri.toString();
     }
 
-    String unique_task_id = toString(unique_query_id) + "::" + task.task_id;
-    String unique_temp_file_path = toString(unique_query_id);
-
-    sendTask(stateless_worker_endpoint_uri, unique_task_id, serialized_query_plan, task, unique_temp_file_path, context);
-
-    return {stateless_worker_endpoint_uri, unique_task_id};
-}
-
-void executeStage(const UUID & unique_query_id, const DistributedQueryStage & stage, ContextPtr context)
-{
-    std::deque<RunningTaskInfo> started_tasks;
-    for (const auto & task : stage.tasks)
-        started_tasks.emplace_back(startTask(unique_query_id, stage.query_plan_fragment, task, context));
-
-    /// TODO: periodically check for cancellation
-    String error_message;
-    while (!started_tasks.empty())
+protected:
+    struct RunningTaskInfo
     {
-        auto & task = started_tasks.front();
-        auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, 1000, context);
+        String endpoint_uri;
+        String task_id;
+    };
 
-        if (task_status == "Running\n")
-            continue;
+    RunningTaskInfo startTask(const QueryPlan & query_plan, const DistributedQueryTask & task)
+    {
+        const String serialized_query_plan = serializeQueryPlan(query_plan);
 
-        started_tasks.pop_front();
-        if (task_status != "Finished\n")
-            error_message += " Task " + task.task_id + " error: " + task_status;
+        String stateless_worker_endpoint_uri;
+        if (context->getConfigRef().getBool("stateless_worker_client.enabled", true))
+        {
+            String host = context->getConfigRef().getString("stateless_worker_client.host", "localhost");
+            auto default_port = context->getInterserverIOAddress().second;
+            auto port = context->getConfigRef().getUInt("stateless_worker_client.port", default_port);
+            String default_endpoint = context->getConfigRef().getString("stateless_worker_server.endpoint", "localhost");
+            auto endpoint = context->getConfigRef().getString("stateless_worker_client.endpoint", "stateless_worker/" + default_endpoint);
+            Poco::URI stateless_worker_uri;
+            stateless_worker_uri.setScheme("http");
+            stateless_worker_uri.setHost(host);
+            stateless_worker_uri.setPort(port);
+            stateless_worker_uri.addQueryParameter("endpoint", endpoint);
+            stateless_worker_endpoint_uri = stateless_worker_uri.toString();
+        }
+
+        String unique_task_id = toString(unique_query_id) + "::" + task.task_id;
+        String unique_temp_file_path = toString(unique_query_id);
+
+        sendTask(stateless_worker_endpoint_uri, unique_task_id, serialized_query_plan, task, unique_temp_file_path, context);
+
+        return {stateless_worker_endpoint_uri, unique_task_id};
     }
 
-    if (!error_message.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failures: {}", error_message);
-}
+    void executeStage(const DistributedQueryStage & stage) override
+    {
+        std::deque<RunningTaskInfo> started_tasks;
+        for (const auto & task : stage.tasks)
+            started_tasks.emplace_back(startTask(stage.query_plan_fragment, task));
 
-#endif
+        /// TODO: periodically check for cancellation
+        String error_message;
+        while (!started_tasks.empty())
+        {
+            auto & task = started_tasks.front();
+            auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, 1000, context);
 
-void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
+            if (task_status == "Running\n")
+                continue;
+
+            started_tasks.pop_front();
+            if (task_status != "Finished\n")
+                error_message += " Task " + task.task_id + " error: " + task_status;
+        }
+
+        if (!error_message.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failures: {}", error_message);
+    }
+};
+
+void DistributedQueryPlanExecutor::execute()
 {
-    auto logger = Poco::Logger::getShared("executeDistributedQuery");
-
     LOG_DEBUG(logger, "Executing distributed query, unique id: {}", toString(unique_query_id));
 
     /// Execute stages in topological order
@@ -290,12 +343,24 @@ void executeDistributedQuery(const UUID & unique_query_id, const DistributedQuer
             "plan:\n{}\n"
             "==========================================================================",
             stage_name, dumpQueryPlan(stage.query_plan_fragment));
-        executeStage(unique_query_id, stage, context);
+        executeStage(stage);
         executed_stages.insert(stage_name);
     };
 
     for (const auto & [stage_name, _] : distributed_query_plan.stages)
         execute_stage(stage_name);
+}
+
+void executeDistributedQuery(const UUID & unique_query_id, const DistributedQueryPlan & distributed_query_plan, ContextPtr context)
+{
+    bool run_locally = context->getSettingsRef()[Setting::execute_distributed_plan_locally];
+    std::unique_ptr<DistributedQueryPlanExecutor> executor;
+    if (run_locally)
+        executor = std::make_unique<DistributedQueryPlanExecutorLocal>(unique_query_id, distributed_query_plan, context);
+    else
+        executor = std::make_unique<DistributedQueryPlanExecutorRemote>(unique_query_id, distributed_query_plan, context);
+
+    executor->execute();
 }
 
 }
