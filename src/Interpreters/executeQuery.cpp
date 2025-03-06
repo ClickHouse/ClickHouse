@@ -11,7 +11,7 @@
 #include <Common/FieldVisitorToString.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
-#include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/LimitReadBuffer.h>
@@ -141,10 +141,10 @@ namespace Setting
     extern const SettingsUInt64 query_cache_max_size_in_bytes;
     extern const SettingsMilliseconds query_cache_min_query_duration;
     extern const SettingsUInt64 query_cache_min_query_runs;
-    extern const SettingsQueryCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
+    extern const SettingsQueryResultCacheNondeterministicFunctionHandling query_cache_nondeterministic_function_handling;
     extern const SettingsBool query_cache_share_between_users;
     extern const SettingsBool query_cache_squash_partial_results;
-    extern const SettingsQueryCacheSystemTableHandling query_cache_system_table_handling;
+    extern const SettingsQueryResultCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsSeconds query_cache_ttl;
     extern const SettingsInt64 query_metric_log_interval;
     extern const SettingsOverflowMode read_overflow_mode;
@@ -544,7 +544,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCacheUsage query_cache_usage,
+    QueryResultCacheUsage query_result_cache_usage,
     bool internal)
 {
     const Settings & settings = context->getSettingsRef();
@@ -596,7 +596,7 @@ void logQueryFinish(
                 ReadableSize(elem.read_bytes / elapsed_seconds));
         }
 
-        elem.query_cache_usage = query_cache_usage;
+        elem.query_result_cache_usage = query_result_cache_usage;
 
         if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
@@ -677,7 +677,7 @@ void logQueryException(
     }
     logQueryMetricLogFinish(context, internal, elem.client_info.current_query_id, time_now, info);
 
-    elem.query_cache_usage = QueryCacheUsage::None;
+    elem.query_result_cache_usage = QueryResultCacheUsage::None;
 
     if (settings[Setting::calculate_text_stack_trace] && log_error)
         setExceptionStackTrace(elem);
@@ -1321,15 +1321,16 @@ static BlockIO executeQueryImpl(
             }
         }
 
-        QueryCachePtr query_cache = context->getQueryCache();
-        const bool can_use_query_cache = query_cache != nullptr && settings[Setting::use_query_cache] && !internal
+        QueryResultCachePtr query_result_cache = context->getQueryResultCache();
+        const bool can_use_query_result_cache = query_result_cache != nullptr && settings[Setting::use_query_cache] && !internal
             && client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY
             && (out_ast->as<ASTSelectQuery>() || out_ast->as<ASTSelectWithUnionQuery>());
-        QueryCacheUsage query_cache_usage = QueryCacheUsage::None;
+        QueryResultCacheUsage query_result_cache_usage = QueryResultCacheUsage::None;
 
-        /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query cache will store a truncated result (if
-        /// enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query cache that the query result
-        /// is truncated. Therefore throw an exception, to notify the user to disable either the query cache or use another overflow mode.
+        /// Bug 67476: If the query runs with a non-THROW overflow mode and hits a limit, the query result cache will store a truncated
+        /// result (if enabled). This is incorrect. Unfortunately it is hard to detect from the perspective of the query result cache that
+        /// the query result is truncated. Therefore throw an exception, to notify the user to disable either the query result cache or use
+        /// another overflow mode.
         if (settings[Setting::use_query_cache] && (settings[Setting::read_overflow_mode] != OverflowMode::THROW
             || settings[Setting::read_overflow_mode_leaf] != OverflowMode::THROW
             || settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
@@ -1342,38 +1343,38 @@ static BlockIO executeQueryImpl(
             || settings[Setting::distinct_overflow_mode] != OverflowMode::THROW))
             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE, "use_query_cache and overflow_mode != 'throw' cannot be used together");
 
-        /// If the query runs with "use_query_cache = 1", we first probe if the query cache already contains the query result (if yes:
-        /// return result from cache). If doesn't, we execute the query normally and write the result into the query cache. Both steps use a
-        /// hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places internally
-        /// modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes no longer
-        /// match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
+        /// If the query runs with "use_query_cache = 1", we first probe if the query result cache already contains the query result (if
+        /// yes: return result from cache). If doesn't, we execute the query normally and write the result into the query result cache. Both
+        /// steps use a hash of the AST, the current database and the settings as cache key. Unfortunately, the settings are in some places
+        /// internally modified between steps 1 and 2 (= during query execution) - this is silly but hard to forbid. As a result, the hashes
+        /// no longer match and the cache is rendered ineffective. Therefore make a copy of the settings and use it for steps 1 and 2.
         std::optional<Settings> settings_copy;
-        if (can_use_query_cache)
+        if (can_use_query_result_cache)
             settings_copy = settings;
 
         if (!async_insert)
         {
-            /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then set
-            /// a pipeline with a source populated by the query cache.
-            auto get_result_from_query_cache = [&]()
+            /// If it is a non-internal SELECT, and passive (read) use of the query result cache is enabled, and the cache knows the query,
+            /// then set a pipeline with a source populated by the query result cache.
+            auto get_result_from_query_result_cache = [&]()
             {
-                if (can_use_query_cache && settings[Setting::enable_reads_from_query_cache])
+                if (can_use_query_result_cache && settings[Setting::enable_reads_from_query_cache])
                 {
-                    QueryCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
-                    QueryCacheReader reader = query_cache->createReader(key);
+                    QueryResultCache::Key key(out_ast, context->getCurrentDatabase(), *settings_copy, context->getCurrentQueryId(), context->getUserID(), context->getCurrentRoles());
+                    QueryResultCacheReader reader = query_result_cache->createReader(key);
                     if (reader.hasCacheEntryForKey())
                     {
                         QueryPipeline pipeline;
-                        pipeline.readFromQueryCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
+                        pipeline.readFromQueryResultCache(reader.getSource(), reader.getSourceTotals(), reader.getSourceExtremes());
                         res.pipeline = std::move(pipeline);
-                        query_cache_usage = QueryCacheUsage::Read;
+                        query_result_cache_usage = QueryResultCacheUsage::Read;
                         return true;
                     }
                 }
                 return false;
             };
 
-            if (!get_result_from_query_cache())
+            if (!get_result_from_query_result_cache())
             {
                 /// We need to start the (implicit) transaction before getting the interpreter as this will get links to the latest snapshots
                 if (!context->getCurrentTransaction() && settings[Setting::implicit_transaction] && !out_ast->as<ASTTransactionControl>())
@@ -1461,33 +1462,33 @@ static BlockIO executeQueryImpl(
 
                     res = interpreter->execute();
 
-                    /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
-                    /// top of the pipeline which stores the result in the query cache.
-                    if (can_use_query_cache && settings[Setting::enable_writes_to_query_cache])
+                    /// If it is a non-internal SELECT query, and active (write) use of the query result cache is enabled, then add a
+                    /// processor on top of the pipeline which stores the result in the query result cache.
+                    if (can_use_query_result_cache && settings[Setting::enable_writes_to_query_cache])
                     {
-                        /// Only use the query cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
+                        /// Only use the query result cache if the query does not contain non-deterministic functions or system tables (which are typically non-deterministic)
 
                         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(out_ast, context);
                         const bool ast_contains_system_tables = astContainsSystemTables(out_ast, context);
 
-                        const QueryCacheNondeterministicFunctionHandling nondeterministic_function_handling
+                        const QueryResultCacheNondeterministicFunctionHandling nondeterministic_function_handling
                             = settings[Setting::query_cache_nondeterministic_function_handling];
-                        const QueryCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
+                        const QueryResultCacheSystemTableHandling system_table_handling = settings[Setting::query_cache_system_table_handling];
 
-                        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Throw)
+                        if (ast_contains_nondeterministic_functions && nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Throw)
                             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS,
                                 "The query result was not cached because the query contains a non-deterministic function."
                                 " Use setting `query_cache_nondeterministic_function_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
 
-                        if (ast_contains_system_tables && system_table_handling == QueryCacheSystemTableHandling::Throw)
+                        if (ast_contains_system_tables && system_table_handling == QueryResultCacheSystemTableHandling::Throw)
                             throw Exception(ErrorCodes::QUERY_CACHE_USED_WITH_SYSTEM_TABLE,
                                 "The query result was not cached because the query contains a system table."
                                 " Use setting `query_cache_system_table_handling = 'save'` or `= 'ignore'` to cache the query result regardless or to omit caching");
 
-                        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryCacheNondeterministicFunctionHandling::Save)
-                            && (!ast_contains_system_tables || system_table_handling == QueryCacheSystemTableHandling::Save))
+                        if ((!ast_contains_nondeterministic_functions || nondeterministic_function_handling == QueryResultCacheNondeterministicFunctionHandling::Save)
+                            && (!ast_contains_system_tables || system_table_handling == QueryResultCacheSystemTableHandling::Save))
                         {
-                            QueryCache::Key key(
+                            QueryResultCache::Key key(
                                 out_ast, context->getCurrentDatabase(), *settings_copy, res.pipeline.getHeader(),
                                 context->getCurrentQueryId(),
                                 context->getUserID(), context->getCurrentRoles(),
@@ -1495,24 +1496,24 @@ static BlockIO executeQueryImpl(
                                 std::chrono::system_clock::now() + std::chrono::seconds(settings[Setting::query_cache_ttl]),
                                 settings[Setting::query_cache_compress_entries]);
 
-                            const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
+                            const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
                             if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
                             {
-                                LOG_TRACE(getLogger("QueryCache"),
+                                LOG_TRACE(getLogger("QueryResultCache"),
                                         "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
                                         num_query_runs, settings[Setting::query_cache_min_query_runs].value);
                             }
                             else
                             {
-                                auto query_cache_writer = std::make_shared<QueryCacheWriter>(query_cache->createWriter(
+                                auto query_result_cache_writer = std::make_shared<QueryResultCacheWriter>(query_result_cache->createWriter(
                                                  key,
                                                  std::chrono::milliseconds(settings[Setting::query_cache_min_query_duration].totalMilliseconds()),
                                                  settings[Setting::query_cache_squash_partial_results],
                                                  settings[Setting::max_block_size],
                                                  settings[Setting::query_cache_max_size_in_bytes],
                                                  settings[Setting::query_cache_max_entries]));
-                                res.pipeline.writeResultIntoQueryCache(query_cache_writer);
-                                query_cache_usage = QueryCacheUsage::Write;
+                                res.pipeline.writeResultIntoQueryResultCache(query_result_cache_writer);
+                                query_result_cache_usage = QueryResultCacheUsage::Write;
                             }
                         }
                     }
@@ -1565,19 +1566,19 @@ static BlockIO executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     out_ast,
-                                    query_cache_usage,
+                                    query_result_cache_usage,
                                     internal,
                                     implicit_txn_control,
                                     execute_implicit_tcl_query,
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                if (query_cache_usage == QueryCacheUsage::Write)
-                    /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
-                    /// partial/garbage results in case of exceptions during query execution.
-                    query_pipeline.finalizeWriteInQueryCache();
+                if (query_result_cache_usage == QueryResultCacheUsage::Write)
+                    /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
+                    /// prevent partial/garbage results in case of exceptions during query execution.
+                    query_pipeline.finalizeWriteInQueryResultCache();
 
-                logQueryFinish(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_cache_usage, internal);
+                logQueryFinish(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);

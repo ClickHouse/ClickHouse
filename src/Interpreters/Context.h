@@ -105,7 +105,7 @@ class Macros;
 struct Progress;
 struct FileProgress;
 class Clusters;
-class QueryCache;
+class QueryResultCache;
 class QueryConditionCache;
 class ISystemLog;
 class QueryLog;
@@ -1127,10 +1127,10 @@ public:
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void clearMMappedFileCache() const;
 
-    void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
-    void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<QueryCache> getQueryCache() const;
-    void clearQueryCache(const std::optional<String> & tag) const;
+    void setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
+    void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<QueryResultCache> getQueryResultCache() const;
+    void clearQueryResultCache(const std::optional<String> & tag) const;
 
     void setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);

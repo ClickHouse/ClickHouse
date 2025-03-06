@@ -279,7 +279,10 @@ static ASTPtr tryBuildAdditionalFilterAST(
         if (node->column && isColumnConst(*node->column))
         {
             auto literal = std::make_shared<ASTLiteral>((*node->column)[0]);
-            node_to_ast[node] = std::move(literal);
+            /// Need to enforce type of the literal, because some type is not comparable to its native type
+            /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
+            auto casted_literal = makeASTFunction("_CAST", literal, std::make_shared<ASTLiteral>(node->result_type->getName()));
+            node_to_ast[node] = std::move(casted_literal);
             stack.pop();
             continue;
         }

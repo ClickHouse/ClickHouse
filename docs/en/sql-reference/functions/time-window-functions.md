@@ -13,7 +13,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with [WindowView](../statements/create/view.md/#window-view-experimental) are listed below:
+Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with [WindowView](/sql-reference/statements/create/view#window-view) are listed below:
 
 ## tumble {#tumble}
 
