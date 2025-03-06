@@ -564,6 +564,10 @@ void ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
 
         if (node.type == ActionType::INPUT && used_inputs.contains(&node))
             roots.push_back(&node);
+
+        /// Preserve constants
+        if (node.type == ActionType::COLUMN && isColumnConst(*node.column))
+            roots.push_back(&node);
     }
 
     std::unordered_set<const Node *> required_nodes;
