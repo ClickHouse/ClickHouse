@@ -17,6 +17,7 @@ Positions: 2
             Function: sum(UInt64) → UInt64
             Arguments: __table1.number
       Skip merging: 0
+      Use sharding: 1
         Expression ((Before GROUP BY + Change column names to column identifiers))
         Actions: INPUT : 0 -> number UInt64 : 0
                  COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
@@ -37,6 +38,7 @@ Positions: 2
                 Function: sum(UInt64) → UInt64
                 Arguments: __table1.number
           Skip merging: 0
+          Use sharding: 1
             Expression ((Before GROUP BY + Change column names to column identifiers))
             Actions: INPUT : 0 -> number UInt64 : 0
                      COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
@@ -56,6 +58,7 @@ Positions: 2
                 Function: sum(UInt64) → UInt64
                 Arguments: __table1.number
           Skip merging: 0
+          Use sharding: 1
             Expression ((Before GROUP BY + Change column names to column identifiers))
             Actions: INPUT : 0 -> number UInt64 : 0
                      COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
@@ -91,6 +94,7 @@ Positions: 2
             Function: sum(UInt64) → UInt64
             Arguments: __table1.number
       Skip merging: 0
+      Use sharding: 1
         Expression ((Before GROUP BY + Change column names to column identifiers))
         Actions: INPUT : 0 -> number UInt64 : 0
                  COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
@@ -114,6 +118,7 @@ Positions: 2
                 Function: sum(UInt64) → UInt64
                 Arguments: __table1.number
           Skip merging: 0
+          Use sharding: 1
             Expression ((Before GROUP BY + Change column names to column identifiers))
             Actions: INPUT : 0 -> number UInt64 : 0
                      COLUMN Const(UInt8) -> 3_UInt8 UInt8 : 1
