@@ -59,7 +59,7 @@ CHECK TABLE [db.]name
 如果表已损坏，则可以将未损坏的数据复制到另一个表。 要做到这一点:
 
 1.  创建一个与损坏的表结构相同的新表。 请执行查询 `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  将 [max_threads](../../operations/settings/settings.md#settings-max_threads) 值设置为1，以在单个线程中处理下一个查询。 要这样做，请运行查询 `SET max_threads = 1`.
+2.  将 [max_threads](/operations/settings/settings#max_threads) 值设置为1，以在单个线程中处理下一个查询。 要这样做，请运行查询 `SET max_threads = 1`.
 3.  执行查询 `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. 此请求将未损坏的数据从损坏的表复制到另一个表。 只有损坏部分之前的数据才会被复制。
 4.  重新启动 `clickhouse-client` 以重置 `max_threads` 值。
 
@@ -248,7 +248,7 @@ KILL MUTATION [ON CLUSTER cluster]
   [FORMAT format]
 ```
 
-尝试取消和删除当前正在执行的 [mutations](alter.md#alter-mutations) 。 要取消的mutation是使用 `KILL` 查询的WHERE子句指定的过滤器从[`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations) 表中选择的。
+尝试取消和删除当前正在执行的 [mutations](alter.md#alter-mutations) 。 要取消的mutation是使用 `KILL` 查询的WHERE子句指定的过滤器从[`system.mutations`](/operations/system-tables/mutations) 表中选择的。
 
 测试查询 (`TEST`）仅检查用户的权限并显示要停止的mutations列表。
 
@@ -278,7 +278,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 
 当 `OPTIMIZE` 与 [ReplicatedMergeTree](../../engines/table-engines/mergetree-family/replication.md) 家族的表引擎一起使用时，ClickHouse将创建一个合并任务，并等待所有节点上的执行（如果 `alter_sync` 设置已启用）。
 
--   如果 `OPTIMIZE` 出于任何原因不执行合并，它不通知客户端。 要启用通知，请使用 [optimize_throw_if_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) 设置。
+-   如果 `OPTIMIZE` 出于任何原因不执行合并，它不通知客户端。 要启用通知，请使用 [optimize_throw_if_noop](/operations/settings/settings#optimize_throw_if_noop) 设置。
 -   如果您指定 `PARTITION`，仅优化指定的分区。 [如何设置分区表达式](alter.md#alter-how-to-specify-part-expr).
 -   如果您指定 `FINAL`，即使所有数据已经在一个部分中，也会执行优化。
 -   如果您指定 `DEDUPLICATE`，则将对完全相同的行进行重复数据删除（所有列进行比较），这仅适用于MergeTree引擎。

@@ -194,7 +194,7 @@ Result:
 └────────────────────────────┘
 ```
 
-The dataset in use at the time of writing has only a few hundred distinct parks and playgrounds in the `PARK_NM` column.  This is a small number based on the [LowCardinality](../../sql-reference/data-types/lowcardinality.md#lowcardinality-dscr) recommendation to stay below 10,000 distinct strings in a `LowCardinality(String)` field.
+The dataset in use at the time of writing has only a few hundred distinct parks and playgrounds in the `PARK_NM` column.  This is a small number based on the [LowCardinality](/sql-reference/data-types/lowcardinality#description) recommendation to stay below 10,000 distinct strings in a `LowCardinality(String)` field.
 
 ### DateTime fields {#datetime-fields}
 Based on the **Columns in this Dataset** section of the [dataset web page](https://data.cityofnewyork.us/Public-Safety/NYPD-Complaint-Data-Current-Year-To-Date-/5uac-w243) there are date and time fields for the start and end of the reported event.  Looking at the min and max of the `CMPLNT_FR_DT` and `CMPLT_TO_DT` gives an idea of whether or not the fields are always populated:
