@@ -9,6 +9,7 @@
 #include <Common/logger_useful.h>
 
 #include <boost/noncopyable.hpp>
+#include <fmt/ranges.h>
 
 namespace DB
 {

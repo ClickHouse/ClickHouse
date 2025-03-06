@@ -9,7 +9,7 @@ slug: /ru/operations/system-tables/quotas_usage
 
 -   `quota_name` ([String](../../sql-reference/data-types/string.md)) — имя квоты.
 -   `quota_key` ([String](../../sql-reference/data-types/string.md)) — ключ квоты.
--   `is_current` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — квота используется для текущего пользователя.
+-   `is_current` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — квота используется для текущего пользователя.
 -   `start_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md)))) — время начала расчета потребления ресурсов.
 -   `end_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md)))) — время окончания расчета потребления ресурсов.
 -   `duration` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt32](../../sql-reference/data-types/int-uint.md))) — длина временного интервала для расчета потребления ресурсов, в секундах.
@@ -35,4 +35,4 @@ slug: /ru/operations/system-tables/quotas_usage
 -   `max_execution_time` ([Nullable](../../sql-reference/data-types/nullable.md)([Float64](../../sql-reference/data-types/float.md))) — максимальное время выполнения запроса.
 ## Смотрите также {#see-also}
 
--   [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)
+-   [SHOW QUOTA](/sql-reference/statements/show#show-quota))
