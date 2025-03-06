@@ -130,6 +130,7 @@ create temporary table known_short_messages (s String) as select * from (select 
     'Sending part {}',
     'Sent handshake',
     'Starting {}',
+    'starting up'
     'Substitution {} is not set',
     'Table {} does not exist',
     'Table {} doesn\'t exist',

@@ -24,7 +24,7 @@ class TextLogSink
 {
 public:
     /// Makes an extended message from msg and passes it to the client logs queue and child (if possible)
-    void log(const ExtendedLogMessage & msg);
+    void log(const ExtendedLogMessage & msg, bool send_to_text_log);
 
 #ifndef WITHOUT_TEXT_LOG
     void addTextLog(std::shared_ptr<DB::TextLogQueue> log_queue, int max_priority);

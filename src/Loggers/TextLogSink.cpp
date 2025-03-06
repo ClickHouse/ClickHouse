@@ -16,7 +16,7 @@
 namespace DB
 {
 
-void TextLogSink::log(const ExtendedLogMessage & msg)
+void TextLogSink::log(const ExtendedLogMessage & msg, bool send_to_text_log)
 {
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
@@ -42,6 +42,9 @@ void TextLogSink::log(const ExtendedLogMessage & msg)
 
             [[maybe_unused]] bool push_result = logs_queue->emplace(std::move(columns));
         }
+
+        if (!send_to_text_log)
+            return;
 
         auto text_log_locked = text_log.lock();
         if (!text_log_locked)

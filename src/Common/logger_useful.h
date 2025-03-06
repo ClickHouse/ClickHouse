@@ -248,13 +248,14 @@ namespace impl
             DB::ExtendedLogMessage _msg_ext = DB::ExtendedLogMessage::getFrom(_poco_message); \
             std::string _text; \
             _formatter->formatExtended(_msg_ext, _text); \
-            if (::impl::shouldLog(_logger, level, &_poco_message)) \
+            auto _should_log = ::impl::shouldLog(_logger, level, &_poco_message); \
+            if (_should_log) \
             { \
                 QUILL_DEFINE_MACRO_METADATA(__PRETTY_FUNCTION__, "{}", nullptr, quill::LogLevel::Dynamic); \
                 ::impl::getQuillLogger(_logger)->template log_statement<QUILL_IMMEDIATE_FLUSH, true>( \
                     ::impl::logLevelToQuillLogLevel(level), &macro_metadata, _text); \
             } \
-            Logger::getTextLogSink().log(_msg_ext); \
+            Logger::getTextLogSink().log(_msg_ext, _should_log); \
         } \
         catch (const Poco::Exception & logger_exception) \
         { \

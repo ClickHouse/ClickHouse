@@ -300,6 +300,9 @@ private:
 
     void rotateFiles()
     {
+        if (!current_log_size)
+            return;
+
         Base::flush_sink();
         Base::fsync_file(/*force_fsync=*/true);
 
