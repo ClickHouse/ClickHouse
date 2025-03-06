@@ -183,4 +183,17 @@ private:
     }
 };
 
+inline Block convertBlobColumns(const Block & block)
+{
+    Block res;
+    res.info = block.info;
+    for (const auto & elem : block)
+    {
+        ColumnWithTypeAndName column = elem;
+        if (const auto * col = typeid_cast<const ColumnBlob *>(column.column.get()))
+            column.column = col->convertFrom();
+        res.insert(std::move(column));
+    }
+    return res;
+}
 }

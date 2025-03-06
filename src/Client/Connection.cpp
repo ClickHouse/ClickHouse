@@ -38,10 +38,9 @@
 #include <Common/FailPoint.h>
 
 #include <Columns/ColumnBlob.h>
-
+#include <Core/Types.h>
 #include <Common/config_version.h>
 #include <Common/scope_guard_safe.h>
-#include <Core/Types.h>
 #include "config.h"
 
 #if USE_SSL
@@ -1350,21 +1349,11 @@ Block Connection::receiveLogData()
     return receiveDataImpl(*block_logs_in);
 }
 
-
-static Block convertBlobColumns(const Block & block)
+void Connection::initBlockQueue()
 {
-    Block res;
-    res.info = block.info;
-    for (const auto & elem : block)
-    {
-        ColumnWithTypeAndName column = elem;
-        if (const auto * col = typeid_cast<const ColumnBlob *>(column.column.get()))
-            column.column = col->convertFrom();
-        res.insert(std::move(column));
-    }
-    return res;
+    if (!block_queue)
+        block_queue = std::make_unique<BlockQueue>(8, [](const Block & block) { return convertBlobColumns(block); });
 }
-
 
 Block Connection::receiveDataImpl(NativeReader & reader)
 {
@@ -1375,7 +1364,13 @@ Block Connection::receiveDataImpl(NativeReader & reader)
 
     /// Read one block from network.
     Block res = reader.read();
-    res = convertBlobColumns(res);
+
+    if (res)
+    {
+        initBlockQueue();
+        block_queue->enqueueForProcessing(res);
+        res = block_queue->dequeueNextProcessed();
+    }
 
     if (throttler)
         throttler->add(in->count() - prev_bytes);
