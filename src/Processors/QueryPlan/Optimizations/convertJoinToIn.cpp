@@ -79,6 +79,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         if (!(left && !right))
             return 0;
 
+        /// Check in and out type
         if (!left_input_header.getByName(column_name).type->equals(*column_with_type_and_name.type))
             return 0;
     }
