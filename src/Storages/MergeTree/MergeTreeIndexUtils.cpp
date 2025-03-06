@@ -5,7 +5,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Columns/ColumnConst.h>
-#include <iostream>
 
 namespace DB
 {
@@ -50,7 +49,7 @@ ASTPtr buildFilterNode(const ASTPtr & select_query, ASTs additional_filters)
 namespace
 {
 
-const ActionsDAG::Node & cloneActionsDAGNodeWithRecalculatedConstantsNames(
+const ActionsDAG::Node & cloneActionsDAGNodeWithRegeneratedConstantsNames(
     const ActionsDAG::Node & node,
     ActionsDAG & new_dag,
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> cloned_nodes)
@@ -84,13 +83,13 @@ const ActionsDAG::Node & cloneActionsDAGNodeWithRecalculatedConstantsNames(
         }
         case (ActionsDAG::ActionType::ALIAS):
         {
-            auto arg = cloneActionsDAGNodeWithRecalculatedConstantsNames(*node.children.front(), new_dag, cloned_nodes);
+            auto arg = cloneActionsDAGNodeWithRegeneratedConstantsNames(*node.children.front(), new_dag, cloned_nodes);
             res = &new_dag.addAlias(arg, node.result_name);
             break;
         }
         case (ActionsDAG::ActionType::ARRAY_JOIN):
         {
-            auto arg = cloneActionsDAGNodeWithRecalculatedConstantsNames(*node.children.front(), new_dag, cloned_nodes);
+            auto arg = cloneActionsDAGNodeWithRegeneratedConstantsNames(*node.children.front(), new_dag, cloned_nodes);
             res = &new_dag.addArrayJoin(arg, {});
             break;
         }
@@ -98,7 +97,7 @@ const ActionsDAG::Node & cloneActionsDAGNodeWithRecalculatedConstantsNames(
         {
             ActionsDAG::NodeRawConstPtrs children(node.children);
             for (auto & arg : children)
-                arg = &cloneActionsDAGNodeWithRecalculatedConstantsNames(*arg, new_dag, cloned_nodes);
+                arg = &cloneActionsDAGNodeWithRegeneratedConstantsNames(*arg, new_dag, cloned_nodes);
             res = &new_dag.addFunction(node.function_base, children, "");
             break;
         }
@@ -110,13 +109,13 @@ const ActionsDAG::Node & cloneActionsDAGNodeWithRecalculatedConstantsNames(
 
 }
 
-ActionsDAG cloneActionsDAGWithRecalculatedConstantsNames(const ActionsDAG & dag)
+ActionsDAG cloneActionsDAGWithRegeneratedConstantsNames(const ActionsDAG & dag)
 {
     ActionsDAG new_dag;
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> cloned_nodes;
     ActionsDAG::NodeRawConstPtrs outputs = dag.getOutputs();
     for (auto & node : outputs)
-        node = &cloneActionsDAGNodeWithRecalculatedConstantsNames(*node, new_dag, cloned_nodes);
+        node = &cloneActionsDAGNodeWithRegeneratedConstantsNames(*node, new_dag, cloned_nodes);
 
     new_dag.getOutputs().swap(outputs);
     return new_dag;

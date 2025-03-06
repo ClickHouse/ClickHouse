@@ -205,7 +205,10 @@ MergeTreeConditionFullText::MergeTreeConditionFullText(
         return;
     }
 
-    auto cloned_filter_actions_dag = cloneActionsDAGWithRecalculatedConstantsNames(*filter_actions_dag);
+    /// Clone ActionsDAG with re-generated column name for constants.
+    /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
+    /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
+    auto cloned_filter_actions_dag = cloneActionsDAGWithRegeneratedConstantsNames(*filter_actions_dag);
     rpn = std::move(
             RPNBuilder<RPNElement>(
                     cloned_filter_actions_dag.getOutputs().at(0), context_,
