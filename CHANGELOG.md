@@ -12,7 +12,7 @@
 
 # 2025 Changelog
 
-### <a id="252"></a> ClickHouse release 25.2, 2025-02-27
+### ClickHouse release 25.2, 2025-02-27 {#252}
 
 #### Backward Incompatible Change
 * Completely enable `async_load_databases` by default (even for those installations that do not upgrade `config.xml`). [#74772](https://github.com/ClickHouse/ClickHouse/pull/74772) ([Azat Khuzhin](https://github.com/azat)).
@@ -175,7 +175,7 @@
 * Disable network access for user default in the docker image. [#75259](https://github.com/ClickHouse/ClickHouse/pull/75259) ([Mikhail f. Shiryaev](https://github.com/Felixoid)). Make all clickhouse-server related actions a function, and execute them only when launching the default binary in `entrypoint.sh`. A long-postponed improvement was suggested in [#50724](https://github.com/ClickHouse/ClickHouse/issues/50724). Added switch `--users` to `clickhouse-extract-from-config` to get values from the `users.xml`. [#75643](https://github.com/ClickHouse/ClickHouse/pull/75643) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
 * Remove about 20MB of dead code from the binary. [#76226](https://github.com/ClickHouse/ClickHouse/pull/76226) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
-### <a id="251"></a> ClickHouse release 25.1, 2025-01-28
+### ClickHouse release 25.1, 2025-01-28 {#251}
 
 #### Backward Incompatible Change
 * `JSONEachRowWithProgress` will write the progress whenever the progress happens. In previous versions, the progress was shown only after each block of the result, which made it useless. Change the way how the progress is displayed: it will not show zero values. This closes [#70800](https://github.com/ClickHouse/ClickHouse/issues/70800). [#73834](https://github.com/ClickHouse/ClickHouse/pull/73834) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
