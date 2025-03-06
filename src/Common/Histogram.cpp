@@ -52,7 +52,7 @@ namespace DB::Histogram
 
     Metric & MetricFamily::withLabels(LabelValues label_values)
     {
-        assert(label_values.size() == labels.size());
+        chassert(label_values.size() == labels.size());
         std::lock_guard lock(mutex);
         auto [it, _] = metrics.try_emplace(std::move(label_values), std::make_shared<Metric>(buckets));
         return *it->second;
