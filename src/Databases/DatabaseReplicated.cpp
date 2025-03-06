@@ -167,9 +167,7 @@ DatabaseReplicated::DatabaseReplicated(
                                             "and replica_group_name is configured. It may cause collisions in cluster names.";
         context_->addOrUpdateWarningMessage(
             Context::WarningType::REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
-            Context::Warning{
-                .message = fmt::format(message_format_string, ALL_GROUPS_CLUSTER_PREFIX, message_format_string),
-                .message_format_string = message_format_string});
+            PreformattedMessage::create(message_format_string, ALL_GROUPS_CLUSTER_PREFIX));
     }
 }
 

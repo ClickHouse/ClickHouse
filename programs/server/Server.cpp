@@ -670,7 +670,7 @@ void sanityChecks(Server & server)
             = "Server logging level is set to 'test' and performance is degraded. This cannot be used in production.";
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::SERVER_LOGGING_LEVEL_TEST,
-            Context::Warning{.message = message_format_string, .message_format_string = message_format_string});
+            PreformattedMessage::create(message_format_string));
     }
 #if defined(OS_LINUX)
     try
@@ -689,7 +689,7 @@ void sanityChecks(Server & server)
             constexpr auto message_format_string = "Linux is not using a fast clock source. Performance can be degraded. Check {}";
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_FAST_CLOCK_SOURCE_NOT_USED,
-                Context::Warning{.message = fmt::format(message_format_string, filename), .message_format_string = message_format_string});
+                PreformattedMessage::create(message_format_string, filename));
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -704,8 +704,7 @@ void sanityChecks(Server & server)
             constexpr auto message_format_string = "Linux memory overcommit is disabled. Check {}";
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_MEMORY_OVERCOMMIT_DISABLED,
-                Context::Warning{
-                    .message = fmt::format(message_format_string, String(filename)), .message_format_string = message_format_string});
+                PreformattedMessage::create(message_format_string, String(filename)));
         }
         }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -720,7 +719,7 @@ void sanityChecks(Server & server)
             constexpr auto message_format_string = "Linux transparent hugepages are set to \"always\". Check {}";
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
-                Context::Warning{.message = fmt::format(message_format_string, String(filename)), .message_format_string = message_format_string});
+                PreformattedMessage::create(message_format_string, String(filename)));
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -735,8 +734,7 @@ void sanityChecks(Server & server)
             constexpr auto message_format_string = "Linux max PID is too low. Check {}";
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_MAX_PID_TOO_LOW,
-                Context::Warning{
-                    .message = fmt::format(message_format_string, String(filename)), .message_format_string = message_format_string});
+               PreformattedMessage::create(message_format_string, String(filename)));
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -751,8 +749,7 @@ void sanityChecks(Server & server)
             constexpr auto message_format_string = "Linux threads max count is too low. Check {}";
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_MAX_THREADS_COUNT_TOO_LOW,
-                Context::Warning{
-                    .message = fmt::format(message_format_string, String(filename)), .message_format_string = message_format_string});
+                PreformattedMessage::create(message_format_string, String(filename)));
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -768,8 +765,7 @@ void sanityChecks(Server & server)
                                            "using `echo 1 > {}` or by using sysctl.";
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::DELAY_ACCOUNTING_DISABLED,
-                Context::Warning{
-                    .message = fmt::format(message_format_string, String(filename)), .message_format_string = message_format_string});
+                PreformattedMessage::create(message_format_string, String(filename)));
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -782,8 +778,7 @@ void sanityChecks(Server & server)
         constexpr auto message_format_string = "Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: {}";
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-            Context::Warning{
-                .message = fmt::format(message_format_string, String(data_path)), .message_format_string = message_format_string});
+            PreformattedMessage::create(message_format_string, String(data_path)));
     }
 #endif
 
@@ -794,7 +789,7 @@ void sanityChecks(Server & server)
             constexpr auto message_format_string = "Available memory at server startup is too low (2GiB).";
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::AVAILABLE_MEMORY_TOO_LOW,
-                Context::Warning{.message = message_format_string, .message_format_string = message_format_string});
+                PreformattedMessage::create(message_format_string));
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -808,8 +803,7 @@ void sanityChecks(Server & server)
             constexpr auto message_format_string = "Available disk space for data at server startup is too low (1GiB): {}";
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
-                Context::Warning{
-                    .message = fmt::format(message_format_string, String(data_path)), .message_format_string = message_format_string});
+                PreformattedMessage::create(message_format_string, String(data_path)));
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -826,8 +820,7 @@ void sanityChecks(Server & server)
                 constexpr auto messge_format_string = "Available disk space for logs at server startup is too low (1GiB): {}";
                 server.context()->addOrUpdateWarningMessage(
                     Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
-                    Context::Warning{
-                        .message = fmt::format(messge_format_string, String(logs_parent)), .message_format_string = messge_format_string});
+                    PreformattedMessage::create(messge_format_string, String(logs_parent)));
             }
         }
     }
@@ -843,7 +836,7 @@ void sanityChecks(Server & server)
               " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.";
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::SETTING_ZERO_COPY_REPLICATION_ENABLED,
-            Context::Warning{.message = message_format_string, .message_format_string = message_format_string});
+            PreformattedMessage::create(message_format_string));
     }
 }
 
@@ -891,9 +884,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                         constexpr auto message_format_string = "The condition query returned `{}`, which can't be interpreted as a boolean (`0`, "
                                                        "`false`, `1`, `true`). Will skip this query.";
                         context->addOrUpdateWarningMessage(
-                            Context::WarningType::SKIPPING_CONDITION_QUERY,
-                            Context::Warning{
-                                .message = fmt::format(message_format_string, result), .message_format_string = message_format_string});
+                            Context::WarningType::SKIPPING_CONDITION_QUERY, PreformattedMessage::create(message_format_string, result));
                     }
 
                     continue;
@@ -1077,15 +1068,14 @@ try
 
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
     String message_debug_mode = "Server was built in debug mode. It will work slowly.";
-    global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_IN_DEBUG_MODE, Context::Warning{.message = message_debug_mode, .message_format_string = message_debug_mode});
+    global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_IN_DEBUG_MODE, PreformattedMessage::create(message_debug_mode));
 #endif
 
     if (ThreadFuzzer::instance().isEffective())
     {
-        String message_thread_fuzzer = "ThreadFuzzer is enabled. Application will run slowly and unstable.";
         global_context->addOrUpdateWarningMessage(
             Context::WarningType::THREAD_FUZZER_IS_ENABLED,
-            Context::Warning{.message = message_thread_fuzzer, .message_format_string = message_thread_fuzzer});
+            PreformattedMessage::create("ThreadFuzzer is enabled. Application will run slowly and unstable."));
     }
 
 #if defined(SANITIZER)
@@ -1102,14 +1092,14 @@ try
     constexpr auto message_format_string_sanitizers = "Server was built with {}. It will work slowly.";
     global_context->addOrUpdateWarningMessage(
         Context::WarningType::SERVER_BUILT_WITH_SANITIZERS,
-        Context::Warning{.message = fmt::format(message_format_string_sanitizers, log_message), .message_format_string = message_format_string_sanitizers});
+        PreformattedMessage::create(message_format_string_sanitizers, log_message));
 #endif
 
 #if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
     String message_built_with_coverage = "Server was built with code coverage. It will work slowly.";
     global_context->addOrUpdateWarningMessage(
         Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
-        Context::Warning{.message = message_built_with_coverage, .message_format_string = message_built_with_coverage});
+        PreformattedMessage::create(message_built_with_coverage));
 #endif
 
     const size_t physical_server_memory = getMemoryAmount();
@@ -1405,11 +1395,10 @@ try
     /// Check that the process user id matches the owner of the data.
     assertProcessUserMatchesDataOwner(
         path_str,
-        [&](const String & message, const String & message_format_string)
+        [&](const PreformattedMessage & message)
         {
             global_context->addOrUpdateWarningMessage(
-                Context::WarningType::PROCESS_USER_MATCHES_DATA_OWNER,
-                Context::Warning{.message = message, .message_format_string = message_format_string});
+                Context::WarningType::PROCESS_USER_MATCHES_DATA_OWNER, message);
         });
 
     global_context->setPath(path_str);
@@ -1478,7 +1467,7 @@ try
                     /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
                     global_context->addOrUpdateWarningMessage(
                         Context::WarningType::SERVER_RUN_UNDER_DEBUGGER,
-                        Context::Warning{.message = fmt::format(message_format_string, calculated_binary_hash), .message_format_string = message_format_string});
+                        PreformattedMessage::create(message_format_string, calculated_binary_hash));
                 }
                 else
                 {
@@ -1635,11 +1624,10 @@ try
 
         if (rlim.rlim_cur < 30000)
         {
-            String message_format_string
-                = "Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries.";
             global_context->addOrUpdateWarningMessage(
                 Context::WarningType::MAX_NUM_THREADS_LOWER_THAN_LIMIT,
-                Context::Warning{.message = message_format_string, .message_format_string = message_format_string});
+                PreformattedMessage::create(
+                    "Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries."));
         }
     }
 

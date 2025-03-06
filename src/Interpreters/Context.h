@@ -623,7 +623,6 @@ public:
         MAX_ATTACHED_DATABASES,
         MAX_ACTIVE_PARTS,
         MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
-        MAX_STUCK_MUTATIONS_EXCEEDS_LIMIT,
         MAX_NUM_THREADS_LOWER_THAN_LIMIT,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
@@ -639,14 +638,8 @@ public:
         THREAD_FUZZER_IS_ENABLED
     };
 
-    struct Warning
-    {
-        String message;
-        String message_format_string;
-    };
-
-    std::unordered_map<Context::WarningType, Context::Warning> getWarnings() const;
-    void addOrUpdateWarningMessage(WarningType warning, const Warning & message) const;
+    std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
+    void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
     void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
     void removeWarningMessage(WarningType warning) const;
 

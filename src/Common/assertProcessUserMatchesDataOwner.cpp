@@ -39,7 +39,7 @@ namespace
     }
 }
 
-void assertProcessUserMatchesDataOwner(const std::string & path, std::function<void(const String &, const String &)> on_warning)
+void assertProcessUserMatchesDataOwner(const std::string & path, std::function<void(const PreformattedMessage &)> on_warning)
 {
     /// Check that the process user id matches the owner of the data.
     const auto effective_user_id = geteuid();
@@ -48,16 +48,15 @@ void assertProcessUserMatchesDataOwner(const std::string & path, std::function<v
     {
         auto effective_user = getUserName(effective_user_id);
         auto data_owner = getUserName(statbuf.st_uid);
-        String message_format_string = "Effective user of the process ({}) does not match the owner of the data ({}).";
-        String message = fmt::format(fmt::runtime(message_format_string), effective_user, data_owner);
-
+        constexpr auto message_format_string = "Effective user of the process ({}) does not match the owner of the data ({}).";
+        auto formatted_msg = PreformattedMessage::create(message_format_string, effective_user, data_owner);
         if (effective_user_id == 0)
         {
-            message += fmt::format(" Run under 'sudo -u {}'.", data_owner);
+            auto message = formatted_msg.text + fmt::format(" Run under 'sudo -u {}'.", data_owner);
             throw Exception(ErrorCodes::MISMATCHING_USERS_FOR_PROCESS_AND_DATA, "{}", message);
         }
 
-        on_warning(message, message_format_string);
+        on_warning(formatted_msg);
     }
 }
 

@@ -22,8 +22,8 @@ void StorageSystemWarnings::fillData(MutableColumns & res_columns, ContextPtr co
 {
     for (const auto & [_, warning] : context->getWarnings())
     {
-        res_columns[0]->insert(warning.message);
-        res_columns[1]->insert(warning.message_format_string);
+        res_columns[0]->insert(warning.text);
+        res_columns[1]->insert(warning.format_string);
     }
 }
 
