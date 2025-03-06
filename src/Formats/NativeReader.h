@@ -44,6 +44,8 @@ public:
 
     Block read();
 
+    bool hasPendingData() const;
+
     static void readData(
         const ISerialization & serialization,
         ColumnPtr & column,

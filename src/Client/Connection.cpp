@@ -1362,16 +1362,32 @@ Block Connection::receiveDataImpl(NativeReader & reader)
 
     size_t prev_bytes = in->count();
 
-    /// Read one block from network.
+    // initBlockQueue();
+    // Block block;
+    // do
+    // {
+    //     block = reader.read();
+    //     if (!block_queue->enqueueForProcessing(block, /*wait=*/false))
+    //         break;
+    // } while (reader.hasPendingData());
+    //
+    // if (res)
+    // {
+    //     res = block_queue->dequeueNextProcessed();
+    // }
+    //
+    // if (block)
+    // {
+    //     // Everything that was possible to push without waiting is pushed. Now we have to push the last block regardless of the queue state
+    //     block_queue->enqueueForProcessing(block, /*wait=*/true);
+    // }
+
     Block res = reader.read();
+    initBlockQueue();
+    block_queue->enqueueForProcessing(res);
+    res = block_queue->dequeueNextProcessed();
 
-    if (res)
-    {
-        initBlockQueue();
-        block_queue->enqueueForProcessing(res);
-        res = block_queue->dequeueNextProcessed();
-    }
-
+    // TODO(nickitat): fix
     if (throttler)
         throttler->add(in->count() - prev_bytes);
 

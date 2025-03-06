@@ -119,6 +119,11 @@ Block NativeReader::getHeader() const
     return header;
 }
 
+bool NativeReader::hasPendingData() const
+{
+    return istr.hasPendingData();
+}
+
 Block NativeReader::read()
 {
     Block res;
