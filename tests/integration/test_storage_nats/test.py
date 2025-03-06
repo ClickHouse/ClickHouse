@@ -1358,6 +1358,11 @@ def test_nats_no_connection_at_startup_1(nats_cluster):
                         nats_row_delimiter = '\\n';
         """
         )
+        instance.query_and_get_error(
+            """
+            SHOW TABLE test.cs;
+        """
+        )
 
 
 def test_nats_no_connection_at_startup_2(nats_cluster):
