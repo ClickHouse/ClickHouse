@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
+            {"use_datalake_metadata_cache", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
