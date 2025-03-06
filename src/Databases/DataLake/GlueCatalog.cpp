@@ -33,7 +33,6 @@
 namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::Setting
@@ -44,32 +43,34 @@ namespace DB::Setting
     extern const SettingsBool enable_s3_requests_logging;
 }
 
-
-
 namespace
 {
 
-// Utility function to trim spaces
-String trim(const String & str) {
+String trim(const String & str)
+{
     size_t start = str.find_first_not_of(' ');
     size_t end = str.find_last_not_of(' ');
     return (start == String::npos || end == String::npos) ? "" : str.substr(start, end - start + 1);
 }
 
-// Function to extract inner types from generic types (map<>, struct<>)
-std::vector<String> splitTypeArguments(const String & type_str) {
+std::vector<String> splitTypeArguments(const String & type_str)
+{
     std::vector<String> args;
     int depth = 0;
     size_t start = 0;
-    for (size_t i = 0; i < type_str.size(); i++) {
-        if (type_str[i] == '<') depth++;
-        else if (type_str[i] == '>') depth--;
-        else if (type_str[i] == ',' && depth == 0) {
+    for (size_t i = 0; i < type_str.size(); i++)
+    {
+        if (type_str[i] == '<')
+            depth++;
+        else if (type_str[i] == '>')
+            depth--;
+        else if (type_str[i] == ',' && depth == 0)
+        {
             args.push_back(trim(type_str.substr(start, i - start)));
             start = i + 1;
         }
     }
-    args.push_back(trim(type_str.substr(start)));  // Last part
+    args.push_back(trim(type_str.substr(start)));
     return args;
 }
 
@@ -189,7 +190,6 @@ GlueCatalog::GlueCatalog(
 
 }
 
-
 DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & prefix, size_t limit) const
 {
     DataLake::ICatalog::Namespaces result;
@@ -232,7 +232,6 @@ DataLake::ICatalog::Namespaces GlueCatalog::getDatabases(const std::string & pre
 
     return result;
 }
-
 
 DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t limit) const
 {
@@ -285,7 +284,6 @@ DB::Names GlueCatalog::getTables() const
     }
     return result;
 }
-
 
 bool GlueCatalog::existsTable(const std::string & schema_name, const std::string & table_name) const
 {
@@ -393,7 +391,6 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Glue catalog support S3 backend for data storage only");
     }
 }
-
 
 bool GlueCatalog::empty() const
 {
