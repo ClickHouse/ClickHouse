@@ -304,7 +304,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     /// Clone ActionsDAG with re-generated column name for constants.
     /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
     /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
-    auto filter_actions_dag = cloneActionsDAGWithRegeneratedConstantsNames(*filter_dag);
+    auto filter_actions_dag = cloneFilterDAGForIndexesAnalysis(*filter_dag);
     std::vector<FutureSetPtr> sets_to_prepare;
     if (checkDAGUseless(*filter_actions_dag.getOutputs().at(0), context, sets_to_prepare))
         return;

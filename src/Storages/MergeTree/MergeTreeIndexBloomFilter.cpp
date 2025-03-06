@@ -216,7 +216,7 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     /// Clone ActionsDAG with re-generated column name for constants.
     /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
     /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
-    auto cloned_filter_actions_dag = cloneActionsDAGWithRegeneratedConstantsNames(*filter_actions_dag);
+    auto cloned_filter_actions_dag = cloneFilterDAGForIndexesAnalysis(*filter_actions_dag);
     RPNBuilder<RPNElement> builder(
         cloned_filter_actions_dag.getOutputs().at(0),
         context_,

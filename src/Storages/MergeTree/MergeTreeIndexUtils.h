@@ -14,6 +14,7 @@ ASTPtr buildFilterNode(const ASTPtr & select_query, ASTs additional_filters = {}
 /// Clone ActionsDAG with re-generated column name for constants.
 /// DAG from the query (with enabled analyzer) uses suffixes for constants, like 1_UInt8.
 /// DAG from the skip indexes does not use it. This breaks matching by column name sometimes.
-ActionsDAG cloneActionsDAGWithRegeneratedConstantsNames(const ActionsDAG & dag);
+/// Also remove useless CASTs to the same type (CAST(column, 'Type') where column already has type Type).
+ActionsDAG cloneFilterDAGForIndexesAnalysis(const ActionsDAG & dag);
 
 }
