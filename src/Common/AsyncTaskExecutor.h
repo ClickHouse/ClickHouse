@@ -61,6 +61,9 @@ public:
 
     bool isCancelled() const { return is_cancelled; }
 
+    void setFinished() { routine_is_finished = true; }
+    bool isFinished() const { return routine_is_finished; }
+
     virtual ~AsyncTaskExecutor() = default;
 
 
