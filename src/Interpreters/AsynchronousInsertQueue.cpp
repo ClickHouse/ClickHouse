@@ -2,6 +2,8 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
+#include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -964,7 +966,7 @@ try
 
         bool pulling_pipeline = false;
         logQueryFinish(
-            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCacheUsage::None, internal);
+            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryResultCacheUsage::None, internal);
     };
 
     try

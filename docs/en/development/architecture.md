@@ -52,7 +52,7 @@ When we calculate some function over columns in a block, we add another column w
 
 Blocks are created for every processed chunk of data. Note that for the same type of calculation, the column names and types remain the same for different blocks, and only column data changes. It is better to split block data from the block header because small block sizes have a high overhead of temporary strings for copying shared_ptrs and column names.
 
-## Processors
+## Processors {#processors}
 
 See the description at [https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/IProcessor.h).
 
@@ -129,7 +129,7 @@ There are ordinary functions and aggregate functions. For aggregate functions, s
 
 Ordinary functions do not change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`'s of data to implement vectorized query execution.
 
-There are some miscellaneous functions, like [blockSize](../sql-reference/functions/other-functions.md#blocksize-function-blocksize), [rowNumberInBlock](../sql-reference/functions/other-functions.md#rownumberinblock-function-rownumberinblock), and [runningAccumulate](../sql-reference/functions/other-functions.md#runningaccumulate-runningaccumulate), that exploit block processing and violate the independence of rows.
+There are some miscellaneous functions, like [blockSize](/sql-reference/functions/other-functions#blockSize), [rowNumberInBlock](/sql-reference/functions/other-functions#rowNumberInBlock), and [runningAccumulate](/sql-reference/functions/other-functions#runningaccumulate), that exploit block processing and violate the independence of rows.
 
 ClickHouse has strong typing, so there's no implicit type conversion. If a function does not support a specific combination of types, it throws an exception. But functions can work (be overloaded) for many different combinations of types. For example, the `plus` function (to implement the `+` operator) works for any combination of numeric types: `UInt8` + `Float32`, `UInt16` + `Int8`, and so on. Also, some variadic functions can accept any number of arguments, such as the `concat` function.
 

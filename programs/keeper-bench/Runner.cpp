@@ -2,6 +2,7 @@
 #include <atomic>
 #include <Poco/Util/AbstractConfiguration.h>
 
+#include <Columns/IColumn.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
 #include <Coordination/KeeperSnapshotManager.h>
@@ -961,8 +962,8 @@ void dumpStats(std::string_view type, const RequestFromLogStats::Stats & stats_f
     std::cerr << fmt::format(
         "{} requests: {} total, {} with unexpected results ({:.4}%)",
         type,
-        stats_for_type.total,
-        stats_for_type.unexpected_results,
+        stats_for_type.total.load(),
+        stats_for_type.unexpected_results.load(),
         stats_for_type.total != 0 ? static_cast<double>(stats_for_type.unexpected_results) / stats_for_type.total * 100 : 0.0)
               << std::endl;
 };

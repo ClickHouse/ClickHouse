@@ -13,9 +13,9 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with [WindowView](../statements/create/view.md/#window-view-experimental) are listed below:
+Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with [WindowView](/sql-reference/statements/create/view#window-view) are listed below:
 
-## tumble
+## tumble {#tumble}
 
 A tumbling time window assigns records to non-overlapping, continuous windows with a fixed duration (`interval`).
 
@@ -50,7 +50,7 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-## tumbleStart
+## tumbleStart {#tumblestart}
 
 Returns the inclusive lower bound of the corresponding [tumbling window](#tumble).
 
@@ -86,7 +86,7 @@ Result:
 └────────────────────────────────────────┘
 ```
 
-## tumbleEnd
+## tumbleEnd {#tumbleend}
 
 Returns the exclusive upper bound of the corresponding [tumbling window](#tumble).
 
@@ -122,7 +122,7 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-## hop
+## hop {#hop}
 
 A hopping time window has a fixed duration (`window_interval`) and hops by a specified hop interval (`hop_interval`). If the `hop_interval` is smaller than the `window_interval`, hopping windows are overlapping. Thus, records can be assigned to multiple windows.
 
@@ -161,7 +161,7 @@ Result:
 └────────────────────────────────────────────────────┘
 ```
 
-## hopStart
+## hopStart {#hopstart}
 
 Returns the inclusive lower bound of the corresponding [hopping window](#hop).
 
@@ -201,7 +201,7 @@ Result:
 └─────────────────────────────────────────────────────────┘
 ```
 
-## hopEnd
+## hopEnd {#hopend}
 
 Returns the exclusive upper bound of the corresponding [hopping window](#hop).
 
@@ -242,6 +242,6 @@ Result:
 
 ```
 
-## Related content
+## Related content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

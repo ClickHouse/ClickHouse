@@ -2,6 +2,8 @@
 slug: /sql-reference/table-functions/hdfsCluster
 sidebar_position: 81
 sidebar_label: hdfsCluster
+title: "hdfsCluster"
+description: "Allows processing files from HDFS in parallel from many nodes in a specified cluster."
 ---
 
 # hdfsCluster Table Function
@@ -18,7 +20,7 @@ hdfsCluster(cluster_name, URI, format, structure)
 
 - `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
 - `URI` — URI to a file or a bunch of files. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{'abc','def'}` and `{N..M}` where `N`, `M` — numbers, `abc`, `def` — strings. For more information see [Wildcards In Path](../../engines/table-engines/integrations/s3.md#wildcards-in-path).
-- `format` — The [format](../../interfaces/formats.md#formats) of the file.
+- `format` — The [format](/sql-reference/formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Returned value**

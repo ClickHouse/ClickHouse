@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
-#include <base/int8_to_string.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
 #include <Core/LogsLevel.h>
@@ -11,7 +10,6 @@
 #include <exception>
 #include <vector>
 
-#include <fmt/core.h>
 #include <fmt/format.h>
 #include <Poco/Exception.h>
 
@@ -338,11 +336,11 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, bool
 
 template <typename T>
 requires std::is_pointer_v<T>
-T exception_cast(std::exception_ptr e)
+T current_exception_cast()
 {
     try
     {
-        std::rethrow_exception(e);
+        throw;
     }
     catch (std::remove_pointer_t<T> & concrete)
     {
