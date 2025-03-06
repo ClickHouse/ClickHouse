@@ -509,7 +509,7 @@ macro (clickhouse_add_executable target)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # disabled for TSAN and gcc since libtsan.a provides overrides too
+        # Disabled if memory tracking is disabled
         if (TARGET clickhouse_new_delete)
             # operator::new/delete for executables (MemoryTracker stuff)
             target_link_libraries (${target} PRIVATE clickhouse_new_delete)
