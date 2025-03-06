@@ -325,7 +325,10 @@ void KafkaConsumer::rejoin_consumer_group()
     }
 
     LOG_TRACE(log, "Re-joining claimed consumer after failure");
+
     cleanUnprocessed();
+    assignment.reset();
+    waited_for_assignment = 0;
 
     // it should not raise exception as used in destructor
     try

@@ -341,20 +341,24 @@ void consumerGracefulStop(
 
     try
     {
-        consumer.pause();
+        auto assignment = consumer.get_assignment();
+
+        if (!assignment.empty())
+        {
+            consumer.pause_partitions(assignment);
+
+            // let's also remove disable forwarding for toppar queues, as they are not needed anymore anyway
+            for (const auto& partition : assignment)
+            {
+                // that call disables the forwarding of the messages to the customer queue
+                consumer.get_partition_queue(partition);
+            }
+        }
     }
     catch (const cppkafka::HandleException & e)
     {
         LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
     }
-
-    // let's also remove disable forwarding for toppar queues, as they are not needed anymore anyway
-    for (const auto& partition : consumer.get_assignment())
-    {
-        // that call disables the forwarding of the messages to the customer queue
-        consumer.get_partition_queue(partition);
-    }
-
 
     // the pause works only on the list of partitions, and during the drain we may have a rebalance which will change the list
 
