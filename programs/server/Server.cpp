@@ -1067,8 +1067,7 @@ try
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
-    String message_debug_mode = "Server was built in debug mode. It will work slowly.";
-    global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_IN_DEBUG_MODE, PreformattedMessage::create(message_debug_mode));
+    global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_IN_DEBUG_MODE, PreformattedMessage::create("Server was built in debug mode. It will work slowly."));
 #endif
 
     if (ThreadFuzzer::instance().isEffective())
@@ -1096,10 +1095,9 @@ try
 #endif
 
 #if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
-    String message_built_with_coverage = "Server was built with code coverage. It will work slowly.";
     global_context->addOrUpdateWarningMessage(
         Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
-        PreformattedMessage::create(message_built_with_coverage));
+        PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
 #endif
 
     const size_t physical_server_memory = getMemoryAmount();
