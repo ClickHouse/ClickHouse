@@ -146,23 +146,28 @@ namespace
 {
 constexpr UInt64 THREAD_GROUP_ID = 0;
 
+bool isSpecialFile(const String & path)
+{
+    return path == "/dev/null" || path == "/dev/stdout" || path == "/dev/stderr";
+}
+
 void handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const String & out_file, String & query)
 {
     if (!query_with_output->is_outfile_truncate)
         return;
 
-    // Skip atomic rename for special files
-    if (out_file == "/dev/null" || out_file == "/dev/stdout" || out_file == "/dev/stderr")
+    /// Skip handling truncate mode of special files
+    if (isSpecialFile(out_file))
         return;
 
-    // Create a temporary file with unique suffix
+    /// Create a temporary file with unique suffix
     String tmp_file = out_file + ".tmp." + DB::toString(randomSeed());
 
-    // Update the AST to use the temporary file
+    /// Update the AST to use the temporary file
     auto tmp_file_literal = std::make_shared<DB::ASTLiteral>(tmp_file);
     query_with_output->out_file = tmp_file_literal;
 
-    // Update the query string after modifying the AST
+    /// Update the query string after modifying the AST
     query = serializeAST(*query_with_output);
 }
 
@@ -175,8 +180,8 @@ void cleanupTempFile(const DB::ASTPtr & parsed_query)
             const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
             String tmp_file = tmp_file_node.value.safeGet<std::string>();
 
-            // Skip cleanup for special files
-            if (tmp_file == "/dev/null" || tmp_file == "/dev/stdout" || tmp_file == "/dev/stderr")
+            /// Skip rename for special files
+            if (isSpecialFile(tmp_file))
                 return;
 
             if (fs::exists(tmp_file))
@@ -194,11 +199,11 @@ void performAtomicRename(const DB::ASTPtr & parsed_query)
             const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
             String tmp_file = tmp_file_node.value.safeGet<std::string>();
 
-            // Skip rename for special files
-            if (tmp_file == "/dev/null" || tmp_file == "/dev/stdout" || tmp_file == "/dev/stderr")
+            /// Skip rename for special files
+            if (isSpecialFile(tmp_file))
                 return;
 
-            String out_file = tmp_file.substr(0, tmp_file.find(".tmp."));
+            String out_file = tmp_file.substr(0, tmp_file.rfind(".tmp."));
 
             try
             {
@@ -206,9 +211,10 @@ void performAtomicRename(const DB::ASTPtr & parsed_query)
             }
             catch (const fs::filesystem_error & e)
             {
-                // Clean up temporary file
+                /// Clean up temporary file
                 if (fs::exists(tmp_file))
                     fs::remove(tmp_file);
+
                 throw DB::Exception(DB::ErrorCodes::CANNOT_WRITE_TO_FILE,
                     "Cannot rename temporary file {} to {}: {}",
                     tmp_file, out_file, e.what());

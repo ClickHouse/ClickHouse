@@ -10,18 +10,24 @@ function perform()
     local query=$2
     local expected=$3
     local is_compressed=$4
+    local custom_extension=$5
+
+    local file_extension=".out"
+    if [ -n "$custom_extension" ]; then
+        file_extension="${file_extension}${custom_extension}"
+    fi
 
     echo "performing test: $test_id"
     ${CLICKHOUSE_CLIENT} --query "$query"
     if [ "$?" -eq 0 ]; then
         local actual
         if [ "$is_compressed" = "1" ]; then
-            actual=$(gunzip -c "${CLICKHOUSE_TMP}/test_atomic_$test_id.out.gz")
+            actual=$(gunzip -c "${CLICKHOUSE_TMP}/test_atomic_${test_id}${file_extension}.gz")
         else
-            actual=$(cat "${CLICKHOUSE_TMP}/test_atomic_$test_id.out")
+            actual=$(cat "${CLICKHOUSE_TMP}/test_atomic_${test_id}${file_extension}")
         fi
         if [ "$actual" != "$expected" ]; then
-            echo "Content mismatch in test_atomic_$test_id"
+            echo "Content mismatch in test_atomic_${test_id}"
             echo "Expected: $expected"
             echo "Got: $actual"
             exit 1
@@ -31,9 +37,9 @@ function perform()
         exit 1
     fi
     if [ "$is_compressed" = "1" ]; then
-        rm -f "${CLICKHOUSE_TMP}/test_atomic_$test_id.out.gz"
+        rm -f "${CLICKHOUSE_TMP}/test_atomic_${test_id}${file_extension}.gz"
     else
-        rm -f "${CLICKHOUSE_TMP}/test_atomic_$test_id.out"
+        rm -f "${CLICKHOUSE_TMP}/test_atomic_${test_id}${file_extension}"
     fi
 }
 
@@ -57,5 +63,9 @@ perform "4" "SELECT 'new text' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_4.out
 ${CLICKHOUSE_CLIENT} --query="SELECT 'line1\nline2' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_5.out' FORMAT RawBLOB" || { echo "Failed to create initial file for test 5"; exit 1; }
 perform "5" "SELECT 'new line1\nnew line2' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_5.out' TRUNCATE FORMAT RawBLOB" "new line1
 new line2" "0"
+
+# Test 6: File with .tmp in its name
+${CLICKHOUSE_CLIENT} --query="SELECT 'old content' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_6.out.tmp'" || { echo "Failed to create initial file for test 6"; exit 1; }
+perform "6" "SELECT 'new content' INTO OUTFILE '${CLICKHOUSE_TMP}/test_atomic_6.out.tmp' TRUNCATE" "new content" "0" ".tmp"
 
 echo "OK"
