@@ -23,12 +23,15 @@
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
+#include <Common/CurrentThread.h>
+
 #include "base/types.h"
 #include <base/range.h>
 #include <Poco/URI.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/ProcessList.h>
 
 // only after poco
 // naming conflict:
@@ -515,12 +518,11 @@ Chunk MongoDBPocoLegacySource::generate()
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
-
     String query_id (CurrentThread::getQueryId());
-    const auto context = CurrentThread::getQueryContext();
+    auto context = CurrentThread::getQueryContext();
     while (num_rows < max_block_size)
     {
-        if (!query_id.empty()) // Checks if the current query is timed out
+        if (!query_id.empty() && context) // Checks if the current query is timed out
         {
             const ProcessList & process_list = context->getProcessList();
             std::shared_ptr<const QueryStatusInfo> process_list_entry = process_list.getQueryInfo(query_id);
