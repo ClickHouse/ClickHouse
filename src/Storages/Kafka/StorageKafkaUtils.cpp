@@ -359,7 +359,7 @@ void consumerGracefulStop(
     // the pause works only on the list of partitions, and during the drain we may have a rebalance which will change the list
 
     consumer.set_assignment_callback(
-        [this](const cppkafka::TopicPartitionList & topic_partitions)
+        [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
         {
             consumer.pause_partitions(topic_partitions);
             consumer.assign(topic_partitions); // cppkafka does it anyway
@@ -370,8 +370,8 @@ void consumerGracefulStop(
 
         });
 
-    consumer->set_revocation_callback(
-        [this](const cppkafka::TopicPartitionList & topic_partitions)
+    consumer.set_revocation_callback(
+        [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
         {
             // we don't care during the destruction
         });
