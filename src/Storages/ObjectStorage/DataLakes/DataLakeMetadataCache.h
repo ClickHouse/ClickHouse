@@ -3,6 +3,7 @@
 #include <Common/CacheBase.h>
 #include <Common/HashTable/Hash.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 
 namespace ProfileEvents
 {
