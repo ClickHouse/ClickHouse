@@ -300,7 +300,6 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(const 
     auto split_results = actions_dag.splitPossibleOutputNames(required_outputs);
     const auto actions_dag_input_count_before = actions_dag.getInputs().size();
 
-
     const auto required_columns_contains_filter = std::any_of(
         split_results.output_names.begin(),
         split_results.output_names.end(),
@@ -309,30 +308,49 @@ IQueryPlanStep::UnusedColumnRemovalResult FilterStep::removeUnusedColumns(const 
     if (!required_columns_contains_filter)
         split_results.output_names.push_back(filter_column_name);
 
-    const auto removed_any_actions = actions_dag.removeUnusedActions(split_results.output_names, remove_inputs);
+    auto updated_actions = actions_dag.removeUnusedActions(split_results.output_names, remove_inputs);
 
-    if (!removed_any_actions && output_header.has_value() && output_header->columns() == required_outputs.size())
-        return UnusedColumnRemovalResult{false, false};
-
-    // There cannot be more inputs in the DAG than columns in the input header
-    chassert(actions_dag.getInputs().size() <= getInputHeaders().at(0).columns());
-
-    auto & input_header = input_headers.front();
-    // Number of columns that are not changed/removed by actions
+    const auto & input_header = input_headers.front();
+    // Number of input columns that are not removed by actions
     const auto pass_through_inputs = input_header.columns() - actions_dag_input_count_before;
-    const auto update_inputs = remove_inputs
-        && (actions_dag.getInputs().size() < actions_dag_input_count_before || pass_through_inputs > split_results.not_output_names.size());
-
-    if (update_inputs)
+    const auto has_to_remove_any_pass_through_input = pass_through_inputs > split_results.not_output_names.size();
+    const auto has_to_add_input_to_actions = !remove_inputs && has_to_remove_any_pass_through_input;
+    const auto build_required_inputs_set = [this, &not_output_names = split_results.not_output_names]()
     {
         std::unordered_set<String> required_inputs_set;
 
         for (const auto * input_node : actions_dag.getInputs())
             required_inputs_set.insert(input_node->result_name);
 
-        for (const auto & pass_through_input : split_results.not_output_names)
+        for (const auto & pass_through_input : not_output_names)
             required_inputs_set.insert(pass_through_input);
 
+        return required_inputs_set;
+    };
+
+    if (has_to_add_input_to_actions)
+    {
+        const auto required_inputs_set = build_required_inputs_set();
+
+        for (const auto & name_and_type : input_header)
+            if (!required_inputs_set.contains(name_and_type.name))
+                actions_dag.addInput(name_and_type);
+
+        updated_actions = true;
+    }
+
+    if (!updated_actions && output_header.has_value() && output_header->columns() == required_outputs.size())
+        return UnusedColumnRemovalResult{false, false};
+
+    // There cannot be more inputs in the DAG than columns in the input header
+    chassert(actions_dag.getInputs().size() <= getInputHeaders().at(0).columns());
+
+    const auto update_inputs = remove_inputs
+        && (actions_dag.getInputs().size() < actions_dag_input_count_before || pass_through_inputs > split_results.not_output_names.size());
+
+    if (update_inputs)
+    {
+        const auto required_inputs_set = build_required_inputs_set();
         Header new_input_header{};
 
         for (const auto & col_type_and_name : input_header)
