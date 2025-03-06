@@ -83,11 +83,17 @@ namespace ErrorCodes
 namespace
 {
 bool worthConvertToTwoLevel(
-    size_t group_by_two_level_threshold, size_t result_size, size_t group_by_two_level_threshold_bytes, auto result_size_bytes)
+    size_t group_by_two_level_threshold,
+    size_t result_size,
+    size_t group_by_two_level_threshold_bytes,
+    auto result_size_bytes,
+    bool use_sharding_by_keys
+)
 {
     // params.group_by_two_level_threshold will be equal to 0 if we have only one thread to execute aggregation (refer to AggregatingStep::transformPipeline).
-    return (group_by_two_level_threshold && result_size >= group_by_two_level_threshold)
-        || (group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(group_by_two_level_threshold_bytes));
+    // Two level aggregation is not supported if data is sharded by aggregation keys hash.
+    return ((group_by_two_level_threshold && result_size >= group_by_two_level_threshold)
+        || (group_by_two_level_threshold_bytes && result_size_bytes >= static_cast<Int64>(group_by_two_level_threshold_bytes))) && !use_sharding_by_keys;
 }
 
 DB::AggregatedDataVariants::Type convertToTwoLevelTypeIfPossible(DB::AggregatedDataVariants::Type type)
@@ -117,7 +123,8 @@ void initDataVariantsWithSizeHint(
                 params.group_by_two_level_threshold,
                 hint->sum_of_sizes,
                 /*group_by_two_level_threshold_bytes*/ 0,
-                /*result_size_bytes*/ 0))
+                /*result_size_bytes*/ 0,
+                params.use_sharding_by_keys))
             method_chosen = convertToTwoLevelTypeIfPossible(method_chosen);
         result.init(method_chosen, hint->median_size);
     }
@@ -199,6 +206,7 @@ Aggregator::Params::Params(
     bool enable_prefetch_,
     bool only_merge_, // true for projections
     bool optimize_group_by_constant_keys_,
+    bool use_sharding_by_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
     const StatsCollectingParams & stats_collecting_params_)
     : keys(keys_)
@@ -221,6 +229,7 @@ Aggregator::Params::Params(
     , only_merge(only_merge_)
     , enable_prefetch(enable_prefetch_)
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
+    , use_sharding_by_keys(use_sharding_by_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
 {
@@ -1594,7 +1603,8 @@ bool Aggregator::executeOnBlock(Columns columns,
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
-        params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
+        params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes, params.use_sharding_by_keys);
+    LOG_DEBUG(getLogger(__func__), "Use sharding: {}", params.use_sharding_by_keys);
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
@@ -3020,7 +3030,7 @@ bool Aggregator::mergeOnBlock(Block block, AggregatedDataVariants & result, bool
     auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
-        params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
+        params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes, params.use_sharding_by_keys);
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.

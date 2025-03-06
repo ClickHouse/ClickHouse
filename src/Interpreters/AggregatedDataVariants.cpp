@@ -145,7 +145,7 @@ bool AggregatedDataVariants::isConvertibleToTwoLevel() const
     {
     #define M(NAME) \
         case Type::NAME: \
-            return true;
+            return !aggregator->params.use_sharding_by_keys;
 
         APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
 

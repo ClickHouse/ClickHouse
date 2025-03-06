@@ -717,7 +717,7 @@ void AggregatingTransform::initGenerate()
 
     if (params->aggregator.hasTemporaryData())
     {
-        if (variants.isConvertibleToTwoLevel())
+        if (variants.isConvertibleToTwoLevel() && !params->params.use_sharding_by_keys)
             variants.convertToTwoLevel();
 
         /// Flush data in the RAM to disk also. It's easier than merging on-disk and RAM data.
@@ -813,7 +813,7 @@ void AggregatingTransform::initGenerate()
             ///  because at the time thread has finished, no data has been flushed to disk, and then some were.
             for (auto & cur_variants : many_data->variants)
             {
-                if (cur_variants->isConvertibleToTwoLevel())
+                if (cur_variants->isConvertibleToTwoLevel() && !params->params.use_sharding_by_keys)
                     cur_variants->convertToTwoLevel();
 
                 if (!cur_variants->empty())

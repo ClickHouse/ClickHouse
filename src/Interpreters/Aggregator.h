@@ -115,6 +115,7 @@ public:
         bool only_merge = false;
         bool enable_prefetch = false;
         bool optimize_group_by_constant_keys = false;
+        bool use_sharding_by_keys = false;
         const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
 
@@ -139,6 +140,7 @@ public:
             bool enable_prefetch_,
             bool only_merge_, // true for projections
             bool optimize_group_by_constant_keys_,
+            bool use_sharding_by_keys_,
             float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_);
 

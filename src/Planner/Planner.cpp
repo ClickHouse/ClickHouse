@@ -458,6 +458,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_software_prefetch_in_aggregation],
         /* only_merge */ false,
         settings[Setting::optimize_group_by_constant_keys],
+        /*use_sharding_by_keys_=*/false,
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params);
 

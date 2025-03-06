@@ -53,6 +53,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const QueryPlanSerializationSettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const QueryPlanSerializationSettingsBool optimize_group_by_constant_keys;
+    extern const QueryPlanSerializationSettingsBool group_by_use_sharding;
 }
 
 namespace ErrorCodes
@@ -287,10 +288,10 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
       * 2. An aggregation is done with store of temporary data on the disk, and they need to be merged in a memory efficient way.
       */
     const auto src_header = pipeline.getHeader();
-    auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
-
     if (!grouping_sets_params.empty())
     {
+        auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
+
         const size_t grouping_sets_size = grouping_sets_params.size();
 
         const size_t streams = pipeline.getNumStreams();
@@ -402,6 +403,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
     if (!sort_description_for_merging.empty())
     {
+        auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
+
         /// We don't rely here on input_stream.sort_description because it is not correctly propagated for now in all cases
         /// see https://github.com/ClickHouse/ClickHouse/pull/45892#discussion_r1094503048
         if (explicit_sorting_required_for_aggregation_in_order)
@@ -497,18 +500,22 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     size_t streams = pipeline.getNumStreams();
     if (streams > 1)
     {
-        bool use_sharding = group_by_use_sharding && transform_params->params.keys_size > 0 && merge_threads > 1;
+        /// Sharding doesn't make sense when data in the streams is already independent (it is split by partition).
+        bool use_sharding = group_by_use_sharding && params.keys_size > 0 && merge_threads > 1 && !skip_merging;
         if (use_sharding)
         {
             const auto & stream_header = pipeline.getHeader();
 
             ColumnNumbers key_columns;
-            key_columns.reserve(transform_params->params.keys_size);
-            for (const auto & key : transform_params->params.keys)
+            key_columns.reserve(params.keys_size);
+            for (const auto & key : params.keys)
                 key_columns.push_back(stream_header.getPositionByName(key));
 
             scatterDataByKeysIfNeeded(pipeline, key_columns, merge_threads, streams);
+            params.use_sharding_by_keys = use_sharding;
         }
+
+        auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
 
         /// Add resize transform to uniformly distribute data between aggregating streams.
         /// But not if we execute aggregation over partitioned data in which case data streams shouldn't be mixed.
@@ -538,6 +545,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
     }
     else
     {
+        auto transform_params = std::make_shared<AggregatingTransformParams>(src_header, std::move(params), final);
         pipeline.addSimpleTransform([&](const Block & header) { return std::make_shared<AggregatingTransform>(header, transform_params); });
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : params.max_threads, false /* force */);
@@ -555,6 +563,7 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
         settings.out << prefix << "Order: " << dumpSortDescription(sort_description_for_merging) << '\n';
     }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
+    settings.out << prefix << "Use sharding: " << group_by_use_sharding << '\n';
     // settings.out << prefix << "Memory bound merging: " << memory_bound_merging_of_aggregation_results_enabled << '\n';
 }
 
@@ -747,6 +756,8 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     settings[QueryPlanSerializationSetting::collect_hash_table_stats_during_aggregation] = params.stats_collecting_params.isCollectionAndUseEnabled();
     settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats] = params.stats_collecting_params.max_entries_for_hash_table_stats;
     settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation] = params.stats_collecting_params.max_size_to_preallocate;
+
+    settings[QueryPlanSerializationSetting::group_by_use_sharding] = group_by_use_sharding;
 }
 
 void AggregatingStep::serialize(Serialization & ctx) const
@@ -884,6 +895,7 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
         ctx.settings[QueryPlanSerializationSetting::enable_software_prefetch_in_aggregation],
         /* only_merge */ false,
         ctx.settings[QueryPlanSerializationSetting::optimize_group_by_constant_keys],
+        ctx.settings[QueryPlanSerializationSetting::group_by_use_sharding],
         ctx.settings[QueryPlanSerializationSetting::min_hit_rate_to_use_consecutive_keys_optimization],
         stats_collecting_params
     };
