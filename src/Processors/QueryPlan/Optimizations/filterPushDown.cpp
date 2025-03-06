@@ -133,6 +133,7 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     auto * filter = assert_cast<FilterStep *>(parent.get());
     auto & expression = filter->getExpression();
     const auto & filter_column_name = filter->getFilterColumnName();
+    bool enable_adaptive_short_circuit_execution = filter->enableAdaptiveShortCircuit();
 
     const auto * filter_node = expression.tryFindInOutputs(filter_column_name);
     if (update_parent_filter && !filter_node && !filter->removesFilterColumn())
@@ -152,7 +153,7 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
     String split_filter_column_name = split_filter.getOutputs().front()->result_name;
 
     node.step = std::make_unique<FilterStep>(
-        node.children.at(0)->step->getOutputHeader(), std::move(split_filter), std::move(split_filter_column_name), can_remove_filter);
+        node.children.at(0)->step->getOutputHeader(), std::move(split_filter), std::move(split_filter_column_name), can_remove_filter, enable_adaptive_short_circuit_execution);
 
     child->updateInputHeader(node.step->getOutputHeader(), child_idx);
 
@@ -165,7 +166,7 @@ addNewFilterStepOrThrow(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
         {
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
-            parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(expression));
+            parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(expression), enable_adaptive_short_circuit_execution);
         }
         else
         {
@@ -426,7 +427,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         {
             /// This means that all predicates of filter were pushed down.
             /// Replace current actions to expression, as we don't need to filter anything.
-            parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(filter_expression));
+            parent = std::make_unique<ExpressionStep>(child->getOutputHeader(), std::move(filter_expression), filter->enableAdaptiveShortCircuit());
         }
         else
         {
@@ -652,7 +653,8 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
                 filter_node.children.front()->step->getOutputHeader(),
                 filter->getExpression().clone(),
                 filter->getFilterColumnName(),
-                filter->removesFilterColumn());
+                filter->removesFilterColumn(),
+                filter->enableAdaptiveShortCircuit());
         }
 
         ///       - Filter - Something

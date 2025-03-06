@@ -37,6 +37,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
     if (parent_expr && child_expr)
     {
+        bool enable_adaptive_short_circuit_execution = parent_expr->enableAdaptiveShortCircuit() || child_expr->enableAdaptiveShortCircuit();
         auto & child_actions = child_expr->getExpression();
         auto & parent_actions = parent_expr->getExpression();
 
@@ -48,7 +49,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
-        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
+        auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged), enable_adaptive_short_circuit_execution);
         expr->setStepDescription("(" + parent_expr->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
 
         parent_node->step = std::move(expr);
@@ -57,6 +58,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
     }
     if (parent_filter && child_expr)
     {
+        bool enable_adaptive_short_circuit_execution = parent_filter->enableAdaptiveShortCircuit() || child_expr->enableAdaptiveShortCircuit();
         auto & child_actions = child_expr->getExpression();
         auto & parent_actions = parent_filter->getExpression();
 
@@ -69,7 +71,8 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
             child_expr->getInputHeaders().front(),
             std::move(merged),
             parent_filter->getFilterColumnName(),
-            parent_filter->removesFilterColumn());
+            parent_filter->removesFilterColumn(),
+            enable_adaptive_short_circuit_execution);
         filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
 
         parent_node->step = std::move(filter);
@@ -94,6 +97,7 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
 
     if (parent_filter && child_filter)
     {
+        bool enable_adaptive_short_circuit_execution = parent_filter->enableAdaptiveShortCircuit() || child_filter->enableAdaptiveShortCircuit();
         auto & child_actions = child_filter->getExpression();
         auto & parent_actions = parent_filter->getExpression();
 
@@ -120,7 +124,8 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         auto filter = std::make_unique<FilterStep>(child_filter->getInputHeaders().front(),
                                                    std::move(child_actions),
                                                    condition.result_name,
-                                                   true);
+                                                   true,
+                                                   enable_adaptive_short_circuit_execution);
         filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_filter->getStepDescription() + ")");
 
         parent_node->step = std::move(filter);

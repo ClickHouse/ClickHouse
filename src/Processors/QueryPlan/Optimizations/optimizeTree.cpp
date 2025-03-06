@@ -193,7 +193,7 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 /// Projection optimization relies on PK optimization
                 if (optimization_settings.optimize_projection)
                 {
-                    auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings.optimize_use_implicit_projections);
+                    auto applied_projection = optimizeUseAggregateProjections(*frame.node, nodes, optimization_settings);
                     if (applied_projection)
                         applied_projection_names.insert(*applied_projection);
                 }

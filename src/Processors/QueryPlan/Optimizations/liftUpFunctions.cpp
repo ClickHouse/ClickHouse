@@ -79,8 +79,9 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     auto & node_with_needed = nodes.emplace_back();
     std::swap(node_with_needed.children, child_node->children);
     child_node->children = {&node_with_needed};
+    bool enable_adaptive_short_circuit_execution = expression_step->enableAdaptiveShortCircuit();
 
-    node_with_needed.step = std::make_unique<ExpressionStep>(getChildOutputHeader(node_with_needed), std::move(needed_for_sorting));
+    node_with_needed.step = std::make_unique<ExpressionStep>(getChildOutputHeader(node_with_needed), std::move(needed_for_sorting), enable_adaptive_short_circuit_execution);
     node_with_needed.step->setStepDescription(child_step->getStepDescription());
     // Sorting (parent_node) -> so far the origin Expression (child_node) -> NeededCalculations (node_with_needed)
 
@@ -90,7 +91,7 @@ size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan:
     sorting_step->updateInputHeader(getChildOutputHeader(*child_node));
 
     auto description = parent_step->getStepDescription();
-    parent_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting));
+    parent_step = std::make_unique<DB::ExpressionStep>(child_step->getOutputHeader(), std::move(unneeded_for_sorting), enable_adaptive_short_circuit_execution);
     parent_step->setStepDescription(description + " [lifted up part]");
     // UneededCalculations (parent_node) -> Sorting (child_node) -> NeededCalculations (node_with_needed)
 
