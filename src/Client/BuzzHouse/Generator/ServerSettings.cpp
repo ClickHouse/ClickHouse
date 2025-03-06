@@ -982,7 +982,7 @@ static std::unordered_map<String, CHSetting> serverSettings3
        {"use_index_for_in_with_subqueries", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_local_cache_for_remote_storage", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_page_cache_for_disks_without_file_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"use_query_cache",
+       /*{"use_query_cache",
         CHSetting(
             [](RandomGenerator & rg)
             {
@@ -992,7 +992,7 @@ static std::unordered_map<String, CHSetting> serverSettings3
                 return rg.pickRandomlyFromVector(choices);
             },
             {},
-            false)},
+            false)},*/
        {"use_skip_indexes", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_skip_indexes_if_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
