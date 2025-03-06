@@ -156,7 +156,7 @@ static void enforceAggregationInOrder(
         if (!shard.query_plan)
             continue;
 
-        auto sorting = std::make_unique<SortingStep>(shard.query_plan->getCurrentHeader(), sort_description, 0, SortingStep::Settings(context));
+        auto sorting = std::make_unique<SortingStep>(shard.query_plan->getCurrentHeader(), sort_description, 0, SortingStep::Settings(context.getSettingsRef()));
         sorting->setStepDescription("Enforce aggregation in order");
         shard.query_plan->addStep(std::move(sorting));
     }
