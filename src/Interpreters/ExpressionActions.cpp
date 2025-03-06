@@ -346,7 +346,7 @@ static bool isNoExceptNode(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     for (const auto * node : nodes)
     {
-        if (node->type == ActionsDAG::ActionType::FUNCTION && !node->function_base->isNoExcept())
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
         {
             if (!node->function_base->isNoExcept())
             {
@@ -1120,8 +1120,7 @@ void AdaptiveExpressionActions::executeFunctionAction(
         if (res_column.column->getDataType() != res_column.type->getColumnType())
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
+                ErrorCodes::LOGICAL_ERROR, "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
                 action.node->function->getName(),
                 res_column.type->getName(),
                 res_column.column->getName(),
@@ -1147,6 +1146,14 @@ void AdaptiveExpressionActions::accumulateProfile(ExpressionActions::Action & ac
     for (const auto & arg_profile : profile.argument_profiles)
     {
         const auto & func_arg_pos = arg_profile.first;
+        if (func_arg_pos >= action.arguments.size())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid arg pos: {}. arg size: {}", func_arg_pos, action.arguments.size());
+        }
+        if (action.arguments[func_arg_pos].actions_pos >= actions.size())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid action pos: {}. arg size: {}", action.arguments[func_arg_pos].actions_pos, actions.size());
+        }
         auto & arg_action = actions[action.arguments[func_arg_pos].actions_pos];
         accumulateProfile(arg_action, arg_profile.second);
     }

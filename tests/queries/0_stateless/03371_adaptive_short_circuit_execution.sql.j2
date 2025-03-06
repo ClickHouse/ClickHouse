@@ -1,5 +1,6 @@
 SET enable_adaptive_short_circuit_lazy_execution = true;
 SET max_threads=1;
+SET max_block_size=20000;
 
 -- { echoOn }
 {% for short_circuit_mode in ['force_enable', 'enable', 'disable']-%}
