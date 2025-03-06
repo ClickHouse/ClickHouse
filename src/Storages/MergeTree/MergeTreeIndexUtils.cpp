@@ -70,7 +70,7 @@ bool isTrivialCast(const ActionsDAG::Node & node)
 const ActionsDAG::Node & cloneFilterDAGNodeForIndexesAnalysis(
     const ActionsDAG::Node & node,
     ActionsDAG & new_dag,
-    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> cloned_nodes)
+    std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & cloned_nodes)
 {
     auto it = cloned_nodes.find(&node);
     if (it != cloned_nodes.end())

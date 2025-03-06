@@ -1,4 +1,4 @@
-    ReadFromMergeTree (default.test_index)
+    ReadFromMergeTree (test.test_index)
     Indexes:
       MinMax
         Keys: 
@@ -30,7 +30,7 @@
 -----------------
               "Node Type": "ReadFromMergeTree",
               "Node Id": "ReadFromMergeTree_0",
-              "Description": "default.test_index",
+              "Description": "test.test_index",
               "Indexes": [
                 {
                   "Type": "MinMax",
@@ -83,7 +83,7 @@
   }
 ]
 -----------------
-        ReadFromMergeTree (default.test_index)
+        ReadFromMergeTree (test.test_index)
         ReadType: InOrder
         Parts: 1
         Granules: 3
@@ -91,14 +91,14 @@
         Actions: INPUT :: 0 -> x UInt32 : 0
         Positions: 0
 -----------------
-        ReadFromMergeTree (default.test_index)
+        ReadFromMergeTree (test.test_index)
         ReadType: InReverseOrder
         Parts: 1
         Granules: 3
         Virtual row conversions
         Actions: INPUT :: 0 -> x UInt32 : 0
         Positions: 0
-    ReadFromMergeTree (default.idx)
+    ReadFromMergeTree (test.idx)
     Indexes:
       PrimaryKey
         Keys: 
@@ -107,7 +107,7 @@
         Condition: or((x in 2-element set), (plus(plus(x, y), 1) in (-Inf, 2]))
         Parts: 1/1
         Granules: 1/1
-    ReadFromMergeTree (default.test_index)
+    ReadFromMergeTree (test.test_index)
     Indexes:
       MinMax
         Keys: 
@@ -131,10 +131,15 @@
         Description: minmax GRANULARITY 2
         Parts: 1/2
         Granules: 3/6
+      Skip
+        Name: t_set
+        Description: set GRANULARITY 2
+        Parts: 1/1
+        Granules: 2/3
 -----------------
               "Node Type": "ReadFromMergeTree",
               "Node Id": "ReadFromMergeTree_0",
-              "Description": "default.test_index",
+              "Description": "test.test_index",
               "Indexes": [
                 {
                   "Type": "MinMax",
@@ -168,6 +173,15 @@
                   "Selected Parts": 1,
                   "Initial Granules": 6,
                   "Selected Granules": 3
+                },
+                {
+                  "Type": "Skip",
+                  "Name": "t_set",
+                  "Description": "set GRANULARITY 2",
+                  "Initial Parts": 1,
+                  "Selected Parts": 1,
+                  "Initial Granules": 3,
+                  "Selected Granules": 2
                 }
               ]
             }
@@ -178,7 +192,7 @@
   }
 ]
 -----------------
-        ReadFromMergeTree (default.test_index)
+        ReadFromMergeTree (test.test_index)
         ReadType: InOrder
         Parts: 1
         Granules: 3
@@ -187,7 +201,7 @@
                  ALIAS x :: 0 -> __table1.x UInt32 : 1
         Positions: 1
 -----------------
-        ReadFromMergeTree (default.test_index)
+        ReadFromMergeTree (test.test_index)
         ReadType: InReverseOrder
         Parts: 1
         Granules: 3
@@ -195,7 +209,7 @@
         Actions: INPUT : 0 -> x UInt32 : 0
                  ALIAS x :: 0 -> __table1.x UInt32 : 1
         Positions: 1
-    ReadFromMergeTree (default.idx)
+    ReadFromMergeTree (test.idx)
     Indexes:
       PrimaryKey
         Keys: 
