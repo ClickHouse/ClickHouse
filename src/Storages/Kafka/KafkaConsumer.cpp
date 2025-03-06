@@ -324,7 +324,7 @@ void KafkaConsumer::subscribe()
             }
             else
             {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not get subscuption.");
+                throw Exception(ErrorCodes::CANNOT_COMMIT_OFFSET, "Can not get subscription.");
             }
         }
         else
