@@ -515,8 +515,19 @@ Chunk MongoDBPocoLegacySource::generate()
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
+
+    String query_id (CurrentThread::getQueryId());
+    const auto context = CurrentThread::getQueryContext();
     while (num_rows < max_block_size)
     {
+        if (!query_id.empty()) // Checks if the current query is timed out
+        {
+            const ProcessList & process_list = context->getProcessList();
+            std::shared_ptr<const QueryStatusInfo> process_list_entry = process_list.getQueryInfo(query_id);
+            if (process_list_entry->is_cancelled)
+                break;
+        }
+
         auto documents = cursor.nextDocuments(*connection);
 
         for (auto & document : documents)
