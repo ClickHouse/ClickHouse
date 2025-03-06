@@ -4,6 +4,8 @@ sidebar_position: 70
 sidebar_label: Encryption
 ---
 
+# Encryption Functions
+
 These functions  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
 Key length depends on encryption mode. It is 16, 24, and 32 bytes long for `-128-`, `-196-`, and `-256-` modes respectively.
