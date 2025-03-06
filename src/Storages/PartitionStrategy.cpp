@@ -6,15 +6,9 @@
 #include <Storages/PartitionedSink.h>
 #include <Functions/generateSnowflakeID.h>
 #include <Interpreters/Context.h>
-#include <Core/Settings.h>
 
 namespace DB
 {
-
-namespace Setting
-{
-extern const SettingsBool use_hive_partitioning;
-}
 
 namespace ErrorCodes
 {
@@ -55,9 +49,13 @@ PartitionStrategy::PartitionStrategy(ASTPtr partition_by_, const Block & sample_
 
 }
 
-std::shared_ptr<PartitionStrategy> PartitionStrategyProvider::get(ASTPtr partition_by, const Block & sample_block, ContextPtr context, const std::string & file_format)
+std::shared_ptr<PartitionStrategy> PartitionStrategyProvider::get(ASTPtr partition_by,
+                                                                  const Block & sample_block,
+                                                                  ContextPtr context,
+                                                                  const std::string & file_format,
+                                                                  const std::string & partitioning_style)
 {
-    if (context->getSettingsRef()[Setting::use_hive_partitioning])
+    if (partitioning_style == "hive")
     {
         if (file_format.empty())
         {

@@ -29,7 +29,12 @@ protected:
 
 struct PartitionStrategyProvider
 {
-    static std::shared_ptr<PartitionStrategy> get(ASTPtr partition_by, const Block & sample_block, ContextPtr context, const std::string & file_format);
+    static std::shared_ptr<PartitionStrategy> get(
+        ASTPtr partition_by,
+        const Block & sample_block,
+        ContextPtr context,
+        const std::string & file_format,
+        const std::string & partitioning_style = "");
 };
 
 struct StringfiedPartitionStrategy : public PartitionStrategy

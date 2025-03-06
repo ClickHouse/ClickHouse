@@ -3,10 +3,10 @@
 DROP TABLE IF EXISTS t_03363_s3_sink, t_03363_s3_sink_read;
 
 CREATE TABLE t_03363_s3_sink (year UInt16, country String, random UInt8)
-ENGINE = S3(s3_conn, filename = 't_03363_s3_sink_root', format = Parquet)
+ENGINE = S3(s3_conn, filename = 't_03363_s3_sink_root', format = Parquet, partitioning_style='hive')
 PARTITION BY (year, country);
 
-INSERT INTO t_03363_s3_sink SETTINGS use_hive_partitioning=1, s3_truncate_on_insert=1 VALUES
+INSERT INTO t_03363_s3_sink SETTINGS s3_truncate_on_insert=1 VALUES
     (2022, 'USA', 1),
     (2022, 'Canada', 2),
     (2023, 'USA', 3),
