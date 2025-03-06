@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/database-engines/sqlite
+slug: /engines/database-engines/sqlite
 sidebar_position: 55
 sidebar_label: SQLite
+title: "SQLite"
+description: "Allows to connect to SQLite databases and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and SQLite."
 ---
 
 # SQLite

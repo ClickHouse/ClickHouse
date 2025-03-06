@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about contributors."
-slug: /en/operations/system-tables/contributors
-title: "contributors"
+slug: /operations/system-tables/contributors
+title: "system.contributors"
 keywords: ["system table", "contributors"]
 ---
 

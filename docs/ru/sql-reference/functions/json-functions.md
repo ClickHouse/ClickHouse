@@ -423,8 +423,8 @@ String
 ## toJSONString {#tojsonstring}
 
 Сериализует значение в JSON представление. Поддерживаются различные типы данных и вложенные структуры.
-По умолчанию 64-битные [целые числа](../../sql-reference/data-types/int-uint.md) и более (например, `UInt64` или `Int128`) заключаются в кавычки. Настройка [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers) управляет этим поведением.
-Специальные значения `NaN` и `inf` заменяются на `null`. Чтобы они отображались, включите настройку [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals).
+По умолчанию 64-битные [целые числа](../../sql-reference/data-types/int-uint.md) и более (например, `UInt64` или `Int128`) заключаются в кавычки. Настройка [output_format_json_quote_64bit_integers](/operations/settings/formats#output_format_json_quote_64bit_integers) управляет этим поведением.
+Специальные значения `NaN` и `inf` заменяются на `null`. Чтобы они отображались, включите настройку [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals).
 Когда сериализуется значение [Enum](../../sql-reference/data-types/enum.md), то функция выводит его имя.
 
 **Синтаксис**
@@ -464,5 +464,5 @@ SELECT toJSONString(tuple(1.25, NULL, NaN, +inf, -inf, [])) SETTINGS output_form
 
 **Смотрите также**
 
--   [output_format_json_quote_64bit_integers](../../operations/settings/settings.md#session_settings-output_format_json_quote_64bit_integers)
--   [output_format_json_quote_denormals](../../operations/settings/settings.md#settings-output_format_json_quote_denormals)
+-   [output_format_json_quote_64bit_integers](/operations/settings/formats#output_format_json_quote_64bit_integers)
+-   [output_format_json_quote_denormals](/operations/settings/formats#output_format_json_quote_denormals)

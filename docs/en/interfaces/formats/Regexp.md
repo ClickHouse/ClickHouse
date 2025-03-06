@@ -1,7 +1,7 @@
 ---
-title : Regexp
-slug : /en/interfaces/formats/Regexp
-keywords : [Regexp]
+title: Regexp
+slug: /interfaces/formats/Regexp
+keywords: [Regexp]
 input_format: true
 output_format: false
 alias: []
@@ -11,21 +11,21 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✗      |       |
 
-## Description
+## Description {#description}
 
 The `Regex` format parses every line of imported data according to the provided regular expression.
 
 **Usage**
 
-The regular expression from [format_regexp](/docs/en/operations/settings/settings-formats.md/#format_regexp) setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
+The regular expression from [format_regexp](/operations/settings/settings-formats.md/#format_regexp) setting is applied to every line of imported data. The number of subpatterns in the regular expression must be equal to the number of columns in imported dataset.
 
 Lines of the imported data must be separated by newline character `'\n'` or DOS-style newline `"\r\n"`.
 
-The content of every matched subpattern is parsed with the method of corresponding data type, according to [format_regexp_escaping_rule](/docs/en/operations/settings/settings-formats.md/#format_regexp_escaping_rule) setting.
+The content of every matched subpattern is parsed with the method of corresponding data type, according to [format_regexp_escaping_rule](/operations/settings/settings-formats.md/#format_regexp_escaping_rule) setting.
 
-If the regular expression does not match the line and [format_regexp_skip_unmatched](/docs/en/operations/settings/settings-formats.md/#format_regexp_escaping_rule) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
+If the regular expression does not match the line and [format_regexp_skip_unmatched](/operations/settings/settings-formats.md/#format_regexp_escaping_rule) is set to 1, the line is silently skipped. Otherwise, exception is thrown.
 
-## Example Usage
+## Example Usage {#example-usage}
 
 Consider the file `data.tsv`:
 
@@ -60,17 +60,17 @@ SELECT * FROM imp_regex_table;
 └────┴─────────┴────────┴────────────┘
 ```
 
-## Format Settings
+## Format Settings {#format-settings}
 
 When working with the `Regexp` format, you can use the following settings:
 
-- `format_regexp` — [String](/docs/en/sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
-- `format_regexp_escaping_rule` — [String](/docs/en/sql-reference/data-types/string.md). The following escaping rules are supported:
+- `format_regexp` — [String](/sql-reference/data-types/string.md). Contains regular expression in the [re2](https://github.com/google/re2/wiki/Syntax) format.
+- `format_regexp_escaping_rule` — [String](/sql-reference/data-types/string.md). The following escaping rules are supported:
 
-  - CSV (similarly to [CSV](/docs/en/interfaces/formats/CSV)
-  - JSON (similarly to [JSONEachRow](/docs/en/interfaces/formats/JSONEachRow)
-  - Escaped (similarly to [TSV](/docs/en/interfaces/formats/TabSeparated)
-  - Quoted (similarly to [Values](/docs/en/interfaces/formats/Values)
-  - Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/docs/en/interfaces/formats/TabSeparated)
+  - CSV (similarly to [CSV](/interfaces/formats/CSV)
+  - JSON (similarly to [JSONEachRow](/interfaces/formats/JSONEachRow)
+  - Escaped (similarly to [TSV](/interfaces/formats/TabSeparated)
+  - Quoted (similarly to [Values](/interfaces/formats/Values)
+  - Raw (extracts subpatterns as a whole, no escaping rules, similarly to [TSVRaw](/interfaces/formats/TabSeparated)
 
-- `format_regexp_skip_unmatched` — [UInt8](/docs/en/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
+- `format_regexp_skip_unmatched` — [UInt8](/sql-reference/data-types/int-uint.md). Defines the need to throw an exception in case the `format_regexp` expression does not match the imported data. Can be set to `0` or `1`.
