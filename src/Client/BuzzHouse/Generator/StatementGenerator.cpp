@@ -553,7 +553,8 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
     const uint32_t desc_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
     const uint32_t desc_query = 5;
     const uint32_t desc_function = 5;
-    const uint32_t prob_space = desc_table + desc_view + desc_query + desc_function;
+    const uint32_t desc_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
+    const uint32_t prob_space = desc_table + desc_view + desc_query + desc_function + desc_system_table;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -589,6 +590,13 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
     {
         generateTableFuncCall(rg, dt->mutable_stf());
         this->levels.clear();
+    }
+    else if (desc_system_table && nopt < (desc_table + desc_view + desc_query + desc_function + desc_system_table + 1))
+    {
+        ExprSchemaTable * est = dt->mutable_est();
+
+        est->mutable_database()->set_database("system");
+        est->mutable_table()->set_table(rg.pickKeyRandomlyFromMap(systemTables));
     }
     else
     {
@@ -2763,6 +2771,15 @@ static std::optional<String> backupOrRestoreTable(BackupRestoreObject * bro, con
     return b.getCluster();
 }
 
+static void backupOrRestoreSystemTable(BackupRestoreObject * bro, const String & name)
+{
+    ExprSchemaTable * est = bro->mutable_object()->mutable_est();
+
+    bro->set_sobject(SQLObject::TABLE);
+    est->mutable_database()->set_database("system");
+    est->mutable_table()->set_table(name);
+}
+
 static std::optional<String> backupOrRestoreDatabase(BackupRestoreObject * bro, const std::shared_ptr<SQLDatabase> & d)
 {
     bro->set_sobject(SQLObject::DATABASE);
@@ -2773,11 +2790,12 @@ static std::optional<String> backupOrRestoreDatabase(BackupRestoreObject * bro, 
 void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore * br)
 {
     const uint32_t backup_table = 10 * static_cast<uint32_t>(collectionHas<SQLTable>(attached_tables));
+    const uint32_t backup_system_table = 3 * static_cast<uint32_t>(!systemTables.empty());
     const uint32_t backup_view = 10 * static_cast<uint32_t>(collectionHas<SQLView>(attached_views));
     const uint32_t backup_database = 10 * static_cast<uint32_t>(collectionHas<std::shared_ptr<SQLDatabase>>(attached_databases));
     const uint32_t all_temporary = 3;
     const uint32_t everything = 3;
-    const uint32_t prob_space = backup_table + backup_view + backup_database;
+    const uint32_t prob_space = backup_table + backup_system_table + backup_view + backup_database;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
     BackupRestoreElement * bre = br->mutable_backup_element();
@@ -2789,21 +2807,25 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
         cluster = backupOrRestoreTable(
             bre->mutable_bobject(), SQLObject::TABLE, rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables)));
     }
-    else if (backup_view && nopt < (backup_table + backup_view + 1))
+    else if (backup_system_table && nopt < (backup_table + backup_system_table + 1))
+    {
+        backupOrRestoreSystemTable(bre->mutable_bobject(), rg.pickKeyRandomlyFromMap(systemTables));
+    }
+    else if (backup_view && nopt < (backup_table + backup_system_table + backup_view + 1))
     {
         cluster = backupOrRestoreTable(
             bre->mutable_bobject(), SQLObject::VIEW, rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views)));
     }
-    else if (backup_database && nopt < (backup_table + backup_view + backup_database + 1))
+    else if (backup_database && nopt < (backup_table + backup_system_table + backup_view + backup_database + 1))
     {
         cluster = backupOrRestoreDatabase(
             bre->mutable_bobject(), rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
     }
-    else if (all_temporary && nopt < (backup_table + backup_view + backup_database + all_temporary + 1))
+    else if (all_temporary && nopt < (backup_table + backup_system_table + backup_view + backup_database + all_temporary + 1))
     {
         bre->set_all_temporary(true);
     }
-    else if (everything && nopt < (backup_table + backup_view + backup_database + all_temporary + everything + 1))
+    else if (everything && nopt < (backup_table + backup_system_table + backup_view + backup_database + all_temporary + everything + 1))
     {
         bre->set_all(true);
     }
@@ -2924,21 +2946,26 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     else
     {
         const uint32_t restore_table = 10 * static_cast<uint32_t>(!backup.tables.empty());
+        const uint32_t restore_system_table = 3 * static_cast<uint32_t>(backup.system_table.has_value());
         const uint32_t restore_view = 10 * static_cast<uint32_t>(!backup.views.empty());
         const uint32_t restore_database = 10 * static_cast<uint32_t>(!backup.databases.empty());
-        const uint32_t prob_space = restore_table + restore_view + restore_database;
+        const uint32_t prob_space = restore_table + restore_system_table + restore_view + restore_database;
         std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
         const uint32_t nopt = next_dist(rg.generator);
 
-        if (nopt < restore_table + 1)
+        if (restore_table && (nopt < restore_table + 1))
         {
             cluster = backupOrRestoreTable(bre->mutable_bobject(), SQLObject::TABLE, rg.pickValueRandomlyFromMap(backup.tables));
         }
-        else if (nopt < restore_table + restore_view + 1)
+        else if (restore_system_table && (nopt < restore_table + restore_system_table + 1))
+        {
+            backupOrRestoreSystemTable(bre->mutable_bobject(), backup.system_table.value());
+        }
+        else if (restore_view && nopt < (restore_table + restore_system_table + restore_view + 1))
         {
             cluster = backupOrRestoreTable(bre->mutable_bobject(), SQLObject::VIEW, rg.pickValueRandomlyFromMap(backup.views));
         }
-        else if (nopt < restore_table + restore_view + restore_database + 1)
+        else if (restore_database && nopt < (restore_table + restore_system_table + restore_view + restore_database + 1))
         {
             cluster = backupOrRestoreDatabase(bre->mutable_bobject(), rg.pickValueRandomlyFromMap(backup.databases));
         }
@@ -3733,9 +3760,16 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::TABLE)
             {
-                const uint32_t tname = static_cast<uint32_t>(std::stoul(bre.bobject().object().est().table().table().substr(1)));
+                if (!bre.bobject().object().est().has_database() || bre.bobject().object().est().database().database() != "system")
+                {
+                    const uint32_t tname = static_cast<uint32_t>(std::stoul(bre.bobject().object().est().table().table().substr(1)));
 
-                newb.tables[tname] = this->tables[tname];
+                    newb.tables[tname] = this->tables[tname];
+                }
+                else
+                {
+                    newb.system_table = bre.bobject().object().est().table().table();
+                }
             }
             else if (bre.has_bobject() && bre.bobject().sobject() == SQLObject::VIEW)
             {

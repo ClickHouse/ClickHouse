@@ -101,6 +101,8 @@ public:
     std::unordered_map<uint32_t, std::shared_ptr<SQLDatabase>> databases;
     std::unordered_map<uint32_t, SQLTable> tables;
     std::unordered_map<uint32_t, SQLView> views;
+    /// Backup a system table
+    std::optional<String> system_table;
 
     CatalogBackup() = default;
 };
