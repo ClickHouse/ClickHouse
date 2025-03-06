@@ -20,7 +20,7 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
 
 **Arguments**
 
-`values` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in input values.
+`values` — [Expression](/sql-reference/syntax#expressions) resulting in input values.
 
 **Parameters**
 

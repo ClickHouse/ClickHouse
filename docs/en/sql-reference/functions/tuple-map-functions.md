@@ -248,7 +248,7 @@ mapAdd(arg1, arg2 [, ...])
 
 **Arguments**
 
-Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promoted to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges) or [Float64](../data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promoted to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges) or [Float64](/sql-reference/data-types/float)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
@@ -296,7 +296,7 @@ mapSubtract(Tuple(Array, Array), Tuple(Array, Array) [, ...])
 
 **Arguments**
 
-Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges) or [Float64](../data-types/float.md#float32-float64)). The common promoted type is used as a type for the result array.
+Arguments are [maps](../data-types/map.md) or [tuples](../data-types/tuple.md#tuplet1-t2) of two [arrays](../data-types/array.md#data-type-array), where items in the first array represent keys, and the second array contains values for the each key. All key arrays should have same type, and all value arrays should contain items which are promote to the one type ([Int64](../data-types/int-uint.md#int-ranges), [UInt64](/sql-reference/data-types/int-uint#integer-ranges) or [Float64](/sql-reference/data-types/float)). The common promoted type is used as a type for the result array.
 
 **Returned value**
 
@@ -613,7 +613,7 @@ mapApply(func, map)
 
 **Arguments**
 
-- `func` — [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` — [Lambda function](/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -655,7 +655,7 @@ mapFilter(func, map)
 
 **Arguments**
 
-- `func`  - [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func`  - [Lambda function](/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `map` — [Map](../data-types/map.md).
 
 **Returned value**
@@ -858,7 +858,7 @@ mapPartialSort([func,] limit, map)
 ```
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
 - `map` – Map to sort. [Map](../data-types/map.md).
 
@@ -919,7 +919,7 @@ mapPartialReverseSort([func,] limit, map)
 ```
 **Arguments**
 
-- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/docs/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func` – Optional function to apply to the keys and values of the map. [Lambda function](/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `limit` – Elements in range [1..limit] are sorted. [(U)Int](../data-types/int-uint.md).
 - `map` – Map to sort. [Map](../data-types/map.md).
 

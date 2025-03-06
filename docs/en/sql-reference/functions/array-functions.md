@@ -2500,7 +2500,7 @@ arrayFirstOrNull(func, arr1, ...)
 
 **Parameters**
 
-- `func`: Lambda function. [Lambda function](../functions/#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func`: Lambda function. [Lambda function](/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `arr1`: Array to operate on. [Array](/sql-reference/data-types/array).
 
 **Returned value**
@@ -2568,7 +2568,7 @@ arrayLastOrNull(func, arr1, ...)
 
 **Parameters**
 
-- `func`: Lambda function. [Lambda function](../functions/#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func`: Lambda function. [Lambda function](/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `arr1`: Array to operate on. [Array](/sql-reference/data-types/array).
 
 **Returned value**

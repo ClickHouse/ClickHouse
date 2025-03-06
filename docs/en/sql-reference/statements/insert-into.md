@@ -261,7 +261,6 @@ When you are inserting large amounts of data, ClickHouse will optimize write per
 **See Also**
 
 - [async_insert](/operations/settings/settings#async_insert)
-- [async_insert_threads](../../operations/settings/settings.md#async-insert-threads)
 - [wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
 - [wait_for_async_insert_timeout](../../operations/settings/settings.md#wait-for-async-insert-timeout)
 - [async_insert_max_data_size](../../operations/settings/settings.md#async-insert-max-data-size)
