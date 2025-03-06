@@ -89,14 +89,6 @@ struct QueryPlanOptimizationSettings
     /// It should be relativaly simple to fix, but I will do it later.
     size_t max_threads;
 
-    /// Please, avoid using this
-    ///
-    /// We should not have the number of threads in query plan.
-    /// The information about threads should be available only at the moment we build pipeline.
-    /// Currently, it is used by ConcurrentHashJoin: it requiers the number of threads in ctor.
-    /// It should be relativaly simple to fix, but I will do it later.
-    size_t max_threads;
-
     bool keep_logical_steps;
 
     /// If query condition cache is enabled, the query condition cache needs to be updated in the WHERE stage.

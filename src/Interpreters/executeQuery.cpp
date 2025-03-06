@@ -1887,19 +1887,13 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
             auto finish_callback = [elem,
                                     context,
                                     ast,
-                                    //query_cache_usage,
                                     internal,
                                     implicit_txn_control,
                                     execute_implicit_tcl_query,
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-                // if (query_cache_usage == QueryCache::Usage::Write)
-                //     /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
-                //     /// partial/garbage results in case of exceptions during query execution.
-                //     query_pipeline.finalizeWriteInQueryCache();
-
-                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, QueryCacheUsage::None, internal);
+                logQueryFinish(elem, context, ast, query_pipeline, pulling_pipeline, query_span, QueryResultCacheUsage::None, internal);
 
                 if (*implicit_txn_control)
                     execute_implicit_tcl_query(context, ASTTransactionControl::COMMIT);
