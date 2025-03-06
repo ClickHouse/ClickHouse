@@ -2465,7 +2465,7 @@ Result:
 
 ## initializeAggregation {#initializeaggregation}
 
-Calculates the result of an aggregate function based on a single value. This function can be used to initialize aggregate functions with combinator [-State](/sql-reference/aggregate-functions/combinators#-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](/sql-reference/data-types/aggregatefunctione) or use initialized aggregates as default values.
+Calculates the result of an aggregate function based on a single value. This function can be used to initialize aggregate functions with combinator [-State](/sql-reference/aggregate-functions/combinators#-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](/sql-reference/data-types/aggregatefunction) or use initialized aggregates as default values.
 
 **Syntax**
 
