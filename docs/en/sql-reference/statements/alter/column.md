@@ -36,7 +36,7 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/sql-reference/statements/create/table.md/#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/sql-reference/statements/create/table#default_values)).
 
 If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -77,7 +77,7 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
 :::tip
-You can't delete a column if it is referenced by [materialized view](/sql-reference/statements/create/view.md/#materialized). Otherwise, it returns an error.
+You can't delete a column if it is referenced by [materialized view](/sql-reference/statements/create/view). Otherwise, it returns an error.
 :::
 
 Example:
@@ -326,7 +326,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 **See Also**
 
-- [MATERIALIZED](/sql-reference/statements/create/table.md/#materialized).
+- [MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
 
 ## Limitations {#limitations}
 

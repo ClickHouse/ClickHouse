@@ -17,7 +17,7 @@ import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
-`JSON` can be used as an alias to `Object('json')` when setting [use_json_alias_for_old_object_type](../../operations/settings/settings.md#usejsonaliasforoldobjecttype) is enabled.
+`JSON` can be used as an alias to `Object('json')` when setting [use_json_alias_for_old_object_type](/operations/settings/settings#use_json_alias_for_old_object_type) is enabled.
 
 ## Example {#example}
 

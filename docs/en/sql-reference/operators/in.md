@@ -20,7 +20,7 @@ Don't list too many values explicitly (i.e. millions). If a data set is large, 
 
 The right side of the operator can be a set of constant expressions, a set of tuples with constant expressions (shown in the examples above), or the name of a database table or `SELECT` subquery in brackets.
 
-ClickHouse allows types to differ in the left and the right parts of `IN` subquery. In this case it converts the left side value to the type of the right side, as if the [accurateCastOrNull](../functions/type-conversion-functions.md#type_conversion_function-accurate-cast_or_null) function is applied. That means, that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion cannot be performed, it returns [NULL](../../sql-reference/syntax.md#null-literal).
+ClickHouse allows types to differ in the left and the right parts of `IN` subquery. In this case it converts the left side value to the type of the right side, as if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accuratecastornullx-t) function is applied. That means, that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion cannot be performed, it returns [NULL](/operations/settings/formats#input_format_null_as_default).
 
 **Example**
 
@@ -86,7 +86,7 @@ A subquery in the `IN` clause is always run just one time on a single server. Th
 
 ## NULL Processing {#null-processing}
 
-During request processing, the `IN` operator assumes that the result of an operation with [NULL](../../sql-reference/syntax.md#null-literal) always equals `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared if [transform_null_in = 0](../../operations/settings/settings.md#transform_null_in).
+During request processing, the `IN` operator assumes that the result of an operation with [NULL](/operations/settings/formats#input_format_null_as_default) always equals `0`, regardless of whether `NULL` is on the right or left side of the operator. `NULL` values are not included in any dataset, do not correspond to each other and cannot be compared if [transform_null_in = 0](../../operations/settings/settings.md#transform_null_in).
 
 Here is an example with the `t_null` table:
 
@@ -231,7 +231,7 @@ This is specially important if the `GLOBAL IN` query returns a large amount of d
 select * from table1 where col1 global in (select col1 from table2 where <some_predicate>)
 ```
  
-If `some_predicate` is not selective enough, it will return a large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](../../operations/settings/query-complexity.md#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.
+If `some_predicate` is not selective enough, it will return a large amount of data and cause performance issues. In such cases, it is wise to limit the data transfer over the network. Also, note that [`set_overflow_mode`](/operations/settings/settings#set_overflow_mode) is set to `throw` (by default) meaning that an exception is raised when these thresholds are met.
 
 ### Distributed Subqueries and max_parallel_replicas {#distributed-subqueries-and-max_parallel_replicas}
 

@@ -19,7 +19,7 @@ empty([x])
 An array is considered empty if it does not contain any elements.
 
 :::note
-Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](../../operations/settings/settings.md#optimize-functions-to-subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
+Can be optimized by enabling the [`optimize_functions_to_subcolumns` setting](/operations/settings/settings#optimize_functions_to_subcolumns). With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT empty(arr) FROM TABLE;` transforms to `SELECT arr.size0 = 0 FROM TABLE;`.
 :::
 
 The function also works for [strings](string-functions.md#empty) or [UUID](uuid-functions.md#empty).
@@ -61,7 +61,7 @@ notEmpty([x])
 An array is considered non-empty if it contains at least one element.
 
 :::note
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT notEmpty(arr) FROM table` transforms to `SELECT arr.size0 != 0 FROM TABLE`.
 :::
 
 The function also works for [strings](string-functions.md#notempty) or [UUID](uuid-functions.md#notempty).
@@ -96,7 +96,7 @@ Returns the number of items in the array.
 The result type is UInt64.
 The function also works for strings.
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT length(arr) FROM table` transforms to `SELECT arr.size0 FROM TABLE`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [size0](/sql-reference/data-types/array#array-size) subcolumn instead of reading and processing the whole array column. The query `SELECT length(arr) FROM table` transforms to `SELECT arr.size0 FROM TABLE`.
 
 Alias: `OCTET_LENGTH`
 
@@ -1101,7 +1101,7 @@ arrayPushBack(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](../data-types/index.md#data_types)". Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](/sql-reference/data-types)". Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -1126,7 +1126,7 @@ arrayPushFront(array, single_value)
 **Arguments**
 
 - `array` – Array.
-- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](../data-types/index.md#data_types)". Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
+- `single_value` – A single value. Only numbers can be added to an array with numbers, and only strings can be added to an array of strings. When adding numbers, ClickHouse automatically sets the `single_value` type for the data type of the array. For more information about the types of data in ClickHouse, see "[Data types](/sql-reference/data-types)". Can be `NULL`. The function adds a `NULL` element to an array, and the type of array elements converts to `Nullable`.
 
 **Example**
 
@@ -1588,7 +1588,7 @@ If you want to get a list of unique items in an array, you can use arrayReduce('
 
 ## arrayJoin(arr) {#arrayjoinarr}
 
-A special function. See the section ["ArrayJoin function"](../../sql-reference/functions/array-join.md#functions_arrayjoin).
+A special function. See the section ["ArrayJoin function"](/sql-reference/functions/array-join).
 
 ## arrayDifference {#arraydifference}
 
@@ -1602,11 +1602,11 @@ arrayDifference(array)
 
 **Arguments**
 
-- `array` – [Array](/data_types/array/).
+- `array` – [Array](/sql-reference/data-types/array).
 
 **Returned values**
 
-Returns an array of differences between adjacent array elements. [UInt\*](/docs/data_types/int_uint/#uint-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/sql-reference/data-types/float).
+Returns an array of differences between adjacent array elements. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float).
 
 **Example**
 
@@ -1652,7 +1652,7 @@ arrayDistinct(array)
 
 **Arguments**
 
-- `array` – [Array](/data_types/array/).
+- `array` – [Array](/sql-reference/data-types/array).
 
 **Returned values**
 
@@ -2500,7 +2500,7 @@ arrayFirstOrNull(func, arr1, ...)
 
 **Parameters**
 
-- `func`: Lambda function. [Lambda function](../functions/#higher-order-functions---operator-and-lambdaparams-expr-function).
+- `func`: Lambda function. [Lambda function](/sql-reference/functions/overview#higher-order-functions---operator-and-lambdaparams-expr-function).
 - `arr1`: Array to operate on. [Array](/sql-reference/data-types/array).
 
 **Returned value**
@@ -2863,7 +2863,7 @@ arrayCumSum(arr)
 
 **Returned value**
 
-- Returns an array of the partial sums of the elements in the source array. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/sql-reference/data-types/float/).
+- Returns an array of the partial sums of the elements in the source array. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float/).
 
 Example:
 
@@ -2895,7 +2895,7 @@ arrayCumSumNonNegative(arr)
 
 **Returned value**
 
-- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/docs/data_types/int_uint/#int-ranges), [Float\*](/sql-reference/data-types/float/).
+- Returns an array of non-negative partial sums of elements in the source array. [UInt\*](/sql-reference/data-types/int-uint#integer-ranges), [Int\*](/sql-reference/data-types/int-uint#integer-ranges), [Float\*](/sql-reference/data-types/float/).
 
 ``` sql
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res

@@ -53,7 +53,7 @@ Unsupported Parquet data types are:
 - `UUID`
 - `ENUM`.
 
-Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions/#type_conversion_function-cast) the data to that data type which is set for the ClickHouse table column.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Parquet data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#cast) the data to that data type which is set for the ClickHouse table column.
 
 ## Example Usage {#example-usage}
 
