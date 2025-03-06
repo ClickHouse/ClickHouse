@@ -4,6 +4,7 @@
 #include <Client/BuzzHouse/Generator/RandomGenerator.h>
 #include <Client/BuzzHouse/Generator/RandomSettings.h>
 #include <Client/BuzzHouse/Generator/SQLCatalog.h>
+#include <Client/BuzzHouse/Generator/SQLFuncs.h>
 
 namespace BuzzHouse
 {
@@ -113,6 +114,7 @@ public:
 private:
     ExternalIntegrations & connections;
     const bool supports_cloud_features, replica_setup;
+    const size_t deterministic_funcs_limit, deterministic_aggrs_limit;
 
     PeerQuery peer_query = PeerQuery::None;
     bool in_transaction = false, inside_projection = false, allow_not_deterministic = true, allow_in_expression_alias = true,
@@ -385,6 +387,12 @@ private:
     void generateNextRestore(RandomGenerator & rg, BackupRestore * br);
     void generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br);
 
+    static const constexpr auto funcDeterministicLambda = [](const SQLFunction & f) { return f.is_deterministic; };
+
+    static const constexpr auto funcNotDeterministicIndexLambda = [](const CHFunction & f) { return f.fnum == SQLFunc::FUNCarrayShuffle; };
+
+    static const constexpr auto aggrNotDeterministicIndexLambda = [](const CHAggregate & a) { return a.fnum == SQLFunc::FUNCany; };
+
 public:
     SQLType * randomNextType(RandomGenerator & rg, uint32_t allowed_types, uint32_t & col_counter, TopTypeName * tp);
 
@@ -408,7 +416,7 @@ public:
         = [](const SQLView & v) { return (v.db && v.db->attached != DetachStatus::ATTACHED) || v.attached != DetachStatus::ATTACHED; };
 
     template <typename T>
-    std::function<bool(const T &)> hasTableOrView(const SQLBase & b)
+    std::function<bool(const T &)> hasTableOrView(const SQLBase & b) const
     {
         return [&b](const T & t) { return t.isAttached() && (t.is_deterministic || !b.is_deterministic); };
     }
@@ -418,6 +426,10 @@ public:
         , connections(conn)
         , supports_cloud_features(scf)
         , replica_setup(hrs)
+        , deterministic_funcs_limit(static_cast<size_t>(
+              std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
+        , deterministic_aggrs_limit(static_cast<size_t>(
+              std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
     {
         chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
     }
