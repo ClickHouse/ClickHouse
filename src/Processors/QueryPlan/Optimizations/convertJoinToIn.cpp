@@ -62,8 +62,6 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         return 0;
     if (!isInner(join_info.kind))
         return 0;
-    if (join->getJoinSettings().join_use_nulls)
-        return 0;
 
     const auto & left_input_header = join->getInputHeaders().front();
     const auto & right_input_header = join->getInputHeaders().back();
