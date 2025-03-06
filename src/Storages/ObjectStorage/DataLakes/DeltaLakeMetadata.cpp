@@ -713,7 +713,8 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
     ContextPtr local_context,
     [[maybe_unused]] bool allow_experimental_delta_kernel_rs)
 {
-    auto create_metadata = [&]() {
+    auto create_metadata = [&]()
+    {
     #if USE_DELTA_KERNEL_RS
         if (allow_experimental_delta_kernel_rs)
             return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
