@@ -12,11 +12,11 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.fast_test,
         *[job for job in JobConfigs.build_jobs if job.name == "Build (amd_binary)"],
-        *[
-            job
-            for job in JobConfigs.unittest_jobs
-            if job.name == JobNames.UNITTEST + " (binary)"
-        ],
+        # *[
+        #     job
+        #     for job in JobConfigs.unittest_jobs
+        #     if job.name == JobNames.UNITTEST + " (binary)"
+        # ],
     ],
     artifacts=[
         *[

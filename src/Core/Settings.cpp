@@ -5063,6 +5063,9 @@ Wait time to lock cache for space reservation for temporary data in filesystem c
     DECLARE(Bool, use_page_cache_for_disks_without_file_cache, false, R"(
 Use userspace page cache for remote disks that don't have filesystem cache enabled.
 )", 0) \
+    DECLARE(Bool, use_page_cache_with_distributed_cache, false, R"(
+Use userspace page cache when distributed cache is used.
+)", 0) \
     DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
 Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
 )", 0) \
