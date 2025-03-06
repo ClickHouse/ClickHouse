@@ -4288,7 +4288,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(QueryCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryCacheNondeterministicFunctionHandling::Throw, R"(
+    DECLARE(QueryResultCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryResultCacheNondeterministicFunctionHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
 Possible values:
@@ -4297,7 +4297,7 @@ Possible values:
 - `'save'` - Cache the query result.
 - `'ignore'` - Don't cache the query result and don't throw an exception.
 )", 0) \
-    DECLARE(QueryCacheSystemTableHandling, query_cache_system_table_handling, QueryCacheSystemTableHandling::Throw, R"(
+    DECLARE(QueryResultCacheSystemTableHandling, query_cache_system_table_handling, QueryResultCacheSystemTableHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
 
 Possible values:
