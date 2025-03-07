@@ -44,6 +44,17 @@ public:
 
     Block read();
 
+    bool eof() const;
+    bool hasPendingData() const;
+
+    static void readData(
+        const ISerialization & serialization,
+        ColumnPtr & column,
+        ReadBuffer & istr,
+        const FormatSettings * format_settings,
+        size_t rows,
+        double avg_value_size_hint);
+
 private:
     ReadBuffer & istr;
     Block header;

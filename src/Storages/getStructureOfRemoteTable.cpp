@@ -1,20 +1,21 @@
 #include "getStructureOfRemoteTable.h"
+#include <Columns/ColumnString.h>
 #include <Core/Settings.h>
-#include <Interpreters/Cluster.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ClusterProxy/executeQuery.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
-#include <Storages/IStorage.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Common/quoteString.h>
-#include <Common/NetException.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Common/NetException.h>
+#include <Common/quoteString.h>
+#include "Columns/ColumnBlob.h"
 
 
 namespace DB
@@ -99,6 +100,9 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     while (Block current = executor.readBlock())
     {
+        // TODO(nickitat): pls do smth about this
+        current = convertBlobColumns(current);
+
         ColumnPtr name = current.getByName("name").column;
         ColumnPtr type = current.getByName("type").column;
         ColumnPtr default_kind = current.getByName("default_type").column;

@@ -2,11 +2,12 @@
 
 #include <Poco/Net/StreamSocket.h>
 
-#include <Common/callOnce.h>
-#include <Common/SSHWrapper.h>
-#include <Common/SettingsChanges.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
+#include <Common/BlockQueue.h>
+#include <Common/SSHWrapper.h>
+#include <Common/SettingsChanges.h>
+#include <Common/callOnce.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -257,6 +258,8 @@ private:
 
     bool have_more_addresses_to_connect = false;
 
+    std::unique_ptr<BlockQueue> block_queue;
+
     /// Logger is created lazily, for avoid to run DNS request in constructor.
     class LoggerWrapper
     {
@@ -321,6 +324,7 @@ private:
     void initBlockInput();
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
+    void initBlockQueue();
 
     [[noreturn]] void throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected);
 };

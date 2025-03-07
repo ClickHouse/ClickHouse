@@ -200,6 +200,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
                 extension);
 
             remote_query_executor->setLogger(log);
+            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             pipes.emplace_back(std::make_shared<RemoteSource>(
                 remote_query_executor,
                 add_agg_info,

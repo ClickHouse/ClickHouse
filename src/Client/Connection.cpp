@@ -37,9 +37,10 @@
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
 
+#include <Columns/ColumnBlob.h>
+#include <Core/Types.h>
 #include <Common/config_version.h>
 #include <Common/scope_guard_safe.h>
-#include <Core/Types.h>
 #include "config.h"
 
 #include <fmt/ranges.h>
@@ -1350,6 +1351,11 @@ Block Connection::receiveLogData()
     return receiveDataImpl(*block_logs_in);
 }
 
+void Connection::initBlockQueue()
+{
+    if (!block_queue)
+        block_queue = std::make_unique<BlockQueue>(8, [](const Block & block) { return convertBlobColumns(block); });
+}
 
 Block Connection::receiveDataImpl(NativeReader & reader)
 {
@@ -1358,7 +1364,48 @@ Block Connection::receiveDataImpl(NativeReader & reader)
 
     size_t prev_bytes = in->count();
 
-    /// Read one block from network.
+    // initBlockQueue();
+    // Block block;
+    // bool first = true;
+    // bool has = false;
+    // do
+    // {
+    //     if (reader.eof())
+    //         break;
+    //
+    //     block = reader.read();
+    //     has = true;
+    //
+    //     if (!block_queue->enqueueForProcessing(block, /*wait=*/first))
+    //         break;
+    //     else
+    //     {
+    //         LOG_DEBUG(
+    //             &Poco::Logger::get("debug"),
+    //             "__PRETTY_FUNCTION__={}, __LINE__={}, block={}",
+    //             __PRETTY_FUNCTION__,
+    //             __LINE__,
+    //             block.dumpStructure());
+    //         has = false;
+    //     }
+    //     first = false;
+    // } while (reader.hasPendingData());
+    //
+    // Block res = block_queue->dequeueNextProcessed(/*wait=*/false);
+    // LOG_DEBUG(
+    //     &Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}, block={}", __PRETTY_FUNCTION__, __LINE__, block.dumpStructure());
+    //
+    // if (has)
+    // {
+    //     block_queue->enqueueForProcessing(block, /*wait=*/true);
+    //     LOG_DEBUG(
+    //         &Poco::Logger::get("debug"),
+    //         "__PRETTY_FUNCTION__={}, __LINE__={}, block={}",
+    //         __PRETTY_FUNCTION__,
+    //         __LINE__,
+    //         block.dumpStructure());
+    // }
+
     Block res = reader.read();
 
     if (throttler)

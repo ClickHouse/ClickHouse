@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnBlob.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
@@ -585,6 +586,7 @@ template class IColumnHelper<ColumnObject, IColumn>;
 
 template class IColumnHelper<IColumnDummy, IColumn>;
 
+template class IColumnHelper<ColumnBlob, IColumn>;
 
 void intrusive_ptr_add_ref(const IColumn * c)
 {
@@ -597,4 +599,5 @@ void intrusive_ptr_release(const IColumn * c)
     BOOST_ASSERT(c != nullptr);
     boost::sp_adl_block::intrusive_ptr_release(dynamic_cast<const boost::intrusive_ref_counter<IColumn> *>(c));
 }
+
 }
