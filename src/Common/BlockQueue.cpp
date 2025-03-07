@@ -1,5 +1,12 @@
 #include <Common/BlockQueue.h>
 
+namespace CurrentMetrics
+{
+extern const Metric AggregatorThreads;
+extern const Metric AggregatorThreadsActive;
+extern const Metric AggregatorThreadsScheduled;
+}
+
 namespace DB
 {
 

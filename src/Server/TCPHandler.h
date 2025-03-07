@@ -35,10 +35,6 @@
 namespace CurrentMetrics
 {
     extern const Metric TCPConnection;
-
-    extern const Metric AggregatorThreads;
-    extern const Metric AggregatorThreadsActive;
-    extern const Metric AggregatorThreadsScheduled;
 }
 
 namespace Poco { class Logger; }
