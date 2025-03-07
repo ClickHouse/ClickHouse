@@ -27,7 +27,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 - `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
 - `attr_names` — Name of the column of the dictionary, [String literal](/sql-reference/syntax#string), or tuple of column names, [Tuple](/sql-reference/data-types/tuple)([String literal](/sql-reference/syntax#string).
 - `id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning dictionary key-type value or [Tuple](../data-types/tuple.md)-type value depending on the dictionary configuration.
-- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](/sql-reference/syntax#expressions) or [Tuple](../data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](/sql-reference/syntax#expressions) or [Tuple](../data-types/tuple.md)([Expression](/sql-reference/syntax#expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
 
 **Returned value**
 
