@@ -3171,9 +3171,13 @@ message PartitionExpr {
     }
 }
 
+message SinglePartitionExpr {
+    required PartitionExpr partition = 1;
+}
+
 message LightDelete {
     required ExprSchemaTable est = 1;
-    optional PartitionExpr partition = 2;
+    optional SinglePartitionExpr single_partition = 2;
     optional Cluster cluster = 3;
     required WhereStatement where = 4;
     optional SettingValues setting_values = 5;
@@ -3211,7 +3215,7 @@ message TopSelect {
 
 message CheckTable {
     required ExprSchemaTable est = 1;
-    optional PartitionExpr partition = 2;
+    optional SinglePartitionExpr single_partition = 2;
     optional bool single_result = 3;
     optional SettingValues setting_values = 4;
 }
@@ -3236,7 +3240,7 @@ message DeduplicateExpr {
 message OptimizeTable {
     required ExprSchemaTable est = 1;
     optional Cluster cluster = 2;
-    optional PartitionExpr partition = 3;
+    optional SinglePartitionExpr single_partition = 3;
     optional bool final = 4;
     optional DeduplicateExpr dedup = 5;
     optional bool cleanup = 6;
@@ -3258,12 +3262,12 @@ message UpdateSet {
 message Update {
     required UpdateSet update = 1;
     repeated UpdateSet other_updates = 2;
-    optional PartitionExpr partition = 3;
+    optional SinglePartitionExpr single_partition = 3;
     required WhereStatement where = 4;
 }
 
 message HeavyDelete {
-    optional PartitionExpr partition = 1;
+    optional SinglePartitionExpr single_partition = 1;
     required WhereStatement del = 2;
 }
 
@@ -3287,7 +3291,7 @@ message RenameCol {
 
 message ColInPartition {
     required ColumnPath col = 1;
-    optional PartitionExpr partition = 2;
+    optional SinglePartitionExpr single_partition = 2;
 }
 
 message CommentColumn {
@@ -3307,12 +3311,12 @@ message AddIndex {
 
 message IdxInPartition {
     required Index idx = 1;
-    optional PartitionExpr partition = 2;
+    optional SinglePartitionExpr single_partition = 2;
 }
 
 message ProjectionInPartition {
     required Projection proj = 1;
-    optional PartitionExpr partition = 2;
+    optional SinglePartitionExpr single_partition = 2;
 }
 
 message RemoveColumnProperty {
@@ -3389,31 +3393,31 @@ message CreateView {
 }
 
 message ApplyDeleteMask {
-    optional PartitionExpr partition = 1;
+    optional SinglePartitionExpr single_partition = 1;
 }
 
 message AttachPartitionFrom {
-    required PartitionExpr partition = 1;
+    required SinglePartitionExpr single_partition = 1;
     required ExprSchemaTable est = 2;
 }
 
 message ClearColumnInPartition {
     required ColumnPath col = 1;
-    required PartitionExpr partition = 2;
+    required SinglePartitionExpr single_partition = 2;
 }
 
 message FreezePartition {
-    optional PartitionExpr partition = 1;
+    optional SinglePartitionExpr single_partition = 1;
     required uint32 fname = 2;
 }
 
 message ClearIndexInPartition {
     required Index idx = 1;
-    required PartitionExpr partition = 2;
+    required SinglePartitionExpr single_partition = 2;
 }
 
 message MovePartition {
-    required PartitionExpr partition = 1;
+    required SinglePartitionExpr single_partition = 1;
     required Storage storage = 2;
 }
 
@@ -3451,11 +3455,11 @@ message AlterTableItem {
         ProjectionInPartition clear_projection = 29;
         ConstraintDef add_constraint = 30;
         Constraint remove_constraint = 31;
-        PartitionExpr detach_partition = 32;
-        PartitionExpr drop_partition = 33;
-        PartitionExpr drop_detached_partition = 34;
-        PartitionExpr forget_partition = 35;
-        PartitionExpr attach_partition = 36;
+        SinglePartitionExpr detach_partition = 32;
+        SinglePartitionExpr drop_partition = 33;
+        SinglePartitionExpr drop_detached_partition = 34;
+        SinglePartitionExpr forget_partition = 35;
+        SinglePartitionExpr attach_partition = 36;
         AttachPartitionFrom attach_partition_from = 37;
         AttachPartitionFrom replace_partition_from = 38;
         AttachPartitionFrom move_partition_to = 39;
@@ -3583,7 +3587,7 @@ message BackupRestoreObject {
     required SQLObject sobject = 2;
     required SQLObjectName object = 3;
     optional SQLObjectName alias = 4;
-    repeated PartitionExpr partition = 5;
+    repeated PartitionExpr partitions = 5;
 }
 
 message BackupRestoreElement {
