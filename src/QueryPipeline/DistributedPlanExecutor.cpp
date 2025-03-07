@@ -319,6 +319,35 @@ public:
     }
 
 protected:
+    void fillHostnames()
+    {
+        if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
+
+        String host;
+        String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
+        if (!cluster_name.empty())
+        {
+            auto cluster = context->tryGetCluster(cluster_name);
+            auto shard_addresses = cluster->getShardsAddresses();
+            if (shard_addresses.empty())
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Cluster '{}' has no shards", cluster_name);
+            for (const auto & shard : shard_addresses[0])
+                hostnames.push_back(shard.host_name);
+        }
+        else
+        {
+            host = context->getConfigRef().getString("stateless_worker_client.host");
+            if (!host.empty())
+                hostnames.push_back(host);
+        }
+
+        if (hostnames.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No hosts specified for stateless worker client");
+
+        LOG_DEBUG(logger, "Hosts for running distributed query: [{}]", fmt::join(hostnames, ", "));
+    }
+
     struct RunningTaskInfo
     {
         String endpoint_uri;
@@ -347,6 +376,8 @@ protected:
 
         String unique_task_id = toString(unique_query_id) + "::" + task.task_id;
         String unique_temp_file_path = toString(unique_query_id);
+
+        LOG_DEBUG(logger, "Sending task {} to host {}", unique_task_id, host);
 
         sendTask(stateless_worker_endpoint_uri, unique_task_id, serialized_query_plan, task, unique_temp_file_path, context);
 
@@ -399,9 +430,9 @@ void DistributedQueryPlanExecutor::execute()
         const auto & stage = distributed_query_plan.stages.at(stage_name);
         LOG_DEBUG(logger,
             "\n====================== Executing stage '{}' =========================\n"
-            "plan:\n{}\n"
+            "PLAN:\n{}\nTASKS: {}\n"
             "==========================================================================",
-            stage_name, dumpQueryPlan(stage.query_plan_fragment));
+            stage_name, dumpQueryPlan(stage.query_plan_fragment), stage.tasks.size());
         executeStage(stage);
         executed_stages.insert(stage_name);
     };
