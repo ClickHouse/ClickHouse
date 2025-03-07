@@ -99,6 +99,7 @@ Positions: 1
         Function: sum(UInt32) → UInt64
         Arguments: __table1.y
   Skip merging: 0
+  Use sharding: 1
     Union
       Expression (Before GROUP BY)
       Actions: INPUT :: 0 -> __table1.y UInt32 : 0
@@ -202,6 +203,7 @@ Positions: 1 0
               Function: sum(UInt32) → UInt64
               Arguments: __table1.y
         Skip merging: 0
+        Use sharding: 1
           Expression
           Actions: INPUT : 1 -> y UInt32 : 0
                    INPUT : 0 -> x UInt32 : 1
@@ -250,6 +252,7 @@ Positions: 1 0
                   Function: sum(UInt32) → UInt64
                   Arguments: __table1.y
             Skip merging: 0
+            Use sharding: 1
               Expression
               Actions: INPUT : 1 -> y UInt32 : 0
                        INPUT : 0 -> x UInt32 : 1

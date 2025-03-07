@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
+            {"group_by_use_sharding", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {

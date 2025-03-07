@@ -665,7 +665,7 @@ void AggregatingTransform::consume(Chunk chunk)
 {
     const UInt64 num_rows = chunk.getNumRows();
 
-    if (num_rows == 0 && params->params.empty_result_for_aggregation_by_empty_set)
+    if (num_rows == 0 && (/*skip_merging ||*/ params->params.empty_result_for_aggregation_by_empty_set))
         return;
 
     if (!is_consume_started)
@@ -717,7 +717,7 @@ void AggregatingTransform::initGenerate()
 
     if (params->aggregator.hasTemporaryData())
     {
-        if (variants.isConvertibleToTwoLevel())
+        if (variants.isConvertibleToTwoLevel() && !params->params.use_sharding_by_keys)
             variants.convertToTwoLevel();
 
         /// Flush data in the RAM to disk also. It's easier than merging on-disk and RAM data.
@@ -737,6 +737,22 @@ void AggregatingTransform::initGenerate()
     {
         if (!skip_merging)
         {
+            // if (!params->params.empty_result_for_aggregation_by_empty_set)
+            // {
+            //     bool all_varians_are_empty = true;
+            //     for (const auto & variant : many_data->variants)
+            //         if (!variant->empty())
+            //             all_varians_are_empty = false;
+
+            //     if (all_varians_are_empty)
+            //     {
+            //         if (params->params.only_merge)
+            //             params->aggregator.mergeOnBlock(getInputs().front().getHeader(), variants, no_more_keys, is_cancelled);
+            //         else
+            //             params->aggregator.executeOnBlock(getInputs().front().getHeader(), variants, key_columns, aggregate_columns, no_more_keys);
+            //     }
+            // }
+
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants));
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(
@@ -797,7 +813,7 @@ void AggregatingTransform::initGenerate()
             ///  because at the time thread has finished, no data has been flushed to disk, and then some were.
             for (auto & cur_variants : many_data->variants)
             {
-                if (cur_variants->isConvertibleToTwoLevel())
+                if (cur_variants->isConvertibleToTwoLevel() && !params->params.use_sharding_by_keys)
                     cur_variants->convertToTwoLevel();
 
                 if (!cur_variants->empty())

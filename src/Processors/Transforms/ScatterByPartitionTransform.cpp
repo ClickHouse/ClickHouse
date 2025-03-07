@@ -2,6 +2,11 @@
 #include <Core/ColumnNumbers.h>
 #include <Processors/Port.h>
 #include <Processors/Transforms/ScatterByPartitionTransform.h>
+#include <fmt/format.h>
+#include <fmt/ranges.h>
+
+#include "Common/Logger.h"
+#include <Common/logger_useful.h>
 #include <Common/PODArray.h>
 
 namespace DB
@@ -72,6 +77,9 @@ void ScatterByPartitionTransform::work()
         generateOutputChunks();
     all_outputs_processed = true;
 
+    std::vector<size_t> rows_count(outputs.size(), -1);
+    size_t total = 0;
+
     size_t chunk_number = 0;
     for (auto & output : outputs)
     {
@@ -91,9 +99,14 @@ void ScatterByPartitionTransform::work()
             continue;
         }
 
+        rows_count[chunk_number - 1] = output_chunk.getNumRows();
+        total += output_chunk.getNumRows();
+        // LOG_DEBUG(getLogger("ScatterByPartition"), "Pusing to output {} ({} rows)", chunk_number, output_chunk.getNumRows());
         output.push(std::move(output_chunk));
         was_processed = true;
     }
+
+    LOG_DEBUG(getLogger("ScatterByPartition"), "Pushing '{}' (total: {})", fmt::join(rows_count, ", "), total);
 
     if (all_outputs_processed)
     {
@@ -105,6 +118,8 @@ void ScatterByPartitionTransform::work()
 void ScatterByPartitionTransform::generateOutputChunks()
 {
     auto num_rows = chunk.getNumRows();
+    if (num_rows == 0)
+        return;
     const auto & columns = chunk.getColumns();
 
     hash.reset(num_rows);
@@ -123,7 +138,10 @@ void ScatterByPartitionTransform::generateOutputChunks()
     {
         auto filtered_columns = column->scatter(output_size, selector);
         for (size_t i = 0; i < output_size; ++i)
+        {
             output_chunks[i].addColumn(std::move(filtered_columns[i]));
+            was_output_processed[i] = output_chunks[i].getNumRows() == 0;
+        }
     }
 }
 
