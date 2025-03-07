@@ -11,4 +11,4 @@ SELECT y FROM test_table ORDER BY c;
 
 SET allow_experimental_parallel_reading_from_replicas = 1;
 SELECT '----';
-SELECT y FROM remote('127.0.0.{1,2}', default, test_table) ORDER BY c settings extremes=1;
+SELECT y FROM remote('127.0.0.{1,2}', currentDatabase(), test_table) ORDER BY c settings extremes=1;
