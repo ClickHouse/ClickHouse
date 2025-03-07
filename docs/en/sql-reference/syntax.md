@@ -222,7 +222,7 @@ To store `NULL` in a table field, it must be of the [Nullable](../sql-reference/
 :::note
 The following should be noted for `NULL`:
 
-- Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](../interfaces/formats.md#formats).
+- Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](/interfaces/formats).
 - `NULL` processing is nuanced. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. We recommend to read the documentation for each operation.
 - In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isnull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isnotnull) operators and the related functions `isNull` and `isNotNull`.
 :::
