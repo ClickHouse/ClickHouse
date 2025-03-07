@@ -137,18 +137,21 @@ namespace impl
     template <typename TLogger>
     inline bool shouldLog(TLogger & logger, DB::LogsLevel level, Poco::Message * message)
     {
+        if (!shouldLog(getQuillLogger(logger), level))
+            return false;
+
         if constexpr (DB::is_any_of<TLogger, LogToStrImpl, LogFrequencyLimiterImpl>)
         {
-            if (message && !logger.shouldLogMessage(*message))
-                return false;
+            return !message || logger.shouldLogMessage(*message);
         }
         else if constexpr (DB::is_any_of<TLogger, LogSeriesLimiter *, LogSeriesLimiterPtr>)
         {
-            if (message && !logger->shouldLogMessage(*message))
-                return false;
+            return !message || logger->shouldLogMessage(*message);
         }
-
-        return shouldLog(getQuillLogger(logger), level);
+        else
+        {
+            return true;
+        }
     }
     /////////////////// shouldLog ///////////////////
 }
@@ -246,11 +249,11 @@ namespace impl
                 _format_string, \
                 _format_string_args); \
             DB::ExtendedLogMessage _msg_ext = DB::ExtendedLogMessage::getFrom(_poco_message); \
-            std::string _text; \
-            _formatter->formatExtended(_msg_ext, _text); \
             auto _should_log = ::impl::shouldLog(_logger, level, &_poco_message); \
             if (_should_log) \
             { \
+                std::string _text; \
+                _formatter->formatExtended(_msg_ext, _text); \
                 QUILL_DEFINE_MACRO_METADATA(__PRETTY_FUNCTION__, "{}", nullptr, quill::LogLevel::Dynamic); \
                 ::impl::getQuillLogger(_logger)->template log_statement<QUILL_IMMEDIATE_FLUSH, true>( \
                     ::impl::logLevelToQuillLogLevel(level), &macro_metadata, _text); \

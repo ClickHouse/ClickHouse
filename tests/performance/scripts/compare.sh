@@ -140,7 +140,7 @@ function restart
         --path left/db
         --user_files_path left/db/user_files
         --top_level_domains_path "$(left_or_right left top_level_domains)"
-        --logger.log left-server-log.log
+        --logger.log left-server-file-log.log
         --tcp_port $LEFT_SERVER_PORT
         --keeper_server.tcp_port $LEFT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $LEFT_SERVER_KEEPER_RAFT_PORT
@@ -148,7 +148,7 @@ function restart
         --zookeeper.node.port $LEFT_SERVER_KEEPER_PORT
         --interserver_http_port $LEFT_SERVER_INTERSERVER_PORT
     )
-    left/clickhouse-server "${left_server_opts[@]}" &
+    left/clickhouse-server "${left_server_opts[@]}" &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
@@ -162,14 +162,14 @@ function restart
         --user_files_path right/db/user_files
         --top_level_domains_path "$(left_or_right right top_level_domains)"
         --tcp_port $RIGHT_SERVER_PORT
-        --logger.log right-server-log.log
+        --logger.log right-server-file-log.log
         --keeper_server.tcp_port $RIGHT_SERVER_KEEPER_PORT
         --keeper_server.raft_configuration.server.port $RIGHT_SERVER_KEEPER_RAFT_PORT
         --keeper_server.storage_path right/coordination
         --zookeeper.node.port $RIGHT_SERVER_KEEPER_PORT
         --interserver_http_port $RIGHT_SERVER_INTERSERVER_PORT
     )
-    right/clickhouse-server "${right_server_opts[@]}" &
+    right/clickhouse-server "${right_server_opts[@]}" &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
