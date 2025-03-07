@@ -31,7 +31,6 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Interpreters/ProcessList.h>
 
 // only after poco
 // naming conflict:
@@ -518,7 +517,6 @@ Chunk MongoDBPocoLegacySource::generate()
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
-    String query_id (CurrentThread::getQueryId());
     auto context = CurrentThread::getQueryContext();
     while (num_rows < max_block_size)
     {
