@@ -1,6 +1,6 @@
 from praktika import Workflow
 
-from ci.defs.defs import BASE_BRANCH, SECRETS, ArtifactConfigs, JobNames
+from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, JobNames
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
@@ -15,8 +15,8 @@ workflow = Workflow.Config(
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        JobConfigs.docker_build_arm,
-        JobConfigs.docker_build_amd,
+        # JobConfigs.docker_build_arm,
+        # JobConfigs.docker_build_amd,
         JobConfigs.style_check,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
@@ -70,7 +70,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.performance_packages,
         *ArtifactConfigs.performance_reports,
     ],
-    # dockers=DOCKERS,
+    dockers=DOCKERS[:1],
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,

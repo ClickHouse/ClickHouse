@@ -66,6 +66,12 @@ SECRETS = [
 
 DOCKERS = [
     Docker.Config(
+        name="clickhouse/style-test",
+        path="./ci/docker/style-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/binary-builder",
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
@@ -221,12 +227,6 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/s3-proxy",
         path="./docker/test/integration/s3_proxy",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/style-test",
-        path="./ci/docker/style-test",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),

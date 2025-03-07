@@ -1,4 +1,5 @@
 import json
+import platform
 import sys
 import traceback
 from pathlib import Path
@@ -36,14 +37,25 @@ _workflow_config_job = Job.Config(
 )
 
 _docker_build_job = Job.Config(
-    name=Settings.DOCKER_BUILD_JOB_NAME,
-    runs_on=Settings.DOCKER_BUILD_RUNS_ON,
+    name=Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+    runs_on=Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
     job_requirements=Job.Requirements(
         python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
         python_requirements_txt="",
     ),
     timeout=int(5.5 * 3600),
-    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_JOB_NAME}'",
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME}'",
+)
+
+_docker_build_arm_linux_job = Job.Config(
+    name=Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+    runs_on=Settings.DOCKER_BUILD_ARM_RUNS_ON,
+    job_requirements=Job.Requirements(
+        python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
+        python_requirements_txt="",
+    ),
+    timeout=int(5.5 * 3600),
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME}'",
 )
 
 _final_job = Job.Config(
@@ -61,7 +73,8 @@ _final_job = Job.Config(
 def _is_praktika_job(job_name):
     if job_name in (
         Settings.CI_CONFIG_JOB_NAME,
-        Settings.DOCKER_BUILD_JOB_NAME,
+        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+        Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
         Settings.FINISH_WORKFLOW_JOB_NAME,
     ):
         return True
@@ -77,6 +90,19 @@ def _build_dockers(workflow, job_name):
     job_info = ""
     dockers = Docker.sort_in_build_order(dockers)
     docker_digests = {}  # type: Dict[str, str]
+    arm_only = False
+    amd_only = False
+    if not Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB:
+        cpu_arch = platform.processor()
+        if cpu_arch in ("arm", "aarch64"):
+            arm_only = True
+        elif cpu_arch == "x86_64":
+            amd_only = True
+        else:
+            Utils.raise_with_error(
+                f"Not supported CPU architecture for docker build [{cpu_arch}]"
+            )
+
     for docker in dockers:
         docker_digests[docker.name] = Digest().calc_docker_digest(docker, dockers)
 
@@ -104,50 +130,38 @@ def _build_dockers(workflow, job_name):
             assert (
                 docker.name not in ready
             ), f"All docker names must be uniq [{dockers}]"
-            stopwatch = Utils.Stopwatch()
-            info = f"{docker.name}:{docker_digests[docker.name]}"
-            log_file = f"{Settings.OUTPUT_DIR}/docker_{Utils.normalize_string(docker.name)}.log"
-            files = []
 
-            code, out, err = Shell.get_res_stdout_stderr(
-                f"docker manifest inspect {docker.name}:{docker_digests[docker.name]}"
-            )
-            print(
-                f"Docker inspect results for {docker.name}:{docker_digests[docker.name]}: exit code [{code}], out [{out}], err [{err}]"
-            )
-            if "no such manifest" in err:
-                ret_code = Docker.build(
-                    docker, log_file=log_file, digests=docker_digests, add_latest=False
-                )
-                if ret_code == 0:
-                    status = Result.Status.SUCCESS
-                else:
-                    status = Result.Status.FAILED
-                    job_status = Result.Status.FAILED
-                    info += f", failed with exit code: {ret_code}, see log"
-                    files.append(log_file)
-            else:
-                print(
-                    f"Docker image [{docker.name}:{docker_digests[docker.name]} exists - skip build"
-                )
-                status = Result.Status.SKIPPED
-            ready.append(docker.name)
             results.append(
-                Result(
-                    name=docker.name,
-                    status=status,
-                    info=info,
-                    duration=stopwatch.duration,
-                    start_time=stopwatch.start_time,
-                    files=files,
+                Docker.build(
+                    docker,
+                    digests=docker_digests,
+                    amd_only=amd_only,
+                    arm_only=arm_only,
+                    with_log=True,
                 )
             )
-    return (
-        Result.from_fs(job_name)
-        .set_status(job_status)
-        .set_results(results)
-        .set_info(job_info)
-    )
+            if results[0].is_ok():
+                ready.append(docker.name)
+            else:
+                job_status = Result.Status.FAILED
+                break
+
+    if (
+        job_status == Result.Status.SUCCESS
+        and job_name == Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME
+    ):
+        print("Start docker manifest merge")
+        for docker in dockers:
+            results.append(
+                Docker.merge_manifest(
+                    config=docker,
+                    digests=docker_digests,
+                    with_log=True,
+                    add_latest=False,
+                )
+            )
+
+    return Result.create_from(results=results, info=job_info)
 
 
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
@@ -500,7 +514,10 @@ if __name__ == "__main__":
     sw = Utils.Stopwatch()
     try:
         workflow = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
-        if job_name == Settings.DOCKER_BUILD_JOB_NAME:
+        if job_name in (
+            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+            Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+        ):
             result = _build_dockers(workflow, job_name)
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
             result = _config_workflow(workflow, job_name)
