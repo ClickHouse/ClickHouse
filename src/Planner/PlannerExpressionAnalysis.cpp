@@ -24,6 +24,7 @@
 #include <Planner/Utils.h>
 
 #include <Core/Settings.h>
+#include "Core/NamesAndTypes.h"
 
 namespace DB
 {
@@ -122,7 +123,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
     for (auto & aggregate_description : aggregates_descriptions)
         available_columns_after_aggregation.emplace_back(nullptr, aggregate_description.function->getResultType(), aggregate_description.column_name);
 
-    Names aggregation_keys;
+    NamesAndTypes aggregation_keys;
 
     ActionsAndProjectInputsFlagPtr before_aggregation_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     before_aggregation_actions->dag = ActionsDAG(input_columns);
@@ -173,7 +174,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                         auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
                         auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
                         available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
-                        aggregation_keys.push_back(expression_dag_node->result_name);
+                        aggregation_keys.emplace_back(expression_dag_node->result_name, expression_dag_node->result_type);
                         before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                         before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
                     }
@@ -194,10 +195,10 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
 
                 for (auto & key : aggregation_keys)
                 {
-                    if (grouping_sets_used_keys.contains(key))
+                    if (grouping_sets_used_keys.contains(key.name))
                         continue;
 
-                    grouping_sets_parameter.missing_keys.push_back(key);
+                    grouping_sets_parameter.missing_keys.push_back(key.name);
                 }
 
                 grouping_sets_parameter.used_keys = std::move(grouping_sets_keys);
@@ -225,7 +226,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(const QueryTreeNodeP
                     auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
 
                     available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
-                    aggregation_keys.push_back(expression_dag_node->result_name);
+                    aggregation_keys.emplace_back(expression_dag_node->result_name, expression_dag_node->result_type);
                     before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
                     before_aggregation_actions_output_node_names.insert(expression_dag_node->result_name);
                 }
