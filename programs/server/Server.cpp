@@ -108,15 +108,15 @@
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Parsers/ASTAlterQuery.h>
+#include <Server/CloudPlacementInfo.h>
+#include <Server/HTTP/HTTPServer.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
+#include <Server/KeeperReadinessHandler.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
+#include <Server/ProtocolServerAdapter.h>
 #include <Server/ProxyV1HandlerFactory.h>
 #include <Server/TLSHandlerFactory.h>
-#include <Server/ProtocolServerAdapter.h>
-#include <Server/KeeperReadinessHandler.h>
-#include <Server/HTTP/HTTPServer.h>
-#include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <filesystem>
@@ -141,6 +141,7 @@
 #    include <Server/SSH/SSHPtyHandlerFactory.h>
 #    include <Common/LibSSHInitializer.h>
 #    include <Common/LibSSHLogger.h>
+#    include <Server/ACMEClient.h>
 #endif
 
 #if USE_GRPC
@@ -2044,6 +2045,7 @@ try
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
+            ACMEClient::ACMEClient::instance().initialize(*config);
             CertificateReloader::instance().tryReloadAll(*config);
 #endif
             NamedCollectionFactory::instance().reloadFromConfig(*config);
@@ -2489,8 +2491,8 @@ try
                              "to configuration file.)");
 
 #if USE_SSL
+        ACMEClient::ACMEClient::instance().initialize(config());
         CertificateReloader::instance().tryLoad(config());
-        CertificateReloader::instance().tryLoadClient(config());
 #endif
 
         /// Must be done after initialization of `servers`, because async_metrics will access `servers` variable from its thread.
