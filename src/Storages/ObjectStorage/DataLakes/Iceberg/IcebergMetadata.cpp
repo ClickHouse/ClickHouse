@@ -229,7 +229,6 @@ getLatestMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const S
     metadata_files_with_versions.reserve(metadata_files.size());
     for (const auto & path : metadata_files)
     {
-        LOG_DEBUG(&Poco::Logger::get("Iceberg"), "Looking at {}", path);
         metadata_files_with_versions.emplace_back(getMetadataFileAndVersion(path));
     }
 
@@ -244,7 +243,6 @@ static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const 
     if (!explicit_metadata_path.empty())
     {
         auto prefix_storage_path = configuration.getPath();
-        LOG_DEBUG(&Poco::Logger::get("Iceberg"), "Prefix path {}, metadata path {}", prefix_storage_path, explicit_metadata_path);
         if (!explicit_metadata_path.starts_with(prefix_storage_path))
             explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
         result = getMetadataFileAndVersion(explicit_metadata_path);
