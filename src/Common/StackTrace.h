@@ -44,7 +44,8 @@ public:
     using Frames = std::array<Frame, capacity>;
 
     /// Tries to capture stack trace
-    StackTrace();
+    /// avoid inlining to get correct line of StackTrace() caller in captured stack trace
+    __attribute__((noinline)) StackTrace();
 
     /// Tries to capture stack trace. Fallbacks on parsing caller address from
     /// signal context if no stack trace could be captured
