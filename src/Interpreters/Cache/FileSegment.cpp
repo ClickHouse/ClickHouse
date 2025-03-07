@@ -542,7 +542,7 @@ bool FileSegment::reserve(
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
-                size_to_reserve, range().toString(), downloaded_size);
+                size_to_reserve, range().toString(), downloaded_size.load());
         }
 
         chassert(reserved_size >= expected_downloaded_size);
@@ -922,7 +922,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
         const auto & entry = it->getEntry();
         if (download_state != State::DOWNLOADING && entry->size != reserved_size)
-            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size, reserved_size));
+            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size.load(), reserved_size.load()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());

@@ -45,7 +45,7 @@ Read about setting the partition expression in a section [How to set the partiti
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
-This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](/operations/system-tables/replicas.md/#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
+This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](/operations/system-tables/replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
 
 ## DROP PARTITION\|PART {#drop-partitionpart}
 
@@ -320,7 +320,7 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 
 ### See Also {#see-also}
 
-- [UPDATE](/sql-reference/statements/alter/update.md/#alter-table-update-statements)
+- [UPDATE](/sql-reference/statements/alter/partition#update-in-partition)
 
 ## DELETE IN PARTITION {#delete-in-partition}
 
@@ -344,7 +344,7 @@ ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 
 ### See Also {#see-also-1}
 
-- [DELETE](/sql-reference/statements/alter/delete.md/#alter-mutations)
+- [DELETE](/sql-reference/statements/alter/delete)
 
 ## How to Set Partition Expression {#how-to-set-partition-expression}
 
@@ -354,7 +354,7 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 - Using the keyword `ALL`. It can be used only with DROP/DETACH/ATTACH/ATTACH FROM. For example, `ALTER TABLE visits ATTACH PARTITION ALL`.
 - As a tuple of expressions or constants that matches (in types) the table partitioning keys tuple. In the case of a single element partitioning key, the expression should be wrapped in the `tuple (...)` function. For example, `ALTER TABLE visits DETACH PARTITION tuple(toYYYYMM(toDate('2019-01-25')))`.
 - Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
-- In the [ALTER ATTACH PART](#attach-partitionpart) and [DROP DETACHED PART](#drop-detached-partitionpart) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached_parts](/operations/system-tables/detached_parts.md/#system_tables-detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+- In the [ALTER ATTACH PART](#attach-partitionpart) and [DROP DETACHED PART](#drop-detached-partitionpart) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached_parts](/operations/system-tables/detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Usage of quotes when specifying the partition depends on the type of partition expression. For example, for the `String` type, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes are needed.
 
@@ -364,6 +364,6 @@ All the rules above are also true for the [OPTIMIZE](/sql-reference/statements/o
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
-`IN PARTITION` specifies the partition to which the [UPDATE](/sql-reference/statements/alter/update.md/#alter-table-update-statements) or [DELETE](/sql-reference/statements/alter/delete.md/#alter-mutations) expressions are applied as a result of the `ALTER TABLE` query. New parts are created only from the specified partition. In this way, `IN PARTITION` helps to reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
+`IN PARTITION` specifies the partition to which the [UPDATE](/sql-reference/statements/alter/update.md/#alter-table-update-statements) or [DELETE](/sql-reference/statements/alter/delete) expressions are applied as a result of the `ALTER TABLE` query. New parts are created only from the specified partition. In this way, `IN PARTITION` helps to reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
 
 The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).

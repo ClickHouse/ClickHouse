@@ -411,7 +411,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_QUERY_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryCache(query.query_cache_tag);
+            getContext()->clearQueryResultCache(query.query_result_cache_tag);
             break;
         }
         case Type::DROP_QUERY_CONDITION_CACHE:
@@ -533,8 +533,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_PAGE_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);
-
-            getContext()->dropPageCache();
+            system_context->clearPageCache();
             break;
         }
         case Type::DROP_SCHEMA_CACHE:

@@ -8,7 +8,7 @@ sidebar_label: "\u95F4\u9694"
 
 # Interval类型 {#data-type-interval}
 
-表示时间和日期间隔的数据类型家族。  [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) 运算的结果类型。
+表示时间和日期间隔的数据类型家族。  [INTERVAL](/sql-reference/operators#interval) 运算的结果类型。
 
 !!! warning "警告"
     `Interval` 数据类型值不能存储在表中。
@@ -82,5 +82,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## 另请参阅 {#see-also}
 
--   [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) 操作
--   [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) 类型转换函数
+-   [INTERVAL](/sql-reference/operators#interval) 操作
+-   [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyearl) 类型转换函数
