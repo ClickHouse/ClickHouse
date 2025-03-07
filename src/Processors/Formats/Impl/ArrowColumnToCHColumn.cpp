@@ -522,6 +522,17 @@ static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::Chu
     return offsets_column;
 }
 
+static ColumnPtr readOffsetsFromFixedArrowListColumn(const std::shared_ptr<arrow::ChunkedArray> & arrow_column, int32_t length)
+{
+    auto offsets_column = ColumnUInt64::create();
+    ColumnArray::Offsets & offsets_data = assert_cast<ColumnVector<UInt64> &>(*offsets_column).getData();
+    int64_t size = arrow_column->length();
+    offsets_data.reserve(size);
+    for (int64_t i = 0; i < size; ++i)
+        offsets_data.emplace_back((i + 1) * length);
+    return offsets_column;
+}
+
 /*
  * Arrow Dictionary and ClickHouse LowCardinality types are a bit different.
  * Dictionary(Nullable(X)) in ArrowColumn format is composed of a nullmap, dictionary and an index.
@@ -742,6 +753,7 @@ struct ReadColumnFromArrowColumnSettings
     bool allow_arrow_null_type;
     bool skip_columns_with_unsupported_types;
     bool allow_inferring_nullable_columns;
+    bool case_insensitive_matching;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -908,8 +920,29 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         }
         case arrow::Type::LIST:
         case arrow::Type::LARGE_LIST:
+        case arrow::Type::FIXED_SIZE_LIST:
         {
-            bool is_large_list = arrow_column->type()->id() == arrow::Type::LARGE_LIST;
+            enum class ListType
+            {
+                List,
+                LargeList,
+                FixedSizeList
+            };
+            ListType list_type = [&]
+            {
+                switch (arrow_column->type()->id())
+                {
+                    case arrow::Type::LIST:
+                        return ListType::List;
+                    case arrow::Type::LARGE_LIST:
+                        return ListType::LargeList;
+                    case arrow::Type::FIXED_SIZE_LIST:
+                        return ListType::FixedSizeList;
+                    default:
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected list type: {}", arrow_column->type()->name());
+                }
+            }();
+
             DataTypePtr nested_type_hint;
             if (type_hint)
             {
@@ -918,19 +951,41 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     nested_type_hint = array_type_hint->getNestedType();
             }
 
-            bool is_nested_nullable_column = false;
-            if (is_large_list)
+            bool is_nested_nullable_column = [&]
             {
-                auto * arrow_large_list_type = assert_cast<arrow::LargeListType *>(arrow_column->type().get());
-                is_nested_nullable_column = arrow_large_list_type->value_field()->nullable();
-            }
-            else
-            {
-                auto * arrow_list_type = assert_cast<arrow::ListType *>(arrow_column->type().get());
-                is_nested_nullable_column = arrow_list_type->value_field()->nullable();
-            }
+                switch (list_type)
+                {
+                    case ListType::LargeList:
+                    {
+                        auto * arrow_large_list_type = assert_cast<arrow::LargeListType *>(arrow_column->type().get());
+                        return arrow_large_list_type->value_field()->nullable();
+                    }
+                    case ListType::FixedSizeList:
+                    {
+                        auto * arrow_fixed_size_list_type = assert_cast<arrow::FixedSizeListType *>(arrow_column->type().get());
+                        return arrow_fixed_size_list_type->value_field()->nullable();
+                    }
+                    case ListType::List:
+                    {
+                        auto * arrow_list_type = assert_cast<arrow::ListType *>(arrow_column->type().get());
+                        return arrow_list_type->value_field()->nullable();
+                    }
+                }
+            }();
 
-            auto arrow_nested_column = is_large_list ? getNestedArrowColumn<arrow::LargeListArray>(arrow_column) : getNestedArrowColumn<arrow::ListArray>(arrow_column);
+            auto arrow_nested_column = [&]
+            {
+                switch (list_type)
+                {
+                    case ListType::LargeList:
+                        return getNestedArrowColumn<arrow::LargeListArray>(arrow_column);
+                    case ListType::FixedSizeList:
+                        return getNestedArrowColumn<arrow::FixedSizeListArray>(arrow_column);
+                    case ListType::List:
+                        return getNestedArrowColumn<arrow::ListArray>(arrow_column);
+                }
+            }();
+
             auto nested_column = readColumnFromArrowColumn(arrow_nested_column,
                 column_name,
                 dictionary_infos,
@@ -941,7 +996,21 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             if (!nested_column.column)
                 return {};
 
-            auto offsets_column = is_large_list ? readOffsetsFromArrowListColumn<arrow::LargeListArray>(arrow_column) : readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column);
+            auto offsets_column = [&]
+            {
+                switch (list_type)
+                {
+                    case ListType::LargeList:
+                        return readOffsetsFromArrowListColumn<arrow::LargeListArray>(arrow_column);
+                    case ListType::FixedSizeList:
+                    {
+                        auto fixed_length = assert_cast<arrow::FixedSizeListType *>(arrow_column->type().get())->list_size();
+                        return readOffsetsFromFixedArrowListColumn(arrow_column, fixed_length);
+                    }
+                    case ListType::List:
+                        return readOffsetsFromArrowListColumn<arrow::ListArray>(arrow_column);
+                }
+            }();
             auto array_column = ColumnArray::create(nested_column.column, offsets_column);
 
             DataTypePtr array_type;
@@ -978,16 +1047,22 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             for (int i = 0; i != arrow_struct_type->num_fields(); ++i)
             {
                 const auto & field = arrow_struct_type->field(i);
-                const auto & field_name = field->name();
+                String field_name = field->name();
 
                 DataTypePtr nested_type_hint;
                 if (tuple_type_hint)
                 {
                     if (tuple_type_hint->haveExplicitNames() && !is_map_nested_column)
                     {
-                        auto pos = tuple_type_hint->tryGetPositionByName(field_name);
+                        auto pos = tuple_type_hint->tryGetPositionByName(field_name, settings.case_insensitive_matching);
                         if (pos)
+                        {
                             nested_type_hint = tuple_type_hint->getElement(*pos);
+                            /// Consider the case in which arrow_struct_type is "struct<a Int32>", and tuple_type_hint is "Tuple(A Int32)"
+                            /// If case insensitive matching is allowed, we should use the name from the tuple_type_hint as field_name
+                            /// to make sure the returned [[ColumnWithTypeAndName]] has the correct name.
+                            field_name = tuple_type_hint->getNameByPosition(*pos + 1);
+                        }
                     }
                     else if (size_t(i) < tuple_type_hint->getElements().size())
                         nested_type_hint = tuple_type_hint->getElement(i);
@@ -1009,9 +1084,13 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                 tuple_names.emplace_back(std::move(column_with_type_and_name.name));
             }
 
-            auto tuple_column = ColumnTuple::create(std::move(tuple_elements));
+            ColumnPtr tuple_column;
+            if (tuple_elements.empty())
+                tuple_column = ColumnTuple::create(arrow_column->length());
+            else
+                tuple_column = ColumnTuple::create(std::move(tuple_elements));
             auto tuple_type = std::make_shared<DataTypeTuple>(std::move(tuple_types), std::move(tuple_names));
-            return {std::move(tuple_column), std::move(tuple_type), column_name};
+            return {tuple_column, tuple_type, column_name};
         }
         case arrow::Type::DICTIONARY:
         {
@@ -1132,6 +1211,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
+        arrow_column->type()->id() != arrow::Type::FIXED_SIZE_LIST &&
         arrow_column->type()->id() != arrow::Type::MAP &&
         arrow_column->type()->id() != arrow::Type::STRUCT &&
         arrow_column->type()->id() != arrow::Type::DICTIONARY)
@@ -1193,7 +1273,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const arrow::Schema & schema,
     const std::string & format_name,
     bool skip_columns_with_unsupported_types,
-    bool allow_inferring_nullable_columns)
+    bool allow_inferring_nullable_columns,
+    bool case_insensitive_matching)
 {
     ReadColumnFromArrowColumnSettings settings
     {
@@ -1202,6 +1283,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_arrow_null_type = false,
         .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types,
         .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
+        .case_insensitive_matching = case_insensitive_matching
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -1276,7 +1358,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
         .date_time_overflow_behavior = date_time_overflow_behavior,
         .allow_arrow_null_type = true,
         .skip_columns_with_unsupported_types = false,
-        .allow_inferring_nullable_columns = true
+        .allow_inferring_nullable_columns = true,
+        .case_insensitive_matching = case_insensitive_matching
     };
 
     Columns columns;

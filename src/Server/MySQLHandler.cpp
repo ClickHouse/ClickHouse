@@ -13,7 +13,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -170,6 +169,30 @@ static String killConnectionIdReplacementQuery(const String & query)
     return query;
 }
 
+
+/** MySQL returns this error code, HY000, so should we.
+  *
+  * These error codes represent the worst legacy practices in software engineering from 1970s
+  * (fixed-size fields, short variable names, cryptic abbreviations, lack of documentation, made-up alphabets)
+  * We should never ever fall into these practices, and having this compatibility error code is probably the only exception.
+  *
+  * You might be wondering, why it is HY000, and more precisely, what do the letters H and Y mean?
+  * The history does not know. The best answer I found is:
+  * https://dba.stackexchange.com/questions/241506/what-does-hy-stand-for-in-error-code
+  * Also, https://en.wikipedia.org/wiki/SQLSTATE
+  *
+  * Apparently, they decide to allocate alphanumeric characters for some meaning,
+  * then split their range (0..9A..Z) to some intervals for the system, user, and other categories,
+  * and the letter H appeared to be the first in some category.
+  *
+  * Also, the letter Y is chosen, because it is the highest, but someone afraid to took letter Z,
+  * and decided that the second highest letter is good enough.
+  *
+  * This will forever remind us about the mistakes made by previous generations of software engineers.
+  */
+static constexpr const char * mysql_error_code = "HY000";
+
+
 MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
@@ -257,7 +280,7 @@ void MySQLHandler::run()
         catch (const Exception & exc)
         {
             log->log(exc);
-            packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()));
+            packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
         }
 
         OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
@@ -321,7 +344,7 @@ void MySQLHandler::run()
             catch (...)
             {
                 tryLogCurrentException(log, "MySQLHandler: Cannot read packet: ");
-                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)));
+                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), mysql_error_code, getCurrentExceptionMessage(false)));
             }
         }
     }
@@ -400,7 +423,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     catch (const Exception & exc)
     {
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
-        packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()));
+        packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
         throw;
     }
     LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);

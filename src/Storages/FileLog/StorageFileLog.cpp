@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -71,6 +72,18 @@ namespace ErrorCodes
 namespace
 {
     const auto MAX_THREAD_WORK_DURATION_MS = 60000;
+
+    ContextMutablePtr configureContext(ContextPtr context)
+    {
+        auto new_context = Context::createCopy(context);
+        /// It does not make sense to use auto detection here, since the format
+        /// will be reset for each message, plus, auto detection takes CPU
+        /// time.
+        new_context->setSetting("input_format_csv_detect_header", false);
+        new_context->setSetting("input_format_tsv_detect_header", false);
+        new_context->setSetting("input_format_custom_detect_header", false);
+        return new_context;
+    }
 }
 
 static constexpr auto TMP_SUFFIX = ".tmp";
@@ -114,7 +127,7 @@ private:
             return Pipe{};
         }
 
-        auto modified_context = Context::createCopy(getContext());
+        auto modified_context = Context::createCopy(file_log.filelog_context);
 
         auto max_streams_number = std::min<UInt64>((*file_log.filelog_settings)[FileLogSetting::max_threads], file_log.file_infos.file_names.size());
 
@@ -157,6 +170,7 @@ StorageFileLog::StorageFileLog(
     LoadingStrictnessLevel mode)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
+    , filelog_context(configureContext(getContext()))
     , filelog_settings(std::move(settings))
     , path(path_)
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
@@ -500,7 +514,7 @@ void StorageFileLog::openFilesAndSetPos()
                     "Last saved offsset for File {} is bigger than file size ({} > {})",
                     file,
                     meta.last_writen_position,
-                    file_end);
+                    std::streamoff{file_end});
             }
             /// update file end at the moment, used in ReadBuffer and serialize
             meta.last_open_end = file_end;
@@ -759,7 +773,7 @@ bool StorageFileLog::streamToViews()
     auto insert = std::make_shared<ASTInsertQuery>();
     insert->table_id = table_id;
 
-    auto new_context = Context::createCopy(getContext());
+    auto new_context = Context::createCopy(filelog_context);
 
     InterpreterInsertQuery interpreter(
         insert,
@@ -805,7 +819,7 @@ bool StorageFileLog::streamToViews()
     }
 
     UInt64 milliseconds = watch.elapsedMilliseconds();
-    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows, table_id.getNameForLogs(), milliseconds);
+    LOG_DEBUG(log, "Pushing {} rows to {} took {} ms.", rows.load(), table_id.getNameForLogs(), milliseconds);
 
     return updateFileInfos();
 }

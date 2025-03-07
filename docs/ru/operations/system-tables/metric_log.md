@@ -46,7 +46,7 @@ CurrentMetric_ReplicatedChecks:                             0
 **Смотрите также**
 
 -   [Настройка metric_log](../../operations/server-configuration-parameters/settings.md#metric_log) — как включить и выключить запись истории.
--   [system.asynchronous_metrics](#system_tables-asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
--   [system.events](#system_tables-events) — таблица с количеством произошедших событий.
--   [system.metrics](#system_tables-metrics) — таблица с мгновенно вычисляемыми метриками.
--   [Мониторинг](../../operations/monitoring.md) — основы мониторинга в ClickHouse.
+-   [system.asynchronous_metrics](/ru/operations/system-tables/asynchronous_metrics) — таблица с периодически вычисляемыми метриками.
+-   [system.events](/ru/operations/system-tables/asynchronous_metrics) — таблица с количеством произошедших событий.
+-   [system.metrics](/ru/operations/system-tables/metrics) — таблица с мгновенно вычисляемыми метриками.
+-   [Мониторинг](/ru/operations/monitoring) — основы мониторинга в ClickHouse.

@@ -53,7 +53,6 @@ private:
 
     std::string editor;
     bool overwrite_mode = false;
-    bool commit_line = false;
 };
 
 }

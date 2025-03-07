@@ -98,6 +98,7 @@ jobs:
       build_name: package_aarch64
       checkout_depth: 0
       data: ${{ needs.RunConfig.outputs.data }}
+      runner_type: builder-aarch64
   BuilderDebAsan:
     needs: [RunConfig, BuildDockers]
     if: ${{ !failure() && !cancelled() }}
@@ -135,6 +136,7 @@ jobs:
       build_name: binary_darwin_aarch64
       data: ${{ needs.RunConfig.outputs.data }}
       checkout_depth: 0
+      runner_type: builder-aarch64
 ############################################################################################
 ##################################### Docker images  #######################################
 ############################################################################################
@@ -210,17 +212,6 @@ jobs:
       runner_type: func-tester
       data: ${{ needs.RunConfig.outputs.data }}
 ##############################################################################################
-############################ FUNCTIONAl STATEFUL TESTS #######################################
-##############################################################################################
-  FunctionalStatefulTestDebug:
-    needs: [RunConfig, BuilderDebDebug]
-    if: ${{ !failure() && !cancelled() }}
-    uses: ./.github/workflows/reusable_test.yml
-    with:
-      test_name: Stateful tests (debug)
-      runner_type: func-tester
-      data: ${{ needs.RunConfig.outputs.data }}
-##############################################################################################
 ######################################### STRESS TESTS #######################################
 ##############################################################################################
   StressTestTsan:
@@ -256,7 +247,6 @@ jobs:
       - RunConfig
       - Builds_Report
       - FunctionalStatelessTestAsan
-      - FunctionalStatefulTestDebug
       - StressTestTsan
       - IntegrationTestsTsan
       - IntegrationTestsAsanOldAnalyzer

@@ -10,12 +10,6 @@ node = cluster.add_instance(
     main_configs=[],
     user_configs=["configs/users.d/users.xml"],
 )
-node_no_send = cluster.add_instance(
-    "node_no_send",
-    main_configs=["configs/config.d/no_send.xml"],
-    user_configs=["configs/users.d/users.xml"],
-)
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -50,7 +44,7 @@ def test_settings_from_server(started_cluster):
     )
     assert "[" not in res, "should not be formatted as a JSON array"
 
-    # Setting changed by server but changed back client command line.
+    # Setting changed by server but changed back by client command line.
     res = node.query(
         "select 42::UInt64 as x format JSONEachRow",
         user="second_user",
@@ -66,6 +60,30 @@ def test_settings_from_server(started_cluster):
     assert res == "86400\n"
     node.query("drop user u")
 
-    # send_settings_to_client = false
-    res = node_no_send.query("select 42::UInt64 as x format JSON")
+    # apply_settings_from_server = false
+    res = node.query("select 42::UInt64 as x settings apply_settings_from_server=0 format JSON")
     assert '"x": "42"' in res, "should be quoted"
+
+    # apply_settings_from_server = false using SET query.
+    res = node.query("set apply_settings_from_server=0; select 42::UInt64 as x format JSON;")
+    assert '"x": "42"' in res, "should be quoted"
+
+    # apply_settings_from_server = false in user profile.
+    res = node.query("select 42::UInt64 as x format JSON", user="no_apply_user")
+    assert '"x": "42"' in res, "should be quoted"
+
+    # apply_settings_from_server = false received from server, unsuccessfully overridden by the query.
+    res = node.query("select 42::UInt64 as x settings apply_settings_from_server=1 format JSON", user="no_apply_user")
+    assert '"x": "42"' in res, "should be unquoted"
+
+    # apply_settings_from_server = false implicitly set using compatibility setting.
+    res = node.query("select 42::UInt64 as x format JSON", user="compat_user")
+    assert '"x": "42"' in res, "should be quoted"
+
+    # Multiple queries in one session with different value of apply_settings_from_server.
+    res = node.query("select 42::UInt64 as x settings apply_settings_from_server=0 format JSON; select 42::UInt64 as x format JSON;")
+    quoted_pos = res.find('"x": "42"')
+    unquoted_pos = res.find('"x": 42')
+    assert quoted_pos != -1, "first query should return quoted number"
+    assert unquoted_pos != -1, "second query should return unquoted number"
+    assert quoted_pos < unquoted_pos, "should be quoted for first query, unquoted for second"

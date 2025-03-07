@@ -2,7 +2,8 @@
 
 SET max_bytes_before_external_sort = 33554432;
 SET max_bytes_ratio_before_external_sort = 0;
-set max_block_size = 1048576;
+SET min_external_sort_block_bytes = '10Mi';
+SET max_block_size = 1048576;
 
 SELECT number FROM (SELECT number FROM numbers(2097152)) ORDER BY number * 1234567890123456789 LIMIT 2097142, 10
 SETTINGS log_comment='02402_external_disk_mertrics/sort'

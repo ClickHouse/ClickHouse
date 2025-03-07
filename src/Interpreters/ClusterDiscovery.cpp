@@ -28,6 +28,8 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 
@@ -166,6 +168,14 @@ ClusterDiscovery::ClusterDiscovery(
 
     LOG_TRACE(log, "Clusters in discovery mode: {}", fmt::join(clusters_info_names, ", "));
     clusters_to_update = std::make_shared<UpdateFlags>(clusters_info_names.begin(), clusters_info_names.end());
+
+    /// Init get_nodes_callbacks after init clusters_to_update.
+    for (const auto & e : clusters_info)
+        get_nodes_callbacks[e.first] = std::make_shared<Coordination::WatchCallback>(
+            [cluster_name = e.first, my_clusters_to_update = clusters_to_update](auto)
+            {
+                my_clusters_to_update->set(cluster_name);
+            });
 }
 
 /// List node in zookeper for cluster
@@ -175,10 +185,8 @@ Strings ClusterDiscovery::getNodeNames(zkutil::ZooKeeperPtr & zk,
                                        int * version,
                                        bool set_callback)
 {
-    auto watch_callback = [cluster_name, my_clusters_to_update = clusters_to_update](auto) { my_clusters_to_update->set(cluster_name); };
-
     Coordination::Stat stat;
-    Strings nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? watch_callback : Coordination::WatchCallback{});
+    Strings nodes = zk->getChildrenWatch(getShardsListPath(zk_root), &stat, set_callback ? get_nodes_callbacks[cluster_name] : Coordination::WatchCallbackPtr{});
     if (version)
         *version = stat.cversion;
     return nodes;

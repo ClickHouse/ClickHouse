@@ -12,6 +12,7 @@
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/queryToString.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -27,6 +28,8 @@
 #include <Interpreters/InDepthNodeVisitor.h>
 
 #include <algorithm>
+
+#include <fmt/ranges.h>
 
 
 namespace DB
@@ -387,9 +390,7 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     QueryPlan query_plan;
     buildQueryPlan(query_plan);
 
-    auto builder = query_plan.buildQueryPipeline(
-        QueryPlanOptimizationSettings::fromContext(context),
-        BuildQueryPipelineSettings::fromContext(context));
+    auto builder = query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
 
     res.pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     setQuota(res.pipeline);

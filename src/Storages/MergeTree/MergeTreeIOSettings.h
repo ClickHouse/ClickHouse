@@ -1,6 +1,5 @@
 #pragma once
 #include <cstddef>
-#include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
@@ -37,6 +36,8 @@ struct MergeTreeReaderSettings
     CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
     /// True if we read stream for dictionary of LowCardinality type.
     bool is_low_cardinality_dictionary = false;
+    /// True if we read stream for structure of Dynamic/Object type.
+    bool is_dynamic_or_object_structure = false;
     /// True if data may be compressed by different codecs in one stream.
     bool allow_different_codecs = false;
     /// Deleted mask is applied to all reads except internal select from mutate some part columns.
@@ -51,6 +52,10 @@ struct MergeTreeReaderSettings
     bool adjust_read_buffer_size = true;
     /// If true, it's allowed to read the whole part without reading marks.
     bool can_read_part_without_marks = false;
+    /// Prewhere condition filtered marks is written to the mark filter cache.
+    bool use_query_condition_cache = false;
+    bool use_deserialization_prefixes_cache = false;
+    bool use_prefixes_deserialization_thread_pool = false;
 };
 
 struct MergeTreeWriterSettings

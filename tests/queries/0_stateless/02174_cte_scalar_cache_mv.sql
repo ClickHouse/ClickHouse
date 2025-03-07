@@ -37,7 +37,7 @@ FROM t2
 GROUP BY k, l, m, n
 ORDER BY k, l, m, n;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 -- The main query should have a cache miss and 3 global hits
 -- The MV is executed 20 times (100 / 5) and each run does 1 miss and 4 hits to the LOCAL cache
 -- In addition to this, to prepare the MV, there is an extra preparation to get the list of columns via
@@ -84,7 +84,7 @@ FROM t2
 GROUP BY k, l, m, n
 ORDER BY k, l, m, n;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     '02177_MV',
@@ -120,7 +120,7 @@ SETTINGS
     max_threads=1;
 
 SELECT * FROM t3 ORDER BY z ASC;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     '02177_MV_2',
     ProfileEvents['ScalarSubqueriesGlobalCacheHit'] as scalar_cache_global_hit,
@@ -147,7 +147,7 @@ SETTINGS
     max_threads=1;
 
 SELECT * FROM t3 ORDER BY z ASC;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT
     '02177_MV_2',
     ProfileEvents['ScalarSubqueriesGlobalCacheHit'] as scalar_cache_global_hit,
@@ -180,7 +180,7 @@ SELECT number as i, number as j from numbers(100)
     min_insert_block_size_rows_for_materialized_views=5,
     max_block_size=5,
     max_threads=1;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT * FROM t4 ORDER BY z ASC;
 
@@ -208,7 +208,7 @@ SELECT number as i, number as j from numbers(100)
     min_insert_block_size_rows_for_materialized_views=5,
     max_block_size=5,
     max_threads=1;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT * FROM t4 ORDER BY z ASC;
 

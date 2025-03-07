@@ -1,5 +1,6 @@
 import copy
 from dataclasses import dataclass
+from typing import List, Union
 
 
 class Artifact:
@@ -18,7 +19,7 @@ class Artifact:
 
         name: str
         type: str
-        path: str
+        path: Union[str, List[str]]
         _provided_by: str = ""
         _s3_path: str = ""
 

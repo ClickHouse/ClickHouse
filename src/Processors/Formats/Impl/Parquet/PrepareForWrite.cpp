@@ -8,6 +8,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
+#include <Core/Block.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
@@ -33,7 +34,8 @@
 ///  * `def` and `rep` arrays can be longer than `primitive_column`, because they include nulls and
 ///    empty arrays; the values in primitive_column correspond to positions where def[i] == max_def.
 ///
-/// If you do want to learn it, see dremel paper: https://research.google/pubs/pub36632/
+/// If you do want to learn it, see dremel paper:
+/// https://web.archive.org/web/20250126175539/https://static.googleusercontent.com/media/research.google.com/en//pubs/archive/36632.pdf
 /// Instead of reading the whole paper, try staring at figures 2-3 for a while - it might be enough.
 /// (Why does Parquet do all this instead of just storing array lengths and null masks? I'm not
 /// really sure.)
@@ -53,6 +55,7 @@ namespace DB::ErrorCodes
     extern const int TOO_DEEP_RECURSION; // I'm 14 and this is deep
     extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace DB::Parquet
@@ -232,6 +235,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
     auto & state = states.emplace_back();
     state.primitive_column = column;
     state.compression = options.compression;
+    state.compression_level = options.compression_level;
 
     state.column_chunk.__isset.meta_data = true;
     state.column_chunk.meta_data.__set_path_in_schema({name});
@@ -485,15 +489,19 @@ void prepareColumnTuple(
 {
     const auto * column_tuple = assert_cast<const ColumnTuple *>(column.get());
     const auto * type_tuple = assert_cast<const DataTypeTuple *>(type.get());
+    size_t num_elements = type_tuple->getElements().size();
+
+    if (num_elements == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parquet doesn't support empty tuples");
 
     auto & tuple_schema = schemas.emplace_back();
     tuple_schema.__set_repetition_type(parq::FieldRepetitionType::REQUIRED);
     tuple_schema.__set_name(name);
-    tuple_schema.__set_num_children(static_cast<Int32>(type_tuple->getElements().size()));
+    tuple_schema.__set_num_children(static_cast<Int32>(num_elements));
 
     size_t child_states_begin = states.size();
 
-    for (size_t i = 0; i < type_tuple->getElements().size(); ++i)
+    for (size_t i = 0; i < num_elements; ++i)
         prepareColumnRecursive(column_tuple->getColumnPtr(i), type_tuple->getElement(i), type_tuple->getNameByPosition(i + 1), options, states, schemas);
 
     for (size_t i = child_states_begin; i < states.size(); ++i)

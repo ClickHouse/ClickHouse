@@ -4,7 +4,6 @@
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
-#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerSettings.h>
@@ -22,6 +21,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
+#include <Interpreters/LatencyLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
@@ -51,6 +51,11 @@
 
 #include <fmt/core.h>
 
+
+namespace ProfileEvents
+{
+    extern const Event SystemLogErrorOnFlush;
+}
 
 namespace DB
 {
@@ -127,6 +132,7 @@ namespace
 {
 
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
+constexpr size_t DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 
 /// Creates a system log with MergeTree engine using parameters from config
@@ -199,7 +205,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.engine = "ENGINE = MergeTree";
 
         /// PARTITION expr is not necessary.
-        String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
+        String partition_by = config.getString(config_prefix + ".partition_by", TSystemLog::getDefaultPartitionBy());
         if (!partition_by.empty())
             log_settings.engine += " PARTITION BY (" + partition_by + ")";
 
@@ -213,7 +219,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.engine += " ORDER BY (" + order_by + ")";
 
         /// SETTINGS expr is not necessary.
-        ///   https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#settings
+        ///   https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#settings
         ///
         /// STORAGE POLICY expr is retained for backward compatible.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");
@@ -327,6 +333,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         metric_log->startCollect("MetricLog", collect_interval_milliseconds);
     }
 
+    if (latency_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("latency_log.collect_interval_milliseconds",
+                                                                DEFAULT_LATENCY_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        latency_log->startCollect("LatencyLog", collect_interval_milliseconds);
+    }
+
     if (error_log)
     {
         size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
@@ -356,25 +369,78 @@ std::vector<ISystemLog *> SystemLogs::getAllLogs() const
     return result;
 }
 
-void SystemLogs::flush(bool should_prepare_tables_anyway)
+namespace
 {
-    auto logs = getAllLogs();
-    std::vector<ISystemLog::Index> logs_indexes(logs.size(), 0);
-
-    for (size_t i = 0; i < logs.size(); ++i)
+constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
+{
+    String result;
+    for (const auto & c : name)
     {
-        auto last_log_index = logs[i]->getLastLogIndex();
-        logs_indexes[i] = last_log_index;
-        logs[i]->notifyFlush(last_log_index, should_prepare_tables_anyway);
+        /// Ignore underscores and dots to match things better
+        if ((c == '_') || (c == '.'))
+            continue;
+
+        if (isAlphaASCII(c))
+            result += toLowerIfAlphaASCII(c);
+        else
+            result += c;
     }
 
-    for (size_t i = 0; i < logs.size(); ++i)
-        logs[i]->flush(logs_indexes[i], should_prepare_tables_anyway);
+    return result;
+}
+}
+
+void SystemLogs::flush(bool should_prepare_tables_anyway, const Strings & names)
+{
+    std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
+
+    if (names.empty())
+    {
+        for (auto * log : getAllLogs())
+        {
+            auto last_log_index = log->getLastLogIndex();
+            logs_to_wait.push_back({log, log->getLastLogIndex()});
+            log->notifyFlush(last_log_index, should_prepare_tables_anyway);
+        }
+    }
+    else
+    {
+        #define GET_MAP_VALUES(log_type, member, descr) \
+            { getLowerCaseAndRemoveUnderscores(#member), (member).get() }, \
+            { getLowerCaseAndRemoveUnderscores((member).get() ? (member)->getTableID().getFullTableName() : "system."#member), (member).get() },
+
+        std::unordered_map<String, ISystemLog *> logs_map
+        {
+            LIST_OF_ALL_SYSTEM_LOGS(GET_MAP_VALUES)
+        };
+        #undef GET_MAP_VALUES
+
+        for (const auto & name : names)
+        {
+            String log_name = getLowerCaseAndRemoveUnderscores(name);
+
+            auto it = logs_map.find(log_name);
+            if (it == logs_map.end())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Log name '{}' does not exist", name);
+
+            if (it->second == nullptr)
+                /// The log exists but it's not initialized. Nothing to do
+                continue;
+
+            auto last_log_index = it->second->getLastLogIndex();
+            logs_to_wait.push_back({it->second, it->second->getLastLogIndex()});
+            it->second->notifyFlush(last_log_index, should_prepare_tables_anyway);
+        }
+    }
+
+    /// We must wait for the async flushes to finish
+    for (const auto & [log, index] : logs_to_wait)
+        log->flush(index, should_prepare_tables_anyway);
 }
 
 void SystemLogs::flushAndShutdown()
 {
-    flush(/* should_prepare_tables_anyway */ false);
+    flush(/* should_prepare_tables_anyway */ false, {});
     shutdown();
 }
 
@@ -514,6 +580,7 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
     }
     catch (...)
     {
+        ProfileEvents::increment(ProfileEvents::SystemLogErrorOnFlush);
         tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("Failed to flush system log {} with {} entries up to offset {}",
             table_id.getNameForLogs(), to_flush.size(), to_flush_end));
     }

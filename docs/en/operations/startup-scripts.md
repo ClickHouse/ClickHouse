@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/startup-scripts
+slug: /operations/startup-scripts
 sidebar_label: Startup Scripts
 ---
 
@@ -16,6 +16,10 @@ ClickHouse can run arbitrary SQL queries from the server configuration during st
         <scripts>
             <query>CREATE TABLE TestTable (id UInt64) ENGINE=TinyLog</query>
             <condition>SELECT 1;</condition>
+        </scripts>
+        <scripts>
+            <query>CREATE DICTIONARY test_dict (...) SOURCE(CLICKHOUSE(...))</query>
+            <user>default</user>
         </scripts>
     </startup_scripts>
 </clickhouse>

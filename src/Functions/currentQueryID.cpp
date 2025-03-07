@@ -62,7 +62,7 @@ SELECT currentQueryID();
 │ 1280d0e8-1a08-4524-be6e-77975bb68e7d │
 └──────────────────────────────────────┘
 )"}}},
-        .categories{"Other"},
+        .category{"Other"},
     });
     factory.registerAlias("current_query_id", FunctionCurrentQueryID::name, FunctionFactory::Case::Insensitive);
 }

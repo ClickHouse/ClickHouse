@@ -1,4 +1,5 @@
 #include <amqpcpp.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -6,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -33,8 +35,11 @@
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
+#include <Common/RemoteHostFilter.h>
 
 #include <base/range.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {
@@ -330,6 +335,13 @@ ContextMutablePtr StorageRabbitMQ::addSettings(ContextPtr local_context) const
 
     /// check for non-rabbitmq-related settings
     modified_context->applySettingsChanges(rabbitmq_settings->getFormatSettings());
+
+    /// It does not make sense to use auto detection here, since the format
+    /// will be reset for each message, plus, auto detection takes CPU
+    /// time.
+    modified_context->setSetting("input_format_csv_detect_header", false);
+    modified_context->setSetting("input_format_tsv_detect_header", false);
+    modified_context->setSetting("input_format_custom_detect_header", false);
 
     return modified_context;
 }
@@ -841,7 +853,7 @@ void StorageRabbitMQ::read(
     }
     else
     {
-        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), getName(), local_context, query_info);
+        auto read_step = std::make_unique<ReadFromStorageStep>(std::move(pipe), shared_from_this(), local_context, query_info);
         query_plan.addStep(std::move(read_step));
         query_plan.addInterpreterContext(modified_context);
     }
@@ -1199,7 +1211,7 @@ bool StorageRabbitMQ::tryStreamToViews()
         write_failed = true;
     }
 
-    LOG_TRACE(log, "Processed {} rows", rows);
+    LOG_TRACE(log, "Processed {} rows", rows.load());
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent

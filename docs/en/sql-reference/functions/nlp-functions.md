@@ -1,16 +1,22 @@
 ---
-slug: /en/sql-reference/functions/nlp-functions
+slug: /sql-reference/functions/nlp-functions
 sidebar_position: 130
-sidebar_label: NLP (experimental)
+sidebar_label: NLP
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
 # Natural Language Processing (NLP) Functions
+
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 :::warning
 This is an experimental feature that is currently in development and is not ready for general use. It will change in unpredictable backwards-incompatible ways in future releases. Set `allow_experimental_nlp_functions = 1` to enable it.
 :::
 
-## detectCharset
+## detectCharset {#detectcharset}
 
 The `detectCharset` function detects the character set of the non-UTF8-encoded input string.
 
@@ -22,7 +28,7 @@ detectCharset('text_to_be_analyzed')
 
 *Arguments*
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -44,7 +50,7 @@ Result:
 └────────────────────────────────────────────────┘
 ```
 
-## detectLanguage
+## detectLanguage {#detectlanguage}
 
 Detects the language of the UTF8-encoded input string. The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection, and it returns the 2-letter ISO language code.
 
@@ -58,7 +64,7 @@ detectLanguage('text_to_be_analyzed')
 
 *Arguments*
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -74,7 +80,7 @@ Other possible results:
 Query:
 
 ```sql
-SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there’s a will, there’s a way.');
+SELECT detectLanguage('Je pense que je ne parviendrai jamais à parler français comme un natif. Where there's a will, there's a way.');
 ```
 
 Result:
@@ -83,7 +89,7 @@ Result:
 fr
 ```
 
-## detectLanguageMixed
+## detectLanguageMixed {#detectlanguagemixed}
 
 Similar to the `detectLanguage` function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
 
@@ -96,7 +102,7 @@ detectLanguageMixed('text_to_be_analyzed')
 
 *Arguments*
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -119,7 +125,7 @@ Result:
 └───────────────────────┘
 ```
 
-## detectProgrammingLanguage
+## detectProgrammingLanguage {#detectprogramminglanguage}
 
 Determines the programming language from the source code. Calculates all the unigrams and bigrams of commands in the source code. 
 Then using a marked-up dictionary with weights of unigrams and bigrams of commands for various programming languages finds the biggest weight of the programming language and returns it.
@@ -132,7 +138,7 @@ detectProgrammingLanguage('source_code')
 
 *Arguments*
 
-- `source_code` — String representation of the source code to analyze. [String](../data-types/string.md#string).
+- `source_code` — String representation of the source code to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -154,7 +160,7 @@ Result:
 └──────────────────────────────────────────────────┘
 ```
 
-## detectLanguageUnknown
+## detectLanguageUnknown {#detectlanguageunknown}
 
 Similar to the `detectLanguage` function, except the `detectLanguageUnknown` function works with non-UTF8-encoded strings. Prefer this version when your character set is UTF-16 or UTF-32.
 
@@ -167,7 +173,7 @@ detectLanguageUnknown('text_to_be_analyzed')
 
 *Arguments*
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -194,7 +200,7 @@ Result:
 └────────────────────────────────────────────────────────┘
 ```
 
-## detectTonality
+## detectTonality {#detecttonality}
 
 Determines the sentiment of text data. Uses a marked-up sentiment dictionary, in which each word has a tonality ranging from `-12` to `6`.
 For each text, it calculates the average sentiment value of its words and returns it in the range `[-1,1]`.
@@ -211,7 +217,7 @@ detectTonality(text)
 
 *Arguments*
 
-- `text` — The text to be analyzed. [String](../data-types/string.md#string).
+- `text` — The text to be analyzed. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -234,7 +240,7 @@ Result:
 │                               0.44445 │                             0 │                                 -0.3 │
 └───────────────────────────────────────┴───────────────────────────────┴──────────────────────────────────────┘
 ```
-## lemmatize
+## lemmatize {#lemmatize}
 
 Performs lemmatization on a given word. Needs dictionaries to operate, which can be obtained [here](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
 
@@ -246,8 +252,8 @@ lemmatize('language', word)
 
 *Arguments*
 
-- `language` — Language which rules will be applied. [String](../data-types/string.md#string).
-- `word` — Word that needs to be lemmatized. Must be lowercase. [String](../data-types/string.md#string).
+- `language` — Language which rules will be applied. [String](/sql-reference/data-types/string).
+- `word` — Word that needs to be lemmatized. Must be lowercase. [String](/sql-reference/data-types/string).
 
 *Examples*
 
@@ -281,7 +287,7 @@ This configuration specifies that the dictionary `en.bin` should be used for lem
 </lemmatizers>
 ```
 
-## stem
+## stem {#stem}
 
 Performs stemming on a given word.
 
@@ -294,7 +300,7 @@ stem('language', word)
 *Arguments*
 
 - `language` — Language which rules will be applied. Use the two letter [ISO 639-1 code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
-- `word` — word that needs to be stemmed. Must be in lowercase. [String](../data-types/string.md#string).
+- `word` — word that needs to be stemmed. Must be in lowercase. [String](/sql-reference/data-types/string).
 
 *Examples*
 
@@ -347,7 +353,7 @@ The stem() function uses the [Snowball stemming](https://snowballstem.org/) libr
 - Turkish
 - Yiddish
 
-## synonyms
+## synonyms {#synonyms}
 
 Finds synonyms to a given word. There are two types of synonym extensions: `plain` and `wordnet`.
 
@@ -363,8 +369,8 @@ synonyms('extension_name', word)
 
 *Arguments*
 
-- `extension_name` — Name of the extension in which search will be performed. [String](../data-types/string.md#string).
-- `word` — Word that will be searched in extension. [String](../data-types/string.md#string).
+- `extension_name` — Name of the extension in which search will be performed. [String](/sql-reference/data-types/string).
+- `word` — Word that will be searched in extension. [String](/sql-reference/data-types/string).
 
 *Examples*
 

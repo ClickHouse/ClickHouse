@@ -10,6 +10,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/copyData.h>
 #include <Interpreters/registerInterpreters.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
@@ -34,6 +35,8 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/registerFormats.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
+
+#include <boost/algorithm/string/split.hpp>
 
 namespace DB
 {
@@ -105,6 +108,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             ("backslash", "add a backslash at the end of each line of the formatted query")
             ("allow_settings_after_format_in_insert", "Allow SETTINGS after FORMAT, but note, that this is not always safe")
             ("seed", po::value<std::string>(), "seed (arbitrary string) that determines the result of obfuscation")
+            ("format_alter_operations_with_parentheses", po::value<bool>()->default_value(true), "If set to `true`, then alter operations will be surrounded by parentheses in formatted queries. This makes the parsing of formatted alter queries less ambiguous.")
         ;
 
         Settings cmd_settings;
@@ -131,6 +135,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
         bool obfuscate = options.count("obfuscate");
         bool backslash = options.count("backslash");
         bool allow_settings_after_format_in_insert = options.count("allow_settings_after_format_in_insert");
+        bool format_alter_operations_with_parentheses = options["format_alter_operations_with_parentheses"].as<bool>();
 
         if (quiet && (hilite || oneline || obfuscate))
         {
@@ -156,6 +161,7 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             return 2;
         }
 
+        ASTAlterCommand::setFormatAlterCommandsWithParentheses(format_alter_operations_with_parentheses);
 
         String query;
 

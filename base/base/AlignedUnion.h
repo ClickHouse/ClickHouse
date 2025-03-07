@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+/// Replacement for std::aligned_union which is deprecated in C++23
 template<std::size_t len, class... Types>
 struct AlignedUnion
 {

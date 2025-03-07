@@ -48,9 +48,9 @@ AutoFDO
 AutoML
 Autocompletion
 AvroConfluent
+AvroFormatSettings
 AzureQueue
 Azurite
-arrayNormalizedGini
 BFloat
 BIGINT
 BIGSERIAL
@@ -88,6 +88,8 @@ BestEffortOrZero
 BestEffortUS
 BestEffortUSOrNull
 BestEffortUSOrZero
+BetaBadge
+Bitwise
 Blazingly
 BlockActiveTime
 BlockDiscardBytes
@@ -171,6 +173,7 @@ ClickHouseClient
 ClickHouseMigrator
 ClickHouseNIO
 ClickHouseVapor
+ClickPipes
 ClickVisual
 ClickableSquare
 CloudAvailableBadge
@@ -205,6 +208,9 @@ Crowdsourced
 Ctrl
 CurrentMetrics
 CustomSeparated
+CustomSeparatedIgnoreSpaces
+CustomSeparatedIgnoreSpacesWithNames
+CustomSeparatedIgnoreSpacesWithNamesAndTypes
 CustomSeparatedWithNames
 CustomSeparatedWithNamesAndTypes
 DBAs
@@ -225,8 +231,8 @@ Damerau
 DataGrip
 DataLens
 DataPacket
-DataTime
 DataTypes
+DataTypesMatching
 DatabaseCatalog
 DatabaseCatalogThreads
 DatabaseCatalogThreadsActive
@@ -250,6 +256,7 @@ DeliveryTag
 DeltaLake
 Deltalake
 Denormalize
+DeprecatedBadge
 DestroyAggregatesThreads
 DestroyAggregatesThreadsActive
 DictCacheRequests
@@ -293,6 +300,7 @@ ExactEdgeLengthKm
 ExactEdgeLengthM
 ExactEdgeLengthRads
 ExecutablePool
+ExperimentalBadge
 ExtType
 ExternalDistributed
 FFFD
@@ -302,6 +310,7 @@ FOSDEM
 FQDN
 Failover
 FarmHash
+FastFormats
 FileCluster
 FileLog
 FilesystemCacheBytes
@@ -376,6 +385,7 @@ Heredoc
 HexAreaKm
 HexAreaM
 HexRing
+HiveText
 Holistics
 Homebrew
 Homebrew's
@@ -455,10 +465,12 @@ JSONCompactColumns
 JSONCompactEachRow
 JSONCompactEachRowWithNames
 JSONCompactEachRowWithNamesAndTypes
+JSONCompactEachRowWithProgress
 JSONCompactStrings
 JSONCompactStringsEachRow
 JSONCompactStringsEachRowWithNames
 JSONCompactStringsEachRowWithNamesAndTypes
+JSONCompactStringsEachRowWithProgress
 JSONCompactWithProgress
 JSONDynamicPaths
 JSONDynamicPathsWithTypes
@@ -477,6 +489,7 @@ JSONExtractString
 JSONExtractUInt
 JSONHas
 JSONLength
+JSONLines
 JSONObjectEachRow
 JSONSharedDataPaths
 JSONSharedDataPathsWithTypes
@@ -537,6 +550,8 @@ Liao
 LibFuzzer
 LightHouse
 LineAsString
+LineAsStringWithNames
+LineAsStringWithNamesAndTypes
 LineString
 Linf
 LinfDistance
@@ -646,6 +661,7 @@ MySQLConnection
 MySQLDataTypesSupport
 MySQLDump
 MySQLThreads
+MySQLWire
 NATS
 NCHAR
 NDJSON
@@ -689,6 +705,7 @@ NumberOfDatabases
 NumberOfDetachedByUserParts
 NumberOfDetachedParts
 NumberOfTables
+ODBCDriver
 OFNS
 OLAP
 OLTP
@@ -807,6 +824,7 @@ PostLink
 PostLinks
 PostgreSQLConnection
 PostgreSQLThreads
+PostgreSQLWire
 Postgres
 PostgresSQL
 Precompiled
@@ -815,8 +833,11 @@ PrettyCompact
 PrettyCompactMonoBlock
 PrettyCompactNoEscapes
 PrettyCompactNoEscapesMonoBlock
+PrettyFormatSettings
 PrettyJSONEachRow
+PrettyJSONLines
 PrettyMonoBlock
+PrettyNDJSON
 PrettyNoEscapes
 PrettyNoEscapesMonoBlock
 PrettySpace
@@ -825,6 +846,7 @@ PrettySpaceNoEscapes
 PrettySpaceNoEscapesMonoBlock
 Prewhere
 PrivateKeyPassphraseHandler
+PrivatePreviewBadge
 ProfileEvents
 Profiler
 Proleptic
@@ -847,9 +869,9 @@ QueryCacheBytes
 QueryCacheEntries
 QueryCacheHits
 QueryCacheMisses
-QueryCacheNondeterministicFunctionHandling
-QueryCacheSystemTableHandling
 QueryPreempted
+QueryResultCacheNondeterministicFunctionHandling
+QueryResultCacheSystemTableHandling
 QueryThread
 QuickAssist
 QuickSight
@@ -868,6 +890,8 @@ RabbitMQ
 Rabl
 RangeHashed
 RawBLOB
+RawWithNames
+RawWithNamesAndTypes
 ReDoS
 ReadTaskRequestsSent
 ReadonlyReplica
@@ -915,6 +939,7 @@ RoaringBitmap
 RocksDB
 Rollup
 RowBinary
+RowBinaryFormatSettings
 RowBinaryWithDefaults
 RowBinaryWithNames
 RowBinaryWithNamesAndTypes
@@ -945,6 +970,7 @@ SaaS
 Sanjeev
 Sankey
 Scalable
+ScalePlanFeatureBadge
 Scatterplot
 Schaefer
 SchemaInferenceMode
@@ -1007,6 +1033,7 @@ SummingMergeTree
 SuperSet
 Superset
 SupersetDocker
+SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
@@ -1023,7 +1050,10 @@ TMIN
 TPCH
 TSDB
 TSVRaw
+TSVRawWithNames
+TSVRawWithNamesAndTypes
 TSVWithNames
+TSVWithNamesAndTypes
 TSVs
 TSan
 TThe
@@ -1216,6 +1246,7 @@ alphaTokens
 amplab
 analysisOfVariance
 analytics
+annindexes
 anonymize
 anonymized
 ansi
@@ -1268,6 +1299,7 @@ arrayLastOrNull
 arrayMap
 arrayMax
 arrayMin
+arrayNormalizedGini
 arrayPartialReverseSort
 arrayPartialShuffle
 arrayPartialSort
@@ -1296,6 +1328,7 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
+arraySymmetricDifference
 arrayUnion
 arrayUniq
 arrayWithConstant
@@ -1311,6 +1344,7 @@ atan
 atanh
 atomicity
 auth
+authType
 authenticator
 authenticators
 autocompletion
@@ -1331,11 +1365,13 @@ azureBlobStorage
 azureBlobStorageCluster
 backend
 backoff
+backtick
 backticks
 backupview
 balancer
 basename
 bcrypt
+benchmarked
 benchmarking
 bfloat
 bigrams
@@ -1481,6 +1517,7 @@ codepoints
 collapsingmergetree
 combinator
 combinators
+compareSubstrings
 comparising
 composable
 composable
@@ -1500,6 +1537,7 @@ connectionId
 const
 contrib
 convertCharset
+cooldown
 coroutines
 corrMatrix
 corrStable
@@ -1859,6 +1897,7 @@ greaterOrEquals
 greaterorequals
 greenspace
 groupArray
+groupArrayArray
 groupArrayInsertAt
 groupArrayIntersect
 groupArrayLast
@@ -1971,6 +2010,7 @@ infty
 initcap
 initcapUTF
 initialQueryID
+initialQueryStartTime
 initializeAggregation
 injective
 innogames
@@ -2422,6 +2462,7 @@ pread
 preallocate
 prebuild
 prebuilt
+preconfigured
 preemptable
 preferServerCiphers
 prefetch
@@ -2429,6 +2470,7 @@ prefetched
 prefetches
 prefetching
 prefetchsize
+preflight
 preimage
 preloaded
 prem
@@ -2468,9 +2510,11 @@ protobuf
 protobuflist
 protobufsingle
 protocol
+protos
 proxied
 pseudorandom
 pseudorandomize
+pseudoterminal
 psql
 ptrs
 punycodeDecode
@@ -2655,6 +2699,7 @@ seekable
 seektable
 sequenceCount
 sequenceMatch
+sequenceMatchEvents
 sequenceNextNode
 seriesDecomposeSTL
 seriesOutliersDetectTukey
@@ -2724,6 +2769,7 @@ sql
 sqlalchemy
 sqlinsert
 sqlite
+sqlreference
 sqrt
 src
 srcReplicas
@@ -2756,6 +2802,7 @@ stochasticlinearregression
 stochasticlogisticregression
 storages
 storig
+stringCompare
 stringJaccardIndex
 stringJaccardIndexUTF
 stringToH
@@ -2883,6 +2930,7 @@ timeZoneOffset
 timezones
 tinylog
 tmp
+toBFloat
 toBool
 toColumnTypeName
 toDate
@@ -3096,6 +3144,7 @@ userspace
 userver
 utils
 uuid
+uuids
 uuidv
 vCPU
 varPop
@@ -3154,6 +3203,7 @@ wordShingleSimHashCaseInsensitive
 wordShingleSimHashCaseInsensitiveUTF
 wordShingleSimHashUTF
 wordshingleMinHash
+workfactor
 writability
 wrt
 wyHash

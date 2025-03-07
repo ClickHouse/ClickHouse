@@ -333,7 +333,7 @@ std::pair<String, DataTypePtr> ColumnObject::getValueNameAndType(size_t n) const
         const auto column = decoded_type->createColumn();
         decoded_type->getDefaultSerialization()->deserializeBinary(*column, buf, getFormatSettings());
 
-        const auto & [value, type] = column->getValueNameAndType(n);
+        const auto & [value, type] = column->getValueNameAndType(0);
 
         wb << ": " << value;
     }
@@ -761,7 +761,7 @@ void ColumnObject::serializePathAndValueIntoSharedData(ColumnString * shared_dat
     shared_data_values->getOffsets().push_back(shared_data_values_chars.size());
 }
 
-void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column) const
+void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column)
 {
     auto value_data = shared_data_values->getDataAt(n);
     ReadBufferFromMemory buf(value_data.data, value_data.size);
@@ -835,7 +835,7 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
 {
     const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
 
-    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map)
+    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map, bool is_dynamic_paths)
     {
         NameSet names_to_remove;
 
@@ -850,11 +850,19 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
         }
 
         for (const auto & name : names_to_remove)
+        {
+            if (is_dynamic_paths)
+            {
+                dynamic_paths_ptrs.erase(name);
+                sorted_dynamic_paths.erase(name);
+            }
+
             columns_map.erase(name);
+        }
     };
 
-    rollback_columns(typed_paths, object_checkpoint.typed_paths);
-    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths);
+    rollback_columns(typed_paths, object_checkpoint.typed_paths, false);
+    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths, true);
     shared_data->rollback(*object_checkpoint.shared_data);
 }
 
@@ -1256,7 +1264,7 @@ void ColumnObject::protect()
     shared_data->protect();
 }
 
-void ColumnObject::forEachSubcolumn(DB::IColumn::MutableColumnCallback callback)
+void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
         callback(column);
@@ -1268,18 +1276,44 @@ void ColumnObject::forEachSubcolumn(DB::IColumn::MutableColumnCallback callback)
     callback(shared_data);
 }
 
-void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
+void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
     {
         callback(*column);
-        column->forEachSubcolumnRecursively(callback);
+        column->forEachMutableSubcolumnRecursively(callback);
     }
     for (auto & [path, column] : dynamic_paths)
     {
         callback(*column);
-        column->forEachSubcolumnRecursively(callback);
+        column->forEachMutableSubcolumnRecursively(callback);
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
+    }
+    callback(*shared_data);
+    shared_data->forEachMutableSubcolumnRecursively(callback);
+}
+
+void ColumnObject::forEachSubcolumn(DB::IColumn::ColumnCallback callback) const
+{
+    for (const auto & [_, column] : typed_paths)
+        callback(column);
+    for (const auto & [path, column] : dynamic_paths)
+        callback(column);
+
+    callback(shared_data);
+}
+
+void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveColumnCallback callback) const
+{
+    for (const auto & [_, column] : typed_paths)
+    {
+        callback(*column);
+        column->forEachSubcolumnRecursively(callback);
+    }
+    for (const auto & [path, column] : dynamic_paths)
+    {
+        callback(*column);
+        column->forEachSubcolumnRecursively(callback);
     }
     callback(*shared_data);
     shared_data->forEachSubcolumnRecursively(callback);

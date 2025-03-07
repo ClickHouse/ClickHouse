@@ -14,6 +14,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <IO/WriteHelpers.h>
+#include <Planner/PlannerContext.h>
 #include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -293,8 +295,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
 
     auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(), mutable_context, /*async_insert=*/false);
 
-    auto optimization_settings = QueryPlanOptimizationSettings::fromContext(mutable_context);
-    auto build_pipeline_settings = BuildQueryPipelineSettings::fromContext(mutable_context);
+    QueryPlanOptimizationSettings optimization_settings(mutable_context);
+    BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
     auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
 
     size_t min_block_size_rows = mutable_context->getSettingsRef()[Setting::min_external_table_block_size_rows];
@@ -400,19 +402,28 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
                 && in_function_node_type != QueryTreeNodeType::TABLE)
                 continue;
 
+            QueryTreeNodePtr replacement_table_expression;
             auto & temporary_table_expression_node = global_in_temporary_tables[in_function_subquery_node];
             if (!temporary_table_expression_node)
             {
                 auto subquery_to_execute = in_function_subquery_node;
                 if (subquery_to_execute->as<TableNode>())
-                    subquery_to_execute
-                        = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context->getQueryContext());
+                    subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(
+                        subquery_to_execute,
+                        planner_context->getQueryContext());
 
                 temporary_table_expression_node = executeSubqueryNode(
-                    subquery_to_execute, planner_context->getMutableQueryContext(), global_in_or_join_node.subquery_depth);
+                    subquery_to_execute,
+                    planner_context->getMutableQueryContext(),
+                    global_in_or_join_node.subquery_depth);
+                    replacement_table_expression = temporary_table_expression_node;
+            }
+            else
+            {
+                replacement_table_expression = temporary_table_expression_node->clone();
             }
 
-            replacement_map.emplace(in_function_subquery_node.get(), temporary_table_expression_node);
+            replacement_map.emplace(in_function_subquery_node.get(), replacement_table_expression);
         }
         else
         {

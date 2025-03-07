@@ -12,6 +12,8 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
 
+#include <fmt/ranges.h>
+
 namespace CurrentMetrics
 {
     extern const Metric DistributedSend;

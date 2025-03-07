@@ -6,8 +6,11 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/IJoin.h>
-
+#include <Interpreters/JoinInfo.h>
+#include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/JoinNode.h>
 
 namespace DB
 {
@@ -238,15 +241,55 @@ JoinClausesAndActions buildJoinClausesAndActions(
   */
 std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join_node);
 
+struct JoinAlgorithmSettings
+{
+    bool join_any_take_last_row;
+
+    bool collect_hash_table_stats_during_joins;
+    UInt64 max_entries_for_hash_table_stats;
+
+    UInt64 grace_hash_join_initial_buckets;
+    UInt64 grace_hash_join_max_buckets;
+
+    UInt64 max_size_to_preallocate_for_joins;
+    UInt64 max_threads;
+
+    String initial_query_id;
+    std::chrono::milliseconds lock_acquire_timeout;
+
+    explicit JoinAlgorithmSettings(const Context & context);
+
+    JoinAlgorithmSettings(
+        const JoinSettings & join_settings,
+        UInt64 max_threads_,
+        UInt64 max_entries_for_hash_table_stats_,
+        String initial_query_id_,
+        std::chrono::milliseconds lock_acquire_timeout_);
+};
+
 /** Choose JOIN algorithm for table join, right table expression, right table expression header and planner context.
   * Table join structure can be modified during JOIN algorithm choosing for special JOIN algorithms.
   * For example JOIN with Dictionary engine, or JOIN with JOIN engine.
   */
 std::shared_ptr<IJoin> chooseJoinAlgorithm(
     std::shared_ptr<TableJoin> & table_join,
-    const QueryTreeNodePtr & right_table_expression,
+    const PreparedJoinStorage & right_table_expression,
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
-    const PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info);
+    const JoinAlgorithmSettings & settings,
+    IQueryTreeNode::HashState hash_table_key_hash);
+
+using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
+TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node);
+
+std::set<JoinTableSide> extractJoinTableSidesFromExpression(
+    const IQueryTreeNode * expression_root_node,
+    const TableExpressionSet & left_table_expressions,
+    const TableExpressionSet & right_table_expressions,
+    const JoinNode & join_node);
+
+QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node);
+
+void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::shared_ptr<TableJoin> & table_join);
+
 }

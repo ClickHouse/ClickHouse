@@ -1,7 +1,7 @@
 DROP TABLE IF EXISTS dtest;
 
 
-CREATE TABLE dtest ( `a` Decimal(18, 0), `b` Decimal(18, 1), `c` Decimal(36, 0) ) ENGINE = Memory;
+CREATE TABLE dtest ( `a` Decimal(18, 0), `b` Decimal(18, 1), `c` Decimal(36, 0) ) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO dtest VALUES ('33', '44.4', '35');
 
 SELECT count() == 0 FROM (SELECT '33.3' :: Decimal(9, 1) AS a WHERE a IN ('33.33' :: Decimal(9, 2)));

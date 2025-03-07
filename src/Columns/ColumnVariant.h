@@ -2,12 +2,12 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnVector.h>
-#include <Formats/FormatSettings.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 
 namespace DB
 {
+struct FormatSettings;
 
 /**
  * Column for storing Variant(...) type values.
@@ -252,8 +252,10 @@ public:
     ColumnCheckpointPtr getCheckpoint() const override;
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
-    void forEachSubcolumn(MutableColumnCallback callback) override;
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachSubcolumn(ColumnCallback callback) const override;
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
     bool structureEquals(const IColumn & rhs) const override;
     ColumnPtr compress(bool force_compression) const override;
     double getRatioOfDefaultRows(double sample_ratio) const override;
