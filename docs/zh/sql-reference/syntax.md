@@ -42,7 +42,7 @@ ClickHouse支持SQL风格或C语言风格的注释：
 - 在某些流行的RDBMS中被实现的关键字，例如，`DateTime` 和 `datetime`是一样的
 
 
-你可以在系统表 [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families) 中检查某个数据类型的名称是否是大小写敏感型。
+你可以在系统表 [system.data_type_families](/operations/system-tables/data_type_families) 中检查某个数据类型的名称是否是大小写敏感型。
 
 和标准SQL相反，所有其它的关键字都是 **大小写敏感的**，包括函数名称。
 
@@ -138,7 +138,7 @@ expr AS alias
 - `AS` — 用于定义别名的关键字。可以对表或select语句中的列定义别名(`AS` 可以省略）
   例如, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-  在 [CAST函数](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 中，`AS`有其它含义。请参见该函数的说明部分。
+  在 [CAST函数](/sql-reference/functions/type-conversion-functions#cast) 中，`AS`有其它含义。请参见该函数的说明部分。
 
 
 - `expr` — 任意CH支持的表达式.
