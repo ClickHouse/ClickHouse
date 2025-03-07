@@ -170,42 +170,17 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
     def _check_yaml_up_to_date():
         print("Check workflows are up to date")
-        stop_watch = Utils.Stopwatch()
-        exit_code, output, err = Shell.get_res_stdout_stderr(
-            f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
-        )
-        info = ""
-        status = Result.Status.FAILED
-        if exit_code != 0:
-            info = f"workspace has uncommitted files unexpectedly [{output}]"
-            status = Result.Status.ERROR
-            print("ERROR: ", info)
-        else:
-            exit_code_1, out, err = Shell.get_res_stdout_stderr(
-                f"{Settings.PYTHON_INTERPRETER} -m praktika yaml", verbose=True
-            )
-            exit_code_2, output, err = Shell.get_res_stdout_stderr(
-                f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
-            )
-            if exit_code_1 != 0:
-                info = f"praktika failed to generate workflows.\n{out}\nerr: {err}"
-                status = Result.Status.FAILED
-                print("ERROR: ", info)
-            elif output:
-                info = f"outdated workflows: [{output}], run [praktika yaml] to update"
-                status = Result.Status.FAILED
-                print("ERROR: ", info)
-            elif exit_code_2 == 0 and not err:
-                status = Result.Status.SUCCESS
-            else:
-                print(f"ERROR: exit code [{exit_code}], err [{err}]")
+        commands = [
+            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
+            f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
+            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
+        ]
 
-        return Result(
-            name="Check Workflows updated",
-            status=status,
-            start_time=stop_watch.start_time,
-            duration=stop_watch.duration,
-            info=info,
+        return Result.from_commands_run(
+            name="Check Workflows",
+            command=commands,
+            with_info=True,
+            fail_fast=True,
         )
 
     def _check_secrets(secrets):
@@ -250,7 +225,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     results = []
     files = []
-    info_lines = []
 
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
@@ -273,20 +247,16 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         result_ = _check_yaml_up_to_date()
         if result_.status != Result.Status.SUCCESS:
             print("ERROR: yaml files are outdated - regenerate, commit and push")
-            info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
 
     if results[-1].is_ok() and workflow.secrets:
         result_ = _check_secrets(workflow.secrets)
         if result_.status != Result.Status.SUCCESS:
             print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
-            info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
 
     if results[-1].is_ok() and workflow.enable_cidb:
         result_ = _check_db(workflow)
-        if result_.status != Result.Status.SUCCESS:
-            info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
 
     if Path(Settings.CUSTOM_DATA_FILE).is_file():
@@ -399,9 +369,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         files.append(Result.file_name_static(workflow.name))
 
-    return Result.create_from(
-        name=job_name, results=results, files=files, info=("\n".join(info_lines))
-    )
+    return Result.create_from(name=job_name, results=results, files=files)
 
 
 def _finish_workflow(workflow, job_name):
