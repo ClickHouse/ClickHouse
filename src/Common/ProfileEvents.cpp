@@ -968,6 +968,8 @@ The server successfully detected this situation and will download merged part fr
     \
     M(MemoryWorkerRun, "Number of runs done by MemoryWorker in background", ValueType::Number) \
     M(MemoryWorkerRunElapsedMicroseconds, "Total time spent by MemoryWorker for background work", ValueType::Microseconds) \
+    M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
+    M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
     \
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
     M(ParquetDecompressionTimeMicroseconds, "Time spent decompressing Parquet page data", ValueType::Microseconds) \
