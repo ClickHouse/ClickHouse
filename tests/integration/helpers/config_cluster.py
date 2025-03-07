@@ -4,7 +4,7 @@ mysql_pass = "ClickHouse_MySQL_P@ssw0rd"
 
 # POSTGRES CREDENTIALS
 pg_user = "postgres"
-pg_pass = "ClickHouse_PostreSQL_P@ssw0rd"
+pg_pass = "ClickHouse_PostgreSQL_P@ssw0rd"
 pg_db = "postgres"
 
 # MINIO CREDENTIALS

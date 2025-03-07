@@ -65,7 +65,7 @@ def get_mysql_conn():
             if conn is None:
                 conn = pymysql.connect(
                     user="root",
-                    password="clickhouse",
+                    password=mysql_pass,
                     host=cluster.mysql8_ip,
                     port=cluster.mysql8_port,
                 )
