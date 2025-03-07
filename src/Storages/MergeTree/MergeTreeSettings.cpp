@@ -253,6 +253,7 @@ namespace ErrorCodes
     DECLARE(Bool, check_sample_column_is_correct, true, "Check columns or columns by hash for sampling are unsigned integer.", 0) \
     DECLARE(Bool, allow_vertical_merges_from_compact_to_wide_parts, true, "Allows vertical merges from compact to wide parts. This settings must have the same value on all replicas", 0) \
     DECLARE(Bool, enable_the_endpoint_id_with_zookeeper_name_prefix, false, "Enable the endpoint id with zookeeper name prefix for the replicated merge tree table", 0) \
+    DECLARE(UInt64, zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock, 0, "If zero copy replication is enabled sleep random amount of time up to 500ms before trying to lock for merge or mutation", 0) \
     DECLARE(UInt64, zero_copy_merge_mutation_min_parts_size_sleep_before_lock, 1ULL * 1024 * 1024 * 1024, "If zero copy replication is enabled sleep random amount of time before trying to lock depending on parts size for merge or mutation", 0) \
     DECLARE(Bool, allow_floating_point_partition_key, false, "Allow floating point as partition key", 0) \
     DECLARE(UInt64, sleep_before_loading_outdated_parts_ms, 0, "For testing. Do not change it.", 0) \
@@ -575,6 +576,17 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             ErrorCodes::BAD_ARGUMENTS,
             "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
             merge_selecting_sleep_slowdown_factor.value);
+    }
+
+    if (zero_copy_merge_mutation_min_parts_size_sleep_before_lock != 0
+        && zero_copy_merge_mutation_min_parts_size_sleep_before_lock < zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock)
+    {
+        throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of zero_copy_merge_mutation_min_parts_size_sleep_before_lock setting ({}) cannot be less than"
+                " the value of zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock ({})",
+                zero_copy_merge_mutation_min_parts_size_sleep_before_lock.value,
+                zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock.value);
     }
 }
 
