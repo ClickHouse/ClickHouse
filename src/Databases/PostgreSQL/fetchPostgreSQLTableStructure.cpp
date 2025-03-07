@@ -135,9 +135,7 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
         }
     }
-
-    /// If the type is not mapped so far, assume it's some sort of String
-    if (!res)
+    else if (type.starts_with("character"))
     {
         if (type.ends_with(')'))
         {
@@ -152,10 +150,10 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
                 }
             }
         }
-
-        if (!res)
-            res = std::make_shared<DataTypeString>();
     }
+
+    if (!res)
+        res = std::make_shared<DataTypeString>();
 
     if (is_nullable)
         res = std::make_shared<DataTypeNullable>(res);
