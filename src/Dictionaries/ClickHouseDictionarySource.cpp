@@ -184,6 +184,7 @@ QueryPipeline ClickHouseDictionarySource::createStreamForQuery(const String & qu
     }
     else
     {
+        LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         pipeline = QueryPipeline(std::make_shared<RemoteSource>(
             std::make_shared<RemoteQueryExecutor>(pool, query, empty_sample_block, context_copy), false, false, false));
     }
@@ -206,6 +207,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
     /// We pass empty block to RemoteQueryExecutor, because we don't know the structure of the result.
     Block invalidate_sample_block;
+    LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     QueryPipeline pipeline(std::make_shared<RemoteSource>(
         std::make_shared<RemoteQueryExecutor>(pool, request, invalidate_sample_block, context_copy), false, false, false));
     return readInvalidateQuery(std::move(pipeline));

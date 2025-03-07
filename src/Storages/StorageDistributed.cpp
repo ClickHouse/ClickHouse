@@ -1061,6 +1061,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
             ///  INSERT SELECT query returns empty block
             auto remote_query_executor
                 = std::make_shared<RemoteQueryExecutor>(std::move(connections), new_query_str, Block{}, query_context);
+            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
                 remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
@@ -1181,6 +1182,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
                 QueryProcessingStage::Complete,
                 extension);
 
+            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
                 remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));

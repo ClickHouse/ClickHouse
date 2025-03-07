@@ -108,8 +108,9 @@ public:
 
     /// All other methods throw the exception.
 
-    size_t byteSize() const override { throwInapplicable(); }
-    size_t allocatedBytes() const override { throwInapplicable(); }
+    // TODO(nickitat): implement
+    size_t byteSize() const override { return blob.size(); }
+    size_t allocatedBytes() const override { return blob.size(); }
 
     TypeIndex getDataType() const override { throwInapplicable(); }
     Field operator[](size_t) const override { throwInapplicable(); }
