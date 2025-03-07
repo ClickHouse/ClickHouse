@@ -1183,6 +1183,8 @@ void ParquetBlockInputFormat::resetParser()
     is_stopped = true;
     if (pool)
         pool->wait();
+    if (io_pool)
+        io_pool->wait();
 
     arrow_file.reset();
     metadata.reset();
