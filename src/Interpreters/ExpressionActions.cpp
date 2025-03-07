@@ -1132,6 +1132,18 @@ void AdaptiveExpressionActions::executeFunctionAction(
 
 void AdaptiveExpressionActions::accumulateProfile(ExpressionActions::Action & action, const FunctionExecutionProfile & profile)
 {
+    ExpressionActions::Action * function_action = &action;
+    // We need to eliminate aliases and access the true function node, taking into account the potential presence of nested aliases.
+    while (function_action->node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        function_action = &actions[function_action->arguments[0].actions_pos];
+    }
+
+    if (function_action->node->type != ActionsDAG::ActionType::FUNCTION)
+    {
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid node type.\n{}\n{}", action.toString(), actions_dag.dumpDAG());
+    }
+
     auto accumulate_profile = [](FunctionExecutionProfile & a, const FunctionExecutionProfile & b)
     {
         a.executed_rows = b.executed_rows;
@@ -1139,22 +1151,22 @@ void AdaptiveExpressionActions::accumulateProfile(ExpressionActions::Action & ac
         a.lazy_executed_additional_elapsed += b.lazy_executed_additional_elapsed;
     };
 
-    accumulate_profile(action.current_round_profile, profile);
-    accumulate_profile(action.total_profile, profile);
+    accumulate_profile(function_action->current_round_profile, profile);
+    accumulate_profile(function_action->total_profile, profile);
 
     // update the profiles of its lazy executed arguments.
     for (const auto & arg_profile : profile.argument_profiles)
     {
         const auto & func_arg_pos = arg_profile.first;
-        if (func_arg_pos >= action.arguments.size())
+        if (func_arg_pos >= function_action->arguments.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid arg pos: {}. arg size: {}", func_arg_pos, action.arguments.size());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid arg pos: {}. arg size: {}. action:{}\n{}", func_arg_pos, function_action->arguments.size(), function_action->toString(), actions_dag.dumpDAG());
         }
-        if (action.arguments[func_arg_pos].actions_pos >= actions.size())
+        if (function_action->arguments[func_arg_pos].actions_pos >= actions.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid action pos: {}. arg size: {}", action.arguments[func_arg_pos].actions_pos, actions.size());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid action pos: {}. arg size: {}", function_action->arguments[func_arg_pos].actions_pos, actions.size());
         }
-        auto & arg_action = actions[action.arguments[func_arg_pos].actions_pos];
+        auto & arg_action = actions[function_action->arguments[func_arg_pos].actions_pos];
         accumulateProfile(arg_action, arg_profile.second);
     }
 }
