@@ -1,4 +1,7 @@
-from ci.defs.defs import RunnerLabels
+class RunnerLabels:
+    STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
+    STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+
 
 S3_BUCKET_NAME = "clickhouse-builds"
 S3_REPORT_BUCKET_NAME = "clickhouse-test-reports"
