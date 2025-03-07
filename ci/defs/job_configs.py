@@ -31,7 +31,7 @@ class JobConfigs:
         name=JobNames.STYLE_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        requires=[JobNames.DOCKER_BUILDS_AMD],
+        requires=[],
         enable_commit_status=True,
     )
     fast_test = Job.Config(
@@ -56,7 +56,7 @@ class JobConfigs:
                 "./rust",
             ]
         ),
-        requires=[JobNames.DOCKER_BUILDS_AMD],
+        requires=[],
         timeout=3000,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         provides=[ArtifactNames.FAST_TEST],

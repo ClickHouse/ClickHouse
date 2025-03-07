@@ -125,11 +125,20 @@ class Validator:
                 ), f"CACHE_S3_PATH Setting must be defined if enable_cache=True, workflow [{workflow.name}]"
 
             if workflow.dockers:
-                cls.evaluate_check(
-                    Settings.DOCKER_BUILD_RUNS_ON,
-                    f"DOCKER_BUILD_RUNS_ON settings must be defined if workflow has dockers",
-                    workflow_name=workflow.name,
-                )
+                if Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB == False:
+                    cls.evaluate_check_simple(
+                        Settings.DOCKER_BUILD_ARM_RUNS_ON
+                        and Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON
+                        and Settings.DOCKER_BUILD_ARM_RUNS_ON
+                        != Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
+                        f"Settings: DOCKER_BUILD_AND_MERGE_RUNS_ON, DOCKER_BUILD_ARM_RUNS_ON must be provided and be different CPU architecture machines",
+                    )
+                else:
+                    cls.evaluate_check(
+                        Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
+                        f"DOCKER_BUILD_AND_MERGE_RUNS_ON settings must be defined if workflow has dockers",
+                        workflow_name=workflow.name,
+                    )
 
             if workflow.enable_report:
                 assert (
@@ -240,7 +249,7 @@ class Validator:
                     path = Path(job.job_requirements.python_requirements_txt)
                     message = f"File with py requirement [{path}] does not exist"
                     if job.name in (
-                        Settings.DOCKER_BUILD_JOB_NAME,
+                        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                         Settings.CI_CONFIG_JOB_NAME,
                         Settings.FINISH_WORKFLOW_JOB_NAME,
                     ):
