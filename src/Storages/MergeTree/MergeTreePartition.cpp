@@ -222,7 +222,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     bool are_all_integral = true;
     for (const Field & field : value)
     {
-        if (field.getType() != Field::Types::UInt64 && field.getType() != Field::Types::Int64 && field.getType() != Field::Types::IPv4)
+        if (field.getType() != Field::Types::Bool && field.getType() != Field::Types::UInt64 && field.getType() != Field::Types::Int64 && field.getType() != Field::Types::IPv4)
         {
             are_all_integral = false;
             break;
@@ -417,9 +417,12 @@ void MergeTreePartition::load(const IMergeTreeDataPart & part)
     const auto & partition_key_sample = adjustPartitionKey(metadata_snapshot, part.storage.getContext()).sample_block;
 
     auto file = part.readFile("partition.dat");
+    FormatSettings settings;
+    /// For compatibility we should read values of Bool data type as 0/1 int Field, not as bool true/false Field.
+    settings.binary.read_bool_field_as_int = true;
     value.resize(partition_key_sample.columns());
     for (size_t i = 0; i < partition_key_sample.columns(); ++i)
-        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, {});
+        partition_key_sample.getByPosition(i).type->getDefaultSerialization()->deserializeBinary(value[i], *file, settings);
 }
 
 std::unique_ptr<WriteBufferFromFileBase> MergeTreePartition::store(
