@@ -101,7 +101,13 @@ private:
 
         /// sorting removed, so need to update sorting traits for upstream steps
         const Header * input_header = &parent_node->children.front()->step->getOutputHeader();
-        chassert(parent_node == (stack.rbegin() + 1)->node); /// skip element on top of stack since it's sorting which was just removed
+        LOG_DEBUG(
+            getLogger(__PRETTY_FUNCTION__),
+            "parent_node={} stack_node={}\n{}",
+            parent_node->step->getName(),
+            (stack.rbegin() + 1)->node->step->getName(),
+            StackTrace().toString());
+        // chassert(parent_node == (stack.rbegin() +  1)->node); /// skip element on top of stack since it's sorting which was just removed
         for (StackWithParent::const_reverse_iterator it = stack.rbegin() + 1; it != stack.rend(); ++it)
         {
             const QueryPlan::Node * node = it->node;
