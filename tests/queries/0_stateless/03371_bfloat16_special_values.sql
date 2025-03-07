@@ -1,5 +1,3 @@
---  Tags: no-random-merge-tree-settings
-
 select 'Float32 Results';
 select toFloat32(0.0) == toFloat32(-0.0);
 select toFloat32(0.0) != toFloat32(-0.0);
@@ -62,14 +60,14 @@ select toBFloat16(5.5) / toBFloat16(Inf);
 select toBFloat16(5.5) % toBFloat16(Inf);
 
 DROP TABLE IF EXISTS t0;
-CREATE TABLE t0 (c0 Tuple(BFloat16)) ENGINE = SummingMergeTree() ORDER BY (c0);
+-- Even with fix in PR #77290, ratio_of_defaults_for_sparse_serialization is explicitly set to avoid any row permutation change to Row1->(-0.0), Row3->(0.0)
+CREATE TABLE t0 (c0 Tuple(BFloat16)) ENGINE = SummingMergeTree() ORDER BY (c0) SETTINGS ratio_of_defaults_for_sparse_serialization = 1.2;
 INSERT INTO TABLE t0 (c0) VALUES ((-0.0, )), ((nan, )), ((0.0, ));
 SELECT c0 FROM t0 FINAL;
 DROP TABLE t0;
 
-CREATE TABLE t0 (c0 BFloat16 PRIMARY KEY) ENGINE = SummingMergeTree();
+CREATE TABLE t0 (c0 BFloat16 PRIMARY KEY) ENGINE = SummingMergeTree() SETTINGS ratio_of_defaults_for_sparse_serialization = 1.2;
 INSERT INTO TABLE t0 (c0) VALUES (nan), (-0.0);
 INSERT INTO TABLE t0 (c0) VALUES (0.0), (nan);
 SELECT c0 FROM t0 FINAL;
 DROP TABLE t0;
-
