@@ -1,5 +1,6 @@
 import pymongo
 import pytest
+import urllib
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -28,11 +29,11 @@ def started_cluster(request):
 def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
     if secure:
         return pymongo.MongoClient(
-            f"mongodb://root:{mongo_pass}@localhost:{started_cluster.mongo_secure_port}/?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true"
+            f"mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@localhost:{started_cluster.mongo_secure_port}/?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true"
         )
     if with_credentials:
         return pymongo.MongoClient(
-            f"mongodb://root:{mongo_pass}@localhost:{started_cluster.mongo_port}"
+            f"mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@localhost:{started_cluster.mongo_port}"
         )
 
     return pymongo.MongoClient(
@@ -92,26 +93,26 @@ def test_simple_select_uri(started_cluster):
     node = started_cluster.instances["node"]
     assert (
         node.query(
-            f"SELECT COUNT() FROM mongodb('mongodb://root:{mongo_pass}@mongo1:27017/test', 'simple_table', structure='key UInt64, data String')"
+            f"SELECT COUNT() FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test', 'simple_table', structure='key UInt64, data String')"
         )
         == "100\n"
     )
     assert (
         node.query(
-            f"SELECT sum(key) FROM mongodb('mongodb://root:{mongo_pass}@mongo1:27017/test', 'simple_table', structure='key UInt64, data String')"
+            f"SELECT sum(key) FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test', 'simple_table', structure='key UInt64, data String')"
         )
         == str(sum(range(0, 100))) + "\n"
     )
     assert (
         node.query(
-            f"SELECT sum(key) FROM mongodb('mongodb://root:{mongo_pass}@mongo1:27017/test', 'simple_table', 'key UInt64, data String')"
+            f"SELECT sum(key) FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test', 'simple_table', 'key UInt64, data String')"
         )
         == str(sum(range(0, 100))) + "\n"
     )
 
     assert (
         node.query(
-            f"SELECT data FROM mongodb('mongodb://root:{mongo_pass}@mongo1:27017/test', 'simple_table', structure='key UInt64, data String') WHERE key = 42"
+            f"SELECT data FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test', 'simple_table', structure='key UInt64, data String') WHERE key = 42"
         )
         == hex(42 * 42) + "\n"
     )
@@ -304,7 +305,7 @@ def test_secure_connection_uri(started_cluster):
     assert (
         node.query(
             f"""SELECT COUNT()
-               FROM mongodb('mongodb://root:{mongo_pass}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
+               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
                             'simple_table',
                             'key UInt64, data String')"""
         )
@@ -313,7 +314,7 @@ def test_secure_connection_uri(started_cluster):
     assert (
         node.query(
             f"""SELECT sum(key)
-               FROM mongodb('mongodb://root:{mongo_pass}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
+               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
                             'simple_table',
                             'key UInt64, data String')"""
         )
@@ -322,7 +323,7 @@ def test_secure_connection_uri(started_cluster):
     assert (
         node.query(
             f"""SELECT sum(key)
-               FROM mongodb('mongodb://root:{mongo_pass}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
+               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
                             'simple_table',
                             'key UInt64, data String')"""
         )
@@ -332,7 +333,7 @@ def test_secure_connection_uri(started_cluster):
     assert (
         node.query(
             f"""SELECT data
-               FROM mongodb('mongodb://root:{mongo_pass}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
+               FROM mongodb('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true',
                             'simple_table',
                             'key UInt64, data String')
                WHERE key = 42"""
