@@ -119,6 +119,11 @@ namespace
                     type = AuthenticationType::SHA256_PASSWORD;
                     expect_hash = true;
                 }
+                else if (ParserKeyword{Keyword::SCRAM_SHA256_HASH}.ignore(pos, expected))
+                {
+                    type = AuthenticationType::SCRAM_SHA256_PASSWORD;
+                    expect_hash = true;
+                }
                 else if (ParserKeyword{Keyword::DOUBLE_SHA1_HASH}.ignore(pos, expected))
                 {
                     type = AuthenticationType::DOUBLE_SHA1_PASSWORD;
@@ -153,7 +158,7 @@ namespace
                 if (!ParserKeyword{Keyword::BY}.ignore(pos, expected) || !ParserStringAndSubstitution{}.parse(pos, value, expected))
                     return false;
 
-                if (expect_hash && type == AuthenticationType::SHA256_PASSWORD)
+                if (expect_hash && (type == AuthenticationType::SHA256_PASSWORD || type == AuthenticationType::SCRAM_SHA256_PASSWORD))
                 {
                     if (ParserKeyword{Keyword::SALT}.ignore(pos, expected))
                     {
