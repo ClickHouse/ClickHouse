@@ -25,9 +25,7 @@ void StatementGenerator::generateSettingValues(
 {
     for (size_t i = 0; i < nvalues; i++)
     {
-        SetValue * sv = i == 0 ? vals->mutable_set_value() : vals->add_other_values();
-
-        setRandomSetting(rg, settings, sv);
+        setRandomSetting(rg, settings, vals->has_set_value() ? vals->add_other_values() : vals->mutable_set_value());
     }
 }
 
@@ -2902,39 +2900,9 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
         br->add_out_params(std::move(backup_file));
     }
     br->set_out(outf);
-
     if (rg.nextSmallNumber() < 4)
     {
         br->set_format(static_cast<OutFormat>((rg.nextRandomUInt32() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
-    }
-    if (rg.nextSmallNumber() < 4)
-    {
-        SettingValues * vals = br->mutable_setting_values();
-
-        generateSettingValues(rg, backupSettings, vals);
-        if (!backups.empty() && rg.nextBool())
-        {
-            /// Do an incremental backup
-            String info;
-            SetValue * sv = vals->add_other_values();
-            const CatalogBackup & backup = rg.pickValueRandomlyFromMap(backups);
-
-            sv->set_property("base_backup");
-            info += BackupRestore_BackupOutput_Name(backup.outf);
-            info += "(";
-            for (size_t i = 0; i < backup.out_params.size(); i++)
-            {
-                if (i != 0)
-                {
-                    info += ", ";
-                }
-                info += "'";
-                info += backup.out_params[i];
-                info += "'";
-            }
-            info += ")";
-            sv->set_value(std::move(info));
-        }
     }
 }
 
@@ -3006,21 +2974,54 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
         br->set_format(backup.out_format.value());
     }
     br->set_backup_number(backup.backup_num);
-    if (rg.nextSmallNumber() < 4)
-    {
-        generateSettingValues(rg, restoreSettings, br->mutable_setting_values());
-    }
 }
 
 void StatementGenerator::generateNextBackupOrRestore(RandomGenerator & rg, BackupRestore * br)
 {
-    if (backups.empty() || rg.nextBool())
+    SettingValues * vals = nullptr;
+    const bool isBackup = backups.empty() || rg.nextBool();
+
+    if (isBackup)
     {
         generateNextBackup(rg, br);
     }
     else
     {
         generateNextRestore(rg, br);
+    }
+    if (rg.nextSmallNumber() < 4)
+    {
+        vals = vals ? vals : br->mutable_setting_values();
+        generateSettingValues(rg, isBackup ? backupSettings : restoreSettings, vals);
+    }
+    if (isBackup && !backups.empty() && rg.nextBool())
+    {
+        /// Do an incremental backup
+        String info;
+        vals = vals ? vals : br->mutable_setting_values();
+        SetValue * sv = vals->has_set_value() ? vals->add_other_values() : vals->mutable_set_value();
+        const CatalogBackup & backup = rg.pickValueRandomlyFromMap(backups);
+
+        sv->set_property("base_backup");
+        info += BackupRestore_BackupOutput_Name(backup.outf);
+        info += "(";
+        for (size_t i = 0; i < backup.out_params.size(); i++)
+        {
+            if (i != 0)
+            {
+                info += ", ";
+            }
+            info += "'";
+            info += backup.out_params[i];
+            info += "'";
+        }
+        info += ")";
+        sv->set_value(std::move(info));
+    }
+    if (rg.nextSmallNumber() < 4)
+    {
+        vals = vals ? vals : br->mutable_setting_values();
+        generateSettingValues(rg, serverSettings, vals);
     }
     br->set_async(rg.nextSmallNumber() < 4);
 }
