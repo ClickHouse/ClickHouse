@@ -43,7 +43,7 @@ std::unique_ptr<QueryPlan> createLocalPlan(
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        // std::cerr << "!!!!!!!!!!!!!!!!! building local plan" << std::endl;
+        // std::cerr << "***************** building local plan" << std::endl;
         /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
         /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
         /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
