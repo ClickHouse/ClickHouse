@@ -6,33 +6,40 @@
 namespace DB
 {
 
-/// Cache the mark filter corresponding to the query condition,
-/// which helps to quickly filter out useless Marks and speed up the query when the index is not hit.
+/// An implementation of predicate caching a la https://doi.org/10.1145/3626246.3653395
+///
+/// Given the table + part IDs and a hash of a predicate as key, caches which marks definitely don't
+/// match the predicate and which marks may match the predicate. This allows to skip the scan if the
+/// same predicate is evaluated on the same data again. Note that this doesn't work the other way
+/// round: we can't tell if _all_ rows in the mark match the predicate.
 class QueryConditionCache
 {
 public:
-    /// 0 means none of the rows in the mark match the predicate. We can skip such marks.
-    /// 1 means at least one row in the mark matches the predicate. We need to read such marks.
+    /// False means none of the rows in the mark match the predicate. We can skip such marks.
+    /// True means at least one row in the mark matches the predicate. We need to read such marks.
     using MatchingMarks = std::vector<bool>;
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    /// Read the filter and return empty if it does not exist.
-    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, size_t condition_hash);
+    /// Add an entry to the cache. The passed markes represent ranges of the column with matches of the predicate.
+    void write(
+        const UUID & table_id, const String & part_name, size_t predicate_hash,
+        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
-    /// Take out the mark filter corresponding to the query condition and set it to false on the corresponding mark.
-    void write(const UUID & table_id, const String & part_name, size_t condition_hash, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
+    /// Check the cache if it contains an entry for the given table + part id and predicate hash.
+    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, size_t predicate_hash);
 
     void clear();
 
     void setMaxSizeInBytes(size_t max_size_in_bytes);
 
 private:
+    /// Key + entry represent a mark range result.
     struct Key
     {
         const UUID table_id;
         const String part_name;
-        const size_t condition_hash;
+        const size_t predicate_hash;
 
         bool operator==(const Key & other) const;
     };
