@@ -7,6 +7,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS_OR_BYTES;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 
@@ -31,10 +32,22 @@ void LimitsCheckingTransform::transform(Chunk & chunk)
         info.started = true;
     }
 
-    if (!limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode))
+    if (const UInt64 & max_execution_time = limits.speed_limits.max_execution_time.totalMilliseconds(); max_execution_time != 0)
     {
-        stopReading();
-        return;
+        // Check for elapsed time or if the query has been marked as timed out.
+        if (info.total_stopwatch.elapsedMilliseconds() > static_cast<UInt64>(max_execution_time) ||
+            (process_list_elem && process_list_elem->isTimedOut()))	
+        {	
+            ExecutionSpeedLimits::handleOverflowMode(	
+                limits.timeout_overflow_mode,	
+                ErrorCodes::TIMEOUT_EXCEEDED,	
+                "Timeout exceeded: elapsed {} ms, maximum: {} ms",	
+                static_cast<double>(info.total_stopwatch.elapsed()) / 1000000ULL,	
+                max_execution_time);	
+
+            stopReading();
+            return;	
+        }
     }
 
     if (chunk)
