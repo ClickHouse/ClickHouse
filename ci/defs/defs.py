@@ -72,6 +72,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/fasttest",
+        path="./ci/docker/fasttest",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/binary-builder",
         path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
@@ -113,12 +119,6 @@ DOCKERS = [
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=[],
     # ),
-    Docker.Config(
-        name="clickhouse/fasttest",
-        path="./ci/docker/fasttest",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
     # Docker.Config(
     #     name="clickhouse/keeper-jepsen-test",
     #     path="./ci/docker/test/keeper-jepsen",
