@@ -30,8 +30,10 @@
 #include <IO/Progress.h>
 
 #include <Core/Settings.h>
+#include "Common/Logger.h"
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include "QueryPipeline/QueryPlanResourceHolder.h"
 
 namespace ProfileEvents
 {
@@ -363,16 +365,16 @@ void ViewsManager::buildRelaitions()
     std::queue<StorageID> bfs_q;
     bfs_q.push(init_id);
 
-    auto table_storage = DatabaseCatalog::instance().tryGetTable(init_id, init_context);
-    chassert(table_storage);
-    auto table_metadata = table_storage->getInMemoryMetadataPtr();
+    LOG_DEBUG(logger, "buildRelaitions: {}", init_id);
+
+    auto table_metadata = init_storage->getInMemoryMetadataPtr();
 
     parents[init_id] = init_id;
     inner_storages[init_id] = init_id;
-    storages[init_id] = table_storage;
+    storages[init_id] = init_storage;
     metadata_snapshots[init_id] = table_metadata;
     select_queries[init_id] = init_query->as<ASTInsertQuery>()->select;
-    auto lock = table_storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    auto lock = init_storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     chassert(lock);
     storage_locks[init_id] = std::move(lock);
     select_contexts[init_id] = init_context;
@@ -392,7 +394,7 @@ void ViewsManager::buildRelaitions()
 
         for (const auto & child_id : children_ids)
         {
-            LOG_DEBUG(getLogger("ViewsManager"), "relation: {} --> {}", parent_id.getNameForLogs(), child_id.getNameForLogs());
+            LOG_DEBUG(logger, "relation: {} --> {}", parent_id.getNameForLogs(), child_id.getNameForLogs());
 
             if (parents.contains(child_id))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "there is a cycle {}", child_id.getFullTableName());
@@ -424,7 +426,7 @@ void ViewsManager::buildRelaitions()
             select_context->setSetting("parallelize_output_from_storages", Field{false});
 
             auto insert_context = Context::createCopy(select_context);
-            if (deduplicate_blocks_in_dependent_materialized_views)
+            if (!deduplicate_blocks_in_dependent_materialized_views)
                 insert_context->setSetting("insert_deduplicate", Field{false});
 
             const auto & insert_settings = insert_context->getSettingsRef();
@@ -460,7 +462,7 @@ void ViewsManager::buildRelaitions()
                 {
                     // In case the materialized view is dropped/detached at this point, we register a warning and ignore it
                     assert(inner_table_storage->is_dropped || inner_table_storage->is_detached);
-                    LOG_WARNING(getLogger("ViewsManager"), "Trying to access table {} but it doesn't exist", child_id.getFullTableName());
+                    LOG_WARNING(logger, "Trying to access table {} but it doesn't exist", child_id.getFullTableName());
                     continue;
                 }
 
@@ -469,8 +471,7 @@ void ViewsManager::buildRelaitions()
                 {
                     /// It may happen if materialize view query was changed and it doesn't depend on this source table anymore.
                     /// See setting `allow_experimental_alter_materialized_view_structure`
-                    LOG_DEBUG(
-                        getLogger("ViewsManager"), "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
+                    LOG_DEBUG(logger, "Table '{}' is not a source for view '{}' anymore, current source is '{}'",
                         parent_id.getFullTableName(), child_id.getFullTableName(), select_query.select_table_id.getFullTableName());
                     continue;
                 }
@@ -521,7 +522,7 @@ void ViewsManager::buildRelaitions()
 
 Chain ViewsManager::createRetry(StorageID t_id)
 {
-    LOG_DEBUG(getLogger("ViewsManager"), "createRetry: {}", t_id.getNameForLogs());
+    LOG_DEBUG(logger, "createRetry: {}", t_id.getNameForLogs());
 
     if (t_id == init_id)
     {
@@ -538,7 +539,7 @@ Chain ViewsManager::createRetry(StorageID t_id)
 
 Chain ViewsManager::createSelect(StorageID t_id)
 {
-    LOG_DEBUG(getLogger("ViewsManager"), "select generator: {}", t_id.getNameForLogs());
+    LOG_DEBUG(logger, "select generator: {}", t_id.getNameForLogs());
 
     if (t_id == init_id)
         return {};
@@ -606,30 +607,32 @@ Chain ViewsManager::createSelect(StorageID t_id)
 #endif
     }
 
-    LOG_DEBUG(getLogger("ViewsManager"), "select generator: {}, input {}, output {}", t_id.getNameForLogs(), result.getInputHeader().dumpStructure(), result.getOutputHeader().dumpStructure());
+    LOG_DEBUG(logger, "select generator: {}, input {}, output {}", t_id.getNameForLogs(), result.getInputHeader().dumpStructure(), result.getOutputHeader().dumpStructure());
 
     return result;
 }
 
 
-ViewsManager::ViewsManager(StorageID table_id, ASTPtr query, Block insert_header, ContextPtr context)
-    : init_id(table_id)
+ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, ContextPtr context)
+    : init_id(table->getStorageID())
+    , init_storage(table)
     , init_query(query)
     , init_header(std::move(insert_header))
     , init_context(context)
+    , logger(getLogger("ViewsManager"))
 {
-    buildRelaitions();
-
     deduplicate_blocks_in_dependent_materialized_views = init_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
 
     const ASTInsertQuery * as_insert_query = init_query->as<ASTInsertQuery>();
     insert_null_as_default = as_insert_query && as_insert_query->select && init_context->getSettingsRef()[Setting::insert_null_as_default];
+
+    buildRelaitions();
 }
 
 
 Chain ViewsManager::createPreSink(StorageID t_id)
 {
-    LOG_DEBUG(getLogger("ViewsManager"), "createPreSink: {}", t_id.getNameForLogs());
+    LOG_DEBUG(logger, "createPreSink: {}", t_id.getNameForLogs());
 
     /// We create a pipeline of several streams, into which we will write data.
     Chain chain;
@@ -640,7 +643,7 @@ Chain ViewsManager::createPreSink(StorageID t_id)
     auto select_header = select_headers.at(t_id);
 
     auto inner_id = inner_storages.at(t_id);
-    LOG_DEBUG(getLogger("ViewsManager"), "createPreSink: {}, inner id {}", t_id.getNameForLogs(), inner_id.getNameForLogs());
+    LOG_DEBUG(logger, "createPreSink: {}, inner id {}", t_id.getNameForLogs(), inner_id.getNameForLogs());
 
     auto inner_storage = storages.at(inner_id);
     auto inner_metadata_snapshot = metadata_snapshots.at(inner_id);
@@ -656,7 +659,7 @@ Chain ViewsManager::createPreSink(StorageID t_id)
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(select_header, adding_missing_defaults_dag.getRequiredColumnsNames(), insert_context);
     auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
 
-    LOG_DEBUG(getLogger("ViewsManager"), "createPreSink: {}, transformed header add default {}", t_id.getNameForLogs(), ExpressionTransform::transformHeader(select_header, adding_missing_defaults_actions->getActionsDAG()).dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, transformed header add default {}", t_id.getNameForLogs(), ExpressionTransform::transformHeader(select_header, adding_missing_defaults_actions->getActionsDAG()).dumpStructure());
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
@@ -669,7 +672,7 @@ Chain ViewsManager::createPreSink(StorageID t_id)
 
     auto convert_action = std::make_shared<ExpressionActions>(std::move(converting));
 
-    LOG_DEBUG(getLogger("ViewsManager"), "createPreSink: {}, transformed header cast types {}", t_id.getNameForLogs(), ExpressionTransform::transformHeader(chain.getOutputHeader(), convert_action->getActionsDAG()).dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, transformed header cast types {}", t_id.getNameForLogs(), ExpressionTransform::transformHeader(chain.getOutputHeader(), convert_action->getActionsDAG()).dumpStructure());
 
     chain.addSink(std::make_shared<ExpressionTransform>(chain.getOutputHeader(), convert_action));
 
@@ -709,7 +712,7 @@ Chain ViewsManager::createPreSink(StorageID t_id)
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     chain.addSink(std::make_shared<NestedElementsValidationTransform>(inner_storage_header));
 
-    LOG_DEBUG(getLogger("ViewsManager"), "createPreSink: {}, input {}, output {}", t_id.getNameForLogs(), chain.getInputHeader().dumpStructure(), chain.getOutputHeader().dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, input {}, output {}", t_id.getNameForLogs(), chain.getInputHeader().dumpStructure(), chain.getOutputHeader().dumpStructure());
 
     return chain;
 }
@@ -717,7 +720,7 @@ Chain ViewsManager::createPreSink(StorageID t_id)
 
 Chain ViewsManager::createSink(StorageID t_id)
 {
-    LOG_DEBUG(getLogger("ViewsManager"), "createSink: {}", t_id.getNameForLogs());
+    LOG_DEBUG(logger, "createSink: {}", t_id.getNameForLogs());
 
     Chain chain;
 
@@ -743,13 +746,13 @@ Chain ViewsManager::createSink(StorageID t_id)
     }
     else if (dynamic_cast<StorageMaterializedView *>(storage.get()))
     {
-        LOG_DEBUG(getLogger("ViewsManager"), "createSink: {}, for StorageMaterializedView", t_id.getNameForLogs());
+        LOG_DEBUG(logger, "createSink: {}, for StorageMaterializedView", t_id.getNameForLogs());
 
-        LOG_DEBUG(getLogger("ViewsManager"), "createSink: {}, medatada structure: {}", t_id, metadata_snapshot->getSampleBlock().dumpStructure());
+        LOG_DEBUG(logger, "createSink: {}, medatada structure: {}", t_id, metadata_snapshot->getSampleBlock().dumpStructure());
 
         auto sink = storage->write(select_query, metadata_snapshot, insert_context, /*async_insert*/ false);
 
-        LOG_DEBUG(getLogger("ViewsManager"), "createSink: {}, sink structure: {}", t_id, sink->getHeader().dumpStructure());
+        LOG_DEBUG(logger, "createSink: {}, sink structure: {}", t_id, sink->getHeader().dumpStructure());
 
         //metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         //sink->setRuntimeData(thread_status, elapsed_counter_ms);
@@ -758,7 +761,7 @@ Chain ViewsManager::createSink(StorageID t_id)
     }
     else
     {
-        LOG_DEBUG(getLogger("ViewsManager"), "createSink: {}, for not a view", t_id.getNameForLogs());
+        LOG_DEBUG(logger, "createSink: {}, for not a view", t_id.getNameForLogs());
 
         chassert(t_id == init_id);
 
@@ -771,7 +774,7 @@ Chain ViewsManager::createSink(StorageID t_id)
 
     chain.addSink(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(chain.getOutputHeader()));
 
-    LOG_DEBUG(getLogger("ViewsManager"), "createSink: {}, input {}, output {}", t_id.getNameForLogs(), chain.getInputHeader().dumpStructure(), chain.getOutputHeader().dumpStructure());
+    LOG_DEBUG(logger, "createSink: {}, input {}, output {}", t_id.getNameForLogs(), chain.getInputHeader().dumpStructure(), chain.getOutputHeader().dumpStructure());
 
     return chain;
 }
@@ -779,7 +782,7 @@ Chain ViewsManager::createSink(StorageID t_id)
 
 Chain ViewsManager::createPostSink(StorageID t_id, size_t level)
 {
-    LOG_DEBUG(getLogger("ViewsManager"), "createPostSink: {}", t_id.getNameForLogs());
+    LOG_DEBUG(logger, "createPostSink: {}", t_id.getNameForLogs());
 
     auto & current_children = children.at(t_id);
 
@@ -794,7 +797,7 @@ Chain ViewsManager::createPostSink(StorageID t_id, size_t level)
 
     for (auto & child_id : current_children)
     {
-        LOG_DEBUG(getLogger("ViewsManager"), "createPostSink: {} --> {}", t_id.getNameForLogs(), child_id.getNameForLogs());
+        LOG_DEBUG(logger, "createPostSink: {} --> {}", t_id.getNameForLogs(), child_id.getNameForLogs());
 
         Chain chain;
         chain.appendChainNotStrict(createSelect(child_id));
@@ -833,20 +836,9 @@ Chain ViewsManager::createPostSink(StorageID t_id, size_t level)
     result.setNumThreads(max_parallel_streams);
     result.setConcurrencyControl(insert_contexts.at(t_id)->getSettingsRef()[Setting::use_concurrency_control]);
 
-    LOG_DEBUG(getLogger("ViewsManager"), "createPostSink: {}, input {}, output {}", t_id.getNameForLogs(), result.getInputHeader().dumpStructure(), result.getOutputHeader().dumpStructure());
+    LOG_DEBUG(logger, "createPostSink: {}, input {}, output {}", t_id.getNameForLogs(), result.getInputHeader().dumpStructure(), result.getOutputHeader().dumpStructure());
 
     return result;
-}
-
-struct MakeSharedEnabler : public ViewsManager
-{
-    template <class... Args>
-    explicit MakeSharedEnabler(Args &&... args) : ViewsManager(std::forward<Args>(args)...) { }
-};
-
-ViewsManager::Ptr ViewsManager::create(StorageID table_id, ASTPtr query, Block insert_header, ContextPtr context)
-{
-    return std::make_shared<MakeSharedEnabler>(table_id, query, insert_header, context);
 }
 
 }
