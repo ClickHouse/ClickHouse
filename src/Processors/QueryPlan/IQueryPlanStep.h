@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/CurrentThread.h>
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
 #include <Interpreters/Context.h>
@@ -100,6 +99,25 @@ public:
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(Headers input_headers_);
     void updateInputHeader(Header input_header, size_t idx = 0);
+
+
+    /// Returns true if the step has implemented removeUnusedColumns.
+    virtual bool canRemoveUnusedColumns() const { return false; }
+
+    struct UnusedColumnRemovalResult
+    {
+        bool updated_anything;
+        bool removed_any_input;
+    };
+
+    /// Removes the unnecessary inputs and outputs from the step based on required_outputs.
+    /// required_outputs must be a maybe empty subset of the current outputs of the step.
+    /// It is guaranteed that the output header of the step will contain all columns from required_outputs and might contain some other columns too.
+    /// Can be used only if canRemoveUnusedColumns returns true.
+    virtual UnusedColumnRemovalResult removeUnusedColumns(const Names & /*required_outputs*/, bool /*remove_inputs*/);
+
+    /// Returns true if the step can remove any columns from the output using removeUnusedColumns.
+    virtual bool canRemoveColumnsFromOutput() const;
 
 protected:
     virtual void updateOutputHeader() = 0;

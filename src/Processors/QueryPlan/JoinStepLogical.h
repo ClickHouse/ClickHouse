@@ -87,7 +87,12 @@ public:
     const JoinSettings & getSettings() const { return join_settings; }
     bool useNulls() const { return use_nulls; }
 
+    bool canRemoveUnusedColumns() const override { return true; }
+    UnusedColumnRemovalResult removeUnusedColumns(const Names & required_outputs, bool remove_inputs) override;
+    bool canRemoveColumnsFromOutput() const override;
+
 protected:
+    Header calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
 
     std::vector<std::pair<String, String>> describeJoinActions() const;

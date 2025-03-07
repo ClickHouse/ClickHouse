@@ -2,17 +2,7 @@
 
 #include <Processors/QueryPlan/JoinStep.h>
 
-#include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Processors/Transforms/JoiningTransform.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/Context.h>
-#include <IO/Operators.h>
-#include <Common/JSONBuilder.h>
-#include <Common/typeid_cast.h>
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Storages/StorageJoin.h>
+#include <algorithm>
 #include <ranges>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
@@ -20,6 +10,20 @@
 #include <Interpreters/JoinUtils.h>
 #include <Planner/PlannerJoins.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionFactory.h>
+#include <IO/Operators.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/PasteJoin.h>
+#include <Interpreters/TableJoin.h>
+#include <Planner/PlannerJoins.h>
+#include <Processors/Transforms/JoiningTransform.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/StorageJoin.h>
+#include <Common/JSONBuilder.h>
+#include <Common/typeid_cast.h>
 
 #include <Functions/FunctionsLogical.h>
 #include <Functions/FunctionsComparison.h>
@@ -78,7 +82,7 @@ void formatJoinCondition(const JoinCondition & join_condition, WriteBuffer & buf
     auto quote_string = std::views::transform([](const auto & s) { return fmt::format("({})", s.getColumnName()); });
     auto format_predicate = std::views::transform([](const auto & p) { return fmt::format("{} {} {}", p.left_node.getColumnName(), toString(p.op), p.right_node.getColumnName()); });
     buf << "[";
-    buf << fmt::format("Predcates: ({})", fmt::join(join_condition.predicates | format_predicate, ", "));
+    buf << fmt::format("Predicates: ({})", fmt::join(join_condition.predicates | format_predicate, ", "));
     if (!join_condition.left_filter_conditions.empty())
         buf << " " << fmt::format("Left filter: ({})", fmt::join(join_condition.left_filter_conditions | quote_string, ", "));
     if (!join_condition.right_filter_conditions.empty())
@@ -193,11 +197,103 @@ static ActionsDAG::NodeRawConstPtrs getAnyColumn(const ActionsDAG::NodeRawConstP
     return result_nodes;
 }
 
-void JoinStepLogical::updateOutputHeader()
+IQueryPlanStep::UnusedColumnRemovalResult JoinStepLogical::removeUnusedColumns(const Names & required_outputs, bool remove_inputs)
 {
-    Header & header = output_header.emplace();
-    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
+    required_output_columns = required_outputs;
+    NameSet left_required_outputs{};
+    NameSet right_required_outputs{};
 
+    auto collect_required_outputs_from_condition
+        = [this, &left_required_outputs, &right_required_outputs](const JoinCondition & condition) mutable
+    {
+        for (const auto & predicate : condition.predicates)
+        {
+            left_required_outputs.insert(predicate.left_node.getColumnName());
+            right_required_outputs.insert(predicate.right_node.getColumnName());
+        }
+        for (const auto & residual_condition : condition.residual_conditions)
+            required_output_columns.push_back(residual_condition.getColumnName());
+    };
+
+    collect_required_outputs_from_condition(join_info.expression.condition);
+    for (const auto & condition : join_info.expression.disjunctive_conditions)
+        collect_required_outputs_from_condition(condition);
+
+    // Join needs to have at least one output and calculateOutputHeader will produce a deterministic result
+    if (required_output_columns.empty())
+        required_output_columns = calculateOutputHeader({}).getNames();
+
+    // We can always remove inputs from post join actions, that doesn't affect the inputs of this step
+    bool removed_any_actions = expression_actions.post_join_actions->removeUnusedActions(required_output_columns);
+    const auto & new_post_join_inputs = expression_actions.post_join_actions->getInputs();
+
+    for (const auto * post_join_input: new_post_join_inputs)
+    {
+        if (const auto * left_output = expression_actions.left_pre_join_actions->tryFindInOutputs(post_join_input->result_name); nullptr != left_output)
+            left_required_outputs.insert(post_join_input->result_name);
+        else
+            right_required_outputs.insert(post_join_input->result_name);
+    }
+
+    const auto remove_unused_actions_from_pre_join_actions
+        = [remove_inputs](ActionsDAG & pre_join_actions, NameSet & pre_join_required_outputs)
+    {
+        // Pre-join actions should keep at least one of the outputs
+        if (pre_join_required_outputs.empty() && !pre_join_actions.getInputs().empty())
+            pre_join_required_outputs.insert(pre_join_actions.getInputs().front()->result_name);
+
+        return pre_join_actions.removeUnusedActions(pre_join_required_outputs, remove_inputs);
+    };
+
+    removed_any_actions |= remove_unused_actions_from_pre_join_actions(*expression_actions.left_pre_join_actions, left_required_outputs);
+    removed_any_actions |= remove_unused_actions_from_pre_join_actions(*expression_actions.right_pre_join_actions, right_required_outputs);
+
+    if (!removed_any_actions)
+        return UnusedColumnRemovalResult{false, false};
+
+    if (remove_inputs
+        && (expression_actions.left_pre_join_actions->getInputs().size() < getInputHeaders().at(0).columns()
+            || expression_actions.right_pre_join_actions->getInputs().size() < getInputHeaders().at(1).columns()))
+    {
+        Headers new_input_headers;
+
+        const auto get_input_columns = [](const ActionsDAG & actions)
+        {
+            Header result;
+            for (const auto * input_node : actions.getInputs())
+                result.insert(ColumnWithTypeAndName{input_node->column, input_node->result_type, input_node->result_name});
+
+            return result;
+        };
+
+        new_input_headers.push_back(get_input_columns(*expression_actions.left_pre_join_actions));
+        new_input_headers.push_back(get_input_columns(*expression_actions.right_pre_join_actions));
+        updateInputHeaders(std::move(new_input_headers));
+
+        return UnusedColumnRemovalResult{true, true};
+    }
+
+    updateOutputHeader();
+
+    return UnusedColumnRemovalResult{true, false};
+}
+
+bool JoinStepLogical::canRemoveColumnsFromOutput() const
+{
+    if (!output_header.has_value())
+        return false;
+
+    const auto minimal_output_header = calculateOutputHeader({});
+
+    chassert(minimal_output_header.columns() <= output_header->columns());
+
+    return !blocksHaveEqualStructure(*output_header, minimal_output_header);
+}
+
+
+Header JoinStepLogical::calculateOutputHeader(const NameSet & required_output_columns_set) const
+{
+    Header header;
     for (const auto * node : expression_actions.post_join_actions->getInputs())
     {
         const auto & column_type = node->result_type;
@@ -215,6 +311,14 @@ void JoinStepLogical::updateOutputHeader()
             header.insert(ColumnWithTypeAndName(column_type->createColumn(), column_type, column_name));
         }
     }
+
+    return header;
+}
+
+void JoinStepLogical::updateOutputHeader()
+{
+    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
+    output_header = calculateOutputHeader(required_output_columns_set);
 }
 
 JoinActionRef addNewOutput(const ActionsDAG::Node & node, ActionsDAGPtr & actions_dag)

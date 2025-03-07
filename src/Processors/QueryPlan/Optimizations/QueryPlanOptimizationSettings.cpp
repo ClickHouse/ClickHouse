@@ -33,6 +33,7 @@ namespace Setting
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
+    extern const SettingsBool query_plan_remove_unused_columns;
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_limit_for_ann_queries;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -71,6 +72,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     aggregate_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_aggregate_partitions_independently];
     remove_redundant_distinct = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_redundant_distinct];
     try_use_vector_search = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_try_use_vector_search];
+    remove_unused_columns = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_unused_columns];
     join_swap_table = from[Setting::query_plan_join_swap_table].get();
 
     optimize_prewhere = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_optimize_prewhere];
