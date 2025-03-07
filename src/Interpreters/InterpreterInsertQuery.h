@@ -52,8 +52,7 @@ public:
         const Names & columns,
         ThreadStatusesHolderPtr thread_status_holder = {},
         std::atomic_uint64_t * elapsed_counter_ms = nullptr,
-        bool check_access = false,
-        SinkToStorage::ChainGenerator generator = {});
+        bool check_access = false);
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
@@ -95,21 +94,6 @@ private:
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
-
-    Chain buildSink(
-        const StoragePtr & table,
-        size_t view_level,
-        const StorageMetadataPtr & metadata_snapshot,
-        ThreadStatusesHolderPtr thread_status_holder,
-        ThreadGroupPtr running_group,
-        std::atomic_uint64_t * elapsed_counter_ms,
-        SinkToStorage::ChainGenerator generator = {});
-
-    Chain buildPreSinkChain(
-        const Block & subsequent_header,
-        const StoragePtr & table,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Block & query_sample_block);
 };
 
 

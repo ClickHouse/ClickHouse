@@ -76,7 +76,6 @@ Chain buildPushingToViewsChain(
     /// True if it's part of async insert flush
     bool async_insert,
     /// LiveView executes query itself, it needs source block structure.
-    const Block & live_view_header = {},
-    SinkToStorage::ChainGenerator generator = {});
+    const Block & live_view_header = {});
 
 }

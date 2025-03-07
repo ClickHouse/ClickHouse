@@ -235,8 +235,7 @@ std::optional<Chain> generateViewChain(
     ThreadStatusesHolderPtr thread_status_holder,
     bool async_insert,
     const Block & storage_header,
-    bool disable_deduplication_for_children,
-    SinkToStorage::ChainGenerator generator)
+    bool disable_deduplication_for_children)
 {
     auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
     if (view == nullptr)
@@ -378,7 +377,7 @@ std::optional<Chain> generateViewChain(
 
         /// TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
         bool check_access = !materialized_view->hasInnerTable() && materialized_view->getInMemoryMetadataPtr()->sql_security_type;
-        out = interpreter.buildChain(inner_table, view_level + 1, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access, std::move(generator));
+        out = interpreter.buildChain(inner_table, view_level + 1, inner_metadata_snapshot, insert_columns, thread_status_holder, view_counter_ms, check_access);
 
         if (interpreter.shouldAddSquashingForStorage(inner_table))
         {
@@ -438,8 +437,7 @@ std::optional<Chain> generateViewChain(
             view, view_metadata_snapshot, insert_context, ASTPtr(),
             view_level + 1,
             /* no_destination= */ true,
-            thread_status_holder, running_group, view_counter_ms, async_insert, storage_header,
-            std::move(generator));
+            thread_status_holder, running_group, view_counter_ms, async_insert, storage_header);
     }
     else if (auto * window_view = dynamic_cast<StorageWindowView *>(view.get()))
     {
@@ -449,8 +447,7 @@ std::optional<Chain> generateViewChain(
             view, view_metadata_snapshot, insert_context, ASTPtr(),
             view_level + 1,
             /* no_destination= */ true,
-            thread_status_holder, running_group, view_counter_ms, async_insert, {},
-            std::move(generator));
+            thread_status_holder, running_group, view_counter_ms, async_insert, {});
     }
     else
     {
@@ -459,8 +456,7 @@ std::optional<Chain> generateViewChain(
             view, view_metadata_snapshot, insert_context, ASTPtr(),
             view_level + 1,
             /* no_destination= */ false,
-            thread_status_holder, running_group, view_counter_ms, async_insert, {},
-            std::move(generator));
+            thread_status_holder, running_group, view_counter_ms, async_insert, {});
     }
 
     return out;
@@ -478,9 +474,7 @@ Chain buildPushingToViewsChain(
     ThreadGroupPtr running_group,
     std::atomic_uint64_t * elapsed_counter_ms,
     bool async_insert,
-    const Block & live_view_header,
-    SinkToStorage::ChainGenerator generator
-)
+    const Block & live_view_header)
 {
     checkStackSize();
     Chain result_chain;
@@ -529,8 +523,7 @@ Chain buildPushingToViewsChain(
         {
             auto out = generateViewChain(
                 context, view_level, view_id, running_group, result_chain,
-                views_data, thread_status_holder, async_insert, storage_header, disable_deduplication_for_children,
-                std::move(generator));
+                views_data, thread_status_holder, async_insert, storage_header, disable_deduplication_for_children);
 
             if (!out.has_value())
                 continue;
@@ -600,7 +593,6 @@ Chain buildPushingToViewsChain(
     {
         auto sink = std::make_shared<PushingToLiveViewSink>(live_view_header, *live_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
-        sink->setDeduplicationRetryGenerator(std::move(generator));
         result_chain.addSource(std::move(sink));
 
         result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
@@ -609,7 +601,6 @@ Chain buildPushingToViewsChain(
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, storage, context);
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
-        sink->setDeduplicationRetryGenerator(std::move(generator));
         result_chain.addSource(std::move(sink));
 
         result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
@@ -619,9 +610,7 @@ Chain buildPushingToViewsChain(
         auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
-        sink->setDeduplicationRetryGenerator(std::move(generator));
         result_chain.addSource(std::move(sink));
-
         result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(result_chain.getInputHeader()));
     }
     /// Do not push to destination table if the flag is set
@@ -630,8 +619,6 @@ Chain buildPushingToViewsChain(
         auto sink = storage->write(query_ptr, metadata_snapshot, context, async_insert);
         metadata_snapshot->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_status, elapsed_counter_ms);
-        sink->setDeduplicationRetryGenerator(std::move(generator));
-
         result_chain.addSource(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(sink->getHeader()));
 
         result_chain.addSource(std::move(sink));
@@ -1019,7 +1006,7 @@ void FinalizingViewsTransform::work()
                 "Pushing from {} to {} took {} ms.",
                 views_data->source_storage_id.getNameForLogs(),
                 view.table_id.getNameForLogs(),
-                view.runtime_stats->elapsed_ms.load());
+                view.runtime_stats.elapsed_ms.load());
         }
     }
 
