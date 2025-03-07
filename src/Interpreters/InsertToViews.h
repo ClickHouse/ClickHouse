@@ -4,7 +4,7 @@
 #include <Storages/StorageSnapshot.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/Chain.h>
-#include "QueryPipeline/QueryPlanResourceHolder.h"
+#include <Common/Logger.h>
 
 #include <map>
 #include <memory>

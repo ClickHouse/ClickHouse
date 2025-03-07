@@ -26,19 +26,20 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 #include <IO/Progress.h>
 
 #include <Core/Settings.h>
-#include "Common/Logger.h"
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
-#include "QueryPipeline/QueryPlanResourceHolder.h"
 
 namespace ProfileEvents
 {
     extern const Event SelectedRows;
     extern const Event SelectedBytes;
+    extern const Event InsertQueriesWithSubqueries;
+    extern const Event QueriesWithSubqueries;
 }
 
 namespace DB
@@ -705,7 +706,6 @@ Chain ViewsManager::createPreSink(StorageID t_id)
     if (!constraints.empty())
         chain.addSink(std::make_shared<CheckConstraintsTransform>(inner_id, inner_storage_header, constraints, insert_context));
 
-
     /// Add transform to check if the sizes of arrays - elements of nested data structures doesn't match.
     /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
     /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
@@ -729,6 +729,8 @@ Chain ViewsManager::createSink(StorageID t_id)
     auto select_query = select_queries.at(t_id);
     auto select_header = select_headers.at(t_id);
     auto insert_context = insert_contexts.at(t_id);
+
+    IInterpreter::checkStorageSupportsTransactionsIfNeeded(storage, insert_context);
 
     if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
@@ -785,7 +787,6 @@ Chain ViewsManager::createPostSink(StorageID t_id, size_t level)
     LOG_DEBUG(logger, "createPostSink: {}", t_id.getNameForLogs());
 
     auto & current_children = children.at(t_id);
-
     if (current_children.empty())
         return {};
 
@@ -798,6 +799,9 @@ Chain ViewsManager::createPostSink(StorageID t_id, size_t level)
     for (auto & child_id : current_children)
     {
         LOG_DEBUG(logger, "createPostSink: {} --> {}", t_id.getNameForLogs(), child_id.getNameForLogs());
+
+        ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
+        ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
         Chain chain;
         chain.appendChainNotStrict(createSelect(child_id));
@@ -815,12 +819,12 @@ Chain ViewsManager::createPostSink(StorageID t_id, size_t level)
     auto in = finalizing_views->getInputs().begin();
 
     std::list<ProcessorPtr> processors;
-    QueryPlanResourceHolder resourses;
+    QueryPlanResourceHolder resources;
     size_t max_parallel_streams = 0;
     for (auto & chain : view_chains)
     {
         max_parallel_streams += std::max<size_t>(chain.getNumThreads(), 1);
-        resourses.append(chain.detachResources());
+        resources.append(chain.detachResources());
         connect(*out, chain.getInputPort());
         connect(chain.getOutputPort(), *in);
         ++in;
@@ -832,7 +836,7 @@ Chain ViewsManager::createPostSink(StorageID t_id, size_t level)
     processors.emplace_back(std::move(finalizing_views));
 
     auto result = Chain(std::move(processors));
-    result.attachResources(std::move(resourses));
+    result.attachResources(std::move(resources));
     result.setNumThreads(max_parallel_streams);
     result.setConcurrencyControl(insert_contexts.at(t_id)->getSettingsRef()[Setting::use_concurrency_control]);
 
