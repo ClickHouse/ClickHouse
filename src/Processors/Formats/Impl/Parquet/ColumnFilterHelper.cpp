@@ -25,6 +25,9 @@ FilterSplitResultPtr ColumnFilterHelper::splitFilterForPushDown(const bool case_
                 factories.end(),
                 [&](const ColumnFilterFactoryPtr & factory)
                 {
+                    // Bypass indexHint in the filter as it does not select a specific index.
+                    if (condition->function_base->getName() == "indexHint")
+                        return true;
                     if (!factory->validate(*condition))
                         return false;
                     NamedColumnFilter named_filter;
