@@ -26,7 +26,7 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 
 -   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
 -   `attr_names` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal), или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких имен.
--   `id_expr` — значение ключа словаря. [Expression](../../sql-reference/syntax.md#syntax-expressions) возвращает пару "ключ-значение" словаря или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
+-   `id_expr` — значение ключа словаря. [Expression](/sql-reference/syntax#expressions) возвращает пару "ключ-значение" словаря или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
 -   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_names`, или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких выражений.
 
 **Возвращаемое значение**
@@ -238,8 +238,8 @@ dictHas('dict_name', id)
 
 **Аргументы**
 
--   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря. [Expression](../../sql-reference/syntax.md#syntax-expressions) возвращает пару "ключ-значение" словаря или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
+-   `dict_name` — имя словаря. [Строковый литерал](/sql-reference/data-types/string).
+-   `id_expr` — значение ключа словаря. [Expression](/sql-reference/syntax#expressions) возвращает пару "ключ-значение" словаря или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
 
 **Возвращаемое значение**
 
@@ -260,8 +260,8 @@ dictGetHierarchy('dict_name', key)
 
 **Аргументы**
 
--   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
+-   `dict_name` — имя словаря. [Строковый литерал](/sql-reference/data-types/string).
+-   `key` — значение ключа. [Выражение](/sql-reference/syntax#expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 
 **Возвращаемое значение**
 
@@ -277,9 +277,9 @@ Type: [Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-refere
 
 **Аргументы**
 
--   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `child_id_expr` — ключ для проверки. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
--   `ancestor_id_expr` — предполагаемый предок ключа `child_id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
+-   `dict_name` — имя словаря. [Строковый литерал](/sql-reference/data-types/string).
+-   `child_id_expr` — ключ для проверки. [Выражение](/sql-reference/syntax#expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
+-   `ancestor_id_expr` — предполагаемый предок ключа `child_id_expr`. [Выражение](/sql-reference/syntax#expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 
 **Возвращаемое значение**
 
@@ -300,8 +300,8 @@ dictGetChildren(dict_name, key)
 
 **Аргументы**
 
--   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
+-   `dict_name` — имя словаря. [String literal](/sql-reference/syntax#string).
+-   `key` — значение ключа. [Выражение](/sql-reference/syntax#expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 
 **Возвращаемые значения**
 
@@ -349,8 +349,8 @@ dictGetDescendants(dict_name, key, level)
 
 **Аргументы**
 
--   `dict_name` — имя словаря. [String literal](../../sql-reference/syntax.md#syntax-string-literal).
--   `key` — значение ключа. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
+-   `dict_name` — имя словаря. [String literal](/sql-reference/syntax#string).
+-   `key` — значение ключа. [Выражение](/sql-reference/syntax#expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md).
 -   `level` — уровень иерархии. Если `level = 0`, возвращаются все потомки. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Возвращаемые значения**
@@ -426,10 +426,10 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Аргументы**
 
--   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `attr_name` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
--   `id_expr` — значение ключа словаря. [Выражение](../syntax.md#syntax-expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
--   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
+-   `dict_name` — имя словаря. [Строковый литерал](/sql-reference/data-types/string).
+-   `attr_name` — имя столбца словаря. [Строковый литерал](/sql-reference/data-types/string).
+-   `id_expr` — значение ключа словаря. [Выражение](/sql-reference/syntax#expressions), возвращающее значение типа [UInt64](../../sql-reference/functions/ext-dict-functions.md) или [Tuple](../../sql-reference/functions/ext-dict-functions.md) в зависимости от конфигурации словаря.
+-   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](/sql-reference/syntax#expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_name`.
 
 **Возвращаемое значение**
 

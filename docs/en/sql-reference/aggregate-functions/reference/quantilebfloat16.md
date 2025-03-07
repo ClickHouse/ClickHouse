@@ -29,7 +29,7 @@ Alias: `medianBFloat16`
 
 - Approximate quantile of the specified level.
 
-Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -65,5 +65,5 @@ Like `quantileBFloat16` but takes into account the weight of each sequence membe
 
 **See Also**
 
-- [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+- [median](/sql-reference/aggregate-functions/reference/median)
 - [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

@@ -2402,7 +2402,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         throw Exception(ErrorCodes::TOO_MANY_PARTS,
                         "Cannot move {} parts at once, the limit is {}. "
                         "Wait until some parts are merged and retry, move smaller partitions, or increase the setting 'max_parts_to_move'.",
-                        src_parts.size(), settings[Setting::max_parts_to_move]);
+                        src_parts.size(), settings[Setting::max_parts_to_move].value);
     }
 
     MutableDataPartsVector dst_parts;

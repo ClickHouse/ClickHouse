@@ -6,7 +6,7 @@ sidebar_label: Interval
 
 # Interval
 
-The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator.
+The family of data types representing time and date intervals. The resulting types of the [INTERVAL](/sql-reference/operators#interval) operator.
 
 Structure:
 
@@ -79,5 +79,5 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 
 ## See Also {#see-also}
 
-- [INTERVAL](../../../sql-reference/operators/index.md#operator-interval) operator
-- [toInterval](../../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
+- [INTERVAL](/sql-reference/operators#interval) operator
+- [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions
