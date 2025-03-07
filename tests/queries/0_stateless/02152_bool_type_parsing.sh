@@ -25,4 +25,3 @@ clickhouse_local -q "SELECT * FROM file('$DATA_FILE', 'CSV', 'bool Bool') settin
 echo -e "'Yes'\n'No'\n'yes'\n'no'\n'y'\n'Y'\n'N'\nTrue\nFalse\ntrue\nfalse\n't'\n'f'\n'T'\n'F'\n'On'\n'Off'\n'on'\n'off'\n'enable'\n'disable'\n'enabled'\n'disabled'" > $DATA_FILE
 clickhouse_local -q "SELECT * FROM file('$DATA_FILE', 'CustomSeparated', 'bool Bool') settings format_custom_escaping_rule='Quoted'"
 clickhouse_local -q "SELECT * FROM file('$DATA_FILE', 'CustomSeparated', 'bool Bool') settings format_custom_escaping_rule='Quoted', input_format_parallel_parsing=0, max_read_buffer_size=2"
-git
