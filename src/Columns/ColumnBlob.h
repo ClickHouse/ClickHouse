@@ -8,8 +8,11 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromVector.h>
+#include <Interpreters/castColumn.h>
 #include <Common/WeakHash.h>
 #include "Compression/CompressedReadBuffer.h"
+#include "Core/ColumnWithTypeAndName.h"
+#include "DataTypes/ObjectUtils.h"
 #include "DataTypes/Serializations/ISerialization.h"
 #include "Formats/NativeReader.h"
 #include "base/defines.h"
@@ -74,7 +77,10 @@ public:
     ColumnPtr convertFrom() const
     {
         chassert(from_blob_task);
-        return from_blob_task(blob, 0);
+        ColumnWithTypeAndName col;
+        col.column = from_blob_task(blob, 0);
+        col.type = cast_from;
+        return cast_to ? DB::castColumn(col, cast_to) : col.column;
     }
 
     /// Creates serialized and compressed blob from the source column.
@@ -104,6 +110,12 @@ public:
         double avg_value_size_hint = 0;
         NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, avg_value_size_hint);
         return nested;
+    }
+
+    void addCast(const DataTypePtr & from, const DataTypePtr & to) const
+    {
+        cast_from = from;
+        cast_to = to;
     }
 
     /// All other methods throw the exception.
@@ -177,6 +189,9 @@ private:
     ColumnPtr concrete_column;
     ToBlob to_blob_task;
     FromBlob from_blob_task;
+
+    mutable DataTypePtr cast_from;
+    mutable DataTypePtr cast_to;
 
     [[noreturn]] static void throwInapplicable()
     {
