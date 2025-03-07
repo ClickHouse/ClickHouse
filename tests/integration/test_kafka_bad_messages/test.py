@@ -209,6 +209,7 @@ def bad_messages_parsing_mode(
                          kafka_topic_list = '{topic_name}',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
+                         kafka_flush_interval_ms = 500,
                          kafka_handle_error_mode= '{handle_error_mode}';
 
             {additional_dml}
@@ -246,6 +247,7 @@ message Message {
                          kafka_topic_list = '{topic_name}',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
+                         kafka_flush_interval_ms = 500,
                          kafka_handle_error_mode= '{handle_error_mode}',
                          kafka_schema='schema_test_errors:Message';
 
@@ -287,6 +289,7 @@ struct Message
                          kafka_topic_list = '{topic_name}',
                          kafka_group_name = 'CapnProto',
                          kafka_format = 'CapnProto',
+                         kafka_flush_interval_ms = 500,
                          kafka_handle_error_mode= '{handle_error_mode}',
                          kafka_schema='schema_test_errors:Message';
 
