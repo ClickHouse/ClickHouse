@@ -225,14 +225,7 @@ public:
 
     bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::ClickHouse; }
 
-    std::optional<String> getCluster() const
-    {
-        if (db && db->cluster.has_value())
-        {
-            return db->cluster;
-        }
-        return cluster;
-    }
+    std::optional<String> getCluster() const { return cluster; }
 
     bool isAttached() const { return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED; }
 };

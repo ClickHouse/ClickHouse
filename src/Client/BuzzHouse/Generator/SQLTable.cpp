@@ -1013,10 +1013,16 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         }
     }
     /// Shared and Replicated MergeTree are to be used with cluster
-    /// If the database already has a cluster, don't set on the table
-    if (!fc.clusters.empty() && (!b.db || !b.db->cluster.has_value()) && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
+    if (!fc.clusters.empty() && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
     {
-        b.cluster = rg.pickRandomlyFromVector(fc.clusters);
+        if (b.db && b.db->cluster.has_value() && rg.nextSmallNumber() < 9)
+        {
+            b.cluster = b.db->cluster;
+        }
+        else
+        {
+            b.cluster = rg.pickRandomlyFromVector(fc.clusters);
+        }
     }
 }
 
