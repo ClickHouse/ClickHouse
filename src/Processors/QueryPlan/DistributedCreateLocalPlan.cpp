@@ -1,12 +1,10 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 
 #include <Common/checkStackSize.h>
-#include "IO/WriteBufferFromString.h"
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
-#include <iostream>
 
 namespace DB
 {

@@ -387,7 +387,6 @@ void addExpressionStep(QueryPlan & query_plan,
     UsefulSets & useful_sets)
 {
     auto actions = std::move(expression_actions->dag);
-    // std::cerr << step_description << std::endl << actions.dumpDAG() << std::endl;
     if (expression_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
 
@@ -1576,13 +1575,6 @@ void Planner::buildPlanForQueryNode()
 
     if (select_query_options.to_stage == QueryProcessingStage::FetchColumns)
         return;
-
-    // {
-    //     std::cerr << ">>:::::::::::::<<<< \n" << std::endl;
-    //     WriteBufferFromOwnString buf;
-    //     query_plan.explainPlan(buf, {.header=true, .actions=true});
-    //     std::cerr << buf.stringView() << std::endl;
-    // }
 
     PlannerQueryProcessingInfo query_processing_info(from_stage, select_query_options.to_stage);
     QueryAnalysisResult query_analysis_result(query_tree, query_processing_info, planner_context);
