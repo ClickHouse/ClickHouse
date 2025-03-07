@@ -39,6 +39,7 @@ def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
     return False
 
 
+# Copy of packager.is_release_build()
 def with_performance_artifacts(build_config: CI.BuildConfig) -> bool:
     return (
         not build_config.debug_build
@@ -84,9 +85,6 @@ def get_packager_cmd(
     cmd += " --with-profiler"
     cmd += " --with-buzzhouse"
     cmd += f" --version={build_version}"
-
-    if with_performance_artifacts(build_config):
-        cmd += " --with-performance-artifacts"
 
     if _can_export_binaries(build_config):
         cmd += " --with-binaries=tests"
