@@ -1,4 +1,5 @@
 #pragma once
+#include <Storages/LazilyReadInfo.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
 namespace DB

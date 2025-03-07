@@ -17,6 +17,9 @@ namespace DB
 
 struct PrewhereExprInfo;
 
+struct LazilyReadInfo;
+using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
+
 struct ChunkAndProgress
 {
     Chunk chunk;

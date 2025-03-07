@@ -11,6 +11,9 @@
 namespace DB
 {
 
+struct LazilyReadInfo;
+using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
+
 using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 
 class Pipe;

@@ -18,6 +18,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <city.h>
+#include <Storages/LazilyReadInfo.h>
 
 namespace
 {

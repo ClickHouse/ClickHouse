@@ -31,6 +31,7 @@
 #include <Processors/Transforms/SelectByIndicesTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Storages/LazilyReadInfo.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeIndexLegacyVectorSimilarity.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
