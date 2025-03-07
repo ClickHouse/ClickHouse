@@ -277,11 +277,15 @@ void AsyncLoader::shutdown()
 
         while (!scheduled_jobs.empty())
         {
-            LoadJobPtr job = scheduled_jobs.begin()->first;
-            auto e = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "AsyncLoader was shut down"));
-            finish(job, LoadStatus::CANCELED, e, lock);
-            chassert(lock.owns_lock());
-            chassert(!scheduled_jobs.contains(job));
+            const auto it = scheduled_jobs.begin();
+            if (!it->second.isExecuting())
+            {
+                LoadJobPtr job = it->first;
+                auto e = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "AsyncLoader was shut down"));
+                finish(job, LoadStatus::CANCELED, e, lock);
+                chassert(lock.owns_lock());
+                chassert(!scheduled_jobs.contains(job));
+            }
         }
     }
 
