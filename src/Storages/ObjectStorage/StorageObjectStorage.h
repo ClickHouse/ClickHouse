@@ -254,7 +254,6 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
-    StorageObjectStorageSettingsPtr getSettingsPtr() const;
     const StorageObjectStorageSettings & getSettingsRef() const;
 
 protected:

@@ -616,11 +616,6 @@ const StorageObjectStorageSettings & StorageObjectStorage::Configuration::getSet
     return *storage_settings;
 }
 
-StorageObjectStorageSettingsPtr StorageObjectStorage::Configuration::getSettingsPtr() const
-{
-    return storage_settings;
-}
-
 void StorageObjectStorage::Configuration::check(ContextPtr) const
 {
     FormatFactory::instance().checkFormatName(format);
