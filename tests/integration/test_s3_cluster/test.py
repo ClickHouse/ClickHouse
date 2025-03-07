@@ -111,7 +111,7 @@ def test_select_all(started_cluster):
     pure_s3 = node.query(
         f"""
     SELECT * from s3(
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
         'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     ORDER BY (name, value, polygon)"""
@@ -121,7 +121,7 @@ def test_select_all(started_cluster):
         f"""
     SELECT * from s3Cluster(
         'cluster_simple',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', '{minio_secret_key}', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') ORDER BY (name, value, polygon)"""
     )
     # print(s3_distributed)
@@ -134,7 +134,7 @@ def test_count(started_cluster):
     pure_s3 = node.query(
         f"""
     SELECT count(*) from s3(
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
         'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
@@ -142,7 +142,7 @@ def test_count(started_cluster):
     s3_distributed = node.query(
         f"""
     SELECT count(*) from s3Cluster(
-        'cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*',
+        'cluster_simple', 'http://minio1:9001/root/data/{{clickhouse,database}}/*',
         'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
@@ -157,7 +157,7 @@ def test_count_macro(started_cluster):
     s3_macro = node.query(
         f"""
     SELECT count(*) from s3Cluster(
-        '{default_cluster_macro}', 'http://minio1:9001/root/data/{clickhouse,database}/*',
+        '{{default_cluster_macro}}', 'http://minio1:9001/root/data/{{clickhouse,database}}/*',
         'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
@@ -165,7 +165,7 @@ def test_count_macro(started_cluster):
     s3_distributed = node.query(
         f"""
     SELECT count(*) from s3Cluster(
-        'cluster_simple', 'http://minio1:9001/root/data/{clickhouse,database}/*',
+        'cluster_simple', 'http://minio1:9001/root/data/{{clickhouse,database}}/*',
         'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')"""
     )
@@ -181,12 +181,12 @@ def test_union_all(started_cluster):
     SELECT * FROM
     (
         SELECT * from s3(
-            'http://minio1:9001/root/data/{clickhouse,database}/*',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*',
             'minio', '{minio_secret_key}', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
         UNION ALL
         SELECT * from s3(
-            'http://minio1:9001/root/data/{clickhouse,database}/*',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*',
             'minio', '{minio_secret_key}', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     )
@@ -200,12 +200,12 @@ def test_union_all(started_cluster):
     (
         SELECT * from s3Cluster(
             'cluster_simple',
-            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
         UNION ALL
         SELECT * from s3Cluster(
             'cluster_simple',
-            'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', '{minio_secret_key}', 'CSV',
+            'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
             'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     )
     ORDER BY (name, value, polygon)
@@ -222,12 +222,12 @@ def test_wrong_cluster(started_cluster):
         f"""
     SELECT count(*) from s3Cluster(
         'non_existent_cluster',
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
         'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     UNION ALL
     SELECT count(*) from s3Cluster(
         'non_existent_cluster',
-        'http://minio1:9001/root/data/{clickhouse,database}/*',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*',
         'minio', '{minio_secret_key}', 'CSV', 'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))')
     """
     )
@@ -241,11 +241,11 @@ def test_ambiguous_join(started_cluster):
         f"""
     SELECT l.name, r.value from s3Cluster(
         'cluster_simple',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', '{minio_secret_key}', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as l
     JOIN s3Cluster(
         'cluster_simple',
-        'http://minio1:9001/root/data/{clickhouse,database}/*', 'minio', '{minio_secret_key}', 'CSV',
+        'http://minio1:9001/root/data/{{clickhouse,database}}/*', 'minio', '{minio_secret_key}', 'CSV',
         'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))') as r
     ON l.name = r.name
     """
@@ -477,29 +477,29 @@ def test_cluster_default_expression(started_cluster):
     )
 
     expected_result = node.query(
-        f"SELECT * FROM s3('http://minio1:9001/root/data/data{1,2,3}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id"
+        f"SELECT * FROM s3('http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id"
     )
 
     result = node.query(
-        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id"
-    )
-
-    assert result == expected_result
-
-    result = node.query(
-        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', '{minio_secret_key}', 'auto', 'id UInt32, date Date DEFAULT 18262') order by id"
+        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262') order by id"
     )
 
     assert result == expected_result
 
     result = node.query(
-        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id"
+        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'auto', 'id UInt32, date Date DEFAULT 18262') order by id"
     )
 
     assert result == expected_result
 
     result = node.query(
-        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{1,2,3}', 'minio', '{minio_secret_key}', 'auto', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id"
+        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'JSONEachRow', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id"
+    )
+
+    assert result == expected_result
+
+    result = node.query(
+        f"SELECT * FROM s3Cluster(cluster_simple, 'http://minio1:9001/root/data/data{{1,2,3}}', 'minio', '{minio_secret_key}', 'auto', 'id UInt32, date Date DEFAULT 18262', 'auto') order by id"
     )
 
     assert result == expected_result

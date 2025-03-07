@@ -241,10 +241,10 @@ def test_postgres_array_ndim_error_messges(started_cluster):
         'CREATE TABLE array_ndim_table (x INTEGER, "Mixed-case with spaces" INTEGER[]);'
     )
     cursor.execute("CREATE VIEW  array_ndim_view AS SELECT * FROM array_ndim_table;")
-    describe_table = """
+    describe_table = f"""
     DESCRIBE TABLE postgresql(
         'postgres1:5432', 'postgres', 'array_ndim_view',
-        'postgres', f'{pg_pass}'
+        'postgres', '{pg_pass}'
     )
     """
 

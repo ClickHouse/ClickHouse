@@ -331,7 +331,7 @@ def test_empty_put(started_cluster, auth):
     "maybe_auth,positive",
     [
         pytest.param("", True, id="positive"),
-        pytest.param(f"'minio',f'{minio_secret_key}',", True, id="auth_positive"),
+        pytest.param(f"'minio', '{minio_secret_key}',", True, id="auth_positive"),
         pytest.param("'wrongid','wrongkey',", False, id="negative"),
     ],
 )
