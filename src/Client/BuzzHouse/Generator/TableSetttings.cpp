@@ -42,7 +42,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg)
          {
              const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
-             return rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomly(choices);
          },
          {},
          false)},
@@ -70,7 +70,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg)
          {
              const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
-             return rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomly(choices);
          },
          {},
          false)},
@@ -211,7 +211,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
         merge_storage_policies.insert(merge_storage_policies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
         mergeTreeTableSettings.insert(
             {{"storage_policy",
-              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(merge_storage_policies) + "'"; }, {}, false)}});
+              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(merge_storage_policies) + "'"; }, {}, false)}});
     }
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
