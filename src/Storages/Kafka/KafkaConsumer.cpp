@@ -268,6 +268,12 @@ void KafkaConsumer::commit()
 
 void KafkaConsumer::subscribe()
 {
+    cleanUnprocessed();
+
+    // we can reset any flags (except of CONSUMER_STOPPED) before attempt of reading new block of data
+    if (stalled_status != CONSUMER_STOPPED)
+        stalled_status = NO_MESSAGES_RETURNED;
+
     auto subcription = consumer->get_subscription();
 
     if (!subcription.empty())
@@ -334,7 +340,6 @@ void KafkaConsumer::subscribe()
     }
 
     current_subscription_valid = true;
-    cleanUnprocessed();
 
     doPoll();
 }
