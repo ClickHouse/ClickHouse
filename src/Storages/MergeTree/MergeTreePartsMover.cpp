@@ -4,7 +4,10 @@
 #include <Common/FailPoint.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 #include <Disks/IVolume.h>
+
+#include <base/sleep.h>
 
 #include <set>
 
@@ -284,6 +287,21 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
     MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings());
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
+
+    if (auto volume = data->getStoragePolicy()->getVolumeByDiskName(disk->getName()); volume->max_wait_after_move_ms > 0)
+    {
+        UInt64 time_to_sleep_ms
+            = std::uniform_int_distribution<UInt64>(volume->min_wait_after_move_ms, volume->max_wait_after_move_ms)(thread_local_rng);
+
+        LOG_TRACE(
+            log,
+            "Sleeping {} ms after cloning part {} to {}",
+            time_to_sleep_ms,
+            part->name,
+            cloned_part.part->getDataPartStorage().getFullPath());
+
+        sleepForMilliseconds(time_to_sleep_ms);
+    }
 
     cloned_part.part->is_temp = false;
     if (data->allowRemoveStaleMovingParts())
