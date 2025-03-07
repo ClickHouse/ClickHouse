@@ -215,6 +215,26 @@ void MetadataStorageFromPlainObjectStorageTransaction::removeDirectory(const std
     }
 }
 
+void MetadataStorageFromPlainObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        throwNotImplemented();
+
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyOperation>(
+        path_from, path_to, *metadata_storage.getPathMap(), object_storage));
+}
+
+void MetadataStorageFromPlainObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
+{
+    if (metadata_storage.object_storage->isWriteOnce())
+        throwNotImplemented();
+
+    if (metadata_storage.existsDirectory(path_from))
+        moveDirectory(path_from, path_to);
+    else
+        throwNotImplemented();
+}
+
 void MetadataStorageFromPlainObjectStorageTransaction::createEmptyMetadataFile(const std::string & path)
 {
     if (metadata_storage.object_storage->isWriteOnce())
