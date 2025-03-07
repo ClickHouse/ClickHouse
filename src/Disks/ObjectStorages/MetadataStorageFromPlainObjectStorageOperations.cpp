@@ -1,5 +1,8 @@
 #include "MetadataStorageFromPlainObjectStorageOperations.h"
+#include <Dictionaries/SSDCacheDictionaryStorage.h>
 #include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
+#include <Disks/ObjectStorages/StoredObject.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
 
 #include <filesystem>
@@ -332,5 +335,47 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::undo(std:
             path);
     }
 }
+MetadataStorageFromPlainObjectStorageCopyOperation::MetadataStorageFromPlainObjectStorageCopyOperation(
+    std::filesystem::path path_from_,
+    std::filesystem::path path_to_,
+    InMemoryDirectoryPathMap & path_map_,
+    ObjectStoragePtr object_storage_)
+    : path_from(path_from_)
+    , remote_path_from(object_storage_->generateObjectKeyForPath(path_from_, std::nullopt).serialize())
+    , path_to(path_to_)
+    , remote_path_to(object_storage_->generateObjectKeyForPath(path_to_, std::nullopt).serialize())
+    , path_map(path_map_)
+    , object_storage(object_storage_)
+{
+}
 
+void MetadataStorageFromPlainObjectStorageCopyOperation::execute(std::unique_lock<SharedMutex> & /*metadata_lock*/)
+{
+    LOG_TEST(getLogger("MetadataStorageFromPlainObjectStorageCopyOperation"), "Copying file from '{}' to '{}'", path_from, path_to);
+
+    const auto directory_from = path_from.parent_path();
+    if (!path_map.existsLocalPath(directory_from))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the source directory path '{}' does not exist", path_from);
+
+    const auto directory_to = path_to.parent_path();
+    if (!path_map.existsLocalPath(directory_to))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the destination directory path '{}' does not exist", path_to);
+
+    object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
+
+    copied = true;
+    chassert(path_map.addFile(path_to));
+}
+
+void MetadataStorageFromPlainObjectStorageCopyOperation::undo(std::unique_lock<SharedMutex> & /*metadata_lock*/)
+{
+    if (!copied)
+        return;
+
+    LOG_TRACE(
+        getLogger("MetadataStorageFromPlainObjectStorageCopyOperation"), "Reversing file copying from '{}' to '{}'", path_from, path_to);
+
+    object_storage->removeObjectIfExists(StoredObject(remote_path_to));
+    path_map.removeFile(path_to);
+}
 }
