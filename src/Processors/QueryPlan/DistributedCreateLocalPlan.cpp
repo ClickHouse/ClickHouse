@@ -1,10 +1,12 @@
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 
 #include <Common/checkStackSize.h>
+#include "IO/WriteBufferFromString.h"
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Processors/QueryPlan/ConvertingActions.h>
+#include <iostream>
 
 namespace DB
 {
@@ -41,12 +43,21 @@ std::unique_ptr<QueryPlan> createLocalPlan(
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
+        // std::cerr << "!!!!!!!!!!!!!!!!! building local plan" << std::endl;
         /// For Analyzer, identifier in GROUP BY/ORDER BY/LIMIT BY lists has been resolved to
         /// ConstantNode in QueryTree if it is an alias of a constant, so we should not replace
         /// ConstantNode with ProjectionNode again(https://github.com/ClickHouse/ClickHouse/issues/62289).
         new_context->setSetting("enable_positional_arguments", Field(false));
         auto interpreter = InterpreterSelectQueryAnalyzer(query_ast, new_context, select_query_options);
         query_plan = std::make_unique<QueryPlan>(std::move(interpreter).extractQueryPlan());
+
+        // std::cerr << "++++++++++ local plan" << std::endl;
+        // {
+        //     //std::cerr << "<<<<<<<<<<<<<<<<<<<< \n" << std::endl;
+        //     WriteBufferFromOwnString buf;
+        //     query_plan->explainPlan(buf, {.header=true, .actions=true});
+        //     std::cerr << buf.stringView() << std::endl;
+        // }
     }
     else
     {

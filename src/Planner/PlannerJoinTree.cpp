@@ -650,19 +650,36 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
     std::unordered_map<std::string, ActionsDAG> & alias_column_expressions, const Header & current_header)
 {
+    // std::cerr << current_header.dumpStructure() << std::endl;
     ActionsDAG merged_alias_columns_actions_dag(current_header.getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag.getInputs();
 
-    for (auto & [column_name, alias_column_actions_dag] : alias_column_expressions)
+    for (auto & [column_name, alias_column_actions_dag_] : alias_column_expressions)
     {
-        const auto & current_outputs = alias_column_actions_dag.getOutputs();
+        auto alias_column_actions_dag = alias_column_actions_dag_.clone();
+        // std::cerr << "alias dag for " << column_name << std::endl << alias_column_actions_dag.dumpDAG() << std::endl;
+//        const auto & current_outputs = alias_column_actions_dag.getOutputs();
+
+
+        auto & current_outputs = alias_column_actions_dag.getOutputs();
+
+        // for (auto & output : current_outputs)
+        //     if (output->column)
+        //         output = &alias_column_actions_dag.materializeNode(*output, false);
+
+
+        // std::cerr << "alias dag 2 for " << column_name << std::endl << alias_column_actions_dag.dumpDAG() << std::endl;
+
         action_dag_outputs.insert(action_dag_outputs.end(), current_outputs.begin(), current_outputs.end());
         merged_alias_columns_actions_dag.mergeNodes(std::move(alias_column_actions_dag));
+        // std::cerr << merged_alias_columns_actions_dag.dumpDAG() << std::endl;
     }
 
     for (const auto * output_node : action_dag_outputs)
         merged_alias_columns_actions_dag.addOrReplaceInOutputs(*output_node);
     merged_alias_columns_actions_dag.removeUnusedActions(false);
+
+    // std::cerr << "...\n" << merged_alias_columns_actions_dag.dumpDAG() << std::endl;
 
     auto alias_column_step = std::make_unique<ExpressionStep>(current_header, std::move(merged_alias_columns_actions_dag));
     alias_column_step->setStepDescription("Compute alias columns");
@@ -829,6 +846,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         }
         else
         {
+            // std::cerr << "==== Columns names " << table_expression_data.getColumnNames().size() << std::endl;
+            // for (const auto & name : table_expression_data.getColumnNames())
+            //     std::cerr << "----- name " << name << std::endl;
+
+
             if (!select_query_options.only_analyze)
             {
                 auto & prewhere_info = table_expression_query_info.prewhere_info;
@@ -1107,6 +1129,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 }
 
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
+                // std::cerr << "alias column expressions size " << alias_column_expressions.size() << std::endl;
                 if (!alias_column_expressions.empty() && query_plan.isInitialized() && from_stage == QueryProcessingStage::FetchColumns)
                 {
                     auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
@@ -1154,12 +1177,21 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             else
             {
                 /// Create step which reads from empty source if storage has no data.
-                const auto & column_names = table_expression_data.getSelectedColumnsNames();
+                // const auto & column_names = table_expression_data.getSelectedColumnsNames();
+                const auto & column_names = table_expression_data.getColumnNames();
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
+                // std::cerr << "no plan source header "<< source_header.dumpStructure() << std::endl;
                 Pipe pipe(std::make_shared<NullSource>(source_header));
                 auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
                 read_from_pipe->setStepDescription("Read from NullSource");
                 query_plan.addStep(std::move(read_from_pipe));
+
+                auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
+                if (!alias_column_expressions.empty())
+                {
+                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
+                    query_plan.addStep(std::move(alias_column_step));
+                }
             }
         }
     }
@@ -1230,11 +1262,25 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
     }
     else
     {
+        // {
+        //     std::cerr << "<<<<<<<<<<<<<<<<<<<< \n" << std::endl;
+        //     WriteBufferFromOwnString buf;
+        //     query_plan.explainPlan(buf, {.header=true, .actions=true});
+        //     std::cerr << buf.stringView() << std::endl;
+        // }
+
         SelectQueryOptions analyze_query_options = SelectQueryOptions(from_stage).analyze();
         Planner planner(select_query_info.query_tree,
             analyze_query_options,
             select_query_info.planner_context);
         planner.buildQueryPlanIfNeeded();
+
+        // {
+        //     std::cerr << ">>>>>>>>>>>>>>>>>>>>> \n" << std::endl;
+        //     WriteBufferFromOwnString buf;
+        //     planner.getQueryPlan().explainPlan(buf, {.header=true, .actions=true});
+        //     std::cerr << buf.stringView() << std::endl;
+        // }
 
         auto expected_header = planner.getQueryPlan().getCurrentHeader();
 

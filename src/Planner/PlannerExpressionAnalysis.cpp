@@ -374,7 +374,9 @@ ProjectionAnalysisResult analyzeProjection(const QueryNode & query_node,
     ActionsChain & actions_chain)
 {
     auto projection_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    // std::cerr << "building projection dag from \n" << query_node.getProjectionNode()->dumpTree() << std::endl;
     projection_actions->dag = buildActionsDAGFromExpressionNode(query_node.getProjectionNode(), input_columns, planner_context);
+    // std::cerr << "projection dag from \n" << projection_actions->dag.dumpDAG() << std::endl;
 
     auto projection_columns = query_node.getProjectionColumns();
     size_t projection_columns_size = projection_columns.size();

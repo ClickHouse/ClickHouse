@@ -675,8 +675,18 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 {
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
     const auto & column_node = node->as<ColumnNode &>();
-    if (column_node.hasExpression() && !use_column_identifier_as_action_node_name)
-        return visitImpl(column_node.getExpression());
+    if (column_node.hasExpression())
+    {
+        auto expression = column_node.getExpression();
+        if (expression->getNodeType() == QueryTreeNodeType::CONSTANT)
+            return visitConstant(expression);
+        else if (!use_column_identifier_as_action_node_name)
+            return visitImpl(expression);
+
+        //&& !use_column_identifier_as_action_node_name)
+        // auto res = visitImpl(column_node.getExpression());
+        // if (use_column_identifier_as_action_node_name && res.first != column_node_name && )
+    }
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
     for (Int64 i = actions_stack_size; i >= 0; --i)
     {
