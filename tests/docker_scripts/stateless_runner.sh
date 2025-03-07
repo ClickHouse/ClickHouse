@@ -430,24 +430,42 @@ if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TR
 fi
 
 
-# Compress tables.
+# Save system.*_log as artifacts
 #
 # NOTE:
 # - that due to tests with s3 storage we cannot use /var/lib/clickhouse/data
 #   directly
 # - even though ci auto-compress some files (but not *.tsv) it does this only
 #   for files >64MB, we want this files to be compressed explicitly
+function clickhouse_local_system()
+{
+    local args=(
+        ${logs_saver_client_options}
+        "$@"
+        --only-system-tables
+        --stacktrace
+        --
+        # FIXME: Hack for s3_with_keeper (note, that we don't need the disk,
+        # the problem is that whenever we need disks all disks will be
+        # initialized [1])
+        #
+        #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
+        --zookeeper.implementation=testkeeper
+    )
+    clickhouse-local "${args[@]}"
+}
+
 for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latency_log
 do
-    clickhouse-local ${logs_saver_client_options} "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table into outfile '/test_output/$table.tsv.zst'" ||:
+    clickhouse_local_system "$data_path_config" -q "select * from system.$table into outfile '/test_output/$table.tsv.zst'" ||:
 
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst'" ||:
-        clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse2/ --only-system-tables --stacktrace -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst'" ||:
+        clickhouse_local_system --path /var/lib/clickhouse1/ -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst'" ||:
+        clickhouse_local_system --path /var/lib/clickhouse2/ -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst'" ||:
     fi
 
     if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-        clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst'" ||:
+        clickhouse_local_system --path /var/lib/clickhouse1/ -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst'" ||:
     fi
 done
 
