@@ -522,13 +522,8 @@ Chunk MongoDBPocoLegacySource::generate()
     auto context = CurrentThread::getQueryContext();
     while (num_rows < max_block_size)
     {
-        if (!query_id.empty() && context) // Checks if the current query is timed out
-        {
-            const ProcessList & process_list = context->getProcessList();
-            std::shared_ptr<const QueryStatusInfo> process_list_entry = process_list.getQueryInfo(query_id);
-            if (process_list_entry->is_cancelled)
-                break;
-        }
+        if (context && context->isCurrentQueryKilled())
+            break;
 
         auto documents = cursor.nextDocuments(*connection);
 
