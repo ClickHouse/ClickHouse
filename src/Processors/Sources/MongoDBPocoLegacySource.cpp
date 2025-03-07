@@ -24,6 +24,7 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentThread.h>
+#include <Interpreters/Context.h>
 
 #include "base/types.h"
 #include <base/range.h>
