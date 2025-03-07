@@ -68,7 +68,11 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     ColumnPtr concrete_column(column->cloneEmpty());
     auto task = [concrete_column, nested_serialization = nested, limit, format_settings = settings.format_settings](
                     const ColumnBlob::Blob & blob, int)
-    { return ColumnBlob::fromBlob(blob, concrete_column, nested_serialization, limit, format_settings); };
+    {
+        // In case of alias columns, `column` might be a reference to the same column for a number of calls to this function.
+        // To avoid deserializing into the same column multiple times, we clone the column here one more time.
+        return ColumnBlob::fromBlob(blob, concrete_column->cloneEmpty(), nested_serialization, limit, format_settings);
+    };
 
     auto column_blob = ColumnPtr(ColumnBlob::create(std::move(task), limit));
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column_blob, limit, settings, state, cache);

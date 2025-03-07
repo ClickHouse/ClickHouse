@@ -108,6 +108,7 @@ public:
         CompressedReadBuffer decompressed_buffer(rbuf);
         // TODO(nickitat): support
         double avg_value_size_hint = 0;
+        chassert(nested->empty());
         NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, avg_value_size_hint);
         return nested;
     }
