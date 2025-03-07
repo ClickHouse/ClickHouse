@@ -1,0 +1,11 @@
+42	foo	\N
+17	bar	\N
+4711	cologne	\N
+42	\N	foo
+17	\N	bar
+4711	\N	cologne
+\N
+42	\N
+17	\N	bar
+4711	\N	cologne
+3
