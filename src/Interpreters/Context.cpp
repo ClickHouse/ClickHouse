@@ -4405,13 +4405,13 @@ UInt16 Context::getServerPort(const String & port_name) const
     return it->second;
 }
 
-void Context::setMaxPartNumToWarn(size_t max_part_to_warn) const
+void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
     shared->max_part_num_to_warn = max_part_to_warn;
 }
 
-void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn) const
+void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
     shared->max_pending_mutations_to_warn = max_pending_mutations_to_warn;
@@ -4423,28 +4423,28 @@ size_t Context::getMaxPendingMutationsToWarn() const
     return shared->max_pending_mutations_to_warn;
 }
 
-void Context::setMaxTableNumToWarn(size_t max_table_to_warn) const
+void Context::setMaxTableNumToWarn(size_t max_table_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_table_num_to_warn= max_table_to_warn;
+    shared->max_table_num_to_warn = max_table_to_warn;
 }
 
-void Context::setMaxViewNumToWarn(size_t max_view_to_warn) const
+void Context::setMaxViewNumToWarn(size_t max_view_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_view_num_to_warn= max_view_to_warn;
+    shared->max_view_num_to_warn = max_view_to_warn;
 }
 
-void Context::setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn) const
+void Context::setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_dictionary_num_to_warn= max_dictionary_to_warn;
+    shared->max_dictionary_num_to_warn = max_dictionary_to_warn;
 }
 
-void Context::setMaxDatabaseNumToWarn(size_t max_database_to_warn) const
+void Context::setMaxDatabaseNumToWarn(size_t max_database_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_database_num_to_warn= max_database_to_warn;
+    shared->max_database_num_to_warn = max_database_to_warn;
 }
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const

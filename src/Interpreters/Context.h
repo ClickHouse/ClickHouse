@@ -994,17 +994,15 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
-    void setMaxTableNumToWarn(size_t max_table_to_warn) const;
-    void setMaxViewNumToWarn(size_t max_view_to_warn) const;
-    void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn) const;
-    void setMaxDatabaseNumToWarn(size_t max_database_to_warn) const;
-    void setMaxPartNumToWarn(size_t max_part_to_warn) const;
+    void setMaxTableNumToWarn(size_t max_table_to_warn);
+    void setMaxViewNumToWarn(size_t max_view_to_warn);
+    void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
+    void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
+    void setMaxPartNumToWarn(size_t max_part_to_warn);
 
     // Following are based on asynchronous metrics
-    void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn) const;
-    void setMaxStuckMutationsToWarn(size_t max_stuck_mutations_to_warn) const;
+    void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
     size_t getMaxPendingMutationsToWarn() const;
-    size_t getMaxStuckMutationsToWarn() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
