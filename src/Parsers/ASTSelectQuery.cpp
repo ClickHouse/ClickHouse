@@ -205,6 +205,27 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         }
     }
 
+    if (limitInRangeFrom())
+    {
+        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT INRANGE FROM " << (s.hilite ? hilite_none : "");
+        limitInRangeFrom()->formatImpl(s, state, frame);
+    }
+
+    if (limitInRangeTo())
+    {
+        if (limitInRangeFrom())
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "TO " << (s.hilite ? hilite_none : "");
+        else
+            s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT INRANGE TO " << (s.hilite ? hilite_none : "");
+        limitInRangeTo()->formatImpl(s, state, frame);
+    }
+
+    if (limitInRangeWindow())
+    {
+        s.ostr << ", ";
+        limitInRangeWindow()->formatImpl(s, state, frame);
+    }
+
     if (limitByLength())
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "LIMIT " << (s.hilite ? hilite_none : "");
