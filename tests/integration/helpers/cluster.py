@@ -2428,7 +2428,7 @@ class ClickHouseCluster:
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
-            host="localhost", port=self.mongo_port, user=mongo_user, password=mongo_pass
+            host="localhost", port=self.mongo_port, user=mongo_user, password=urllib.parse.quote_plus(mongo_pass)
         )
         if secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"

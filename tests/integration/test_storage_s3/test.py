@@ -121,7 +121,7 @@ def run_query(instance, query, *args, **kwargs):
     "maybe_auth,positive,compression",
     [
         pytest.param("", True, "auto", id="positive"),
-        pytest.param("'minio','{minio_secret_key}',", True, "auto", id="auth_positive"),
+        pytest.param(f"'minio','{minio_secret_key}',", True, "auto", id="auth_positive"),
         pytest.param("'wrongid','wrongkey',", False, "auto", id="auto"),
         pytest.param("'wrongid','wrongkey',", False, "gzip", id="gzip"),
         pytest.param("'wrongid','wrongkey',", False, "deflate", id="deflate"),
@@ -243,7 +243,7 @@ def test_partition_by_const_column(started_cluster):
 def test_get_file_with_special(started_cluster, special):
     symbol = {"space": " ", "plus": "+"}[special]
     urlsafe_symbol = {"space": "%20", "plus": "%2B"}[special]
-    auth = "'minio','{minio_secret_key}',"
+    auth = f"'minio','{minio_secret_key}',"
     bucket = started_cluster.minio_restricted_bucket
     instance = started_cluster.instances["dummy"]
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
@@ -293,7 +293,7 @@ def test_get_path_with_special(started_cluster, special):
 
 
 # Test put no data to S3.
-@pytest.mark.parametrize("auth", [pytest.param("'minio','{minio_secret_key}',", id="minio")])
+@pytest.mark.parametrize("auth", [pytest.param(f"'minio','{minio_secret_key}',", id="minio")])
 def test_empty_put(started_cluster, auth):
     # type: (ClickHouseCluster, str) -> None
     id = uuid.uuid4()
@@ -331,7 +331,7 @@ def test_empty_put(started_cluster, auth):
     "maybe_auth,positive",
     [
         pytest.param("", True, id="positive"),
-        pytest.param("'minio',f'{minio_secret_key}',", True, id="auth_positive"),
+        pytest.param(f"'minio',f'{minio_secret_key}',", True, id="auth_positive"),
         pytest.param("'wrongid','wrongkey',", False, id="negative"),
     ],
 )

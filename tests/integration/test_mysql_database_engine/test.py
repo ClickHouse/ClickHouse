@@ -904,7 +904,7 @@ def test_mysql_types(
         assert (
             execute_query(
                 clickhouse_node,
-                "SELECT toTypeName(value) FROM mysql('mysql80:3306', '${mysql_db}', '${table_name}', 'root'," + "'{mysql_pass}') LIMIT 1",
+                "SELECT toTypeName(value) FROM mysql('mysql80:3306', '${mysql_db}', '${table_name}', 'root'," + f"'{mysql_pass}') LIMIT 1",
                 settings=clickhouse_query_settings,
             )
             == expected_ch_type
@@ -913,7 +913,7 @@ def test_mysql_types(
         # Validate values
         assert expected_format_clickhouse_values == execute_query(
             clickhouse_node,
-            "SELECT value FROM mysql('mysql80:3306', '${mysql_db}', '${table_name}', 'root'," + "'{mysql_pass}')",
+            "SELECT value FROM mysql('mysql80:3306', '${mysql_db}', '${table_name}', 'root'," + f"'{mysql_pass}')",
             settings=clickhouse_query_settings,
         )
 

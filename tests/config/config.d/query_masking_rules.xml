@@ -12,7 +12,7 @@
         </rule>
         <rule>
             <name>PostgreSQL</name>
-            <regexp>(?i)ClickHouse_PostreSQL_P@ssw0rd</regexp>
+            <regexp>(?i)ClickHouse_PostgreSQL_P@ssw0rd</regexp>
             <fail_on_match>true</fail_on_match>
         </rule>
         <rule>

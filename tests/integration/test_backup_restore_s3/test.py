@@ -343,7 +343,7 @@ def test_backup_to_s3():
     storage_policy = "default"
     backup_name = new_backup_name()
     backup_destination = (
-        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', minio_secret_key)"
+        f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
     )
     (backup_events, _) = check_backup_and_restore(storage_policy, backup_destination)
     check_system_tables(backup_events["query_id"])
