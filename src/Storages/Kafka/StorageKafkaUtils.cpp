@@ -436,7 +436,7 @@ void drainConsumer(
     }
 }
 
-void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler)
+size_t eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler)
 {
     size_t skipped = std::erase_if(
         messages,
@@ -454,6 +454,8 @@ void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler
 
     if (skipped)
         LOG_ERROR(log, "There were {} messages with an error", skipped);
+
+    return skipped;
 }
 
 SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const String & schema_name)

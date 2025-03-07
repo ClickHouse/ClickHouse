@@ -160,7 +160,7 @@ private:
     const size_t batch_size = 1;
     const size_t poll_timeout = 0;
     size_t offsets_stored = 0;
-    bool is_subscribed = false;
+    bool current_subscription_valid = false;
 
     StalledStatus stalled_status = NO_MESSAGES_RETURNED;
 
@@ -197,7 +197,6 @@ private:
     void doPoll();
     void cleanUnprocessed();
     void resetIfStopped();
-    void filterMessageErrors();
     ReadBufferPtr getNextMessage();
 };
 
