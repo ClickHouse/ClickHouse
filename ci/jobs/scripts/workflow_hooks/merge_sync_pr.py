@@ -28,7 +28,7 @@ def check():
         return
 
     if not Shell.check(
-        f"gh pr merge {sync_pr_number} --repo {SYNC_REPO} --merge --auto", verbose=True
+        f"gh pr merge {sync_pr_number} --repo {SYNC_REPO} --merge", verbose=True
     ):
         print("WARNING: Failed to merge Sync PR")
         return
