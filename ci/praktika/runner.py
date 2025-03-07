@@ -212,9 +212,7 @@ class Runner:
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).custom_data.get(
-                        "digest_dockers", "latest"
-                    )
+                    RunConfig.from_fs(workflow.name).digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()

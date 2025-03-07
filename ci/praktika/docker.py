@@ -87,22 +87,25 @@ class Docker:
             else:
                 assert f"Not supported platform [{platform}]"
 
-        cmd = "docker manifest create --amend " + " ".join(
-            (f"{config.name}:{t}" for t in tags)
-        )
-        result = Result.from_commands_run(
-            name=f"merge: {config.name}:{tags[0]}", command=cmd, with_info=with_log
-        )
+        commands = [
+            "docker manifest create --amend "
+            + " ".join(f"{config.name}:{t}" for t in tags)
+        ]
+        commands.append(f"docker manifest push {config.name}:{digests[config.name]}")
 
-        if result.is_ok() and add_latest:
-            tags[0] = "latest"
-            cmd = "docker manifest create --amend " + " ".join(
-                (f"{config.name}:{t}" for t in tags)
+        if add_latest:
+            commands.append(
+                "docker manifest create --amend "
+                + " ".join((f"{config.name}:{t}" for t in tags))
             )
-            result = Result.from_commands_run(
-                name=f"Merge {config.name}:{tags[0]}", command=cmd, with_info=with_log
-            )
-        return result
+            commands.append(f"docker manifest push {config.name}:latest")
+
+        return Result.from_commands_run(
+            name=f"merge: {config.name}:{digests[config.name]} (latest={add_latest})",
+            command=commands,
+            with_info=with_log,
+            fail_fast=True,
+        )
 
     @classmethod
     def sort_in_build_order(cls, dockers: List["Docker.Config"]):
