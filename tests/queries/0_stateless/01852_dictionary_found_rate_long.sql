@@ -27,11 +27,11 @@ LAYOUT(FLAT())
 LIFETIME(MIN 0 MAX 1000);
 
 SELECT * FROM simple_key_flat_dictionary_01862 FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
 SELECT * FROM simple_key_flat_dictionary_01862 WHERE id = 0 FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
 SELECT dictGet('simple_key_flat_dictionary_01862', 'value', toUInt64(2)) FORMAT Null;
-SELECT name, round(found_rate, 2), status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
+SELECT name, round(query_count, 2), status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_flat_dictionary_01862';
 
 DROP DICTIONARY simple_key_flat_dictionary_01862;
 
@@ -47,13 +47,13 @@ SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(DIRECT());
 
 -- check that found_rate is 0, not nan
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_direct_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_direct_dictionary_01862';
 SELECT * FROM simple_key_direct_dictionary_01862 FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_direct_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_direct_dictionary_01862';
 SELECT dictGet('simple_key_direct_dictionary_01862', 'value', toUInt64(1)) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_direct_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_direct_dictionary_01862';
 SELECT dictGet('simple_key_direct_dictionary_01862', 'value', toUInt64(2)) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_direct_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_direct_dictionary_01862';
 
 DROP DICTIONARY simple_key_direct_dictionary_01862;
 
@@ -69,11 +69,11 @@ SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(HASHED())
 LIFETIME(MIN 0 MAX 1000);
 
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_hashed_dictionary_01862';
 SELECT dictGet('simple_key_hashed_dictionary_01862', 'value', toUInt64(1)) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_hashed_dictionary_01862';
 SELECT dictGet('simple_key_hashed_dictionary_01862', 'value', toUInt64(2)) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_hashed_dictionary_01862';
 
 DROP DICTIONARY simple_key_hashed_dictionary_01862;
 
@@ -89,11 +89,11 @@ SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(SPARSE_HASHED())
 LIFETIME(MIN 0 MAX 1000);
 
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_sparse_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_sparse_hashed_dictionary_01862';
 SELECT dictGet('simple_key_sparse_hashed_dictionary_01862', 'value', toUInt64(1)) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_sparse_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_sparse_hashed_dictionary_01862';
 SELECT dictGet('simple_key_sparse_hashed_dictionary_01862', 'value', toUInt64(2)) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_sparse_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_sparse_hashed_dictionary_01862';
 
 DROP DICTIONARY simple_key_sparse_hashed_dictionary_01862;
 
@@ -109,11 +109,11 @@ SOURCE(CLICKHOUSE(TABLE 'simple_key_source_table_01862'))
 LAYOUT(CACHE(SIZE_IN_CELLS 100000))
 LIFETIME(MIN 0 MAX 1000);
 
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_cache_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_cache_dictionary_01862';
 SELECT toUInt64(1) as key, dictGet('simple_key_cache_dictionary_01862', 'value', key) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_cache_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_cache_dictionary_01862';
 SELECT toUInt64(2) as key, dictGet('simple_key_cache_dictionary_01862', 'value', key) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_cache_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_cache_dictionary_01862';
 
 DROP DICTIONARY simple_key_cache_dictionary_01862;
 
@@ -147,11 +147,11 @@ SOURCE(CLICKHOUSE(TABLE 'complex_key_source_table_01862'))
 LAYOUT(COMPLEX_KEY_HASHED())
 LIFETIME(MIN 0 MAX 1000);
 
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_hashed_dictionary_01862';
 SELECT dictGet('complex_key_hashed_dictionary_01862', 'value', (toUInt64(1), 'FirstKey')) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_hashed_dictionary_01862';
 SELECT dictGet('complex_key_hashed_dictionary_01862', 'value', (toUInt64(2), 'FirstKey')) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_hashed_dictionary_01862';
 
 DROP DICTIONARY complex_key_hashed_dictionary_01862;
 
@@ -167,11 +167,11 @@ PRIMARY KEY id, id_key
 SOURCE(CLICKHOUSE(TABLE 'complex_key_source_table_01862'))
 LAYOUT(COMPLEX_KEY_DIRECT());
 
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_direct_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_direct_dictionary_01862';
 SELECT dictGet('complex_key_direct_dictionary_01862', 'value', (toUInt64(1), 'FirstKey')) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_direct_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_direct_dictionary_01862';
 SELECT dictGet('complex_key_direct_dictionary_01862', 'value', (toUInt64(2), 'FirstKey')) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_direct_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_direct_dictionary_01862';
 
 DROP DICTIONARY complex_key_direct_dictionary_01862;
 
@@ -188,11 +188,11 @@ SOURCE(CLICKHOUSE(TABLE 'complex_key_source_table_01862'))
 LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS 100000))
 LIFETIME(MIN 0 MAX 1000);
 
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_cache_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_cache_dictionary_01862';
 SELECT dictGet('complex_key_cache_dictionary_01862', 'value', (toUInt64(1), 'FirstKey')) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_cache_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_cache_dictionary_01862';
 SELECT dictGet('complex_key_cache_dictionary_01862', 'value', (toUInt64(2), 'FirstKey')) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_cache_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'complex_key_cache_dictionary_01862';
 
 DROP DICTIONARY complex_key_cache_dictionary_01862;
 
@@ -228,11 +228,11 @@ LAYOUT(RANGE_HASHED())
 RANGE(MIN first MAX last)
 LIFETIME(MIN 0 MAX 1000);
 
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_range_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_range_hashed_dictionary_01862';
 SELECT dictGet('simple_key_range_hashed_dictionary_01862', 'value', toUInt64(1), today()) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_range_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_range_hashed_dictionary_01862';
 SELECT dictGet('simple_key_range_hashed_dictionary_01862', 'value', toUInt64(2), today()) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_range_hashed_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'simple_key_range_hashed_dictionary_01862';
 
 DROP DICTIONARY simple_key_range_hashed_dictionary_01862;
 
@@ -264,13 +264,13 @@ LAYOUT(IP_TRIE())
 LIFETIME(MIN 0 MAX 1000);
 
 -- found_rate = 0, because we didn't make any searches.
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'ip_trie_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'ip_trie_dictionary_01862';
 -- found_rate = 1, because the dictionary covers the 127.0.0.1 address.
 SELECT dictGet('ip_trie_dictionary_01862', 'value', tuple(toIPv4('127.0.0.1'))) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'ip_trie_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'ip_trie_dictionary_01862';
 -- found_rate = 0.5, because the dictionary does not cover 1.1.1.1 and we have two lookups in total as of now.
 SELECT dictGet('ip_trie_dictionary_01862', 'value', tuple(toIPv4('1.1.1.1'))) FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'ip_trie_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'ip_trie_dictionary_01862';
 
 DROP DICTIONARY ip_trie_dictionary_01862;
 
@@ -306,9 +306,9 @@ SOURCE(CLICKHOUSE(USER 'default' TABLE 'polygons_01862'))
 LIFETIME(0)
 LAYOUT(POLYGON());
 
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'polygon_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'polygon_dictionary_01862';
 SELECT tuple(x, y) as key, dictGet('polygon_dictionary_01862', 'name', key) FROM points_01862 FORMAT Null;
-SELECT name, found_rate, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'polygon_dictionary_01862';
+SELECT name, query_count, status, last_exception FROM system.dictionaries WHERE database = currentDatabase() AND name = 'polygon_dictionary_01862';
 
 DROP DICTIONARY polygon_dictionary_01862;
 DROP TABLE polygons_01862;
