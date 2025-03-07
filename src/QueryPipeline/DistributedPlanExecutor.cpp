@@ -237,7 +237,8 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     String config_prefix = "distributed_query.temporary_files_storage";
     ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, false);
 
-    String object_storage_path = "distributed_query_temporary_files/" + unique_temp_file_path;
+    String object_storage_path_prefix = context->getConfigRef().getString("distributed_query.temporary_files_storage.endpoint_subpath");
+    String object_storage_path = object_storage_path_prefix + unique_temp_file_path;
 
     return {object_storage, object_storage_path};
 }
