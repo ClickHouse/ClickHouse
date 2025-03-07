@@ -2476,7 +2476,9 @@ class ClickHouseCluster:
                         )
                         errors = minio_client.remove_objects(bucket, delete_object_list)
                         for error in errors:
-                            logging.error(f"Error occurred when deleting object {error}")
+                            logging.error(
+                                f"Error occurred when deleting object {error}"
+                            )
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
@@ -3174,10 +3176,10 @@ class ClickHouseCluster:
 
     @contextmanager
     def pause_container(self, instance_name):
-        '''Use it as following:
+        """Use it as following:
         with cluster.pause_container(name):
             useful_stuff()
-        '''
+        """
         self._pause_container(instance_name)
         try:
             yield
@@ -4019,51 +4021,64 @@ class ClickHouseInstance:
         filename="clickhouse-server.log",
         exclusion_substring="",
     ):
-        if from_host:
-            # We check first file exists but want to look for all rotated logs as well
-            result = subprocess_check_call(
-                [
-                    "bash",
-                    "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
-                ]
-            )
-        else:
-            result = self.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
-                ]
-            )
+        for i in range(10):
+            if from_host:
+                # We check first file exists but want to look for all rotated logs as well
+                result = subprocess_check_call(
+                    [
+                        "bash",
+                        "-c",
+                        f'[ -f {self.logs_dir}/{filename} ] && zgrep -aH "{substring}" {self.logs_dir}/{filename}* | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
+                    ]
+                )
+            else:
+                result = self.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep -aH "{substring}" /var/log/clickhouse-server/{filename} | ( [ -z "{exclusion_substring}" ] && cat || grep -v "${exclusion_substring}" ) || true',
+                    ]
+                )
+            if len(result) > 0:
+                break
+
+            time.sleep(0.5)
+
         return len(result) > 0
 
     def grep_in_log(
         self, substring, from_host=False, filename="clickhouse-server.log", after=None
     ):
-        logging.debug(f"grep in log called %s", substring)
-        if after is not None:
-            after_opt = "-A{}".format(after)
-        else:
-            after_opt = ""
-        if from_host:
-            # We check fist file exists but want to look for all rotated logs as well
-            result = subprocess_check_call(
-                [
-                    "bash",
-                    "-c",
-                    f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}* || true',
-                ]
-            )
-        else:
-            result = self.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
-                ]
-            )
-        logging.debug("grep result %s", result)
+        for i in range(10):
+            logging.debug(f"grep in log called %s", substring)
+            if after is not None:
+                after_opt = "-A{}".format(after)
+            else:
+                after_opt = ""
+            if from_host:
+                # We check fist file exists but want to look for all rotated logs as well
+                result = subprocess_check_call(
+                    [
+                        "bash",
+                        "-c",
+                        f'[ -f {self.logs_dir}/{filename} ] && zgrep {after_opt} -a "{substring}" {self.logs_dir}/{filename}* || true',
+                    ]
+                )
+            else:
+                result = self.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        f'[ -f /var/log/clickhouse-server/{filename} ] && zgrep {after_opt} -a "{substring}" /var/log/clickhouse-server/{filename}* || true',
+                    ]
+                )
+            logging.debug("grep result %s", result)
+
+            if result:
+                break
+
+            time.sleep(0.5)
+
         return result
 
     def count_in_log(self, substring):

@@ -44,12 +44,6 @@ node2 = cluster.add_instance(
 )
 
 
-def get_log(node):
-    return node.exec_in_container(
-        ["bash", "-c", "cat /var/log/clickhouse-server/clickhouse-server.log"]
-    )
-
-
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
@@ -539,7 +533,7 @@ def test_remove_disk(started_cluster):
         assert "remove_disk_jbod3" in set(
             node1.query("SELECT name FROM system.disks").splitlines()
         )
-        assert re.search("Warning.*remove_disk_jbod3", get_log(node1))
+        assert node1.grep_in_log("Warning.*remove_disk_jbod3")
     finally:
         try:
             node1.query("DROP TABLE IF EXISTS {}".format(name))
@@ -583,7 +577,7 @@ def test_remove_policy(started_cluster):
         assert "remove_policy_cool_policy" in set(
             node1.query("SELECT policy_name FROM system.storage_policies").splitlines()
         )
-        assert re.search("Error.*remove_policy_cool_policy", get_log(node1))
+        assert node1.grep_in_log("Error.*remove_policy_cool_policy")
 
     finally:
         try:
@@ -651,9 +645,7 @@ def test_remove_volume_from_policy(started_cluster):
         )
         assert {"volume1", "volume2"} == volumes
         assert {"['jbod3']", "['jbod4']"} == disks_sets
-        assert re.search(
-            "Error.*test_remove_volume_from_policy_cool_policy", get_log(node1)
-        )
+        assert node1.grep_in_log("Error.*test_remove_volume_from_policy_cool_policy")
 
     finally:
         try:
@@ -721,9 +713,7 @@ def test_remove_disk_from_policy(started_cluster):
         )
         assert {"volume1"} == volumes
         assert {"['jbod3','jbod4']"} == disks_sets
-        assert re.search(
-            "Error.*test_remove_disk_from_policy_cool_policy", get_log(node1)
-        )
+        assert node1.grep_in_log("Error.*test_remove_disk_from_policy_cool_policy")
 
     finally:
         try:
