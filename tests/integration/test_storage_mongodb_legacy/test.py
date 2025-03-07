@@ -3,6 +3,7 @@ from uuid import UUID
 
 import pymongo
 import pytest
+import urllib
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -32,9 +33,7 @@ def started_cluster(request):
 def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
     connection_str = ""
     if with_credentials:
-        connection_str = "mongodb://root:clickhouse@localhost:{}".format(
-            started_cluster.mongo_secure_port if secure else started_cluster.mongo_port
-        )
+        connection_str = f"mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@localhost:{started_cluster.mongo_secure_port if secure else started_cluster.mongo_port}"
     else:
         connection_str = "mongodb://localhost:{}".format(
             started_cluster.mongo_no_cred_port
@@ -48,9 +47,11 @@ def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
 def test_uuid(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", mongo_pass)
+    if db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    db.command("createUser", "root", pwd=mongo_pass, roles=[{'role': 'readWrite', 'db': 'test'}])
     mongo_table = db["uuid_table"]
-    mongo_table.insert({"key": 0, "data": UUID("f0e77736-91d1-48ce-8f01-15123ca1c7ed")})
+    mongo_table.insert_one({"key": 0, "data": UUID("f0e77736-91d1-48ce-8f01-15123ca1c7ed")})
 
     node = started_cluster.instances["node"]
     node.query(
@@ -70,7 +71,9 @@ def test_uuid(started_cluster):
 def test_simple_select(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", mongo_pass)
+    if db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    db.command("createUser", "root", pwd=mongo_pass, roles=[{'role': 'readWrite', 'db': 'test'}])
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -100,7 +103,9 @@ def test_simple_select(started_cluster):
 def test_simple_select_from_view(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", mongo_pass)
+    if db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    db.command("createUser", "root", pwd=mongo_pass, roles=[{'role': 'readWrite', 'db': 'test'}])
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -134,7 +139,9 @@ def test_simple_select_from_view(started_cluster):
 def test_arrays(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", mongo_pass)
+    if db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    db.command("createUser", "root", pwd=mongo_pass, roles=[{'role': 'readWrite', 'db': 'test'}])
     arrays_mongo_table = db["arrays_table"]
     data = []
     for i in range(0, 100):
@@ -293,7 +300,9 @@ def test_arrays(started_cluster):
 def test_complex_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", mongo_pass)
+    if db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    db.command("createUser", "root", pwd=mongo_pass, roles=[{'role': 'readWrite', 'db': 'test'}])
     incomplete_mongo_table = db["complex_table"]
     data = []
     for i in range(0, 100):
@@ -323,7 +332,9 @@ def test_complex_data_type(started_cluster):
 def test_incorrect_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", mongo_pass)
+    if db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    db.command("createUser", "root", pwd=mongo_pass, roles=[{'role': 'readWrite', 'db': 'test'}])
     strange_mongo_table = db["strange_table"]
     data = []
     for i in range(0, 100):
@@ -354,7 +365,9 @@ def test_incorrect_data_type(started_cluster):
 def test_secure_connection(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test"]
-    db.add_user("root", mongo_pass)
+    if db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    db.command("createUser", "root", pwd=mongo_pass, roles=[{'role': 'readWrite', 'db': 'test'}])
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -384,7 +397,9 @@ def test_secure_connection(started_cluster):
 def test_predefined_connection_configuration(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    if db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    db.command("createUser", "root", pwd=mongo_pass, roles=[{'role': 'readWrite', 'db': 'test'}])
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
@@ -423,9 +438,11 @@ def test_no_credentials(started_cluster):
 def test_auth_source(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, with_credentials=False)
     admin_db = mongo_connection["admin"]
-    admin_db.add_user(
+    if admin_db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    admin_db.command("createUser",
         "root",
-        mongo_pass,
+        pwd=mongo_pass,
         roles=[{"role": "userAdminAnyDatabase", "db": "admin"}, "readWriteAnyDatabase"],
     )
     simple_mongo_table_admin = admin_db["simple_table"]
@@ -460,7 +477,9 @@ def test_auth_source(started_cluster):
 def test_missing_columns(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", mongo_pass)
+    if db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    db.command("createUser", "root", pwd=mongo_pass, roles=[{'role': 'readWrite', 'db': 'test'}])
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 10):
@@ -484,7 +503,9 @@ def test_missing_columns(started_cluster):
 def test_simple_insert_select(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", mongo_pass)
+    if db.command("usersInfo", "root")["users"]:
+        db.command("dropUser", "root")
+    db.command("createUser", "root", pwd=mongo_pass, roles=[{'role': 'readWrite', 'db': 'test'}])
     simple_mongo_table = db["simple_table"]
 
     node = started_cluster.instances["node"]

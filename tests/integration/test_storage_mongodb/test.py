@@ -1,7 +1,7 @@
 import datetime
 import json
 import uuid
-
+import urllib
 import bson
 import pymongo
 import pytest
@@ -33,11 +33,11 @@ def started_cluster(request):
 def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
     if secure:
         return pymongo.MongoClient(
-            f"mongodb://root:{mongo_pass}@localhost:{started_cluster.mongo_secure_port}/?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true"
+            f"mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@localhost:{started_cluster.mongo_secure_port}/?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true"
         )
     if with_credentials:
         return pymongo.MongoClient(
-            f"mongodb://root:{mongo_pass}@localhost:{started_cluster.mongo_port}"
+            f"mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@localhost:{started_cluster.mongo_port}"
         )
 
     return pymongo.MongoClient(
@@ -88,7 +88,7 @@ def test_simple_select_uri(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        f"CREATE OR REPLACE TABLE simple_table_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:{mongo_pass}@mongo1:27017/test', 'simple_table_uri')"
+        f"CREATE OR REPLACE TABLE simple_table_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo1:27017/test', 'simple_table_uri')"
     )
 
     assert node.query("SELECT COUNT() FROM simple_table_uri") == "100\n"
@@ -322,7 +322,7 @@ def test_complex_data_type(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        "CREATE OR REPLACE TABLE incomplete_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'complex_table', 'root', '{mongo_pass}')"
+        f"CREATE OR REPLACE TABLE incomplete_mongo_table(key UInt64, data String) ENGINE = MongoDB('mongo1:27017', 'test', 'complex_table', 'root', '{mongo_pass}')"
     )
 
     assert node.query("SELECT COUNT() FROM incomplete_mongo_table") == "100\n"
@@ -401,7 +401,7 @@ def test_secure_connection_uri(started_cluster):
     simple_mongo_table.insert_many(data)
     node = started_cluster.instances["node"]
     node.query(
-        f"CREATE OR REPLACE TABLE test_secure_connection_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:{mongo_pass}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true&authSource=admin', 'test_secure_connection_uri')"
+        f"CREATE OR REPLACE TABLE test_secure_connection_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test?tls=true&tlsAllowInvalidCertificates=true&tlsAllowInvalidHostnames=true&authSource=admin', 'test_secure_connection_uri')"
     )
 
     assert node.query("SELECT COUNT() FROM test_secure_connection_uri") == "100\n"
@@ -429,7 +429,7 @@ def test_secure_connection_uri_with_validation(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        f"CREATE OR REPLACE TABLE test_secure_connection_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:{mongo_pass}@mongo_secure:27017/test?tls=true', 'test_secure_connection_uri')"
+        f"CREATE OR REPLACE TABLE test_secure_connection_uri(key UInt64, data String) ENGINE = MongoDB('mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@mongo_secure:27017/test?tls=true', 'test_secure_connection_uri')"
     )
 
     with pytest.raises(QueryRuntimeException):
@@ -876,7 +876,7 @@ def test_defaults(started_cluster):
 
     node = started_cluster.instances["node"]
     node.query(
-        """
+        f"""
         CREATE OR REPLACE TABLE defaults_table(
         _id          String,
         k_int64      Int64,
