@@ -205,6 +205,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_num;
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_ratio_to_cores;
+    extern const ServerSettingsString concurrent_threads_scheduler;
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
@@ -1721,16 +1722,16 @@ try
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
-    size_t query_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
-    size_t query_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
-    size_t query_cache_query_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-    size_t query_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
-    if (query_cache_max_size_in_bytes > max_cache_size)
+    size_t query_result_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
+    size_t query_result_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
+    size_t query_result_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
+    size_t query_result_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    if (query_result_cache_max_size_in_bytes > max_cache_size)
     {
-        query_cache_max_size_in_bytes = max_cache_size;
-        LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_cache_max_size_in_bytes));
+        query_result_cache_max_size_in_bytes = max_cache_size;
+        LOG_INFO(log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes));
     }
-    global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
+    global_context->setQueryResultCache(query_result_cache_max_size_in_bytes, query_result_cache_max_entries, query_result_cache_max_entry_size_in_bytes, query_result_cache_max_entry_size_in_rows);
 
     String query_condition_cache_policy = server_settings[ServerSetting::query_condition_cache_policy];
     size_t query_condition_cache_size = server_settings[ServerSetting::query_condition_cache_size];
@@ -1906,11 +1907,13 @@ try
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
-            auto concurrent_threads_soft_limit = global_context->setConcurrentThreadsSoftLimit(
+            auto [concurrent_threads_soft_limit, concurrency_control_scheduler] = global_context->setConcurrentThreadsSoftLimit(
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
-                new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores]);
-            LOG_INFO(log, "ConcurrencyControl limit is set to {}",
-                concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit));
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores],
+                new_server_settings[ServerSetting::concurrent_threads_scheduler]);
+            LOG_INFO(log, "ConcurrencyControl limit is set to {} CPU slots with '{}' scheduler",
+                concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit),
+                concurrency_control_scheduler);
 
             global_context->getProcessList().setMaxSize(new_server_settings[ServerSetting::max_concurrent_queries]);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);
@@ -2036,7 +2039,7 @@ try
             global_context->updateIndexMarkCacheConfiguration(*config);
             global_context->updateSkippingIndexCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
-            global_context->updateQueryCacheConfiguration(*config);
+            global_context->updateQueryResultCacheConfiguration(*config);
             global_context->updateQueryConditionCacheConfiguration(*config);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
