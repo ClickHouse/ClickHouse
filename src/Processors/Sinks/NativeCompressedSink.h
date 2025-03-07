@@ -14,6 +14,7 @@ public:
     NativeCompressedSink(Block header_, WriteBuffer & out_)
         : ISink(std::move(header_))
         , out(out_)
+        , rows_written(0)
     {
     }
 
@@ -29,6 +30,7 @@ private:
     WriteBuffer & out;
     std::unique_ptr<CompressedWriteBuffer> compressed_buf;
     std::unique_ptr<NativeWriter> writer;
+    size_t rows_written;
 };
 
 }

@@ -1,25 +1,42 @@
 #include <Processors/Sinks/NativeCompressedSink.h>
 #include <Core/ProtocolDefines.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
 
 void NativeCompressedSink::onStart()
 {
+    if (!input.getHeader()) /// No input columns? (case of `SELECT count()`)
+        return;
+
     compressed_buf = std::make_unique<CompressedWriteBuffer>(out);
     writer = std::make_unique<NativeWriter>(*compressed_buf, DBMS_MIN_PROTOCOL_VERSION_WITH_CHUNKED_PACKETS, input.getHeader());
 }
 
 void NativeCompressedSink::consume(Chunk chunk)
 {
+    rows_written += chunk.getNumRows();
+
+    if (!input.getHeader()) /// Blocks without columns will not be written, we will write total rows count only at the end.
+        return;
+
     Block block = input.getHeader().cloneWithColumns(chunk.getColumns());
     writer->write(block);
 }
 
 void NativeCompressedSink::onFinish()
 {
-    writer->flush();
-    compressed_buf->finalize();
+    if (!input.getHeader())
+    {
+        /// Only write total rows count.
+        writeVarUInt(rows_written, out);
+    }
+    else
+    {
+        writer->flush();
+        compressed_buf->finalize();
+    }
     out.finalize();
 }
 
