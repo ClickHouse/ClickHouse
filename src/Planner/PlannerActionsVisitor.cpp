@@ -682,10 +682,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             return visitConstant(expression);
         else if (!use_column_identifier_as_action_node_name)
             return visitImpl(expression);
-
-        //&& !use_column_identifier_as_action_node_name)
-        // auto res = visitImpl(column_node.getExpression());
-        // if (use_column_identifier_as_action_node_name && res.first != column_node_name && )
     }
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
     for (Int64 i = actions_stack_size; i >= 0; --i)

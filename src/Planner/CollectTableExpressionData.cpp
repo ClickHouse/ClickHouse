@@ -1,4 +1,3 @@
-#include <iostream>
 #include <Planner/CollectTableExpressionData.h>
 
 #include <Storages/IStorage.h>
@@ -15,9 +14,6 @@
 
 #include <Planner/PlannerContext.h>
 #include <Planner/PlannerActionsVisitor.h>
-
-#include <Functions/materialize.h>
-#include <Functions/IFunctionAdaptors.h>
 
 namespace DB
 {
@@ -85,12 +81,10 @@ public:
 
         if (isAliasColumn(node))
         {
-            // std::cerr << "+++++ checking alias col " << column_node->getColumnName() << std::endl;
             /// Column is an ALIAS column with expression
             bool column_already_exists = table_expression_data.hasColumn(column_node->getColumnName());
             if (!column_already_exists)
             {
-                // std::cerr << "+++++ do not have yet " << column_node->getColumnName() << std::endl;
                 CollectSourceColumnsVisitor visitor_for_alias_column(planner_context);
                 /// While we are processing expression of ALIAS columns we should not add source columns to selected.
                 /// See also comment for `select_added_columns`
@@ -100,7 +94,6 @@ public:
 
                 if (!keep_alias_columns)
                 {
-                    // std::cerr << "+++++ kip aliases " << column_node->getColumnName() << std::endl;
                     /// For PREWHERE we can just replace ALIAS column with it's expression,
                     /// because ActionsDAG for PREWHERE applied right on top of table expression
                     /// and cannot affect subqueries or other table expressions.
@@ -118,13 +111,6 @@ public:
                         "Expected single output in actions dag for alias column {}. Actual {}", column_node->dumpTree(), outputs.size());
 
                 auto & alias_node = outputs[0];
-                // if (alias_node->column)
-                // {
-                //     FunctionPtr func_materialize = std::make_shared<FunctionMaterialize<false>>();
-                //     FunctionOverloadResolverPtr func_builder_materialize = std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(func_materialize));
-                //     alias_node = &alias_column_actions_dag.addFunction(func_builder_materialize, {alias_node}, {});
-                // }
-
                 const auto & column_name = column_node->getColumnName();
                 alias_node = &alias_column_actions_dag.addAlias(*alias_node, column_name);
 
@@ -336,7 +322,6 @@ void checkStorageSupportPrewhere(const QueryTreeNodePtr & table_expression)
 
 void collectTableExpressionData(QueryTreeNodePtr & query_node, PlannerContextPtr & planner_context)
 {
-    // std::cerr << "collectTableExpressionData for \n" << query_node->dumpTree() << std::endl;
     auto & query_node_typed = query_node->as<QueryNode &>();
     auto table_expressions_nodes = extractTableExpressions(query_node_typed.getJoinTree());
 
