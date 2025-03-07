@@ -103,7 +103,8 @@ JoinStepLogical::JoinStepLogical(
     Names required_output_columns_,
     bool use_nulls_,
     JoinSettings join_settings_,
-    SortingStep::Settings sorting_settings_)
+    SortingStep::Settings sorting_settings_,
+    ContextPtr query_context_)
     : expression_actions(std::move(join_expression_actions_))
     , join_info(std::move(join_info_))
     , required_output_columns(std::move(required_output_columns_))

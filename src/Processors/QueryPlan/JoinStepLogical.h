@@ -49,7 +49,8 @@ public:
         Names required_output_columns_,
         bool use_nulls_,
         JoinSettings join_settings_,
-        SortingStep::Settings sorting_settings_);
+        SortingStep::Settings sorting_settings_,
+        ContextPtr query_context_);
 
     String getName() const override { return "JoinLogical"; }
 
