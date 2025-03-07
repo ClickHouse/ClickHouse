@@ -320,7 +320,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-#if ENABLE_DISTRIBUTED_CACHE
         case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
         {
             break;
@@ -333,7 +332,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
                 ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
             break;
         }
-#endif
         case Type::UNFREEZE:
         {
             print_keyword(" WITH NAME ");

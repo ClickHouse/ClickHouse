@@ -517,7 +517,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
-#if ENABLE_DISTRIBUTED_CACHE
         case Type::DROP_DISTRIBUTED_CACHE:
         {
             ParserLiteral parser;
@@ -537,7 +536,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 
             break;
         }
-#endif
         case Type::SYNC_FILESYSTEM_CACHE:
         {
             ParserLiteral path_parser;

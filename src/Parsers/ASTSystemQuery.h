@@ -5,8 +5,6 @@
 #include <Parsers/SyncReplicaMode.h>
 #include <Server/ServerType.h>
 
-#include "config.h"
-
 
 namespace DB
 {
@@ -36,10 +34,8 @@ public:
         DROP_QUERY_CONDITION_CACHE,
         DROP_COMPILED_EXPRESSION_CACHE,
         DROP_FILESYSTEM_CACHE,
-#if ENABLE_DISTRIBUTED_CACHE
         DROP_DISTRIBUTED_CACHE,
         DROP_DISTRIBUTED_CACHE_CONNECTIONS,
-#endif
         DROP_DISK_METADATA_CACHE,
         DROP_PAGE_CACHE,
         DROP_SCHEMA_CACHE,
