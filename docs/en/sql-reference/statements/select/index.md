@@ -149,7 +149,7 @@ Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. How
 
 You can use synonyms (`AS` aliases) in any part of a query.
 
-The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional arguments. To enable this, switch on the [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) setting. Then, for example, `ORDER BY 1,2` will be sorting rows in the table on the first and then the second column.
+The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional arguments. To enable this, switch on the [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments) setting. Then, for example, `ORDER BY 1,2` will be sorting rows in the table on the first and then the second column.
 
 ## Implementation Details {#implementation-details}
 
@@ -224,7 +224,7 @@ SELECT * EXCEPT (i) from columns_transformers;
 
 ### REPLACE {#replace}
 
-Specifies one or more [expression aliases](../../../sql-reference/syntax.md#syntax-expression_aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`.
+Specifies one or more [expression aliases](/sql-reference/syntax#expression-aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`.
 
 This modifier does not change the names or order of columns. However, it can change the value and the value type.
 

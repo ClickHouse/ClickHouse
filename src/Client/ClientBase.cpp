@@ -76,6 +76,7 @@
 #include <unordered_map>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
