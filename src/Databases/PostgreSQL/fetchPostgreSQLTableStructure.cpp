@@ -135,7 +135,7 @@ static DataTypePtr convertPostgreSQLDataType(String & type, Fn<void()> auto && r
             res = std::make_shared<DataTypeDecimal<Decimal128>>(precision, scale);
         }
     }
-    else if (type.starts_with("character"))
+    else if (type.starts_with("character("))
     {
         if (type.ends_with(')'))
         {

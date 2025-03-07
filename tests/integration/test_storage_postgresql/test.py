@@ -159,8 +159,8 @@ def test_postgres_conversions(started_cluster):
                 k UUID[],                                   -- Nullable(UUID)
                 l UUID[][],                                 -- Nullable(UUID)
                 "M" integer[] NOT NULL,                     -- Int32 (mixed-case identifier)
-                n VARCHAR,                                  -- Nullable(String)
-                o VARCHAR(2)                                -- Nullable(FixedString(2))
+                n BPCHAR(2),                                -- Nullable(FixedString(2))
+                o CHARACTER(2)                              -- Nullable(FixedString(2))
            )"""
     )
 
@@ -182,7 +182,7 @@ def test_postgres_conversions(started_cluster):
         "k\tArray(Nullable(UUID))\t\t\t\t\t\n"
         "l\tArray(Array(Nullable(UUID)))\t\t\t\t\t\n"
         "M\tArray(Int32)\t\t\t\t\t\n"
-        "n\tNullable(String)\t\t\t\t\t\n"
+        "n\tNullable(FixedString(2))\t\t\t\t\t\n"
         "o\tNullable(FixedString(2))"
         ""
     )
@@ -204,8 +204,8 @@ def test_postgres_conversions(started_cluster):
         "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', '42209d53-d641-4d73-a8b6-c038db1e75d6', NULL], "
         "[[NULL, '42209d53-d641-4d73-a8b6-c038db1e75d6'], ['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a', NULL], [NULL, NULL]],"
         "[42, 42, 42], "
-        "'normal string', "
-        "'me'"
+        "'tu', "
+        "'yo'"
         ")"
     )
 
@@ -227,8 +227,8 @@ def test_postgres_conversions(started_cluster):
         "['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a','42209d53-d641-4d73-a8b6-c038db1e75d6',NULL]\t"
         "[[NULL,'42209d53-d641-4d73-a8b6-c038db1e75d6'],['2a0c0bfc-4fec-4e32-ae3a-7fc8eea6626a',NULL],[NULL,NULL]]\t"
         "[42,42,42]\t"
-        "normal string\t"
-        "me\n"
+        "tu\t"
+        "yo\n"
     )
     assert result == expected
 
