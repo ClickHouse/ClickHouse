@@ -976,6 +976,8 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetOutputRows, "Parquet output rows", ValueType::Number) \
     M(ParquetSkipPageNum, "Parquet pages skipped", ValueType::Number) \
     \
+    M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
+
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)

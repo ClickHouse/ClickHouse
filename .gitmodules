@@ -67,9 +67,6 @@
 [submodule "contrib/h3"]
 	path = contrib/h3
 	url = https://github.com/ClickHouse/h3
-[submodule "contrib/libunwind"]
-	path = contrib/libunwind
-	url = https://github.com/ClickHouse/libunwind
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
 	url = https://github.com/simdjson/simdjson
