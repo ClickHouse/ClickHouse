@@ -1,0 +1,71 @@
+--  Tags: no-random-merge-tree-settings
+
+select 'Float32 Results';
+select toFloat32(0.0) == toFloat32(-0.0);
+select toFloat32(0.0) != toFloat32(-0.0);
+select toFloat32(0.0) > toFloat32(-0.0);
+select toFloat32(0.0) < toFloat32(-0.0);
+select toFloat32(0.0) + toFloat32(-0.0);
+select toFloat32(-0.0) + toFloat32(-0.0);
+select toFloat32(NaN) == toFloat32(NaN);
+select toFloat32(NaN) + toFloat32(NaN);
+select toFloat32(NaN) - toFloat32(NaN);
+select toFloat32(NaN) * toFloat32(NaN);
+select toFloat32(NaN) / toFloat32(NaN);
+select toFloat32(NaN) % toFloat32(NaN);
+select toFloat32(5.5) + toFloat32(NaN);
+select toFloat32(5.5) - toFloat32(NaN);
+select toFloat32(5.5) * toFloat32(NaN);
+select toFloat32(5.5) / toFloat32(NaN);
+select toFloat32(5.5) % toFloat32(NaN);
+select toFloat32(Inf) == toFloat32(Inf);
+select toFloat32(Inf) + toFloat32(Inf);
+select toFloat32(Inf) - toFloat32(Inf);
+select toFloat32(Inf) * toFloat32(Inf);
+select toFloat32(Inf) / toFloat32(Inf);
+select toFloat32(Inf) % toFloat32(Inf);
+select toFloat32(-Inf) == toFloat32(-Inf);
+select toFloat32(5.5) + toFloat32(Inf);
+select toFloat32(5.5) - toFloat32(Inf);
+select toFloat32(5.5) * toFloat32(Inf);
+select toFloat32(5.5) / toFloat32(Inf);
+select toFloat32(5.5) % toFloat32(Inf);
+select 'BFloat16 Results';
+select toBFloat16(0.0) == toBFloat16(-0.0);
+select toBFloat16(0.0) != toBFloat16(-0.0);
+select toBFloat16(0.0) > toBFloat16(-0.0);
+select toBFloat16(0.0) < toBFloat16(-0.0);
+select toBFloat16(0.0) + toBFloat16(-0.0);
+select toBFloat16(-0.0) + toBFloat16(-0.0);
+select toBFloat16(NaN) == toBFloat16(NaN);
+select toBFloat16(NaN) + toBFloat16(NaN);
+select toBFloat16(NaN) - toBFloat16(NaN);
+select toBFloat16(NaN) * toBFloat16(NaN);
+select toBFloat16(NaN) / toBFloat16(NaN);
+select toBFloat16(NaN) % toBFloat16(NaN);
+select toBFloat16(5.5) + toBFloat16(NaN);
+select toBFloat16(5.5) - toBFloat16(NaN);
+select toBFloat16(5.5) * toBFloat16(NaN);
+select toBFloat16(5.5) / toBFloat16(NaN);
+select toBFloat16(5.5) % toBFloat16(NaN);
+select toBFloat16(Inf) == toBFloat16(Inf);
+select toBFloat16(Inf) + toBFloat16(Inf);
+select toBFloat16(Inf) - toBFloat16(Inf);
+select toBFloat16(Inf) * toBFloat16(Inf);
+select toBFloat16(Inf) / toBFloat16(Inf);
+select toBFloat16(Inf) % toBFloat16(Inf);
+select toBFloat16(-Inf) == toBFloat16(-Inf);
+select toBFloat16(5.5) + toBFloat16(Inf);
+select toBFloat16(5.5) - toBFloat16(Inf);
+select toBFloat16(5.5) * toBFloat16(Inf);
+select toBFloat16(5.5) / toBFloat16(Inf);
+select toBFloat16(5.5) % toBFloat16(Inf);
+
+DROP TABLE IF EXISTS t0;
+CREATE TABLE t0 (c0 Tuple(BFloat16)) ENGINE = SummingMergeTree() ORDER BY (c0);
+INSERT INTO TABLE t0 (c0) VALUES ((-0.0, )), ((nan, )), ((0.0, ));
+-- We will see -0.0 in the output because the row with -0.0 was inserted first.
+-- If the row with 0.0 was inserted first, then we get 0.0 as the output row
+SELECT c0 FROM t0 FINAL;
+DROP TABLE t0;
+

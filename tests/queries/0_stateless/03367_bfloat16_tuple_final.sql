@@ -1,4 +1,4 @@
---  Tags: disabled
+--  Tags: no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 (c0 Tuple(BFloat16)) ENGINE = SummingMergeTree() ORDER BY (c0);
