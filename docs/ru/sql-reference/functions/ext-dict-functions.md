@@ -24,10 +24,10 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 
 **Аргументы**
 
--   `dict_name` — имя словаря. [Строковый литерал](/sql-reference/data-types/string).
--   `attr_names` — имя столбца словаря. [Строковый литерал](/sql-reference/data-types/string), или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких имен.
+-   `dict_name` — имя словаря. [Строковый литерал](../syntax.md#syntax-string-literal).
+-   `attr_names` — имя столбца словаря. [Строковый литерал](../syntax.md#syntax-string-literal), или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких имен.
 -   `id_expr` — значение ключа словаря. [Expression](/sql-reference/syntax#expressions) возвращает пару "ключ-значение" словаря или [Tuple](../../sql-reference/functions/ext-dict-functions.md), в зависимости от конфигурации словаря.
--   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](/sql-reference/syntax#expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_names`, или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких выражений.
+-   `default_value_expr` — значение, возвращаемое в том случае, когда словарь не содержит строки с заданным ключом `id_expr`. [Выражение](../syntax.md#syntax-expressions), возвращающее значение с типом данных, сконфигурированным для атрибута `attr_names`, или кортеж [Tuple](../../sql-reference/data-types/tuple.md) таких выражений.
 
 **Возвращаемое значение**
 
