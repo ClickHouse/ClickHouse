@@ -7,18 +7,21 @@
 #include <Interpreters/TransactionVersionMetadata.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Disks/WriteMode.h>
-#include <boost/core/noncopyable.hpp>
+#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+
 #include <memory>
 #include <optional>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Disks/IDiskTransaction.h>
-#include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+
+#include <boost/core/noncopyable.hpp>
 
 namespace DB
 {
 struct ReadSettings;
 class ReadBufferFromFileBase;
 class WriteBufferFromFileBase;
+
+struct IDiskTransaction;
+using DiskTransactionPtr = std::shared_ptr<IDiskTransaction>;
 
 struct CanRemoveDescription
 {

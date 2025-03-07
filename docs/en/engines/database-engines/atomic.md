@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/database-engines/atomic
+slug: /engines/database-engines/atomic
 sidebar_label: Atomic
 sidebar_position: 10
+title: "Atomic"
+description: "The `Atomic` engine supports non-blocking `DROP TABLE` and `RENAME TABLE` queries, and atomic `EXCHANGE TABLES`queries. The `Atomic` database engine is used by default."
 ---
 
 # Atomic 
@@ -66,8 +68,8 @@ EXCHANGE TABLES new_table AND old_table;
 
 ### ReplicatedMergeTree in Atomic Database {#replicatedmergetree-in-atomic-database}
 
-For [`ReplicatedMergeTree`](../table-engines/mergetree-family/replication.md#table_engines-replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [`default_replica_name`](../../operations/server-configuration-parameters/settings.md#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
+For [`ReplicatedMergeTree`](/engines/table-engines/mergetree-family/replication) tables, it is recommended not to specify the engine parameters for the path in ZooKeeper and the replica name. In this case, the configuration parameters [`default_replica_path`](../../operations/server-configuration-parameters/settings.md#default_replica_path) and [`default_replica_name`](../../operations/server-configuration-parameters/settings.md#default_replica_name) will be used. If you want to specify engine parameters explicitly, it is recommended to use the `{uuid}` macros. This ensures that unique paths are automatically generated for each table in ZooKeeper.
 
-## See Also
+## See Also {#see-also}
 
 - [system.databases](../../operations/system-tables/databases.md) system table

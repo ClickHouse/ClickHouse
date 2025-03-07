@@ -19,6 +19,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <boost/program_options.hpp>
+#include <fmt/ranges.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
@@ -161,6 +162,8 @@ namespace ErrorCodes
     DECLARE(UInt64, number_of_partitions_to_consider_for_merge, 10, "Only available in ClickHouse Cloud. Up to top N partitions which we will consider for merge. Partitions picked in a random weighted way where weight is amount of data parts which can be merged in this partition.", 0) \
     DECLARE(UInt64, max_suspicious_broken_parts, 100, "Max broken parts, if more - deny automatic deletion.", 0) \
     DECLARE(UInt64, max_suspicious_broken_parts_bytes, 1ULL * 1024 * 1024 * 1024, "Max size of all broken parts, if more - deny automatic deletion.", 0) \
+    DECLARE(UInt64, shared_merge_tree_max_suspicious_broken_parts, 0, "Max broken parts for SMT, if more - deny automatic detach.", 0) \
+    DECLARE(UInt64, shared_merge_tree_max_suspicious_broken_parts_bytes, 0, "Max size of all broken parts for SMT, if more - deny automatic detach.", 0) \
     DECLARE(UInt64, max_files_to_modify_in_alter_columns, 75, "Not apply ALTER if number of files for modification(deletion, addition) more than this.", 0) \
     DECLARE(UInt64, max_files_to_remove_in_alter_columns, 50, "Not apply ALTER, if number of files for deletion more than this.", 0) \
     DECLARE(Float, replicated_max_ratio_of_wrong_parts, 0.5, "If ratio of wrong parts to total number of parts is less than this - allow to start.", 0) \
@@ -183,6 +186,9 @@ namespace ErrorCodes
     DECLARE(UInt64, shared_merge_tree_leader_update_period_seconds, 30, "Maximum period to recheck leadership for parts update. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_leader_update_period_random_add_seconds, 10, "Add uniformly distributed value from 0 to x seconds to shared_merge_tree_leader_update_period to avoid thundering herd effect. Only available in ClickHouse Cloud", 0) \
     DECLARE(Bool, shared_merge_tree_read_virtual_parts_from_leader, true, "Read virtual parts from leader when possible. Only available in ClickHouse Cloud", 0) \
+    DECLARE(UInt64, shared_merge_tree_initial_parts_update_backoff_ms, 50, "Initial backoff for parts update. Only available in ClickHouse Cloud", 0) \
+    DECLARE(UInt64, shared_merge_tree_max_parts_update_backoff_ms, 5000, "Max backoff for parts update. Only available in ClickHouse Cloud", 0) \
+    DECLARE(UInt64, shared_merge_tree_interserver_http_connection_timeout_ms, 100, "Timeouts for interserver HTTP connection. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_interserver_http_timeout_ms, 10000, "Timeouts for interserver HTTP communication. Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_max_replicas_for_parts_deletion, 10, "Max replicas which will participate in parts deletion (killer thread). Only available in ClickHouse Cloud", 0) \
     DECLARE(UInt64, shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range, 5, "Max replicas which will try to assign potentially conflicting merges (allow to avoid redundant conflicts in merges assignment). 0 means disabled. Only available in ClickHouse Cloud", 0) \
@@ -270,6 +276,7 @@ namespace ErrorCodes
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, "Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, "Enables writing attributes into virtual parts and committing blocks in keeper", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \
@@ -483,7 +490,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because mutations cannot work with these settings.",
-            number_of_free_entries_in_pool_to_execute_mutation,
+            number_of_free_entries_in_pool_to_execute_mutation.value,
             background_pool_tasks);
     }
 
@@ -495,7 +502,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_lower_max_size_of_merge,
+            number_of_free_entries_in_pool_to_lower_max_size_of_merge.value,
             background_pool_tasks);
     }
 
@@ -507,7 +514,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_execute_optimize_entire_partition,
+            number_of_free_entries_in_pool_to_execute_optimize_entire_partition.value,
             background_pool_tasks);
     }
 
@@ -517,7 +524,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity: value {} makes no sense",
-            index_granularity);
+            index_granularity.value);
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
@@ -529,8 +536,8 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity_bytes: {} is lower than specified min_index_granularity_bytes: {}",
-            index_granularity_bytes,
-            min_index_granularity_bytes);
+            index_granularity_bytes.value,
+            min_index_granularity_bytes.value);
     }
 
     // If min_bytes_to_rebalance_partition_over_jbod is not disabled i.e > 0 b, then always ensure that
@@ -542,7 +549,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 1024: {}",
-            min_bytes_to_rebalance_partition_over_jbod,
+            min_bytes_to_rebalance_partition_over_jbod.value,
             max_bytes_to_merge_at_max_space_in_pool / 1024);
     }
 
@@ -551,7 +558,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_cleanup_delay_period setting ({}) must be greater than the value of cleanup_delay_period setting ({})",
-            max_cleanup_delay_period, cleanup_delay_period);
+            max_cleanup_delay_period.value, cleanup_delay_period.value);
     }
 
     if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
@@ -559,7 +566,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_merge_selecting_sleep_ms setting ({}) must be greater than the value of merge_selecting_sleep_ms setting ({})",
-            max_merge_selecting_sleep_ms, merge_selecting_sleep_ms);
+            max_merge_selecting_sleep_ms.value, merge_selecting_sleep_ms.value);
     }
 
     if (merge_selecting_sleep_slowdown_factor < 1.f)
@@ -567,7 +574,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
-            merge_selecting_sleep_slowdown_factor);
+            merge_selecting_sleep_slowdown_factor.value);
     }
 }
 
@@ -737,8 +744,9 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         const auto & setting_name = setting.getName();
         res_columns[0]->insert(setting_name);
         res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.isValueChanged());
-        res_columns[3]->insert(setting.getDescription());
+        res_columns[2]->insert(setting.getDefaultValueString());
+        res_columns[3]->insert(setting.isValueChanged());
+        res_columns[4]->insert(setting.getDescription());
 
         Field min;
         Field max;
@@ -751,12 +759,12 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         if (!max.isNull())
             max = MergeTreeSettings::valueToStringUtil(setting_name, max);
 
-        res_columns[4]->insert(min);
-        res_columns[5]->insert(max);
-        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[7]->insert(setting.getTypeName());
-        res_columns[8]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[9]->insert(setting.getTier());
+        res_columns[5]->insert(min);
+        res_columns[6]->insert(max);
+        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[8]->insert(setting.getTypeName());
+        res_columns[9]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[10]->insert(setting.getTier());
     }
 }
 
