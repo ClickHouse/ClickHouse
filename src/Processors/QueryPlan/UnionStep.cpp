@@ -1,4 +1,3 @@
-#include <type_traits>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
@@ -28,8 +27,9 @@ static Block checkHeaders(const Headers & input_headers)
     return res;
 }
 
-UnionStep::UnionStep(Headers input_headers_, size_t max_threads_)
+UnionStep::UnionStep(Headers input_headers_, size_t max_threads_, bool parallel_replicas_)
     : max_threads(max_threads_)
+    , parallel_replicas(parallel_replicas_)
 {
     updateInputHeaders(std::move(input_headers_));
 }

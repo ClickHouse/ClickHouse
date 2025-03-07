@@ -98,6 +98,9 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, bool allow_existing_or
     if (node.children.size() != 1)
         return nullptr;
 
+    if (step->optimizationBarrier())
+        return nullptr;
+
     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
         return findReadingStep(*node.children.front(), allow_existing_order);
 
@@ -1103,18 +1106,6 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node)
     return {};
 }
 
-bool readingFromParallelReplicas(const QueryPlan::Node * node)
-{
-    IQueryPlanStep * step = node->step.get();
-    while (!node->children.empty())
-    {
-        step = node->children.front()->step.get();
-        node = node->children.front();
-    }
-
-    return typeid_cast<const ReadFromParallelRemoteReplicasStep *>(step);
-}
-
 }
 
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
@@ -1133,8 +1124,11 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
     bool apply_virtual_row = false;
 
-    if (typeid_cast<UnionStep *>(node.children.front()->step.get()))
+    if (const auto * union_step = typeid_cast<const UnionStep *>(node.children.front()->step.get()))
     {
+        if (union_step->optimizationBarrier())
+            return;
+
         auto & union_node = node.children.front();
 
         bool use_buffering = false;
@@ -1142,16 +1136,6 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes)
 
         std::vector<InputOrderInfoPtr> infos;
         infos.reserve(node.children.size());
-
-        for (const auto * child : union_node->children)
-        {
-            /// in case of parallel replicas
-            /// avoid applying read-in-order optimization for local replica
-            /// since it will lead to different parallel replicas modes
-            /// between local and remote nodes
-            if (readingFromParallelReplicas(child))
-                return;
-        }
 
         for (auto * child : union_node->children)
         {

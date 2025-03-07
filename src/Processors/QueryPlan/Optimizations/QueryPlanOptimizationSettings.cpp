@@ -38,6 +38,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
+    extern const SettingsBool parallel_replicas_local_plan;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
 }
@@ -102,6 +103,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     : QueryPlanOptimizationSettings(from->getSettingsRef(), from->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats], from->getInitialQueryId(), ExpressionActionsSettings(from))
 {
+    optimize_parallel_replicas_local_plan_separately
+        = from->canUseParallelReplicasOnInitiator() && from->getSettingsRef()[Setting::parallel_replicas_local_plan];
 }
 
 }

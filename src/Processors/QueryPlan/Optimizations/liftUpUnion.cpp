@@ -20,6 +20,9 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
     if (!union_step)
         return 0;
 
+    if (union_step->optimizationBarrier())
+        return 0;
+
     if (auto * expression = typeid_cast<ExpressionStep *>(parent.get()))
     {
         /// Union does not change header.
@@ -32,7 +35,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         /// Expression - Union - Something
         ///                    - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->parallelReplicas());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);
@@ -89,6 +92,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
                 distinct->getLimitHint(),
                 distinct->getColumnNames(),
                 distinct->isPreliminary());
+            distinct_node.step->setStepDescription(distinct->getStepDescription());
         }
 
         ///       - Distinct - Something
