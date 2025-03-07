@@ -22,31 +22,27 @@ void QueryConditionCache::write(
 {
     Key key = {table_id, part_name, predicate_hash};
 
-    auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
-    auto [entry, _] = cache.getOrSet(key, load_func);
+    auto entry = std::make_shared<Entry>(marks_count);
 
-    chassert(marks_count == entry->matching_marks.size());
+    /// The input mark ranges are the areas which the scan can skip later on.
+    for (const auto & mark_range : mark_ranges)
+        std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
 
-    {
-        std::lock_guard lock(entry->mutex);
+    if (has_final_mark)
+        entry->matching_marks[marks_count - 1] = false;
 
-        /// The input mark ranges are the areas which the scan can skip later on.
-        for (const auto & mark_range : mark_ranges)
-            std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
+    LOG_DEBUG(
+        logger,
+        "Wrote entry for table_id: {}, part_name: {}, predicate_hash: {}, marks_count: {}, has_final_mark: {}, (ranges: {})",
+        table_id,
+        part_name,
+        predicate_hash,
+        marks_count,
+        has_final_mark,
+        toString(mark_ranges));
 
-        if (has_final_mark)
-            entry->matching_marks[marks_count - 1] = false;
-
-        LOG_DEBUG(
-            logger,
-            "Wrote entry for table_id: {}, part_name: {}, predicate_hash: {}, marks_count: {}, has_final_mark: {}, (ranges: {})",
-            table_id,
-            part_name,
-            predicate_hash,
-            marks_count,
-            has_final_mark,
-            toString(mark_ranges));
-    }
+    auto load_func = [&](){ return entry; };
+    auto result = cache.getOrSet(key, load_func);
 }
 
 std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, size_t predicate_hash)
@@ -57,7 +53,6 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
-        std::lock_guard lock(entry->mutex);
         return {entry->matching_marks};
     }
     else
