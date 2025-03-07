@@ -21,7 +21,7 @@ public:
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
-    /// Add an entry to the cache. The passed markes represent ranges of the column with matches of the predicate.
+    /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
     void write(
         const UUID & table_id, const String & part_name, size_t predicate_hash,
         const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
