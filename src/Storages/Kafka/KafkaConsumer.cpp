@@ -312,7 +312,8 @@ void KafkaConsumer::subscribe()
             throw;
         }
 
-        auto subcription = consumer->get_subscription();
+        subcription = consumer->get_subscription();
+
         if (subcription.empty())
         {
             if (max_retries > 0)
