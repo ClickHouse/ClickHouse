@@ -5,9 +5,6 @@
     <tcp_with_proxy_port remove="remove"/>
     <listen_host>::</listen_host>
 
-    <logger>
-        <console>true</console>
-    </logger>
 
     <text_log remove="remove"/>
     <crash_log remove="remove"/>
