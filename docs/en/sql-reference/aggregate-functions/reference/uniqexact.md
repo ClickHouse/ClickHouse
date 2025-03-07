@@ -36,6 +36,6 @@ SELECT uniqExact(typecode) FROM opensky.opensky
 **See Also**
 
 - [uniq](/sql-reference/aggregate-functions/reference/uniq)
-- [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
-- [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)
-- [uniqTheta](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)
+- [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined)
+- [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
+- [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)

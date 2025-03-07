@@ -19,7 +19,7 @@ file(path, format, structure)
 **参数**
 
 -   `path` — [user_files_path](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-user_files_path)中文件的相对路径。在只读模式下，文件路径支持以下通配符: `*`, `?`, `{abc,def}` 和 `{N..M}`，其中 `N`, `M` 是数字, \``'abc', 'def'` 是字符串。
--   `format` —文件的[格式](../../interfaces/formats.md#formats)。
+-   `format` —文件的[格式](/sql-reference/formats)。
 -   `structure` — 表的结构。格式 `'column1_name column1_type, column2_name column2_type, ...'`。
 
 **返回值**
