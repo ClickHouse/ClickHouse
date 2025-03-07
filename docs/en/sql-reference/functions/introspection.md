@@ -20,7 +20,7 @@ For proper operation of introspection functions:
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse saves profiler reports to the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
+ClickHouse saves profiler reports to the [trace_log](/operations/system-tables/trace_log) system table. Make sure the table and profiler are configured properly.
 
 ## addressToLine {#addresstoline}
 
@@ -97,7 +97,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
 
 ``` text
 Row 1:
@@ -164,7 +164,7 @@ WHERE
     query_id = '5e173544-2020-45de-b645-5deebe2aae54';
 ```
 
-The [arrayJoin](../../sql-reference/functions/array-functions.md#array-functions-join) functions will split array to rows.
+The [arrayJoin](/sql-reference/functions/array-join) functions will split array to rows.
 
 ``` text
 ┌────────ta─┬─addressToLineWithInlines(arrayJoin(trace))───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -282,7 +282,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
 
 ``` text
 Row 1:
@@ -376,7 +376,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](../../sql-reference/functions/array-functions.md#array-map) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
+The [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
 
 ``` text
 Row 1:
@@ -413,7 +413,7 @@ tid()
 
 **Returned value**
 
-- Current thread id. [Uint64](../data-types/int-uint.md#uint-ranges).
+- Current thread id. [Uint64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
@@ -443,7 +443,7 @@ logTrace('message')
 
 **Arguments**
 
-- `message` — Message that is emitted to server log. [String](../data-types/string.md#string).
+- `message` — Message that is emitted to server log. [String](/sql-reference/data-types/string).
 
 **Returned value**
 

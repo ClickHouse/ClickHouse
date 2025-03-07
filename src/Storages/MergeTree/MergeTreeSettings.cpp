@@ -19,6 +19,7 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <boost/program_options.hpp>
+#include <fmt/ranges.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
@@ -252,6 +253,7 @@ namespace ErrorCodes
     DECLARE(Bool, check_sample_column_is_correct, true, "Check columns or columns by hash for sampling are unsigned integer.", 0) \
     DECLARE(Bool, allow_vertical_merges_from_compact_to_wide_parts, true, "Allows vertical merges from compact to wide parts. This settings must have the same value on all replicas", 0) \
     DECLARE(Bool, enable_the_endpoint_id_with_zookeeper_name_prefix, false, "Enable the endpoint id with zookeeper name prefix for the replicated merge tree table", 0) \
+    DECLARE(UInt64, zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock, 0, "If zero copy replication is enabled sleep random amount of time up to 500ms before trying to lock for merge or mutation", 0) \
     DECLARE(UInt64, zero_copy_merge_mutation_min_parts_size_sleep_before_lock, 1ULL * 1024 * 1024 * 1024, "If zero copy replication is enabled sleep random amount of time before trying to lock depending on parts size for merge or mutation", 0) \
     DECLARE(Bool, allow_floating_point_partition_key, false, "Allow floating point as partition key", 0) \
     DECLARE(UInt64, sleep_before_loading_outdated_parts_ms, 0, "For testing. Do not change it.", 0) \
@@ -489,7 +491,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because mutations cannot work with these settings.",
-            number_of_free_entries_in_pool_to_execute_mutation,
+            number_of_free_entries_in_pool_to_execute_mutation.value,
             background_pool_tasks);
     }
 
@@ -501,7 +503,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_lower_max_size_of_merge,
+            number_of_free_entries_in_pool_to_lower_max_size_of_merge.value,
             background_pool_tasks);
     }
 
@@ -513,7 +515,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_execute_optimize_entire_partition,
+            number_of_free_entries_in_pool_to_execute_optimize_entire_partition.value,
             background_pool_tasks);
     }
 
@@ -523,7 +525,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity: value {} makes no sense",
-            index_granularity);
+            index_granularity.value);
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
@@ -535,8 +537,8 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity_bytes: {} is lower than specified min_index_granularity_bytes: {}",
-            index_granularity_bytes,
-            min_index_granularity_bytes);
+            index_granularity_bytes.value,
+            min_index_granularity_bytes.value);
     }
 
     // If min_bytes_to_rebalance_partition_over_jbod is not disabled i.e > 0 b, then always ensure that
@@ -548,7 +550,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 1024: {}",
-            min_bytes_to_rebalance_partition_over_jbod,
+            min_bytes_to_rebalance_partition_over_jbod.value,
             max_bytes_to_merge_at_max_space_in_pool / 1024);
     }
 
@@ -557,7 +559,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_cleanup_delay_period setting ({}) must be greater than the value of cleanup_delay_period setting ({})",
-            max_cleanup_delay_period, cleanup_delay_period);
+            max_cleanup_delay_period.value, cleanup_delay_period.value);
     }
 
     if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
@@ -565,7 +567,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_merge_selecting_sleep_ms setting ({}) must be greater than the value of merge_selecting_sleep_ms setting ({})",
-            max_merge_selecting_sleep_ms, merge_selecting_sleep_ms);
+            max_merge_selecting_sleep_ms.value, merge_selecting_sleep_ms.value);
     }
 
     if (merge_selecting_sleep_slowdown_factor < 1.f)
@@ -573,7 +575,18 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
-            merge_selecting_sleep_slowdown_factor);
+            merge_selecting_sleep_slowdown_factor.value);
+    }
+
+    if (zero_copy_merge_mutation_min_parts_size_sleep_before_lock != 0
+        && zero_copy_merge_mutation_min_parts_size_sleep_before_lock < zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock)
+    {
+        throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The value of zero_copy_merge_mutation_min_parts_size_sleep_before_lock setting ({}) cannot be less than"
+                " the value of zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock ({})",
+                zero_copy_merge_mutation_min_parts_size_sleep_before_lock.value,
+                zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock.value);
     }
 }
 
@@ -743,8 +756,9 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         const auto & setting_name = setting.getName();
         res_columns[0]->insert(setting_name);
         res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.isValueChanged());
-        res_columns[3]->insert(setting.getDescription());
+        res_columns[2]->insert(setting.getDefaultValueString());
+        res_columns[3]->insert(setting.isValueChanged());
+        res_columns[4]->insert(setting.getDescription());
 
         Field min;
         Field max;
@@ -757,12 +771,12 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         if (!max.isNull())
             max = MergeTreeSettings::valueToStringUtil(setting_name, max);
 
-        res_columns[4]->insert(min);
-        res_columns[5]->insert(max);
-        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[7]->insert(setting.getTypeName());
-        res_columns[8]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[9]->insert(setting.getTier());
+        res_columns[5]->insert(min);
+        res_columns[6]->insert(max);
+        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[8]->insert(setting.getTypeName());
+        res_columns[9]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[10]->insert(setting.getTier());
     }
 }
 

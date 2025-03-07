@@ -8,5 +8,5 @@ slug: /ru/operations/system-tables/current-roles
 Столбцы:
 
  - `role_name` ([String](../../sql-reference/data-types/string.md))) — Имя роли.
- - `with_admin_option` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Флаг, который показывает, обладает ли `current_role` роль привилегией `ADMIN OPTION`.
- - `is_default` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) —  Флаг, который показывает, является ли `current_role` ролью по умолчанию.
+ - `with_admin_option` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Флаг, который показывает, обладает ли `current_role` роль привилегией `ADMIN OPTION`.
+ - `is_default` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) —  Флаг, который показывает, является ли `current_role` ролью по умолчанию.

@@ -9,6 +9,8 @@
 #include <Common/SettingsChanges.h>
 #include <Common/callOnce.h>
 
+#include <Formats/FormatSettings.h>
+
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
 

@@ -8,10 +8,10 @@ description: "Optional prepared data structure for usage in JOIN operations."
 
 # Join Table Engine
 
-Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join.md/#select-join) operations.
+Optional prepared data structure for usage in [JOIN](/sql-reference/statements/select/join) operations.
 
 :::note
-This is not an article about the [JOIN clause](/sql-reference/statements/select/join.md/#select-join) itself.
+This is not an article about the [JOIN clause](/sql-reference/statements/select/join) itself.
 :::
 
 ## Creating a Table {#creating-a-table}
@@ -24,17 +24,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
 ```
 
-See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table.md/#create-table-query) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 ## Engine Parameters {#engine-parameters}
 
 ### join_strictness {#join_strictness}
 
-`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join.md/#select-join-types).
+`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join#supported-types-of-join).
 
 ### join_type {#join_type}
 
-`join_type` – [JOIN type](/sql-reference/statements/select/join.md/#select-join-types).
+`join_type` – [JOIN type](/sql-reference/statements/select/join#supported-types-of-join).
 
 ### Key columns {#key-columns}
 
@@ -73,15 +73,15 @@ When creating a table, the following settings are applied:
 
 #### max_rows_in_join {#max_rows_in_join}
 
-[max_rows_in_join](/operations/settings/query-complexity.md/#settings-max_rows_in_join)
+[max_rows_in_join](/operations/settings/query-complexity#settings-max_rows_in_join)
 
 #### max_bytes_in_join {#max_bytes_in_join}
 
-[max_bytes_in_join](/operations/settings/query-complexity.md/#settings-max_bytes_in_join)
+[max_bytes_in_join](/operations/settings/query-complexity#settings-max_bytes_in_join)
 
 #### join_overflow_mode {#join_overflow_mode}
 
-[join_overflow_mode](/operations/settings/query-complexity.md/#settings-join_overflow_mode)
+[join_overflow_mode](/operations/settings/query-complexity#settings-join_overflow_mode)
 
 #### join_any_take_last_row {#join_any_take_last_row}
 

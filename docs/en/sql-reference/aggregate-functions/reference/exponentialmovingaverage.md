@@ -20,7 +20,7 @@ Each `value` corresponds to the determinate `timeunit`. The half-life `x` is the
 **Arguments**
 
 - `value` — Value. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md).
-- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](../../functions/arithmetic-functions.md#intdiva-b).
+- `timeunit` — Timeunit. [Integer](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md) or [Decimal](../../../sql-reference/data-types/decimal.md). Timeunit is not timestamp (seconds), it's -- an index of the time interval. Can be calculated using [intDiv](/sql-reference/functions/arithmetic-functions#intdiv).
 
 **Parameters**
 
@@ -30,7 +30,7 @@ Each `value` corresponds to the determinate `timeunit`. The half-life `x` is the
 
 - Returns an [exponentially smoothed moving average](https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average) of the values for the past `x` time at the latest point of time.
 
-Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Examples**
 
