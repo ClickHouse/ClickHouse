@@ -9,6 +9,7 @@ import cassandra.cluster
 import pymongo
 import pymysql.cursors
 import redis
+import urllib
 
 
 class ExternalSource(object):
@@ -216,7 +217,7 @@ class SourceMongo(ExternalSource):
             host=self.internal_hostname,
             port=self.internal_port,
             user=self.user,
-            password=self.password,
+            password=urllib.parse.quote_plus(self.password),
         )
         if self.secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
