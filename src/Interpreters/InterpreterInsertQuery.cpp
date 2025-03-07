@@ -50,14 +50,8 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
-#include "Processors/Sinks/SinkToStorage.h"
+#include <Processors/Sinks/SinkToStorage.h>
 
-
-namespace ProfileEvents
-{
-    extern const Event InsertQueriesWithSubqueries;
-    extern const Event QueriesWithSubqueries;
-}
 
 namespace DB
 {
@@ -79,6 +73,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
 namespace MergeTreeSetting
@@ -656,6 +651,7 @@ BlockIO InterpreterInsertQuery::execute()
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
 
     StoragePtr table = getTable(query);
+
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
 
     if (query.partition_by && !table->supportsPartitionBy())
