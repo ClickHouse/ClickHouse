@@ -64,8 +64,12 @@ select toBFloat16(5.5) % toBFloat16(Inf);
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 (c0 Tuple(BFloat16)) ENGINE = SummingMergeTree() ORDER BY (c0);
 INSERT INTO TABLE t0 (c0) VALUES ((-0.0, )), ((nan, )), ((0.0, ));
--- We will see -0.0 in the output because the row with -0.0 was inserted first.
--- If the row with 0.0 was inserted first, then we get 0.0 as the output row
+SELECT c0 FROM t0 FINAL;
+DROP TABLE t0;
+
+CREATE TABLE t0 (c0 BFloat16 PRIMARY KEY) ENGINE = SummingMergeTree();
+INSERT INTO TABLE t0 (c0) VALUES (nan), (-0.0);
+INSERT INTO TABLE t0 (c0) VALUES (0.0), (nan);
 SELECT c0 FROM t0 FINAL;
 DROP TABLE t0;
 
