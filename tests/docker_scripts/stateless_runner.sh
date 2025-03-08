@@ -387,6 +387,10 @@ clickhouse-client -q "system flush logs" ||:
 # stop logs replication to make it possible to dump logs tables via clickhouse-local
 stop_logs_replication
 
+# Remove all limits to avoid TOO_MANY_ROWS_OR_BYTES while gathering system.*_log tables
+rm /etc/clickhouse-server/users.d/limits.yaml
+clickhouse-client -q "system reload config" ||:
+
 logs_saver_client_options="--max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0"
 
 # collect minio audit and server logs
