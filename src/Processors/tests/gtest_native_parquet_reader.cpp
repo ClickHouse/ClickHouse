@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <config.h>
 #if USE_PARQUET
 
 #include <Functions/FunctionFactory.h>
