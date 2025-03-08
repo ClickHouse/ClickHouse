@@ -165,7 +165,7 @@ Result:
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
 
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
+If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](/sql-reference/functions/type-conversion-functions) functions.
 
 :::note
 If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
@@ -320,7 +320,7 @@ unbin(arg)
 
 Alias: `UNBIN`.
 
-For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264) functions.
+For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](/sql-reference/functions/type-conversion-functions#reinterpret) functions.
 
 :::note
 If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.

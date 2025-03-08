@@ -237,11 +237,19 @@ bool ReadBufferFromRemoteFSGather::isContentCached(size_t offset, size_t size)
     if (current_buf)
     {
         /// offset should be adjusted the same way as we do it in initialize()
-        for (const auto & blob : blobs_to_read)
-            if (offset >= blob.bytes_size)
-                offset -= blob.bytes_size;
-
-        return current_buf->isContentCached(offset, size);
+        for (size_t i = 0; i < blobs_to_read.size(); ++i)
+        {
+            const auto & blob = blobs_to_read[i];
+            if (i == current_buf_idx)
+            {
+                if (offset + size <= blob.bytes_size)
+                    return current_buf->isContentCached(offset, size);
+                return false;
+            }
+            if (offset < blob.bytes_size)
+                return false;
+            offset -= blob.bytes_size;
+        }
     }
 
     return false;
