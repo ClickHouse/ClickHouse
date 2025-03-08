@@ -94,6 +94,9 @@ public:
 
     StreamingHandleErrorMode getHandleKafkaErrorMode() const;
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
+
 private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
     using TopicPartitions = KafkaConsumer2::TopicPartitions;
