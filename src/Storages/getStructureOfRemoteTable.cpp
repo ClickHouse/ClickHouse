@@ -212,6 +212,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
         ColumnsDescription res;
         while (auto block = executor.readBlock())
         {
+            block = convertBlobColumns(block);
             const auto & name_col = *block.getByName("name").column;
             const auto & type_col = *block.getByName("type").column;
 
