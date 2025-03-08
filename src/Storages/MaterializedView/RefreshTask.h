@@ -114,7 +114,7 @@ public:
 
         /// Time when the latest successful refresh started.
         std::chrono::sys_seconds last_success_time;
-        std::chrono::milliseconds last_success_duration;
+        std::chrono::milliseconds last_success_duration{0};
         /// Note that this may not match the DB if a refresh managed to EXCHANGE tables, then failed to write to keeper.
         /// That can only happen if last_attempt_succeeded = false.
         UUID last_success_table_uuid;
