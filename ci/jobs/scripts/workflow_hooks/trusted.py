@@ -7,12 +7,11 @@ TRUSTED_CONTRIBUTORS = {
     e.lower()
     for e in [
         "amosbird",
-        "azat",  # SEMRush
-        "bharatnc",  # Many contributions.
         "den-crane",  # Documentation contributor
         "taiyang-li",
         "ucasFL",  # Amos Bird's friend
         "tonickkozlov",  # Cloudflare
+        "canhld94",
     ]
 }
 
@@ -33,9 +32,11 @@ def can_be_trusted():
     ):
         print("It's approved by 'can be tested' label")
         return ""
-    org = Shell.get_output(f"gh api users/{Info().user_name}/orgs --jq '.[].login'")
-    if org == "ClickHouse":
-        print("It's an internal contributor using fork - why?")
+    orgs = Shell.get_output(
+        f"gh api users/{Info().user_name}/orgs --jq '.[].login'", verbose=True
+    )
+    if "ClickHouse" in [line.strip() for line in orgs.splitlines() if line.strip()]:
+        print("It's an internal contributor using fork")
         return ""
 
     return "'can be tested' label is required"

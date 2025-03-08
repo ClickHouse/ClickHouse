@@ -1,6 +1,7 @@
 #include <Core/Defines.h>
 
 #include <atomic>
+#include <mutex>
 #include <ranges>
 #include <chrono>
 
@@ -121,7 +122,6 @@
 #include <filesystem>
 #include <iterator>
 #include <numeric>
-#include <thread>
 #include <future>
 
 
@@ -471,7 +471,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
             current_zookeeper = nullptr;
         }
     }
-
 
     std::optional<std::unordered_set<std::string>> expected_parts_on_this_replica;
     bool skip_sanity_checks = false;
@@ -4060,7 +4059,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 " is greater than max_replicated_merges_in_queue ({}), so won't select new parts to merge or mutate.",
                 merges_and_mutations_queued.merges,
                 merges_and_mutations_queued.mutations,
-                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue]);
+                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue].value);
             return AttemptStatus::Limited;
         }
 
@@ -4142,7 +4141,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             LOG_TRACE(log, "Number of queued mutations ({}) is greater than max_replicated_mutations_in_queue ({})"
                 " or there are not enough free threads for mutations, so won't select new parts to merge or mutate.",
                 max_source_part_size_for_mutation,
-                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue]);
+                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue].value);
             return AttemptStatus::Limited;
         }
 
@@ -7703,6 +7702,8 @@ void StorageReplicatedMergeTree::fetchPartition(
       * In this case, update the information about the available parts and try again.
       */
 
+    Stopwatch watch;
+
     unsigned try_no = 0;
     Strings missing_parts;
     do
@@ -7751,29 +7752,49 @@ void StorageReplicatedMergeTree::fetchPartition(
         LOG_INFO(log, "Parts to fetch: {}", parts_to_fetch.size());
 
         missing_parts.clear();
+
+        ThreadPoolCallbackRunnerLocal<void> fetch_partition_runner(getFetchPartitionThreadPool().get(), "FETCH PARTITION");
+        std::mutex missing_parts_mutex;
         for (const String & part : parts_to_fetch)
         {
-            bool fetched = false;
-
-            try
+            fetch_partition_runner([&]()
             {
-                fetched = fetchPart(part, metadata_snapshot, from_zookeeper_name, best_replica_path, true, 0, zookeeper, /* try_fetch_shared = */ false);
-            }
-            catch (const DB::Exception & e)
-            {
-                if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
-                    && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
-                    throw;
+                bool fetched = false;
 
-                LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-            }
+                try
+                {
+                    fetched = fetchPart(
+                        part,
+                        metadata_snapshot,
+                        from_zookeeper_name,
+                        best_replica_path,
+                        /*to_detached=*/ true,
+                        /*quorum=*/ 0,
+                        zookeeper,
+                        /*try_fetch_shared=*/ false);
+                }
+                catch (const DB::Exception & e)
+                {
+                    if (e.code() != ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER && e.code() != ErrorCodes::RECEIVED_ERROR_TOO_MANY_REQUESTS
+                        && e.code() != ErrorCodes::CANNOT_READ_ALL_DATA)
+                        throw;
 
-            if (!fetched)
-                missing_parts.push_back(part);
+                    LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+                }
+
+                if (!fetched)
+                {
+                    std::lock_guard lock(missing_parts_mutex);
+                    missing_parts.push_back(part);
+                }
+            });
         }
+        fetch_partition_runner.waitForAllToFinishAndRethrowFirstError();
 
         ++try_no;
     } while (!missing_parts.empty());
+
+    LOG_TRACE(log, "Fetch took {} sec. ({} tries)", watch.elapsedSeconds(), try_no);
 }
 
 
@@ -9570,6 +9591,16 @@ bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
 MergeTreeData::MutationsSnapshotPtr StorageReplicatedMergeTree::getMutationsSnapshot(const IMutationsSnapshot::Params & params) const
 {
     return queue.getMutationsSnapshot(params);
+}
+
+UInt64 StorageReplicatedMergeTree::getNumberOnFlyDataMutations() const
+{
+    return queue.getNumberOnFlyDataMutations();
+}
+
+UInt64 StorageReplicatedMergeTree::getNumberOnFlyMetadataMutations() const
+{
+    return queue.getNumberOnFlyMetadataMutations();
 }
 
 void StorageReplicatedMergeTree::startBackgroundMovesIfNeeded()

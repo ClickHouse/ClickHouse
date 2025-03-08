@@ -23,6 +23,8 @@
 #include <Storages/IStorage_fwd.h>
 #include <Backups/BackupsInMemoryHolder.h>
 
+#include <Poco/AutoPtr.h>
+
 #include "config.h"
 
 #include <functional>
@@ -60,6 +62,7 @@ class SystemLogs;
 struct ContextSharedPart;
 class ContextAccess;
 class ContextAccessWrapper;
+class Field;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct SettingsProfilesInfo;
@@ -102,7 +105,8 @@ class Macros;
 struct Progress;
 struct FileProgress;
 class Clusters;
-class QueryCache;
+class QueryResultCache;
+class QueryConditionCache;
 class ISystemLog;
 class QueryLog;
 class QueryMetricLog;
@@ -593,6 +597,8 @@ public:
     String getUserScriptsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
+
+    // Get the disk used by databases to store metadata files.
     std::shared_ptr<IDisk> getDatabaseDisk() const;
 
     /// A list of warnings about server configuration to place in `system.warnings` table.
@@ -693,6 +699,8 @@ public:
     void setMergeWorkload(const String & value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
+    bool getThrowOnUnknownWorkload() const;
+    void setThrowOnUnknownWorkload(bool value);
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     UInt64 setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores);
@@ -1081,9 +1089,12 @@ public:
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void clearUncompressedCache() const;
 
-    void setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages);
+    void setPageCache(
+        size_t default_block_size, size_t default_lookahead_blocks,
+        std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
+        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio);
     std::shared_ptr<PageCache> getPageCache() const;
-    void dropPageCache() const;
+    void clearPageCache() const;
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1116,10 +1127,15 @@ public:
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void clearMMappedFileCache() const;
 
-    void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
-    void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<QueryCache> getQueryCache() const;
-    void clearQueryCache(const std::optional<String> & tag) const;
+    void setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
+    void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<QueryResultCache> getQueryResultCache() const;
+    void clearQueryResultCache(const std::optional<String> & tag) const;
+
+    void setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+    void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
+    void clearQueryConditionCache() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -1255,6 +1271,9 @@ public:
     StoragePolicyPtr getStoragePolicy(const String & name) const;
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
+
+    using StoragePolicyCreator = std::function<StoragePolicyPtr(const StoragePoliciesMap & storage_policies_map)>;
+    StoragePolicyPtr getOrCreateStoragePolicy(const String & name, StoragePolicyCreator creator) const;
 
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
@@ -1492,6 +1511,8 @@ public:
 
     ThrottlerPtr getMutationsThrottler() const;
     ThrottlerPtr getMergesThrottler() const;
+
+    void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;

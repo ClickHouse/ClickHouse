@@ -83,4 +83,4 @@ SELECT * FROM table_with_ttl;
 ### Смотрите также
 
 - Подробнее о [свойстве TTL](../../../engines/table-engines/mergetree-family/mergetree.md#mergetree-column-ttl).
-- Изменить столбец [с TTL](../../../sql-reference/statements/alter/column.md#alter_modify-column).
+- Изменить столбец [с TTL](/sql-reference/statements/alter/ttl).

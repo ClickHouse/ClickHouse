@@ -119,7 +119,7 @@ CREATE TABLE system.data_skipping_indices
     `granularity` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,
-    `marks` UInt64
+    `marks_bytes` UInt64
 )
 ENGINE = SystemDataSkippingIndices
 COMMENT 'Contains all the information about all the data skipping indices in tables, similar to system.columns.'
@@ -340,6 +340,7 @@ CREATE TABLE system.merge_tree_settings
 (
     `name` String,
     `value` String,
+    `default` String,
     `changed` UInt8,
     `description` String,
     `min` Nullable(String),
@@ -634,6 +635,7 @@ CREATE TABLE system.processes
     `memory_usage` Int64,
     `peak_memory_usage` Int64,
     `query` String,
+    `normalized_query_hash` UInt64,
     `query_kind` String,
     `thread_ids` Array(UInt64),
     `ProfileEvents` Map(String, UInt64),
@@ -934,6 +936,7 @@ CREATE TABLE system.replicated_merge_tree_settings
 (
     `name` String,
     `value` String,
+    `default` String,
     `changed` UInt8,
     `description` String,
     `min` Nullable(String),
@@ -1123,6 +1126,8 @@ CREATE TABLE system.tables
     `parts` Nullable(UInt64),
     `active_parts` Nullable(UInt64),
     `total_marks` Nullable(UInt64),
+    `active_on_fly_data_mutations` UInt64,
+    `active_on_fly_metadata_mutations` UInt64,
     `lifetime_rows` Nullable(UInt64),
     `lifetime_bytes` Nullable(UInt64),
     `comment` String,

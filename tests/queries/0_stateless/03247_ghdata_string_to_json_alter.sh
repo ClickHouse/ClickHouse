@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-s3-storage, long
+# Tags: no-fasttest, no-s3-storage, long, no-azure-blob-storage
 # ^ no-s3-storage: too memory hungry
+# ^ no-azure-blob-storage: too slow
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

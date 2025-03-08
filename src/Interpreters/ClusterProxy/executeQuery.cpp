@@ -7,8 +7,10 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
@@ -134,7 +136,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
 
             if (log)
                 LOG_TRACE(
-                    log, "force_optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::force_optimize_skip_unused_shards_nesting]);
+                    log, "force_optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::force_optimize_skip_unused_shards_nesting].value);
         }
     }
 
@@ -154,7 +156,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             new_settings[Setting::optimize_skip_unused_shards_nesting].changed = true;
 
             if (log)
-                LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting]);
+                LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting].value);
         }
     }
 
@@ -559,7 +561,7 @@ void executeQueryWithParallelReplicas(
             getLogger("ReadFromParallelRemoteReplicasStep"),
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
-            settings[Setting::max_parallel_replicas],
+            settings[Setting::max_parallel_replicas].value,
             shard.getAllNodeCount());
         max_replicas_to_use = shard.getAllNodeCount();
     }

@@ -12,13 +12,6 @@ extern const int BAD_ARGUMENTS;
 }
 class WindowTransform;
 
-struct RowNumber
-{
-    UInt64 block = 0;
-    UInt64 row = 0;
-
-    auto operator <=>(const RowNumber &) const = default;
-};
 
 // Interface for true window functions. It's not much of an interface, they just
 // accept the guts of WindowTransform and do 'something'. Given a small number of
@@ -39,9 +32,6 @@ public:
 
     /// Is the frame type supported by this function.
     virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }
-
-    /// In most cases, the result should be current_row or prev_frame_start.
-    virtual RowNumber firstRequiredRowInFrame(const WindowTransform * transform) const;
 };
 
 // Runtime data for computing one window function.

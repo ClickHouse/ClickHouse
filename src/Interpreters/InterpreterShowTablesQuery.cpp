@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/formatAST.h>

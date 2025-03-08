@@ -22,17 +22,18 @@
 
 #include <Interpreters/Context.h>
 
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/IdentifierNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
-#include <Analyzer/TableNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/FunctionNode.h>
+#include <Analyzer/IdentifierNode.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/TableNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/Resolve/IdentifierResolveScope.h>
 
 #include <ranges>
 namespace DB
@@ -194,6 +195,28 @@ void makeUniqueColumnNamesInBlock(Block & block)
     }
 }
 
+bool isExpressionNodeType(QueryTreeNodeType node_type)
+{
+    return node_type == QueryTreeNodeType::CONSTANT || node_type == QueryTreeNodeType::COLUMN || node_type == QueryTreeNodeType::FUNCTION
+        || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
+bool isFunctionExpressionNodeType(QueryTreeNodeType node_type)
+{
+    return node_type == QueryTreeNodeType::LAMBDA;
+}
+
+bool isSubqueryNodeType(QueryTreeNodeType node_type)
+{
+    return node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION;
+}
+
+bool isTableExpressionNodeType(QueryTreeNodeType node_type)
+{
+    return node_type == QueryTreeNodeType::TABLE || node_type == QueryTreeNodeType::TABLE_FUNCTION ||
+        isSubqueryNodeType(node_type);
+}
+
 bool isQueryOrUnionNode(const IQueryTreeNode * node)
 {
     auto node_type = node->getNodeType();
@@ -203,6 +226,55 @@ bool isQueryOrUnionNode(const IQueryTreeNode * node)
 bool isQueryOrUnionNode(const QueryTreeNodePtr & node)
 {
     return isQueryOrUnionNode(node.get());
+}
+
+bool isDependentColumn(IdentifierResolveScope * scope_to_check, const QueryTreeNodePtr & column_source)
+{
+    /// The case of lambda argument. Example:
+    /// arrayMap(X -> X + Y, [0])
+    ///
+    /// X would have lambda as a source node
+    /// Y comes from outer scope and requires ordinary check.
+    if (column_source->getNodeType() == QueryTreeNodeType::LAMBDA)
+        return false;
+
+    while (scope_to_check != nullptr)
+    {
+        if (scope_to_check->registered_table_expression_nodes.contains(column_source))
+            return false;
+        if (isQueryOrUnionNode(scope_to_check->scope_node))
+            return true;
+        scope_to_check = scope_to_check->parent_scope;
+    }
+    return true;
+}
+
+DataTypePtr getExpressionNodeResultTypeOrNull(const QueryTreeNodePtr & query_tree_node)
+{
+    auto node_type = query_tree_node->getNodeType();
+
+    switch (node_type)
+    {
+        case QueryTreeNodeType::CONSTANT:
+            [[fallthrough]];
+        case QueryTreeNodeType::COLUMN:
+        {
+            return query_tree_node->getResultType();
+        }
+        case QueryTreeNodeType::FUNCTION:
+        {
+            auto & function_node = query_tree_node->as<FunctionNode &>();
+            if (function_node.isResolved())
+                return function_node.getResultType();
+            break;
+        }
+        default:
+        {
+            break;
+        }
+    }
+
+    return nullptr;
 }
 
 QueryTreeNodePtr buildCastFunction(const QueryTreeNodePtr & expression,

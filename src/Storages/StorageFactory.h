@@ -3,9 +3,7 @@
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Parsers/IAST_fwd.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
@@ -16,8 +14,10 @@ namespace DB
 {
 
 class Context;
+class ASTCreateQuery;
+class ASTStorage;
 struct StorageID;
-
+struct ConstraintsDescription;
 
 /** Allows to create a table by the name and parameters of the engine.
   * In 'columns' Nested data structures must be flattened.

@@ -42,6 +42,8 @@
 #include <Core/Types.h>
 #include "config.h"
 
+#include <fmt/ranges.h>
+
 #if USE_SSL
 #    include <Poco/Net/SecureStreamSocket.h>
 #endif
@@ -58,6 +60,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool allow_suspicious_codecs;
+    extern const SettingsBool enable_deflate_qpl_codec;
     extern const SettingsBool enable_zstd_qat_codec;
     extern const SettingsString network_compression_method;
     extern const SettingsInt64 network_zstd_compression_level;
@@ -802,6 +805,7 @@ void Connection::sendQuery(
             level,
             !(*settings)[Setting::allow_suspicious_codecs],
             (*settings)[Setting::allow_experimental_codecs],
+            (*settings)[Setting::enable_deflate_qpl_codec],
             (*settings)[Setting::enable_zstd_qat_codec]);
         compression_codec = CompressionCodecFactory::instance().get(method, level);
     }
