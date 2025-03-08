@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#if USE_PARQUET
+
 #include <Functions/FunctionFactory.h>
 #include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -268,3 +270,5 @@ TEST(TestNativeParquetReader, TestIsNullFilter)
     ASSERT_FALSE(filter.testFloat32(0.3f));
     ASSERT_FALSE(filter.testFloat64(0.3));
 }
+
+#endif
