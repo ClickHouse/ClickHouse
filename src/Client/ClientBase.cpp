@@ -85,6 +85,8 @@
 #include <IO/ReadHelpers.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
+#include <Columns/ColumnBlob.h>
+
 #if USE_GWP_ASAN
 #    include <Common/GWPAsan.h>
 #endif
@@ -441,6 +443,7 @@ void ClientBase::onData(Block & block, ASTPtr parsed_query)
     if (!block)
         return;
 
+    block = convertBlobColumns(block);
     processed_rows += block.rows();
     /// Even if all blocks are empty, we still need to initialize the output stream to write empty resultset.
     initOutputFormat(block, parsed_query);

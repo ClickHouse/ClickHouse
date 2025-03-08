@@ -1,5 +1,8 @@
 #include <Common/BlockQueue.h>
 
+#include <Poco/Logger.h>
+#include <Common/logger_useful.h>
+
 namespace CurrentMetrics
 {
 extern const Metric AggregatorThreads;

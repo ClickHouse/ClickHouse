@@ -4,6 +4,8 @@
 #include <Processors/RowsBeforeStepCounter.h>
 #include <QueryPipeline/Pipe.h>
 
+#include <Processors/ISimpleTransform.h>
+
 #include <Core/UUID.h>
 
 #include <Common/EventFD.h>
@@ -96,6 +98,19 @@ protected:
 
 private:
     RemoteQueryExecutorPtr query_executor;
+};
+
+struct ConvertBlobColumnsTransform : ISimpleTransform
+{
+public:
+    explicit ConvertBlobColumnsTransform(const Block & header_)
+        : ISimpleTransform(header_, header_, false)
+    {
+    }
+
+    String getName() const override { return "ConvertBlobColumnsTransform"; }
+
+    void transform(Chunk & chunk) override;
 };
 
 /// Create pipe with remote sources.

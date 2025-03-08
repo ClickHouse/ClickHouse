@@ -74,7 +74,7 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
         return ColumnBlob::fromBlob(blob, concrete_column->cloneEmpty(), nested_serialization, limit, format_settings);
     };
 
-    auto column_blob = ColumnPtr(ColumnBlob::create(std::move(task), limit));
+    auto column_blob = ColumnPtr(ColumnBlob::create(std::move(task), concrete_column, limit));
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column_blob, limit, settings, state, cache);
     column = column_blob;
 }

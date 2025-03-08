@@ -12,8 +12,6 @@
 #include "Processors/IProcessor.h"
 #include "base/types.h"
 
-#include <Processors/ISimpleTransform.h>
-
 namespace DB
 {
 
@@ -307,29 +305,6 @@ Chunk RemoteExtremesSource::generate()
     return {};
 }
 
-struct ConvertBlobColumnsTransform : ISimpleTransform
-{
-public:
-    explicit ConvertBlobColumnsTransform(const Block & header_)
-        : ISimpleTransform(header_, header_, false)
-    {
-    }
-
-    String getName() const override { return "ConvertBlobColumnsTransform"; }
-
-    void transform(Chunk & chunk) override
-    {
-        const auto rows = chunk.getNumRows();
-        auto columns = chunk.detachColumns();
-        for (auto & column : columns)
-        {
-            if (const auto * col = typeid_cast<const ColumnBlob *>(column.get()))
-                column = col->convertFrom();
-        }
-        chunk.setColumns(std::move(columns), rows);
-    }
-};
-
 class SortChunksBySequenceNumber : public IProcessor
 {
 public:
@@ -471,6 +446,18 @@ private:
     std::vector<Chunk> chunks;
     std::vector<bool> is_input_finished;
 };
+
+void ConvertBlobColumnsTransform::transform(Chunk & chunk)
+{
+    const auto rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+    {
+        if (const auto * col = typeid_cast<const ColumnBlob *>(column.get()))
+            column = col->convertFrom();
+    }
+    chunk.setColumns(std::move(columns), rows);
+}
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,

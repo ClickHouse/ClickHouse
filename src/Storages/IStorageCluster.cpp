@@ -200,12 +200,13 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
                 extension);
 
             remote_query_executor->setLogger(log);
-            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
-            pipes.emplace_back(std::make_shared<RemoteSource>(
+            Pipe pipe{std::make_shared<RemoteSource>(
                 remote_query_executor,
                 add_agg_info,
                 current_settings[Setting::async_socket_for_remote],
-                current_settings[Setting::async_query_sending_for_remote]));
+                current_settings[Setting::async_query_sending_for_remote])};
+            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<ConvertBlobColumnsTransform>(header); });
+            pipes.emplace_back(std::move(pipe));
         }
     }
 

@@ -43,11 +43,20 @@ public:
     using FromBlob = std::function<ColumnPtr(const Blob &, int)>;
 
     ColumnBlob(ToBlob task, ColumnPtr concrete_column_)
-        : rows(concrete_column_->size()), concrete_column(std::move(concrete_column_)), to_blob_task(std::move(task))
+        : rows(concrete_column_->size())
+        , concrete_column(std::move(concrete_column_))
+        , to_blob_task(std::move(task))
+        , creation_stack(StackTrace().toString())
     {
     }
 
-    ColumnBlob(FromBlob task, size_t rows_) : rows(rows_), from_blob_task(std::move(task)) { }
+    ColumnBlob(FromBlob task, ColumnPtr concrete_column_, size_t rows_)
+        : rows(rows_)
+        , concrete_column(std::move(concrete_column_))
+        , from_blob_task(std::move(task))
+        , creation_stack(StackTrace().toString())
+    {
+    }
 
     const char * getFamilyName() const override { return "Blob"; }
 
@@ -191,16 +200,19 @@ private:
     ToBlob to_blob_task;
     FromBlob from_blob_task;
 
+    std::string creation_stack;
+
     mutable DataTypePtr cast_from;
     mutable DataTypePtr cast_to;
 
-    [[noreturn]] static void throwInapplicable()
+    [[noreturn]] void throwInapplicable() const
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBlob should be converted to a regular column before usage");
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "ColumnBlob should be converted to a regular column before usage; created at {}", creation_stack);
     }
 };
 
-inline Block convertBlobColumns(const Block & block)
+[[nodiscard]] inline Block convertBlobColumns(const Block & block)
 {
     Block res;
     res.info = block.info;

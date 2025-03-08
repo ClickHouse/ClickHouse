@@ -6030,9 +6030,13 @@ std::optional<QueryPipeline> StorageReplicatedMergeTree::distributedWriteFromClu
                 QueryProcessingStage::Complete,
                 extension);
 
-            LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
-            QueryPipeline remote_pipeline(std::make_shared<RemoteSource>(
-                remote_query_executor, false, settings[Setting::async_socket_for_remote], settings[Setting::async_query_sending_for_remote]));
+            Pipe pipe{std::make_shared<RemoteSource>(
+                remote_query_executor,
+                false,
+                settings[Setting::async_socket_for_remote],
+                settings[Setting::async_query_sending_for_remote])};
+            pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<ConvertBlobColumnsTransform>(header); });
+            QueryPipeline remote_pipeline{std::move(pipe)};
             remote_pipeline.complete(std::make_shared<EmptySink>(remote_query_executor->getHeader()));
 
             pipeline.addCompletedPipeline(std::move(remote_pipeline));
