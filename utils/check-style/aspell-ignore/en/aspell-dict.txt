@@ -1752,6 +1752,7 @@ enum's
 enums
 erfc
 errorCodeToName
+estimateCompressionRatio
 etag
 evalMLMethod
 exFAT
