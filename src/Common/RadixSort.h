@@ -1,6 +1,5 @@
 #pragma once
 
-
 #include <string.h>
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
@@ -13,10 +12,16 @@
 #include <type_traits>
 #include <memory>
 
+#include <Core/Defines.h>
 #include <base/bit_cast.h>
 #include <base/extended_types.h>
 #include <base/sort.h>
-#include <Core/Defines.h>
+#include <Common/TargetSpecific.h>
+#include <Common/PODArray.h>
+
+#if USE_MULTITARGET_CODE
+#include <immintrin.h>
+#endif
 
 
 /** Radix sort, has the following functionality:
@@ -259,6 +264,11 @@ private:
         return getPart(N, keyToBits(Traits::extractKey(elem)));
     }
 
+    static ALWAYS_INLINE KeyBits extractPartFromKey(size_t N, Key & key)
+    {
+        return getPart(N, keyToBits(key));
+    }
+
     static void insertionSortInternal(Element * arr, size_t size)
     {
         Element * end = arr + size;
@@ -275,7 +285,6 @@ private:
             }
         }
     }
-
 
     template <bool DIRECT_WRITE_TO_DESTINATION>
     static NO_INLINE void radixSortLSDInternal(Element * arr, size_t size, bool reverse, Result * destination)
@@ -312,7 +321,7 @@ private:
                 for (size_t pass = 0; pass < NUM_PASSES; ++pass)
                 {
                     CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
-                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass] - 1;
+                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass];
                     sums[pass] = tmp;
                 }
             }
@@ -328,8 +337,14 @@ private:
             {
                 size_t pos = extractPart(pass, reader[i]);
 
+                if (i + 1 < size)
+                {
+                    size_t next_pos = extractPart(pass, reader[i + 1]);
+                    __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
+                }
+
                 /// Place the element on the next free position.
-                auto & dest = writer[++histograms[pass * HISTOGRAM_SIZE + pos]];
+                auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + pos]++];
                 dest = reader[i];
 
                 /// On the last pass, we do the reverse transformation.
@@ -349,7 +364,13 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = extractPart(pass, reader[i]);
-                    writer[size - 1 - (++histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(reader[i]);
+                    if (i + 1 < size)
+                    {
+                        size_t next_pos = extractPart(pass, reader[i + 1]);
+                        __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
+                    }
+
+                    writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos]++)] = Traits::extractResult(reader[i]);
                 }
             }
             else
@@ -357,7 +378,13 @@ private:
                 for (size_t i = 0; i < size; ++i)
                 {
                     size_t pos = extractPart(pass, reader[i]);
-                    writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(reader[i]);
+                    if (i + 1 < size)
+                    {
+                        size_t next_pos = extractPart(pass, reader[i + 1]);
+                        __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1, 0);
+                    }
+
+                    writer[histograms[pass * HISTOGRAM_SIZE + pos]++] = Traits::extractResult(reader[i]);
                 }
             }
         }
@@ -578,6 +605,13 @@ public:
     {
         radixSortLSDInternal<true>(arr, size, reverse, destination);
     }
+
+    /*
+    static void executeLSDWithSOA(Key * arr, UInt32 * indices, size_t size, bool reverse, Result * destination)
+    {
+        radixSortLSDInternalWithSOA<true>(arr, indices, size, reverse, destination);
+    }
+    */
 
     /** Tries to fast sort elements for common sorting patterns (unstable).
       * If fast sort cannot be performed, execute least significant digit radix sort.
