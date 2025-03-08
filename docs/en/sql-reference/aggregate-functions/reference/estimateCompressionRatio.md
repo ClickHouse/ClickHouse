@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/estimateCompressionRatio
 sidebar_position: 132
-title: "estimateCompressionRate"
+title: "estimateCompressionRatio"
 description: "Estimates the compression ratio of a given column without compressing it."
 ---
 
@@ -21,7 +21,7 @@ estimateCompressionRatio(codec, block_size_bytes)(column)
 
 **Parameters**
 
-- `codec` - [String](../../../sql-reference/data-types/string.md) containg a [compression codec](../../../sql-reference/statements/create/table.md#column-compression-codecs).
+- `codec` - [String](../../../sql-reference/data-types/string.md) containing a [compression codec](../../../sql-reference/statements/create/table.md#column-compression-codecs).
 - `block_size_bytes` - Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes).
 
 Both parameters are optional.
@@ -46,9 +46,7 @@ ORDER BY number
 SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO compression_estimate_example
-SELECT
-    number,
-FROM system.numbers LIMIT 100_000;
+SELECT number FROM system.numbers LIMIT 100_000;
 ```
 
 Query:
