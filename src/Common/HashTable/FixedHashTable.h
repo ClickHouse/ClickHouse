@@ -113,15 +113,16 @@ struct FixedHashTableCalculatedSize
 template <typename Key, typename Cell, typename Size, typename Allocator>
 class FixedHashTable : private boost::noncopyable, protected Allocator, protected Cell::State, protected Size
 {
-    static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
-
     /// We maintain min and max values inserted into the hash table to then limit the amount of cells to traverse to the [min; max] range.
     /// Both values could be efficiently calculated only within `emplace` calls (and not when we populate the hash table in `read` method for example), so we update them only within `emplace` and track if any other method was called.
     bool only_emplace_was_used_to_insert_data = true;
+    std::mutex lock;
     size_t min = NUM_CELLS - 1;
     size_t max = 0;
 
 protected:
+    static constexpr size_t NUM_CELLS = 1ULL << (sizeof(Key) * 8);
+
     friend class const_iterator;
     friend class iterator;
     friend class Reader;
@@ -169,6 +170,8 @@ protected:
 
         bool operator==(const iterator_base & rhs) const { return ptr == rhs.ptr; }
         bool operator!=(const iterator_base & rhs) const { return ptr != rhs.ptr; }
+        bool operator<(const iterator_base & rhs) const { return ptr < rhs.ptr; }
+        bool operator>(const iterator_base & rhs) const { return ptr > rhs.ptr; }
 
         Derived & operator++()
         {
@@ -178,6 +181,22 @@ protected:
             const auto * buf_end = container->buf + container->NUM_CELLS;
             if (container->canUseMinMaxOptimization())
                 buf_end = container->buf + container->max + 1;
+            while (ptr < buf_end && ptr->isZero(*container))
+                ++ptr;
+
+            return static_cast<Derived &>(*this);
+        }
+
+        Derived & nextCellBeforeLimit(const iterator_base & rhs)
+        {
+            ++ptr;
+
+            /// Skip empty cells in the main buffer.
+            const auto * buf_end = container->buf + container->NUM_CELLS;
+            if (container->canUseMinMaxOptimization())
+                buf_end = container->buf + container->max + 1;
+
+            buf_end = std::min(buf_end, rhs.ptr);
             while (ptr < buf_end && ptr->isZero(*container))
                 ++ptr;
 
@@ -334,6 +353,32 @@ public:
         return iterator(this, buf ? lastPopulatedCell() : buf);
     }
 
+    const_iterator getIteratorWithOffset(size_t offset)
+    {
+        if (!buf)
+            return cend();
+
+        Cell * ptr = std::min(buf + offset, lastPopulatedCell());
+
+        return const_iterator(this, ptr);
+    }
+
+    const_iterator getIteratorWithOffsetAndLimit(size_t offset, size_t limit)
+    {
+        if (!buf)
+            return cend();
+
+        Cell * ptr = buf;
+        auto * buf_end = std::min(buf + offset + limit, lastPopulatedCell());
+
+        ptr = std::min(buf + offset, lastPopulatedCell());
+
+        while (ptr < buf_end && ptr->isZero(*this))
+            ++ptr;
+
+        return const_iterator(this, ptr);
+    }
+
 
     /// The last parameter is unused but exists for compatibility with HashTable interface.
     void ALWAYS_INLINE emplace(const Key & x, LookupResult & it, bool & inserted, size_t /* hash */ = 0)
@@ -348,9 +393,14 @@ public:
 
         new (&buf[x]) Cell(x, *this);
         inserted = true;
-        if (x < min) min = x;
-        if (x > max) max = x;
-        this->increaseSize();
+        {
+            std::lock_guard mutex(lock);
+            if (x < min)
+                min = x;
+            if (x > max)
+                max = x;
+            this->increaseSize();
+        }
     }
 
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
