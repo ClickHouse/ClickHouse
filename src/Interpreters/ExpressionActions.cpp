@@ -1132,6 +1132,7 @@ void AdaptiveExpressionActions::executeFunctionAction(
 
 void AdaptiveExpressionActions::accumulateProfile(ExpressionActions::Action & action, const FunctionExecutionProfile & profile)
 {
+    // LOG_TRACE(getLogger("AdaptiveExpressionActions"), "Accumulate profile  for action:{}", action.toString());
     ExpressionActions::Action * function_action = &action;
     // We need to eliminate aliases and access the true function node, taking into account the potential presence of nested aliases.
     while (function_action->node->type == ActionsDAG::ActionType::ALIAS)
@@ -1141,7 +1142,7 @@ void AdaptiveExpressionActions::accumulateProfile(ExpressionActions::Action & ac
 
     if (function_action->node->type != ActionsDAG::ActionType::FUNCTION)
     {
-        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid node type.\n{}\n{}", action.toString(), actions_dag.dumpDAG());
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Function node is expected, but got \n{}. The actions DAG is\n{}", action.toString(), actions_dag.dumpDAG());
     }
 
     auto accumulate_profile = [](FunctionExecutionProfile & a, const FunctionExecutionProfile & b)
@@ -1160,13 +1161,14 @@ void AdaptiveExpressionActions::accumulateProfile(ExpressionActions::Action & ac
         const auto & func_arg_pos = arg_profile.first;
         if (func_arg_pos >= function_action->arguments.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid arg pos: {}. arg size: {}. action:{}\n{}", func_arg_pos, function_action->arguments.size(), function_action->toString(), actions_dag.dumpDAG());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid argument pos: {}. action argument size: {}. action:{}\naction DAG:{}", func_arg_pos, function_action->arguments.size(), function_action->toString(), actions_dag.dumpDAG());
         }
         if (function_action->arguments[func_arg_pos].actions_pos >= actions.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "xxx invalid action pos: {}. arg size: {}", function_action->arguments[func_arg_pos].actions_pos, actions.size());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid action pos: {}. actions size: {}", function_action->arguments[func_arg_pos].actions_pos, actions.size());
         }
         auto & arg_action = actions[function_action->arguments[func_arg_pos].actions_pos];
+        // LOG_TRACE(getLogger("AdaptiveExpressionActions"), "visit arg. pos: {}, action: {}", func_arg_pos, arg_action.toString());
         accumulateProfile(arg_action, arg_profile.second);
     }
 }
