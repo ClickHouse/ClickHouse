@@ -226,8 +226,6 @@ void HTTPHandler::processQuery(
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
 
-    SCOPE_EXIT({ session->releaseSessionID(); });
-
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
@@ -583,8 +581,6 @@ void HTTPHandler::processQuery(
         {},
         handle_exception_in_output_format);
 
-    session->releaseSessionID();
-
     if (used_output.hasDelayed())
     {
         /// TODO: set Content-Length if possible
@@ -671,8 +667,13 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     String session_id;
 
     SCOPE_EXIT_SAFE({
-        if (close_session && !session_id.empty())
-            session->closeSession(session_id);
+        if (!session_id.empty())
+        {
+            if (close_session)
+                session->closeSession(session_id);
+            else
+                session->releaseSessionID();
+        }
     });
 
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
