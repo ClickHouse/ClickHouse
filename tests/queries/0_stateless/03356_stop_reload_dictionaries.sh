@@ -64,24 +64,18 @@ $CLICKHOUSE_CLIENT --query "SELECT '12 -> ', dictGetInt64('${CLICKHOUSE_DATABASE
 $CLICKHOUSE_CLIENT --query "SELECT '13 -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(13))"
 $CLICKHOUSE_CLIENT --query "SELECT '14 -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(14))"
 
-# SYSTEM RELOAD DICTIONARIES throws an exception when reload is stopped.
-set +e
-OUT=$($CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARIES" 2>&1)
-set -e
+# SYSTEM RELOAD DICTIONARIES has no effect.
+$CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARIES"
 
-if ! echo "$OUT" | grep -q "DB::Exception"; then
-  echo "Expected DB::Exception"
-fi
-
-# SYSTEM RELOAD DICTIONARY has no effect
+# SYSTEM RELOAD DICTIONARY has no effect.
 $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARY '${CLICKHOUSE_DATABASE}.dict'"
 
-# Still only the value for 12 can be read
+# Still only the value for 12 can be read.
 $CLICKHOUSE_CLIENT --query "SELECT '12 (2) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(12))"
 $CLICKHOUSE_CLIENT --query "SELECT '13 (2) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(13))"
 $CLICKHOUSE_CLIENT --query "SELECT '14 (2) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(14))"
 
-# Start reload again and wait for the dictionary to reload
+# Start reload again and wait for the dictionary to reload.
 $CLICKHOUSE_CLIENT --query "SYSTEM START RELOAD DICTIONARIES"
 
 if ! wait_for_dict_upate; then
@@ -89,14 +83,14 @@ if ! wait_for_dict_upate; then
     exit 1
 fi
 
-# Values for 12 and 13 can be loaded. The value for 14 requires SYSTEM RELOAD DICTIONARIES
+# Values for 12 and 13 can be loaded. The value for 14 requires SYSTEM RELOAD DICTIONARIES.
 $CLICKHOUSE_CLIENT --query "SELECT '12 (3) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(12))"
 $CLICKHOUSE_CLIENT --query "SELECT '13 (3) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(13))"
 $CLICKHOUSE_CLIENT --query "SELECT '14 (3) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(14))"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM RELOAD DICTIONARIES"
 
-# SYSTEM RELOADS DICTIONARIES reloads everything
+# SYSTEM RELOADS DICTIONARIES reloads everything.
 $CLICKHOUSE_CLIENT --query "SELECT '12 (4) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(12))"
 $CLICKHOUSE_CLIENT --query "SELECT '13 (4) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(13))"
 $CLICKHOUSE_CLIENT --query "SELECT '14 (4) -> ', dictGetInt64('${CLICKHOUSE_DATABASE}.dict', 'y', toUInt64(14))"
