@@ -4,7 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Core/QualifiedTableName.h>
 
-#include <fmt/format.h>
+import fmt;
 
 namespace Poco
 {

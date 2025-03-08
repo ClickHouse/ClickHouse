@@ -12,7 +12,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace CurrentMetrics
 {

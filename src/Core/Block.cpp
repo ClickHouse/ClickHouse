@@ -16,7 +16,8 @@
 #include <ranges>
 
 #include <boost/algorithm/string.hpp>
-#include <fmt/ranges.h>
+
+import fmt;
 
 
 namespace DB

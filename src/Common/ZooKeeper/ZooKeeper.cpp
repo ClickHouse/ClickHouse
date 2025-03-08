@@ -28,7 +28,7 @@
 #include <ranges>
 #include <vector>
 
-#include <fmt/ranges.h>
+import fmt;
 
 
 namespace fs = std::filesystem;

@@ -42,7 +42,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
-#include <fmt/format.h>
+import fmt;
 
 namespace DB
 {

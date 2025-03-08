@@ -81,7 +81,7 @@ nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> InMemoryLogStore::log_e
             if (entry == logs.end())
             {
                 entry = logs.find(0);
-                assert(0);
+                chassert(0);
             }
             src = entry->second;
         }
@@ -128,7 +128,7 @@ nuraft::ptr<nuraft::buffer> InMemoryLogStore::pack(uint64_t index, Int32 cnt)
             std::lock_guard l(logs_lock);
             le = logs[ii];
         }
-        assert(le.get());
+        chassert(le.get());
         nuraft::ptr<nuraft::buffer> buf = le->serialize();
         uint64_total += buf->size();
         returned_logs.push_back(buf);

@@ -7,7 +7,8 @@
 
 #include <sys/timerfd.h>
 #include <unistd.h>
-#include <fmt/format.h>
+
+import fmt;
 
 
 namespace DB

@@ -26,7 +26,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/TableJoin.h>
-#include <fmt/format.h>
+
+import fmt;
 
 namespace DB::ErrorCodes
 {

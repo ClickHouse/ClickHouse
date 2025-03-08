@@ -4,8 +4,9 @@
 #include <IO/ReadHelpers.h>
 #include <IO/S3/Credentials.h>
 #include <Poco/String.h>
-#include <fmt/core.h>
 #include <filesystem>
+
+import fmt;
 
 
 namespace DB

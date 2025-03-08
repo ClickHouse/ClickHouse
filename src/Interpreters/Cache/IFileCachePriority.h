@@ -9,7 +9,7 @@
 #include <atomic>
 #include <memory>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace DB
 {

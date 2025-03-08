@@ -108,13 +108,14 @@
 #include <unordered_set>
 #include <filesystem>
 
-#include <fmt/format.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #include <azure/core/http/http.hpp>
 #endif
+
+import fmt;
 
 
 template <>

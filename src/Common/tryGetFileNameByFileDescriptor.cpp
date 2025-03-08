@@ -6,7 +6,7 @@
 #    include <fcntl.h>
 #endif
 
-#include <fmt/format.h>
+import fmt;
 
 
 namespace DB

@@ -13,11 +13,12 @@
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Poco/Net/HTTPResponse.h>
 
-#include <fmt/core.h>
 #include <iterator>
 #include <sstream>
 #include <string>
 #include <string_view>
+
+import fmt;
 
 namespace DB
 {

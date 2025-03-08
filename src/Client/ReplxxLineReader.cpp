@@ -21,13 +21,14 @@
 #include <fcntl.h>
 #include <fstream>
 #include <filesystem>
-#include <fmt/format.h>
 #include <Common/quoteString.h>
 #include "config.h" // USE_SKIM
 
 #if USE_SKIM
 #include <skim.h>
 #endif
+
+import fmt;
 
 namespace
 {

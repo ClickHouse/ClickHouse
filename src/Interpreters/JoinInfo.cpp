@@ -5,7 +5,7 @@
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 
 namespace DB

@@ -7,8 +7,6 @@
 #include <string_view>
 #include <utility> /// pair
 
-#include <fmt/format.h>
-
 #include "config.h"
 #include "config_tools.h"
 
@@ -24,6 +22,7 @@
 #include <base/phdr_cache.h>
 #include <base/scope_guard.h>
 
+import fmt;
 
 int mainEntryClickHouseKeeper(int argc, char ** argv);
 #if ENABLE_CLICKHOUSE_KEEPER_CONVERTER
