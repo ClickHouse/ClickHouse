@@ -270,26 +270,20 @@ void AsyncLoader::wait()
 
 void AsyncLoader::shutdown()
 {
+    LoadJobSet jobs;
+
     {
         std::unique_lock lock{mutex};
         shutdown_requested = true;
         is_running = false;
 
-        while (!scheduled_jobs.empty())
-        {
-            const auto it = scheduled_jobs.begin();
-            if (!it->second.isExecuting())
-            {
-                LoadJobPtr job = it->first;
-                auto e = std::make_exception_ptr(Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "AsyncLoader was shut down"));
-                finish(job, LoadStatus::CANCELED, e, lock);
-                chassert(lock.owns_lock());
-                chassert(!scheduled_jobs.contains(job));
-            }
-        }
+        for (const auto & [job, _] : scheduled_jobs)
+            jobs.insert(job);
     }
 
-    // Wait for all currently running jobs to finish (and do NOT wait all pending jobs)
+    // Cancel scheduled jobs, wait for currently running jobs to finish.
+    remove(jobs);
+
     for (auto & p : pools)
         p.thread_pool->wait();
 }
