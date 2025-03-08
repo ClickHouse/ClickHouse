@@ -46,7 +46,6 @@ public:
         : rows(concrete_column_->size())
         , concrete_column(std::move(concrete_column_))
         , to_blob_task(std::move(task))
-        , creation_stack(StackTrace().toString())
     {
     }
 
@@ -54,7 +53,6 @@ public:
         : rows(rows_)
         , concrete_column(std::move(concrete_column_))
         , from_blob_task(std::move(task))
-        , creation_stack(StackTrace().toString())
     {
     }
 
@@ -200,15 +198,12 @@ private:
     ToBlob to_blob_task;
     FromBlob from_blob_task;
 
-    std::string creation_stack;
-
     mutable DataTypePtr cast_from;
     mutable DataTypePtr cast_to;
 
     [[noreturn]] void throwInapplicable() const
     {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "ColumnBlob should be converted to a regular column before usage; created at {}", creation_stack);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBlob should be converted to a regular column before usage");
     }
 };
 
