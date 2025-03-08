@@ -26,6 +26,12 @@ profiles:
     max_execution_speed_bytes: 10T
     timeout_before_checking_execution_speed: 300
     max_estimated_execution_time: 600
+    # Some tables located on S3 and accessed via web disk, the problem is that
+    # sometimes S3 may return "Error: No message received.", to avoid failing
+    # queries with "TOO_SLOW" due to *execution_time* limits, let's limit
+    # maximum backoff.
+    http_retry_initial_backoff_ms: 50
+    http_retry_max_backoff_ms: 100
     max_columns_to_read: 20K
     max_temporary_columns: 20K
     max_temporary_non_const_columns: 20K
