@@ -58,6 +58,11 @@ IDatabase::~IDatabase()
     CurrentMetrics::sub(CurrentMetrics::AttachedDatabase, 1);
 }
 
+void IDatabase::alterDatabaseComment(const AlterCommand & /*command*/)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: ALTER DATABASE COMMENT is not supported", getEngineName());
+}
+
 std::vector<std::pair<ASTPtr, StoragePtr>> IDatabase::getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const
 {
     /// Cannot backup any table because IDatabase doesn't own any tables.
