@@ -139,7 +139,7 @@ public:
     String disk;
     UInt64 seconds{};
 
-    std::optional<String> query_cache_tag;
+    std::optional<String> query_result_cache_tag;
 
     String filesystem_cache_name;
     std::string key_to_drop;

@@ -138,7 +138,7 @@ Treat empty fields in TSV input as default values.
 Treat inserted enum values in TSV formats as enum indices.
 )", 0) \
     DECLARE(Bool, input_format_null_as_default, true, R"(
-Enables or disables the initialization of [NULL](/sql-reference/syntax#literals) fields with [default values](../../sql-reference/statements/create/table.md/#create-default-values), if data type of these fields is not [nullable](/sql-reference/data-types/nullable).
+Enables or disables the initialization of [NULL](/sql-reference/syntax#literals) fields with [default values](/sql-reference/statements/create/table#default_values), if data type of these fields is not [nullable](/sql-reference/data-types/nullable).
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
 This setting is applicable for most input formats.
@@ -1159,7 +1159,7 @@ The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
 )", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
-Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
+Enables or disables random shard insertion into a [Distributed](/engines/table-engines/special/distributed) table when there is no distributed key.
 
 By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will reject any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
 
