@@ -15,11 +15,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
-
 [[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
 {
@@ -449,7 +444,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (!ParserStringLiteral{}.parse(pos, ast, expected))
                 return false;
-            String time_str = ast->as<ASTLiteral &>().value.safeGet<const String &>();
+            String time_str = ast->as<ASTLiteral &>().value.safeGet<String>();
             ReadBufferFromString buf(time_str);
             time_t time;
             readDateTimeText(time, buf);
@@ -479,7 +474,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserLiteral tag_parser;
             ASTPtr ast;
             if (ParserKeyword{Keyword::TAG}.ignore(pos, expected) && tag_parser.parse(pos, ast, expected))
-                res->query_cache_tag = std::make_optional<String>(ast->as<ASTLiteral>()->value.safeGet<String>());
+                res->query_result_cache_tag = std::make_optional<String>(ast->as<ASTLiteral>()->value.safeGet<String>());
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             break;
@@ -514,7 +509,9 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         }
         case Type::DROP_DISK_METADATA_CACHE:
         {
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
+            if (!parseQueryWithOnClusterAndTarget(res, pos, expected, SystemQueryTargetType::Disk))
+                return false;
+            break;
         }
         case Type::DROP_SCHEMA_CACHE:
         {
@@ -552,7 +549,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr ast;
             if (ParserKeyword{Keyword::WITH_NAME}.ignore(pos, expected) && ParserStringLiteral{}.parse(pos, ast, expected))
             {
-                res->backup_name = ast->as<ASTLiteral &>().value.safeGet<const String &>();
+                res->backup_name = ast->as<ASTLiteral &>().value.safeGet<String>();
             }
             else
             {
@@ -591,7 +588,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     if (!ParserStringLiteral{}.parse(pos, ast, expected))
                         return false;
 
-                    custom_name = ast->as<ASTLiteral &>().value.safeGet<const String &>();
+                    custom_name = ast->as<ASTLiteral &>().value.safeGet<String>();
                 }
 
                 return true;
@@ -632,6 +629,47 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
 
             res->server_type = ServerType(base_type, base_custom_name, exclude_type, exclude_custom_names);
+
+            break;
+        }
+
+        case Type::FLUSH_LOGS:
+        {
+            Pos prev_token = pos;
+            if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
+            {
+                pos = prev_token;
+                if (!parseQueryWithOnCluster(res, pos, expected))
+                    return false;
+            }
+
+            ParserToken s_dot(TokenType::Dot);
+            ParserIdentifier table_parser(true);
+
+
+            do
+            {
+                ASTPtr table_first;
+                if (!table_parser.parse(pos, table_first, expected))
+                {
+                    if (res->logs.empty())
+                        break;
+                    return false;
+                }
+
+                if (!s_dot.ignore(pos))
+                    res->logs.emplace_back(table_first->as<ASTIdentifier &>().full_name);
+                else
+                {
+                    ASTPtr table_second;
+                    if (!table_parser.parse(pos, table_second, expected))
+                        return false;
+                    res->logs.emplace_back(
+                        fmt::format("{}.{}", table_first->as<ASTIdentifier &>().full_name, table_second->as<ASTIdentifier &>().full_name));
+                }
+
+
+            } while (ParserToken{TokenType::Comma}.ignore(pos, expected));
 
             break;
         }

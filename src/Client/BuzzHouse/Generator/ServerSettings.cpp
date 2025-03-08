@@ -7,7 +7,7 @@ const std::function<String(RandomGenerator &)> probRange
     = [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<double>(0.3, 0.5, 0.0, 1.0)); };
 
 std::unordered_map<String, CHSetting> serverSettings = {
-    {"aggregate_functions_null_for_empty", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    {"aggregate_functions_null_for_empty", CHSetting(trueOrFalse, {}, false)},
     {"aggregation_in_order_max_block_bytes",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(8192))); },
@@ -108,19 +108,33 @@ std::unordered_map<String, CHSetting> serverSettings = {
     /// {"describe_compact_output", CHSetting(trueOrFalse, {}, false)},
     {"describe_extend_object_types", CHSetting(trueOrFalse, {}, false)},
     {"describe_include_subcolumns", CHSetting(trueOrFalse, {}, false)},
+    {"describe_include_virtual_columns", CHSetting(trueOrFalse, {}, false)},
     {"dictionary_use_async_executor", CHSetting(trueOrFalse, {}, false)},
+    {"dictionary_validate_primary_key_type", CHSetting(trueOrFalse, {}, false)},
     {"distributed_aggregation_memory_efficient", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"distributed_background_insert_batch", CHSetting(trueOrFalse, {}, false)},
     {"distributed_background_insert_split_batch_on_failure", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_bypass_connection_pool", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_discard_connection_if_unread_data", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_fetch_metrics_only_from_current_az", CHSetting(trueOrFalse, {}, false)},
+    {"distributed_cache_min_bytes_for_seek", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"distributed_cache_throw_on_error", CHSetting(trueOrFalse, {}, false)},
     {"distributed_foreground_insert", CHSetting(trueOrFalse, {}, false)},
     {"distributed_group_by_no_merge", CHSetting(zeroOneTwo, {}, false)},
     {"distributed_insert_skip_read_only_replicas", CHSetting(trueOrFalse, {}, false)},
+    {"distributed_product_mode",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {"'deny'", "'local'", "'global'", "'allow'"};
+             return rg.pickRandomlyFromVector(choices);
+         },
+         {},
+         false)},
+    {"distributed_push_down_limit", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"do_not_merge_across_partitions_select_final", CHSetting(trueOrFalse, {}, false)},
     {"empty_result_for_aggregation_by_constant_keys_on_empty_set", CHSetting(trueOrFalse, {}, false)},
+    {"enable_adaptive_memory_spill_scheduler", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"enable_analyzer", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"enable_blob_storage_log", CHSetting(trueOrFalse, {}, false)},
     {"enable_early_constant_folding", CHSetting(trueOrFalse, {}, false)},
@@ -338,18 +352,37 @@ std::unordered_map<String, CHSetting> serverSettings = {
      CHSetting(
          [](RandomGenerator & rg)
          {
-             const DB::Strings & choices
-                 = {"'default'",
-                    "'grace_hash'",
-                    "'direct, hash'",
-                    "'hash'",
-                    "'parallel_hash'",
-                    "'partial_merge'",
-                    "'direct'",
-                    "'auto'",
-                    "'full_sorting_merge'",
-                    "'prefer_partial_merge'"};
-             return rg.pickRandomlyFromVector(choices);
+             String res;
+             DB::Strings choices
+                 = {"auto",
+                    "default",
+                    "direct",
+                    "full_sorting_merge",
+                    "grace_hash",
+                    "hash",
+                    "parallel_hash",
+                    "partial_merge",
+                    "prefer_partial_merge"};
+
+             if (rg.nextBool())
+             {
+                 res = rg.pickRandomlyFromVector(choices);
+             }
+             else
+             {
+                 const uint32_t nalgo = (rg.nextMediumNumber() % static_cast<uint32_t>(choices.size())) + 1;
+
+                 std::shuffle(choices.begin(), choices.end(), rg.generator);
+                 for (uint32_t i = 0; i < nalgo; i++)
+                 {
+                     if (i != 0)
+                     {
+                         res += ",";
+                     }
+                     res += choices[i];
+                 }
+             }
+             return "'" + res + "'";
          },
          {"'default'",
           "'grace_hash'",
@@ -368,6 +401,16 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"keeper_map_strict_mode", CHSetting(trueOrFalse, {}, false)},
     {"legacy_column_name_of_tuple_literal", CHSetting(trueOrFalse, {}, false)},
     /// {"lightweight_deletes_sync", CHSetting(zeroOneTwo, {}, false)}, FINAL queries don't cover these
+    {"load_balancing",
+     CHSetting(
+         [](RandomGenerator & rg)
+         {
+             const DB::Strings & choices = {
+                 "'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"};
+             return rg.pickRandomlyFromVector(choices);
+         },
+         {"'round_robin'", "'in_order'", "'hostname_levenshtein_distance'", "'nearest_hostname'", "'first_or_random'", "'random'"},
+         false)},
     {"load_marks_asynchronously", CHSetting(trueOrFalse, {}, false)},
     {"local_filesystem_read_method",
      CHSetting(
@@ -429,7 +472,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {"0", "1", "1000", "1000000"},
          false)},
     /// {"max_bytes_in_distinct", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
-    {"max_bytes_in_join",
+    /*{"max_bytes_in_join",
      CHSetting(
          [](RandomGenerator & rg)
          {
@@ -437,7 +480,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
                  rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(10) * UINT32_C(1024) * UINT32_C(1024) * UINT32_C(1024)));
          },
          {"0", "1", "1000", "1000000"},
-         false)},
+         false)},*/
     /// {"max_bytes_in_set", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     {"max_bytes_ratio_before_external_group_by",
      CHSetting(
@@ -503,11 +546,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     /// {"max_result_bytes", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     /// {"max_result_rows", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     /// {"max_rows_in_distinct", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
-    {"max_rows_in_join",
+    /*{"max_rows_in_join",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.7, 0, UINT32_C(8192))); },
          {"0", "8", "32", "64", "1024", "10000"},
-         false)},
+         false)},*/
     /// {"max_rows_in_set", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     /// {"max_rows_to_group_by",  CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
     /// {"max_rows_to_read", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); }, {}, false)},
@@ -651,7 +694,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"optimize_uniq_to_count", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_use_implicit_projections", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"optimize_use_projections", CHSetting(trueOrFalse, {"0", "1"}, false)},
-    {"optimize_using_constraints", CHSetting(trueOrFalse, {"0", "1"}, false)},
+    /// {"optimize_using_constraints", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"os_thread_priority",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.randomInt<int32_t>(-20, 19)); }, {"-20", "-10", "0", "10", "19"}, false)},
@@ -952,7 +995,7 @@ static std::unordered_map<String, CHSetting> serverSettings3
        {"use_index_for_in_with_subqueries", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_local_cache_for_remote_storage", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_page_cache_for_disks_without_file_cache", CHSetting(trueOrFalse, {"0", "1"}, false)},
-       {"use_query_cache",
+       /*{"use_query_cache",
         CHSetting(
             [](RandomGenerator & rg)
             {
@@ -962,7 +1005,7 @@ static std::unordered_map<String, CHSetting> serverSettings3
                 return rg.pickRandomlyFromVector(choices);
             },
             {},
-            false)},
+            false)},*/
        {"use_skip_indexes", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_skip_indexes_if_final", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"use_structure_from_insertion_table_in_table_functions", CHSetting(zeroOneTwo, {}, false)},
