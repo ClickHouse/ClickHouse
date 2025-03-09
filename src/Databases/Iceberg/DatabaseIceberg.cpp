@@ -12,7 +12,6 @@
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
@@ -229,7 +228,7 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false, storage_settings.get());
+    StorageObjectStorage::Configuration::initialize(*configuration, args, context_, /* with_table_structure */false, std::move(storage_settings));
 
     return std::make_shared<StorageObjectStorage>(
         configuration,

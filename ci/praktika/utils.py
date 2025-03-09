@@ -53,6 +53,7 @@ class MetaClasses:
                 try:
                     return cls.from_dict(json.load(f))
                 except json.decoder.JSONDecodeError as ex:
+                    traceback.print_exc()
                     print(f"ERROR: failed to parse json, ex [{ex}]")
                     print(f"JSON content [{cls.file_name_static(name)}]")
                     Shell.check(f"cat {cls.file_name_static(name)}")

@@ -140,23 +140,16 @@ void DatabaseMemory::drop(ContextPtr local_context)
 
 void DatabaseMemory::alterTable(ContextPtr local_context, const StorageID & table_id, const StorageInMemoryMetadata & metadata)
 {
-    /// NOTE: It is safe to modify AST without lock since alterTable() is called under IStorage::lockForShare()
-    ASTPtr create_query;
-    {
-        std::lock_guard lock{mutex};
-        auto it = create_queries.find(table_id.table_name);
-        if (it == create_queries.end() || !it->second)
-            throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
-        create_query = it->second;
-    }
+    std::lock_guard lock{mutex};
+    auto it = create_queries.find(table_id.table_name);
+    if (it == create_queries.end() || !it->second)
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot alter: There is no metadata of table {}", table_id.getNameForLogs());
 
-    /// Apply metadata changes without holding a lock to avoid possible deadlock
-    /// (i.e. when ALTER contains IN (table))
-    applyMetadataChangesToCreateQuery(create_query, metadata, local_context);
+    applyMetadataChangesToCreateQuery(it->second, metadata, local_context);
 
     /// The create query of the table has been just changed, we need to update dependencies too.
-    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query, local_context->getCurrentDatabase());
-    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), create_query);
+    auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second, local_context->getCurrentDatabase());
+    auto loading_dependencies = getLoadingDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), it->second);
     DatabaseCatalog::instance().updateDependencies(table_id, ref_dependencies, loading_dependencies);
 }
 

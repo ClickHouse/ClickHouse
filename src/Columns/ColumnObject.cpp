@@ -835,7 +835,7 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
 {
     const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
 
-    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map, bool is_dynamic_paths)
+    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map)
     {
         NameSet names_to_remove;
 
@@ -850,19 +850,11 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
         }
 
         for (const auto & name : names_to_remove)
-        {
-            if (is_dynamic_paths)
-            {
-                dynamic_paths_ptrs.erase(name);
-                sorted_dynamic_paths.erase(name);
-            }
-
             columns_map.erase(name);
-        }
     };
 
-    rollback_columns(typed_paths, object_checkpoint.typed_paths, false);
-    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths, true);
+    rollback_columns(typed_paths, object_checkpoint.typed_paths);
+    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths);
     shared_data->rollback(*object_checkpoint.shared_data);
 }
 
@@ -1264,7 +1256,7 @@ void ColumnObject::protect()
     shared_data->protect();
 }
 
-void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
+void ColumnObject::forEachSubcolumn(DB::IColumn::MutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
         callback(column);
@@ -1276,44 +1268,18 @@ void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback ca
     callback(shared_data);
 }
 
-void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
+void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
 {
     for (auto & [_, column] : typed_paths)
     {
         callback(*column);
-        column->forEachMutableSubcolumnRecursively(callback);
+        column->forEachSubcolumnRecursively(callback);
     }
     for (auto & [path, column] : dynamic_paths)
     {
         callback(*column);
-        column->forEachMutableSubcolumnRecursively(callback);
+        column->forEachSubcolumnRecursively(callback);
         dynamic_paths_ptrs[path] = assert_cast<ColumnDynamic *>(column.get());
-    }
-    callback(*shared_data);
-    shared_data->forEachMutableSubcolumnRecursively(callback);
-}
-
-void ColumnObject::forEachSubcolumn(DB::IColumn::ColumnCallback callback) const
-{
-    for (const auto & [_, column] : typed_paths)
-        callback(column);
-    for (const auto & [path, column] : dynamic_paths)
-        callback(column);
-
-    callback(shared_data);
-}
-
-void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveColumnCallback callback) const
-{
-    for (const auto & [_, column] : typed_paths)
-    {
-        callback(*column);
-        column->forEachSubcolumnRecursively(callback);
-    }
-    for (const auto & [path, column] : dynamic_paths)
-    {
-        callback(*column);
-        column->forEachSubcolumnRecursively(callback);
     }
     callback(*shared_data);
     shared_data->forEachSubcolumnRecursively(callback);

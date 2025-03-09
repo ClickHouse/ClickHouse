@@ -5,7 +5,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Storages/MergeTree/MergeTreePartInfo.h>
+#include "Storages/MergeTree/AlterConversions.h"
+#include "Storages/MergeTree/MergeTreePartInfo.h"
 
 
 namespace DB

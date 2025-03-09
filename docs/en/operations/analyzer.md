@@ -1,5 +1,5 @@
 ---
-slug: /operations/analyzer
+slug: /en/operations/analyzer
 sidebar_label: Analyzer
 title: Analyzer
 description: Details about ClickHouse's query analyzer
@@ -8,12 +8,12 @@ keywords: [analyzer]
 
 # Analyzer
 
-## Known incompatibilities {#known-incompatibilities}
+## Known incompatibilities
 
 In ClickHouse version `24.3`, the new query analyzer was enabled by default.
 Despite fixing a large number of bugs and introducing new optimizations, it also introduces some breaking changes in ClickHouse behaviour. Please read the following changes to determine how to rewrite your queries for the new analyzer.
 
-### Invalid queries are no longer optimized {#invalid-queries-are-no-longer-optimized}
+### Invalid queries are no longer optimized
 
 The previous query planning infrastructure applied AST-level optimizations before the query validation step.
 Optimizations could rewrite the initial query so it becomes valid and can be executed.
@@ -57,7 +57,7 @@ WHERE number > 5
 GROUP BY n
 ```
 
-### CREATE VIEW with invalid query {#create-view-with-invalid-query}
+### CREATE VIEW with invalid query
 
 The new analyzer always performs type-checking.
 Previously, it was possible to create a `VIEW` with an invalid `SELECT` query. It would then fail during the first `SELECT` or `INSERT` (in the case of `MATERIALIZED VIEW`).
@@ -74,9 +74,9 @@ AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
 FROM source;
 ```
 
-### Known incompatibilities of the `JOIN` clause {#known-incompatibilities-of-the-join-clause}
+### Known incompatibilities of the `JOIN` clause
 
-#### Join using column from projection {#join-using-column-from-projection}
+#### Join using column from projection
 
 Alias from the `SELECT` list can not be used as a `JOIN USING` key by default.
 
@@ -95,7 +95,7 @@ With `analyzer_compatibility_join_using_top_level_identifier` set to `true`, the
 When the setting is `false`, the join condition defaults to `t1.b = t2.b`, and the query will return `2, 'one'`.
 If `b` is not present in `t1`, the query will fail with an error.
 
-#### Changes in behavior with `JOIN USING` and `ALIAS`/`MATERIALIZED` columns {#changes-in-behavior-with-join-using-and-aliasmaterialized-columns}
+#### Changes in behavior with `JOIN USING` and `ALIAS`/`MATERIALIZED` columns
 
 In the new analyzer, using `*` in a `JOIN USING` query that involves `ALIAS` or `MATERIALIZED` columns will include those columns in the result set by default.
 
@@ -116,7 +116,7 @@ In the new analyzer, the result of this query will include the `payload` column 
 
 To ensure consistent and expected results, especially when migrating old queries to the new analyzer, it is advisable to specify columns explicitly in the `SELECT` clause rather than using `*`.
 
-#### Handling of Type Modifiers for columns in `USING` Clause {#handling-of-type-modifiers-for-columns-in-using-clause}
+#### Handling of Type Modifiers for columns in `USING` Clause
 
 In the new version of the analyzer, the rules for determining the common supertype for columns specified in the `USING` clause have been standardized to produce more predictable outcomes, especially when dealing with type modifiers like `LowCardinality` and `Nullable`.
 
@@ -134,7 +134,7 @@ USING (id);
 
 In this query, the common supertype for `id` is determined as `String`, discarding the `LowCardinality` modifier from `t1`.
 
-### Projection column names changes {#projection-column-names-changes}
+### Projection column names changes
 
 During projection names computation, aliases are not substituted.
 
@@ -160,7 +160,7 @@ FORMAT PrettyCompact
    └───┴────────────┘
 ```
 
-### Incompatible function arguments types {#incompatible-function-arguments-types}
+### Incompatible function arguments types
 
 In the new analyzer, type inference happens during initial query analysis.
 This change means that type checks are done before short-circuit evaluation; thus, `if` function arguments must always have a common supertype.
@@ -173,17 +173,17 @@ The following query fails with `There is no supertype for types Array(UInt8), St
 SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 ```
 
-### Heterogeneous clusters {#heterogeneous-clusters}
+### Heterogeneous clusters
 
 The new analyzer significantly changed the communication protocol between servers in the cluster. Thus, it's impossible to run distributed queries on servers with different `enable_analyzer` setting values.
 
-### Mutations are interpreted by previous analyzer {#mutations-are-interpreted-by-previous-analyzer}
+### Mutations are interpreted by previous analyzer
 
 Mutations are still using the old analyzer.
 This means some new ClickHouse SQL features can't be used in mutations. For example, the `QUALIFY` clause.
 Status can be checked [here](https://github.com/ClickHouse/ClickHouse/issues/61563).
 
-### Unsupported features {#unsupported-features}
+### Unsupported features
 
 The list of features new analyzer currently doesn't support:
 

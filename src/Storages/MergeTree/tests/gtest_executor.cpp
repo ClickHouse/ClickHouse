@@ -6,7 +6,6 @@
 #include <random>
 #include <functional>
 
-#include <Common/Exception.h>
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 

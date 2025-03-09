@@ -1,5 +1,4 @@
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorToJSONElement.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -169,8 +168,6 @@ String FieldVisitorToString::operator() (const Map & x) const
 
 String FieldVisitorToString::operator() (const Object & x) const
 {
-    /// We don't support Object literals in a form of {"a" : ...}.
-    /// So we write Object as a String containing valid JSON.
     WriteBufferFromOwnString wb;
 
     wb << '{';
@@ -180,11 +177,12 @@ String FieldVisitorToString::operator() (const Object & x) const
             wb << ", ";
 
         writeDoubleQuoted(it->first, wb);
-        wb << ": " << applyVisitor(FieldVisitorToJSONElement(), it->second);
+        wb << ": " << applyVisitor(*this, it->second);
     }
     wb << '}';
 
-    return formatQuoted(wb.str());
+    return wb.str();
+
 }
 
 String convertFieldToString(const Field & field)

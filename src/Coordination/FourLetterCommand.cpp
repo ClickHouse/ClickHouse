@@ -2,7 +2,6 @@
 
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperDispatcher.h>
-#include <Coordination/KeeperStorage.h>
 #include <Server/KeeperTCPHandler.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/logger_useful.h>

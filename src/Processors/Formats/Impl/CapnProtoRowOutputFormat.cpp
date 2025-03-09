@@ -6,8 +6,6 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/CapnProtoSerializer.h>
 #include <IO/WriteBuffer.h>
-#include <Processors/Port.h>
-
 #include <capnp/dynamic.h>
 #include <capnp/serialize-packed.h>
 

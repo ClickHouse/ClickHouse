@@ -43,8 +43,6 @@
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include "config.h"
@@ -119,6 +117,7 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 
@@ -142,6 +141,29 @@ ColumnsStatistics getStatisticsForColumns(
         }
     }
     return all_statistics;
+}
+
+NamesAndTypesList getSubcolumnsUsedInExpression(const Block & header, const ExpressionActionsPtr & expr)
+{
+    NamesAndTypesList subcolumns;
+    for (const auto & name : expr->getRequiredColumns())
+    {
+        if (!header.has(name))
+        {
+            auto [column_name, subcolumn_name] = Nested::splitName(name);
+            const auto * column = header.findByName(column_name);
+            if (!column)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Column {} from sorting key/index expression is not found in block {}", column_name, header.dumpStructure());
+
+            auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
+            if (!subcolumn_type)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Subcolumn {} from sorting key/index expression is not found in block {}", name, header.dumpStructure());
+
+            subcolumns.emplace_back(column_name, subcolumn_name, column->type, subcolumn_type);
+        }
+    }
+
+    return subcolumns;
 }
 
 }
@@ -409,7 +431,6 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         throw Exception(ErrorCodes::DIRECTORY_ALREADY_EXISTS, "Directory {} already exists", data_part_storage->getFullPath());
 
     data_part_storage->beginTransaction();
-
     /// Background temp dirs cleaner will not touch tmp projection directory because
     /// it's located inside part's directory
     if (!global_ctx->parent_part)
@@ -1109,12 +1130,22 @@ MergeTask::VerticalMergeRuntimeContext::PreparedColumnPipeline MergeTask::Vertic
             indexes_to_recalc = MergeTreeIndexFactory::instance().getMany(indexes_it->second);
 
             auto indices_expression = indexes_it->second.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
+            auto subcolumns = getSubcolumnsUsedInExpression(merge_column_query_plan.getCurrentHeader(), indices_expression);
+            /// If index expressions contain subcolumns, we need to add additional step
+            /// that will extract these subcolumns and add them to the block.
+            if (!subcolumns.empty())
+            {
+                NamesAndTypesList required_columns = merge_column_query_plan.getCurrentHeader().getNamesAndTypesList();
+                required_columns.splice(required_columns.end(), subcolumns);
+                auto extract_columns_step = std::make_unique<ExtractColumnsStep>(merge_column_query_plan.getCurrentHeader(), required_columns);
+                merge_column_query_plan.addStep(std::move(extract_columns_step));
+            }
+
             auto indices_expression_dag = indices_expression->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(merge_column_query_plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
             indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
             auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
                 merge_column_query_plan.getCurrentHeader(),
-                ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag)));
+                std::move(indices_expression_dag));
             merge_column_query_plan.addStep(std::move(calculate_indices_expression_step));
         }
     }
@@ -1272,7 +1303,7 @@ bool MergeTask::MergeProjectionsStage::mergeMinMaxIndexAndPrepareProjections() c
         double elapsed_seconds = global_ctx->merge_list_element_ptr->watch.elapsedSeconds();
         LOG_DEBUG(ctx->log,
             "Merge sorted {} rows, containing {} columns ({} merged, {} gathered) in {} sec., {} rows/sec., {}/sec.",
-            global_ctx->merge_list_element_ptr->rows_read.load(),
+            global_ctx->merge_list_element_ptr->rows_read,
             global_ctx->storage_columns.size(),
             global_ctx->merging_columns.size(),
             global_ctx->gathering_columns.size(),
@@ -1794,11 +1825,21 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     {
         /// Calculate sorting key expressions so that they are available for merge sorting.
         const auto & sorting_key_expression = global_ctx->metadata_snapshot->getSortingKey().expression;
+        auto subcolumns = getSubcolumnsUsedInExpression(merge_parts_query_plan.getCurrentHeader(), sorting_key_expression);
+        /// If sorting expressions contain subcolumns, we need to add additional step
+        /// that will extract these subcolumns and add them to the block.
+        if (!subcolumns.empty())
+        {
+            NamesAndTypesList required_columns = merge_parts_query_plan.getCurrentHeader().getNamesAndTypesList();
+            required_columns.splice(required_columns.end(), subcolumns);
+            auto extract_columns_step = std::make_unique<ExtractColumnsStep>(merge_parts_query_plan.getCurrentHeader(), required_columns);
+            merge_parts_query_plan.addStep(std::move(extract_columns_step));
+        }
+
         auto sorting_key_expression_dag = sorting_key_expression->getActionsDAG().clone();
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(merge_parts_query_plan.getCurrentHeader(), sorting_key_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
         auto calculate_sorting_key_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentHeader(),
-            ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_expression_dag)));
+            std::move(sorting_key_expression_dag));
         merge_parts_query_plan.addStep(std::move(calculate_sorting_key_expression_step));
     }
 
@@ -1888,12 +1929,22 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (!global_ctx->merging_skip_indexes.empty())
     {
         auto indices_expression = global_ctx->merging_skip_indexes.getSingleExpressionForIndices(global_ctx->metadata_snapshot->getColumns(), global_ctx->data->getContext());
+        auto subcolumns = getSubcolumnsUsedInExpression(merge_parts_query_plan.getCurrentHeader(), indices_expression);
+        /// If index expressions contain subcolumns, we need to add additional step
+        /// that will extract these subcolumns and add them to the block.
+        if (!subcolumns.empty())
+        {
+            NamesAndTypesList required_columns = merge_parts_query_plan.getCurrentHeader().getNamesAndTypesList();
+            required_columns.splice(required_columns.end(), subcolumns);
+            auto extract_columns_step = std::make_unique<ExtractColumnsStep>(merge_parts_query_plan.getCurrentHeader(), required_columns);
+            merge_parts_query_plan.addStep(std::move(extract_columns_step));
+        }
+
         auto indices_expression_dag = indices_expression->getActionsDAG().clone();
-        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(merge_parts_query_plan.getCurrentHeader(), indices_expression_dag.getRequiredColumnsNames(), global_ctx->data->getContext());
         indices_expression_dag.addMaterializingOutputActions(/*materialize_sparse=*/ true); /// Const columns cannot be written without materialization.
         auto calculate_indices_expression_step = std::make_unique<ExpressionStep>(
             merge_parts_query_plan.getCurrentHeader(),
-            ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag)));
+            std::move(indices_expression_dag));
         merge_parts_query_plan.addStep(std::move(calculate_indices_expression_step));
     }
 

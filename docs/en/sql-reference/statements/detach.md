@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/detach
+slug: /en/sql-reference/statements/detach
 sidebar_position: 43
 sidebar_label: DETACH
 title: "DETACH Statement"
@@ -76,5 +76,5 @@ In ClickHouse Cloud users should use the `PERMANENTLY` clause e.g. `DETACH TABLE
 
 **See Also**
 
-- [Materialized View](/sql-reference/statements/create/view#materialized-view)
+- [Materialized View](../../sql-reference/statements/create/view.md#materialized)
 - [Dictionaries](../../sql-reference/dictionaries/index.md)

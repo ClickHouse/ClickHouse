@@ -1,5 +1,5 @@
 ---
-slug: /development/contrib
+slug: /en/development/contrib
 sidebar_position: 60
 sidebar_label: Third-Party Libraries
 ---
@@ -19,7 +19,7 @@ Depending on the build options, some of the libraries may have not been compiled
 
 [Example](https://sql.clickhouse.com?query_id=478GCPU7LRTSZJBNY3EJT3)
 
-## Adding and maintaining third-party libraries {#adding-and-maintaining-third-party-libraries}
+## Adding and maintaining third-party libraries
 
 Each third-party library must reside in a dedicated directory under the `contrib/` directory of the ClickHouse repository.
 Avoid dumping copies of external code into the library directory.

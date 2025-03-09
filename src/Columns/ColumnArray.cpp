@@ -143,7 +143,7 @@ void ColumnArray::get(size_t n, Field & res) const
             size, max_array_size_as_field);
 
     res = Array();
-    Array & res_arr = res.safeGet<Array>();
+    Array & res_arr = res.safeGet<Array &>();
     res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
@@ -332,7 +332,7 @@ void ColumnArray::updateHashFast(SipHash & hash) const
 
 void ColumnArray::insert(const Field & x)
 {
-    const Array & array = x.safeGet<Array>();
+    const Array & array = x.safeGet<const Array &>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
@@ -344,7 +344,7 @@ bool ColumnArray::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Array)
         return false;
 
-    const Array & array = x.safeGet<Array>();
+    const Array & array = x.safeGet<const Array &>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
     {

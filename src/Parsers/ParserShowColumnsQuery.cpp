@@ -79,7 +79,7 @@ bool ParserShowColumnsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
 
     if (like)
-        query->like = like->as<ASTLiteral &>().value.safeGet<String>();
+        query->like = like->as<ASTLiteral &>().value.safeGet<const String &>();
 
     node = query;
 

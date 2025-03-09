@@ -1,9 +1,7 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/studentttest
+slug: /en/sql-reference/aggregate-functions/reference/studentttest
 sidebar_position: 194
 sidebar_label: studentTTest
-title: "studentTTest"
-description: "Applies Student's t-test to samples from two populations."
 ---
 
 # studentTTest
@@ -71,4 +69,4 @@ Result:
 **See Also**
 
 - [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
-- [welchTTest function](/sql-reference/aggregate-functions/reference/welchttest)
+- [welchTTest function](welchttest.md#welchttest)

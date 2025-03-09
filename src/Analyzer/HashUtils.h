@@ -2,8 +2,6 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 
-#include <city.h>
-
 namespace DB
 {
 

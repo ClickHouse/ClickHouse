@@ -4,12 +4,12 @@
 #include <base/constexpr_helpers.h>
 #include <base/demangle.h>
 
-#include <base/MemorySanitizer.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/SharedMutex.h>
 #include <Common/SymbolIndex.h>
-#include <Common/scope_guard_safe.h>
 
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>

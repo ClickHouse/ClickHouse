@@ -1,5 +1,4 @@
 #include <Common/CancelToken.h>
-#include <Common/Exception.h>
 
 namespace DB
 {

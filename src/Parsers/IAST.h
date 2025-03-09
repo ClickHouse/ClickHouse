@@ -6,8 +6,7 @@
 #include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-
-#include <city.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
 #include <set>

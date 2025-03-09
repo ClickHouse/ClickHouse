@@ -1,13 +1,13 @@
 ---
-slug: /sql-reference/functions/geo/coordinates
+slug: /en/sql-reference/functions/geo/coordinates
 sidebar_label: Geographical Coordinates
 sidebar_position: 62
 title: "Functions for Working with Geographical Coordinates"
 ---
 
-## greatCircleDistance {#greatcircledistance}
+## greatCircleDistance
 
-Calculates the distance between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
+Calculates the distance between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
 ``` sql
 greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
@@ -24,7 +24,7 @@ Positive values correspond to North latitude and East longitude, and negative va
 
 **Returned value**
 
-The distance between two points on the Earth's surface, in meters.
+The distance between two points on the Earth’s surface, in meters.
 
 Generates an exception when the input parameter values fall outside of the range.
 
@@ -40,7 +40,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS grea
 └─────────────────────┘
 ```
 
-## geoDistance {#geodistance}
+## geoDistance
 
 Similar to `greatCircleDistance` but calculates the distance on WGS-84 ellipsoid instead of sphere. This is more precise approximation of the Earth Geoid.
 The performance is the same as for `greatCircleDistance` (no performance drawback). It is recommended to use `geoDistance` to calculate the distances on Earth.
@@ -62,7 +62,7 @@ Positive values correspond to North latitude and East longitude, and negative va
 
 **Returned value**
 
-The distance between two points on the Earth's surface, in meters.
+The distance between two points on the Earth’s surface, in meters.
 
 Generates an exception when the input parameter values fall outside of the range.
 
@@ -78,9 +78,9 @@ SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
 └─────────────┘
 ```
 
-## greatCircleAngle {#greatcircleangle}
+## greatCircleAngle
 
-Calculates the central angle between two points on the Earth's surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
+Calculates the central angle between two points on the Earth’s surface using [the great-circle formula](https://en.wikipedia.org/wiki/Great-circle_distance).
 
 ``` sql
 greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
@@ -109,7 +109,7 @@ SELECT greatCircleAngle(0, 0, 45, 0) AS arc
 └─────┘
 ```
 
-## pointInEllipses {#pointinellipses}
+## pointInEllipses
 
 Checks whether the point belongs to at least one of the ellipses.
 Coordinates are geometric in the Cartesian coordinate system.
@@ -142,7 +142,7 @@ SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
 └─────────────────────────────────────────────────┘
 ```
 
-## pointInPolygon {#pointinpolygon}
+## pointInPolygon
 
 Checks whether the point belongs to the polygon on the plane.
 

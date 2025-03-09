@@ -1,5 +1,5 @@
 ---
-slug: /development/build-cross-loongarch
+slug: /en/development/build-cross-loongarch
 sidebar_position: 35
 sidebar_label: Build on Linux for LoongArch64
 ---

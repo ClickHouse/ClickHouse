@@ -5,7 +5,6 @@
 #   include <Formats/ProtobufWriter.h>
 #   include <Formats/ProtobufSerializer.h>
 #   include <Formats/ProtobufSchemas.h>
-#   include <Processors/Port.h>
 
 namespace DB
 {

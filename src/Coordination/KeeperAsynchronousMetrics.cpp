@@ -1,7 +1,6 @@
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
 #include <Coordination/KeeperDispatcher.h>
-#include <Coordination/KeeperStorage.h>
 
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>

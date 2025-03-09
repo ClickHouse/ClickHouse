@@ -154,10 +154,8 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
-    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
-    void forEachSubcolumn(ColumnCallback callback) const override;
-    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
+    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
 
     bool structureEquals(const IColumn & rhs) const override;
 

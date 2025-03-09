@@ -490,9 +490,6 @@ void CHJIT::runOptimizationPassesOnModule(llvm::Module & module) const
     llvm::CGSCCAnalysisManager cgam;
     llvm::ModuleAnalysisManager mam;
 
-    auto target_analysis = machine->getTargetIRAnalysis();
-    fam.registerPass([&] { return target_analysis; });
-
     llvm::PipelineTuningOptions pto;
     pto.SLPVectorization = true;
 
@@ -526,8 +523,10 @@ std::unique_ptr<llvm::TargetMachine> CHJIT::getTargetMachine()
         throw Exception(ErrorCodes::CANNOT_COMPILE_CODE, "Cannot find target triple {} error: {}", triple, error);
 
     llvm::SubtargetFeatures features;
-    for (const auto & f : llvm::sys::getHostCPUFeatures())
-        features.AddFeature(f.first(), f.second);
+    llvm::StringMap<bool> feature_map;
+    if (llvm::sys::getHostCPUFeatures(feature_map))
+        for (auto & f : feature_map)
+            features.AddFeature(f.first(), f.second);
 
     llvm::TargetOptions options;
 

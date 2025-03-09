@@ -1,7 +1,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
@@ -9,8 +8,8 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageFactory.h>
 #include <Poco/Logger.h>
-#include <Databases/LoadingStrictnessLevel.h>
-#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include "Common/logger_useful.h"
+#include "Storages/ObjectStorage/StorageObjectStorageSettings.h"
 
 namespace DB
 {
@@ -27,19 +26,18 @@ namespace
 #if USE_AWS_S3 || USE_AZURE_BLOB_STORAGE || USE_HDFS || USE_AVRO
 
 std::shared_ptr<StorageObjectStorage>
-createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorage::ConfigurationPtr configuration)
+createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorage::ConfigurationPtr configuration, ContextPtr context)
 {
     auto & engine_args = args.engine_args;
     if (engine_args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
-    const auto context = args.getLocalContext();
+
     auto queue_settings = std::make_unique<StorageObjectStorageSettings>();
 
-    if (args.storage_def->settings)
-        queue_settings->loadFromQuery(*args.storage_def->settings);
+    queue_settings->loadFromQuery(*args.storage_def);
 
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, queue_settings.get());
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, context, false, std::move(queue_settings));
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -65,10 +63,8 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
-        // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
-        // and we want to avoid it when we load the table after a server restart.
-        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE),
-        args.getContext(), /// Use global context.
+        configuration->createObjectStorage(context, /* is_readonly */ false),
+        args.getContext(),
         args.table_id,
         args.columns,
         args.constraints,
@@ -88,7 +84,7 @@ void registerStorageAzure(StorageFactory & factory)
     factory.registerStorage("AzureBlobStorage", [](const StorageFactory::Arguments & args)
     {
         auto configuration = std::make_shared<StorageAzureConfiguration>();
-        return createStorageObjectStorage(args, configuration);
+        return createStorageObjectStorage(args, configuration, args.getLocalContext());
     },
     {
         .supports_settings = true,
@@ -106,7 +102,7 @@ void registerStorageS3Impl(const String & name, StorageFactory & factory)
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
         auto configuration = std::make_shared<StorageS3Configuration>();
-        return createStorageObjectStorage(args, configuration);
+        return createStorageObjectStorage(args, configuration, args.getLocalContext());
     },
     {
         .supports_settings = true,
@@ -140,7 +136,7 @@ void registerStorageHDFS(StorageFactory & factory)
     factory.registerStorage("HDFS", [=](const StorageFactory::Arguments & args)
     {
         auto configuration = std::make_shared<StorageHDFSConfiguration>();
-        return createStorageObjectStorage(args, configuration);
+        return createStorageObjectStorage(args, configuration, args.getLocalContext());
     },
     {
         .supports_settings = true,
@@ -178,7 +174,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageS3IcebergConfiguration>();
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
         },
         {
             .supports_settings = true,
@@ -192,7 +188,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageS3IcebergConfiguration>();
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
         },
         {
             .supports_settings = true,
@@ -207,7 +203,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageAzureIcebergConfiguration>();
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
         },
         {
             .supports_settings = true,
@@ -222,7 +218,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageHDFSIcebergConfiguration>();
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
         },
         {
             .supports_settings = true,
@@ -236,7 +232,7 @@ void registerStorageIceberg(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageLocalIcebergConfiguration>();
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
         },
         {
             .supports_settings = true,
@@ -249,7 +245,7 @@ void registerStorageIceberg(StorageFactory & factory)
 #endif
 
 
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
 void registerStorageDeltaLake(StorageFactory & factory)
 {
 #if USE_AWS_S3
@@ -258,10 +254,10 @@ void registerStorageDeltaLake(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageS3DeltaLakeConfiguration>();
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
         },
         {
-            .supports_settings = true,
+            .supports_settings = false,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
@@ -279,7 +275,7 @@ void registerStorageHudi(StorageFactory & factory)
         [&](const StorageFactory::Arguments & args)
         {
             auto configuration = std::make_shared<StorageS3HudiConfiguration>();
-            return createStorageObjectStorage(args, configuration);
+            return createStorageObjectStorage(args, configuration, args.getLocalContext());
         },
         {
             .supports_settings = false,

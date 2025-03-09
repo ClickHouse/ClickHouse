@@ -1,7 +1,7 @@
 ---
-title: XML
-slug: /interfaces/formats/XML
-keywords: [XML]
+title : XML
+slug : /en/interfaces/formats/XML
+keywords : [XML]
 input_format: false
 output_format: true
 alias: []
@@ -11,18 +11,18 @@ alias: []
 |-------|--------|-------|
 | ✗     | ✔      |       |
 
-## Description {#description}
+## Description
 
 The `XML` format is suitable only for output, and not for parsing. 
 
-If the column name does not have an acceptable format, just 'field' is used as the element name. In general, the XML structure follows the JSON structure.
+If the column name does not have an acceptable format, just ‘field’ is used as the element name. In general, the XML structure follows the JSON structure.
 Just as for JSON, invalid UTF-8 sequences are changed to the replacement character `�` so the output text will consist of valid UTF-8 sequences.
 
 In string values, the characters `<` and `&` are escaped as `<` and `&`.
 
 Arrays are output as `<array><elem>Hello</elem><elem>World</elem>...</array>`,and tuples as `<tuple><elem>Hello</elem><elem>World</elem>...</tuple>`.
 
-## Example Usage {#example-usage}
+## Example Usage
 
 Example:
 
@@ -88,6 +88,6 @@ Example:
 </result>
 ```
 
-## Format Settings {#format-settings}
+## Format Settings
 
 ## XML {#xml}

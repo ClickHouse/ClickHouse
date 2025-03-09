@@ -1,10 +1,9 @@
 ---
-description: "System table containing information about disks defined in the server configuration"
-slug: /operations/system-tables/disks
-title: "system.disks"
-keywords: ["system table", "disks"]
+slug: /en/operations/system-tables/disks
 ---
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
+# disks
 
 <SystemTableCloud/>
 

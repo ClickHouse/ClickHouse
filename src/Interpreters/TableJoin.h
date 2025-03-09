@@ -12,6 +12,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <QueryPipeline/SizeLimits.h>
+#include <Common/Exception.h>
 
 #include <base/types.h>
 
@@ -248,7 +249,6 @@ public:
     TableJoin() = default;
 
     TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
-    TableJoin(const JoinSettings & settings, bool join_use_nulls_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_);
 
     /// for StorageJoin
     TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness,

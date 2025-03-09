@@ -1,5 +1,5 @@
 ---
-slug: /engines/table-engines/log-family/tinylog
+slug: /en/engines/table-engines/log-family/tinylog
 toc_priority: 34
 toc_title: TinyLog
 ---
@@ -10,9 +10,9 @@ The engine belongs to the log engine family. See [Log Engine Family](../../../en
 
 This table engine is typically used with the write-once method: write data one time, then read it as many times as necessary. For example, you can use `TinyLog`-type tables for intermediary data that is processed in small batches. Note that storing data in a large number of small tables is inefficient.
 
-Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (up to about 1,000,000 rows). It makes sense to use this table engine if you have many small tables, since it's simpler than the [Log](../../../engines/table-engines/log-family/log.md) engine (fewer files need to be opened).
+Queries are executed in a single stream. In other words, this engine is intended for relatively small tables (up to about 1,000,000 rows). It makes sense to use this table engine if you have many small tables, since it’s simpler than the [Log](../../../engines/table-engines/log-family/log.md) engine (fewer files need to be opened).
 
-## Characteristics {#characteristics}
+## Characteristics
 
 - **Simpler Structure**: Unlike the Log engine, TinyLog does not use mark files. This reduces complexity but also limits performance optimizations for large datasets.
 - **Single Stream Queries**: Queries on TinyLog tables are executed in a single stream, making it suitable for relatively small tables, typically up to 1,000,000 rows.
@@ -31,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = TinyLog
 ```
 
-See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 ## Writing the Data {#table_engines-tinylog-writing-the-data}
 

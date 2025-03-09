@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MutateFromLogEntryTask.h>
 
-#include <Core/BackgroundSchedulePool.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -168,7 +167,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
                 uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
 
                 LOG_INFO(log, "Mutation size is {} bytes (it's more than sleep threshold {}) so will intentionally sleep for {} ms to allow other replicas to took this big mutation",
-                    estimated_space_for_result, (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock].value, time_to_sleep_milliseconds);
+                    estimated_space_for_result, (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock], time_to_sleep_milliseconds);
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
             }

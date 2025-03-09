@@ -1,10 +1,6 @@
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 
-#include <Common/ElapsedTimeProfileEventIncrement.h>
-
-#include <Interpreters/Context.h>
-
 #include <base/insertAtEnd.h>
 
 namespace CurrentMetrics
@@ -49,7 +45,7 @@ PartsRanges checkRanges(PartsRanges && ranges)
 #ifndef NDEBUG
     /// If some range was generated -- it should not be empty.
     for (const auto & range : ranges)
-        chassert(!range.empty());
+        assert(!range.empty());
 #endif
 
     return ranges;
@@ -107,7 +103,7 @@ PartsRanges splitByMergePredicate(PartsRange && range, const MergePredicatePtr &
 
 PartsRanges splitByMergePredicate(PartsRanges && ranges, const MergePredicatePtr & merge_predicate, LogSeriesLimiter & series_log)
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds);
+    Stopwatch ranges_for_merge_timer;
 
     PartsRanges mergeable_ranges;
     for (auto && range : ranges)
@@ -119,6 +115,7 @@ PartsRanges splitByMergePredicate(PartsRanges && ranges, const MergePredicatePtr
     LOG_TRACE(series_log, "Split parts into {} mergeable ranges using merge predicate", mergeable_ranges.size());
     ProfileEvents::increment(ProfileEvents::MergerMutatorPartsInRangesForMergeCount, calculatePartsCount(mergeable_ranges));
     ProfileEvents::increment(ProfileEvents::MergerMutatorRangesForMergeCount, mergeable_ranges.size());
+    ProfileEvents::increment(ProfileEvents::MergerMutatorPrepareRangesForMergeElapsedMicroseconds, ranges_for_merge_timer.elapsedMicroseconds());
 
     return checkRanges(std::move(mergeable_ranges));
 }
@@ -143,7 +140,7 @@ std::unordered_map<String, PartsRanges> combineByPartitions(PartsRanges && range
 
     for (auto && range : ranges)
     {
-        chassert(!range.empty());
+        assert(!range.empty());
         ranges_by_partitions[range.front().info.partition_id].push_back(std::move(range));
     }
 
@@ -163,7 +160,7 @@ std::unordered_map<String, PartitionStatistics> calculateStatisticsForPartitions
 
     for (const auto & range : ranges)
     {
-        chassert(!range.empty());
+        assert(!range.empty());
         PartitionStatistics & partition_stats = stats[range.front().info.partition_id];
 
         partition_stats.part_count += range.size();
@@ -229,7 +226,7 @@ String getBestPartitionToOptimizeEntire(
             return e1.second.min_age < e2.second.min_age;
         });
 
-    chassert(best_partition_it != stats.end());
+    assert(best_partition_it != stats.end());
 
     const size_t best_partition_min_age = static_cast<size_t>(best_partition_it->second.min_age);
     if (best_partition_min_age < (*settings)[MergeTreeSetting::min_age_to_force_merge_seconds] || is_partition_invalid(best_partition_it->second))
@@ -246,8 +243,12 @@ PartsRanges grabAllPossibleRanges(
     const std::optional<PartitionIdsHint> & partitions_hint,
     LogSeriesLimiter & series_log)
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds);
-    return parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
+    Stopwatch get_data_parts_for_merge_timer;
+
+    auto ranges = parts_collector->grabAllPossibleRanges(metadata_snapshot, storage_policy, current_time, partitions_hint, series_log);
+    ProfileEvents::increment(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds, get_data_parts_for_merge_timer.elapsedMicroseconds());
+
+    return checkRanges(std::move(ranges));
 }
 
 std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
@@ -257,8 +258,12 @@ std::expected<PartsRange, PreformattedMessage> grabAllPartsInsidePartition(
     const time_t & current_time,
     const std::string & partition_id)
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds);
-    return parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id);
+    Stopwatch get_data_parts_for_merge_timer;
+
+    auto range = parts_collector->grabAllPartsInsidePartition(metadata_snapshot, storage_policy, current_time, partition_id);
+    ProfileEvents::increment(ProfileEvents::MergerMutatorsGetPartsForMergeElapsedMicroseconds, get_data_parts_for_merge_timer.elapsedMicroseconds());
+
+    return range;
 }
 
 std::optional<MergeSelectorChoice> chooseMergeFrom(
@@ -272,7 +277,7 @@ std::optional<MergeSelectorChoice> chooseMergeFrom(
     time_t current_time,
     const LoggerPtr & log)
 {
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds);
+    Stopwatch select_parts_from_ranges_timer;
 
     auto choice = selector.chooseMergeFrom(
         ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times,
@@ -280,9 +285,15 @@ std::optional<MergeSelectorChoice> chooseMergeFrom(
 
     if (choice.has_value())
     {
-        const auto & range = choice->range;
+        LOG_INFO(log, "Selected {} parts from {} to {}. Merge selecting phase took: {}ms",
+            choice->range.size(), choice->range.front().name, choice->range.back().name, select_parts_from_ranges_timer.elapsedMicroseconds() / 1000);
+
         ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, choice->range.size());
-        LOG_INFO(log, "Selected {} parts from {} to {}. Merge selecting phase took: {}ms", range.size(), range.front().name, range.back().name, watch.elapsed() / 1000);
+        ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::MergerMutatorSelectPartsForMergeElapsedMicroseconds, select_parts_from_ranges_timer.elapsedMicroseconds());
     }
 
     return choice;
@@ -298,7 +309,7 @@ MergeTreeDataMergerMutator::MergeTreeDataMergerMutator(MergeTreeData & data_)
 
 void MergeTreeDataMergerMutator::updateTTLMergeTimes(const MergeSelectorChoice & merge_choice, const MergeTreeSettingsPtr & settings, time_t current_time)
 {
-    chassert(!merge_choice.range.empty());
+    assert(!merge_choice.range.empty());
     const String & partition_id = merge_choice.range.front().info.partition_id;
 
     switch (merge_choice.merge_type)
@@ -342,8 +353,8 @@ PartitionIdsHint MergeTreeDataMergerMutator::getPartitionsThatMayBeMerged(
     PartitionIdsHint partitions_hint;
     for (const auto & [partition, ranges_in_partition] : ranges_by_partitions)
     {
-        chassert(!ranges_in_partition.empty());
-        chassert(!ranges_in_partition.front().empty());
+        assert(!ranges_in_partition.empty());
+        assert(!ranges_in_partition.front().empty());
 
         auto merge_choice = chooseMergeFrom(
             selector,

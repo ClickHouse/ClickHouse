@@ -3,7 +3,6 @@
 #if USE_MONGODB
 #include <Storages/StorageMongoDB.h>
 
-#include <Common/assert_cast.h>
 #include <Common/Exception.h>
 
 #include <Interpreters/Context.h>

@@ -28,8 +28,6 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
-#include <fmt/ranges.h>
-
 namespace DB
 {
 

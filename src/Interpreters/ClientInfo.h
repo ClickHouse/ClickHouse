@@ -1,14 +1,16 @@
 #pragma once
 
+#include <Core/UUID.h>
+#include <Poco/Net/SocketAddress.h>
 #include <base/types.h>
-#include <Common/OpenTelemetryTracingContext.h>
+#include <Common/OpenTelemetryTraceContext.h>
+#include <Common/VersionNumber.h>
+#include <boost/algorithm/string/trim.hpp>
 
-#include <time.h>
 
 namespace Poco::Net
 {
     class HTTPRequest;
-    class SocketAddress;
 }
 
 namespace DB
@@ -54,19 +56,17 @@ public:
         SECONDARY_QUERY = 2,    /// Query that was initiated by another query for distributed or ON CLUSTER query execution.
     };
 
-    ClientInfo();
-
     QueryKind query_kind = QueryKind::NO_QUERY;
 
     /// Current values are not serialized, because it is passed separately.
     String current_user;
     String current_query_id;
-    std::shared_ptr<Poco::Net::SocketAddress> current_address;
+    Poco::Net::SocketAddress current_address;
 
     /// When query_kind == INITIAL_QUERY, these values are equal to current.
     String initial_user;
     String initial_query_id;
-    std::shared_ptr<Poco::Net::SocketAddress> initial_address;
+    Poco::Net::SocketAddress initial_address;
     time_t initial_query_start_time{};
     Decimal64 initial_query_start_time_microseconds{};
 
@@ -109,16 +109,18 @@ public:
     /// For mysql and postgresql
     UInt64 connection_id = 0;
 
-    /// For interserver in case initial query transport was authenticated via JWT.
-    String jwt;
-
     /// Comma separated list of forwarded IP addresses (from X-Forwarded-For for HTTP interface).
     /// It's expected that proxy appends the forwarded address to the end of the list.
     /// The element can be trusted only if you trust the corresponding proxy.
     /// NOTE This field can also be reused in future for TCP interface with PROXY v1/v2 protocols.
     String forwarded_for;
     std::optional<Poco::Net::SocketAddress> getLastForwardedFor() const;
-    String getLastForwardedForHost() const;
+
+    String getLastForwardedForHost() const
+    {
+        auto addr = getLastForwardedFor();
+        return addr ? addr->host().toString() : "";
+    }
 
     /// Common
     String quota_key;
@@ -160,6 +162,7 @@ public:
     bool clientVersionEquals(const ClientInfo & other, bool compare_patch) const;
 
     String getVersionStr() const;
+    VersionNumber getVersionNumber() const;
 
 private:
     void fillOSUserHostNameAndVersionInfo();

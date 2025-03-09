@@ -34,8 +34,7 @@ function run_query_with_pure_parallel_replicas () {
         --prefer_localhost_replica 1 \
         --cluster_for_parallel_replicas 'test_cluster_one_shard_three_replicas_localhost' \
         --enable_parallel_replicas 1 \
-        --enable_analyzer 0 \
-        --parallel_replicas_only_with_analyzer 0
+        --enable_analyzer 0
 
     $CLICKHOUSE_CLIENT \
         --query "$2" \

@@ -58,7 +58,6 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/ConcurrentHashJoin.h>
@@ -445,7 +444,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             columns_names.size(),
-            settings[Setting::max_columns_to_read].value);
+            settings[Setting::max_columns_to_read]);
 }
 
 void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info,
@@ -584,7 +583,7 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
     ASTPtr additional_filter_ast;
     for (const auto & additional_filter : additional_filters)
     {
-        const auto & tuple = additional_filter.safeGet<Tuple>();
+        const auto & tuple = additional_filter.safeGet<const Tuple &>();
         auto const & table = tuple.at(0).safeGet<String>();
         auto const & filter = tuple.at(1).safeGet<String>();
 
@@ -1414,7 +1413,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     trySetStorageInTableJoin(right_table_expression, table_join);
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
-    auto join_algorithm = chooseJoinAlgorithm(table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), std::move(hash_table_stat_cache_key));
+    auto join_algorithm = chooseJoinAlgorithm(table_join, prepared_join_storage, left_header, right_header, planner_context->getQueryContext(), std::move(hash_table_stat_cache_key));
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();
@@ -2057,9 +2056,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
     join_step_logical->setHashTableCacheKey(preCalculateCacheKey(join_node.getRightTableExpression(), select_query_info));
 
     auto & join_expression_actions = join_step_logical->getExpressionActions();
-    appendSetsFromActionsDAG(*join_expression_actions.left_pre_join_actions, left_join_tree_query_plan.useful_sets);
-    appendSetsFromActionsDAG(*join_expression_actions.post_join_actions, left_join_tree_query_plan.useful_sets);
-    appendSetsFromActionsDAG(*join_expression_actions.right_pre_join_actions, right_join_tree_query_plan.useful_sets);
+    appendSetsFromActionsDAG(join_expression_actions.left_pre_join_actions, left_join_tree_query_plan.useful_sets);
+    appendSetsFromActionsDAG(join_expression_actions.post_join_actions, left_join_tree_query_plan.useful_sets);
+    appendSetsFromActionsDAG(join_expression_actions.right_pre_join_actions, right_join_tree_query_plan.useful_sets);
     return joinPlansWithStep(
         std::move(join_step_logical),
         std::move(left_join_tree_query_plan),

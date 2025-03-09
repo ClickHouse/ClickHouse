@@ -1,7 +1,7 @@
+#include "config.h"
+
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
-#include <Common/SipHash.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
@@ -25,11 +25,6 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueCleanupMaxSetSizeOrTTLMicroseconds;
     extern const Event ObjectStorageQueueLockLocalFileStatusesMicroseconds;
-};
-
-namespace CurrentMetrics
-{
-    extern const Metric ObjectStorageQueueRegisteredServers;
 };
 
 namespace DB
@@ -156,7 +151,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
     LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
-              table_metadata.mode, table_metadata.buckets.load(), table_metadata.processing_threads_num.load(), buckets_num);
+              table_metadata.mode, table_metadata.buckets, table_metadata.processing_threads_num, buckets_num);
 
     update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
@@ -854,12 +849,7 @@ void ObjectStorageQueueMetadata::updateRegistry(const DB::Strings & registered_)
         return;
 
     std::unique_lock lock(active_servers_mutex);
-
-    CurrentMetrics::sub(CurrentMetrics::ObjectStorageQueueRegisteredServers, active_servers.size());
-
     active_servers = registered_set;
-
-    CurrentMetrics::add(CurrentMetrics::ObjectStorageQueueRegisteredServers, active_servers.size());
 
     if (!active_servers_hash_ring)
         active_servers_hash_ring = std::make_shared<ServersHashRing>(1000, log); /// TODO: Add a setting.
@@ -1028,7 +1018,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     };
 
     LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}",
-             table_metadata.tracked_files_limit.load(), table_metadata.tracked_files_ttl_sec.load(), get_nodes_str());
+             table_metadata.tracked_files_limit, table_metadata.tracked_files_ttl_sec, get_nodes_str());
 
     static constexpr size_t keeper_multi_batch_size = 100;
     Coordination::Requests remove_requests;
