@@ -11,6 +11,7 @@
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
+#include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 
 
 namespace DB
@@ -18,6 +19,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool object_storage_stable_cluster_task_distribution;
 }
 
 namespace ErrorCodes
@@ -118,14 +120,30 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
         local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
 
-    auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
+    auto cluster = getCluster(local_context);
+    
+    if (local_context->getSettingsRef()[Setting::object_storage_stable_cluster_task_distribution])
     {
-        auto object_info = iterator->next(0);
-        if (object_info)
-            return object_info->getPath();
-        return "";
-    });
-    return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+        auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, cluster);
+        
+        auto callback = std::make_shared<TaskIterator>(
+            [task_distributor](Connection * connection) mutable -> String {
+                return task_distributor->getNextTask(connection);
+            });
+        
+        return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+    }
+    else
+    {
+        auto callback = std::make_shared<TaskIterator>(
+            [iterator](Connection *) mutable -> String {
+                if (auto object_info = iterator->next(0))
+                    return object_info->getPath();
+                return "";
+            });
+        
+        return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
+    }
 }
 
 }
