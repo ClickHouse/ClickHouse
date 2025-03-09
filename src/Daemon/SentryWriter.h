@@ -1,5 +1,7 @@
 #pragma once
 
+#include "config.h"
+
 #include <string>
 #include <Common/StackTrace.h>
 
@@ -50,8 +52,10 @@ public:
 
 private:
     static std::unique_ptr<SentryWriter> instance;
+#if USE_SENTRY
     bool initialized = false;
     bool anonymize = false;
+#endif
     std::string server_data_path;
 
     explicit SentryWriter(Poco::Util::LayeredConfiguration & config);
