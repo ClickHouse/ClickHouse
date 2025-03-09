@@ -9,25 +9,25 @@ sidebar_label: SimpleAggregateFunction
 This optimization can be applied to functions for which the following property holds: the result of applying a function `f` to a row set `S1 UNION ALL S2` can be obtained by applying `f` to parts of the row set separately, and then again applying `f` to the results: `f(S1 UNION ALL S2) = f(f(S1) UNION ALL f(S2))`.
 This property guarantees that partial aggregation results are enough to compute the combined one, so we do not have to store and process any extra data.
 
-The common way to produce an aggregate function value is by calling the aggregate function with the [-SimpleState](/sql-reference/aggregate-functions/combinators#-simplestate) suffix.
+The common way to produce an aggregate function value is by calling the aggregate function with the [-SimpleState](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-simplestate) suffix.
 
 The following aggregate functions are supported:
 
-- [`any`](/sql-reference/aggregate-functions/reference/any)
-- [`anyLast`](/sql-reference/aggregate-functions/reference/anylast)
-- [`min`](/sql-reference/aggregate-functions/reference/min)
-- [`max`](/sql-reference/aggregate-functions/reference/max)
-- [`sum`](/sql-reference/aggregate-functions/reference/sum)
-- [`sumWithOverflow`](/sql-reference/aggregate-functions/reference/sumwithoverflow)
-- [`groupBitAnd`](/sql-reference/aggregate-functions/reference/groupbitand)
-- [`groupBitOr`](/sql-reference/aggregate-functions/reference/groupbitor)
-- [`groupBitXor`](/sql-reference/aggregate-functions/reference/groupbitxor)
-- [`groupArrayArray`](/sql-reference/aggregate-functions/reference/grouparray)
+- [`any`](../../sql-reference/aggregate-functions/reference/any.md#agg_function-any)
+- [`anyLast`](../../sql-reference/aggregate-functions/reference/anylast.md#anylastx)
+- [`min`](../../sql-reference/aggregate-functions/reference/min.md#agg_function-min)
+- [`max`](../../sql-reference/aggregate-functions/reference/max.md#agg_function-max)
+- [`sum`](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum)
+- [`sumWithOverflow`](../../sql-reference/aggregate-functions/reference/sumwithoverflow.md#sumwithoverflowx)
+- [`groupBitAnd`](../../sql-reference/aggregate-functions/reference/groupbitand.md#groupbitand)
+- [`groupBitOr`](../../sql-reference/aggregate-functions/reference/groupbitor.md#groupbitor)
+- [`groupBitXor`](../../sql-reference/aggregate-functions/reference/groupbitxor.md#groupbitxor)
+- [`groupArrayArray`](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray)
 - [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupuniqarray.md)
 - [`groupUniqArrayArrayMap`](../../sql-reference/aggregate-functions/combinators#-map)
-- [`sumMap`](/sql-reference/aggregate-functions/reference/summap)
-- [`minMap`](/sql-reference/aggregate-functions/reference/minmap)
-- [`maxMap`](/sql-reference/aggregate-functions/reference/maxmap)
+- [`sumMap`](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap)
+- [`minMap`](../../sql-reference/aggregate-functions/reference/minmap.md#agg_functions-minmap)
+- [`maxMap`](../../sql-reference/aggregate-functions/reference/maxmap.md#agg_functions-maxmap)
 
 
 :::note

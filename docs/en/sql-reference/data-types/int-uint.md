@@ -10,7 +10,7 @@ with a sign (`Int`) or without a sign (unsigned `UInt`) ranging from one byte to
 
 When creating tables, numeric parameters for integer numbers can be set (e.g. `TINYINT(8)`, `SMALLINT(16)`, `INT(32)`, `BIGINT(64)`), but ClickHouse ignores them.
 
-## Integer Ranges {#integer-ranges}
+## Integer Ranges
 
 Integer types have the following ranges:
 
@@ -34,7 +34,7 @@ Unsigned integer types have the following ranges:
 | `UInt128` | \[0 : 340282366920938463463374607431768211455\]                                        |
 | `UInt256` | \[0 : 115792089237316195423570985008687907853269984665640564039457584007913129639935\] |
 
-## Integer Aliases {#integer-aliases}
+## Integer Aliases
 
 Integer types have the following aliases:
 

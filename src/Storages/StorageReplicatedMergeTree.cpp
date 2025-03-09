@@ -472,6 +472,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         }
     }
 
+
     std::optional<std::unordered_set<std::string>> expected_parts_on_this_replica;
     bool skip_sanity_checks = false;
     /// It does not make sense for CREATE query
@@ -4059,7 +4060,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 " is greater than max_replicated_merges_in_queue ({}), so won't select new parts to merge or mutate.",
                 merges_and_mutations_queued.merges,
                 merges_and_mutations_queued.mutations,
-                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue].value);
+                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_merges_in_queue]);
             return AttemptStatus::Limited;
         }
 
@@ -4141,7 +4142,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             LOG_TRACE(log, "Number of queued mutations ({}) is greater than max_replicated_mutations_in_queue ({})"
                 " or there are not enough free threads for mutations, so won't select new parts to merge or mutate.",
                 max_source_part_size_for_mutation,
-                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue].value);
+                (*storage_settings_ptr)[MergeTreeSetting::max_replicated_mutations_in_queue]);
             return AttemptStatus::Limited;
         }
 

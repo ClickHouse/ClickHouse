@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/IStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -17,7 +18,6 @@ namespace DB
 class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
-struct StorageObjectStorageSettings;
 
 namespace ErrorCodes
 {

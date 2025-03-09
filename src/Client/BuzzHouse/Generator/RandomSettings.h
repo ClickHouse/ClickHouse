@@ -25,6 +25,9 @@ public:
         , changes_behavior(cb)
     {
     }
+
+    constexpr CHSetting(const CHSetting & rhs) = default;
+    constexpr CHSetting(CHSetting && rhs) = default;
 };
 
 const std::function<String(RandomGenerator &)> trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };

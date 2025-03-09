@@ -3,8 +3,6 @@ slug: /sql-reference/table-functions/gcs
 sidebar_position: 70
 sidebar_label: gcs
 keywords: [gcs, bucket]
-title: "gcs"
-description: "Provides a table-like interface to `SELECT` and `INSERT` data from Google Cloud Storage. Requires the `Storage Object User` IAM role."
 ---
 
 # gcs Table Function
@@ -39,11 +37,11 @@ The GCS Table Function integrates with Google Cloud Storage by using the GCS XML
   :::
 - `NOSIGN` — If this keyword is provided in place of credentials, all the requests will not be signed.
 - `hmac_key` and `hmac_secret` — Keys that specify credentials to use with given endpoint. Optional.
-- `format` — The [format](/sql-reference/formats) of the file.
+- `format` — The [format](../../interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 - `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
 
-Arguments can also be passed using [named collections](operations/named-collections.md). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
+Arguments can also be passed using [named collections](/docs/operations/named-collections.md). In this case `url`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 
  - `access_key_id` — `hmac_key`, optional.
  - `secret_access_key` — `hmac_secret`, optional.
@@ -89,7 +87,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-## Usage {#usage}
+## Usage
 
 Suppose that we have several files with following URIs on GCS:
 
@@ -171,7 +169,7 @@ The below get data from all `test-data.csv.gz` files from any folder inside `my-
 SELECT * FROM gcs('https://storage.googleapis.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
-For production use cases it is recommended to use [named collections](operations/named-collections.md). Here is the example:
+For production use cases it is recommended to use [named collections](/docs/operations/named-collections.md). Here is the example:
 ``` sql
 
 CREATE NAMED COLLECTION creds AS
@@ -181,7 +179,7 @@ SELECT count(*)
 FROM gcs(creds, url='https://s3-object-url.csv')
 ```
 
-## Partitioned Write {#partitioned-write}
+## Partitioned Write
 
 If you specify `PARTITION BY` expression when inserting data into `GCS` table, a separate file is created for each partition value. Splitting the data into separate files helps to improve reading operations efficiency.
 

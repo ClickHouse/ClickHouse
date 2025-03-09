@@ -7,7 +7,6 @@
 #include <vector>
 
 #include <Core/Field.h>
-#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeArray.h>
@@ -17,19 +16,14 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
-#include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterSortedStreamByRange.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Common/FieldAccurateComparison.h>
-
-#include <boost/functional/hash.hpp>
-
-#include <fmt/ranges.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 
 using namespace DB;
 
@@ -115,10 +109,10 @@ int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
     {
         for (size_t i = 0; i < size; ++i)
         {
-            if (accurateLess(rhs[i], lhs[i]))
+            if (applyVisitor(FieldVisitorAccurateLess(), rhs[i], lhs[i]))
                 return -1;
 
-            if (!accurateEquals(rhs[i], lhs[i]))
+            if (!applyVisitor(FieldVisitorAccurateEquals(), rhs[i], lhs[i]))
                 return 1;
         }
     }
@@ -126,10 +120,10 @@ int compareValues(const Values & lhs, const Values & rhs, bool in_reverse_order)
     {
         for (size_t i = 0; i < size; ++i)
         {
-            if (accurateLess(lhs[i], rhs[i]))
+            if (applyVisitor(FieldVisitorAccurateLess(), lhs[i], rhs[i]))
                 return -1;
 
-            if (!accurateEquals(lhs[i], rhs[i]))
+            if (!applyVisitor(FieldVisitorAccurateEquals(), lhs[i], rhs[i]))
                 return 1;
         }
     }
@@ -310,7 +304,7 @@ struct PartsRangesIterator
             return false;
 
         for (size_t i = 0; i < value.size(); ++i)
-            if (!accurateEquals(value[i], other.value[i]))
+            if (!applyVisitor(FieldVisitorAccurateEquals(), value[i], other.value[i]))
                 return false;
 
         return range == other.range && part_index == other.part_index && event == other.event;

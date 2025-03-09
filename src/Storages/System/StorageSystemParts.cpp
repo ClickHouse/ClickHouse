@@ -35,8 +35,8 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Waiting for covered parts to be removed first";
     case DB::DataPartRemovalState::REMOVE:
         return "Part was selected to be removed";
-    case DB::DataPartRemovalState::REMOVE_ROLLED_BACK:
-        return "Part was selected to be removed but then it had been rolled back. The remove will be retried";
+    case DB::DataPartRemovalState::REMOVE_ROLLBACKED:
+        return "Part was selected to be removed but then it had been rollbacked. The remove will be retried";
     case DB::DataPartRemovalState::REMOVE_RETRY:
         return "Retry to remove part";
     }

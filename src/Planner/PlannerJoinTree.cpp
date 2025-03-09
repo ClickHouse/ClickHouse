@@ -445,7 +445,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             columns_names.size(),
-            settings[Setting::max_columns_to_read].value);
+            settings[Setting::max_columns_to_read]);
 }
 
 void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info,
@@ -1414,7 +1414,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     trySetStorageInTableJoin(right_table_expression, table_join);
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
-    auto join_algorithm = chooseJoinAlgorithm(table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), std::move(hash_table_stat_cache_key));
+    auto join_algorithm = chooseJoinAlgorithm(table_join, prepared_join_storage, left_header, right_header, planner_context->getQueryContext(), std::move(hash_table_stat_cache_key));
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();

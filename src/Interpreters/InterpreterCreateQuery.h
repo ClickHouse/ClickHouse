@@ -16,6 +16,7 @@ namespace DB
 class ASTCreateQuery;
 class ASTColumnDeclaration;
 class ASTExpressionList;
+class ASTConstraintDeclaration;
 class ASTStorage;
 class IDatabase;
 class DDLGuard;

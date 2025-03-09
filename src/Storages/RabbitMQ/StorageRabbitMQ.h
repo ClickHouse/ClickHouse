@@ -80,9 +80,6 @@ public:
     void incrementReader();
     void decrementReader();
 
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-
 private:
     ContextMutablePtr rabbitmq_context;
     std::unique_ptr<RabbitMQSettings> rabbitmq_settings;

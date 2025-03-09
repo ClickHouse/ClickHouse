@@ -835,7 +835,7 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
 {
     const auto & object_checkpoint = assert_cast<const ColumnObjectCheckpoint &>(checkpoint);
 
-    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map, bool is_dynamic_paths)
+    auto rollback_columns = [&](auto & columns_map, const auto & checkpoints_map)
     {
         NameSet names_to_remove;
 
@@ -850,19 +850,11 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
         }
 
         for (const auto & name : names_to_remove)
-        {
-            if (is_dynamic_paths)
-            {
-                dynamic_paths_ptrs.erase(name);
-                sorted_dynamic_paths.erase(name);
-            }
-
             columns_map.erase(name);
-        }
     };
 
-    rollback_columns(typed_paths, object_checkpoint.typed_paths, false);
-    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths, true);
+    rollback_columns(typed_paths, object_checkpoint.typed_paths);
+    rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths);
     shared_data->rollback(*object_checkpoint.shared_data);
 }
 

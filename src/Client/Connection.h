@@ -8,7 +8,6 @@
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
-#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>

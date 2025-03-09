@@ -92,9 +92,6 @@ public:
 
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
-    bool supportsDynamicSubcolumns() const override { return true; }
-    bool supportsSubcolumns() const override { return true; }
-
 private:
     friend class ReadFromStorageKafka;
 

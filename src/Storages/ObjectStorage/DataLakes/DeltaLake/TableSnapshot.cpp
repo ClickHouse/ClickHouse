@@ -7,14 +7,11 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Field.h>
-#include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <IO/ReadBufferFromString.h>
 #include "getSchemaFromSnapshot.h"
 #include "KernelUtils.h"
-
-#include <fmt/ranges.h>
 
 namespace fs = std::filesystem;
 

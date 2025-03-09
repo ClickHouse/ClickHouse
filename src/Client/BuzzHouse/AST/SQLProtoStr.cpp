@@ -752,18 +752,6 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
             }
         }
         break;
-        case BottomTypeNameType::kBoolean:
-            ret += "Bool";
-            break;
-        case BottomTypeNameType::kUuid:
-            ret += "UUID";
-            break;
-        case BottomTypeNameType::kIPv4:
-            ret += "IPv4";
-            break;
-        case BottomTypeNameType::kIPv6:
-            ret += "IPv6";
-            break;
         default: {
             if (lcard)
             {
@@ -822,6 +810,12 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
                         }
                     }
                     break;
+                    case BottomTypeNameType::kBoolean:
+                        ret += "Bool";
+                        break;
+                    case BottomTypeNameType::kUuid:
+                        ret += "UUID";
+                        break;
                     case BottomTypeNameType::kJdef: {
                         const JSONDef & jdef = btn.jdef();
 
@@ -896,6 +890,12 @@ void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard
                         ret += ")";
                     }
                     break;
+                    case BottomTypeNameType::kIPv4:
+                        ret += "IPv4";
+                        break;
+                    case BottomTypeNameType::kIPv6:
+                        ret += "IPv6";
+                        break;
                     default:
                         ret += "Int";
                 }
@@ -1722,6 +1722,32 @@ CONV_FN(JoinClause, jc)
     }
 }
 
+CONV_FN(JoinedDerivedQuery, tos)
+{
+    ret += "(";
+    ExplainQueryToString(ret, tos.select());
+    ret += ")";
+    if (tos.has_table_alias())
+    {
+        ret += " ";
+        TableToString(ret, tos.table_alias());
+    }
+}
+
+CONV_FN(JoinedTable, jt)
+{
+    ExprSchemaTableToString(ret, jt.est());
+    if (jt.has_table_alias())
+    {
+        ret += " ";
+        TableToString(ret, jt.table_alias());
+    }
+    if (jt.final())
+    {
+        ret += " FINAL";
+    }
+}
+
 CONV_FN(FileFunc, ff)
 {
     ret += "file('";
@@ -1788,72 +1814,34 @@ CONV_FN(GenerateSeriesFunc, gsf)
     ret += ")";
 }
 
-CONV_FN(TableFunction, tf);
-
-void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
-{
-    using TableOrFunctionType = TableOrFunction::JtfOneofCase;
-    switch (tof.jtf_oneof_case())
-    {
-        case TableOrFunctionType::kEst:
-            if (tudf)
-            {
-                const ExprSchemaTable & est = tof.est();
-
-                ret += "'";
-                if (est.has_database())
-                {
-                    DatabaseToString(ret, est.database());
-                }
-                else
-                {
-                    ret += "default";
-                }
-                ret += "', '";
-                TableToString(ret, est.table());
-                ret += "'";
-            }
-            else
-            {
-                ExprSchemaTableToString(ret, tof.est());
-            }
-            break;
-        case TableOrFunctionType::kTfunc:
-            TableFunctionToString(ret, tof.tfunc());
-            break;
-        case TableOrFunctionType::kSelect:
-            ret += tudf ? "view" : "";
-            ret += "(";
-            ExplainQueryToString(ret, tof.select());
-            ret += ")";
-            break;
-        default:
-            ret += "numbers(10)";
-    }
-}
-
 CONV_FN(RemoteFunc, rfunc)
 {
-    const TableOrFunction & tof = rfunc.tof();
-
     ret += "remote('";
     ret += rfunc.address();
-    ret += "', ";
-    TableOrFunctionToString(ret, true, tof);
-    if (tof.has_est())
+    ret += "'";
+    if (rfunc.has_rdatabase())
     {
-        if (rfunc.has_user() && !rfunc.user().empty())
-        {
-            ret += ", '";
-            ret += rfunc.user();
-            ret += "'";
-        }
-        if (rfunc.has_password())
-        {
-            ret += ", '";
-            ret += rfunc.password();
-            ret += "'";
-        }
+        ret += ", '";
+        ret += rfunc.rdatabase();
+        ret += "'";
+    }
+    if (rfunc.has_rtable())
+    {
+        ret += ", '";
+        ret += rfunc.rtable();
+        ret += "'";
+    }
+    if (rfunc.has_user() && !rfunc.user().empty())
+    {
+        ret += ", '";
+        ret += rfunc.user();
+        ret += "'";
+    }
+    if (rfunc.has_password())
+    {
+        ret += ", '";
+        ret += rfunc.password();
+        ret += "'";
     }
     ret += ")";
 }
@@ -1970,33 +1958,19 @@ CONV_FN(MergeFunc, mfunc)
 
 CONV_FN(ClusterFunc, cluster)
 {
-    const TableOrFunction & tof = cluster.tof();
-
     ret += ClusterFunc_CName_Name(cluster.cname());
     ret += "('";
     ret += cluster.ccluster();
-    ret += "',";
-    TableOrFunctionToString(ret, true, tof);
-    if (tof.has_est() && cluster.has_sharding_key())
+    ret += "', '";
+    ret += cluster.cdatabase();
+    ret += "', '";
+    ret += cluster.ctable();
+    ret += "'";
+    if (cluster.has_sharding_key())
     {
         ret += ", '";
         ret += cluster.sharding_key();
         ret += "'";
-    }
-    ret += ")";
-}
-
-CONV_FN(MergeTreeIndexFunc, mfunc)
-{
-    ret += "mergeTreeIndex('";
-    ret += mfunc.mdatabase();
-    ret += "', '";
-    ret += mfunc.mtable();
-    ret += "'";
-    if (mfunc.has_with_marks())
-    {
-        ret += ", with_marks = ";
-        ret += mfunc.with_marks() ? "true" : "false";
     }
     ret += ")";
 }
@@ -2039,32 +2013,18 @@ CONV_FN(TableFunction, tf)
         case TableFunctionType::kCluster:
             ClusterFuncToString(ret, tf.cluster());
             break;
-        case TableFunctionType::kMtindex:
-            MergeTreeIndexFuncToString(ret, tf.mtindex());
-            break;
-        case TableFunctionType::kLoop:
-            ret += "loop(";
-            TableOrFunctionToString(ret, true, tf.loop());
-            ret += ")";
-            break;
         default:
             ret += "numbers(10)";
     }
 }
 
-CONV_FN(JoinedTableOrFunction, jtf)
+CONV_FN(JoinedTableFunction, jtf)
 {
-    const TableOrFunction & tof = jtf.tof();
-
-    TableOrFunctionToString(ret, false, tof);
+    TableFunctionToString(ret, jtf.tfunc());
     if (jtf.has_table_alias())
     {
         ret += " ";
         TableToString(ret, jtf.table_alias());
-    }
-    if (tof.has_est() && jtf.final())
-    {
-        ret += " FINAL";
     }
 }
 
@@ -2074,7 +2034,13 @@ CONV_FN(TableOrSubquery, tos)
     switch (tos.tos_oneof_case())
     {
         case JoinedType::kJoinedTable:
-            JoinedTableOrFunctionToString(ret, tos.joined_table());
+            JoinedTableToString(ret, tos.joined_table());
+            break;
+        case JoinedType::kJoinedDerivedQuery:
+            JoinedDerivedQueryToString(ret, tos.joined_derived_query());
+            break;
+        case JoinedType::kJoinedTableFunction:
+            JoinedTableFunctionToString(ret, tos.joined_table_function());
             break;
         case JoinedType::kJoinedQuery:
             JoinedQueryToString(ret, tos.joined_query());
@@ -3383,17 +3349,10 @@ CONV_FN(CreateView, create_view)
 
             ret += " TO ";
             ExprSchemaTableToString(ret, cmvt.est());
-            if (cmvt.col_list_size())
+            if (cmvt.has_col_list())
             {
-                ret += " (";
-                for (int i = 0; i < cmvt.col_list_size(); i++)
-                {
-                    if (i != 0)
-                    {
-                        ret += ",";
-                    }
-                    ColumnDefToString(ret, cmvt.col_list(i));
-                }
+                ret += "(";
+                ColumnPathListToString(ret, 0, cmvt.col_list());
                 ret += ")";
             }
         }

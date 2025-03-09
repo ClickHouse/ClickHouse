@@ -476,10 +476,7 @@ def _finish_workflow(workflow, job_name):
     if update_final_report:
         _ResultS3.copy_result_to_s3_with_version(workflow_result, version + 1)
 
-    if results:
-        return Result.create_from(results=results, stopwatch=stop_watch)
-    else:
-        return Result.create_from(status=Result.Status.SUCCESS, stopwatch=stop_watch)
+    return Result.create_from(results=results, stopwatch=stop_watch)
 
 
 if __name__ == "__main__":

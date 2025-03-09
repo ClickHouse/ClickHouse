@@ -1,7 +1,7 @@
 ---
 description: "System table containing formation about quota usage by the current user such as how much of the quota is used and how much is left."
 slug: /operations/system-tables/quota_usage
-title: "system.quota_usage"
+title: "quota_usage"
 keywords: ["system table", "quota_usage"]
 ---
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
@@ -37,4 +37,4 @@ Columns:
 
 ## See Also {#see-also}
 
-- [SHOW QUOTA](/sql-reference/statements/show#show-quota))
+- [SHOW QUOTA](../../sql-reference/statements/show.md#show-quota-statement)

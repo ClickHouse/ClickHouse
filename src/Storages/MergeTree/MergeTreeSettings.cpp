@@ -19,7 +19,6 @@
 #include <Disks/ObjectStorages/DiskObjectStorage.h>
 
 #include <boost/program_options.hpp>
-#include <fmt/ranges.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 
@@ -276,7 +275,6 @@ namespace ErrorCodes
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, "Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud", EXPERIMENTAL) \
-    DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, "Enables writing attributes into virtual parts and committing blocks in keeper", EXPERIMENTAL) \
     \
     /** Compress marks and primary key. */ \
     DECLARE(Bool, compress_marks, true, "Marks support compression, reduce mark file size and speed up network transmission.", 0) \
@@ -490,7 +488,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because mutations cannot work with these settings.",
-            number_of_free_entries_in_pool_to_execute_mutation.value,
+            number_of_free_entries_in_pool_to_execute_mutation,
             background_pool_tasks);
     }
 
@@ -502,7 +500,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_lower_max_size_of_merge.value,
+            number_of_free_entries_in_pool_to_lower_max_size_of_merge,
             background_pool_tasks);
     }
 
@@ -514,7 +512,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
             " is greater than the value of 'background_pool_size'*'background_merges_mutations_concurrency_ratio'"
             " ({}) (the value is defined in users.xml for default profile)."
             " This indicates incorrect configuration because the maximum size of merge will be always lowered.",
-            number_of_free_entries_in_pool_to_execute_optimize_entire_partition.value,
+            number_of_free_entries_in_pool_to_execute_optimize_entire_partition,
             background_pool_tasks);
     }
 
@@ -524,7 +522,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity: value {} makes no sense",
-            index_granularity.value);
+            index_granularity);
     }
 
     // The min_index_granularity_bytes value is 1024 b and index_granularity_bytes is 10 mb by default.
@@ -536,8 +534,8 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "index_granularity_bytes: {} is lower than specified min_index_granularity_bytes: {}",
-            index_granularity_bytes.value,
-            min_index_granularity_bytes.value);
+            index_granularity_bytes,
+            min_index_granularity_bytes);
     }
 
     // If min_bytes_to_rebalance_partition_over_jbod is not disabled i.e > 0 b, then always ensure that
@@ -549,7 +547,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "min_bytes_to_rebalance_partition_over_jbod: {} is lower than specified max_bytes_to_merge_at_max_space_in_pool / 1024: {}",
-            min_bytes_to_rebalance_partition_over_jbod.value,
+            min_bytes_to_rebalance_partition_over_jbod,
             max_bytes_to_merge_at_max_space_in_pool / 1024);
     }
 
@@ -558,7 +556,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_cleanup_delay_period setting ({}) must be greater than the value of cleanup_delay_period setting ({})",
-            max_cleanup_delay_period.value, cleanup_delay_period.value);
+            max_cleanup_delay_period, cleanup_delay_period);
     }
 
     if (max_merge_selecting_sleep_ms < merge_selecting_sleep_ms)
@@ -566,7 +564,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of max_merge_selecting_sleep_ms setting ({}) must be greater than the value of merge_selecting_sleep_ms setting ({})",
-            max_merge_selecting_sleep_ms.value, merge_selecting_sleep_ms.value);
+            max_merge_selecting_sleep_ms, merge_selecting_sleep_ms);
     }
 
     if (merge_selecting_sleep_slowdown_factor < 1.f)
@@ -574,7 +572,7 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "The value of merge_selecting_sleep_slowdown_factor setting ({}) cannot be less than 1.0",
-            merge_selecting_sleep_slowdown_factor.value);
+            merge_selecting_sleep_slowdown_factor);
     }
 }
 
@@ -744,9 +742,8 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         const auto & setting_name = setting.getName();
         res_columns[0]->insert(setting_name);
         res_columns[1]->insert(setting.getValueString());
-        res_columns[2]->insert(setting.getDefaultValueString());
-        res_columns[3]->insert(setting.isValueChanged());
-        res_columns[4]->insert(setting.getDescription());
+        res_columns[2]->insert(setting.isValueChanged());
+        res_columns[3]->insert(setting.getDescription());
 
         Field min;
         Field max;
@@ -759,12 +756,12 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         if (!max.isNull())
             max = MergeTreeSettings::valueToStringUtil(setting_name, max);
 
-        res_columns[5]->insert(min);
-        res_columns[6]->insert(max);
-        res_columns[7]->insert(writability == SettingConstraintWritability::CONST);
-        res_columns[8]->insert(setting.getTypeName());
-        res_columns[9]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
-        res_columns[10]->insert(setting.getTier());
+        res_columns[4]->insert(min);
+        res_columns[5]->insert(max);
+        res_columns[6]->insert(writability == SettingConstraintWritability::CONST);
+        res_columns[7]->insert(setting.getTypeName());
+        res_columns[8]->insert(setting.getTier() == SettingsTierType::OBSOLETE);
+        res_columns[9]->insert(setting.getTier());
     }
 }
 

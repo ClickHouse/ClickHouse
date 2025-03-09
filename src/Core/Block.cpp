@@ -16,7 +16,6 @@
 #include <ranges>
 
 #include <boost/algorithm/string.hpp>
-#include <fmt/ranges.h>
 
 
 namespace DB
@@ -383,16 +382,16 @@ bool Block::has(const std::string & name, bool case_insensitive) const
 }
 
 
-size_t Block::getPositionByName(const std::string & name, bool case_insensitive) const
+size_t Block::getPositionByName(const std::string & name) const
 {
-    auto matcher
-        = [&](const auto & column) { return case_insensitive ? boost::iequals(column.name, name) : boost::equals(column.name, name); };
-    auto found = std::find_if(data.begin(), data.end(), matcher);
-    if (found == data.end())
-        throw Exception(
-            ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}", name, dumpNames());
-    return found - data.begin();
+    auto it = index_by_name.find(name);
+    if (index_by_name.end() == it)
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Not found column {} in block. There are only columns: {}",
+            name, dumpNames());
+
+    return it->second;
 }
+
 
 void Block::checkNumberOfRows(bool allow_null_columns) const
 {

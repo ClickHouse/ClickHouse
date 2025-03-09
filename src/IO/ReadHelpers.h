@@ -595,9 +595,6 @@ template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
 /// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
 
-/// Reads maximum n bytes to string.
-void readString(String & s, ReadBuffer & buf, size_t n);
-
 void readEscapedString(String & s, ReadBuffer & buf);
 
 void readEscapedStringCRLF(String & s, ReadBuffer & buf);

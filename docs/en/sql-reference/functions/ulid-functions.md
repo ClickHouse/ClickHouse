@@ -6,7 +6,7 @@ sidebar_label: ULID
 
 # Functions for Working with ULID
 
-## generateULID {#generateulid}
+## generateULID
 
 Generates the [ULID](https://github.com/ulid/spec).
 
@@ -18,7 +18,7 @@ generateULID([x])
 
 **Arguments**
 
-- `x` — [Expression](/sql-reference/syntax#expressions) resulting in any of the [supported data types](/sql-reference/data-types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/index.md#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
 
 **Returned value**
 
@@ -48,7 +48,7 @@ SELECT generateULID(1), generateULID(2)
 └────────────────────────────┴────────────────────────────┘
 ```
 
-## ULIDStringToDateTime {#ulidstringtodatetime}
+## ULIDStringToDateTime
 
 This function extracts the timestamp from a ULID.
 
@@ -79,6 +79,6 @@ SELECT ULIDStringToDateTime('01GNB2S2FGN2P93QPXDNB4EN2R')
 └────────────────────────────────────────────────────┘
 ```
 
-## See Also {#see-also}
+## See Also
 
 - [UUID](../../sql-reference/functions/uuid-functions.md)

@@ -156,7 +156,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
     LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
-              table_metadata.mode, table_metadata.buckets.load(), table_metadata.processing_threads_num.load(), buckets_num);
+              table_metadata.mode, table_metadata.buckets, table_metadata.processing_threads_num, buckets_num);
 
     update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
@@ -1028,7 +1028,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     };
 
     LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}",
-             table_metadata.tracked_files_limit.load(), table_metadata.tracked_files_ttl_sec.load(), get_nodes_str());
+             table_metadata.tracked_files_limit, table_metadata.tracked_files_ttl_sec, get_nodes_str());
 
     static constexpr size_t keeper_multi_batch_size = 100;
     Coordination::Requests remove_requests;

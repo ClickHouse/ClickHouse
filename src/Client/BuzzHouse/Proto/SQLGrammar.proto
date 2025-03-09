@@ -1550,16 +1550,15 @@ enum SQLTableFunc {
     TFformat = 5;
     TFgenerateSeries = 6;
     TFmerge = 7;
-    TFmergeTreeIndex = 8;
-    TFmysql = 9;
-    TFpostgresql = 10;
-    TFremote = 11;
-    TFremoteSecure = 12;
-    TFS3 = 13;
-    TFS3Cluster = 14;
-    TFsqlite = 15;
-    TFurl = 16;
-    TFurlCluster = 17;
+    TFmysql = 8;
+    TFpostgresql = 9;
+    TFremote = 10;
+    TFremoteSecure = 11;
+    TFS3 = 12;
+    TFS3Cluster = 13;
+    TFsqlite = 14;
+    TFurl = 15;
+    TFurlCluster = 16;
 }
 
 message Database {
@@ -2368,6 +2367,17 @@ message JoinClause {
     repeated JoinClauseCore clauses = 2;
 }
 
+message JoinedDerivedQuery {
+    required ExplainQuery select = 1;
+    optional Table table_alias = 2;
+}
+
+message JoinedTable {
+    required ExprSchemaTable est = 1;
+    optional Table table_alias = 2;
+    optional bool final = 3;
+}
+
 enum FileCompression {
     COMPgz = 1;
     COMPbr = 2;
@@ -2405,19 +2415,12 @@ message GenerateSeriesFunc {
     optional Expr expr3 = 4;
 }
 
-message TableOrFunction {
-    oneof jtf_oneof {
-        ExprSchemaTable est = 1;
-        TableFunction tfunc = 2;
-        ExplainQuery select = 3;
-    }
-}
-
 message RemoteFunc {
     required string address = 1;
-    required TableOrFunction tof = 2;
-    optional string user = 3;
-    optional string password = 4;
+    optional string rdatabase = 2;
+    optional string rtable = 3;
+    optional string user = 4;
+    optional string password = 5;
 }
 
 message MySQLFunc {
@@ -2468,14 +2471,9 @@ message ClusterFunc {
     }
     required CName cname = 1;
     required string ccluster = 2;
-    required TableOrFunction tof = 3;
-    optional string sharding_key = 4;
-}
-
-message MergeTreeIndexFunc {
-    required string mdatabase = 1;
-    required string mtable = 2;
-    optional bool with_marks = 3;
+    required string cdatabase = 3;
+    required string ctable = 4;
+    optional string sharding_key = 5;
 }
 
 message TableFunction {
@@ -2491,21 +2489,20 @@ message TableFunction {
         SQLTableFuncCall func = 9;
         MergeFunc merge = 10;
         ClusterFunc cluster = 11;
-        MergeTreeIndexFunc mtindex = 12;
-        TableOrFunction loop = 13;
     }
 }
 
-message JoinedTableOrFunction {
-    required TableOrFunction tof = 1;
+message JoinedTableFunction {
+    required TableFunction tfunc = 1;
     optional Table table_alias = 2;
-    optional bool final = 3;
 }
 
 message TableOrSubquery {
     oneof tos_oneof {
-        JoinedTableOrFunction joined_table = 1;
-        JoinedQuery joined_query = 2;
+        JoinedTable joined_table = 1;
+        JoinedDerivedQuery joined_derived_query = 2;
+        JoinedTableFunction joined_table_function = 3;
+        JoinedQuery joined_query = 4;
     }
 }
 
@@ -3355,7 +3352,7 @@ message RefreshableView {
 
 message CreateMatViewTo {
     required ExprSchemaTable est = 1;
-    repeated ColumnDef col_list = 2;
+    optional ColumnPathList col_list = 2;
 }
 
 message CreateView {

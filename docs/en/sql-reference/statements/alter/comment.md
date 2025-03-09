@@ -16,7 +16,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
 **Examples**
 
-Creating a table with comment (for more information, see the [COMMENT](/sql-reference/statements/create/table#comment-clause) clause):
+Creating a table with comment (for more information, see the [COMMENT](../../../sql-reference/statements/create/table.md#comment-table) clause):
 
 ``` sql
 CREATE TABLE table_with_comment

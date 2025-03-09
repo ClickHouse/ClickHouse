@@ -753,7 +753,6 @@ struct ReadColumnFromArrowColumnSettings
     bool allow_arrow_null_type;
     bool skip_columns_with_unsupported_types;
     bool allow_inferring_nullable_columns;
-    bool case_insensitive_matching;
 };
 
 static ColumnWithTypeAndName readColumnFromArrowColumn(
@@ -1047,22 +1046,16 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             for (int i = 0; i != arrow_struct_type->num_fields(); ++i)
             {
                 const auto & field = arrow_struct_type->field(i);
-                String field_name = field->name();
+                const auto & field_name = field->name();
 
                 DataTypePtr nested_type_hint;
                 if (tuple_type_hint)
                 {
                     if (tuple_type_hint->haveExplicitNames() && !is_map_nested_column)
                     {
-                        auto pos = tuple_type_hint->tryGetPositionByName(field_name, settings.case_insensitive_matching);
+                        auto pos = tuple_type_hint->tryGetPositionByName(field_name);
                         if (pos)
-                        {
                             nested_type_hint = tuple_type_hint->getElement(*pos);
-                            /// Consider the case in which arrow_struct_type is "struct<a Int32>", and tuple_type_hint is "Tuple(A Int32)"
-                            /// If case insensitive matching is allowed, we should use the name from the tuple_type_hint as field_name
-                            /// to make sure the returned [[ColumnWithTypeAndName]] has the correct name.
-                            field_name = tuple_type_hint->getNameByPosition(*pos + 1);
-                        }
                     }
                     else if (size_t(i) < tuple_type_hint->getElements().size())
                         nested_type_hint = tuple_type_hint->getElement(i);
@@ -1273,8 +1266,7 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
     const arrow::Schema & schema,
     const std::string & format_name,
     bool skip_columns_with_unsupported_types,
-    bool allow_inferring_nullable_columns,
-    bool case_insensitive_matching)
+    bool allow_inferring_nullable_columns)
 {
     ReadColumnFromArrowColumnSettings settings
     {
@@ -1283,7 +1275,6 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
         .allow_arrow_null_type = false,
         .skip_columns_with_unsupported_types = skip_columns_with_unsupported_types,
         .allow_inferring_nullable_columns = allow_inferring_nullable_columns,
-        .case_insensitive_matching = case_insensitive_matching
     };
 
     ColumnsWithTypeAndName sample_columns;
@@ -1358,8 +1349,7 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(const NameToArrowColumn & nam
         .date_time_overflow_behavior = date_time_overflow_behavior,
         .allow_arrow_null_type = true,
         .skip_columns_with_unsupported_types = false,
-        .allow_inferring_nullable_columns = true,
-        .case_insensitive_matching = case_insensitive_matching
+        .allow_inferring_nullable_columns = true
     };
 
     Columns columns;

@@ -62,9 +62,9 @@ Result:
 └─────────────────────────┘
 ```
 
-## Converting Tuple to Map {#converting-tuple-to-map}
+## Converting Tuple to Map
 
-Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](/sql-reference/functions/type-conversion-functions#cast):
+Values of type `Tuple()` can be cast to values of type `Map()` using function [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast):
 
 **Example**
 
@@ -82,7 +82,7 @@ Result:
 └───────────────────────────────┘
 ```
 
-## Reading subcolumns of Map {#reading-subcolumns-of-map}
+## Reading subcolumns of Map
 
 To avoid reading the entire map, you can use subcolumns `keys` and `values` in some cases.
 
@@ -112,11 +112,11 @@ Result:
 
 **See Also**
 
-- [map()](/sql-reference/functions/tuple-map-functions#map) function
-- [CAST()](/sql-reference/functions/type-conversion-functions#cast) function
+- [map()](../../sql-reference/functions/tuple-map-functions.md#function-map) function
+- [CAST()](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function
 - [-Map combinator for Map datatype](../aggregate-functions/combinators.md#-map)
 
 
-## Related content {#related-content}
+## Related content
 
 - Blog: [Building an Observability Solution with ClickHouse - Part 2 - Traces](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)

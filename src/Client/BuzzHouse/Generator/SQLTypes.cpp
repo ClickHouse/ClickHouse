@@ -893,7 +893,7 @@ SQLType * ArrayType::typeDeepCopy() const
     return new ArrayType(subtype->typeDeepCopy());
 }
 
-String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, const uint64_t limit)
+String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, const uint32_t limit)
 {
     /// This is a hot loop, so fmt::format may not be desirable
     String ret = "[";
