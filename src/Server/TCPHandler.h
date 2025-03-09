@@ -22,6 +22,7 @@
 #include <IO/WriteBufferFromPocoSocketChunked.h>
 
 #include <IO/WriteBuffer.h>
+#include "Client/IServerConnection.h"
 #include "IServer.h"
 #include "Interpreters/AsynchronousInsertQueue.h"
 #include "Server/TCPProtocolStackData.h"
@@ -41,6 +42,7 @@ namespace DB
 
 class Session;
 struct Settings;
+struct QueryPlanAndSets;
 class ColumnsDescription;
 struct ProfileInfo;
 class TCPServer;
@@ -78,6 +80,7 @@ struct QueryState
 
     /// Query text.
     String query;
+    std::shared_ptr<QueryPlanAndSets> plan_and_sets;
     /// Parsed query
     ASTPtr parsed_query;
     /// Streams of blocks, that are processing the query.
@@ -262,6 +265,7 @@ private:
 
     bool receiveProxyHeader();
     void receiveHello();
+    bool receiveQueryPlan(QueryState & state);
     void receiveAddendum();
     bool receivePacketsExpectQuery(std::optional<QueryState> & state);
     bool receivePacketsExpectData(QueryState & state) TSA_REQUIRES(callback_mutex);
