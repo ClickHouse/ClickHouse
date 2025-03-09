@@ -21,7 +21,7 @@ namespace DB
 struct ViewRuntimeData
 {
     /// A query we should run over inserted block before pushing into inner storage.
-    const ASTPtr query;
+    ASTPtr query;
     /// This structure is expected by inner storage. Will convert query result to it.
     Block sample_block;
     /// Inner storage id.
@@ -31,7 +31,7 @@ struct ViewRuntimeData
     /// exception is stored here (will be stored in query views log).
     std::exception_ptr exception;
     /// Info which is needed for query views log.
-    std::unique_ptr<QueryViewsLogElement::ViewRuntimeStats> runtime_stats;
+    QueryViewsLogElement::ViewRuntimeStats runtime_stats = {};
 
     /// An overridden context bounded to this view with the correct SQL security grants.
     ContextPtr context;
@@ -39,7 +39,7 @@ struct ViewRuntimeData
     void setException(std::exception_ptr e)
     {
         exception = e;
-        runtime_stats->setStatus(QueryViewsLogElement::ViewStatus::EXCEPTION_WHILE_PROCESSING);
+        runtime_stats.setStatus(QueryViewsLogElement::ViewStatus::EXCEPTION_WHILE_PROCESSING);
     }
 };
 

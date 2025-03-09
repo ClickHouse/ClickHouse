@@ -685,17 +685,17 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
 
     QueryViewsLogElement element;
 
-    element.event_time = timeInSeconds(vinfo.runtime_stats->event_time);
-    element.event_time_microseconds = timeInMicroseconds(vinfo.runtime_stats->event_time);
-    element.view_duration_ms = vinfo.runtime_stats->elapsed_ms;
+    element.event_time = timeInSeconds(vinfo.runtime_stats.event_time);
+    element.event_time_microseconds = timeInMicroseconds(vinfo.runtime_stats.event_time);
 
+    element.view_duration_ms = vinfo.runtime_stats.elapsed_ms;
     element.initial_query_id = query_id_from_query_context;
     element.view_name = vinfo.table_id.getFullTableName();
     element.view_uuid = vinfo.table_id.uuid;
-    element.view_type = vinfo.runtime_stats->type;
+    element.view_type = vinfo.runtime_stats.type;
     if (vinfo.query)
         element.view_query = getCleanQueryAst(vinfo.query, query_context_ptr);
-    element.view_target = vinfo.runtime_stats->target_name;
+    element.view_target = vinfo.runtime_stats.target_name;
 
     element.read_rows = progress_in.read_rows.load(std::memory_order_relaxed);
     element.read_bytes = progress_in.read_bytes.load(std::memory_order_relaxed);
@@ -706,7 +706,7 @@ void ThreadStatus::logToQueryViewsLog(const ViewRuntimeData & vinfo)
         element.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(
                 performance_counters.getPartiallyAtomicSnapshot());
 
-    element.status = vinfo.runtime_stats->event_status;
+    element.status = vinfo.runtime_stats.event_status;
     element.exception_code = 0;
     if (vinfo.exception)
     {

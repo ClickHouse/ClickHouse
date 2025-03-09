@@ -7,6 +7,8 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Common/ThreadStatus.h>
 
+#include <Processors/Sinks/SinkToStorage.h>
+
 namespace DB
 {
 
@@ -92,20 +94,6 @@ private:
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
-
-    Chain buildSink(
-        const StoragePtr & table,
-        size_t view_level,
-        const StorageMetadataPtr & metadata_snapshot,
-        ThreadStatusesHolderPtr thread_status_holder,
-        ThreadGroupPtr running_group,
-        std::atomic_uint64_t * elapsed_counter_ms);
-
-    Chain buildPreSinkChain(
-        const Block & subsequent_header,
-        const StoragePtr & table,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Block & query_sample_block);
 };
 
 
