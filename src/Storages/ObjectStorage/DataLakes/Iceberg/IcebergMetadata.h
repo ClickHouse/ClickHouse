@@ -56,8 +56,7 @@ public:
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
         const ConfigurationObserverPtr & configuration,
-        const ContextPtr & local_context,
-        bool allow_experimental_delta_kernel_rs);
+        const ContextPtr & local_context);
 
     size_t getVersion() const { return current_metadata_version; }
 

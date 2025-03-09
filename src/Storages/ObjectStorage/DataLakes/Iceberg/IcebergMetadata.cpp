@@ -16,14 +16,15 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/ExpressionActions.h>
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -34,6 +35,11 @@ extern const Event IcebergPartitionPrunnedFiles;
 }
 namespace DB
 {
+
+namespace StorageObjectStorageSetting
+{
+extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+}
 
 namespace ErrorCodes
 {
@@ -186,14 +192,32 @@ Int32 IcebergMetadata::parseTableSchema(
     }
 }
 
+static std::pair<Int32, String> getMetadataFileAndVersion(const std::string & path)
+{
+    String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
+    String version_str;
+    /// v<V>.metadata.json
+    if (file_name.starts_with('v'))
+        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+    /// <V>-<random-uuid>.metadata.json
+    else
+        version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
+
+    if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
+
+    return std::make_pair(std::stoi(version_str), path);
+}
+
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
  */
-std::pair<Int32, String>
-getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration)
+static std::pair<Int32, String>
+getLatestMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration)
 {
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
@@ -201,29 +225,36 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
         throw Exception(
             ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration.getPath());
     }
-
     std::vector<std::pair<UInt32, String>> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
     for (const auto & path : metadata_files)
     {
-        String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
-        String version_str;
-        /// v<V>.metadata.json
-        if (file_name.starts_with('v'))
-            version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
-        /// <V>-<random-uuid>.metadata.json
-        else
-            version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
-
-        if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
-        metadata_files_with_versions.emplace_back(std::stoi(version_str), path);
+        metadata_files_with_versions.emplace_back(getMetadataFileAndVersion(path));
     }
 
     /// Get the latest version of metadata file: v<V>.metadata.json
     return *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
 }
+
+static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration)
+{
+    auto explicit_metadata_path = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].value;
+    std::pair<Int32, String> result;
+    if (!explicit_metadata_path.empty())
+    {
+        auto prefix_storage_path = configuration.getPath();
+        if (!explicit_metadata_path.starts_with(prefix_storage_path))
+            explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
+        result = getMetadataFileAndVersion(explicit_metadata_path);
+    }
+    else
+    {
+        result = getLatestMetadataFileAndVersion(object_storage, configuration);
+    }
+
+    return result;
+}
+
 
 Poco::JSON::Object::Ptr IcebergMetadata::readJSON(const String & metadata_file_path, const ContextPtr & local_context) const
 {
@@ -242,7 +273,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr);
 
     if (metadata_version == current_metadata_version)
         return false;
@@ -304,12 +335,11 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const ConfigurationObserverPtr & configuration,
-    const ContextPtr & local_context,
-    bool)
+    const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr);
 
     auto log = getLogger("IcebergMetadata");
 
