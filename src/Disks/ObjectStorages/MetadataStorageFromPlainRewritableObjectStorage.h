@@ -49,11 +49,12 @@ public:
 
     std::optional<Poco::Timestamp> getLastModifiedIfExists(const String & path) const override;
 
-    void refresh() override;
+    void refresh(UInt64 not_sooner_than_milliseconds) override;
 
 private:
     const std::string metadata_key_prefix;
     std::shared_ptr<InMemoryDirectoryPathMap> path_map;
+    AtomicStopwatch previous_refresh;
 
     void load();
 
