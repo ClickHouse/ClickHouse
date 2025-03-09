@@ -216,6 +216,9 @@ public:
     String to_database;
     String to_table;
 
+    String snapshot_name;
+    IAST * snapshot_desc;
+
     /// Which property user want to remove
     String remove_property;
 
