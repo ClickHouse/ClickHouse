@@ -1,63 +1,32 @@
-Float32 Results
-1
-0
-0
-0
-0
--0
-0
-nan
-nan
-nan
-nan
-nan
-nan
-nan
-nan
-nan
-nan
-1
-inf
-nan
-inf
-nan
-nan
-1
-inf
--inf
-inf
-0
-nan
-BFloat16 Results
-1
-0
-0
-0
-0
--0
-0
-nan
-nan
-nan
-nan
-nan
-nan
-nan
-nan
-nan
-nan
-1
-inf
-nan
-inf
-nan
-nan
-1
-inf
--inf
-inf
-0
-nan
+1	1
+0	0
+0	0
+0	0
+0	0
+-0	-0
+0	0
+nan	nan
+nan	nan
+nan	nan
+nan	nan
+nan	nan
+nan	nan
+nan	nan
+nan	nan
+nan	nan
+nan	nan
+1	1
+inf	inf
+nan	nan
+inf	inf
+nan	nan
+nan	nan
+1	1
+inf	inf
+-inf	-inf
+inf	inf
+0	0
+nan	nan
 (-0)
 (nan)
 -0
