@@ -18,9 +18,7 @@
 #include <Common/logger_useful.h>
 
 #include <Columns/ColumnBlob.h>
-#include <Poco/Logger.h>
-#include "DataTypes/Serializations/ISerialization.h"
-#include "base/types.h"
+#include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
 {

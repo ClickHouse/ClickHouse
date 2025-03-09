@@ -1,7 +1,6 @@
 #pragma once
 
 #include <DataTypes/Serializations/ISerialization.h>
-#include <Common/Exception.h>
 
 namespace DB
 {
@@ -53,10 +52,7 @@ public:
     void serializeTextXML(const IColumn &, size_t, WriteBuffer &, const FormatSettings &) const override { throwInapplicable(); }
 
 private:
-    [[noreturn]] static void throwInapplicable()
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBlob should be converted to a regular column before usage");
-    }
+    [[noreturn]] static void throwInapplicable();
 
     SerializationPtr nested;
 };

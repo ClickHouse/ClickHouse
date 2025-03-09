@@ -66,16 +66,24 @@ void SerializationDetached::deserializeBinaryBulkWithMultipleStreams(
     SubstreamsCache * cache) const
 {
     ColumnPtr concrete_column(column->cloneEmpty());
-    auto task = [concrete_column, nested_serialization = nested, limit, format_settings = settings.format_settings](
-                    const ColumnBlob::Blob & blob, int)
+    auto task = [concrete_column,
+                 nested_serialization = nested,
+                 limit,
+                 format_settings = settings.format_settings,
+                 avg_value_size_hint = settings.avg_value_size_hint](const ColumnBlob::Blob & blob, int)
     {
         // In case of alias columns, `column` might be a reference to the same column for a number of calls to this function.
         // To avoid deserializing into the same column multiple times, we clone the column here one more time.
-        return ColumnBlob::fromBlob(blob, concrete_column->cloneEmpty(), nested_serialization, limit, format_settings);
+        return ColumnBlob::fromBlob(blob, concrete_column->cloneEmpty(), nested_serialization, limit, format_settings, avg_value_size_hint);
     };
 
     auto column_blob = ColumnPtr(ColumnBlob::create(std::move(task), concrete_column, limit));
     ISerialization::deserializeBinaryBulkWithMultipleStreams(column_blob, limit, settings, state, cache);
     column = column_blob;
+}
+
+[[noreturn]] void SerializationDetached::throwInapplicable()
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnBlob should be converted to a regular column before usage");
 }
 }

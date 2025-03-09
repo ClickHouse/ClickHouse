@@ -1,9 +1,9 @@
 #pragma once
 
+#include "CompressedReadBufferBase.h"
+
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadBuffer.h>
-#include "CompressedReadBufferBase.h"
-#include "IO/WriteBuffer.h"
 
 
 namespace DB

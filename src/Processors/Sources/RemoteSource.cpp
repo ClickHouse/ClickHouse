@@ -1,6 +1,6 @@
-#include <cstddef>
-#include <vector>
+#include <Columns/ColumnBlob.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Processors/IProcessor.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
@@ -8,9 +8,6 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 #include <Common/Exception.h>
 #include <Common/Logger.h>
-#include "Columns/ColumnBlob.h"
-#include "Processors/IProcessor.h"
-#include "base/types.h"
 
 namespace DB
 {

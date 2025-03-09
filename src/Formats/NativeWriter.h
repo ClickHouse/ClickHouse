@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Compression/ICompressionCodec.h>
 #include <Core/Block.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatSettings.h>
-#include <base/types.h>
 
 namespace DB
 {

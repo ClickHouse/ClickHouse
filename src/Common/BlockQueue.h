@@ -17,11 +17,11 @@ class BlockQueue
 public:
     using Job = std::function<Block(const Block &)>;
 
-    explicit BlockQueue(size_t max_queue_size_, Job job_);
+    BlockQueue(size_t max_queue_size_, Job job_);
 
     ~BlockQueue();
 
-    size_t size();
+    size_t size() const;
 
     bool enqueueForProcessing(const Block & block, bool wait = true);
 
@@ -43,7 +43,7 @@ private:
     std::atomic_bool no_more_input{false};
     std::atomic_bool failure{false};
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
 
     std::exception_ptr first_exception;
 

@@ -9,7 +9,6 @@
 #include <Core/UUID.h>
 
 #include <Common/EventFD.h>
-#include "base/types.h"
 
 namespace DB
 {

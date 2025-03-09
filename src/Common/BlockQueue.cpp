@@ -5,9 +5,9 @@
 
 namespace CurrentMetrics
 {
-extern const Metric AggregatorThreads;
-extern const Metric AggregatorThreadsActive;
-extern const Metric AggregatorThreadsScheduled;
+extern const Metric BlockQueueThreads;
+extern const Metric BlockQueueThreadsActive;
+extern const Metric BlockQueueThreadsScheduled;
 }
 
 namespace DB
@@ -17,9 +17,9 @@ BlockQueue::BlockQueue(size_t max_queue_size_, Job job_)
     : max_queue_size(max_queue_size_)
     , job(std::move(job_))
     , thread_pool(std::make_unique<ThreadPool>(
-          CurrentMetrics::AggregatorThreads,
-          CurrentMetrics::AggregatorThreadsActive,
-          CurrentMetrics::AggregatorThreadsScheduled,
+          CurrentMetrics::BlockQueueThreads,
+          CurrentMetrics::BlockQueueThreadsActive,
+          CurrentMetrics::BlockQueueThreadsScheduled,
           max_queue_size))
 {
     try
@@ -47,7 +47,6 @@ BlockQueue::BlockQueue(size_t max_queue_size_, Job job_)
 
 BlockQueue::~BlockQueue()
 {
-    // TODO(nickitat): an empty block is not always inserted at the end to signify eof (e.g. for insert queries we send only table structure).
     no_more_input = true;
     pop_condition.notify_all();
     push_condition.notify_all();
@@ -57,7 +56,7 @@ BlockQueue::~BlockQueue()
     // chassert(failure || processed.empty());
 }
 
-size_t BlockQueue::size()
+size_t BlockQueue::size() const
 {
     std::unique_lock lock(mutex);
     return processed.size();
@@ -73,17 +72,14 @@ bool BlockQueue::enqueueForProcessing(const Block & block, bool wait)
         if (!predicate() && !wait)
             return false;
 
-        //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         push_condition.wait(lock, predicate);
 
         if (first_exception)
             std::rethrow_exception(first_exception);
 
-        //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         std::promise<Block> promise;
         processed.push(promise.get_future());
         to_be_processed.emplace(block, std::move(promise));
-        //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     }
     pop_condition.notify_one();
     return true;
@@ -100,17 +96,14 @@ Block BlockQueue::dequeueNextProcessed(bool wait)
         if (!predicate() && !wait)
             return {};
 
-        //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         processed_condition.wait(lock, predicate);
 
         if (first_exception)
             std::rethrow_exception(first_exception);
 
-        //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         block = std::move(processed.front());
         processed.pop();
     }
-    //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
     return block.get();
 }
 
@@ -118,32 +111,26 @@ void BlockQueue::work()
 {
     while (true)
     {
-        //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         Task task;
         {
             std::unique_lock lock(mutex);
 
             auto predicate = [&]() { return no_more_input || failure || !to_be_processed.empty(); };
 
-            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             pop_condition.wait(lock, predicate);
 
             if (failure || (no_more_input && to_be_processed.empty()))
                 break;
 
-            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             task = std::move(to_be_processed.front());
-            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
             to_be_processed.pop();
         }
         push_condition.notify_one();
 
-        //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         try
         {
             auto processed_block = job(task.block);
             task.promise.set_value(std::move(processed_block));
-            //LOG_DEBUG(&Poco::Logger::get("debug"), "__PRETTY_FUNCTION__={}, __LINE__={}", __PRETTY_FUNCTION__, __LINE__);
         }
         catch (...)
         {

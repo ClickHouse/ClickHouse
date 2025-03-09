@@ -1,4 +1,6 @@
 #include "getStructureOfRemoteTable.h"
+
+#include <Columns/ColumnBlob.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -15,7 +17,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NetException.h>
 #include <Common/quoteString.h>
-#include "Columns/ColumnBlob.h"
 
 
 namespace DB
@@ -100,7 +101,6 @@ ColumnsDescription getStructureOfRemoteTableInShard(
 
     while (Block current = executor.readBlock())
     {
-        // TODO(nickitat): pls do smth about this
         current = convertBlobColumns(current);
 
         ColumnPtr name = current.getByName("name").column;
@@ -213,6 +213,7 @@ ColumnsDescriptionByShardNum getExtendedObjectsOfRemoteTables(
         while (auto block = executor.readBlock())
         {
             block = convertBlobColumns(block);
+
             const auto & name_col = *block.getByName("name").column;
             const auto & type_col = *block.getByName("type").column;
 

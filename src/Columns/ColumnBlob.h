@@ -99,7 +99,6 @@ public:
         const std::optional<FormatSettings> & format_settings)
     {
         WriteBufferFromVector<Blob> wbuf(blob);
-        // TODO(nickitat): avoid double compression
         CompressedWriteBuffer compressed_buffer(wbuf, codec);
         auto serialization = NativeWriter::getSerialization(client_revision, concrete_column);
         NativeWriter::writeData(
@@ -109,12 +108,15 @@ public:
 
     /// Decompresses and deserializes the blob into the source column.
     static ColumnPtr fromBlob(
-        const Blob & blob, ColumnPtr nested, SerializationPtr nested_serialization, size_t rows, const FormatSettings * format_settings)
+        const Blob & blob,
+        ColumnPtr nested,
+        SerializationPtr nested_serialization,
+        size_t rows,
+        const FormatSettings * format_settings,
+        double avg_value_size_hint)
     {
         ReadBufferFromMemory rbuf(blob.data(), blob.size());
         CompressedReadBuffer decompressed_buffer(rbuf);
-        // TODO(nickitat): support
-        double avg_value_size_hint = 0;
         chassert(nested->empty());
         NativeReader::readData(*nested_serialization, nested, decompressed_buffer, format_settings, rows, avg_value_size_hint);
         return nested;
@@ -128,9 +130,8 @@ public:
 
     /// All other methods throw the exception.
 
-    // TODO(nickitat): implement
     size_t byteSize() const override { return blob.size(); }
-    size_t allocatedBytes() const override { return blob.size(); }
+    size_t allocatedBytes() const override { return blob.capacity(); }
 
     TypeIndex getDataType() const override { throwInapplicable(); }
     Field operator[](size_t) const override { throwInapplicable(); }
