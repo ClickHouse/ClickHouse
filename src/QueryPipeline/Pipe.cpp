@@ -683,12 +683,12 @@ void Pipe::addChains(std::vector<Chain> chains)
     max_parallel_streams = std::max(max_parallel_streams, max_parallel_streams_for_chains);
 }
 
-void Pipe::resize(size_t num_streams, bool force, bool strict)
+void Pipe::resize(size_t num_streams, bool strict)
 {
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");
 
-    if (!force && num_streams == numOutputPorts())
+    if (strict && num_streams == numOutputPorts())
         return;
 
     /// We need to not add the resize in case of 1-1 because in case
