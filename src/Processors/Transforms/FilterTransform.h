@@ -36,6 +36,8 @@ public:
     static bool canUseType(const DataTypePtr & type);
 
 private:
+    void writeIntoQueryConditionCache(const Chunk & chunk);
+
     ExpressionActionsPtr expression;
     String filter_column_name;
     bool remove_filter_column;
@@ -46,7 +48,7 @@ private:
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
 
-    /// If `condition_hash` is not null, the query condition cache needs to be updated at runtime.
+    /// If 'condition_hash' is set, we need to updat the query condition cache at runtime.
     std::optional<size_t> condition_hash;
     std::shared_ptr<QueryConditionCache> query_condition_cache;
 
