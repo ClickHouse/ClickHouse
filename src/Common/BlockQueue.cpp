@@ -1,5 +1,7 @@
 #include <Common/BlockQueue.h>
 
+#include <Common/OpenTelemetryTraceContext.h>
+
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
 
@@ -129,6 +131,7 @@ void BlockQueue::work()
 
         try
         {
+            OpenTelemetry::SpanHolder span("BlockQueue::work");
             auto processed_block = job(task.block);
             task.promise.set_value(std::move(processed_block));
         }
