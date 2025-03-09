@@ -153,12 +153,6 @@ EmbeddedDictionaries::~EmbeddedDictionaries()
 
 void EmbeddedDictionaries::reload()
 {
-    if (reload_blocker.isCancelled())
-    {
-        LOG_INFO(log, "Embedded dictionaries could not be reloaded, reload is blocked");
-        return;
-    }
-
     if (!reloadImpl(true, true))
         throw Exception(ErrorCodes::UNFINISHED, "Some embedded dictionaries were not successfully reloaded");
 }
