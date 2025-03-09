@@ -7,12 +7,14 @@
 #include <IO/S3/BlobStorageLogWriter.h>
 #include <Interpreters/Context.h>
 #include <IO/LimitSeekableReadBuffer.h>
+#include <IO/S3/Requests.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/StdStreamFromReadBuffer.h>
 #include <IO/ReadBufferFromS3.h>
+#include <fnmatch.h>
+#include <ranges>
 
-#include <IO/S3/Requests.h>
 
 namespace ProfileEvents
 {
@@ -49,6 +51,7 @@ namespace ErrorCodes
 namespace S3RequestSetting
 {
     extern const S3RequestSettingsBool allow_native_copy;
+    extern const S3RequestSettingsString native_copy_allowed_patterns;
     extern const S3RequestSettingsBool check_objects_after_upload;
     extern const S3RequestSettingsUInt64 max_part_number;
     extern const S3RequestSettingsBool allow_multipart_copy;
@@ -864,6 +867,41 @@ namespace
             return outcome.GetResult().GetCopyPartResult().GetETag();
         }
     };
+
+    /// Native copy is enabled if `allow_native_copy` is true and both source and destination buckets are listed
+    /// in `native_copy_buckets`.
+    bool isNativeCopyEnabled(
+        const String & src_bucket,
+        const String & src_key,
+        const String & dest_bucket,
+        const String & dest_key,
+        const S3::S3RequestSettings & settings)
+    {
+        if (!settings[S3RequestSetting::allow_native_copy])
+            return false;
+
+        const auto & patterns = settings[S3RequestSetting::native_copy_allowed_patterns].value;
+        if (patterns != "*")
+        {
+            String src = src_bucket + "/" + src_key;
+            String dest = dest_bucket + "/" + dest_key;
+            bool src_allowed = false;
+            bool dest_allowed = false;
+            String pattern;
+            for (auto ipattern : patterns | std::ranges::views::split(';'))
+            {
+                pattern = std::string_view{ipattern};
+                if (fnmatch(pattern.c_str(), src.c_str(), 0) == 0)
+                    src_allowed = true;
+                if (fnmatch(pattern.c_str(), dest.c_str(), 0) == 0)
+                    dest_allowed = true;
+            }
+            if (!src_allowed || !dest_allowed)
+                return false;
+        }
+    
+        return true;
+    }
 }
 
 
@@ -928,9 +966,9 @@ void copyS3File(
             object_metadata);
     };
 
-    if (!settings[S3RequestSetting::allow_native_copy])
+    if (!isNativeCopyEnabled(src_bucket, src_key, dest_bucket, dest_key, settings))
     {
-        LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
+        LOG_TRACE(getLogger("copyS3File"), "Native copy is disabled for {}", src_key);
         fallback_method();
         return;
     }
