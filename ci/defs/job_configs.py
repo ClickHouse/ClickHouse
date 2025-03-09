@@ -54,6 +54,7 @@ class JobConfigs:
                 "./programs",
                 "./docker/packager/packager",
                 "./rust",
+                "./ci/docker/fasttest",
             ]
         ),
         requires=[],
@@ -109,6 +110,7 @@ class JobConfigs:
                 "./rust",
                 "./tests/ci/build_check.py",
                 "./tests/performance",
+                "./ci/docker/binary-builder",
             ],
             with_git_submodules=True,
         ),
@@ -201,6 +203,7 @@ class JobConfigs:
                 "./rust",
                 "./tests/ci/build_check.py",
                 "./tests/performance",
+                "./ci/docker/binary-builder",
             ],
             with_git_submodules=True,
         ),
