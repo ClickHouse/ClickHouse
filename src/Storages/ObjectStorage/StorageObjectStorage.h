@@ -250,6 +250,7 @@ public:
     String format = "auto";
     String compression_method = "auto";
     String structure = "auto";
+    std::string partitioning_style = "auto";
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
