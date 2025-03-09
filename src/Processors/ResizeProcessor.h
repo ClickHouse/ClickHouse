@@ -8,30 +8,31 @@
 namespace DB
 {
 
-class Block;
-
-/** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
-  * All of them have the same structure.
-  *
-  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever it is not full).
-  * Doesn't do any heavy calculations.
-  * Doesn't preserve an order of data.
-  *
-  * Examples:
-  * - union data from multiple inputs to single output - to serialize data that was processed in parallel.
-  * - split data from single input to multiple outputs - to allow further parallel processing.
-  */
-class ResizeProcessor final : public IProcessor
+class BaseResizeProcessor : public IProcessor
 {
 public:
-    ResizeProcessor(const Block & header, size_t num_inputs, size_t num_outputs);
+    BaseResizeProcessor(const Block & header_, size_t num_inputs, size_t num_outputs)
+        : IProcessor(InputPorts(num_inputs, header_), OutputPorts(num_outputs, header_))
+        , header(header_)
+        , current_input(inputs.begin())
+        , current_output(outputs.begin())
+    {
+        is_output_enabled.resize(num_outputs, true);
+    }
 
-    String getName() const override { return "Resize"; }
+    String getName() const override = 0;
+    virtual bool isMemoryDependent() const { return false; }
 
-    Status prepare() override;
-    Status prepare(const PortNumbers &, const PortNumbers &) override;
+protected:
+    virtual void concurrencyControlLogic() {}
 
-private:
+    Status prepareRoundRobin();
+    Status prepareWithQueues(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs);
+
+    void limitThreadsBasedOnMemory();
+
+    Block header;
+
     InputPorts::iterator current_input;
     OutputPorts::iterator current_output;
 
@@ -41,11 +42,13 @@ private:
     std::queue<UInt64> inputs_with_data;
     bool initialized = false;
     bool is_reading_started = false;
+    bool can_be_shrinked = outputs.size() != 1;
 
     enum class OutputStatus : uint8_t
     {
         NotActive,
         NeedData,
+        Disabled, /// Used only by memory-based logic
         Finished,
     };
 
@@ -70,6 +73,72 @@ private:
 
     std::vector<InputPortWithStatus> input_ports;
     std::vector<OutputPortWithStatus> output_ports;
+
+    std::vector<bool> is_output_enabled;
+};
+
+
+/** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
+  * All of them have the same structure.
+  *
+  * Pulls data from arbitrary input (whenever it is ready) and pushes it to arbitrary output (whenever it is not full).
+  * Doesn't do any heavy calculations.
+  * Doesn't preserve an order of data.
+  *
+  * Examples:
+  * - union data from multiple inputs to single output - to serialize data that was processed in parallel.
+  * - split data from single input to multiple outputs - to allow further parallel processing.
+  */
+class ResizeProcessor final : public BaseResizeProcessor
+{
+public:
+    /// TODO Check that there is non zero number of inputs and outputs.
+    ResizeProcessor(const Block & header_, size_t num_inputs, size_t num_outputs)
+        : BaseResizeProcessor(header_, num_inputs, num_outputs)
+    {}
+
+    String getName() const override { return "Resize"; }
+    bool isMemoryDependent() const override { return false; }
+
+    Status prepare() override { return prepareRoundRobin(); }
+    Status prepare(const PortNumbers & updated_inputs, const PortNumbers & updated_outputs) override
+    {
+        return prepareWithQueues(updated_inputs, updated_outputs);
+    }
+
+protected:
+    /// No concurrency logic needed
+    void concurrencyControlLogic() override
+    {
+        // Do nothing
+    }
+};
+
+/** Has arbitrary non zero number of inputs and arbitrary non zero number of outputs.
+  * All of them have the same structure.
+  * When the amount of free memory is too low (some heuristics implemented), we push data to lower amount of inputs, trying to slow down the process.
+  */
+class MemoryDependentResizeProcessor final : public BaseResizeProcessor
+{
+public:
+    MemoryDependentResizeProcessor(const Block & header_, size_t num_inputs, size_t num_outputs)
+        : BaseResizeProcessor(header_, num_inputs, num_outputs)
+    {}
+
+    ~MemoryDependentResizeProcessor() override = default;
+
+    String getName() const override { return "MemoryDependentResize"; }
+    bool isMemoryDependent() const override { return true; }
+
+protected:
+    static bool checkMemory();
+
+    Status prepare() override { return prepareRoundRobin(); }
+    Status prepare(const PortNumbers &, const PortNumbers &) override;
+
+    size_t countActiveOutputs() const;
+
+    void concurrencyControlLogic() override;
 };
 
 class StrictResizeProcessor : public IProcessor
