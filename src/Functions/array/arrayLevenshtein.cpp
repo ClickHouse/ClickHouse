@@ -174,6 +174,9 @@ private:
         ColumnFloat64::Container & res_values = res->getData();
         res_values.resize(columns[0]->size());
         auto get_float = [](const Field & element) -> Float64 { return element.safeGet<Float64>(); };
+        auto sum_array = [](const Array & array) -> Float64 {
+            return std::accumulate(array.begin(), array.end(), 0.0, [](Float64 acc, const Field &field){return acc + field.safeGet<Float64>();});
+        };
         for (size_t row = 0; row < columns[0]->size(); row++)
         {
             // Levenshtein with sliding vectors and weighted elements
@@ -189,10 +192,7 @@ private:
                 if (similarity)
                     res_values[row] = m == n;
                 else
-                    res_values[row] = (
-                        std::accumulate(lhs_w.begin(), lhs_w.end(), 0.0, [](Float64 acc, Field &field){return acc + field.safeGet<Float64>();}) +
-                        std::accumulate(rhs_w.begin(), rhs_w.end(), 0.0, [](Float64 acc, Field &field){return acc + field.safeGet<Float64>();})
-                    );
+                    res_values[row] = sum_array(lhs_w) + sum_array(rhs_w);
                 continue;
             }
             PODArrayWithStackMemory<Float64, 64> v0(m + 1);
@@ -227,16 +227,13 @@ private:
                 continue;
             }
             // arrays similarity
-            Float64 max_distance = (
-                std::accumulate(lhs_w.begin(), lhs_w.end(), 0.0, [](Float64 acc, Field &field){return acc + field.safeGet<Float64>();}) +
-                std::accumulate(rhs_w.begin(), rhs_w.end(), 0.0, [](Float64 acc, Field &field){return acc + field.safeGet<Float64>();})
-            );
-            if (max_distance == 0.0)
+            Float64 weights_sum = sum_array(lhs_w) + sum_array(rhs_w);
+            if (weights_sum == 0.0)
             {
                 res_values[row] = 1.0;
                 continue;
             }
-            res_values[row] = 1 - (v0[m]/max_distance);
+            res_values[row] = 1 - (v0[m]/weights_sum);
         }
         return res;
     }
