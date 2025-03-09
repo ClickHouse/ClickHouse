@@ -408,16 +408,16 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
             break;
-        case Type::DROP_QUERY_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryCache(query.query_cache_tag);
-            break;
-        }
         case Type::DROP_QUERY_CONDITION_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
             getContext()->clearQueryConditionCache();
+            break;
+        }
+        case Type::DROP_QUERY_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
+            getContext()->clearQueryResultCache(query.query_result_cache_tag);
             break;
         }
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
@@ -1451,8 +1451,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_MARK_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_CACHE:
         case Type::DROP_QUERY_CONDITION_CACHE:
+        case Type::DROP_QUERY_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
