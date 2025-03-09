@@ -38,7 +38,7 @@ void QueryConditionCache::write(
 
         LOG_DEBUG(
             logger,
-            "{} entry for table_id: {}, part_name: {}, predicate_hash: {}, marks_count: {}, has_final_mark: {}, (ranges: {})",
+            "{} entry for table_id: {}, part_name: {}, predicate_hash: {}, marks_count: {}, has_final_mark: {}, ranges: {}",
             inserted ? "Inserted" : "Updated",
             table_id,
             part_name,
@@ -59,7 +59,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
         LOG_DEBUG(
             logger,
-            "Found entry for table_uuid: {}, part: {}, predicate_hash: {}, ranges: {}",
+            "Read entry for table_uuid: {}, part: {}, predicate_hash: {}, ranges: {}",
             table_id,
             part_name,
             predicate_hash,
@@ -74,7 +74,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
         LOG_DEBUG(
             logger,
-            "Did not find entry for table_uuid: {}, part: {}, predicate_hash: {}",
+            "Could not find entry for table_uuid: {}, part: {}, predicate_hash: {}",
             table_id,
             part_name,
             predicate_hash);

@@ -29,4 +29,4 @@ Additional cache types:
 
 To drop one of the caches, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md#drop-mark-cache) statements.
 
-To drop the format schema cache, use the [SYSTEM DROP FORMAT SCHEMA CACHE](../sql-reference/statements/system.md#drop-format-schema-cache-system-drop-schema-format) statement.
+To drop the format schema cache, use the [SYSTEM DROP FORMAT SCHEMA CACHE](/sql-reference/statements/system#system-drop-schema-format) statement.
