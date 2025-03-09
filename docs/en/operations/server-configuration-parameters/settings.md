@@ -449,6 +449,34 @@ Type: `Double`
 
 Default: `0.5`
 
+## query_condition_cache_policy {#query_condition_cache_policy}
+
+Query condition cache policy name.
+
+Type: `String`
+
+Default: `SLRU`
+
+## query_condition_cache_size {#query_condition_cache_size}
+
+Maximum size of the query condition cache.
+
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
+Type: `UInt64`
+
+Default: `1073741824` (100 MiB)
+
+## query_condition_cache_size_ratio {#query_condition_cache_size_ratio}
+
+The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.
+
+Type: `Double`
+
+Default: `0.5`
+
 ## max_backup_bandwidth_for_server {#max_backup_bandwidth_for_server}
 
 The maximum read speed in bytes per second for all backups on server. Zero means unlimited.
