@@ -4,6 +4,8 @@
 #include <Processors/RowsBeforeStepCounter.h>
 #include <QueryPipeline/Pipe.h>
 
+#include <Processors/ISimpleTransform.h>
+
 #include <Core/UUID.h>
 
 #include <Common/EventFD.h>
@@ -53,6 +55,8 @@ private:
     RowsBeforeStepCounterPtr rows_before_limit;
     RowsBeforeStepCounterPtr rows_before_aggregation;
 
+    UInt64 chunk_sequence_number = 0;
+
     const bool async_read;
     const bool async_query_sending;
     bool is_async_state = false;
@@ -93,6 +97,19 @@ protected:
 
 private:
     RemoteQueryExecutorPtr query_executor;
+};
+
+struct ConvertBlobColumnsTransform : ISimpleTransform
+{
+public:
+    explicit ConvertBlobColumnsTransform(const Block & header_)
+        : ISimpleTransform(header_, header_, false)
+    {
+    }
+
+    String getName() const override { return "ConvertBlobColumnsTransform"; }
+
+    void transform(Chunk & chunk) override;
 };
 
 /// Create pipe with remote sources.
