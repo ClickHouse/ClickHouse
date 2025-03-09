@@ -20,6 +20,7 @@ namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int LOGICAL_ERROR;
+extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
@@ -40,8 +41,51 @@ public:
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName &) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        if (arguments.size() != T::arguments)
+          throw Exception(
+                  ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                  "Function {}'s arguments number must be {}.",
+                  getName(),
+                  T::arguments);
+
+        DataTypes arguments_types;
+        // First two arguments lhs and rhs are always arrays
+        for (size_t index = 0; index < arguments.size(); ++index)
+        {
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
+
+            if (!array_type)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument {} of function {} must be array. Found {} instead.",
+                    toString(index + 1),
+                    getName(),
+                    arguments[index].type->getName());
+
+            auto nested_type = array_type->getNestedType();
+            arguments_types.emplace_back(nested_type);
+        }
+
+        switch (T::impl)
+        {
+            case 0:
+                return std::make_shared<DataTypeUInt32>();
+            case 1:
+            case 2:
+                for (size_t index = 2; index < 4; ++index)
+                {
+                  if (!WhichDataType(arguments_types[index]).isFloat64())
+                    throw Exception(
+                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                        "Argument {} of function {} must be array of Float64. Found {} instead.",
+                        toString(index + 1),
+                        getName(),
+                        arguments_types[index]->getName());
+                }
+                return std::make_shared<DataTypeFloat64>();
+        }
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Unknown function {}. "
@@ -83,30 +127,6 @@ public:
         }
     }
 private:
-    DataTypes checkArguments(const ColumnsWithTypeAndName & arguments) const
-    {
-        DataTypes arguments_types;
-        // First two arguments lhs and rhs are always arrays
-        for (size_t index = 0; index < arguments.size(); ++index)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
-
-            if (!array_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} of function {} must be array. Found {} instead.",
-                    toString(index + 1),
-                    getName(),
-                    arguments[index].type->getName());
-
-            auto nested_type = array_type->getNestedType();
-            arguments_types.emplace_back(nested_type);
-        }
-
-        assert(arguments.size() == T::arguments);
-        return arguments_types;
-    }
-
     ColumnPtr simpleLevenshteinImpl(std::vector<const ColumnArray *> columns) const
     {
         const ColumnArray * column_lhs = columns[0];
@@ -246,13 +266,6 @@ struct SimpleLevenshtein
     static constexpr size_t arguments = 2;
 };
 
-template <>
-DataTypePtr FunctionArrayLevenshtein<SimpleLevenshtein>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-{
-    DataTypes arguments_types = checkArguments(arguments);
-    return std::make_shared<DataTypeUInt32>();
-}
-
 struct Weighted
 {
     static constexpr auto name{"arrayLevenshteinWeighted"};
@@ -260,47 +273,12 @@ struct Weighted
     static constexpr size_t arguments = 4;
 };
 
-template <>
-DataTypePtr FunctionArrayLevenshtein<Weighted>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-{
-    DataTypes arguments_types = checkArguments(arguments);
-    for (size_t index = 2; index < 4; ++index)
-    {
-      if (!WhichDataType(arguments_types[index]).isFloat64())
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Argument {} of function {} must be array of Float64. Found {} instead.",
-            toString(index + 1),
-            getName(),
-            arguments_types[index]->getName());
-    }
-    return std::make_shared<DataTypeFloat64>();
-}
-
 struct Similarity
 {
     static constexpr auto name{"arraySimilarity"};
     static constexpr size_t impl = 2;
     static constexpr size_t arguments = 4;
 };
-
-template <>
-DataTypePtr FunctionArrayLevenshtein<Similarity>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
-{
-    DataTypes arguments_types = checkArguments(arguments);
-    for (size_t index = 2; index < 4; ++index)
-    {
-      if (!WhichDataType(arguments_types[index]).isFloat64())
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Argument {} of function {} must be array of Float64. Found {} instead.",
-            toString(index + 1),
-            getName(),
-            arguments_types[index]->getName());
-    }
-    return std::make_shared<DataTypeFloat64>();
-}
-
 
 REGISTER_FUNCTION(ArrayLevenshtein)
 {
