@@ -36,6 +36,8 @@ inline static constexpr uint64_t DEFAULT_MAX_REDIRECTS = 10;
 inline static constexpr uint64_t DEFAULT_RETRY_ATTEMPTS = 100;
 
 inline static constexpr bool DEFAULT_ALLOW_NATIVE_COPY = true;
+inline static constexpr std::string_view DEFAULT_NATIVE_COPY_ALLOWED_PATTERNS = "*";
+
 inline static constexpr bool DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD = false;
 
 }
