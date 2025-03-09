@@ -47,6 +47,7 @@ private:
     struct Entry
     {
         MatchingMarks matching_marks;
+        std::mutex mutex;
 
         explicit Entry(size_t mark_count);
     };
