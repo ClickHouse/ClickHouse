@@ -18,13 +18,13 @@ $CLICKHOUSE_CLIENT -m -q "
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" -q "BACKUP TABLE data TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_native_copy') SETTINGS allow_s3_native_copy=true"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT query, ProfileEvents['S3CopyObject']>0 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id'
 "
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" -q "BACKUP TABLE data TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_no_native_copy') SETTINGS allow_s3_native_copy=false"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT query, ProfileEvents['S3CopyObject']>0 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id'
 "
 
@@ -33,13 +33,13 @@ $CLICKHOUSE_CLIENT -m -q "
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" -q "BACKUP TABLE data TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_native_copy_inc') SETTINGS allow_s3_native_copy=true, base_backup=S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_native_copy')"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT query, ProfileEvents['S3CopyObject']>0 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id'
 "
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" -q "BACKUP TABLE data TO S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_no_native_copy_inc') SETTINGS allow_s3_native_copy=false, base_backup=S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_no_native_copy')"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT query, ProfileEvents['S3CopyObject']>0 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id'
 "
 
@@ -47,25 +47,25 @@ $CLICKHOUSE_CLIENT -m -q "
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" -q "RESTORE TABLE data AS data_native_copy FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_native_copy') SETTINGS allow_s3_native_copy=true"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT query, ProfileEvents['S3CopyObject']>0 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id'
 "
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" -q "RESTORE TABLE data AS data_no_native_copy FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_no_native_copy') SETTINGS allow_s3_native_copy=false"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT query, ProfileEvents['S3CopyObject']>0 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id'
 "
 # RESTORE from incremental backup
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" -q "RESTORE TABLE data AS data_native_copy_inc FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_native_copy_inc') SETTINGS allow_s3_native_copy=true"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT query, ProfileEvents['S3CopyObject']>0 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id'
 "
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --format Null --query_id "$query_id" -q "RESTORE TABLE data AS data_no_native_copy_inc FROM S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data_no_native_copy_inc') SETTINGS allow_s3_native_copy=false"
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT query, ProfileEvents['S3CopyObject']>0 FROM system.query_log WHERE type = 'QueryFinish' AND event_date >= yesterday() AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$query_id'
 "

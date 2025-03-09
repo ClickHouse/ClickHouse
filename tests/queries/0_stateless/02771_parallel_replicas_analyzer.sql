@@ -28,7 +28,7 @@ FROM join_inner_table__fuzz_146_replicated
     cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
     enable_parallel_replicas = 1;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 -- There should be 2 different queries
 -- The initial query
 -- The query sent to each replica (which should appear 2 times as we are setting max_parallel_replicas to 2)
