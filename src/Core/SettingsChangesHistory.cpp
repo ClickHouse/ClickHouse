@@ -672,6 +672,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
+            {"zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock", 0, 0, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
@@ -682,6 +683,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"columns_and_secondary_indices_sizes_lazy_calculation", true, true, "New setting to calculate columns and indices sizes lazily"},
             {"table_disk", false, false, "New setting"},
             {"allow_reduce_blocking_parts_task", false, true, "Now SMT will remove stale blocking parts from ZooKeeper by default"},
+            {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", false, false, "New setting to allow automatic cleanup merges for ReplacingMergeTree"},
             {"shared_merge_tree_max_suspicious_broken_parts", 0, 0, "Max broken parts for SMT, if more - deny automatic detach"},
             {"shared_merge_tree_max_suspicious_broken_parts_bytes", 0, 0, "Max size of all broken parts for SMT, if more - deny automatic detach"},
             /// Release closed. Please use 25.3

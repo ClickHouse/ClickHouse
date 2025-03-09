@@ -520,6 +520,7 @@ bool Client::buzzHouse()
                "allow_suspicious_types_in_order_by",
                "allow_unrestricted_reads_from_keeper",
                "enable_analyzer",
+               "enable_deflate_qpl_codec",
                "enable_zstd_qat_codec",
                "type_json_skip_duplicated_paths",
                "allow_experimental_database_iceberg",
