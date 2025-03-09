@@ -56,6 +56,11 @@ bool shouldShowAddress(const void * addr)
 }
 }
 
+StackTrace::StackTrace()
+{
+    tryCapture();
+}
+
 void StackTrace::setShowAddresses(bool show)
 {
     show_addresses.store(show, std::memory_order_relaxed);
