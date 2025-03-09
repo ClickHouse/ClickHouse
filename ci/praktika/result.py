@@ -92,19 +92,17 @@ class Result(MetaClasses.Serializable):
                 infos += info
         if results and not status:
             for result in results:
-                if result.status not in (
-                    Result.Status.SUCCESS,
-                    Result.Status.FAILED,
-                    Result.Status.ERROR,
-                ):
+                if result.status in (Result.Status.SUCCESS, Result.Status.SKIPPED):
+                    continue
+                elif result.status == Result.Status.ERROR:
+                    result_status = Result.Status.ERROR
+                    break
+                elif result.status == Result.Status.FAILED:
+                    result_status = Result.Status.FAILED
+                else:
                     Utils.raise_with_error(
                         f"Unexpected result status [{result.status}] for [{result.name}]"
                     )
-                if result.status != Result.Status.SUCCESS:
-                    result_status = Result.Status.FAILED
-                if result.status == Result.Status.ERROR:
-                    result_status = Result.Status.ERROR
-                    break
         if results and with_info_from_results:
             for result in results:
                 if result.info:
