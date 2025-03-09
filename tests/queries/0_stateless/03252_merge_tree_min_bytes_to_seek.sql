@@ -1,6 +1,4 @@
-
--- Disable query condition cache because it affects the `SelectedRanges` metric.
-SET use_query_condition_cache = 0;
+SET use_query_condition_cache = 0; -- disabled because it affects the `SelectedRanges` metric.
 
 DROP TABLE IF EXISTS t_min_bytes_to_seek;
 
