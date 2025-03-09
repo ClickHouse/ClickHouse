@@ -408,7 +408,7 @@ def parse_args() -> argparse.Namespace:
             "clang-19-amd64-musl",
             "clang-19-freebsd",
         ),
-        default="clang-19",
+        default="clang-20",
         help="a compiler to use",
     )
     parser.add_argument(
