@@ -17,7 +17,9 @@
     },
     "docker/test/integration/base": {
         "name": "clickhouse/integration-test",
-        "dependent": []
+        "dependent": [
+            "docker/test/integration/clickhouse_with_unity_catalog"
+        ]
     },
     "docker/test/fuzzer": {
         "name": "clickhouse/fuzzer",
@@ -166,6 +168,10 @@
     },
     "docker/test/integration/nginx_dav": {
         "name": "clickhouse/nginx-dav",
+        "dependent": []
+    },
+    "docker/test/integration/clickhouse_with_unity_catalog": {
+        "name": "clickhouse/integration-test-with-unity-catalog",
         "dependent": []
     }
 }
