@@ -63,18 +63,14 @@ function find_reference_sha
         # Historically there were various path for the performance test package,
         # test all of them.
         unset found
-        if [[ "$BUILD_NAME" == *"release"* ]]; then
-            build_name_new="build_amd_release"
-        else
-            build_name_new="build_arm_release"
-        fi
         declare -a urls_to_try=(
-            "$S3_URL/REFs/master/$REF_SHA/$build_name_new/performance.tar.zst"
             "$S3_URL/PRs/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tar.zst"
+            "$S3_URL/0/$REF_SHA/$BUILD_NAME/performance.tgz"
         )
         for path in "${urls_to_try[@]}"
         do
-            if curl --fail --head "$path"
+            if curl_with_retry "$path"
             then
                 found="$path"
                 break

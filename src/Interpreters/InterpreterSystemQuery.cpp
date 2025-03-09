@@ -113,7 +113,6 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
-    extern const int ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
@@ -400,10 +399,6 @@ BlockIO InterpreterSystemQuery::execute()
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context->clearIndexUncompressedCache();
             break;
-        case Type::DROP_SKIPPING_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_SKIPPING_INDEX_CACHE);
-            system_context->clearSkippingIndexCache();
-            break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
@@ -411,15 +406,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_QUERY_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryResultCache(query.query_result_cache_tag);
+            getContext()->clearQueryCache(query.query_cache_tag);
             break;
         }
-        case Type::DROP_QUERY_CONDITION_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
-            getContext()->clearQueryConditionCache();
-            break;
-        }
+
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
 #if USE_EMBEDDED_COMPILER
             getContext()->checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
@@ -533,7 +523,8 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_PAGE_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);
-            system_context->clearPageCache();
+
+            getContext()->dropPageCache();
             break;
         }
         case Type::DROP_SCHEMA_CACHE:
@@ -765,7 +756,7 @@ BlockIO InterpreterSystemQuery::execute()
         {
             getContext()->checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             auto system_logs = getContext()->getSystemLogs();
-            system_logs.flush(true, query.logs);
+            system_logs.flush(true);
             break;
         }
         case Type::STOP_LISTEN:
@@ -899,7 +890,7 @@ void InterpreterSystemQuery::restoreReplica()
                              getContext()->getProcessListElementSafe()});
 }
 
-StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
     auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
@@ -909,25 +900,12 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         throw Exception(ErrorCodes::ABORTED, "Database {} is being dropped or detached, will not restart replica {}",
                         backQuoteIfNeed(replica.getDatabaseName()), replica.getNameForLogs());
 
-    std::optional<Exception> exception;
-    auto [database, table] = DatabaseCatalog::instance().getTableImpl(replica, getContext(), &exception);
+    auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
     ASTPtr create_ast;
 
-    if (!table)
-    {
-        if (throw_on_error)
-            throw Exception(*exception);
-        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: {}", replica.getNameForLogs(), exception->message());
+    /// Detach actions
+    if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
         return nullptr;
-    }
-    const StorageID replica_table_id = table->getStorageID();
-    if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
-    {
-        if (throw_on_error)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
-        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: not a ReplicatedMergeTree anymore", replica.getNameForLogs());
-        return nullptr;
-    }
 
     SCOPE_EXIT({
         if (table)
@@ -942,8 +920,9 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
 
         database->detachTable(system_context, replica.table_name);
     }
+    UUID uuid = table->getStorageID().uuid;
     table.reset();
-    database->waitDetachedTableNotInUse(replica_table_id.uuid);
+    database->waitDetachedTableNotInUse(uuid);
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
@@ -954,7 +933,7 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
-    auto new_table = StorageFactory::instance().get(create,
+    table = StorageFactory::instance().get(create,
         data_path,
         system_context,
         system_context->getGlobalContext(),
@@ -962,19 +941,18 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         constraints,
         LoadingStrictnessLevel::ATTACH);
 
-    database->attachTable(system_context, replica.table_name, new_table, data_path);
-    if (new_table->getStorageID().uuid != replica_table_id.uuid)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);
+    database->attachTable(system_context, replica.table_name, table, data_path);
 
-    new_table->startup();
-    LOG_TRACE(log, "Restarted replica {}", new_table->getStorageID().getNameForLogs());
-    return new_table;
+    table->startup();
+    LOG_TRACE(log, "Restarted replica {}", replica);
+    return table;
 }
 
 void InterpreterSystemQuery::restartReplica(const StorageID & replica, ContextMutablePtr system_context)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
-    doRestartReplica(replica, system_context, /*throw_on_error=*/ true);
+    if (!tryRestartReplica(replica, system_context))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
 }
 
 void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
@@ -1010,7 +988,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     for (auto & replica : replica_names)
     {
-        pool.scheduleOrThrowOnError([&]() { doRestartReplica(replica, system_context, /*throw_on_error=*/ false); });
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context); });
     }
     pool.wait();
 }
@@ -1042,32 +1020,16 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         auto access = getContext()->getAccess();
         bool access_is_granted_globally = access->isGranted(AccessType::SYSTEM_DROP_REPLICA);
 
-        /// Instead of silently failing, check the permissions to delete all databases in advance.
-        /// Throw an exception to user if the user doesn't have enough privileges to drop the replica.
-        /// Include the databases that the user needs privileges for in the exception
-        std::vector<String> required_access;
-        for (auto & elem : databases)
-        {
-            if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
-            {
-                required_access.emplace_back(elem.first);
-                LOG_INFO(log, "? Access {} denied, skipping database {}", "SYSTEM DROP REPLICA", elem.first);
-            }
-        }
-
-        if (!required_access.empty())
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Access denied for {}. Not enough permissions to drop these databases: {}",
-                "SYSTEM DROP REPLICA",
-                fmt::join(required_access, ", "));
-
-        /// If we are here, then the user has the necassary access to drop the replica, continue with the operation.
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
+                if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first, iterator->name()))
+                {
+                    LOG_INFO(log, "Access {} denied, skipping {}.{}", "SYSTEM DROP REPLICA", elem.first, iterator->name());
+                    continue;
+                }
                 dropReplicaImpl(query, iterator->table());
             }
             LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
@@ -1372,7 +1334,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
 RefreshTaskList InterpreterSystemQuery::getRefreshTasks()
 {
     auto ctx = getContext();
-    ctx->checkAccess(AccessType::SYSTEM_VIEWS, table_id);
+    ctx->checkAccess(AccessType::SYSTEM_VIEWS);
     auto tasks = ctx->getRefreshSet().findTasks(table_id);
     if (tasks.empty())
         throw Exception(
@@ -1452,12 +1414,10 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
         case Type::DROP_QUERY_CACHE:
-        case Type::DROP_QUERY_CONDITION_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:

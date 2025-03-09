@@ -23,7 +23,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/NaNUtils.h>
-#include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/DateLUT.h>
@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int UNKNOWN_ELEMENT_OF_ENUM;
 }
 
 
@@ -493,7 +494,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (src.getType() == Field::Types::Tuple && from_type_tuple && from_type_tuple->haveExplicitNames())
         {
             const auto & names = from_type_tuple->getElementNames();
-            const auto & tuple = src.safeGet<Tuple>();
+            const auto & tuple = src.safeGet<const Tuple &>();
 
             if (names.size() != tuple.size())
                 throw Exception(
@@ -512,7 +513,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         if (src.getType() == Field::Types::Map)
         {
             Object object;
-            const auto & map = src.safeGet<Map>();
+            const auto & map = src.safeGet<const Map &>();
             for (const auto & element : map)
             {
                 const auto & map_entry = element.safeGet<Tuple>();
@@ -522,7 +523,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 if (key.getType() != Field::Types::String)
                     throw Exception(ErrorCodes::TYPE_MISMATCH, "Cannot convert from Map with key of type {} to Object", key.getTypeName());
 
-                object[key.safeGet<String>()] = value;
+                object[key.safeGet<const String &>()] = value;
             }
 
             return object;
@@ -584,6 +585,8 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             throw;
         }
 
+        if (col->empty())
+            return Field(Null());
         Field parsed = (*col)[0];
         return convertFieldToType(parsed, type, from_type_hint, format_settings);
     }
@@ -660,11 +663,23 @@ static bool decimalEqualsFloat(Field field, Float64 float_value)
 
 std::optional<Field> convertFieldToTypeStrict(const Field & from_value, const IDataType & from_type, const IDataType & to_type, const FormatSettings & format_settings)
 {
-    Field result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
+        //Field result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
+
+    Field result_value;
+    try
+    {
+        result_value = convertFieldToType(from_value, to_type, &from_type, format_settings);
+    }
+    catch (Exception & e)
+    {
+        if (isEnum(to_type) && e.code() == ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM)
+            return {};
+        throw;
+    }
 
     if (Field::isDecimal(from_value.getType()) && Field::isDecimal(result_value.getType()))
     {
-        bool is_equal = accurateEquals(from_value, result_value);
+        bool is_equal = applyVisitor(FieldVisitorAccurateEquals{}, from_value, result_value);
         return is_equal ? result_value : std::optional<Field>{};
     }
 

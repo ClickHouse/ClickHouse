@@ -1,19 +1,13 @@
-
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/Compaction/CompactionStatistics.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ProfileEventsScope.h>
-#include <Common/randomSeed.h>
-
-#include <Core/BackgroundSchedulePool.h>
-
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 #include <pcg_random.hpp>
-
+#include <Common/randomSeed.h>
 #include <cmath>
 
 namespace ProfileEvents
@@ -203,7 +197,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true);
+    size_t estimated_space_for_merge = MergeTreeDataMergerMutator::estimateNeededDiskSpace(parts, true);
 
     /// Can throw an exception while reserving space.
     IMergeTreeDataPart::TTLInfos ttl_infos;
@@ -276,7 +270,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
                 uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
 
                 LOG_INFO(log, "Merge size is {} bytes (it's more than sleep threshold {}) so will intentionally sleep for {} ms to allow other replicas to took this big merge",
-                    estimated_space_for_merge, (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock].value, time_to_sleep_milliseconds);
+                    estimated_space_for_merge, (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock], time_to_sleep_milliseconds);
 
                 std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
             }

@@ -47,15 +47,12 @@ public:
 
     String getID(char) const override;
     ASTPtr clone() const override;
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateRowPolicyQuery>(clone()); }
 
     void replaceCurrentUserTag(const String & current_user_name) const;
     void replaceEmptyDatabase(const String & current_database) const;
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
-
-protected:
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
-
 }

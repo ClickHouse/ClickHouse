@@ -1,10 +1,8 @@
 ---
-slug: /sql-reference/functions/encryption-functions
+slug: /en/sql-reference/functions/encryption-functions
 sidebar_position: 70
 sidebar_label: Encryption
 ---
-
-# Encryption Functions
 
 These functions  implement encryption and decryption of data with AES (Advanced Encryption Standard) algorithm.
 
@@ -14,7 +12,7 @@ Initialization vector length is always 16 bytes (bytes in excess of 16 are ignor
 
 Note that these functions work slowly until ClickHouse 21.1.
 
-## encrypt {#encrypt}
+## encrypt
 
 This function encrypts data using these modes:
 
@@ -23,7 +21,6 @@ This function encrypts data using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
-- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
 
 **Syntax**
 
@@ -33,15 +30,15 @@ encrypt('mode', 'plaintext', 'key' [, iv, aad])
 
 **Arguments**
 
-- `mode` — Encryption mode. [String](/sql-reference/data-types/string).
-- `plaintext` — Text that need to be encrypted. [String](/sql-reference/data-types/string).
-- `key` — Encryption key. [String](/sql-reference/data-types/string).
-- `iv` — Initialization vector. Required for `-gcm` modes, optional for others. [String](/sql-reference/data-types/string).
-- `aad` — Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others would throw an exception. [String](/sql-reference/data-types/string).
+- `mode` — Encryption mode. [String](../data-types/string.md#string).
+- `plaintext` — Text that need to be encrypted. [String](../data-types/string.md#string).
+- `key` — Encryption key. [String](../data-types/string.md#string).
+- `iv` — Initialization vector. Required for `-gcm` modes, optional for others. [String](../data-types/string.md#string).
+- `aad` — Additional authenticated data. It isn't encrypted, but it affects decryption. Works only in `-gcm` modes, for others would throw an exception. [String](../data-types/string.md#string).
 
 **Returned value**
 
-- Ciphertext binary string. [String](/sql-reference/data-types/string).
+- Ciphertext binary string. [String](../data-types/string.md#string).
 
 **Examples**
 
@@ -106,7 +103,7 @@ Result:
 └──────────────────────┴──────────────────────────────────────────────┘
 ```
 
-## aes_encrypt_mysql {#aes_encrypt_mysql}
+## aes_encrypt_mysql
 
 Compatible with mysql encryption and resulting ciphertext can be decrypted with [AES_DECRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-decrypt) function.
 
@@ -126,14 +123,14 @@ aes_encrypt_mysql('mode', 'plaintext', 'key' [, iv])
 
 **Arguments**
 
-- `mode` — Encryption mode. [String](/sql-reference/data-types/string).
-- `plaintext` — Text that needs to be encrypted. [String](/sql-reference/data-types/string).
-- `key` — Encryption key. If key is longer than required by mode, MySQL-specific key folding is performed. [String](/sql-reference/data-types/string).
-- `iv` — Initialization vector. Optional, only first 16 bytes are taken into account [String](/sql-reference/data-types/string).
+- `mode` — Encryption mode. [String](../data-types/string.md#string).
+- `plaintext` — Text that needs to be encrypted. [String](../data-types/string.md#string).
+- `key` — Encryption key. If key is longer than required by mode, MySQL-specific key folding is performed. [String](../data-types/string.md#string).
+- `iv` — Initialization vector. Optional, only first 16 bytes are taken into account [String](../data-types/string.md#string).
 
 **Returned value**
 
-- Ciphertext binary string. [String](/sql-reference/data-types/string).
+- Ciphertext binary string. [String](../data-types/string.md#string).
 
 **Examples**
 
@@ -147,7 +144,7 @@ SELECT encrypt('aes-256-ofb', 'Secret', '12345678910121314151617181920212', 'ivi
 
 Result:
 
-```response
+```
 ┌─ciphertexts_equal─┐
 │                 1 │
 └───────────────────┘
@@ -178,7 +175,7 @@ SELECT hex(aes_encrypt_mysql('aes-256-ofb', 'Secret', '1234567891012131415161718
 
 Result:
 
-```response
+```text
 ┌─ciphertext───┐
 │ 24E9E4966469 │
 └──────────────┘
@@ -215,7 +212,7 @@ mysql> SELECT aes_encrypt('Secret', '123456789101213141516171819202122', 'iviviv
 1 row in set (0.00 sec)
 ```
 
-## decrypt {#decrypt}
+## decrypt
 
 This function decrypts ciphertext into a plaintext using these modes:
 
@@ -224,7 +221,6 @@ This function decrypts ciphertext into a plaintext using these modes:
 - aes-128-ofb, aes-192-ofb, aes-256-ofb
 - aes-128-gcm, aes-192-gcm, aes-256-gcm
 - aes-128-ctr, aes-192-ctr, aes-256-ctr
-- aes-128-cfb, aes-128-cfb1, aes-128-cfb8
 
 **Syntax**
 
@@ -234,15 +230,15 @@ decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 
 **Arguments**
 
-- `mode` — Decryption mode. [String](/sql-reference/data-types/string).
-- `ciphertext` — Encrypted text that needs to be decrypted. [String](/sql-reference/data-types/string).
-- `key` — Decryption key. [String](/sql-reference/data-types/string).
+- `mode` — Decryption mode. [String](../data-types/string.md#string).
+- `ciphertext` — Encrypted text that needs to be decrypted. [String](../data-types/string.md#string).
+- `key` — Decryption key. [String](../data-types/string.md#string).
 - `iv` — Initialization vector. Required for `-gcm` modes, Optional for others. [String](../data-types/string.md#string).
-- `aad` — Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](/sql-reference/data-types/string).
+- `aad` — Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](../data-types/string.md#string).
 
 **Returned value**
 
-- Decrypted String. [String](/sql-reference/data-types/string).
+- Decrypted String. [String](../data-types/string.md#string).
 
 **Examples**
 
@@ -297,7 +293,7 @@ Result:
 
 Notice how only a portion of the data was properly decrypted, and the rest is gibberish since either `mode`, `key`, or `iv` were different upon encryption.
 
-## tryDecrypt {#trydecrypt}
+## tryDecrypt
 
 Similar to `decrypt`, but returns NULL if decryption fails because of using the wrong key.
 
@@ -336,7 +332,7 @@ ORDER BY user_id ASC
 
 Result:
 
-```response
+```
 ┌──────────────────dt─┬─user_id─┬─value──┐
 │ 2022-08-02 00:00:00 │       1 │ ᴺᵁᴸᴸ   │
 │ 2022-09-02 00:00:00 │       2 │ value2 │
@@ -344,7 +340,7 @@ Result:
 └─────────────────────┴─────────┴────────┘
 ```
 
-## aes_decrypt_mysql {#aes_decrypt_mysql}
+## aes_decrypt_mysql
 
 Compatible with mysql encryption and decrypts data encrypted with [AES_ENCRYPT](https://dev.mysql.com/doc/refman/8.0/en/encryption-functions.html#function_aes-encrypt) function.
 
@@ -365,14 +361,14 @@ aes_decrypt_mysql('mode', 'ciphertext', 'key' [, iv])
 
 **Arguments**
 
-- `mode` — Decryption mode. [String](/sql-reference/data-types/string).
-- `ciphertext` — Encrypted text that needs to be decrypted. [String](/sql-reference/data-types/string).
-- `key` — Decryption key. [String](/sql-reference/data-types/string).
-- `iv` — Initialization vector. Optional. [String](/sql-reference/data-types/string).
+- `mode` — Decryption mode. [String](../data-types/string.md#string).
+- `ciphertext` — Encrypted text that needs to be decrypted. [String](../data-types/string.md#string).
+- `key` — Decryption key. [String](../data-types/string.md#string).
+- `iv` — Initialization vector. Optional. [String](../data-types/string.md#string).
 
 **Returned value**
 
-- Decrypted String. [String](/sql-reference/data-types/string).
+- Decrypted String. [String](../data-types/string.md#string).
 
 **Examples**
 

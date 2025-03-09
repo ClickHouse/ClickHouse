@@ -1,12 +1,10 @@
 ---
-sidebar_label: Query-level Session Settings
-title: Query-level Session Settings
-description: "Settings at the query-level"
-slug: /operations/settings/query-level
+sidebar_label: Query-level Settings
+title: Query-level Settings
+slug: /en/operations/settings/query-level
 ---
 
-There are multiple ways to run statements with specific settings.
-Settings are configured in layers, and each subsequent layer redefines the previous values of a setting.
+There are multiple ways to set ClickHouse query-level settings. Settings are configured in layers, and each subsequent layer redefines the previous values of a setting.
 
 The order of priority for defining a setting is:
 
@@ -32,12 +30,12 @@ The order of priority for defining a setting is:
     clause of the SELECT query. The setting value is applied only to that query
     and is reset to the default or previous value after the query is executed.
 
-## Examples {#examples}
+## Examples
 
 These examples all set the value of the `async_insert` setting to `1`, and
 show how to examine the settings in a running system.
 
-### Using SQL to apply a setting to a user directly {#using-sql-to-apply-a-setting-to-a-user-directly}
+### Using SQL to apply a setting to a user directly
 
 This creates the user `ingester` with the setting `async_inset = 1`:
 
@@ -48,7 +46,7 @@ IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f2
 SETTINGS async_insert = 1
 ```
 
-#### Examine the settings profile and assignment {#examine-the-settings-profile-and-assignment}
+#### Examine the settings profile and assignment
 
 ```sql
 SHOW ACCESS
@@ -62,7 +60,7 @@ SHOW ACCESS
 │ ...                                                                                │
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
-### Using SQL to create a settings profile and assign to a user {#using-sql-to-create-a-settings-profile-and-assign-to-a-user}
+### Using SQL to create a settings profile and assign to a user
 
 This creates the profile `log_ingest` with the setting `async_inset = 1`:
 
@@ -81,7 +79,7 @@ SETTINGS PROFILE log_ingest
 ```
 
 
-### Using XML to create a settings profile and user {#using-xml-to-create-a-settings-profile-and-user}
+### Using XML to create a settings profile and user
 
 ```xml title=/etc/clickhouse-server/users.d/users.xml
 <clickhouse>
@@ -109,7 +107,7 @@ SETTINGS PROFILE log_ingest
 </clickhouse>
 ```
 
-#### Examine the settings profile and assignment {#examine-the-settings-profile-and-assignment-1}
+#### Examine the settings profile and assignment
 
 ```sql
 SHOW ACCESS
@@ -128,7 +126,7 @@ SHOW ACCESS
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Assign a setting to a session {#assign-a-setting-to-a-session}
+### Assign a setting to a session
 
 ```sql
 SET async_insert =1;
@@ -141,7 +139,7 @@ SELECT value FROM system.settings where name='async_insert';
 └────────┘
 ```
 
-### Assign a setting during a query {#assign-a-setting-during-a-query}
+### Assign a setting during a query
 
 ```sql
 INSERT INTO YourTable
@@ -151,7 +149,7 @@ VALUES (...)
 ```
 
 
-## Converting a Setting to its Default Value {#converting-a-setting-to-its-default-value}
+## Converting a Setting to its Default Value
 
 If you change a setting and would like to revert it back to its default value, set the value to `DEFAULT`. The syntax looks like:
 
@@ -193,7 +191,7 @@ The setting is now back to its default:
 
 ## Custom Settings {#custom_settings}
 
-In addition to the common [settings](/operations/settings/settings.md), users can define custom settings.
+In addition to the common [settings](../../operations/settings/settings.md), users can define custom settings.
 
 A custom setting name must begin with one of predefined prefixes. The list of these prefixes must be declared in the [custom_settings_prefixes](../../operations/server-configuration-parameters/settings.md#custom_settings_prefixes) parameter in the server configuration file.
 
@@ -215,5 +213,5 @@ SELECT getSetting('custom_a');
 
 **See Also**
 
-- View the [Settings](/operations/settings/settings.md) page for a description of the ClickHouse settings.
-- [Global server settings](/operations/server-configuration-parameters/settings.md)
+- View the [Settings](./settings.md) page for a description of the ClickHouse settings.
+- [Global server settings](../../operations/server-configuration-parameters/settings.md)

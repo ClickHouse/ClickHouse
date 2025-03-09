@@ -18,8 +18,6 @@ bool isNewYearMode();
 
 bool isChineseNewYearMode(const String & local_tz);
 
-std::string getChineseZodiac();
-
 #if USE_REPLXX
 void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors, const Context & context);
 #endif

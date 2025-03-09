@@ -11,8 +11,6 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <fmt/ranges.h>
-
 namespace CurrentMetrics
 {
     extern const Metric DistributedSend;
@@ -63,6 +61,7 @@ DistributedAsyncInsertBatch::DistributedAsyncInsertBatch(DistributedAsyncInsertD
     : parent(parent_)
     , split_batch_on_failure(parent.split_batch_on_failure)
     , fsync(parent.storage.getDistributedSettingsRef()[DistributedSetting::fsync_after_insert])
+    , dir_fsync(parent.dir_fsync)
 {}
 
 bool DistributedAsyncInsertBatch::isEnoughSize() const

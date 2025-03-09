@@ -1,3 +1,4 @@
+#include <chrono>
 #include <Storages/MergeTree/RequestResponse.h>
 
 #include <Core/ProtocolDefines.h>

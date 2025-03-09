@@ -1,0 +1,5 @@
+== Top 10 IPs == 
+
+${data}
+
+--- ${rows_read:XML} rows read in ${time:XML} ---

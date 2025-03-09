@@ -1,5 +1,4 @@
 #include <fstream>
-#include <Core/BackgroundSchedulePool.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>

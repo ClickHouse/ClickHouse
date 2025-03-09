@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/set
+slug: /en/sql-reference/statements/set
 sidebar_position: 50
 sidebar_label: SET
 ---
@@ -10,7 +10,7 @@ sidebar_label: SET
 SET param = value
 ```
 
-Assigns `value` to the `param` [setting](/operations/settings/overview) for the current session. You cannot change [server settings](../../operations/server-configuration-parameters/settings.md) this way.
+Assigns `value` to the `param` [setting](../../operations/settings/index.md) for the current session. You cannot change [server settings](../../operations/server-configuration-parameters/settings.md) this way.
 
 You can also set all the values from the specified settings profile in a single query.
 

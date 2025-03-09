@@ -1,28 +1,28 @@
 ---
-slug: /operations/performance-test
+slug: /en/operations/performance-test
 sidebar_position: 54
 sidebar_label: Testing Hardware
 title: "How to Test Your Hardware with ClickHouse"
 ---
 
-import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 
 <SelfManaged />
 
 You can run a basic ClickHouse performance test on any server without installation of ClickHouse packages.
 
 
-## Automated Run {#automated-run}
+## Automated Run
 
 You can run the benchmark with a single script.
 
 1. Download the script.
-```bash
+```
 wget https://raw.githubusercontent.com/ClickHouse/ClickBench/main/hardware/hardware.sh
 ```
 
 2. Run the script.
-```bash
+```
 chmod a+x ./hardware.sh
 ./hardware.sh
 ```

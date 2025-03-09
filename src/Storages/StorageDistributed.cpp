@@ -7,7 +7,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
@@ -66,7 +65,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -109,9 +107,6 @@
 #include <memory>
 #include <filesystem>
 #include <cassert>
-
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
 
 
 namespace fs = std::filesystem;
@@ -169,7 +164,6 @@ namespace Setting
     extern const SettingsUInt64 optimize_skip_unused_shards_limit;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool prefer_localhost_replica;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 }
 
 namespace DistributedSetting
@@ -323,10 +317,7 @@ size_t getClusterQueriedNodes(const Settings & settings, const ClusterPtr & clus
 {
     size_t num_local_shards = cluster->getLocalShardCount();
     size_t num_remote_shards = cluster->getRemoteShardCount();
-    UInt64 max_parallel_replicas = settings[Setting::allow_experimental_parallel_reading_from_replicas]
-        ? settings[Setting::max_parallel_replicas] : 1;
-
-    return (num_remote_shards + num_local_shards) * max_parallel_replicas;
+    return (num_remote_shards + num_local_shards) * settings[Setting::max_parallel_replicas];
 }
 
 }
@@ -762,7 +753,6 @@ class ReplaseAliasColumnsVisitor : public InDepthQueryTreeVisitor<ReplaseAliasCo
 
         const auto & column_source = column_node->getColumnSourceOrNull();
         if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
-                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
                            || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
             return nullptr;
 
@@ -1092,7 +1082,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
         interpreter.buildQueryPlan(plan);
     }
 
-    plan.optimize(QueryPlanOptimizationSettings(context));
+    plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
     std::stack<QueryPlan::Node *> nodes;
     nodes.push(plan.getRootNode());
@@ -1318,7 +1308,7 @@ void StorageDistributed::initializeFromDisk()
         if (inc > file_names_increment.value)
             file_names_increment.value.store(inc);
     }
-    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value.load());
+    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value);
 }
 
 
@@ -1686,7 +1676,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
             log,
             "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
             "try to increase it, but note that this may increase query processing time.",
-            local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit].value);
+            local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit]);
         return nullptr;
     }
 
@@ -1993,7 +1983,6 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::REMOTE,
-        .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 }
 

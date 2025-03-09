@@ -94,26 +94,21 @@ void MemorySettings::sanityCheck() const
         throw Exception(
             ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "Setting `min_bytes_to_keep` cannot be higher than the `max_bytes_to_keep`. `min_bytes_to_keep`: {}, `max_bytes_to_keep`: {}",
-            impl->min_bytes_to_keep.value,
-            impl->max_bytes_to_keep.value);
+            impl->min_bytes_to_keep,
+            impl->max_bytes_to_keep);
 
 
     if (impl->min_rows_to_keep > impl->max_rows_to_keep)
         throw Exception(
             ErrorCodes::SETTING_CONSTRAINT_VIOLATION,
             "Setting `min_rows_to_keep` cannot be higher than the `max_rows_to_keep`. `min_rows_to_keep`: {}, `max_rows_to_keep`: {}",
-            impl->min_rows_to_keep.value,
-            impl->max_rows_to_keep.value);
+            impl->min_rows_to_keep,
+            impl->max_rows_to_keep);
 }
 
 void MemorySettings::applyChanges(const DB::SettingsChanges & changes)
 {
     impl->applyChanges(changes);
-}
-
-bool MemorySettings::hasBuiltin(std::string_view name)
-{
-    return MemorySettingsImpl::hasBuiltin(name);
 }
 }
 

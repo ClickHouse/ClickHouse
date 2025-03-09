@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/alter/column
+slug: /en/sql-reference/statements/alter/column
 sidebar_position: 37
 sidebar_label: COLUMN
 title: "Column Manipulations"
@@ -23,24 +23,24 @@ The following actions are supported:
 - [RENAME COLUMN](#rename-column) — Renames an existing column.
 - [CLEAR COLUMN](#clear-column) — Resets column values.
 - [COMMENT COLUMN](#comment-column) — Adds a text comment to the column.
-- [MODIFY COLUMN](#modify-column) — Changes column's type, default expression, TTL, and column settings.
+- [MODIFY COLUMN](#modify-column) — Changes column’s type, default expression, TTL, and column settings.
 - [MODIFY COLUMN REMOVE](#modify-column-remove) — Removes one of the column properties.
 - [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) - Changes column settings.
 - [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
 - [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
 These actions are described in detail below.
 
-## ADD COLUMN {#add-column}
+## ADD COLUMN
 
 ``` sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/sql-reference/statements/create/table#default_values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/docs/en/sql-reference/statements/create/table.md/#create-default-values)).
 
-If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
+If the `IF NOT EXISTS` clause is included, the query won’t return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
-Adding a column just changes the table structure, without performing any actions with data. The data does not appear on the disk after `ALTER`. If the data is missing for a column when reading from the table, it is filled in with default values (by performing the default expression if there is one, or using zeros or empty strings). The column appears on the disk after merging data parts (see [MergeTree](/engines/table-engines/mergetree-family/mergetree.md)).
+Adding a column just changes the table structure, without performing any actions with data. The data does not appear on the disk after `ALTER`. If the data is missing for a column when reading from the table, it is filled in with default values (by performing the default expression if there is one, or using zeros or empty strings). The column appears on the disk after merging data parts (see [MergeTree](/docs/en/engines/table-engines/mergetree-family/mergetree.md)).
 
 This approach allows us to complete the `ALTER` query instantly, without increasing the volume of old data.
 
@@ -66,18 +66,18 @@ ToDrop  UInt32
 Added3  UInt32
 ```
 
-## DROP COLUMN {#drop-column}
+## DROP COLUMN
 
 ``` sql
 DROP COLUMN [IF EXISTS] name
 ```
 
-Deletes the column with the name `name`. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
+Deletes the column with the name `name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
 :::tip
-You can't delete a column if it is referenced by [materialized view](/sql-reference/statements/create/view). Otherwise, it returns an error.
+You can’t delete a column if it is referenced by [materialized view](/docs/en/sql-reference/statements/create/view.md/#materialized). Otherwise, it returns an error.
 :::
 
 Example:
@@ -86,13 +86,13 @@ Example:
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-## RENAME COLUMN {#rename-column}
+## RENAME COLUMN
 
 ``` sql
 RENAME COLUMN [IF EXISTS] name to new_name
 ```
 
-Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
+Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist. Since renaming does not involve the underlying data, the query is completed almost instantly.
 
 **NOTE**: Columns specified in the key expression of the table (either with `ORDER BY` or `PRIMARY KEY`) cannot be renamed. Trying to change these columns will produce `SQL Error [524]`.
 
@@ -102,7 +102,7 @@ Example:
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
-## CLEAR COLUMN {#clear-column}
+## CLEAR COLUMN
 
 ``` sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -110,7 +110,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 
 Resets all data in a column for a specified partition. Read more about setting the partition name in the section [How to set the partition expression](../alter/partition.md/#how-to-set-partition-expression).
 
-If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
+If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 Example:
 
@@ -118,17 +118,17 @@ Example:
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-## COMMENT COLUMN {#comment-column}
+## COMMENT COLUMN
 
 ``` sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ```
 
-Adds a comment to the column. If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
+Adds a comment to the column. If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
 Each column can have one comment. If a comment already exists for the column, a new comment overwrites the previous comment.
 
-Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](/sql-reference/statements/describe-table.md) query.
+Comments are stored in the `comment_expression` column returned by the [DESCRIBE TABLE](/docs/en/sql-reference/statements/describe-table.md) query.
 
 Example:
 
@@ -136,7 +136,7 @@ Example:
 ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
 ```
 
-## MODIFY COLUMN {#modify-column}
+## MODIFY COLUMN
 
 ``` sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
@@ -157,13 +157,13 @@ This query changes the `name` column properties:
 
 For examples of columns compression CODECS modifying, see [Column Compression Codecs](../create/table.md/#column_compression_codec).
 
-For examples of columns TTL modifying, see [Column TTL](/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
+For examples of columns TTL modifying, see [Column TTL](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#mergetree-column-ttl).
 
-For examples of column-level settings modifying, see [Column-level Settings](/engines/table-engines/mergetree-family/mergetree.md/#column-level-settings).
+For examples of column-level settings modifying, see [Column-level Settings](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#column-level-settings).
 
-If the `IF EXISTS` clause is specified, the query won't return an error if the column does not exist.
+If the `IF EXISTS` clause is specified, the query won’t return an error if the column does not exist.
 
-When changing the type, values are converted as if the [toType](/sql-reference/functions/type-conversion-functions.md) functions were applied to them. If only the default expression is changed, the query does not do anything complex, and is completed almost instantly.
+When changing the type, values are converted as if the [toType](/docs/en/sql-reference/functions/type-conversion-functions.md) functions were applied to them. If only the default expression is changed, the query does not do anything complex, and is completed almost instantly.
 
 Example:
 
@@ -211,7 +211,7 @@ The `ALTER` query is atomic. For MergeTree tables it is also lock-free.
 
 The `ALTER` query for changing columns is replicated. The instructions are saved in ZooKeeper, then each replica applies them. All `ALTER` queries are run in the same order. The query waits for the appropriate actions to be completed on the other replicas. However, a query to change columns in a replicated table can be interrupted, and all actions will be performed asynchronously.
 
-## MODIFY COLUMN REMOVE {#modify-column-remove}
+## MODIFY COLUMN REMOVE
 
 Removes one of the column properties: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
 
@@ -234,7 +234,7 @@ ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
 - [REMOVE TTL](ttl.md).
 
 
-## MODIFY COLUMN MODIFY SETTING {#modify-column-modify-setting}
+## MODIFY COLUMN MODIFY SETTING
 
 Modify a column setting.
 
@@ -252,7 +252,7 @@ Modify column's `max_compress_block_size` to `1MB`:
 ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
 ```
 
-## MODIFY COLUMN RESET SETTING {#modify-column-reset-setting}
+## MODIFY COLUMN RESET SETTING
 
 Reset a column setting, also removes the setting declaration in the column expression of the table's CREATE query.
 
@@ -270,10 +270,10 @@ Reset column setting `max_compress_block_size` to it's default value:
 ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
 ```
 
-## MATERIALIZE COLUMN {#materialize-column}
+## MATERIALIZE COLUMN
 
-Materializes a column with a `DEFAULT` or `MATERIALIZED` value expression. When adding a materialized column using `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`, existing rows without materialized values are not automatically filled. `MATERIALIZE COLUMN` statement can be used to rewrite existing column data after a `DEFAULT` or `MATERIALIZED` expression has been added or updated (which only updates the metadata but does not change existing data). Note that materializing a column in the sort key is an invalid operation because it could break the sort order.
-Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
+Materializes a column with a `DEFAULT` or `MATERIALIZED` value expression. When adding a materialized column using `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED`, existing rows without materialized values are not automatically filled. `MATERIALIZE COLUMN` statement can be used to rewrite existing column data after a `DEFAULT` or `MATERIALIZED` expression has been added or updated (which only updates the metadata but does not change existing data).
+Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
 
 For columns with a new or updated `MATERIALIZED` value expression, all existing rows are rewritten.
 
@@ -326,16 +326,16 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 **See Also**
 
-- [MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
+- [MATERIALIZED](/docs/en/sql-reference/statements/create/table.md/#materialized).
 
-## Limitations {#limitations}
+## Limitations
 
 The `ALTER` query lets you create and delete separate elements (columns) in nested data structures, but not whole nested data structures. To add a nested data structure, you can add columns with a name like `name.nested_name` and the type `Array(T)`. A nested data structure is equivalent to multiple array columns with a name that has the same prefix before the dot.
 
 There is no support for deleting columns in the primary key or the sampling key (columns that are used in the `ENGINE` expression). Changing the type for columns that are included in the primary key is only possible if this change does not cause the data to be modified (for example, you are allowed to add values to an Enum or to change a type from `DateTime` to `UInt32`).
 
-If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](/sql-reference/statements/insert-into.md/#inserting-the-results-of-select) query, then switch the tables using the [RENAME](/sql-reference/statements/rename.md/#rename-table) query and delete the old table.
+If the `ALTER` query is not sufficient to make the table changes you need, you can create a new table, copy the data to it using the [INSERT SELECT](/docs/en/sql-reference/statements/insert-into.md/#inserting-the-results-of-select) query, then switch the tables using the [RENAME](/docs/en/sql-reference/statements/rename.md/#rename-table) query and delete the old table.
 
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 
-For tables that do not store data themselves (such as [Merge](/sql-reference/statements/alter/index.md) and [Distributed](/sql-reference/statements/alter/index.md)), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.
+For tables that do not store data themselves (such as [Merge](/docs/en/sql-reference/statements/alter/index.md) and [Distributed](/docs/en/sql-reference/statements/alter/index.md)), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.

@@ -5,26 +5,23 @@
 
 #include <Storages/StorageSet.h>
 
+#include <Analyzer/Utils.h>
+#include <Analyzer/SetUtils.h>
+#include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/SetUtils.h>
 #include <Analyzer/TableNode.h>
-#include <Analyzer/Utils.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <Interpreters/Set.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Planner/Planner.h>
-#include <Planner/PlannerContext.h>
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool transform_null_in;
-    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -71,18 +68,13 @@ public:
             auto set_key = in_second_argument->getTreeHash();
             if (sets.findStorage(set_key))
                 return;
-            auto ast = in_second_argument->toAST();
-            sets.addFromStorage(set_key, std::move(ast), storage_set->getSet(), second_argument_table->getStorageID());
+
+            sets.addFromStorage(set_key, storage_set->getSet());
         }
         else if (const auto * constant_node = in_second_argument->as<ConstantNode>())
         {
             auto set = getSetElementsForConstantValue(
-                in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(),
-                GetSetElementParams{
-                    .transform_null_in = settings[Setting::transform_null_in],
-                    .forbid_unknown_enum_values = settings[Setting::validate_enum_literals_in_operators],
-                });
-
+                in_first_argument->getResultType(), constant_node->getValue(), constant_node->getResultType(), settings[Setting::transform_null_in]);
             DataTypes set_element_types = {in_first_argument->getResultType()};
             const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
             if (left_tuple_type && left_tuple_type->getElements().size() != 1)
@@ -94,8 +86,7 @@ public:
             if (sets.findTuple(set_key, set_element_types))
                 return;
 
-            auto ast = in_second_argument->toAST();
-            sets.addFromTuple(set_key, std::move(ast), std::move(set), settings);
+            sets.addFromTuple(set_key, std::move(set), settings);
         }
         else if (in_second_argument_node_type == QueryTreeNodeType::QUERY ||
             in_second_argument_node_type == QueryTreeNodeType::UNION ||
@@ -109,8 +100,7 @@ public:
             if (in_second_argument->as<TableNode>())
                 subquery_to_execute = buildSubqueryToReadColumnsFromTableExpression(subquery_to_execute, planner_context.getQueryContext());
 
-            auto ast = in_second_argument->toAST();
-            sets.addFromSubquery(set_key, std::move(ast), std::move(subquery_to_execute), settings);
+            sets.addFromSubquery(set_key, std::move(subquery_to_execute), settings);
         }
         else
         {

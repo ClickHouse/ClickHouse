@@ -1,7 +1,6 @@
 #include "Server.h"
 
 #include <memory>
-#include <Interpreters/ClientInfo.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -31,7 +30,7 @@
 #include <Common/DNSResolver.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/ISlotControl.h>
+#include <Common/ConcurrencyControl.h>
 #include <Common/Macros.h>
 #include <Common/ShellCommand.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -56,8 +55,6 @@
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
@@ -70,13 +67,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Access/AccessControl.h>
-#include <Access/ContextAccess.h>
-#include <Access/User.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -97,7 +91,6 @@
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/Config/ConfigReloader.h>
 #include <Server/HTTPHandlerFactory.h>
-#include <Common/ReplicasReconnector.h>
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include <Server/TCPHandlerFactory.h>
@@ -107,7 +100,6 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -118,7 +110,7 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-
+#include <Core/ServerSettings.h>
 #include <filesystem>
 #include <unordered_set>
 
@@ -138,9 +130,6 @@
 #if USE_SSL
 #    include <Poco/Net/SecureServerSocket.h>
 #    include <Server/CertificateReloader.h>
-#    include <Server/SSH/SSHPtyHandlerFactory.h>
-#    include <Common/LibSSHInitializer.h>
-#    include <Common/LibSSHLogger.h>
 #endif
 
 #if USE_GRPC
@@ -228,10 +217,6 @@ namespace ServerSetting
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
     extern const ServerSettingsDouble index_mark_cache_size_ratio;
-    extern const ServerSettingsString skipping_index_cache_policy;
-    extern const ServerSettingsUInt64 skipping_index_cache_size;
-    extern const ServerSettingsUInt64 skipping_index_cache_max_entries;
-    extern const ServerSettingsDouble skipping_index_cache_size_ratio;
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
@@ -240,7 +225,6 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
-    extern const ServerSettingsUInt64 max_fetch_partition_thread_pool_size;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_size;
@@ -272,15 +256,16 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_waiting_queries;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
-    extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
-    extern const ServerSettingsString query_condition_cache_policy;
-    extern const ServerSettingsUInt64 query_condition_cache_size;
-    extern const ServerSettingsDouble query_condition_cache_size_ratio;
+    extern const ServerSettingsUInt64 page_cache_chunk_size;
+    extern const ServerSettingsUInt64 page_cache_mmap_size;
+    extern const ServerSettingsUInt64 page_cache_size;
+    extern const ServerSettingsBool page_cache_use_madv_free;
+    extern const ServerSettingsBool page_cache_use_transparent_huge_pages;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
@@ -306,19 +291,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
     extern const ServerSettingsBool use_legacy_mongodb_integration;
-    extern const ServerSettingsBool dictionaries_lazy_load;
-    extern const ServerSettingsBool wait_dictionaries_load_at_startup;
-    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
-    extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
-    extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 page_cache_block_size;
-    extern const ServerSettingsUInt64 page_cache_history_window_ms;
-    extern const ServerSettingsString page_cache_policy;
-    extern const ServerSettingsDouble page_cache_size_ratio;
-    extern const ServerSettingsUInt64 page_cache_min_size;
-    extern const ServerSettingsUInt64 page_cache_max_size;
-    extern const ServerSettingsDouble page_cache_free_memory_ratio;
-    extern const ServerSettingsUInt64 page_cache_lookahead_blocks;
 }
 
 }
@@ -332,7 +304,6 @@ namespace CurrentMetrics
     extern const Metric MaxDDLEntryID;
     extern const Metric MaxPushedDDLEntryID;
     extern const Metric StartupScriptsExecutionState;
-    extern const Metric IsServerShuttingDown;
 }
 
 namespace ProfileEvents
@@ -794,17 +765,6 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
         {
             std::string full_prefix = "startup_scripts." + key;
 
-            auto user = config.getString(full_prefix + ".user", "");
-            auto startup_context = Context::createCopy(context);
-
-            if (!user.empty())
-            {
-                auto & access_control = startup_context->getAccessControl();
-                startup_context->setUser(access_control.getID<User>(user));
-            }
-
-            startup_context->makeQueryContext();
-
             if (config.has(full_prefix + ".condition"))
             {
                 auto condition = config.getString(full_prefix + ".condition");
@@ -812,7 +772,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 auto condition_write_buffer = WriteBufferFromOwnString();
 
                 LOG_DEBUG(log, "Checking startup query condition `{}`", condition);
-                startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+                auto startup_context = Context::createCopy(context);
+                startup_context->makeQueryContext();
                 executeQuery(condition_read_buffer, condition_write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
 
                 auto result = condition_write_buffer.str();
@@ -833,7 +794,8 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
             auto write_buffer = WriteBufferFromOwnString();
 
             LOG_DEBUG(log, "Executing query `{}`", query);
-            startup_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+            auto startup_context = Context::createCopy(context);
+            startup_context->makeQueryContext();
             executeQuery(read_buffer, write_buffer, true, startup_context, callback, QueryFlags{ .internal = true }, std::nullopt, {});
         }
 
@@ -912,11 +874,6 @@ try
 {
 #if USE_JEMALLOC
     setJemallocBackgroundThreads(true);
-#endif
-
-#if USE_SSL
-    ::ssh::LibSSHInitializer::instance();
-    ::ssh::libsshLogger::initialize();
 #endif
 
     Stopwatch startup_watch;
@@ -1122,25 +1079,8 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    if (server_settings[ServerSetting::page_cache_max_size] != 0)
-    {
-        global_context->setPageCache(
-            server_settings[ServerSetting::page_cache_block_size],
-            server_settings[ServerSetting::page_cache_lookahead_blocks],
-            std::chrono::milliseconds(Int64(server_settings[ServerSetting::page_cache_history_window_ms])),
-            server_settings[ServerSetting::page_cache_policy],
-            server_settings[ServerSetting::page_cache_size_ratio],
-            server_settings[ServerSetting::page_cache_min_size],
-            server_settings[ServerSetting::page_cache_max_size],
-            server_settings[ServerSetting::page_cache_free_memory_ratio]);
-        total_memory_tracker.setPageCache(global_context->getPageCache().get());
-    }
-
     MemoryWorker memory_worker(
-        server_settings[ServerSetting::memory_worker_period_ms],
-        server_settings[ServerSetting::memory_worker_correct_memory_tracker],
-        global_context->getServerSettings()[ServerSetting::memory_worker_use_cgroup],
-        global_context->getPageCache());
+        server_settings[ServerSetting::memory_worker_period_ms], server_settings[ServerSetting::memory_worker_correct_memory_tracker]);
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
@@ -1246,11 +1186,6 @@ try
         server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
         server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
 
-    getFetchPartitionThreadPool().initialize(
-        server_settings[ServerSetting::max_fetch_partition_thread_pool_size],
-        0, // FETCH PARTITION is relatively rare, no need to keep threads
-        server_settings[ServerSetting::max_fetch_partition_thread_pool_size]);
-
     getActivePartsLoadingThreadPool().initialize(
         server_settings[ServerSetting::max_active_parts_loading_thread_pool_size],
         0, // We don't need any threads once all the parts will be loaded
@@ -1293,11 +1228,6 @@ try
         server_settings[ServerSetting::database_catalog_drop_table_concurrency],
         0, // We don't need any threads if there are no DROP queries.
         server_settings[ServerSetting::database_catalog_drop_table_concurrency]);
-
-    getMergeTreePrefixesDeserializationThreadPool().initialize(
-        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
-        server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
-        server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 
     /// Initialize global local cache for remote filesystem.
     if (config().has("local_cache_for_remote_fs"))
@@ -1683,6 +1613,13 @@ try
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
+    size_t page_cache_size = server_settings[ServerSetting::page_cache_size];
+    if (page_cache_size != 0)
+        global_context->setPageCache(
+            server_settings[ServerSetting::page_cache_chunk_size], server_settings[ServerSetting::page_cache_mmap_size],
+            page_cache_size, server_settings[ServerSetting::page_cache_use_madv_free],
+            server_settings[ServerSetting::page_cache_use_transparent_huge_pages]);
+
     String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
     size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
     double index_uncompressed_cache_size_ratio = server_settings[ServerSetting::index_uncompressed_cache_size_ratio];
@@ -1703,17 +1640,6 @@ try
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
-    String skipping_index_cache_policy = server_settings[ServerSetting::skipping_index_cache_policy];
-    size_t skipping_index_cache_size = server_settings[ServerSetting::skipping_index_cache_size];
-    size_t skipping_index_cache_max_entries = server_settings[ServerSetting::skipping_index_cache_max_entries];
-    double skipping_index_cache_size_ratio = server_settings[ServerSetting::skipping_index_cache_size_ratio];
-    if (skipping_index_cache_size > max_cache_size)
-    {
-        skipping_index_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered skipping index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(skipping_index_cache_size));
-    }
-    global_context->setSkippingIndexCache(skipping_index_cache_policy, skipping_index_cache_size, skipping_index_cache_max_entries, skipping_index_cache_size_ratio);
-
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -1722,26 +1648,16 @@ try
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
-    size_t query_result_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
-    size_t query_result_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
-    size_t query_result_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-    size_t query_result_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
-    if (query_result_cache_max_size_in_bytes > max_cache_size)
+    size_t query_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
+    size_t query_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
+    size_t query_cache_query_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
+    size_t query_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    if (query_cache_max_size_in_bytes > max_cache_size)
     {
-        query_result_cache_max_size_in_bytes = max_cache_size;
-        LOG_INFO(log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes));
+        query_cache_max_size_in_bytes = max_cache_size;
+        LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_cache_max_size_in_bytes));
     }
-    global_context->setQueryResultCache(query_result_cache_max_size_in_bytes, query_result_cache_max_entries, query_result_cache_max_entry_size_in_bytes, query_result_cache_max_entry_size_in_rows);
-
-    String query_condition_cache_policy = server_settings[ServerSetting::query_condition_cache_policy];
-    size_t query_condition_cache_size = server_settings[ServerSetting::query_condition_cache_size];
-    double query_condition_cache_size_ratio = server_settings[ServerSetting::query_condition_cache_size_ratio];
-    if (query_condition_cache_size > max_cache_size)
-    {
-        query_condition_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered query condition cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_condition_cache_size));
-    }
-    global_context->setQueryConditionCache(query_condition_cache_policy, query_condition_cache_size, query_condition_cache_size_ratio);
+    global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
@@ -1808,15 +1724,16 @@ try
             new_server_settings.loadSettingsFromConfig(*config);
 
             size_t max_server_memory_usage = new_server_settings[ServerSetting::max_server_memory_usage];
-            const double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
-            const size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
-            const size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
+            double max_server_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
+
+            size_t current_physical_server_memory = getMemoryAmount(); /// With cgroups, the amount of memory available to the server can be changed dynamically.
+            size_t default_max_server_memory_usage = static_cast<size_t>(current_physical_server_memory * max_server_memory_usage_to_ram_ratio);
 
             if (max_server_memory_usage == 0)
             {
                 max_server_memory_usage = default_max_server_memory_usage;
-                LOG_INFO(log, "Changed setting 'max_server_memory_usage' to {}"
-                    " ({} available memory * {:.2f} max_server_memory_usage_to_ram_ratio)",
+                LOG_INFO(log, "Setting max_server_memory_usage was set to {}"
+                    " ({} available * {:.2f} max_server_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     max_server_memory_usage_to_ram_ratio);
@@ -1824,9 +1741,10 @@ try
             else if (max_server_memory_usage > default_max_server_memory_usage)
             {
                 max_server_memory_usage = default_max_server_memory_usage;
-                LOG_INFO(log, "Lowered setting 'max_server_memory_usage' to {}"
-                    " because the system has too little memory. The new value was"
-                    " calculated as {} available memory * {:.2f} max_server_memory_usage_to_ram_ratio",
+                LOG_INFO(log, "Setting max_server_memory_usage was lowered to {}"
+                    " because the system has low amount of memory. The amount was"
+                    " calculated as {} available"
+                    " * {:.2f} max_server_memory_usage_to_ram_ratio",
                     formatReadableSizeWithBinarySuffix(max_server_memory_usage),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
                     max_server_memory_usage_to_ram_ratio);
@@ -1846,7 +1764,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio].value);
+                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio]);
             }
             else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
             {
@@ -1855,7 +1773,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio].value);
+                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio]);
             }
 
             LOG_INFO(log, "Merges and mutations memory limit is set to {}",
@@ -1972,11 +1890,6 @@ try
                 new_server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
                 new_server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
 
-            getFetchPartitionThreadPool().reloadConfiguration(
-                new_server_settings[ServerSetting::max_fetch_partition_thread_pool_size],
-                0, // FETCH PARTITION is relatively rare, no need to keep threads
-                new_server_settings[ServerSetting::max_fetch_partition_thread_pool_size]);
-
             getActivePartsLoadingThreadPool().reloadConfiguration(
                 new_server_settings[ServerSetting::max_active_parts_loading_thread_pool_size],
                 0, // We don't need any threads once all the parts will be loaded
@@ -1997,10 +1910,6 @@ try
                 0, // We don't need any threads one all the parts will be deleted
                 new_server_settings[ServerSetting::max_parts_cleaning_thread_pool_size]);
 
-            getMergeTreePrefixesDeserializationThreadPool().reloadConfiguration(
-                new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_size],
-                new_server_settings[ServerSetting::max_prefixes_deserialization_thread_pool_free_size],
-                new_server_settings[ServerSetting::prefixes_deserialization_thread_pool_thread_pool_queue_size]);
 
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
@@ -2037,10 +1946,8 @@ try
             global_context->updatePrimaryIndexCacheConfiguration(*config);
             global_context->updateIndexUncompressedCacheConfiguration(*config);
             global_context->updateIndexMarkCacheConfiguration(*config);
-            global_context->updateSkippingIndexCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
-            global_context->updateQueryResultCacheConfiguration(*config);
-            global_context->updateQueryConditionCacheConfiguration(*config);
+            global_context->updateQueryCacheConfiguration(*config);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
@@ -2336,8 +2243,6 @@ try
     if (dns_cache_updater)
         dns_cache_updater->start();
 
-    auto replicas_reconnector = ReplicasReconnector::init(global_context);
-
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     std::string default_database = server_settings[ServerSetting::default_database].toString();
@@ -2387,7 +2292,7 @@ try
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA_UPPERCASE));
-        /// Firstly remove partially dropped databases, to avoid race with Materialized...SyncThread,
+        /// Firstly remove partially dropped databases, to avoid race with MaterializedMySQLSyncThread,
         /// that may execute DROP before loadMarkedAsDroppedTables() in background,
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
@@ -2505,7 +2410,7 @@ try
         {
             global_context->loadOrReloadDictionaries(config());
 
-            if (!server_settings[ServerSetting::dictionaries_lazy_load] && server_settings[ServerSetting::wait_dictionaries_load_at_startup])
+            if (!config().getBool("dictionaries_lazy_load", true) && config().getBool("wait_dictionaries_load_at_startup", true))
                 global_context->waitForDictionariesLoad();
         }
         catch (...)
@@ -2517,7 +2422,7 @@ try
         /// try to load embedded dictionaries immediately, throw on error and die
         try
         {
-            global_context->tryCreateEmbeddedDictionaries();
+            global_context->tryCreateEmbeddedDictionaries(config());
         }
         catch (...)
         {
@@ -2606,8 +2511,6 @@ try
 
         SCOPE_EXIT_SAFE({
             LOG_DEBUG(log, "Received termination signal.");
-
-            CurrentMetrics::set(CurrentMetrics::IsServerShuttingDown, 1);
 
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
@@ -2720,11 +2623,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (type == "mysql")
             return TCPServerConnectionFactory::Ptr(new MySQLHandlerFactory(*this, ProfileEvents::InterfaceMySQLReceiveBytes, ProfileEvents::InterfaceMySQLSendBytes));
         if (type == "postgres")
-#if USE_SSL
-            return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, conf_name + ".", ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
-#else
             return TCPServerConnectionFactory::Ptr(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes));
-#endif
         if (type == "http")
             return TCPServerConnectionFactory::Ptr(
                 new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory"), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
@@ -2968,37 +2867,6 @@ void Server::createServers(
             });
         }
 
-        if (server_type.shouldStart(ServerType::Type::TCP_SSH))
-        {
-            port_name = "tcp_ssh_port";
-            createServer(
-                config,
-                listen_host,
-                port_name,
-                listen_try,
-                start_servers,
-                servers,
-                [&](UInt16 port) -> ProtocolServerAdapter
-                {
-#if 0 && USE_SSH && defined(OS_LINUX) /// SSH server is insecure until and it is disabled until all special cases are fixed.
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ false);
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        "SSH PTY: " + address.toString(),
-                        std::make_unique<TCPServer>(
-                            new SSHPtyHandlerFactory(*this, config),
-                            server_pool,
-                            socket,
-                            new Poco::Net::TCPServerParams));
-#else
-                UNUSED(port);
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH protocol is disabled for ClickHouse, as it has been either built without libssh or not for Linux");
-#endif
-                });
-        }
-
         if (server_type.shouldStart(ServerType::Type::MYSQL))
         {
             port_name = "mysql_port";
@@ -3029,11 +2897,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "PostgreSQL compatibility protocol: " + address.toString(),
-#if USE_SSL
-                    std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, Poco::Net::SSLManager::CFG_SERVER_PREFIX, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
-#else
                     std::make_unique<TCPServer>(new PostgreSQLHandlerFactory(*this, ProfileEvents::InterfacePostgreSQLReceiveBytes, ProfileEvents::InterfacePostgreSQLSendBytes), server_pool, socket, new Poco::Net::TCPServerParams));
-#endif
             });
         }
 

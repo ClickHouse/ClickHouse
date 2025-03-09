@@ -36,7 +36,6 @@ namespace ErrorCodes
     DECLARE(Bool, allow_native_copy, S3::DEFAULT_ALLOW_NATIVE_COPY, "", 0) \
     DECLARE(Bool, check_objects_after_upload, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD, "", 0) \
     DECLARE(Bool, throw_on_zero_files_match, false, "", 0) \
-    DECLARE(Bool, allow_multipart_copy, true, "", 0) \
     DECLARE(UInt64, max_single_operation_copy_size, S3::DEFAULT_MAX_SINGLE_OPERATION_COPY_SIZE, "", 0) \
     DECLARE(String, storage_class_name, "", "", 0) \
     DECLARE(UInt64, http_max_fields, 1000000, "", 0) \
@@ -206,43 +205,73 @@ void S3RequestSettings::updateIfChanged(const S3RequestSettings & settings)
 
 void S3RequestSettings::validateUploadSettings()
 {
+    static constexpr size_t min_upload_part_size_limit = 5 * 1024 * 1024;
+    if (impl->strict_upload_part_size && impl->strict_upload_part_size < min_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting strict_upload_part_size has invalid value {} which is less than the s3 API limit {}",
+            ReadableSize(impl->strict_upload_part_size), ReadableSize(min_upload_part_size_limit));
+
+    if (impl->min_upload_part_size < min_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting min_upload_part_size has invalid value {} which is less than the s3 API limit {}",
+            ReadableSize(impl->min_upload_part_size), ReadableSize(min_upload_part_size_limit));
+
+    static constexpr size_t max_upload_part_size_limit = 5ull * 1024 * 1024 * 1024;
+    if (impl->max_upload_part_size > max_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_upload_part_size has invalid value {} which is greater than the s3 API limit {}",
+            ReadableSize(impl->max_upload_part_size), ReadableSize(max_upload_part_size_limit));
+
+    if (impl->max_single_part_upload_size > max_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_single_part_upload_size has invalid value {} which is grater than the s3 API limit {}",
+            ReadableSize(impl->max_single_part_upload_size), ReadableSize(max_upload_part_size_limit));
+
+    if (impl->max_single_operation_copy_size > max_upload_part_size_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_single_operation_copy_size has invalid value {} which is grater than the s3 API limit {}",
+            ReadableSize(impl->max_single_operation_copy_size), ReadableSize(max_upload_part_size_limit));
+
+    if (impl->max_upload_part_size < impl->min_upload_part_size)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size {}",
+            ReadableSize(impl->max_upload_part_size), ReadableSize(impl->min_upload_part_size));
+
+    if (!impl->upload_part_size_multiply_factor)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_part_size_multiply_factor cannot be zero");
+
+    if (!impl->upload_part_size_multiply_parts_count_threshold)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
+
     if (!impl->max_part_number)
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
             "Setting max_part_number cannot be zero");
 
-    if (!impl->strict_upload_part_size)
-    {
-        if (!impl->min_upload_part_size)
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting min_upload_part_size ({}) cannot be zero",
-                ReadableSize(impl->min_upload_part_size));
+    static constexpr size_t max_part_number_limit = 10000;
+    if (impl->max_part_number > max_part_number_limit)
+        throw Exception(
+            ErrorCodes::INVALID_SETTING_VALUE,
+            "Setting max_part_number has invalid value {} which is grater than the s3 API limit {}",
+            ReadableSize(impl->max_part_number), ReadableSize(max_part_number_limit));
 
-        if (impl->max_upload_part_size < impl->min_upload_part_size)
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting max_upload_part_size ({}) can't be less than setting min_upload_part_size ({})",
-                ReadableSize(impl->max_upload_part_size), ReadableSize(impl->min_upload_part_size));
-
-        if (!impl->upload_part_size_multiply_factor)
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting upload_part_size_multiply_factor cannot be zero");
-
-        if (!impl->upload_part_size_multiply_parts_count_threshold)
-            throw Exception(
-                ErrorCodes::INVALID_SETTING_VALUE,
-                "Setting upload_part_size_multiply_parts_count_threshold cannot be zero");
-
-        size_t maybe_overflow;
-        if (common::mulOverflow(impl->max_upload_part_size.value, impl->upload_part_size_multiply_factor.value, maybe_overflow))
-            throw Exception(
-                            ErrorCodes::INVALID_SETTING_VALUE,
-                            "Setting upload_part_size_multiply_factor is too big ({}). "
-                            "Multiplication to max_upload_part_size ({}) will cause integer overflow",
-                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size));
-    }
+    size_t maybe_overflow;
+    if (common::mulOverflow(impl->max_upload_part_size.value, impl->upload_part_size_multiply_factor.value, maybe_overflow))
+        throw Exception(
+                        ErrorCodes::INVALID_SETTING_VALUE,
+                        "Setting upload_part_size_multiply_factor is too big ({}). "
+                        "Multiplication to max_upload_part_size ({}) will cause integer overflow",
+                        ReadableSize(impl->max_part_number), ReadableSize(max_part_number_limit));
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};
     if (!impl->storage_class_name.value.empty() && !storage_class_names.contains(impl->storage_class_name))

@@ -11,8 +11,6 @@
 #include <Core/ServerUUID.h>
 #include <Common/logger_useful.h>
 #include <Common/CgroupsMemoryUsageObserver.h>
-#include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/MemoryWorker.h>
 #include <Common/ErrorHandlers.h>
 #include <Common/assertProcessUserMatchesDataOwner.h>
@@ -388,7 +386,7 @@ try
     });
 
     MemoryWorker memory_worker(
-        config().getUInt64("memory_worker_period_ms", 0), config().getBool("memory_worker_correct_memory_tracker", false), /*use_cgroup*/ true, /*page_cache*/ nullptr);
+        config().getUInt64("memory_worker_period_ms", 0), config().getBool("memory_worker_correct_memory_tracker", false));
     memory_worker.start();
 
     static ServerErrorHandler error_handler;

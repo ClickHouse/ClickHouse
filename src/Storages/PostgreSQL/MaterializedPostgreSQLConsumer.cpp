@@ -2,7 +2,6 @@
 
 #include "StorageMaterializedPostgreSQL.h"
 #include <Columns/ColumnNullable.h>
-#include <Common/logger_useful.h>
 #include <base/hex.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
@@ -527,8 +526,7 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
         {
             Int32 relation_id = readInt32(replication_message, pos, size);
 
-            String relation_namespace;
-            String relation_name;
+            String relation_namespace, relation_name;
             readString(replication_message, pos, size, relation_namespace);
             readString(replication_message, pos, size, relation_name);
 

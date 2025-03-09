@@ -17,6 +17,7 @@
 
 #include <Poco/Event.h>
 #include <Common/ThreadStatus.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/Priority.h>
@@ -57,7 +58,7 @@ public:
         explicit ThreadFromThreadPool(ThreadPoolImpl& parent_pool);
 
         // Shift the thread state from Preparing to Running to allow the worker to start.
-        void start(typename ThreadList::iterator& it);
+        void start(ThreadList::iterator& it);
 
         void join();
 
@@ -147,8 +148,6 @@ public:
     void setMaxFreeThreads(size_t value);
     void setQueueSize(size_t value);
     size_t getMaxThreads() const;
-    size_t getMaxFreeThreads() const;
-    size_t getQueueSize() const;
 
     /// Adds a callback which is called in destructor after
     /// joining of all threads. The order of calling callbacks
@@ -196,7 +195,7 @@ private:
     const bool shutdown_on_exception = true;
 
     boost::heap::priority_queue<JobWithPriority,boost::heap::stable<true>> jobs;
-    typename ThreadFromThreadPool::ThreadList threads;
+    ThreadFromThreadPool::ThreadList threads;
     std::exception_ptr first_exception;
     std::stack<OnDestroyCallback> on_destroy_callbacks;
 

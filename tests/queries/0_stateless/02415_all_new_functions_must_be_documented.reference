@@ -141,7 +141,6 @@ arraySort
 arraySplit
 arrayStringConcat
 arraySum
-arraySymmetricDifference
 arrayUnion
 arrayUniq
 arrayWithConstant
@@ -322,6 +321,7 @@ geohashDecode
 geohashEncode
 geohashesInBox
 getMacro
+getMaxTableNameLengthForDatabase
 getOSKernelVersion
 getServerPort
 getSizeOfEnumType

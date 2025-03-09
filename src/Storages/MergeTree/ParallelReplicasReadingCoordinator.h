@@ -1,11 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <Storages/MergeTree/RequestResponse.h>
 
-#include <memory>
-#include <mutex>
-#include <set>
-#include <vector>
 
 namespace DB
 {

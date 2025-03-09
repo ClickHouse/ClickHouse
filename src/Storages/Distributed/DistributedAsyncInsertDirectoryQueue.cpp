@@ -13,7 +13,6 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
-#include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils.h>
 #include <Common/SipHash.h>

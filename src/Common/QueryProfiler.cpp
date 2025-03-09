@@ -56,12 +56,12 @@ namespace
             return;
         }
 
-        const auto saved_errno = errno; /// We must restore previous value of errno in signal handler.
+        auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
 
 #if defined(OS_LINUX)
         if (info)
         {
-            const int overrun_count = info->si_overrun;
+            int overrun_count = info->si_overrun;
 
             /// Quickly drop if signal handler is called too frequently.
             /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.

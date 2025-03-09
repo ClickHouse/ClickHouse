@@ -13,10 +13,9 @@
 #include <Disks/loadLocalDiskConfig.h>
 #include <Disks/TemporaryFileOnDisk.h>
 
-#include <filesystem>
-#include <system_error>
-#include <fcntl.h>
+#include <fstream>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 
 #include <Disks/IO/WriteBufferFromTemporaryFile.h>
@@ -24,7 +23,6 @@
 #include <Common/randomSeed.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <pcg_random.hpp>
 #include <Common/logger_useful.h>
 
 
@@ -326,16 +324,6 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
     fs::rename(from_file, to_file);
 }
 
-void DiskLocal::renameExchange(const std::string & old_path, const std::string & new_path)
-{
-    DB::renameExchange(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
-}
-
-bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const std::string & new_path)
-{
-    return DB::renameExchangeIfSupported(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
-}
-
 std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path, const ReadSettings & settings, std::optional<size_t> read_hint, std::optional<size_t> file_size) const
 {
     if (!file_size.has_value())
@@ -395,14 +383,6 @@ void DiskLocal::removeDirectory(const String & path)
         ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
 }
 
-void DiskLocal::removeDirectoryIfExists(const String & path)
-{
-    auto fs_path = fs::path(disk_path) / path;
-    if (0 != rmdir(fs_path.c_str()))
-        if (errno != ENOENT)
-            ErrnoException::throwFromPath(ErrorCodes::CANNOT_RMDIR, fs_path, "Cannot remove directory {}", fs_path);
-}
-
 void DiskLocal::removeRecursive(const String & path)
 {
     (void)fs::remove_all(fs::path(disk_path) / path);
@@ -433,37 +413,6 @@ time_t DiskLocal::getLastChanged(const String & path) const
 void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
 {
     DB::createHardLink(fs::path(disk_path) / src_path, fs::path(disk_path) / dst_path);
-}
-
-bool DiskLocal::isSymlink(const String & path) const
-{
-    return FS::isSymlink(fs::path(disk_path) / path);
-}
-
-bool DiskLocal::isSymlinkNoThrow(const String & path) const
-{
-    return FS::isSymlinkNoThrow(fs::path(disk_path) / path);
-}
-
-void DiskLocal::createDirectoriesSymlink(const String & target, const String & link)
-{
-    fs::create_directory_symlink(fs::path(disk_path) / target, fs::path(disk_path) / link);
-}
-
-String DiskLocal::readSymlink(const fs::path & path) const
-{
-    return FS::readSymlink(fs::path(disk_path) / path);
-}
-
-bool DiskLocal::equivalent(const String & p1, const String & p2) const
-{
-    return fs::equivalent(fs::path(disk_path) / p1, fs::path(disk_path) / p2);
-}
-
-bool DiskLocal::equivalentNoThrow(const String & p1, const String & p2) const
-{
-    std::error_code ec;
-    return fs::equivalent(fs::path(disk_path) / p1, fs::path(disk_path) / p2, ec);
 }
 
 void DiskLocal::truncateFile(const String & path, size_t size)
@@ -718,7 +667,7 @@ void DiskLocal::setup()
             pcg32_fast rng(randomSeed());
             UInt32 magic_number = rng();
             {
-                auto buf = writeFile(disk_checker_path, 32, WriteMode::Rewrite, {});
+                auto buf = writeFile(disk_checker_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, {});
                 writeIntBinary(magic_number, *buf);
                 buf->finalize();
             }

@@ -1,10 +1,10 @@
 import argparse
 import sys
 
-from praktika.html_prepare import Html
-from praktika.utils import Utils
-from praktika.validator import Validator
-from praktika.yaml_generator import YamlGenerator
+from .html_prepare import Html
+from .utils import Utils
+from .validator import Validator
+from .yaml_generator import YamlGenerator
 
 
 def create_parser():
@@ -71,12 +71,7 @@ def create_parser():
     _yaml_parser = subparsers.add_parser("yaml", help="Generates Yaml Workflows")
 
     _html_parser = subparsers.add_parser("html", help="Uploads HTML page for reports")
-    _html_parser.add_argument(
-        "--test",
-        help="Upload page to test location",
-        action="store_true",
-        default="",
-    )
+
     return parser
 
 
@@ -89,29 +84,24 @@ def main():
         Validator().validate()
         YamlGenerator().generate()
     elif args.command == "html":
-        Html.prepare(args.test)
+        Html.prepare()
     elif args.command == "run":
         from .mangle import _get_workflows
         from .runner import Runner
 
-        workflows = _get_workflows(
-            name=args.workflow or None, default=not bool(args.workflow)
-        )
+        workflows = _get_workflows(name=args.workflow or None)
         job_workflow_pairs = []
         for workflow in workflows:
-            jobs = workflow.find_jobs(args.job, lazy=True)
-            if jobs:
-                for job in jobs:
-                    job_workflow_pairs.append((job, workflow))
+            job = workflow.find_job(args.job, lazy=True)
+            if job:
+                job_workflow_pairs.append((job, workflow))
         if not job_workflow_pairs:
             Utils.raise_with_error(
                 f"Failed to find job [{args.job}] workflow [{args.workflow}]"
             )
         elif len(job_workflow_pairs) > 1:
-            for job, wf in job_workflow_pairs:
-                print(f"Job: [{job.name}], Workflow [{wf.name}]")
             Utils.raise_with_error(
-                f"More than one job [{args.job}]: {[(wf.name, job.name) for job, wf in job_workflow_pairs]}"
+                f"More than one job [{args.job}] found - try specifying workflow name with --workflow"
             )
         else:
             job, workflow = job_workflow_pairs[0][0], job_workflow_pairs[0][1]

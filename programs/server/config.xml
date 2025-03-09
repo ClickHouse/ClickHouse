@@ -141,7 +141,7 @@
 
     <!-- Port for HTTP API. See also 'https_port' for secure connections.
          This interface is also used by ODBC and JDBC drivers (DataGrip, Dbeaver, ...)
-         and by most of the web interfaces (embedded UI, Grafana, Redash, ...).
+         and by most of web interfaces (embedded UI, Grafana, Redash, ...).
       -->
     <http_port>8123</http_port>
 
@@ -223,20 +223,6 @@
     <interserver_http_host>example.clickhouse.com</interserver_http_host>
     -->
 
-    <!-- Port for the SSH server which allows to connect and execute
-         queries in an interactive fashion using the embedded client over the PTY.
-    -->
-    <!-- <tcp_ssh_port>9022</tcp_ssh_port> -->
-
-    <ssh_server>
-        <!-- The public part of the host key will be written to the known_hosts file
-             on the SSH client side on the first connect.
-        -->
-        <!-- <host_rsa_key>path_to_the_ssh_key</host_rsa_key> -->
-        <!-- <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key> -->
-        <!-- <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key> -->
-    </ssh_server>
-
     <!-- You can specify credentials for authenthication between replicas.
          This is required when interserver_https_port is accessible from untrusted networks,
          and also recommended to avoid SSRF attacks from possibly compromised services in your network.
@@ -281,7 +267,7 @@
 
     <!-- <listen_backlog>4096</listen_backlog> -->
 
-    <!-- <max_connections>4096</max_connections> -->
+    <max_connections>4096</max_connections>
 
     <!-- For 'Connection: keep-alive' in HTTP 1.1 -->
     <keep_alive_timeout>10</keep_alive_timeout>
@@ -316,9 +302,7 @@
         <verbose_logs>false</verbose_logs>
     </grpc>
 
-    <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71
-         Note: ClickHouse Cloud https://clickhouse.com/cloud always has secure connections configured.
-    -->
+    <!-- Used with https_port and tcp_port_secure. Full ssl options list: https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h#L71 -->
     <openSSL>
         <server> <!-- Used for https server AND secure tcp port -->
             <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
@@ -357,9 +341,9 @@
         </client>
     </openSSL>
 
-    <!-- Default root page on http[s] server. -->
+    <!-- Default root page on http[s] server. For example load UI from https://tabix.io/ when opening http://localhost:8123 -->
     <!--
-    <http_server_default_response><![CDATA[Greetings from ClickHouse!]]></http_server_default_response>
+    <http_server_default_response><![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]></http_server_default_response>
     -->
 
     <!-- The maximum number of query processing threads, excluding threads for retrieving data from remote servers, allowed to run all queries.
@@ -548,7 +532,8 @@
     </storage_configuration>
     -->
 
-    <!-- Path to temporary data for processing heavy queries. -->
+
+    <!-- Path to temporary data for processing hard queries. -->
     <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 
     <!-- Disable AuthType plaintext_password and no_password for ACL. -->
@@ -564,9 +549,7 @@
     <!-- Work factor for bcrypt_password authentication type-->
     <bcrypt_workfactor>12</bcrypt_workfactor>
 
-    <!-- Complexity requirements for user passwords.
-         Note: ClickHouse Cloud https://clickhouse.com/cloud is always configured for strong passwords.
-      -->
+    <!-- Complexity requirements for user passwords. -->
     <!-- <password_complexity>
         <rule>
             <pattern>.{12}</pattern>
@@ -881,7 +864,6 @@
 
     <!-- Configuration of clusters that could be used in Distributed tables.
          https://clickhouse.com/docs/en/operations/table_engines/distributed/
-         Note: ClickHouse Cloud https://clickhouse.com/cloud has the cluster preconfigured and dynamically scalable.
       -->
     <remote_servers>
         <!-- Test only shard config for testing distributed storage -->
@@ -963,8 +945,6 @@
          Optional. If you don't use replicated tables, you could omit that.
 
          See https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/replication/
-
-         Note: ClickHouse Cloud https://clickhouse.com/cloud has ClickHouse Keeper automatically configured for every service.
       -->
 
     <!--
@@ -1146,7 +1126,6 @@
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <!-- Indication whether logs should be dumped to the disk in case of a crash -->
         <flush_on_crash>false</flush_on_crash>
-        <symbolize>true</symbolize>
     </trace_log>
 
     <!-- Query thread log. Has information about all threads participated in query execution.
@@ -1209,18 +1188,6 @@
         <flush_on_crash>false</flush_on_crash>
     </metric_log>
 
-    <!-- Latency log contains rows with current values of latency buckets collected with "collect_interval_milliseconds" interval. -->
-    <latency_log>
-        <database>system</database>
-        <table>latency_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <flush_on_crash>false</flush_on_crash>
-    </latency_log>
-
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
     <error_log>
         <database>system</database>
@@ -1262,8 +1229,6 @@
 
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.
-
-        NOTE: this table does not use standard schema with event_date and event_time!
     -->
     <opentelemetry_span_log>
         <!--
@@ -1332,7 +1297,6 @@
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
-        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </processors_profile_log>
 
     <!-- Log of asynchronous inserts. It allows to check status
@@ -1446,7 +1410,6 @@
 
     <!-- Uncomment if you want data to be compressed 30-100% better.
          Don't do that if you just started using ClickHouse.
-         Note: ClickHouse Cloud https://clickhouse.com/cloud has a stronger compression by default.
       -->
     <!--
     <compression>
@@ -1467,10 +1430,7 @@
          obtain an encryption key at startup if such a command is
          defined, or encryption codecs will be disabled otherwise. The
          command is executed through /bin/sh and is expected to write
-         a Base64-encoded key to the stdout.
-
-         Note: ClickHouse Cloud https://clickhouse.com/cloud supports encryption with customer-managed keys.
-    -->
+         a Base64-encoded key to the stdout. -->
     <encryption_codecs>
         <!-- aes_128_gcm_siv -->
             <!-- Example of getting hex key from env -->
@@ -1495,9 +1455,7 @@
     </encryption_codecs>
 
     <!-- Allow to execute distributed DDL queries (CREATE, DROP, ALTER, RENAME) on cluster.
-         Works only if ZooKeeper is enabled. Comment it if such functionality isn't required.
-         Note: ClickHouse Cloud https://clickhouse.com/cloud always runs DDL queries on cluster.
-    -->
+         Works only if ZooKeeper is enabled. Comment it if such functionality isn't required. -->
     <distributed_ddl>
         <!-- Path in ZooKeeper to queue with DDL queries -->
         <path>/clickhouse/task_queue/ddl</path>
@@ -1543,9 +1501,7 @@
     </merge_tree>
     -->
 
-    <!-- Settings to fine-tune ReplicatedMergeTree tables. See documentation in source code, in MergeTreeSettings.h
-         Note: ClickHouse Cloud https://clickhouse.com/cloud has a SharedMergeTree engine that does not require fine-tuning.
-    -->
+    <!-- Settings to fine-tune ReplicatedMergeTree tables. See documentation in source code, in MergeTreeSettings.h -->
     <!--
     <replicated_merge_tree>
         <max_replicated_fetches_network_bandwidth>1000000000</max_replicated_fetches_network_bandwidth>
@@ -1764,7 +1720,6 @@
         -->
     <!-- </kafka> -->
 
-    <!-- Note: ClickHouse Cloud https://clickhouse.com/cloud provides automatic backups to object storage. -->
     <backups>
         <allowed_path>backups</allowed_path>
 

@@ -1,11 +1,11 @@
 #include <string_view>
-#include <base/MemorySanitizer.h>
 #include <Compression/CompressionCodecEncrypted.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/VarInt.h>
 #include <Parsers/IAST.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/MemorySanitizer.h>
 #include <Common/logger_useful.h>
 #include <Common/safe_cast.h>
 #include "config.h"
@@ -435,24 +435,19 @@ bool CompressionCodecEncrypted::Configuration::tryLoad(const Poco::Util::Abstrac
 
 void CompressionCodecEncrypted::Configuration::load(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
 {
-    /// Try to create new parameters and fill them from config, if any encryption method parameter is found
-    /// In case of an error, throw exception
-    std::unique_ptr<Params> new_params;
-    static constexpr std::pair<std::string_view, EncryptionMethod> config_encryption_methods[] =
-        {{".aes_128_gcm_siv", AES_128_GCM_SIV}, {".aes_256_gcm_siv", AES_256_GCM_SIV}};
-    for (const auto& config_encryption_method : config_encryption_methods)
+    /// Try to create new parameters and fill them from config.
+    /// If there will be some errors, throw error
+    std::unique_ptr<Params> new_params(new Params);
+    if (config.has(config_prefix + ".aes_128_gcm_siv"))
     {
-        auto encryption_method_key = config_prefix + config_encryption_method.first.data();
-        if (config.has(encryption_method_key))
-        {
-            if (!new_params)
-                new_params = std::make_unique<Params>();
-            loadImpl(config, encryption_method_key, config_encryption_method.second, new_params);
-        }
+        loadImpl(config, config_prefix + ".aes_128_gcm_siv", AES_128_GCM_SIV, new_params);
+    }
+    if (config.has(config_prefix + ".aes_256_gcm_siv"))
+    {
+        loadImpl(config, config_prefix + ".aes_256_gcm_siv", AES_256_GCM_SIV, new_params);
     }
 
-    if (new_params)
-        params.set(std::move(new_params));
+    params.set(std::move(new_params));
 }
 
 void CompressionCodecEncrypted::Configuration::getCurrentKeyAndNonce(EncryptionMethod method, UInt64 & current_key_id, String &current_key, String & nonce) const
@@ -538,8 +533,7 @@ UInt32 CompressionCodecEncrypted::doCompressData(const char * source, UInt32 sou
 
     /// Get key and nonce for encryption
     UInt64 current_key_id;
-    String current_key;
-    String nonce;
+    String current_key, nonce;
     Configuration::instance().getCurrentKeyAndNonce(encryption_method, current_key_id, current_key, nonce);
 
     /// Write current key id to support multiple keys.

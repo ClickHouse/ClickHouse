@@ -258,12 +258,6 @@ void ZooKeeperArgs::initFromKeeperSection(const Poco::Util::AbstractConfiguratio
         {
             availability_zone_autodetect = config.getBool(config_name + "." + key);
         }
-        else if (key == "password")
-        {
-            password = config.getString(config_name + "." + key);
-            if (password.size() > Coordination::PASSWORD_LENGTH)
-                throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Password cannot be longer than {} characters, specified {}", Coordination::PASSWORD_LENGTH, password.size());
-        }
         else
             throw KeeperException(Coordination::Error::ZBADARGUMENTS, "Unknown key {} in config file", key);
     }

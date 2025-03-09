@@ -11,9 +11,6 @@ class Workflow:
     class Event:
         PULL_REQUEST = "pull_request"
         PUSH = "push"
-        SCHEDULE = "schedule"
-        DISPATCH = "dispatch"
-        MERGE_QUEUE = "merge_queue"
 
     @dataclass
     class Config:
@@ -33,14 +30,8 @@ class Workflow:
         enable_cache: bool = False
         enable_report: bool = False
         enable_merge_ready_status: bool = False
-        enable_commit_status_on_failure: bool = False
         enable_cidb: bool = False
         enable_merge_commit: bool = False
-        cron_schedules: List[str] = field(default_factory=list)
-        inputs: List["Workflow.Config.InputConfig"] = field(default_factory=list)
-        pre_hooks: List[str] = field(default_factory=list)
-        workflow_filter_hooks: List[callable] = field(default_factory=list)
-        post_hooks: List[str] = field(default_factory=list)
 
         def is_event_pull_request(self):
             return self.event == Workflow.Event.PULL_REQUEST
@@ -48,43 +39,24 @@ class Workflow:
         def is_event_push(self):
             return self.event == Workflow.Event.PUSH
 
-        def is_event_schedule(self):
-            return self.event == Workflow.Event.SCHEDULE
-
-        def is_event_dispatch(self):
-            return self.event == Workflow.Event.DISPATCH
-
         def get_job(self, name):
-            jobs = self.find_jobs(name)
-            if not jobs:
+            job = self.find_job(name)
+            if not job:
                 Utils.raise_with_error(
                     f"Failed to find job [{name}], workflow [{self.name}]"
                 )
-                assert len(jobs) == 1
-            return jobs[0]
+            return job
 
-        def find_jobs(self, name, lazy=False):
+        def find_job(self, name, lazy=False):
             name = str(name)
-            res = []
             for job in self.jobs:
                 if lazy:
-                    tokens = name.lower().split("*")
-                    match = True
-                    for token in tokens:
-                        if token in job.name.lower():
-                            continue
-                        else:
-                            match = False
-                            break
-                    if match:
-                        res.append(job)
-                    if name.lower() == job.name.lower():
-                        # exact match - consider it as requested job
-                        return [job]
+                    if name.lower() in job.name.lower():
+                        return job
                 else:
                     if job.name == name:
-                        res.append(job)
-            return res
+                        return job
+            return None
 
         def get_secret(self, name) -> Optional[Secret.Config]:
             name = str(name)
@@ -95,10 +67,3 @@ class Workflow:
                 names.append(secret.name)
             print(f"ERROR: Failed to find secret [{name}], workflow secrets [{names}]")
             raise
-
-        @dataclass
-        class InputConfig:
-            name: str
-            description: str
-            is_required: bool
-            default_value: str
