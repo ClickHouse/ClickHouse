@@ -184,6 +184,17 @@ private:
             Array rhs_w = (*columns[3])[row].safeGet<Array>();
             const size_t m = lhs.size();
             const size_t n = rhs.size();
+            if (m==0 || n==0)
+            {
+                if (similarity)
+                    res_values[row] = m == n;
+                else
+                    res_values[row] = (
+                        std::accumulate(lhs_w.begin(), lhs_w.end(), 0.0, [](Float64 acc, Field &field){return acc + field.safeGet<Float64>();}) +
+                        std::accumulate(rhs_w.begin(), rhs_w.end(), 0.0, [](Float64 acc, Field &field){return acc + field.safeGet<Float64>();})
+                    );
+                continue;
+            }
             PODArrayWithStackMemory<Float64, 64> v0(m + 1);
             PODArrayWithStackMemory<Float64, 64> v1(m + 1);
             v0[0] = 0;
