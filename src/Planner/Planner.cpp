@@ -1169,7 +1169,7 @@ void addBuildSubqueriesForSetsStepIfNeeded(
             query_plan.getCurrentHeader(),
             std::move(subqueries),
             planner_context->getQueryContext());
-
+        step->setStepDescription("DelayedCreatingSetsStep");
         query_plan.addStep(std::move(step));
     }
 }
