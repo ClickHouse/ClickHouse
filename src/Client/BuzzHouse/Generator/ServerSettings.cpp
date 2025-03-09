@@ -117,7 +117,6 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"distributed_cache_bypass_connection_pool", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_discard_connection_if_unread_data", CHSetting(trueOrFalse, {}, false)},
     {"distributed_cache_fetch_metrics_only_from_current_az", CHSetting(trueOrFalse, {}, false)},
-    {"distributed_cache_min_bytes_for_seek", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"distributed_cache_throw_on_error", CHSetting(trueOrFalse, {}, false)},
     {"distributed_foreground_insert", CHSetting(trueOrFalse, {}, false)},
     {"distributed_group_by_no_merge", CHSetting(zeroOneTwo, {}, false)},
