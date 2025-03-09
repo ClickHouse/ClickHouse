@@ -244,7 +244,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
     if (sorting_step->getType() != SortingStep::Type::Full)
         return;
 
-    const auto limit = sorting_step->getLimit();
+    const auto limit = limit_step->getLimit();
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return;
 
