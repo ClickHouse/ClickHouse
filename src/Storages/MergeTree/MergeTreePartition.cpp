@@ -222,7 +222,7 @@ String MergeTreePartition::getID(const Block & partition_key_sample) const
     bool are_all_integral = true;
     for (const Field & field : value)
     {
-        if (field.getType() != Field::Types::Bool && field.getType() != Field::Types::UInt64 && field.getType() != Field::Types::Int64 && field.getType() != Field::Types::IPv4)
+        if (field.getType() != Field::Types::UInt64 && field.getType() != Field::Types::Int64 && field.getType() != Field::Types::IPv4)
         {
             are_all_integral = false;
             break;
