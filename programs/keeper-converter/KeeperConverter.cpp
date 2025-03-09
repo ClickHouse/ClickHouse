@@ -31,7 +31,7 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
     Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
 
     LoggerPtr logger = getLogger("KeeperConverter");
-    logger->setChannel(console_channel);
+    //logger->setChannel(console_channel);
 
     if (options.count("help"))
     {

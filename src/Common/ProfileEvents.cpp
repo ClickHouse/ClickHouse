@@ -1,3 +1,4 @@
+#include <quill/core/LogLevel.h>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <Common/TraceSender.h>
@@ -1145,6 +1146,21 @@ void incrementForLogMessage(Poco::Message::Priority priority)
         case Poco::Message::PRIO_WARNING: increment(LogWarning); break;
         case Poco::Message::PRIO_ERROR: increment(LogError); break;
         case Poco::Message::PRIO_FATAL: increment(LogFatal); break;
+        default: break;
+    }
+}
+
+void incrementForLogMessage(DB::LogsLevel log_level)
+{
+    switch (log_level)
+    {
+        case DB::LogsLevel::test: increment(LogTest); break;
+        case DB::LogsLevel::trace: increment(LogTrace); break;
+        case DB::LogsLevel::debug: increment(LogDebug); break;
+        case DB::LogsLevel::information: increment(LogInfo); break;
+        case DB::LogsLevel::warning: increment(LogWarning); break;
+        case DB::LogsLevel::error: increment(LogError); break;
+        case DB::LogsLevel::fatal: increment(LogFatal); break;
         default: break;
     }
 }

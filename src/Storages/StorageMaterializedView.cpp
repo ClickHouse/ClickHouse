@@ -612,7 +612,7 @@ void StorageMaterializedView::dropTempTable(StorageID table_id, ContextMutablePt
     }
     catch (...)
     {
-        tryLogCurrentException(&Poco::Logger::get("StorageMaterializedView"), "Failed to drop temporary table after refresh");
+        tryLogCurrentException(getLogger("StorageMaterializedView"), "Failed to drop temporary table after refresh");
     }
 }
 

@@ -5,7 +5,7 @@
 namespace DB
 {
 
-Poco::Net::SocketAddress makeSocketAddress(const std::string & host, uint16_t port, Poco::Logger * log)
+Poco::Net::SocketAddress makeSocketAddress(const std::string & host, uint16_t port, LoggerPtr log)
 {
     Poco::Net::SocketAddress socket_address;
     try
@@ -31,11 +31,6 @@ Poco::Net::SocketAddress makeSocketAddress(const std::string & host, uint16_t po
         throw;
     }
     return socket_address;
-}
-
-Poco::Net::SocketAddress makeSocketAddress(const std::string & host, uint16_t port, LoggerPtr log)
-{
-    return makeSocketAddress(host, port, log.get());
 }
 
 }

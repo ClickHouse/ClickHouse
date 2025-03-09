@@ -162,7 +162,7 @@ static IMergeTreeDataPart::Checksums checkDataPart(
       */
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
-    Poco::Logger * log = &Poco::Logger::get("checkDataPart");
+    auto log = getLogger("checkDataPart");
 
     NamesAndTypesList columns_txt;
 
