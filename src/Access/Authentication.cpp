@@ -248,7 +248,7 @@ bool Authentication::areCredentialsValid(
         return checkMySQLAuthentication(mysql_credentials, authentication_method);
     }
 
-    if (const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials))
+    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
     {
         return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, settings);
     }

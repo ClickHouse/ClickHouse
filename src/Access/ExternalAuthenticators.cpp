@@ -6,6 +6,7 @@
 #include <Common/SettingsChanges.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
+#include <Common/typeid_cast.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -250,6 +251,14 @@ HTTPAuthClientParams parseHTTPAuthParams(const Poco::Util::AbstractConfiguration
     http_auth_params.max_tries = config.getInt(prefix + ".max_tries", 3);
     http_auth_params.retry_initial_backoff_ms = config.getInt(prefix + ".retry_initial_backoff_ms", 50);
     http_auth_params.retry_max_backoff_ms = config.getInt(prefix + ".retry_max_backoff_ms", 1000);
+
+    Strings forward_headers;
+    config.keys(prefix + ".forward_headers", forward_headers);
+    for (const auto & header : forward_headers)
+    {
+        String name = config.getString(prefix + ".forward_headers." + header);
+        http_auth_params.forward_headers.push_back(name);
+    }
 
     return http_auth_params;
 }
@@ -553,7 +562,13 @@ bool ExternalAuthenticators::checkHTTPBasicCredentials(
     auto params = getHTTPAuthenticationParams(server);
     HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
 
-    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword());
+    std::unordered_map<String, String> headers;
+    if (const auto * http_credentials = typeid_cast<const HTTPCredentials *>(&credentials))
+    {
+        headers = http_credentials->getHeaders();
+    }
+
+    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword(), headers);
 
     if (is_ok)
         std::ranges::move(settings_from_auth_server, std::back_inserter(settings));
