@@ -48,7 +48,7 @@ DISABLED_WORKFLOWS = [
     "master.py",
     "merge_queue.py",
     "backport_branches.py",
-    "release_branches.py"
+    "release_branches.py",
 ]
 PYTHONPATHS = ""
 DEFAULT_LOCAL_TEST_WORKFLOW = "PRNEW"

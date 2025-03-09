@@ -24,9 +24,12 @@ class Docker:
         sw = Utils.Stopwatch()
         tag = digests[config.name]
         if amd_only:
-            tag += "_amd"
+            aarch_suffix = "_amd"
         elif arm_only:
-            tag += "_arm"
+            aarch_suffix = "_arm"
+        else:
+            aarch_suffix = ""
+        tag += aarch_suffix
         name = f"build: {config.name}:{tag}"
 
         code, out, err = Shell.get_res_stdout_stderr(
@@ -43,7 +46,7 @@ class Docker:
                 assert (
                     len(config.depends_on) == 1
                 ), f"Only one dependency in depends_on is currently supported, docker [{config}]"
-                from_tag = f" --build-arg FROM_TAG={digests[config.depends_on[0]]}"
+                from_tag = f" --build-arg FROM_TAG={digests[config.depends_on[0]]}{aarch_suffix}"
 
             platforms = []
             for platform in config.platforms:
@@ -53,10 +56,7 @@ class Docker:
                     continue
                 platforms.append(platform)
 
-            command = f"docker buildx build --builder default {tags_substr} {from_tag} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} --push"
-            if not amd_only and not arm_only:
-                # to build manifest
-                command += f" --platform {','.join(platforms)}"
+            command = f"docker buildx build --builder default {tags_substr} {from_tag} --platform {','.join(platforms)} --cache-to type=inline --cache-from type=registry,ref={config.name} {config.path} --push"
 
             return Result.from_commands_run(
                 name=name, command=command, with_info=with_log

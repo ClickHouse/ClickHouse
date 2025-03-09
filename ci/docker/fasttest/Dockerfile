@@ -31,6 +31,11 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 
+# Install cmake 3.20+ for Rust support
+# Used https://askubuntu.com/a/1157132 as reference
+RUN curl -s https://apt.kitware.com/keys/kitware-archive-latest.asc | gpg --dearmor - > /etc/apt/trusted.gpg.d/kitware.gpg && \
+    echo "deb [signed-by=/etc/apt/trusted.gpg.d/kitware.gpg] https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" >> /etc/apt/sources.list.d/kitware.list
+
 # moreutils - provides ts fo FT
 # expect, bzip2 - requried by FT
 # bsdmainutils - provides hexdump for FT

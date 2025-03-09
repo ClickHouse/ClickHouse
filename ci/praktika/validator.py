@@ -239,7 +239,7 @@ class Validator:
                 else:
                     assert (
                         Path(include_path).is_file() or Path(include_path).is_dir()
-                    ), f"Apparently file path [{include_path}] in job [{job.name}] digest_config [{job.digest_config}] invalid, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
+                    ), f"Invalid file path [{include_path}] in job [{job.name}] digest_config, workflow [{workflow.name}]. Setting to disable check: VALIDATE_FILE_PATHS"
 
     @classmethod
     def validate_requirements_txt_files(cls, workflow: Workflow.Config) -> None:
