@@ -1178,7 +1178,8 @@ ENGINE = SystemUsers
 COMMENT 'Contains a list of all users profiles either configured at the server through a configuration file or created via SQL.'
 CREATE TABLE system.warnings
 (
-    `message` String
+    `message` String,
+    `message_format_string` LowCardinality(String)
 )
 ENGINE = SystemWarnings
 COMMENT 'Contains warnings about server configuration to be displayed by clickhouse-client right after it connects to the server.'
