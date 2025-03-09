@@ -267,7 +267,7 @@ def main():
         duration=elapsed,
         additional_files=[
             str(log_path),
-            "/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/build_docker/contrib/delta-kernel-rs-cmake/_delta_kernel_rs_target-prefix/src/_delta_kernel_rs_target-stamp/_delta_kernel_rs_target-build-err.log"
+            "/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/build_docker/contrib/corrosion-cmake/config.toml"
         ],
         build_dir_for_upload=build_output_path,
         version=version.describe,
