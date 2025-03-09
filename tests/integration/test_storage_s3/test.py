@@ -11,6 +11,7 @@ import pytest
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.config_cluster import minio_secret_key
 from helpers.mock_servers import start_mock_servers
 from helpers.network import PartitionManager
 from helpers.s3_tools import prepare_s3_bucket
@@ -89,7 +90,7 @@ def started_cluster():
             with_minio=True,
             env_variables={
                 "AWS_ACCESS_KEY_ID": "minio",
-                "AWS_SECRET_ACCESS_KEY": "minio123",
+                "AWS_SECRET_ACCESS_KEY": "ClickHouse_Minio_P@ssw0rd",
             },
             main_configs=["configs/use_environment_credentials.xml"],
         )
@@ -120,7 +121,7 @@ def run_query(instance, query, *args, **kwargs):
     "maybe_auth,positive,compression",
     [
         pytest.param("", True, "auto", id="positive"),
-        pytest.param("'minio','minio123',", True, "auto", id="auth_positive"),
+        pytest.param(f"'minio','{minio_secret_key}',", True, "auto", id="auth_positive"),
         pytest.param("'wrongid','wrongkey',", False, "auto", id="auto"),
         pytest.param("'wrongid','wrongkey',", False, "gzip", id="gzip"),
         pytest.param("'wrongid','wrongkey',", False, "deflate", id="deflate"),
@@ -242,7 +243,7 @@ def test_partition_by_const_column(started_cluster):
 def test_get_file_with_special(started_cluster, special):
     symbol = {"space": " ", "plus": "+"}[special]
     urlsafe_symbol = {"space": "%20", "plus": "%2B"}[special]
-    auth = "'minio','minio123',"
+    auth = f"'minio','{minio_secret_key}',"
     bucket = started_cluster.minio_restricted_bucket
     instance = started_cluster.instances["dummy"]
     table_format = "column1 UInt32, column2 UInt32, column3 UInt32"
@@ -284,7 +285,7 @@ def test_get_file_with_special(started_cluster, special):
 def test_get_path_with_special(started_cluster, special):
     symbol = {"space": "%20", "plus": "%2B", "plus2": "%2B"}[special]
     safe_symbol = {"space": "%20", "plus": "+", "plus2": "%2B"}[special]
-    auth = "'minio','minio123',"
+    auth = "'minio','{minio_secret_key}',"
     table_format = "column1 String"
     instance = started_cluster.instances["dummy"]
     get_query = f"SELECT * FROM s3('http://resolver:8082/get-my-path/{safe_symbol}.csv', {auth}'CSV', '{table_format}') FORMAT TSV"
@@ -292,7 +293,7 @@ def test_get_path_with_special(started_cluster, special):
 
 
 # Test put no data to S3.
-@pytest.mark.parametrize("auth", [pytest.param("'minio','minio123',", id="minio")])
+@pytest.mark.parametrize("auth", [pytest.param(f"'minio','{minio_secret_key}',", id="minio")])
 def test_empty_put(started_cluster, auth):
     # type: (ClickHouseCluster, str) -> None
     id = uuid.uuid4()
@@ -330,7 +331,7 @@ def test_empty_put(started_cluster, auth):
     "maybe_auth,positive",
     [
         pytest.param("", True, id="positive"),
-        pytest.param("'minio','minio123',", True, id="auth_positive"),
+        pytest.param(f"'minio', '{minio_secret_key}',", True, id="auth_positive"),
         pytest.param("'wrongid','wrongkey',", False, id="negative"),
     ],
 )
@@ -497,7 +498,7 @@ def test_put_get_with_globs(started_cluster):
     [
         pytest.param("", True, id="positive"),
         pytest.param("'wrongid','wrongkey'", False, id="negative"),
-        # ("'minio','minio123',",True), Redirect with credentials not working with nginx.
+        # ("'minio','{minio_secret_key}',",True), Redirect with credentials not working with nginx.
     ],
 )
 def test_multipart(started_cluster, maybe_auth, positive):
@@ -1268,7 +1269,7 @@ def test_empty_file(started_cluster):
 def test_insert_with_path_with_globs(started_cluster):
     instance = started_cluster.instances["dummy"]
 
-    table_function_3 = f"s3('http://minio1:9001/root/test_parquet*', 'minio', 'minio123', 'Parquet', 'a Int32, b String')"
+    table_function_3 = f"s3('http://minio1:9001/root/test_parquet*', 'minio', '{minio_secret_key}', 'Parquet', 'a Int32, b String')"
     instance.query_and_get_error(
         f"insert into table function {table_function_3} SELECT number, randomString(100) FROM numbers(500)"
     )
@@ -1533,12 +1534,12 @@ def test_signatures(started_cluster):
     assert int(result) == 1
 
     result = instance.query(
-        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123')"
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', '{minio_secret_key}')"
     )
     assert int(result) == 1
 
     error = instance.query_and_get_error(
-        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}')"
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', '{minio_secret_key}', '{session_token}')"
     )
     assert "S3_ERROR" in error
 
@@ -1548,22 +1549,22 @@ def test_signatures(started_cluster):
     assert int(result) == 1
 
     result = instance.query(
-        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', 'Arrow')"
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', '{minio_secret_key}', 'Arrow')"
     )
     assert int(result) == 1
 
     error = instance.query_and_get_error(
-        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}', 'Arrow')"
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', '{minio_secret_key}', '{session_token}', 'Arrow')"
     )
     assert "S3_ERROR" in error
 
     error = instance.query_and_get_error(
-        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}', 'Arrow', 'x UInt64')"
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', '{minio_secret_key}', '{session_token}', 'Arrow', 'x UInt64')"
     )
     assert "S3_ERROR" in error
 
     error = instance.query_and_get_error(
-        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', 'minio123', '{session_token}', 'Arrow', 'x UInt64', 'auto')"
+        f"select * from s3('http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/test.arrow', 'minio', '{minio_secret_key}', '{session_token}', 'Arrow', 'x UInt64', 'auto')"
     )
     assert "S3_ERROR" in error
 
