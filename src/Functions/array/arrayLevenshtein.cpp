@@ -39,7 +39,7 @@ public:
     size_t getNumberOfArguments() const override { return T::arguments; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
@@ -51,7 +51,6 @@ public:
                   T::arguments);
 
         DataTypes arguments_types;
-        // First two arguments lhs and rhs are always arrays
         for (size_t index = 0; index < arguments.size(); ++index)
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
