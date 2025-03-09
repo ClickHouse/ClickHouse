@@ -11,6 +11,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 
+#include <numeric>
+
 namespace DB
 {
 
@@ -171,13 +173,15 @@ private:
         auto res = ColumnFloat64::create();
         ColumnFloat64::Container & res_values = res->getData();
         res_values.resize(columns[0]->size());
+        auto get_float = [](const Field & element) -> Float64 { return element.safeGet<Float64>(); };
         for (size_t row = 0; row < columns[0]->size(); row++)
         {
             // Levenshtein with sliding vectors and weighted elements
+            // https://www.codeproject.com/Articles/13525/Fast-memory-efficient-Levenshtein-algorithm
             Array lhs = (*columns[0])[row].safeGet<Array>();
             Array rhs = (*columns[1])[row].safeGet<Array>();
-            Array l_weights = (*columns[2])[row].safeGet<Array>();
-            Array r_weights = (*columns[3])[row].safeGet<Array>();
+            Array lhs_w = (*columns[2])[row].safeGet<Array>();
+            Array rhs_w = (*columns[3])[row].safeGet<Array>();
             const size_t m = lhs.size();
             const size_t n = rhs.size();
             PODArrayWithStackMemory<Float64, 64> v0(m + 1);
@@ -185,12 +189,12 @@ private:
             v0[0] = 0;
             for (size_t i = 0; i < m; i++)
             {
-                v0[i + 1] = v0[i] + l_weights[i].safeGet<Float64>();
+                v0[i + 1] = v0[i] + get_float(lhs_w[i]);
             }
 
             for (size_t i = 0; i < n; ++i)
             {
-                v1[0] = r_weights[i].safeGet<Float64>() + v0[0];
+                v1[0] = v0[0] + get_float(rhs_w[i]);
                 for (size_t j = 0; j < m; ++j)
                 {
                     if (lhs[j] == rhs[i])
@@ -199,29 +203,29 @@ private:
                         continue;
                     }
 
-                    v1[j+1] = std::min({v0[j + 1] + r_weights[i].safeGet<Float64>(),     // deletion
-                                      v1[j] + l_weights[j].safeGet<Float64>(), // insertion
-                                      v0[j] + l_weights[j].safeGet<Float64>() + r_weights[i].safeGet<Float64>()}); // substitusion
+                    v1[j+1] = std::min({v0[j + 1] + get_float(rhs_w[i]),                     // deletion
+                                        v1[j] + get_float(lhs_w[j]),                         // insertion
+                                        v0[j] + get_float(lhs_w[j]) + get_float(rhs_w[i])}); // substitusion
                 }
                 std::swap(v0, v1);
             }
             if (!similarity)
             {
                 // weighed Levenshtein
-                res_values[row] = static_cast<Float64>(v0[m]);
+                res_values[row] = v0[m];
                 continue;
             }
-            Float64 max_distance = 0;
-            for (size_t i = 0; i < m; ++i)
-                max_distance += l_weights[i].safeGet<Float64>();
-            for (size_t j = 0; j < n; ++j)
-                max_distance += r_weights[j].safeGet<Float64>();
-            if (max_distance == 0)
+            // arrays similarity
+            Float64 max_distance = (
+                std::accumulate(lhs_w.begin(), lhs_w.end(), 0.0, [](Float64 acc, Field &field){return acc + field.safeGet<Float64>();}) +
+                std::accumulate(rhs_w.begin(), rhs_w.end(), 0.0, [](Float64 acc, Field &field){return acc + field.safeGet<Float64>();})
+            );
+            if (max_distance == 0.0)
             {
-                res_values[row] = static_cast<Float64>(1);
+                res_values[row] = 1.0;
                 continue;
             }
-            res_values[row] = static_cast<Float64>(1 - v0[m]/max_distance);
+            res_values[row] = 1 - (v0[m]/max_distance);
         }
         return res;
     }
