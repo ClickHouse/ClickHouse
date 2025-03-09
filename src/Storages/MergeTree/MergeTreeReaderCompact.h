@@ -43,6 +43,7 @@ protected:
         size_t column_idx,
         ColumnPtr & column,
         size_t rows_to_read,
+        size_t rows_offset,
         MergeTreeReaderStream & stream,
         ISerialization::SubstreamsCache & cache,
         std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns);
