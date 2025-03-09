@@ -27,6 +27,8 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     const auto & array_join_columns = array_join_step->getColumns();
     const auto & expression = expression_step ? expression_step->getExpression()
                                               : filter_step->getExpression();
+    bool enable_adaptive_short_circuit_execution = expression_step ? expression_step->enableAdaptiveShortCircuit()
+                                                    : filter_step->enableAdaptiveShortCircuit();
 
     auto split_actions = expression.splitActionsBeforeArrayJoin(array_join_columns);
 
@@ -44,15 +46,17 @@ size_t tryLiftUpArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     /// Expression/Filter -> ArrayJoin -> node -> Something
 
     node.step = std::make_unique<ExpressionStep>(node.children.at(0)->step->getOutputHeader(),
-                                                 std::move(split_actions.first));
+                                                 std::move(split_actions.first),
+                                                 enable_adaptive_short_circuit_execution);
     node.step->setStepDescription(description);
     array_join_step->updateInputHeader(node.step->getOutputHeader());
 
     if (expression_step)
-        parent = std::make_unique<ExpressionStep>(array_join_step->getOutputHeader(), std::move(split_actions.second));
+        parent = std::make_unique<ExpressionStep>(array_join_step->getOutputHeader(), std::move(split_actions.second), enable_adaptive_short_circuit_execution);
     else
         parent = std::make_unique<FilterStep>(array_join_step->getOutputHeader(), std::move(split_actions.second),
-                                              filter_step->getFilterColumnName(), filter_step->removesFilterColumn());
+                                              filter_step->getFilterColumnName(), filter_step->removesFilterColumn(),
+                                              enable_adaptive_short_circuit_execution);
 
     parent->setStepDescription(description + " [split]");
     return 3;

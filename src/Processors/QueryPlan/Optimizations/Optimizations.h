@@ -132,7 +132,7 @@ void tryUpdateQueryConditionCache(const QueryPlanOptimizationSettings & optimiza
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
 /// Returns the name of used projection or nullopt if no projection is used.
-std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
+std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
 
 bool addPlansForSets(QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
