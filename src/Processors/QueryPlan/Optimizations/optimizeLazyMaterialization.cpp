@@ -6,8 +6,8 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
 #include <Storages/MergeTree/MergeTreeLazilyReader.h>
-#include <Storages/SelectQueryInfo.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -229,20 +229,31 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
     if (frame.node->children.size() != 1)
         return;
 
-    auto * sorting = typeid_cast<SortingStep *>(frame.node->step.get());
-    if (!sorting)
+    auto * limit_step = typeid_cast<LimitStep *>(frame.node->step.get());
+    if (!limit_step)
         return;
 
-    if (sorting->getType() != SortingStep::Type::Full)
+    /// it's not clear how many values will be read for LIMIT WITH TIES, so disable it
+    if (limit_step->withTies())
         return;
 
-    const auto limit = sorting->getLimit();
+    auto * sorting_step = typeid_cast<SortingStep *>(frame.node->children.front()->step.get());
+    if (!sorting_step)
+        return;
+
+    if (sorting_step->getType() != SortingStep::Type::Full)
+        return;
+
+    const auto limit = sorting_step->getLimit();
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return;
 
     StepStack steps_to_update;
-    steps_to_update.push_back(sorting);
-    auto * reading_step = findReadingStep(*frame.node->children.front(), steps_to_update);
+    steps_to_update.push_back(limit_step);
+    steps_to_update.push_back(sorting_step);
+
+    auto * sorting_node = frame.node->children.front();
+    auto * reading_step = findReadingStep(*sorting_node->children.front(), steps_to_update);
     if (!reading_step)
         return;
 
@@ -258,7 +269,7 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
 
     lazily_read_info->data_parts_info = std::make_shared<DataPartsInfo>();
     auto lazy_column_reader = std::make_unique<MergeTreeLazilyReader>(
-        sorting->getOutputHeader(),
+        sorting_step->getOutputHeader(),
         reading_step->getMergeTreeData(),
         reading_step->getStorageSnapshot(),
         lazily_read_info,
@@ -267,24 +278,24 @@ void optimizeLazyMaterialization(Stack & stack, QueryPlan::Nodes & nodes, size_t
 
     reading_step->updateLazilyReadInfo(lazily_read_info);
 
-    QueryPlan::Node * sorting_node = frame.node;
+    QueryPlan::Node * limit_node = frame.node;
     auto & replace_node = nodes.emplace_back();
-    replace_node.children.emplace_back(sorting_node);
+    replace_node.children.emplace_back(limit_node);
 
-    QueryPlan::Node * sorting_parent_node = (stack.rbegin() + 1)->node;
+    QueryPlan::Node * limit_parent_node = (stack.rbegin() + 1)->node;
 
-    for (auto & sorting_parent_child : sorting_parent_node->children)
+    for (auto & limit_parent_child : limit_parent_node->children)
     {
-        if (sorting_parent_child == sorting_node)
+        if (limit_parent_child == limit_node)
         {
-            sorting_parent_child = &replace_node;
+            limit_parent_child = &replace_node;
             break;
         }
     }
 
     updateStepsDataStreams(steps_to_update);
 
-    auto lazily_read_step = std::make_unique<LazilyReadStep>(sorting->getOutputHeader(), lazily_read_info, std::move(lazy_column_reader));
+    auto lazily_read_step = std::make_unique<LazilyReadStep>(sorting_step->getOutputHeader(), lazily_read_info, std::move(lazy_column_reader));
     lazily_read_step->setStepDescription("Lazily Read");
     replace_node.step = std::move(lazily_read_step);
 }
