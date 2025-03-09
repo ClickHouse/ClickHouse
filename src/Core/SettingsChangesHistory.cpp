@@ -89,6 +89,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
+            {"input_format_parquet_use_native_reader_v2", false, false, "A new parquet reader support full filter push down"},
             /// Release closed. Please use 25.3
         });
         addSettingsChanges(settings_changes_history, "25.1",
