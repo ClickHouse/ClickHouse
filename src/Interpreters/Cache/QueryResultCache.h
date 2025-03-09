@@ -37,7 +37,7 @@ class QueryResultCacheReader;
 class QueryResultCache
 {
 public:
-    /// Represents a query result in the cache.
+    /// Key + Entry represents a query result in the cache.
     struct Key
     {
         /// ----------------------------------------------------
