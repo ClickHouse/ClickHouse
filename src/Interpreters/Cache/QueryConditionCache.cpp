@@ -57,6 +57,8 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
+        std::lock_guard lock(entry->mutex);
+
         LOG_DEBUG(
             logger,
             "Read entry for table_uuid: {}, part: {}, predicate_hash: {}, ranges: {}",
@@ -65,7 +67,6 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
             predicate_hash,
             toString(entry->matching_marks));
 
-        std::lock_guard lock(entry->mutex);
         return {entry->matching_marks};
     }
     else
