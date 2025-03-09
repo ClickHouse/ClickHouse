@@ -1,6 +1,5 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include "Interpreters/Cache/FileSegmentInfo.h"
 
 namespace ProfileEvents
 {
@@ -23,7 +22,7 @@ void QueryConditionCache::write(
     Key key = {table_id, part_name, predicate_hash};
 
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
-    auto [entry, _] = cache.getOrSet(key, load_func);
+    auto [entry, inserted] = cache.getOrSet(key, load_func);
 
     chassert(marks_count == entry->matching_marks.size());
 
@@ -39,7 +38,8 @@ void QueryConditionCache::write(
 
         LOG_DEBUG(
             logger,
-            "Wrote entry for table_id: {}, part_name: {}, predicate_hash: {}, marks_count: {}, has_final_mark: {}, (ranges: {})",
+            "{} entry for table_id: {}, part_name: {}, predicate_hash: {}, marks_count: {}, has_final_mark: {}, (ranges: {})",
+            inserted ? "Inserted" : "Updated",
             table_id,
             part_name,
             predicate_hash,
@@ -57,12 +57,27 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
+        LOG_DEBUG(
+            logger,
+            "Found entry for table_uuid: {}, part: {}, predicate_hash: {}, ranges: {}",
+            table_id,
+            part_name,
+            predicate_hash,
+            toString(entry->matching_marks));
+
         std::lock_guard lock(entry->mutex);
         return {entry->matching_marks};
     }
     else
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
+
+        LOG_DEBUG(
+            logger,
+            "Did not find entry for table_uuid: {}, part: {}, predicate_hash: {}",
+            table_id,
+            part_name,
+            predicate_hash);
 
         return {};
     }
