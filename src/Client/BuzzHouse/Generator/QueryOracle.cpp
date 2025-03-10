@@ -106,16 +106,16 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
     TopSelect * ts = sq1.mutable_explain()->mutable_inner_query()->mutable_select();
     SelectIntoFile * sif = ts->mutable_intofile();
     SelectStatementCore * sel = ts->mutable_sel()->mutable_select_core();
-    JoinedTable * jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+    JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
     OrderByList * obs = sel->mutable_orderby()->mutable_olist();
-    ExprSchemaTable * est = jt->mutable_est();
+    ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
 
     if (t.db)
     {
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    jt->set_final(t.supportsFinal());
+    jtf->set_final(t.supportsFinal());
     gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
@@ -179,6 +179,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
 {
     String buf;
     bool first = true;
+    std::error_code ec;
     Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
     SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
@@ -186,26 +187,25 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     OutFormat outf = rg.pickKeyRandomlyFromMap(out_in);
 
     /// Remove the file if exists
-    if (std::remove(nfile.generic_string().c_str()) && errno != ENOENT)
+    if (!std::filesystem::remove(nfile, ec) && ec)
     {
-        char buffer[1024];
-
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
     }
     ff->set_path(nfile.generic_string());
 
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         SQLType * tp = entry.getBottomType();
 
         buf += fmt::format(
-            "{}{} {}{}",
+            "{}{} {}{}{}{}",
             first ? "" : ", ",
             entry.getBottomName(),
+            entry.path.size() > 1 ? "Array(" : "",
             tp->typeName(true),
-            entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
+            entry.path.size() > 1 ? ")" : "",
+            (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         /// ArrowStream doesn't support UUID
         if (outf == OutFormat::OUT_ArrowStream && tp->getTypeClass() == SQLTypeClass::UUID)
@@ -223,15 +223,15 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     }
 
     /// Set the table on select
-    JoinedTable * jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-    ExprSchemaTable * est = jt->mutable_est();
+    JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+    ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
 
     if (t.db)
     {
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    jt->set_final(t.supportsFinal());
+    jtf->set_final(t.supportsFinal());
 }
 
 void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
@@ -258,7 +258,7 @@ void QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable &
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         gen.columnPathRef(entry, ins->add_cols());
@@ -346,6 +346,7 @@ void QueryOracle::generateSecondSetting(const SQLQuery & sq1, SQLQuery & sq3)
 
 void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuery pq, StatementGenerator & gen, SQLQuery & sq2)
 {
+    std::error_code ec;
     bool explain = false;
     Select * sel = nullptr;
     InsertSelect * insel = nullptr;
@@ -371,12 +372,9 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tfunction()->mutable_file();
 
-        if (std::remove(qfile.generic_string().c_str()) && errno != ENOENT)
+        if (!std::filesystem::remove(qfile, ec) && ec)
         {
-            char buffer[1024];
-
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+            LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         }
         ff->set_path(qfile.generic_string());
         ff->set_outformat(OutFormat::OUT_CSV);
@@ -397,7 +395,8 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
                                 ->mutable_tos()
                                 ->mutable_join_clause()
                                 ->mutable_tos()
-                                ->mutable_joined_derived_query()
+                                ->mutable_joined_table()
+                                ->mutable_tof()
                                 ->mutable_select();
 
         if (rg.nextBool())
@@ -432,12 +431,27 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             ->mutable_tos()
             ->mutable_join_clause()
             ->mutable_tos()
-            ->mutable_joined_derived_query()
+            ->mutable_joined_table()
+            ->mutable_tof()
             ->mutable_select()
             ->mutable_inner_query()
             ->mutable_select()
             ->set_allocated_sel(osel);
         nsel->mutable_orderby()->set_oall(true);
+    }
+    else if (measure_performance)
+    {
+        /// Add tag to find query later on
+        if (!sel->has_setting_values())
+        {
+            auto * news = sel->mutable_setting_values();
+            UNUSED(news);
+        }
+        SettingValues & svs = const_cast<SettingValues &>(sel->setting_values());
+        SetValue * sv = svs.has_set_value() ? svs.add_other_values() : svs.mutable_set_value();
+
+        sv->set_property("log_comment");
+        sv->set_value("'measure_performance'");
     }
 }
 
@@ -512,11 +526,34 @@ void QueryOracle::findTablesWithPeersAndReplace(
 
         if (tos.has_joined_table())
         {
-            const ExprSchemaTable & est = tos.joined_table().est();
+            findTablesWithPeersAndReplace(rg, const_cast<TableOrFunction &>(tos.joined_table().tof()), gen, replace);
+        }
+        else if (tos.has_joined_query())
+        {
+            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(tos.joined_query()), gen, replace);
+        }
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.TableFunction")
+    {
+        auto & tfunc = static_cast<TableFunction &>(mes);
+
+        if (tfunc.has_remote() || tfunc.has_cluster())
+        {
+            findTablesWithPeersAndReplace(
+                rg, const_cast<TableOrFunction &>(tfunc.has_remote() ? tfunc.remote().tof() : tfunc.cluster().tof()), gen, replace);
+        }
+    }
+    else if (mes.GetTypeName() == "BuzzHouse.TableOrFunction")
+    {
+        auto & torfunc = static_cast<TableOrFunction &>(mes);
+
+        if (torfunc.has_est())
+        {
+            const ExprSchemaTable & est = torfunc.est();
 
             if ((!est.has_database() || est.database().database() != "system") && est.table().table().at(0) == 't')
             {
-                const uint32_t tname = static_cast<uint32_t>(std::stoul(tos.joined_table().est().table().table().substr(1)));
+                const uint32_t tname = static_cast<uint32_t>(std::stoul(est.table().table().substr(1)));
 
                 if (gen.tables.find(tname) != gen.tables.end())
                 {
@@ -526,11 +563,7 @@ void QueryOracle::findTablesWithPeersAndReplace(
                     {
                         if (replace)
                         {
-                            const String saved = tos.joined_table().table_alias().table();
-                            tos.clear_joined_table();
-                            JoinedTableFunction * jtf = tos.mutable_joined_table_function();
-                            gen.setTableRemote(rg, false, t, jtf->mutable_tfunc());
-                            jtf->mutable_table_alias()->set_table(saved);
+                            gen.setTableRemote(rg, false, t, torfunc.mutable_tfunc());
                         }
                         found_tables.insert(tname);
                         can_test_query_success &= t.hasClickHousePeer();
@@ -538,14 +571,13 @@ void QueryOracle::findTablesWithPeersAndReplace(
                 }
             }
         }
-        else if (tos.has_joined_derived_query())
+        else if (torfunc.has_tfunc())
         {
-            findTablesWithPeersAndReplace(
-                rg, const_cast<Select &>(tos.joined_derived_query().select().inner_query().select().sel()), gen, replace);
+            findTablesWithPeersAndReplace(rg, const_cast<TableFunction &>(torfunc.tfunc()), gen, replace);
         }
-        else if (tos.has_joined_query())
+        else if (torfunc.has_select())
         {
-            findTablesWithPeersAndReplace(rg, const_cast<JoinedQuery &>(tos.joined_query()), gen, replace);
+            findTablesWithPeersAndReplace(rg, const_cast<Select &>(torfunc.select().inner_query().select().sel()), gen, replace);
         }
     }
 }
@@ -588,14 +620,12 @@ void QueryOracle::replaceQueryWithTablePeers(
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
     {
         /// Use a different file for the peer database
+        std::error_code ec;
         FileFunc & ff = const_cast<FileFunc &>(sq2.explain().inner_query().insert().tfunction().file());
 
-        if (std::remove(qfile_peer.generic_string().c_str()) && errno != ENOENT)
+        if (!std::filesystem::remove(qfile_peer, ec) && ec)
         {
-            char buffer[1024];
-
-            strerror_r(errno, buffer, sizeof(buffer));
-            LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+            LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         }
         ff.set_path(qfile_peer.generic_string());
     }
@@ -608,15 +638,15 @@ void QueryOracle::replaceQueryWithTablePeers(
 
         // Then insert the data
         gen.setTableRemote(rg, false, t, ins->mutable_tfunction());
-        JoinedTable * jt = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-        ExprSchemaTable * est = jt->mutable_est();
+        JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+        ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
         if (t.db)
         {
             est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
-        jt->set_final(t.supportsFinal());
-        gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+        jtf->set_final(t.supportsFinal());
+        gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {
             gen.columnPathRef(colRef, ins->add_cols());
@@ -647,7 +677,7 @@ void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalInte
     {
         if (measure_performance)
         {
-            measure_performance
+            other_steps_sucess
                 &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->query_duration_ms1, this->memory_usage1);
         }
         else

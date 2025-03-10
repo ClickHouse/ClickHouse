@@ -54,9 +54,10 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Interpreters/Cache/QueryCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -247,12 +248,15 @@ namespace Setting
     extern const SettingsUInt64 remote_fs_read_backoff_max_tries;
     extern const SettingsUInt64 remote_read_min_bytes_for_seek;
     extern const SettingsBool throw_on_error_from_cache_on_write_operations;
-    extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
+    extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_result_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool use_page_cache_for_disks_without_file_cache;
+    extern const SettingsBool use_page_cache_with_distributed_cache;
     extern const SettingsUInt64 use_structure_from_insertion_table_in_table_functions;
     extern const SettingsString workload;
     extern const SettingsString compatibility;
+    extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool parallel_replicas_only_with_analyzer;
 }
 
 namespace MergeTreeSetting
@@ -421,6 +425,7 @@ struct ContextSharedPart : boost::noncopyable
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
+    String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
@@ -437,7 +442,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable SkippingIndexCachePtr skipping_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
-    mutable QueryCachePtr query_cache TSA_GUARDED_BY(mutex);                          /// Cache of query results.
+    mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
+    mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
@@ -900,6 +906,7 @@ struct ContextSharedPart : boost::noncopyable
         delete_access_control.reset();
 
         total_memory_tracker.resetOvercommitTracker();
+        total_memory_tracker.resetPageCache();
     }
 
     bool hasTraceCollector() const
@@ -995,7 +1002,7 @@ ContextData::ContextData(const ContextData &o) :
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
     current_database(o.current_database),
-    can_use_query_cache(o.can_use_query_cache),
+    can_use_query_result_cache(o.can_use_query_result_cache),
     settings(std::make_unique<Settings>(*o.settings)),
     progress_callback(o.progress_callback),
     file_progress_callback(o.file_progress_callback),
@@ -1209,15 +1216,15 @@ Strings Context::getWarnings() const
         SharedLockGuard lock(shared->mutex);
         common_warnings = shared->warnings;
         if (CurrentMetrics::get(CurrentMetrics::AttachedTable) > static_cast<Int64>(shared->max_table_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached tables is more than {}.", shared->max_table_num_to_warn.load()));
         if (CurrentMetrics::get(CurrentMetrics::AttachedView) > static_cast<Int64>(shared->max_view_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached views is more than {}.", shared->max_view_num_to_warn.load()));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDictionary) > static_cast<Int64>(shared->max_dictionary_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached dictionaries is more than {}.", shared->max_dictionary_num_to_warn.load()));
         if (CurrentMetrics::get(CurrentMetrics::AttachedDatabase) > static_cast<Int64>(shared->max_database_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of attached databases is more than {}.", shared->max_database_num_to_warn.load()));
         if (CurrentMetrics::get(CurrentMetrics::PartsActive) > static_cast<Int64>(shared->max_part_num_to_warn))
-            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn));
+            common_warnings.emplace_back(fmt::format("The number of active parts is more than {}.", shared->max_part_num_to_warn.load()));
     }
     /// Make setting's name ordered
     auto obsolete_settings = settings->getChangedAndObsoleteNames();
@@ -1940,9 +1947,24 @@ UInt64 Context::getConcurrentThreadsSoftLimitRatioToCores() const
     return shared->concurrent_threads_soft_limit_ratio_to_cores;
 }
 
-UInt64 Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores)
+String Context::getConcurrentThreadsScheduler() const
 {
     std::lock_guard lock(shared->mutex);
+    return shared->concurrent_threads_scheduler;
+}
+
+std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler)
+{
+    std::lock_guard lock(shared->mutex);
+
+    // Set the scheduler
+    bool ok = ConcurrencyControl::instance().setScheduler(scheduler);
+    if (ok)
+        shared->concurrent_threads_scheduler = scheduler;
+    else
+        LOG_ERROR(shared->log, "Invalid value '{}' is set for the server setting 'concurrent_threads_scheduler'. Scheduler was not changed.", scheduler);
+
+    // Set the limit
     SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
     if (num > 0 && num < concurrent_threads_soft_limit)
         concurrent_threads_soft_limit = num;
@@ -1955,7 +1977,7 @@ UInt64 Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores)
     ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
     shared->concurrent_threads_soft_limit_num = num;
     shared->concurrent_threads_soft_limit_ratio_to_cores = ratio_to_cores;
-    return concurrent_threads_soft_limit;
+    return { concurrent_threads_soft_limit, ConcurrencyControl::instance().getScheduler() };
 }
 
 
@@ -3100,7 +3122,7 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
 
 void Context::waitForDictionariesLoad() const
 {
-    LOG_TRACE(shared->log, "Waiting for dictionaries to be loaded");
+    LOG_INFO(shared->log, "Waiting for dictionaries to be loaded");
     auto results = getExternalDictionariesLoader().tryLoadAll<ExternalLoader::LoadResults>();
     bool all_dictionaries_loaded = true;
     for (const auto & result : results)
@@ -3304,14 +3326,19 @@ void Context::clearUncompressedCache() const
         cache->clear();
 }
 
-void Context::setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages)
+void Context::setPageCache(
+    size_t default_block_size, size_t default_lookahead_blocks, std::chrono::milliseconds history_window,
+    const String & cache_policy, double size_ratio, size_t min_size_in_bytes, size_t max_size_in_bytes,
+    double free_memory_ratio)
 {
     std::lock_guard lock(shared->mutex);
 
     if (shared->page_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Page cache has been already created.");
 
-    shared->page_cache = std::make_shared<PageCache>(bytes_per_chunk, bytes_per_mmap, bytes_total, use_madv_free, use_huge_pages);
+    shared->page_cache = std::make_shared<PageCache>(
+        default_block_size, default_lookahead_blocks, history_window, cache_policy, size_ratio,
+        min_size_in_bytes, max_size_in_bytes, free_memory_ratio);
 }
 
 PageCachePtr Context::getPageCache() const
@@ -3320,7 +3347,7 @@ PageCachePtr Context::getPageCache() const
     return shared->page_cache;
 }
 
-void Context::dropPageCache() const
+void Context::clearPageCache() const
 {
     PageCachePtr cache;
     {
@@ -3328,7 +3355,7 @@ void Context::dropPageCache() const
         cache = shared->page_cache;
     }
     if (cache)
-        cache->dropCache();
+        cache->clear();
 }
 
 void Context::setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
@@ -3578,39 +3605,75 @@ void Context::clearMMappedFileCache() const
         cache->clear();
 }
 
-void Context::setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
+void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
 {
     std::lock_guard lock(shared->mutex);
 
-    if (shared->query_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
+    if (shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark filter cache has been already create.");
 
-    shared->query_cache = std::make_shared<QueryCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+    shared->query_condition_cache = std::make_shared<QueryConditionCache>(cache_policy, max_size_in_bytes, size_ratio);
 }
 
-void Context::updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->query_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache was not created yet.");
-
-    size_t max_size_in_bytes = config.getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
-    size_t max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
-    size_t max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-    size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
-    shared->query_cache->updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
-}
-
-QueryCachePtr Context::getQueryCache() const
+QueryConditionCachePtr Context::getQueryConditionCache() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->query_cache;
+    return shared->query_condition_cache;
 }
 
-void Context::clearQueryCache(const std::optional<String> & tag) const
+void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
-    QueryCachePtr cache = getQueryCache();
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("query_condition_cache_size", DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE);
+    shared->query_condition_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+void Context::clearQueryConditionCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_condition_cache)
+        shared->query_condition_cache->clear();
+}
+
+
+void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_result_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache has been already created.");
+
+    shared->query_result_cache = std::make_shared<QueryResultCache>(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+}
+
+void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->query_result_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("query_result_cache.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
+    size_t max_entries = config.getUInt64("query_result_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
+    size_t max_entry_size_in_bytes = config.getUInt64("query_result_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
+    size_t max_entry_size_in_rows = config.getUInt64("query_result_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    shared->query_result_cache->updateConfiguration(max_size_in_bytes, max_entries, max_entry_size_in_bytes, max_entry_size_in_rows);
+}
+
+QueryResultCachePtr Context::getQueryResultCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->query_result_cache;
+}
+
+void Context::clearQueryResultCache(const std::optional<String> & tag) const
+{
+    QueryResultCachePtr cache = getQueryResultCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
@@ -3649,17 +3712,21 @@ void Context::clearCaches() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
     shared->mmap_cache->clear();
 
-    /// Intentionally not clearing the query cache which is transactionally inconsistent by design.
+    if (!shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
+    shared->query_condition_cache->clear();
+
+    /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
 }
 
-void Context::setCanUseQueryCache(bool can_use_query_cache_)
+void Context::setCanUseQueryResultCache(bool can_use_query_result_cache_)
 {
-    can_use_query_cache = can_use_query_cache_;
+    can_use_query_result_cache = can_use_query_result_cache_;
 }
 
-bool Context::getCanUseQueryCache() const
+bool Context::getCanUseQueryResultCache() const
 {
-    return can_use_query_cache;
+    return can_use_query_result_cache;
 }
 
 void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
@@ -4926,6 +4993,22 @@ StoragePolicyPtr Context::getStoragePolicyFromDisk(const String & disk_name) con
     return storage_policy;
 }
 
+StoragePolicyPtr Context::getOrCreateStoragePolicy(const String & name, StoragePolicyCreator creator) const
+{
+    std::lock_guard lock(shared->storage_policies_mutex);
+
+    auto storage_policy_selector = getStoragePolicySelector(lock);
+
+    auto storage_policy = storage_policy_selector->tryGet(name);
+    if (!storage_policy)
+    {
+        storage_policy = creator(storage_policy_selector->getPoliciesMap());
+        const_cast<StoragePolicySelector *>(storage_policy_selector.get())->add(storage_policy);
+    }
+
+    return storage_policy;
+}
+
 DisksMap Context::getDisksMap() const
 {
     std::lock_guard lock(shared->storage_policies_mutex);
@@ -6064,10 +6147,11 @@ ReadSettings Context::getReadSettings() const
     res.filesystem_cache_prefer_bigger_buffer_size = settings_ref[Setting::filesystem_cache_prefer_bigger_buffer_size];
 
     res.filesystem_cache_max_download_size = settings_ref[Setting::filesystem_cache_max_download_size];
-    res.filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit];
+    res.filesystem_cache_skip_download_if_exceeds_per_query_result_cache_write_limit = settings_ref[Setting::filesystem_cache_skip_download_if_exceeds_per_query_result_cache_write_limit];
 
     res.page_cache = getPageCache();
     res.use_page_cache_for_disks_without_file_cache = settings_ref[Setting::use_page_cache_for_disks_without_file_cache];
+    res.use_page_cache_with_distributed_cache = settings_ref[Setting::use_page_cache_with_distributed_cache];
     res.read_from_page_cache_if_exists_otherwise_bypass_cache = settings_ref[Setting::read_from_page_cache_if_exists_otherwise_bypass_cache];
     res.page_cache_inject_eviction = settings_ref[Setting::page_cache_inject_eviction];
 
@@ -6077,7 +6161,7 @@ ReadSettings Context::getReadSettings() const
     if (!getSettingsRef()[Setting::max_read_buffer_size])
     {
         throw Exception(
-            ErrorCodes::INVALID_SETTING_VALUE, "Invalid value '{}' for max_read_buffer_size", getSettingsRef()[Setting::max_read_buffer_size]);
+            ErrorCodes::INVALID_SETTING_VALUE, "Invalid value '{}' for max_read_buffer_size", getSettingsRef()[Setting::max_read_buffer_size].value);
     }
 
     res.local_fs_buffer_size
@@ -6134,6 +6218,9 @@ std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 bool Context::canUseTaskBasedParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
+
+    if (!settings_ref[Setting::allow_experimental_analyzer] && settings_ref[Setting::parallel_replicas_only_with_analyzer])
+        return false;
 
     return settings_ref[Setting::allow_experimental_parallel_reading_from_replicas] > 0
         && settings_ref[Setting::parallel_replicas_mode] == ParallelReplicasMode::READ_TASKS

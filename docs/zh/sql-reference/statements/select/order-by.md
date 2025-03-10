@@ -79,7 +79,7 @@ SELECT a, b, c FROM t ORDER BY a, b, c
 
 ## 实现细节 {#implementation-details}
 
-更少的RAM使用，如果一个足够小 [LIMIT](../../../sql-reference/statements/select/limit.md) 除了指定 `ORDER BY`. 否则，所花费的内存量与用于排序的数据量成正比。 对于分布式查询处理，如果 [GROUP BY](../../../sql-reference/statements/select/group-by.md) 省略排序，在远程服务器上部分完成排序，并将结果合并到请求者服务器上。 这意味着对于分布式排序，要排序的数据量可以大于单个服务器上的内存量。
+更少的RAM使用，如果一个足够小 [LIMIT](../../../sql-reference/statements/select/limit.md) 除了指定 `ORDER BY`. 否则，所花费的内存量与用于排序的数据量成正比。 对于分布式查询处理，如果 [GROUP BY](/sql-reference/statements/select/group-by) 省略排序，在远程服务器上部分完成排序，并将结果合并到请求者服务器上。 这意味着对于分布式排序，要排序的数据量可以大于单个服务器上的内存量。
 
 如果没有足够的RAM，则可以在外部存储器中执行排序（在磁盘上创建临时文件）。 使用设置 `max_bytes_before_external_sort` 为此目的。 如果将其设置为0（默认值），则禁用外部排序。 如果启用，则当要排序的数据量达到指定的字节数时，将对收集的数据进行排序并转储到临时文件中。 读取所有数据后，将合并所有已排序的文件并输出结果。 文件被写入到 `/var/lib/clickhouse/tmp/` 目录中的配置（默认情况下，但你可以使用 `tmp_path` 参数来更改此设置）。
 
@@ -89,7 +89,7 @@ SELECT a, b, c FROM t ORDER BY a, b, c
 
 ## ORDER BY Expr WITH FILL Modifier {#orderby-with-fill}
 
-此修饰符可以与 [LIMIT ... WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties) 进行组合使用.
+此修饰符可以与 [LIMIT ... WITH TIES modifier](/sql-reference/statements/select/limit#limit--with-ties-modifier) 进行组合使用.
 
 可以在`ORDER BY expr`之后用可选的`FROM expr`，`TO expr`和`STEP expr`参数来设置`WITH FILL`修饰符。
 所有`expr`列的缺失值将被顺序填充，而其他列将被填充为默认值。

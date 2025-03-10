@@ -1,9 +1,9 @@
-#include <Processors/QueryPlan/ReadFromQueryCacheStep.h>
+#include <Processors/QueryPlan/ReadFromQueryResultCacheStep.h>
 
 namespace DB
 {
 
-ReadFromQueryCacheStep::ReadFromQueryCacheStep(Pipe pipe_)
+ReadFromQueryResultCacheStep::ReadFromQueryResultCacheStep(Pipe pipe_)
     : ReadFromPreparedSource(std::move(pipe_))
 {
 }

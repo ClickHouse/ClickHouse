@@ -263,8 +263,8 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
             logProcessorProfile(data.getContext(), io.pipeline.getProcessors());
 
             /// Finalize write in query cache to save scalar subquery result
-            if (data.getContext()->getCanUseQueryCache())
-                io.pipeline.finalizeWriteInQueryCache();
+            if (data.getContext()->getCanUseQueryResultCache())
+                io.pipeline.finalizeWriteInQueryResultCache();
         }
 
         block = materializeBlock(block);

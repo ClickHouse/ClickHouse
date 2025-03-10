@@ -1,7 +1,7 @@
-#include <Processors/QueryPlan/StreamInQueryCacheStep.h>
-#include <Processors/Transforms/StreamInQueryCacheTransform.h>
+#include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
+#include <Processors/Transforms/StreamInQueryResultCacheTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Interpreters/Cache/QueryCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 
 namespace DB
 {
@@ -21,20 +21,20 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-StreamInQueryCacheStep::StreamInQueryCacheStep(
+StreamInQueryResultCacheStep::StreamInQueryResultCacheStep(
     const Header & input_header_,
-    std::shared_ptr<QueryCacheWriter> query_cache_writer_)
+    std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer_)
     : ITransformingStep(input_header_, input_header_, getTraits())
-    , query_cache_writer(query_cache_writer_)
+    , query_result_cache_writer(query_result_cache_writer_)
 {
 }
 
-void StreamInQueryCacheStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void StreamInQueryResultCacheStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     pipeline.addSimpleTransform(
         [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
-            using ChunkType = QueryCacheWriter::ChunkType;
+            using ChunkType = QueryResultCacheWriter::ChunkType;
             using StreamType = QueryPipelineBuilder::StreamType;
 
             ChunkType chunk_type;
@@ -58,7 +58,7 @@ void StreamInQueryCacheStep::transformPipeline(QueryPipelineBuilder & pipeline, 
                 }
             }
 
-            return std::make_shared<StreamInQueryCacheTransform>(header, query_cache_writer, chunk_type);
+            return std::make_shared<StreamInQueryResultCacheTransform>(header, query_result_cache_writer, chunk_type);
         });
 }
 

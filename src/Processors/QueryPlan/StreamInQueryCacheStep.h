@@ -5,21 +5,21 @@
 namespace DB
 {
 
-class QueryCacheWriter;
+class QueryResultCacheWriter;
 
-class StreamInQueryCacheStep : public ITransformingStep
+class StreamInQueryResultCacheStep : public ITransformingStep
 {
 public:
-    StreamInQueryCacheStep(const Header & input_header_, std::shared_ptr<QueryCacheWriter> query_cache_writer);
+    StreamInQueryResultCacheStep(const Header & input_header_, std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
 
-    String getName() const override { return "StreamInQueryCache"; }
+    String getName() const override { return "StreamInQueryResultCache"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
 private:
     void updateOutputHeader() override { output_header = input_headers.front(); }
 
-    std::shared_ptr<QueryCacheWriter> query_cache_writer;
+    std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer;
 };
 
 }

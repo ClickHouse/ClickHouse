@@ -103,6 +103,6 @@ FROM dt
 -   [`date_time_input_format` 配置](../../operations/settings/settings.md#settings-date_time_input_format)
 -   [`date_time_output_format` 配置](../../operations/settings/settings.md#settings-date_time_output_format)
 -   [`timezone` 服务器配置参数](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
--   [用于处理日期和时间的算子](../../sql-reference/operators/index.md#operators-datetime)
+-   [用于处理日期和时间的算子](../../sql-reference/operators#operators-for-working-with-dates-and-times)
 -   [`Date` 数据类型](date.md)
 -   [`DateTime` 数据类型](datetime.md)

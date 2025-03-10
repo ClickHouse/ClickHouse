@@ -5,12 +5,12 @@
 namespace DB
 {
 
-class ReadFromQueryCacheStep : public ReadFromPreparedSource
+class ReadFromQueryResultCacheStep : public ReadFromPreparedSource
 {
 public:
-    explicit ReadFromQueryCacheStep(Pipe pipe_);
+    explicit ReadFromQueryResultCacheStep(Pipe pipe_);
 
-    String getName() const override { return "ReadFromQueryCacheStep"; }
+    String getName() const override { return "ReadFromQueryResultCacheStep"; }
 };
 
 }

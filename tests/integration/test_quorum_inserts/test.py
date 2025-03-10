@@ -379,11 +379,25 @@ def test_insert_quorum_with_keeper_loss_connection(started_cluster):
             )
         )
 
+        zk = cluster.get_kazoo_client("zoo1")
+
+        # Ensure that part had been committed
+        retries = 0
+        while True:
+            if zk.exists(
+                f"/clickhouse/tables/{table_name}/replicas/zero/parts/all_0_0_0"
+            ):
+                break
+            print("replica still did not create all_0_0_0")
+            time.sleep(1)
+            retries += 1
+            if retries == 120:
+                raise Exception("Can not wait for all_0_0_0 part")
+
         with PartitionManager() as pm:
             pm.drop_instance_zk_connections(zero)
 
             retries = 0
-            zk = cluster.get_kazoo_client("zoo1")
             while True:
                 if (
                     zk.exists(
