@@ -307,7 +307,7 @@ void KafkaConsumer::subscribe()
         {
             consumer->subscribe(topics);
         }
-        catch (cppkafka::HandleException & e)
+        catch (const cppkafka::HandleException & e)
         {
             LOG_ERROR(log, "Exception during subscribe: {}", e.what());
 
@@ -348,7 +348,7 @@ void KafkaConsumer::subscribe()
 void KafkaConsumer::cleanUnprocessed()
 {
     messages.clear();
-    current = messages.begin();
+    current = messages.end();
     offsets_stored = 0;
 }
 
