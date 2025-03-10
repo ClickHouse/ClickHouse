@@ -259,16 +259,18 @@ def main():
             url_compact = s3.upload_build_file_to_s3(binary_compact, s3_path_compact)
             print(f"::notice ::Binary static URL (compact): {url_compact}")
 
+    delta_kernel_log_file = "/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/build_docker/contrib/delta-kernel-rs-cmake/_delta_kernel_rs_target-prefix/src/_delta_kernel_rs_target-stamp/_delta_kernel_rs_target-build-err.log"
+    additional_files = [str(log_path)]
+    if Path(delta_kernel_log_file).exists():
+        additional_files.append(delta_kernel_log_file)
+
     JobReport(
         description=version.describe,
         test_results=[],
         status=build_status,
         start_time=stopwatch.start_time_str,
         duration=elapsed,
-        additional_files=[
-            str(log_path),
-            "/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/build_docker/contrib/delta-kernel-rs-cmake/_delta_kernel_rs_target-prefix/src/_delta_kernel_rs_target-stamp/_delta_kernel_rs_target-build-err.log"
-        ],
+        additional_files=additional_files,
         build_dir_for_upload=build_output_path,
         version=version.describe,
     ).dump()
