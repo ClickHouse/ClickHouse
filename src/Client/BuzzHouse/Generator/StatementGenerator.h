@@ -241,7 +241,7 @@ private:
     template <typename T>
     void setTableSystemStatement(RandomGenerator & rg, const std::function<bool(const T &)> & f, ExprSchemaTable * est)
     {
-        const T & t = rg.pickRandomlyFromVector(filterCollection<T>(f));
+        const T & t = rg.pickRandomly(filterCollection<T>(f));
 
         if (t.db)
         {
