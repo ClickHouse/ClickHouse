@@ -2,13 +2,20 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/SettingsEnums.h>
-#include <Databases/Iceberg/StorageCredentials.h>
-#include <Databases/Iceberg/DatabaseIcebergStorageType.h>
+#include <Databases/DataLake/StorageCredentials.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Databases/DataLake/DatabaseDataLakeStorageType.h>
 
-namespace Iceberg
+namespace DataLake
 {
-using StorageType = DB::DatabaseIcebergStorageType;
+
+using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
+
+struct DataLakeSpecificMetadata
+{
+    std::string iceberg_metadata_file_location;
+};
 
 /// A class representing table metadata,
 /// which was received from Catalog.
@@ -17,15 +24,24 @@ class TableMetadata
 public:
     TableMetadata() = default;
 
+    TableMetadata & withLightweight() { with_lightweight = true; return *this; }
     TableMetadata & withLocation() { with_location = true; return *this; }
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
+    TableMetadata & withDataLakeSpecificMetadata() { with_datalake_specific_metadata = true; return *this; }
+
+    bool isLightweight() const;
+    bool hasLocation() const;
+    bool hasSchema() const;
+    bool hasStorageCredentials() const;
+    bool hasDataLakeSpecificMetadata() const;
 
     void setLocation(const std::string & location_);
     std::string getLocation() const;
     std::string getLocationWithEndpoint(const std::string & endpoint_) const;
 
     void setEndpoint(const std::string & endpoint_);
+    std::string getEndpoint() const { return endpoint; }
 
     void setSchema(const DB::NamesAndTypesList & schema_);
     const DB::NamesAndTypesList & getSchema() const;
@@ -33,11 +49,19 @@ public:
     void setStorageCredentials(std::shared_ptr<IStorageCredentials> credentials_);
     std::shared_ptr<IStorageCredentials> getStorageCredentials() const;
 
+    void setDataLakeSpecificMetadata(std::optional<DataLakeSpecificMetadata> && metadata);
+    std::optional<DataLakeSpecificMetadata> getDataLakeSpecificMetadata() const;
+
+    bool requiresLightweight() const { return with_lightweight; }
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
     bool requiresCredentials() const { return with_storage_credentials; }
+    bool requiresDataLakeSpecificMetadata() const { return with_datalake_specific_metadata; }
 
     StorageType getStorageType() const;
+
+    void setDefaultReadableTable(bool value) { is_default_readable_table = value; }
+    bool isDefaultReadableTable() const { return is_default_readable_table; }
 
 private:
     /// Starts with s3://, file://, etc.
@@ -55,9 +79,16 @@ private:
     /// Storage credentials, which are called "vended credentials".
     std::shared_ptr<IStorageCredentials> storage_credentials;
 
+    /// Specific settings for iceberg and datalake
+    std::optional<DataLakeSpecificMetadata> data_lake_specific_metadata;
+
+    bool is_default_readable_table = true;
+
     bool with_location = false;
+    bool with_lightweight = false;
     bool with_schema = false;
     bool with_storage_credentials = false;
+    bool with_datalake_specific_metadata = false;
 
     std::string constructLocation(const std::string & endpoint_) const;
 };
@@ -72,6 +103,7 @@ public:
 
     explicit ICatalog(const std::string & warehouse_) : warehouse(warehouse_) {}
 
+    virtual DB::DatabaseDataLakeCatalogType getCatalogType() const = 0;
     virtual ~ICatalog() = default;
 
     /// Does catalog have any tables?
@@ -103,6 +135,8 @@ public:
     /// Get storage type, where Iceberg tables' data is stored.
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
+
+    virtual DB::StorageObjectStorageSettingsPtr createStorageSettingsFromMetadata(const TableMetadata & metadata) const;
 
 protected:
     /// Name of the warehouse,
