@@ -134,12 +134,12 @@ bool Database::authenticate(Connection& connection, const std::string& username,
 	if (username.empty()) throw Poco::InvalidArgumentException("empty username");
 	if (password.empty()) throw Poco::InvalidArgumentException("empty password");
 
-	if (method == AUTH_MONGODB_CR)
-		return authCR(connection, username, password);
-	else if (method == AUTH_SCRAM_SHA1)
-		return authSCRAM(connection, username, password);
-	else
-		throw Poco::InvalidArgumentException("authentication method", method);
+	// if (method == AUTH_MONGODB_CR)
+	// 	return authCR(connection, username, password);
+	// if (method == AUTH_SCRAM_SHA1)
+    return authSCRAM(connection, username, password);
+
+    // throw Poco::InvalidArgumentException("authentication method", method);
 }
 
 
