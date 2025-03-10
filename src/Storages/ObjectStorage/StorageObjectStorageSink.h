@@ -42,19 +42,16 @@ public:
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
 
     PartitionedStorageObjectStorageSink(
+        std::shared_ptr<PartitionStrategy> partition_strategy_,
         ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
         std::optional<FormatSettings> format_settings_,
         const Block & sample_block_,
-        ContextPtr context_,
-        const ASTPtr & partition_by);
+        ContextPtr context_);
 
     SinkPtr createSinkForPartition(const String & partition_id) override;
 
 private:
-    void validateKey(const String & str);
-    void validateNamespace(const String & str);
-
     ObjectStoragePtr object_storage;
     ConfigurationPtr configuration;
 

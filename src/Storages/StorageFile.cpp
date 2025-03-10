@@ -1902,7 +1902,7 @@ class PartitionedStorageFileSink : public PartitionedSink
 {
 public:
     PartitionedStorageFileSink(
-        const ASTPtr & partition_by,
+        std::shared_ptr<PartitionStrategy> partition_strategy_,
         const StorageMetadataPtr & metadata_snapshot_,
         const String & table_name_for_log_,
         std::unique_lock<std::shared_timed_mutex> && lock_,
@@ -1913,7 +1913,7 @@ public:
         const String format_name_,
         ContextPtr context_,
         int flags_)
-        : PartitionedSink(partition_by, context_, metadata_snapshot_->getSampleBlock())
+        : PartitionedSink(partition_strategy_, context_, metadata_snapshot_->getSampleBlock())
         , path(path_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -1929,19 +1929,19 @@ public:
 
     SinkPtr createSinkForPartition(const String & partition_id) override
     {
-        auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
+        std::string filepath = getPartitionStrategy()->getPath(path, partition_id);
 
-        fs::create_directories(fs::path(partition_path).parent_path());
+        fs::create_directories(fs::path(filepath).parent_path());
 
-        PartitionedSink::validatePartitionKey(partition_path, true);
-        checkCreationIsAllowed(context, context->getUserFilesPath(), partition_path, /*can_be_directory=*/ true);
+        PartitionedSink::validatePartitionKey(filepath, true);
+        checkCreationIsAllowed(context, context->getUserFilesPath(), filepath, /*can_be_directory=*/ true);
         return std::make_shared<StorageFileSink>(
             metadata_snapshot,
             table_name_for_log,
             -1,
             /* use_table_fd */false,
             base_path,
-            partition_path,
+            filepath,
             compression_method,
             format_settings,
             format_name,
@@ -1982,17 +1982,18 @@ SinkToStoragePtr StorageFile::write(
     if (context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
         flags |= O_TRUNC;
 
-    bool has_wildcards = path_for_partitioned_write.contains(PartitionedSink::PARTITION_ID_WILDCARD);
     const auto * insert_query = dynamic_cast<const ASTInsertQuery *>(query.get());
-    bool is_partitioned_implementation = insert_query && insert_query->partition_by && has_wildcards;
+    bool is_partitioned_implementation = insert_query && insert_query->partition_by;
 
     if (is_partitioned_implementation)
     {
         if (path_for_partitioned_write.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty path for partitioned write");
 
+        auto partition_strategy = PartitionStrategyProvider::get(insert_query->partition_by, metadata_snapshot->getSampleBlock(), context, format_name);
+
         return std::make_shared<PartitionedStorageFileSink>(
-            insert_query->partition_by,
+            partition_strategy,
             metadata_snapshot,
             getStorageID().getNameForLogs(),
             std::unique_lock{rwlock, getLockTimeout(context)},
