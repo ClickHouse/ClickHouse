@@ -152,6 +152,10 @@ Its size can be configured using the server-level setting [`uncompressed_cache_s
 Clears the compiled expression cache.
 The compiled expression cache is enabled/disabled with the query/user/profile-level setting [`compile_expressions`](../../operations/settings/settings.md#compile_expressions).
 
+## DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
+
+Clears the query condition cache.
+
 ## DROP QUERY CACHE {#drop-query-cache}
 
 ```sql
