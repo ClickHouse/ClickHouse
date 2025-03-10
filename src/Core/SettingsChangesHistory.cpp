@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
+            {"use_query_condition_cache", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
@@ -86,7 +87,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
             {"output_format_pretty_max_rows", 10000, 1000, "It is better for usability - less amount to scroll."},
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
-            {"use_query_condition_cache", false, false, "New setting."},
             {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
             /// Release closed. Please use 25.3
@@ -101,7 +101,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"query_plan_use_new_logical_join_step", false, false, "New join step, internal change"},
-            {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
+            {"distributed_cache_min_bytes_for_seek", 0, 0, "New private setting."},
             {"use_iceberg_partition_pruning", false, false, "New setting"},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
