@@ -49,6 +49,7 @@
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -59,6 +60,8 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <IO/Ask.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
@@ -81,10 +84,7 @@
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
-#include <base/ask.h>
 #include "config.h"
-#include <IO/ReadHelpers.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 #if USE_GWP_ASAN
 #    include <Common/GWPAsan.h>
@@ -228,6 +228,8 @@ void performAtomicRename(const DB::ASTPtr & parsed_query)
 
 namespace DB
 {
+
+class ClientEmbedded;
 
 ProgressOption toProgressOption(std::string progress)
 {
@@ -638,7 +640,6 @@ try
 {
     if (!output_format)
     {
-        auto is_embedded = global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT;
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -647,7 +648,7 @@ try
         }
 
         WriteBuffer * out_buf = nullptr;
-        if (!pager.empty() && !is_embedded)
+        if (!pager.empty() && !isEmbeeddedClient())
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
@@ -677,7 +678,7 @@ try
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
-            if (query_with_output->out_file && is_embedded)
+            if (query_with_output->out_file && isEmbeeddedClient())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Out files are disabled when you are running client embedded into server.");
 
             String out_file;
@@ -779,12 +780,13 @@ try
             stopKeystrokeInterceptorIfExists();
             SCOPE_EXIT({ startKeystrokeInterceptorIfExists(); });
 
-            if (!ask(fmt::format(R"(The requested output format `{}` is binary and could produce side-effects when output directly into the terminal.
+            const auto question = fmt::format(R"(The requested output format `{}` is binary and could produce side-effects when output directly into the terminal.
 If you want to output it into a file, use the "INTO OUTFILE" modifier in the query or redirect the output of the shell command.
-Do you want to output it anyway? [y/N] )", current_format)))
-            {
+Do you want to output it anyway? [y/N] )", current_format);
+
+            if (!ask(question, *std_in, *std_out))
                 output_format = std::make_shared<NullOutputFormat>(block);
-            }
+
             *std_out << '\n';
         }
     }
@@ -974,7 +976,7 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     // Actually we need to pass tty's name, if we don't want this condition statement,
     // because /dev/tty stands for controlling terminal of the process, thus a client will not see progress line.
     // So it's easier to just pass a descriptor, without the terminal name.
-    if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+    if (isEmbeeddedClient())
     {
          tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stdout_fd, buf_size);
          return;
@@ -1186,7 +1188,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
         if (query_with_output->out_file)
         {
-            if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+            if (isEmbeeddedClient())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Out files are disabled when you are running client embedded into server.");
 
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
@@ -1773,7 +1775,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         return;
     }
 
-    if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT && parsed_insert_query.infile)
+    if (isEmbeeddedClient())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading from INFILE is disabled when you are running client embedded into server.");
 
     query_interrupt_handler.start();
@@ -3031,7 +3033,11 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.count("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
     if (options.count("queries-file"))
+    {
+        if (isEmbeeddedClient())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading queries from file is not allowed, because the client runs in an embedded mode");
         queries_files = options["queries-file"].as<std::vector<std::string>>();
+    }
     if (options.count("multiline"))
         getClientConfiguration().setBool("multiline", true);
     if (options.count("ignore-error"))
@@ -3100,20 +3106,33 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.count("highlight"))
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
+    {
+        if (isEmbeeddedClient())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom history file is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
+    }
     if (options.count("history_max_entries"))
         getClientConfiguration().setUInt("history_max_entries", options["history_max_entries"].as<UInt32>());
     if (options.count("interactive"))
         getClientConfiguration().setBool("interactive", true);
     if (options.count("pager"))
+    {
+        if (isEmbeeddedClient())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom pager is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("pager", options["pager"].as<std::string>());
+    }
+
     if (options.count("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
+    {
+        if (isEmbeeddedClient())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing server logs to a file is disabled, because the client runs in an embedded mode");
         server_logs_file = options["server_logs_file"].as<std::string>();
+    }
 
     if (options.count("proto_caps"))
     {
@@ -3226,25 +3245,29 @@ void ClientBase::runInteractive()
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.
     String actual_history_file_path;
-    if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
+    if (!isEmbeeddedClient())
         actual_history_file_path = history_file;
 
-    lr = std::make_unique<ReplxxLineReader>(
-        *suggest,
-        actual_history_file_path,
-        history_max_entries,
-        getClientConfiguration().has("multiline"),
-        getClientConfiguration().getBool("ignore_shell_suspend", true),
-        query_extenders,
-        query_delimiters,
-        word_break_characters,
-        highlight_callback,
-        input_stream,
-        output_stream,
-        stdin_fd,
-        stdout_fd,
-        stderr_fd
-    );
+    auto options = ReplxxLineReader::Options
+    {
+        .suggest = *suggest,
+        .history_file_path = actual_history_file_path,
+        .history_max_entries = history_max_entries,
+        .multiline = getClientConfiguration().has("multiline"),
+        .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
+        .embedded_mode = isEmbeeddedClient(),
+        .extenders = query_extenders,
+        .delimiters = query_delimiters,
+        .word_break_characters = word_break_characters,
+        .highlighter = highlight_callback,
+        .input_stream = input_stream,
+        .output_stream = output_stream,
+        .in_fd = stdin_fd,
+        .out_fd = stdout_fd,
+        .err_fd = stderr_fd,
+    };
+
+    lr = std::make_unique<ReplxxLineReader>(std::move(options));
 #else
     lr = LineReader(
         history_file,
@@ -3377,6 +3400,9 @@ void ClientBase::runInteractive()
 
 bool ClientBase::processMultiQueryFromFile(const String & file_name)
 {
+    if (isEmbeeddedClient())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading queries from file is not supported for an embedded client");
+
     String queries_from_file;
 
     ReadBufferFromFile in(file_name);
