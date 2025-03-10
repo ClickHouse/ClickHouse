@@ -32,7 +32,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <base/types.h>
 
 
