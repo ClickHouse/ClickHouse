@@ -2550,7 +2550,7 @@ finalizeAggregation(state)
 
 **Arguments**
 
-- `state` — State of aggregation. [AggregateFunction](/sql-reference/data-types/aggregatefunctione).
+- `state` — State of aggregation. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
 
 **Returned value(s)**
 

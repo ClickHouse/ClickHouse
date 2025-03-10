@@ -103,6 +103,9 @@ static constexpr auto DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES = 10'000'000;
 static constexpr auto DEFAULT_MMAP_CACHE_MAX_SIZE = 1_KiB; /// chosen by rolling dice
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE = 128_MiB;
 static constexpr auto DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES = 10'000;
+static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_POLICY = "SLRU";
+static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE = 100_MiB;
+static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE = 1_GiB;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES = 1024uz;
 static constexpr auto DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES = 1_MiB;
@@ -112,9 +115,6 @@ static constexpr auto DEFAULT_PAGE_CACHE_SIZE_RATIO = 0.5l;
 static constexpr auto DEFAULT_PAGE_CACHE_MIN_SIZE = 100_MiB;
 /// It's ok that max < min. Max takes precedence, i.e. max = 0 disables the cache even if min > 0.
 static constexpr auto DEFAULT_PAGE_CACHE_MAX_SIZE = 0_MiB;
-static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_POLICY = "SLRU";
-static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE = 100_MiB;
-static constexpr auto DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO = 0.5l;
 
 /// Query profiler cannot work with sanitizers.
 /// Sanitizers are using quick "frame walking" stack unwinding (this implies -fno-omit-frame-pointer)
