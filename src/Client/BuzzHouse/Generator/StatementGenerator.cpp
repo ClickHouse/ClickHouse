@@ -90,9 +90,8 @@ void StatementGenerator::generateNextCreateDatabase(RandomGenerator & rg, Create
     }
     else if (next.isBackupDatabase())
     {
-        next.backed_db
-            = "d" + ((databases.empty() || rg.nextSmallNumber() < 3) ? "efault" : std::to_string(rg.pickKeyRandomlyFromMap(databases)));
-        next.backed_disk = rg.pickRandomlyFromVector(fc.disks);
+        next.backed_db = "d" + ((databases.empty() || rg.nextSmallNumber() < 3) ? "efault" : std::to_string(rg.pickRandomly(databases)));
+        next.backed_disk = rg.pickRandomly(fc.disks);
     }
     if (!fc.clusters.empty() && rg.nextSmallNumber() < (next.isReplicatedOrSharedDatabase() ? 9 : 4))
     {
@@ -593,7 +592,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
         ExprSchemaTable * est = dt->mutable_est();
 
         est->mutable_database()->set_database("system");
-        est->mutable_table()->set_table(rg.pickKeyRandomlyFromMap(systemTables));
+        est->mutable_table()->set_table(rg.pickRandomly(systemTables));
     }
     else
     {
@@ -2791,7 +2790,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     if (backup_table && nopt < (backup_table + 1))
     {
         BackupRestoreObject * bro = bre->mutable_bobject();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
         const String dname = t.db ? ("d" + std::to_string(t.db->dname)) : "";
         const String tname = "t" + std::to_string(t.tname);
         const bool table_has_partitions = t.isMergeTreeFamily() && fc.tableHasPartitions(false, dname, tname);
@@ -2804,17 +2803,16 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     }
     else if (backup_system_table && nopt < (backup_table + backup_system_table + 1))
     {
-        backupOrRestoreSystemTable(bre->mutable_bobject(), rg.pickKeyRandomlyFromMap(systemTables));
+        backupOrRestoreSystemTable(bre->mutable_bobject(), rg.pickRandomly(systemTables));
     }
     else if (backup_view && nopt < (backup_table + backup_system_table + backup_view + 1))
     {
-        cluster = backupOrRestoreTable(
-            bre->mutable_bobject(), SQLObject::VIEW, rg.pickRandomlyFromVector(filterCollection<SQLView>(attached_views)));
+        cluster = backupOrRestoreTable(bre->mutable_bobject(), SQLObject::VIEW, rg.pickRandomly(filterCollection<SQLView>(attached_views)));
     }
     else if (backup_database && nopt < (backup_table + backup_system_table + backup_view + backup_database + 1))
     {
         cluster = backupOrRestoreDatabase(
-            bre->mutable_bobject(), rg.pickRandomlyFromVector(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
+            bre->mutable_bobject(), rg.pickRandomly(filterCollection<std::shared_ptr<SQLDatabase>>(attached_databases)));
     }
     else if (all_temporary && nopt < (backup_table + backup_system_table + backup_view + backup_database + all_temporary + 1))
     {
@@ -2853,7 +2851,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + 1) && rg.nextBool())
     {
         static const DB::Strings & backup_formats = {"tar", "zip", "tzst", "tgz"};
-        const String & nsuffix = rg.pickRandomlyFromVector(backup_formats);
+        const String & nsuffix = rg.pickRandomly(backup_formats);
 
         backup_file += ".";
         backup_file += nsuffix;
@@ -2862,13 +2860,13 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
             static const DB::Strings & tar_suffixes = {"gz", "bz2", "lzma", "zst", "xz"};
 
             backup_file += ".";
-            backup_file += rg.pickRandomlyFromVector(tar_suffixes);
+            backup_file += rg.pickRandomly(tar_suffixes);
         }
     }
     if (out_to_disk && (nopt2 < out_to_disk + 1))
     {
         outf = BackupRestore_BackupOutput_Disk;
-        br->add_out_params(rg.pickRandomlyFromVector(fc.disks));
+        br->add_out_params(rg.pickRandomly(fc.disks));
         br->add_out_params(std::move(backup_file));
     }
     else if (out_to_file && (nopt2 < out_to_disk + out_to_file + 1))

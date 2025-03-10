@@ -282,7 +282,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg)
          {
              const DB::Strings & choices = {"'deny'", "'local'", "'global'", "'allow'"};
-             return rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomly(choices);
          },
          {},
          false)},
