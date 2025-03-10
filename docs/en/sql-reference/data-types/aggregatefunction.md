@@ -15,13 +15,13 @@ an implementation-specific intermediate state that can be serialized to an
 means of a [materialized view](../../sql-reference/statements/create/view.md).
 
 There are two aggregate function [combinators](/sql-reference/aggregate-functions/combinators)
-commonly used with the `AggregateFunction` type.
+commonly used with the `AggregateFunction` type:
 
-- The [`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate function combinator, when appended to an aggregate
+- The [`-State`](/sql-reference/aggregate-functions/combinators#-state) aggregate function combinator, which when appended to an aggregate
   function name, produces `AggregateFunction` intermediate states.
 - The [`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) aggregate
-  function combinator is used to get the final result of an aggregation from the
-  intermediate states.
+  function combinator, which is used to get the final result of an aggregation 
+  from the intermediate states.
 
 ## Syntax
 
@@ -35,7 +35,7 @@ AggregateFunction(aggregate_function_name, types_of_arguments...)
    is parametric, then its parameters should be specified too.
 - `types_of_arguments` - The types of the aggregate function arguments.
 
-## Example {#example}
+for example:
 
 ```sql
 CREATE TABLE t
@@ -45,9 +45,6 @@ CREATE TABLE t
     column3 AggregateFunction(quantiles(0.5, 0.9), UInt64)
 ) ENGINE = ...
 ```
-
-[uniq](/sql-reference/aggregate-functions/reference/uniq), anyIf ([any](/sql-reference/aggregate-functions/reference/any)+[If](/sql-reference/aggregate-functions/combinators#-if)) and [quantiles](../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) are the aggregate
-functions supported in ClickHouse.
 
 ## Usage {#usage}
 
@@ -81,11 +78,11 @@ query, then this dump can be loaded back using the `INSERT` query.
 ### Data Selection {#data-selection}
 
 When selecting data from `AggregatingMergeTree` table, use the `GROUP BY` clause
-and the same aggregate functions as when inserting data, but using the 
+and the same aggregate functions as for when you inserted the data, but use the 
 [`-Merge`](/sql-reference/aggregate-functions/combinators#-merge) combinator.
 
-An aggregate function combined with the `-Merge` combinator takes a set of states,
-combines them, and returns the result of the complete data aggregation.
+An aggregate function with the `-Merge` combinator appended to it takes a set of 
+states, combines them, and returns the result of the complete data aggregation.
 
 For example, the following two queries return the same result:
 
@@ -104,4 +101,4 @@ See [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregat
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 - [MergeState](/sql-reference/aggregate-functions/combinators#-mergestate)
   combinator.
-- [State](/sql-reference/aggregate-functions/combinators#-state)
+- [State](/sql-reference/aggregate-functions/combinators#-state) combinator.
