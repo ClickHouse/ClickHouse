@@ -3386,8 +3386,8 @@ arrayLevenshtein(lhs, rhs)
 
 **Arguments**
 
-- `lhs`: left-hand side array
-- `rhs`: right-hand side array
+- `lhs` — left-hand side array
+- `rhs` — right-hand side array
 
 **Returned Value**
 
@@ -3423,10 +3423,10 @@ arrayLevenshteinWeighted(lhs, rhs, lhs_weights, rhs_weights)
 
 **Arguments**
 
-- `lhs`: left-hand side array
-- `rhs`: right-hand side array
-- `lhs_weights`: right-hand side weights
-- `rhs_weights`: right-hand side weights
+- `lhs` — left-hand side array
+- `rhs` — right-hand side array
+- `lhs_weights` — right-hand side weights
+- `rhs_weights` — right-hand side weights
 
 **Returned Value**
 
@@ -3462,10 +3462,10 @@ arraySimilarity(lhs, rhs, lhs_weights, rhs_weights)
 
 **Arguments**
 
-- `lhs`: left-hand side array
-- `rhs`: right-hand side array
-- `lhs_weights`: right-hand side weights
-- `rhs_weights`: right-hand side weights
+- `lhs` — left-hand side array
+- `rhs` — right-hand side array
+- `lhs_weights` — right-hand side weights
+- `rhs_weights` — right-hand side weights
 
 **Returned Value**
 

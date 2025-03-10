@@ -7,7 +7,7 @@ std::string FunctionDocumentation::argumentsAsString() const
 {
     std::string res;
     for (const auto & [name, desc] : arguments)
-        res += "- `" + name + "`: " + desc + "\n";
+        res += "- `" + name + "` — " + desc + "\n";
     return res;
 }
 
