@@ -1,4 +1,4 @@
--- Tags: shard
+-- Tags: shard, no-fasttest
 
 DROP TABLE IF EXISTS mem1;
 DROP TABLE IF EXISTS dist_1;
