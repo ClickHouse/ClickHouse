@@ -654,6 +654,7 @@ std::pair<Coordination::OpNum, Coordination::XID> KeeperTCPHandler::receiveReque
     Coordination::OpNum opnum;
     Coordination::read(opnum, read_buffer);
 
+    std::cerr << "TCP op num " << static_cast<Int32>(opnum) << '\n';
     Coordination::ZooKeeperRequestPtr request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request->xid = xid;
 

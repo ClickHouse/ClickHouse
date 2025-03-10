@@ -11,6 +11,7 @@
 #include <fmt/format.h>
 #include <Common/logger_useful.h>
 
+#include <iostream>
 
 namespace Coordination
 {
@@ -234,6 +235,7 @@ size_t ZooKeeperCreateRequest::sizeImpl() const
 
 void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
 {
+    std::cerr << "create request bp1 " << include_data << '\n';
     Coordination::read(path, in);
     Coordination::read(data, in);
     Coordination::read(acls, in);
@@ -245,6 +247,8 @@ void ZooKeeperCreateRequest::readImpl(ReadBuffer & in)
         is_ephemeral = true;
     if (flags & 2)
         is_sequential = true;
+
+    std::cerr << "create request bp2 " << path << ' ' << data.data() << ' ' << acls.data() << ' ' << flags << '\n';
 }
 
 std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
@@ -256,6 +260,12 @@ std::string ZooKeeperCreateRequest::toStringImpl(bool /*short_format*/) const
         path,
         is_ephemeral,
         is_sequential);
+}
+
+void ZooKeeperCreateRequest::setStats(Stat stats) const
+{
+    std::cerr << "set stats check " << include_data << '\n';
+    zstat = stats;
 }
 
 void ZooKeeperCreateResponse::readImpl(ReadBuffer & in)
@@ -271,6 +281,18 @@ void ZooKeeperCreateResponse::writeImpl(WriteBuffer & out) const
 size_t ZooKeeperCreateResponse::sizeImpl() const
 {
     return Coordination::size(path_created);
+}
+
+void ZooKeeperCreate2Response::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(path_created, out);
+    zstat.writeImpl(out);
+    std::cerr << "serialized ZooKeeperCreate2Response\n";
+}
+
+size_t ZooKeeperCreate2Response::sizeImpl() const
+{
+    return Coordination::size(path_created) + zstat.size();
 }
 
 void ZooKeeperRemoveRequest::writeImpl(WriteBuffer & out) const
@@ -774,6 +796,7 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in)
 
 void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_validator)
 {
+    std::cerr << "read multi request\n";
     while (true)
     {
         OpNum op_num;
@@ -955,6 +978,9 @@ ZooKeeperResponsePtr ZooKeeperSimpleListRequest::makeResponse() const { return s
 
 ZooKeeperResponsePtr ZooKeeperCreateRequest::makeResponse() const
 {
+    std::cerr << "make create Response " << include_data << '\n';
+    if (include_data)
+        return std::make_shared<ZooKeeperCreate2Response>();
     if (not_exists)
         return std::make_shared<ZooKeeperCreateIfNotExistsResponse>();
     return std::make_shared<ZooKeeperCreateResponse>();
@@ -1000,6 +1026,7 @@ void ZooKeeperSessionIDRequest::readImpl(ReadBuffer & in)
     Coordination::read(internal_id, in);
     Coordination::read(session_timeout_ms, in);
     Coordination::read(server_id, in);
+    std::cerr << "session info " << internal_id << ' ' << session_timeout_ms << ' ' << server_id << '\n';
 }
 
 Coordination::ZooKeeperResponsePtr ZooKeeperSessionIDRequest::makeResponse() const
@@ -1115,6 +1142,13 @@ void ZooKeeperCreateResponse::fillLogElements(LogElements & elems, size_t idx) c
     elem.path_created = path_created;
 }
 
+void ZooKeeperCreate2Response::fillLogElements(LogElements & elems, size_t idx) const
+{
+    ZooKeeperResponse::fillLogElements(elems, idx);
+    auto & elem =  elems[idx];
+    elem.path_created = path_created;
+}
+
 void ZooKeeperExistsResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     ZooKeeperResponse::fillLogElements(elems, idx);
@@ -1211,6 +1245,8 @@ void registerZooKeeperRequest(ZooKeeperRequestFactory & factory)
             res->operation_type = ZooKeeperMultiRequest::OperationType::Write;
         else if constexpr (num == OpNum::CheckNotExists || num == OpNum::CreateIfNotExists)
             res->not_exists = true;
+        else if constexpr (num == OpNum::Create2)
+            res->include_data = true;
 
         return res;
     });
@@ -1223,6 +1259,7 @@ ZooKeeperRequestFactory::ZooKeeperRequestFactory()
     registerZooKeeperRequest<OpNum::Auth, ZooKeeperAuthRequest>(*this);
     registerZooKeeperRequest<OpNum::Close, ZooKeeperCloseRequest>(*this);
     registerZooKeeperRequest<OpNum::Create, ZooKeeperCreateRequest>(*this);
+    registerZooKeeperRequest<OpNum::Create2, ZooKeeperCreateRequest>(*this);
     registerZooKeeperRequest<OpNum::Remove, ZooKeeperRemoveRequest>(*this);
     registerZooKeeperRequest<OpNum::Exists, ZooKeeperExistsRequest>(*this);
     registerZooKeeperRequest<OpNum::Get, ZooKeeperGetRequest>(*this);

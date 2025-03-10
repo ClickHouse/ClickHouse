@@ -109,6 +109,10 @@
         "name": "clickhouse/postgresql-java-client",
         "dependent": []
     },
+    "docker/test/integration/keeper_persistent_watcher": {
+        "name": "clickhouse/keeper-persistent-watcher",
+        "dependent": []
+    },
     "docker/test/integration/kerberos_kdc": {
         "name": "clickhouse/kerberos-kdc",
         "dependent": []

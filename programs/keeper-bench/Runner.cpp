@@ -927,6 +927,7 @@ struct SetupNodeCollector
 
         auto multi_create_request = std::make_shared<Coordination::ZooKeeperMultiRequest>(create_ops, default_acls);
         initial_storage->preprocessRequest(multi_create_request, 1, 0, next_zxid, /* check_acl = */ false);
+        std::cerr << "runner\n";
         auto responses = initial_storage->processRequest(multi_create_request, 1, next_zxid, /* check_acl = */ false);
         if (responses.size() > 1 || responses[0].response->error != Coordination::Error::ZOK)
             throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Invalid response after trying to create a node {}", responses[0].response->error);

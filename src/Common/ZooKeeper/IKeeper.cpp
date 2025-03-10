@@ -1,3 +1,4 @@
+#include "Common/ZooKeeper/ZooKeeperIO.h"
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/thread_local_rng.h>
@@ -36,6 +37,20 @@ SimpleFaultInjection::~SimpleFaultInjection() noexcept(false)
 
 using namespace DB;
 
+void Stat::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(czxid, out);
+    Coordination::write(mzxid, out);
+    Coordination::write(ctime, out);
+    Coordination::write(mtime, out);
+    Coordination::write(version, out);
+    Coordination::write(cversion, out);
+    Coordination::write(aversion, out);
+    Coordination::write(ephemeralOwner, out);
+    Coordination::write(dataLength, out);
+    Coordination::write(numChildren, out);
+    Coordination::write(pzxid, out);
+}
 
 static void addRootPath(String & path, const String & root_path)
 {

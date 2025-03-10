@@ -9,6 +9,7 @@ RUN sed -i "s|http://archive.ubuntu.com|$apt_archive|g" /etc/apt/sources.list
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get install --yes \
     adduser \
+    apt-transport-https \
     ca-certificates \
     bash \
     btrfs-progs \

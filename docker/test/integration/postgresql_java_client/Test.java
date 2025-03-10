@@ -1,9 +1,10 @@
-import java.sql.Connection;
+/*import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
+
 
 class JavaConnectorTest {
     private static final String CREATE_TABLE_SQL = "CREATE TABLE IF NOT EXISTS default.test1 (`age` Int32, `name` String, `int_nullable` Nullable(Int32)) Engine = Memory";
@@ -79,5 +80,11 @@ class JavaConnectorTest {
             e.printStackTrace();
             System.exit(1);
         }
+    }
+}*/
+
+class TestPersistentWatches {
+    public static void main(String[] args) {
+        System.out.print("fooo");
     }
 }

@@ -406,6 +406,7 @@ Coordination::ZooKeeperRequestPtr deserializeMultiTxn(ReadBuffer & in);
 
 Coordination::ZooKeeperRequestPtr deserializeTxnImpl(ReadBuffer & in, bool subtxn, int64_t txn_length = 0)
 {
+    std::cerr << "deserializeTxnImpl\n";
     int32_t type;
     Coordination::read(type, in);
     Coordination::ZooKeeperRequestPtr result = nullptr;
@@ -545,6 +546,7 @@ bool deserializeTxn(Storage & storage, ReadBuffer & in, LoggerPtr /*log*/) TSA_N
                 return true;
 
             storage.preprocessRequest(request, session_id, time, zxid, /* check_acl = */ false);
+            std::cerr << "ZKDR\n";
             storage.processRequest(request, session_id, zxid, /* check_acl = */ false);
         }
     }

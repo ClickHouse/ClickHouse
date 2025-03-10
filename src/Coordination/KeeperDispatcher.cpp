@@ -70,6 +70,7 @@ namespace
 bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
 {
     if (request->getOpNum() == Coordination::OpNum::Create
+        || request->getOpNum() == Coordination::OpNum::Create2
         || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
         || request->getOpNum() == Coordination::OpNum::Set)
     {
@@ -85,7 +86,9 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
             switch (sub_zk_request->getOpNum())
             {
                 case Coordination::OpNum::Create:
+                case Coordination::OpNum::Create2:
                 case Coordination::OpNum::CreateIfNotExists: {
+                    std::cerr << "checkIfRequestIncreaseMem bp1\n";
                     Coordination::ZooKeeperCreateRequest & create_req
                         = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
                     memory_delta += create_req.bytesSize();

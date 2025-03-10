@@ -18,6 +18,11 @@
   * - ZooKeeper emulation layer on top of Etcd, FoundationDB, whatever.
   */
 
+namespace DB
+{
+class WriteBuffer;
+}
+
 namespace Coordination
 {
 
@@ -61,6 +66,13 @@ struct Stat
     int64_t pzxid{0};
 
     bool operator==(const Stat &) const = default;
+
+    void writeImpl(WriteBuffer & out) const;
+
+    size_t size() const
+    {
+        return 68;
+    }
 };
 
 enum class Error : int32_t
@@ -208,6 +220,8 @@ struct CreateRequest : virtual Request
 
     /// should it succeed if node already exists
     bool not_exists = false;
+
+    bool include_data = false;
 
     void addRootPath(const String & root_path) override;
     String getPath() const override { return path; }

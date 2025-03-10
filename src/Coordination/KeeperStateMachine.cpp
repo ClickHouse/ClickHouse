@@ -215,6 +215,7 @@ struct LockGuardWithStats final
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::pre_commit(uint64_t log_idx, nuraft::buffer & data)
 {
+    std::cerr << "PRE COMMIT!\n";
     double sleep_probability = keeper_context->getPrecommitSleepProbabilityForTesting();
     int64_t sleep_ms = keeper_context->getPrecommitSleepMillisecondsForTesting();
     if (sleep_ms != 0 && sleep_probability != 0)
@@ -294,13 +295,40 @@ nuraft::ptr<nuraft::buffer> IKeeperStateMachine::getZooKeeperLogEntry(const Keep
 std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
 {
+    static int num_calls = 0;
+    num_calls++;
+    std::cerr << "num_cells " << num_calls << '\n';
+    
+    /*if (num_calls == 48) {
+        ReadBufferFromNuraftBuffer buffer(data);
+        for (int i = 0; i < 28; ++i) 
+        {
+            unsigned char cur_value;
+            Coordination::read(cur_value, buffer);
+            std::cerr << static_cast<int>(cur_value) << ' ';
+        }
+        std::cerr << '\n';
+    }*/
     ReadBufferFromNuraftBuffer buffer(data);
     auto request_for_session = std::make_shared<KeeperRequestForSession>();
     readIntBinary(request_for_session->session_id, buffer);
 
+    std::cerr << "session id " << request_for_session->session_id << '\n';
     int32_t length;
     Coordination::read(length, buffer);
 
+    std::cerr << "length message " << length << '\n';
+    if (request_for_session->session_id == -1)
+    {
+        std::cerr << "skiiiip\n";
+        /*buffer.seek(length - sizeof(uint32_t), SEEK_CUR);
+        readIntBinary(request_for_session->session_id, buffer);
+
+        std::cerr << "new session id " << request_for_session->session_id << '\n';
+        Coordination::read(length, buffer);
+        std::cerr << "new length " << length << '\n';
+        */
+    }
     /// because of backwards compatibility, only 32bit xid could be written
     /// for that reason we serialize XID in 2 parts:
     /// - lower: 32 least significant bits of 64bit XID OR 32bit XID
@@ -394,6 +422,7 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
     Coordination::OpNum opnum;
     Coordination::read(opnum, buffer);
 
+    std::cerr << "opnum " << static_cast<Int32>(opnum) << '\n';
     request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
     request_for_session->request->xid = xid;
     request_for_session->request->readImpl(buffer);
@@ -404,6 +433,7 @@ std::shared_ptr<KeeperRequestForSession> IKeeperStateMachine::parseRequest(
         parsed_request_cache[request_for_session->session_id].emplace(xid, request_for_session);
     }
 
+    std::cerr << "EOF buffer " << buffer.available() << '\n';
     return request_for_session;
 }
 
@@ -464,6 +494,53 @@ void KeeperStateMachine<Storage>::reconfigure(const KeeperRequestForSession& req
             response.session_id);
     }
 }
+
+/*
+class Create2(namedtuple("Create2", "path data acl flags")):
+    type = 15
+
+    def serialize(self):
+        b = bytearray()
+        b.extend(write_string(self.path))
+        b.extend(write_buffer(self.data))
+        b.extend(int_struct.pack(len(self.acl)))
+        for acl in self.acl:
+            b.extend(
+                int_struct.pack(acl.perms)
+                + write_string(acl.id.scheme)
+                + write_string(acl.id.id)
+            )
+        b.extend(int_struct.pack(self.flags))
+        return b
+
+    @classmethod
+    def deserialize(cls, bytes, offset):
+        path, offset = read_string(bytes, offset)
+        stat = ZnodeStat._make(stat_struct.unpack_from(bytes, offset))
+        return path, stat
+
+class Create(namedtuple("Create", "path data acl flags")):
+    type = 1
+
+    def serialize(self):
+        b = bytearray()
+        b.extend(write_string(self.path))
+        b.extend(write_buffer(self.data))
+        b.extend(int_struct.pack(len(self.acl)))
+        for acl in self.acl:
+            b.extend(
+                int_struct.pack(acl.perms)
+                + write_string(acl.id.scheme)
+                + write_string(acl.id.id)
+            )
+        b.extend(int_struct.pack(self.flags))
+        return b
+
+    @classmethod
+    def deserialize(cls, bytes, offset):
+        return read_string(bytes, offset)[0]
+
+*/
 
 template<typename Storage>
 KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
@@ -536,7 +613,9 @@ KeeperResponseForSession KeeperStateMachine<Storage>::processReconfiguration(
 template<typename Storage>
 nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
+    std::cerr << "COMMIT!\n";
     auto request_for_session = parseRequest(data, true);
+    std::cerr << "request parsed\n";
     if (!request_for_session->zxid)
         request_for_session->zxid = log_idx;
 
@@ -577,6 +656,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
             response->session_id = session_id;
             try_push(response_for_session);
+            std::cerr << "end of request session\n";
         }
         else
         {
@@ -590,6 +670,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
             {
                 LockGuardWithStats<true> lock(storage_mutex);
                 std::lock_guard response_lock(process_and_responses_lock);
+                std::cerr << "KSM\n";
                 KeeperResponsesForSessions responses_for_sessions
                     = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
                 for (auto & response_for_session : responses_for_sessions)
@@ -622,7 +703,7 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine<Storage>::commit(const uint64_t l
         tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
         throw;
     }
-
+    std::cerr << "commited!\n";
     return nullptr;
 }
 
@@ -937,6 +1018,7 @@ int IKeeperStateMachine::read_logical_snp_obj(
 template<typename Storage>
 void KeeperStateMachine<Storage>::processReadRequest(const KeeperRequestForSession & request_for_session)
 {
+    std::cerr << "processReadRequest\n";
     /// Pure local request, just process it with storage
     LockGuardWithStats<true> storage_lock(storage_mutex);
     std::lock_guard response_lock(process_and_responses_lock);

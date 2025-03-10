@@ -1367,6 +1367,7 @@ bool KeeperStorage<Container>::removeNode(const std::string & path, int32_t vers
 template <typename F>
 auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request, F function)
 {
+    std::cerr << "callOnConcreteRequestType bp1 " << static_cast<int>(zk_request.getOpNum()) << '\n';
     switch (zk_request.getOpNum())
     {
         case Coordination::OpNum::Heartbeat:
@@ -1376,6 +1377,7 @@ auto callOnConcreteRequestType(const Coordination::ZooKeeperRequest & zk_request
         case Coordination::OpNum::Get:
             return function(dynamic_cast<const Coordination::ZooKeeperGetRequest &>(zk_request));
         case Coordination::OpNum::Create:
+        case Coordination::OpNum::Create2:
         case Coordination::OpNum::CreateIfNotExists:
             return function(dynamic_cast<const Coordination::ZooKeeperCreateRequest &>(zk_request));
         case Coordination::OpNum::Remove:
@@ -1561,6 +1563,8 @@ std::list<KeeperStorageBase::Delta> preprocess(
     uint64_t * /*digest*/,
     const KeeperContext & keeper_context)
 {
+    std::cerr << "preprocess ZooKeeperCreateRequest " << zk_request.include_data << '\n';
+
     ProfileEvents::increment(ProfileEvents::KeeperCreateRequest);
 
     std::list<KeeperStorageBase::Delta> new_deltas;
@@ -1643,6 +1647,7 @@ std::list<KeeperStorageBase::Delta> preprocess(
     stat.cversion = 0;
     stat.ephemeralOwner = zk_request.is_ephemeral ? session_id : 0;
 
+    zk_request.setStats(stat);
     new_deltas.emplace_back(
         std::move(path_created),
         zxid,
@@ -1654,9 +1659,19 @@ std::list<KeeperStorageBase::Delta> preprocess(
 template <typename Storage>
 Coordination::ZooKeeperResponsePtr process(const Coordination::ZooKeeperCreateRequest & zk_request, Storage & storage, KeeperStorageBase::DeltaRange deltas)
 {
-    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response = zk_request.not_exists
-        ? std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>()
-        : std::make_shared<Coordination::ZooKeeperCreateResponse>();
+    std::cerr << "process ZooKeeperCreateRequest " << zk_request.include_data << '\n';
+    std::shared_ptr<Coordination::ZooKeeperCreateResponse> response;
+    
+    if (zk_request.include_data)
+    {
+        auto create2response = std::make_shared<Coordination::ZooKeeperCreate2Response>();
+        create2response->zstat = zk_request.zstat;
+        response = create2response;
+    }
+    else if (zk_request.not_exists)
+        response = std::make_shared<Coordination::ZooKeeperCreateIfNotExistsResponse>();
+    else 
+        response = std::make_shared<Coordination::ZooKeeperCreateResponse>();
 
     if (deltas.empty())
     {
@@ -3254,9 +3269,11 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
 
     /// ZooKeeper update sessions expirity for each request, not only for heartbeats
     session_expiry_queue.addNewSessionOrUpdate(session_id, session_and_timeout[session_id]);
+    std::cerr << "Storage Process request bp2\n";
 
     if (zk_request->getOpNum() == Coordination::OpNum::Close) /// Close request is special
     {
+        std::cerr << "Storage Process request bp4\n";
         for (const auto & delta : deltas)
         {
             if (std::holds_alternative<RemoveNodeDelta>(delta.operation))
@@ -3291,6 +3308,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
     }
     else if (zk_request->getOpNum() == Coordination::OpNum::Heartbeat) /// Heartbeat request is also special
     {
+        std::cerr << "Storage Process request bp3\n";
         Coordination::ZooKeeperResponsePtr response = nullptr;
         {
             std::lock_guard lock(storage_mutex);
@@ -3303,6 +3321,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
     }
     else /// normal requests proccession
     {
+        std::cerr << "Storage Process request bp1\n";
         const auto process_request = [&]<std::derived_from<Coordination::ZooKeeperRequest> T>(const T & concrete_zk_request)
         {
             Coordination::ZooKeeperResponsePtr response;
@@ -3377,6 +3396,7 @@ KeeperResponsesForSessions KeeperStorage<Container>::processRequest(
             results.push_back(KeeperResponseForSession{session_id, response});
         };
 
+        std::cerr << "processRequest\n";
         callOnConcreteRequestType(*zk_request, process_request);
     }
 
