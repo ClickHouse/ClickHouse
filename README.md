@@ -59,7 +59,6 @@ Upcoming meetups
 * [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/306385974/) - March 25, 2025
 * [Tel Aviv Meetup](https://www.meetup.com/clickhouse-meetup-israel/events/306434754/) - March 26, 2025
 * [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/305916369) - March 26, 2025
-* [Melbourne Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/306434771) - March 27, 2025
 * [Washington DC Meetup](https://www.meetup.com/clickhouse-dc-user-group/events/306439995) - March 27, 2025
 * [Sydney Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/306549810/) - April 1, 2025
 * [Oslo Meetup](https://www.meetup.com/open-source-real-time-data-warehouse-real-time-analytics/events/306414327/) - April 8, 2025
