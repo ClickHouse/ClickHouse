@@ -83,12 +83,12 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/fasttest"],
     ),
-    # Docker.Config(
-    #     name="clickhouse/cctools",
-    #     path="./ci/docker/packager/cctools",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
+    Docker.Config(
+        name="clickhouse/stateless-test",
+        path="./ci/docker/stateless-test",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
     Docker.Config(
         name="clickhouse/test-old-centos",
         path="./ci/docker/compatibility/centos",
@@ -101,6 +101,12 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
+    # Docker.Config(
+    #     name="clickhouse/cctools",
+    #     path="./ci/docker/packager/cctools",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
     # Docker.Config(
     #     name="clickhouse/test-util",
     #     path="./ci/docker/test/util",
@@ -137,18 +143,12 @@ DOCKERS = [
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=["clickhouse/test-base"],
     # ),
-    Docker.Config(
-        name="clickhouse/stateless-test",
-        path="./ci/docker/stateless-test",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/stateful-test",
-        path="./ci/docker/stateful-test",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/stateless-test"],
-    ),
+    # Docker.Config(
+    #     name="clickhouse/stateful-test",
+    #     path="./ci/docker/stateful-test",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=["clickhouse/stateless-test"],
+    # ),
     Docker.Config(
         name="clickhouse/integration-test",
         path="./ci/docker/integration/integration-test",
@@ -255,20 +255,6 @@ DOCKERS = [
         depends_on=[],
     ),
 ]
-
-# TODO:
-# "docker/test/sqlancer": {
-#     "name": "clickhouse/sqlancer-test",
-#     "dependent": []
-# },
-# "docker/test/install/deb": {
-#     "name": "clickhouse/install-deb-test",
-#     "dependent": []
-# },
-# "docker/test/install/rpm": {
-#     "name": "clickhouse/install-rpm-test",
-#     "dependent": []
-# },
 
 
 class BuildTypes(metaclass=MetaClasses.WithIter):

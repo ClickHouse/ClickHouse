@@ -70,7 +70,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.performance_packages,
         *ArtifactConfigs.performance_reports,
     ],
-    dockers=DOCKERS[:3],
+    dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,
