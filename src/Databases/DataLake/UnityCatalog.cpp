@@ -148,20 +148,20 @@ bool UnityCatalog::tryGetTableMetadata(
         if (hasNotNoneValue("name", object) && object->get("name").extract<String>() == table_name)
         {
             std::string location;
-            if (result.requiresLocationIfExists() && hasNotNoneValue("storage_location", object))
+            if (result.requiresLocation())
             {
-                location = object->get("storage_location").extract<String>();
-                result.setLocation(location);
-            }
-            else if (result.requiresLocation())
-            {
-                if (!hasNotNoneValue("storage_location", object))
-                    throw DB::Exception(
+                if (hasNotNoneValue("storage_location", object))
+                {
+                    location = object->get("storage_location").extract<String>();
+                    result.setLocation(location);
+                }
+                else if (!result.isLightweight())
+                {
+                     throw DB::Exception(
                         DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it doesn't have storage location. " \
                         "It means that it's not a DeltaLake table, and it's unreadable with Unity catalog in ClickHouse", full_table_name);
+                }
 
-                location = object->get("storage_location").extract<String>();
-                result.setLocation(location);
             }
 
             bool has_securable_kind = hasNotNoneValue("securable_kind", object);
@@ -169,7 +169,7 @@ bool UnityCatalog::tryGetTableMetadata(
             if (has_securable_kind && !READABLE_TABLES.contains(object->get("securable_kind").extract<String>()))
             {
                 result.setDefaultReadableTable(false);
-                if (result.requiresLocation())
+                if (!result.isLightweight())
                 {
                     throw DB::Exception(
                         DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it has unsupported securable_kind: '{}'. " \
@@ -181,7 +181,7 @@ bool UnityCatalog::tryGetTableMetadata(
             if (has_data_source_format && object->get("data_source_format").extract<String>() != READABLE_DATA_SOURCE_FORMAT)
             {
                 result.setDefaultReadableTable(false);
-                if (result.requiresLocation())
+                if (!result.isLightweight())
                 {
                     throw DB::Exception(
                         DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it has unsupported data_source_format '{}'. " \
@@ -194,7 +194,7 @@ bool UnityCatalog::tryGetTableMetadata(
             {
                 result.setDefaultReadableTable(true);
             }
-            else if (result.requiresLocation())
+            else if (!result.isLightweight())
             {
                 throw DB::Exception(
                     DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it has no information about data_source_format or securable_kind. " \

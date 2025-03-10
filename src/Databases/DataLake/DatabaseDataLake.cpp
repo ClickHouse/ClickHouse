@@ -247,15 +247,15 @@ StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context
 StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight) const
 {
     auto catalog = getCatalog();
-    auto table_metadata = DataLake::TableMetadata().withSchema();
-    if (!lightweight)
-        table_metadata = table_metadata.withLocation();
-    else
-        table_metadata = table_metadata.withLocationIfExists();
+    auto table_metadata = DataLake::TableMetadata().withSchema().withLocation();
+    if (lightweight)
+        table_metadata = table_metadata.withLightweight();
 
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
-    if (with_vended_credentials && !lightweight)
+    if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
+
+    table_metadata = table_metadata.withDataLakeSpecificMetadata();
 
     auto [namespace_name, table_name] = parseTableName(name);
 
@@ -266,7 +266,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     ASTStorage * storage = database_engine_definition->as<ASTStorage>();
     ASTs args = storage->engine->arguments->children;
 
-    if (!lightweight || table_metadata.hasLocation())
+    if (table_metadata.hasLocation())
     {
         /// Replace Iceberg Catalog endpoint with storage path endpoint of requested table.
         auto table_endpoint = getStorageEndpointForTable(table_metadata);
@@ -317,7 +317,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     }
 
     const auto configuration = getConfiguration(storage_type);
-    auto storage_settings = std::make_unique<StorageObjectStorageSettings>();
+
+    auto storage_settings = catalog->createStorageSettingsFromMetadata(table_metadata);
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);
@@ -327,7 +328,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
-    StorageObjectStorage::Configuration::initialize(*configuration, args, context_copy, /* with_table_structure */false, storage_settings.get());
+    StorageObjectStorage::Configuration::initialize(*configuration, args, context_copy, /* with_table_structure */false, storage_settings);
 
     return std::make_shared<StorageObjectStorage>(
         configuration,
@@ -402,7 +403,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     bool /* throw_on_error */) const
 {
     auto catalog = getCatalog();
-    auto table_metadata = DataLake::TableMetadata().withLocationIfExists().withSchema();
+    auto table_metadata = DataLake::TableMetadata().withLightweight().withLocation().withSchema();
 
     const auto [namespace_name, table_name] = parseTableName(name);
     catalog->getTableMetadata(namespace_name, table_name, table_metadata);
