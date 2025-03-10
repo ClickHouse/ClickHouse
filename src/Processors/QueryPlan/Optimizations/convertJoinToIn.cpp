@@ -27,14 +27,14 @@ namespace DB::Setting
 namespace DB::QueryPlanOptimizations
 {
 
-bool findReadingStep(QueryPlan::Node & node)
+static bool findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
     if (dynamic_cast<ISourceStep *>(step))
     {
         /// might be more cases here
-        if (typeid_cast<ReadFromSystemColumns *>(step) || typeid_cast<ReadFromSystemReplicas *>(step)
-            || typeid_cast<ReadFromSystemOneBlock *>(step) || typeid_cast<ReadFromSystemTables *>(step))
+        if (typeid_cast<DB::ReadFromSystemColumns *>(step) || typeid_cast<DB::ReadFromSystemReplicas *>(step)
+            || typeid_cast<DB::ReadFromSystemOneBlock *>(step) || typeid_cast<DB::ReadFromSystemTables *>(step))
             return false;
         return true;
     }
