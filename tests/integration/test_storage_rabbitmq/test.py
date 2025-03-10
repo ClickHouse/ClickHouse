@@ -3981,3 +3981,4 @@ def test_rabbitmq_json_type(rabbitmq_cluster):
         DROP TABLE test.consumer;
         DROP TABLE test.rabbitmq;
     """
+    )
