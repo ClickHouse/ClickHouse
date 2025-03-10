@@ -88,11 +88,7 @@ bool ParserKQLDateTypeTimespan ::parseConstKQLTimespan(const String & text)
            {"tick", KQLTimespanUint::tick},
            {"ticks", KQLTimespanUint::tick}};
 
-    int days = 0;
-    int hours = 0;
-    int minutes = 0;
-    int seconds = 0;
-    int sec_scale_len = 0;
+    int days = 0, hours = 0, minutes = 0, seconds = 0, sec_scale_len = 0;
     double nanoseconds = 00.00;
 
     const char * ptr = text.c_str();

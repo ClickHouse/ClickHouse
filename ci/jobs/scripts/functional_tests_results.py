@@ -28,6 +28,8 @@ RETRIES_SIGN = "Some tests were restarted"
 
 BROKEN_TESTS_ANALYZER_TECH_DEBT = [
     "01624_soft_constraints",
+    # Check after ConstantNode refactoring
+    "02944_variant_as_common_type",
 ]
 
 
@@ -152,7 +154,7 @@ class FTResultsProcessor:
                 status=test[1],
                 start_time=None,
                 duration=float(test[2]),
-                info="".join(test[3])[:16384],
+                info="".join(test[3])[:8192],
             )
             for test in test_results
         ]

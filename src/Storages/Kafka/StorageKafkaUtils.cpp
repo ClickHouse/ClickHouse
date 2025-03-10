@@ -13,7 +13,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaSettings.h>
@@ -34,9 +33,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
-#include <boost/algorithm/string/split.hpp>
-#include <boost/algorithm/string/trim.hpp>
-
+#include <boost/algorithm/string/replace.hpp>
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
 
@@ -232,7 +229,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns. "
-                "See https://clickhouse.com/docs/engines/table-engines/integrations/kafka/#configuration");
+                "See https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/#configuration");
         }
 
         const auto has_keeper_path = (*kafka_settings)[KafkaSetting::kafka_keeper_path].changed && !(*kafka_settings)[KafkaSetting::kafka_keeper_path].value.empty();
@@ -313,7 +310,6 @@ void registerStorageKafka(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessType::KAFKA,
-            .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
         });
 }
 
@@ -416,14 +412,6 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 
     auto kafka_format_settings = kafka_settings.getFormatSettings();
     result.insert(result.end(), kafka_format_settings.begin(), kafka_format_settings.end());
-
-    /// It does not make sense to use auto detection here, since the format
-    /// will be reset for each message, plus, auto detection takes CPU
-    /// time.
-    result.setSetting("input_format_csv_detect_header", false);
-    result.setSetting("input_format_tsv_detect_header", false);
-    result.setSetting("input_format_custom_detect_header", false);
-
     return result;
 }
 

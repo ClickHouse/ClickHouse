@@ -29,10 +29,9 @@ struct ASTWindowDefinition : public IAST
 
     String getID(char delimiter) const override;
 
-    std::string getDefaultWindowName() const;
-
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+
+    std::string getDefaultWindowName() const;
 };
 
 struct ASTWindowListElement : public IAST
@@ -46,7 +45,6 @@ struct ASTWindowListElement : public IAST
 
     String getID(char delimiter) const override;
 
-protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 

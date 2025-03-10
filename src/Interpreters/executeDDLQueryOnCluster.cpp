@@ -1,7 +1,6 @@
 #include <filesystem>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>

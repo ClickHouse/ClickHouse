@@ -64,10 +64,10 @@ function run_query_with_pure_parallel_replicas () {
         --query "$3" \
         --query_id "${1}_pure" \
         --max_parallel_replicas 3 \
+        --prefer_localhost_replica 1 \
         --parallel_replicas_prefer_local_join 0 \
         --cluster_for_parallel_replicas "parallel_replicas" \
         --enable_parallel_replicas 1 \
-        --parallel_replicas_only_with_analyzer 0 \
         --parallel_replicas_for_non_replicated_merge_tree 1 \
         --parallel_replicas_min_number_of_rows_per_replica "$2" \
     |& grep "It is enough work for" | awk '{ print substr($7, 2, length($7) - 2) "\t" $20 " estimated parallel replicas" }' | sort -n -k2 -b | grep -Pv "\t0 estimated parallel replicas"

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Backups/BackupInfo.h>
-#include <Common/SettingsChanges.h>
 #include <optional>
 
 
@@ -83,13 +82,6 @@ struct BackupSettings
     /// this is whether the backup will contain information to grant the role to the corresponding user again.
     bool write_access_entities_dependents = true;
 
-    /// Only use in SharedMergeTree. Lightweight backup will only copy the meta and object keys of the files from parts.
-    /// This will avoid repeated data copy from original object storage to backup files. Instead of that, data will copy to destinated storage directly.
-    bool experimental_lightweight_snapshot = false;
-
-    /// Is it allowed to use blob paths to calculate checksums of backup entries?
-    bool allow_checksums_from_remote_paths = true;
-
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.
     bool internal = false;
@@ -105,9 +97,6 @@ struct BackupSettings
     /// Internal, should not be specified by user.
     /// UUID of the backup. If it's not set it will be generated randomly.
     std::optional<UUID> backup_uuid;
-
-    /// Core settings specified in the query.
-    SettingsChanges core_settings;
 
     static BackupSettings fromBackupQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;

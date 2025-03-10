@@ -4,6 +4,7 @@
 
 #if USE_SIMDJSON
 #    include <base/types.h>
+#    include <Common/Exception.h>
 #    include <base/defines.h>
 #    include <simdjson.h>
 #    include "ElementTypes.h"
@@ -13,6 +14,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_ALLOCATE_MEMORY;
+}
 
 /// Format elements of basic types into string.
 /// The original implementation is mini_formatter in simdjson.h. But it is not public API, so we
@@ -403,7 +409,11 @@ struct SimdJSONParser
     }
 
     /// Optional: Allocates memory to parse JSON documents faster.
-    void reserve(size_t max_size);
+    void reserve(size_t max_size)
+    {
+        if (parser.allocate(max_size) != simdjson::error_code::SUCCESS)
+            throw Exception(ErrorCodes::CANNOT_ALLOCATE_MEMORY, "Couldn't allocate {} bytes when parsing JSON", max_size);
+    }
 
 private:
     simdjson::dom::parser parser;

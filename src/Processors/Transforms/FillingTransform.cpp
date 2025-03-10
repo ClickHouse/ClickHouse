@@ -6,7 +6,6 @@
 #include <DataTypes/IDataType.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
 #include <Common/FieldVisitorScale.h>
 #include <Common/FieldVisitorSum.h>
@@ -94,7 +93,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             return getStepFunction<UInt32>(step_kind.value(), step.safeGet<Int64>(), date_time->getTimeZone());
         else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
         {
-            const auto & step_dec = step.safeGet<DecimalField<Decimal64>>();
+            const auto & step_dec = step.safeGet<const DecimalField<Decimal64> &>();
             Int64 converted_step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
             static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 

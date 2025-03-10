@@ -3,7 +3,6 @@
 #if USE_USEARCH
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/BitHelpers.h>
 #include <Common/formatReadable.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -20,10 +19,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
 
-#include <ranges>
-
-#include <fmt/ranges.h>
-
 namespace ProfileEvents
 {
     extern const Event USearchAddCount;
@@ -36,11 +31,6 @@ namespace ProfileEvents
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
-}
 
 namespace ServerSetting
 {
@@ -57,6 +47,11 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 hnsw_candidate_list_size_for_search;
 }
 
 namespace
@@ -94,9 +89,17 @@ String joinByComma(const T & t)
     }
     else if constexpr (is_unordered_map<T>)
     {
-        auto keys = std::views::keys(t);
-        return fmt::format("{}", fmt::join(keys, ", "));
+        String joined_keys;
+        for (const auto & [k, _] : t)
+        {
+            if (!joined_keys.empty())
+                joined_keys += ", ";
+            joined_keys += k;
+        }
+        return joined_keys;
     }
+    /// TODO once our libcxx is recent enough, replace above by
+    ///      return fmt::format("{}", fmt::join(std::views::keys(t)), ", "));
     std::unreachable();
 }
 
@@ -175,13 +178,6 @@ String USearchIndexWithSerialization::Statistics::toString() const
             max_level, connectivity, size, capacity, ReadableSize(memory_usage), bytes_per_vector, scalar_words, nodes, edges, max_edges);
 
 }
-
-size_t USearchIndexWithSerialization::memoryUsageBytes() const
-{
-    /// Memory consumption is extremely high, asked in Discord: https://discord.com/channels/1063947616615923875/1064496121520590878/1309266814299144223
-    return Base::memory_usage();
-}
-
 MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     const String & index_name_,
     unum::usearch::metric_kind_t metric_kind_,
@@ -381,8 +377,8 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
     const auto * data_type_array = typeid_cast<const DataTypeArray *>(block.getByName(index_column_name).type.get());
     if (!data_type_array)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected data type Array(Float*)");
-
     const TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
+
     if (WhichDataType(nested_type_index).isFloat32())
         updateImpl<ColumnFloat32>(column_array, column_array_offsets, index, dimensions, rows);
     else if (WhichDataType(nested_type_index).isFloat64())
@@ -395,15 +391,17 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
 }
 
 MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity(
-    const std::optional<VectorSearchParameters> & parameters_,
+    const IndexDescription & /*index_description*/,
+    const SelectQueryInfo & query,
     unum::usearch::metric_kind_t metric_kind_,
     ContextPtr context)
-    : parameters(parameters_)
+    : vector_similarity_condition(query, context)
     , metric_kind(metric_kind_)
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
 {
     if (expansion_search == 0)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Setting 'hnsw_candidate_list_size_for_search' must not be 0");
+
 }
 
 bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexGranulePtr) const
@@ -413,19 +411,19 @@ bool MergeTreeIndexConditionVectorSimilarity::mayBeTrueOnGranule(MergeTreeIndexG
 
 bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
 {
-    /// The vector similarity index was build for a specific distance function ("metric_kind").
-    /// We can use it for vector search only if the distance function used in the SELECT query is the same.
-    bool distance_function_in_query_and_distance_function_in_index_match = parameters &&
-        ((parameters->distance_function == "L2Distance" && metric_kind == unum::usearch::metric_kind_t::l2sq_k)
-        || (parameters->distance_function == "cosineDistance" && metric_kind == unum::usearch::metric_kind_t::cos_k));
-
-    return !distance_function_in_query_and_distance_function_in_index_match;
+    String index_distance_function;
+    switch (metric_kind)
+    {
+        case unum::usearch::metric_kind_t::l2sq_k: index_distance_function = "L2Distance"; break;
+        case unum::usearch::metric_kind_t::cos_k:  index_distance_function = "cosineDistance"; break;
+        default: std::unreachable();
+    }
+    return vector_similarity_condition.alwaysUnknownOrTrue(index_distance_function);
 }
 
 std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule_) const
 {
-    if (!parameters)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected vector_search_parameters to be set");
+    const UInt64 limit = vector_similarity_condition.getLimit();
 
     const auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleVectorSimilarity>(granule_);
     if (granule == nullptr)
@@ -433,16 +431,18 @@ std::vector<UInt64> MergeTreeIndexConditionVectorSimilarity::calculateApproximat
 
     const USearchIndexWithSerializationPtr index = granule->index;
 
-    if (parameters->reference_vector.size() != index->dimensions())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the reference vector in the query ({}) does not match the dimension in the index ({})",
-            parameters->reference_vector.size(), index->dimensions());
+    if (vector_similarity_condition.getDimensions() != index->dimensions())
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "The dimension of the space in the request ({}) does not match the dimension in the index ({})",
+            vector_similarity_condition.getDimensions(), index->dimensions());
+
+    const std::vector<Float64> reference_vector = vector_similarity_condition.getReferenceVector();
 
     /// We want to run the search with the user-provided value for setting hnsw_candidate_list_size_for_search (aka. expansion_search).
     /// The way to do this in USearch is to call index_dense_gt::change_expansion_search. Unfortunately, this introduces a need to
     /// synchronize index access, see https://github.com/unum-cloud/usearch/issues/500. As a workaround, we extended USearch' search method
     /// to accept a custom expansion_add setting. The config value is only used on the fly, i.e. not persisted in the index.
 
-    auto search_result = index->search(parameters->reference_vector.data(), parameters->limit, USearchIndex::any_thread(), false, expansion_search);
+    auto search_result = index->search(reference_vector.data(), limit, USearchIndex::any_thread(), false, expansion_search);
     if (!search_result)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not search in vector similarity index. Error: {}", String(search_result.error.release()));
 
@@ -489,14 +489,14 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexVectorSimilarity::createIndexAggregato
     return std::make_shared<MergeTreeIndexAggregatorVectorSimilarity>(index.name, index.sample_block, metric_kind, scalar_kind, usearch_hnsw_params);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG * /*filter_actions_dag*/, ContextPtr /*context*/) const
+MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function not supported for vector similarity index");
-}
+    return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(index, query, metric_kind, context);
+};
 
-MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG * /*filter_actions_dag*/, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const
+MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG *, ContextPtr) const
 {
-    return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, metric_kind, context);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Vector similarity index cannot be created with ActionsDAG");
 }
 
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
@@ -572,7 +572,7 @@ void vectorSimilarityIndexValidator(const IndexDescription & index, bool /* atta
     if (!data_type_array)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
     TypeIndex nested_type_index = data_type_array->getNestedType()->getTypeId();
-    if (!WhichDataType(nested_type_index).isNativeFloat())
+    if (!WhichDataType(nested_type_index).isFloat())
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Vector similarity indexes can only be created on columns of type Array(Float*)");
 }
 

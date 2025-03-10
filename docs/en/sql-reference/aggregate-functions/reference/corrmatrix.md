@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/corrmatrix
+slug: /en/sql-reference/aggregate-functions/reference/corrmatrix
 sidebar_position: 118
-title: "corrMatrix"
-description: "Computes the correlation matrix over N variables."
 ---
 
 # corrMatrix

@@ -1,5 +1,5 @@
 ---
-slug: /interfaces/overview
+slug: /en/interfaces/overview
 sidebar_label: Overview
 sidebar_position: 1
 keywords: [clickhouse, network, interfaces, http, tcp, grpc, command-line, client, jdbc, odbc, driver]

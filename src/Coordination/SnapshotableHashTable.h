@@ -298,7 +298,7 @@ public:
         size_t hash_value = map.hash(key);
         auto it = map.find(key, hash_value);
         if (it == map.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key.toView());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key);
 
         auto list_itr = it->getMapped();
         uint64_t old_value_size = list_itr->value.sizeInBytes();
@@ -355,7 +355,7 @@ public:
     {
         auto it = map.find(key);
         if (it == map.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key.toView());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Could not find key: '{}'", key);
         return it->getMapped()->value;
     }
 
@@ -364,7 +364,7 @@ public:
         for (auto & itr : snapshot_invalid_iters)
         {
             if (itr->isActiveInMap())
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not active in map", itr->key.toView());
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "{} is not active in map", itr->key);
             updateDataSize(ERASE, itr->key.size, 0, itr->value.sizeInBytes(), /*remove_old=*/true);
             if (itr->getFreeKey())
                 arena.free(const_cast<char *>(itr->key.data), itr->key.size);

@@ -359,11 +359,10 @@ namespace
     }
 }
 
-
-FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
-{
-    return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
-}
+    FunctionPtr FunctionGenerateRandomStructure::create(DB::ContextPtr context)
+    {
+        return std::make_shared<FunctionGenerateRandomStructure>(context->getSettingsRef()[Setting::allow_suspicious_low_cardinality_types].value);
+    }
 
 DataTypePtr FunctionGenerateRandomStructure::getReturnTypeImpl(const DataTypes & arguments) const
 {
@@ -450,7 +449,7 @@ The function returns a value of type String.
                 {"with specified number of columns", "SELECT generateRandomStructure(3)", "c1 String, c2 Array(Int32), c3 LowCardinality(String)"},
                 {"with specified seed", "SELECT generateRandomStructure(1, 42)", "c1 UInt128"},
             },
-            .category{"Random Numbers"}
+            .categories{"Random"}
         });
 }
 

@@ -8,8 +8,8 @@ sidebar_label: FROM
 `FROM` 子句指定从以下数据源中读取数据:
 
 -   [表](../../../engines/table-engines/index.md)
--   [子查询](../../../sql-reference/statements/select/index.md)
--   [表函数](/sql-reference/table-functions)
+-   [子查询](../../../sql-reference/statements/select/index.md) {## TODO: better link ##}
+-   [表函数](../../../sql-reference/table-functions/index.md#table-functions)
 
 [JOIN](../../../sql-reference/statements/select/join.md) 和 [ARRAY JOIN](../../../sql-reference/statements/select/array-join.md) 子句也可以用来扩展 `FROM` 的功能
 
@@ -26,7 +26,7 @@ sidebar_label: FROM
 -   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) 版本 `MergeTree` 引擎
 -   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md)，和 [MaterializedView](../../../engines/table-engines/special/materializedview.md) 在其他引擎上运行的引擎，只要是它们底层是 `MergeTree`-引擎表即可。
 
-现在使用 `FINAL` 修饰符 的 `SELECT` 查询启用了并发执行, 这会快一点。但是仍然存在缺陷 (见下)。  [max_final_threads](/operations/settings/settings#max_final_threads) 设置使用的最大线程数限制。
+现在使用 `FINAL` 修饰符 的 `SELECT` 查询启用了并发执行, 这会快一点。但是仍然存在缺陷 (见下)。  [max_final_threads](../../../operations/settings/settings.md#max-final-threads) 设置使用的最大线程数限制。
 
 ### 缺点 {#drawbacks}
 
@@ -35,7 +35,7 @@ sidebar_label: FROM
 -   在查询执行期间合并数据。
 -   查询与 `FINAL` 除了读取查询中指定的列之外，还读取主键列。
 
-**在大多数情况下，避免使用 `FINAL`.** 常见的方法是使用假设后台进程的不同查询 `MergeTree` 引擎还没有发生，并通过应用聚合（例如，丢弃重复项）来处理它
+**在大多数情况下，避免使用 `FINAL`.** 常见的方法是使用假设后台进程的不同查询 `MergeTree` 引擎还没有发生，并通过应用聚合（例如，丢弃重复项）来处理它。 {## TODO: examples ##}
 
 ## 实现细节 {#implementation-details}
 

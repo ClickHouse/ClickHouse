@@ -5,7 +5,7 @@ SET mutations_sync = 2;
 DROP TABLE IF EXISTS tab;
 
 SELECT 'Map(Nothing, ...) is non-comparable --> not usable as primary key';
-CREATE TABLE tab (m1 Map(String, AggregateFunction(sum, UInt32))) ENGINE = MergeTree ORDER BY m1; -- { serverError DATA_TYPE_CANNOT_BE_USED_IN_KEY }
+CREATE TABLE tab (m1 Map(Nothing, String)) ENGINE = MergeTree ORDER BY m1; -- { serverError DATA_TYPE_CANNOT_BE_USED_IN_KEY }
 
 SELECT 'But Map(Nothing, ...) can be a non-primary-key, it is quite useless though ...';
 CREATE TABLE tab (m3 Map(Nothing, String)) ENGINE = MergeTree ORDER BY tuple();

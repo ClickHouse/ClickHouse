@@ -1,13 +1,9 @@
 ---
-slug: /guides/developer/transactional
+slug: /en/guides/developer/transactional
 ---
-
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # Transactional (ACID) support
 
-## Case 1: INSERT into one partition, of one table, of the MergeTree* family {#case-1-insert-into-one-partition-of-one-table-of-the-mergetree-family}
+## Case 1: INSERT into one partition, of one table, of the MergeTree* family
 
 This is transactional (ACID) if the inserted rows are packed and inserted as a single block (see Notes):
 - Atomic: an INSERT succeeds or is rejected as a whole: if a confirmation is sent to the client, then all rows were inserted; if an error is sent to the client, then no rows were inserted.
@@ -16,27 +12,27 @@ This is transactional (ACID) if the inserted rows are packed and inserted as a s
 - Durable: a successful INSERT is written to the filesystem before answering to the client, on a single replica or multiple replicas (controlled by the `insert_quorum` setting), and ClickHouse can ask the OS to sync the filesystem data on the storage media (controlled by the `fsync_after_insert` setting).
 - INSERT into multiple tables with one statement is possible if materialized views are involved (the INSERT from the client is to a table which has associate materialized views).
 
-## Case 2: INSERT into multiple partitions, of one table, of the MergeTree* family {#case-2-insert-into-multiple-partitions-of-one-table-of-the-mergetree-family}
+## Case 2: INSERT into multiple partitions, of one table, of the MergeTree* family
 
 Same as Case 1 above, with this detail:
 - If table has many partitions and INSERT covers many partitions, then insertion into every partition is transactional on its own
 
 
-## Case 3: INSERT into one distributed table of the MergeTree* family {#case-3-insert-into-one-distributed-table-of-the-mergetree-family}
+## Case 3: INSERT into one distributed table of the MergeTree* family
 
 Same as Case 1 above, with this detail:
 - INSERT into Distributed table is not transactional as a whole, while insertion into every shard is transactional
 
-## Case 4: Using a Buffer table {#case-4-using-a-buffer-table}
+## Case 4: Using a Buffer table
 
 - insert into Buffer tables is neither atomic nor isolated nor consistent nor durable
 
-## Case 5: Using async_insert {#case-5-using-async_insert}
+## Case 5: Using async_insert
 
 Same as Case 1 above, with this detail:
 - atomicity is ensured even if `async_insert` is enabled and `wait_for_async_insert` is set to 1 (the default), but if `wait_for_async_insert` is set to 0, then atomicity is not ensured.
 
-## Notes {#notes}
+## Notes
 - rows inserted from the client in some data format are packed into a single block when:
   - the insert format is row-based (like CSV, TSV, Values, JSONEachRow, etc) and the data contains less then `max_insert_block_size` rows (~1 000 000 by default) or less then `min_chunk_bytes_for_parallel_parsing` bytes (10 MB by default) in case of parallel parsing is used (enabled by default)
   - the insert format is column-based (like Native, Parquet, ORC, etc) and the data contains only one block of data
@@ -48,14 +44,11 @@ Same as Case 1 above, with this detail:
 - "consistency" in ACID terms does not cover the semantics of distributed systems, see https://jepsen.io/consistency which is controlled by different settings (select_sequential_consistency)
 - this explanation does not cover a new transactions feature that allow to have full-featured transactions over multiple tables, materialized views, for multiple SELECTs, etc. (see the next section on Transactions, Commit, and Rollback)
 
-## Transactions, Commit, and Rollback {#transactions-commit-and-rollback}
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+## Transactions, Commit, and Rollback
 
 In addition to the functionality described at the top of this document, ClickHouse has experimental support for transactions, commits, and rollback functionality.
 
-### Requirements {#requirements}
+### Requirements
 
 - Deploy ClickHouse Keeper or ZooKeeper to track transactions
 - Atomic DB only (Default)
@@ -67,16 +60,16 @@ In addition to the functionality described at the top of this document, ClickHou
   </clickhouse>
   ```
 
-### Notes {#notes-1}
+### Notes
 - This is an experimental feature, and changes should be expected.
 - If an exception occurs during a transaction, you cannot commit the transaction.  This includes all exceptions, including `UNKNOWN_FUNCTION` exceptions caused by typos.  
 - Nested transactions are not supported; finish the current transaction and start a new one instead
 
-### Configuration {#configuration}
+### Configuration
 
 These examples are with a single node ClickHouse server with ClickHouse Keeper enabled.
 
-#### Enable experimental transaction support {#enable-experimental-transaction-support}
+#### Enable experimental transaction support
 
 ```xml title=/etc/clickhouse-server/config.d/transactions.xml
 <clickhouse>
@@ -84,10 +77,10 @@ These examples are with a single node ClickHouse server with ClickHouse Keeper e
 </clickhouse>
 ```
 
-#### Basic configuration for a single ClickHouse server node with ClickHouse Keeper enabled {#basic-configuration-for-a-single-clickhouse-server-node-with-clickhouse-keeper-enabled}
+#### Basic configuration for a single ClickHouse server node with ClickHouse Keeper enabled
 
 :::note
-See the [deployment](/deployment-guides/terminology.md) documentation for details on deploying ClickHouse server and a proper quorum of ClickHouse Keeper nodes.  The configuration shown here is for experimental purposes.
+See the [deployment](docs/en/deployment-guides/terminology.md) documentation for details on deploying ClickHouse server and a proper quorum of ClickHouse Keeper nodes.  The configuration shown here is for experimental purposes.
 :::
 
 ```xml title=/etc/clickhouse-server/config.d/config.xml
@@ -130,9 +123,9 @@ See the [deployment](/deployment-guides/terminology.md) documentation for detail
 </clickhouse>
 ```
 
-### Example {#example}
+### Example
 
-#### Verify that experimental transactions are enabled {#verify-that-experimental-transactions-are-enabled}
+#### Verify that experimental transactions are enabled
 
 Issue a `BEGIN TRANSACTION` or `START TRANSACTION` followed by a `ROLLBACK` to verify that experimental transactions are enabled, and that ClickHouse Keeper is enabled as it is used to track transactions. 
 
@@ -145,31 +138,27 @@ Ok.
 
 :::tip
 If you see the following error, then check your configuration file to make sure that `allow_experimental_transactions` is set to `1` (or any value other than `0` or `false`).
-
-```response
+```
 Code: 48. DB::Exception: Received from localhost:9000.
 DB::Exception: Transactions are not supported.
 (NOT_IMPLEMENTED)
 ```
 
 You can also check ClickHouse Keeper by issuing
-
-```bash
+```
 echo ruok | nc localhost 9181
 ```
-
 ClickHouse Keeper should respond with `imok`.
 :::
 
 ```sql
 ROLLBACK
 ```
-
 ```response
 Ok.
 ```
 
-#### Create a table for testing {#create-a-table-for-testing}
+#### Create a table for testing
 
 :::tip
 Creation of tables is not transactional.  Run this DDL query outside of a transaction.
@@ -183,17 +172,15 @@ CREATE TABLE mergetree_table
 ENGINE = MergeTree
 ORDER BY n
 ```
-
 ```response
 Ok.
 ```
 
-#### Begin a transaction and insert a row {#begin-a-transaction-and-insert-a-row}
+#### Begin a transaction and insert a row
 
 ```sql
 BEGIN TRANSACTION
 ```
-
 ```response
 Ok.
 ```
@@ -201,7 +188,6 @@ Ok.
 ```sql
 INSERT INTO mergetree_table FORMAT Values (10)
 ```
-
 ```response
 Ok.
 ```
@@ -210,29 +196,24 @@ Ok.
 SELECT *
 FROM mergetree_table
 ```
-
 ```response
 ┌──n─┐
 │ 10 │
 └────┘
 ```
-
 :::note
 You can query the table from within a transaction and see that the row was inserted even though it has not yet been committed.
 :::
 
-#### Rollback the transaction, and query the table again {#rollback-the-transaction-and-query-the-table-again}
+#### Rollback the transaction, and query the table again
 
 Verify that the transaction is rolled back:
-
 ```sql
 ROLLBACK
 ```
-
 ```response
 Ok.
 ```
-
 ```sql
 SELECT *
 FROM mergetree_table
@@ -243,7 +224,7 @@ Ok.
 0 rows in set. Elapsed: 0.002 sec.
 ```
 
-#### Complete a transaction and query the table again {#complete-a-transaction-and-query-the-table-again}
+#### Complete a transaction and query the table again
 
 ```sql
 BEGIN TRANSACTION
@@ -255,7 +236,6 @@ Ok.
 ```sql
 INSERT INTO mergetree_table FORMAT Values (42)
 ```
-
 ```response
 Ok.
 ```
@@ -263,7 +243,6 @@ Ok.
 ```sql
 COMMIT
 ```
-
 ```response
 Ok. Elapsed: 0.002 sec.
 ```
@@ -272,14 +251,13 @@ Ok. Elapsed: 0.002 sec.
 SELECT *
 FROM mergetree_table
 ```
-
 ```response
 ┌──n─┐
 │ 42 │
 └────┘
 ```
 
-### Transactions introspection {#transactions-introspection}
+### Transactions introspection
 
 You can inspect transactions by querying the `system.transactions` table, but note that you cannot query that
 table from a session that is in a transaction. Open a second `clickhouse client` session to query that table.
@@ -289,7 +267,6 @@ SELECT *
 FROM system.transactions
 FORMAT Vertical
 ```
-
 ```response
 Row 1:
 ──────
@@ -300,7 +277,7 @@ is_readonly: 1
 state:       RUNNING
 ```
 
-## More Details {#more-details}
+## More Details
 
 See this [meta issue](https://github.com/ClickHouse/ClickHouse/issues/48794) to find much more extensive tests and to keep up to date with the progress.
 

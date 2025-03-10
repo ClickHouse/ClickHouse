@@ -158,7 +158,7 @@ private:
     RequestsQueue requests_queue{1};
 
     void pushRequest(RequestInfo && request);
-    void exprireRequest(RequestInfo && request);
+
 
     ThreadFromGlobalPool processing_thread;
 

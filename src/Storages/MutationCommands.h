@@ -5,16 +5,14 @@
 #include <memory>
 #include <unordered_map>
 
-#include <Core/Names.h>
-#include <DataTypes/IDataType.h>
-#include <Interpreters/ActionsDAG.h>
-#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTAlterQuery.h>
 #include <Storages/IStorage_fwd.h>
+#include <DataTypes/IDataType.h>
+#include <Core/Names.h>
 
 namespace DB
 {
 
-class ASTAlterCommand;
 class Context;
 class WriteBuffer;
 class ReadBuffer;
@@ -98,14 +96,5 @@ public:
 };
 
 using MutationCommandsConstPtr = std::shared_ptr<MutationCommands>;
-
-/// A pair of Actions DAG that is required to execute one step
-/// of mutation and the name of filter column if it's a filtering step.
-struct MutationActions
-{
-    ActionsDAG dag;
-    String filter_column_name;
-    bool project_input;
-};
 
 }

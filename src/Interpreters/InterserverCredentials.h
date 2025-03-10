@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Poco/Util/AbstractConfiguration.h>
-
+#include <Common/Exception.h>
 #include <unordered_set>
 
 namespace DB

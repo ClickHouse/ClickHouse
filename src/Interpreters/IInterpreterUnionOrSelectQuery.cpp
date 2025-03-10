@@ -1,6 +1,5 @@
 #include <Interpreters/IInterpreterUnionOrSelectQuery.h>
 
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Interpreters/QueryLog.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -77,7 +76,8 @@ QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline()
 QueryPipelineBuilder IInterpreterUnionOrSelectQuery::buildQueryPipeline(QueryPlan & query_plan)
 {
     buildQueryPlan(query_plan);
-    return std::move(*query_plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context)));
+    return std::move(*query_plan.buildQueryPipeline(
+        QueryPlanOptimizationSettings::fromContext(context), BuildQueryPipelineSettings::fromContext(context)));
 }
 
 static StreamLocalLimits getLimitsForStorage(const Settings & settings, const SelectQueryOptions & options)

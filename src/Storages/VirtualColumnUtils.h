@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Columns/ColumnsNumber.h>
+#include <Core/Block.h>
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -13,9 +13,8 @@
 namespace DB
 {
 
-class Block;
-class Chunk;
 class NamesAndTypesList;
+
 
 namespace VirtualColumnUtils
 {
@@ -43,10 +42,7 @@ void filterBlockWithExpression(const ExpressionActionsPtr & actions, Block & blo
 /// Builds sets used by ActionsDAG inplace.
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context);
 
-/// Checks if all functions used in DAG are deterministic.
-bool isDeterministic(const ActionsDAG::Node * node);
-
-/// Checks recursively if all functions used in DAG are deterministic in scope of query.
+/// Recursively checks if all functions used in DAG are deterministic in scope of query.
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node);
 
 /// Extract a part of predicate that can be evaluated using only columns from input_names.

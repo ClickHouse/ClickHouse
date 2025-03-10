@@ -80,8 +80,4 @@ void SetSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
-bool SetSettings::hasBuiltin(std::string_view name)
-{
-    return SetSettingsImpl::hasBuiltin(name);
-}
 }

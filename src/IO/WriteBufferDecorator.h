@@ -14,7 +14,7 @@ class WriteBuffer;
 /// It's used for writing compressed and encrypted data
 /// This class can own or not own underlying buffer - constructor will differentiate
 /// std::unique_ptr<WriteBuffer> for owning and WriteBuffer* for not owning.
-template <typename Base>
+template <class Base>
 class WriteBufferDecorator : public Base
 {
 public:
