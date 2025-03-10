@@ -526,7 +526,6 @@ class ClickHouseCluster:
         self.minio_ip = None
         self.minio_bucket = "root"
         self.minio_bucket_2 = "root2"
-        self.minio_bucket_db_disk = "root-db-disk"
         self.minio_port = 9001
         self.minio_client = None  # type: Minio
         self.minio_redirect_host = "proxy1"
@@ -1624,26 +1623,8 @@ class ClickHouseCluster:
                 )
             with_remote_database_disk = False
 
-        if not use_keeper:
-            if with_remote_database_disk:
-                raise Exception(
-                    f"Can't add instance '{name}': not support remote database disk with use_keeper=False"
-                )
-            with_remote_database_disk = False
-
-        if with_zookeeper_secure:
-            if with_remote_database_disk:
-                raise Exception(
-                    f"Can't add instance '{name}': not support remote database disk with with_zookeeper_secure=True"
-                )
-            with_remote_database_disk = False
-
         if with_remote_database_disk is None:
             with_remote_database_disk = True
-
-        if with_remote_database_disk:
-            with_zookeeper = True
-            with_minio = True
 
         if not env_variables:
             env_variables = {}
@@ -2497,11 +2478,7 @@ class ClickHouseCluster:
 
                 logging.debug("Connected to Minio.")
 
-                buckets = [
-                    self.minio_bucket,
-                    self.minio_bucket_2,
-                    self.minio_bucket_db_disk,
-                ]
+                buckets = [self.minio_bucket, self.minio_bucket_2]
 
                 for bucket in buckets:
                     if minio_client.bucket_exists(bucket):
@@ -2805,29 +2782,6 @@ class ClickHouseCluster:
                 self.wait_zookeeper_to_start()
                 for command in self.pre_zookeeper_commands:
                     self.run_kazoo_commands_with_retries(command, repeats=5)
-
-            for instance in list(self.instances.values()):
-                if instance.with_remote_database_disk:
-                    config_file_path = os.path.join(
-                        HELPERS_DIR, "remote_database_disk.xml"
-                    )
-                    with open(config_file_path, "r") as p:
-                        data = p.read()
-                    data = data.format(
-                        host=self.minio_host,
-                        port=str(self.minio_port),
-                        bucket=self.minio_bucket_db_disk,
-                        shard="{shard}",
-                        replica="{replica}",
-                    )
-                    instance_config_dir = os.path.join(instance.path, "configs")
-                    target_config_file_path = os.path.join(
-                        instance_config_dir,
-                        "config.d",
-                        "remote_database_disk.xml",
-                    )
-                    with open(target_config_file_path, "w") as p:
-                        p.write(data)
 
             if self.with_mysql_client and self.base_mysql_client_cmd:
                 logging.debug("Setup MySQL Client")
@@ -3465,10 +3419,6 @@ class ClickHouseInstance:
         )
         self.secrets_dir = p.abspath(p.join(base_path, "secrets"))
         self.macros = macros if macros is not None else {}
-        if "shard" not in self.macros:
-            self.macros["shard"] = "default"
-        if "replica" not in self.macros:
-            self.macros["replica"] = self.name
         self.with_zookeeper = with_zookeeper
         self.zookeeper_config_path = zookeeper_config_path
 
@@ -3493,7 +3443,7 @@ class ClickHouseInstance:
             p.join(base_path, "mongo_secure_config")
         )
         self.with_redis = with_redis
-        self.with_minio = with_minio or with_remote_database_disk
+        self.with_minio = with_minio
         self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
         self.with_cassandra = with_cassandra
