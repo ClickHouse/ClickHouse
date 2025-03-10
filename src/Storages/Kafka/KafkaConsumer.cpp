@@ -278,7 +278,7 @@ void KafkaConsumer::subscribe()
 
     if (!subscription.empty())
     {
-        LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(subcription, ", "));
+        LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(subscription, ", "));
 
         if (assignment.has_value())
             LOG_TRACE(log, "Already assigned to: {}", assignment.value());
@@ -470,7 +470,8 @@ void KafkaConsumer::doPoll()
     }
 }
 
-// it do the poll when needed
+/// Consumes a single message from the buffered polled batch
+/// does the poll if needed
 ReadBufferPtr KafkaConsumer::consume()
 {
     resetIfStopped();
