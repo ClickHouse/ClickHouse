@@ -14,6 +14,7 @@
 #include <Disks/IO/ReadBufferFromWebServer.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/getThreadPoolReader.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -50,7 +51,13 @@ WebObjectStorage::loadFiles(const String & path, const std::unique_lock<std::sha
             getContext()->getSettingsRef(),
             getContext()->getServerSettings());
 
-        auto metadata_buf = BuilderRWBufferFromHTTP(Poco::URI(fs::path(full_url) / ".index"))
+        auto uri = Poco::URI(fs::path(full_url) / ".index");
+        auto proxy_protocol = ProxyConfiguration::protocolFromString(uri.getScheme());
+        auto proxy_resolver = ProxyConfigurationResolverProvider::get(proxy_protocol, getContext()->getConfigRef());
+        auto proxy_configuration = proxy_resolver->resolve();
+
+        auto metadata_buf = BuilderRWBufferFromHTTP(uri)
+                                .withProxy(proxy_configuration)
                                 .withConnectionGroup(HTTPConnectionGroupType::DISK)
                                 .withSettings(getContext()->getReadSettings())
                                 .withTimeouts(timeouts)
