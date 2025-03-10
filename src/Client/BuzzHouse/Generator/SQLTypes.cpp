@@ -893,7 +893,7 @@ SQLType * ArrayType::typeDeepCopy() const
     return new ArrayType(subtype->typeDeepCopy());
 }
 
-String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, const uint32_t limit)
+String ArrayType::appendRandomRawValue(RandomGenerator & rg, StatementGenerator & gen, const SQLType * tp, const uint64_t limit)
 {
     /// This is a hot loop, so fmt::format may not be desirable
     String ret = "[";
@@ -1658,10 +1658,7 @@ SQLType * StatementGenerator::randomNextType(RandomGenerator & rg, const uint32_
         /// Nullable
         const bool lcard = (allowed_types & allow_low_cardinality) != 0 && rg.nextMediumNumber() < 18;
         SQLType * res = new Nullable(bottomType(
-            rg,
-            allowed_types & ~(allow_dynamic | allow_JSON),
-            lcard,
-            tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
+            rg, allowed_types & ~(allow_dynamic), lcard, tp ? (lcard ? tp->mutable_nullable_lcard() : tp->mutable_nullable()) : nullptr));
         return lcard ? new LowCardinality(res) : res;
     }
     else if (array_type && nopt < (nullable_type + non_nullable_type + array_type + 1))

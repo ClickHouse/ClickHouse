@@ -81,10 +81,7 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
             newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
-            if (t.db->isReplicatedDatabase())
-            {
-                deng->set_zoo_path(t.db->zoo_path_counter);
-            }
+            t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
             res &= performQuery(buf + ";");
         }
@@ -205,16 +202,17 @@ String MySQLIntegration::truncateStatement()
 
 bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
 {
-    bool success = true;
-
     chassert(t.hasDatabasePeer());
     if (is_clickhouse && t.isMergeTreeFamily())
     {
-        success &= performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
-        success &= performQueryOnServerOrRemote(
+        /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
+        auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
+        auto v = performQueryOnServerOrRemote(
             pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
+        UNUSED(u);
+        UNUSED(v);
     }
-    return success;
+    return true;
 }
 
 bool MySQLIntegration::performQuery(const String & query)
@@ -1134,13 +1132,23 @@ bool MinIOIntegration::sendRequest(const String & resource)
     return true;
 }
 
+String MinIOIntegration::getConnectionURL()
+{
+    return "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/";
+}
+
 void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(
-        "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + tname.substr(1)
-        + (b.isS3QueueEngine() ? "/*" : ""));
+    te->add_params()->set_svalue(getConnectionURL() + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/*" : ""));
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
+}
+
+void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+{
+    br->add_out_params(getConnectionURL() + filename);
+    br->add_out_params(sc.user);
+    br->add_out_params(sc.password);
 }
 
 bool MinIOIntegration::performIntegration(
@@ -1292,6 +1300,11 @@ void ExternalIntegrations::dropPeerTableOnRemote(const SQLTable & t)
         case PeerTableDatabase::None:
             break;
     }
+}
+
+void ExternalIntegrations::setBackupDetails(const String & filename, BackupRestore * br)
+{
+    minio->setBackupDetails(filename, br);
 }
 
 bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String & query)

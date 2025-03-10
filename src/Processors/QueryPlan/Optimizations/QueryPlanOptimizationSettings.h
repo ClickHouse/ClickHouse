@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 
 #include <cstddef>
 
@@ -11,7 +12,12 @@ struct Settings;
 
 struct QueryPlanOptimizationSettings
 {
-    explicit QueryPlanOptimizationSettings(const Settings & from);
+    explicit QueryPlanOptimizationSettings(
+        const Settings & from,
+        UInt64 max_entries_for_hash_table_stats_,
+        String initial_query_id_,
+        ExpressionActionsSettings actions_settings_);
+
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
     /// Allows to globally disable all plan-level optimizations.
@@ -68,7 +74,25 @@ struct QueryPlanOptimizationSettings
     String force_projection_name;
     size_t max_limit_for_ann_queries;
 
+    /// This is needed for conversion JoinLogical -> Join
+
+    UInt64 max_entries_for_hash_table_stats;
+    String initial_query_id;
+    std::chrono::milliseconds lock_acquire_timeout;
+    ExpressionActionsSettings actions_settings;
+
+    /// Please, avoid using this
+    ///
+    /// We should not have the number of threads in query plan.
+    /// The information about threads should be available only at the moment we build pipeline.
+    /// Currently, it is used by ConcurrentHashJoin: it requiers the number of threads in ctor.
+    /// It should be relativaly simple to fix, but I will do it later.
+    size_t max_threads;
+
     bool keep_logical_steps;
+
+    /// If query condition cache is enabled, the query condition cache needs to be updated in the WHERE stage.
+    bool use_query_condition_cache = false;
     bool is_explain;
 };
 

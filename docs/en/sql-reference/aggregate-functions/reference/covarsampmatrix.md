@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/covarsampmatrix
 sidebar_position: 125
+title: "covarSampMatrix"
+description: "Returns the sample covariance matrix over N variables."
 ---
 
 # covarSampMatrix

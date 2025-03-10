@@ -18,7 +18,7 @@ SELECT metric, value >= 1280 * 8, value < 1280 * 8 * 2 FROM system.metrics WHERE
 SELECT count() FROM tab WHERE val = 30;
 SELECT metric, value >= 1280 * 8, value < 1280 * 8 * 2 FROM system.metrics WHERE metric = 'SecondaryIndexCacheSize';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT query, ProfileEvents['SkippingIndexCacheHits'], ProfileEvents['SkippingIndexCacheMisses']
 FROM system.query_log

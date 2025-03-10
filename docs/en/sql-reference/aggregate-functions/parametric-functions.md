@@ -8,7 +8,7 @@ sidebar_label: Parametric
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
-## histogram
+## histogram {#histogram}
 
 Calculates an adaptive histogram. It does not guarantee precise results.
 
@@ -20,7 +20,7 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
 
 **Arguments**
 
-`values` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in input values.
+`values` — [Expression](/sql-reference/syntax#expressions) resulting in input values.
 
 **Parameters**
 
@@ -55,7 +55,7 @@ FROM (
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-You can visualize a histogram with the [bar](../../sql-reference/functions/other-functions.md#function-bar) function, for example:
+You can visualize a histogram with the [bar](/sql-reference/functions/other-functions#bar) function, for example:
 
 ``` sql
 WITH histogram(5)(rand() % 100) AS hist
@@ -82,7 +82,7 @@ FROM
 
 In this case, you should remember that you do not know the histogram bin borders.
 
-## sequenceMatch
+## sequenceMatch {#sequencematch}
 
 Checks whether the sequence contains an event chain that matches the pattern.
 
@@ -113,7 +113,7 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 Type: `UInt8`.
 
-#### Pattern syntax
+#### Pattern syntax {#pattern-syntax}
 
 - `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
 
@@ -173,7 +173,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 - [sequenceCount](#sequencecount)
 
-## sequenceCount
+## sequenceCount {#sequencecount}
 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 
@@ -230,7 +230,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## sequenceMatchEvents
+## sequenceMatchEvents {#sequencematchevents}
 
 Return event timestamps of longest event chains that matched the pattern.
 
@@ -291,7 +291,7 @@ SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2,
 
 - [sequenceMatch](#sequencematch)
 
-## windowFunnel
+## windowFunnel {#windowfunnel}
 
 Searches for event chains in a sliding time window and calculates the maximum number of events that occurred from the chain.
 
@@ -311,7 +311,7 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 
 **Arguments**
 
-- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it's value can't exceed the Int64 maximum, which is 2^63 - 1).
+- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](/sql-reference/data-types/datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it's value can't exceed the Int64 maximum, which is 2^63 - 1).
 - `cond` — Conditions or data describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Parameters**
@@ -387,10 +387,10 @@ Result:
 └───────┴───┘
 ```
 
-## retention
+## retention {#retention}
 
 The function takes as arguments a set of conditions from 1 to 32 arguments of type `UInt8` that indicate whether a certain condition was met for the event.
-Any condition can be specified as an argument (as in [WHERE](../../sql-reference/statements/select/where.md#select-where)).
+Any condition can be specified as an argument (as in [WHERE](/sql-reference/statements/select/where)).
 
 The conditions, except the first, apply in pairs: the result of the second will be true if the first and second are true, of the third if the first and third are true, etc.
 
@@ -546,7 +546,7 @@ Where:
 - `r2`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-02 (`cond1` and `cond2` conditions).
 - `r3`- the number of unique visitors who visited the site during a specific time period on 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
 
-## uniqUpTo(N)(x)
+## uniqUpTo(N)(x) {#uniquptonx}
 
 Calculates the number of different values of the argument up to a specified limit, `N`. If the number of different argument values is greater than `N`, this function returns `N` + 1, otherwise it calculates the exact value.
 
@@ -566,9 +566,9 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 `uniqUpTo(4)(UserID)` calculates the number of unique `UserID` values for each `SearchPhrase`, but it only counts up to 4 unique values. If there are more than 4 unique `UserID` values for a `SearchPhrase`, the function returns 5 (4 + 1). The `HAVING` clause then filters out the `SearchPhrase` values for which the number of unique `UserID` values is less than 5. This will give you a list of search keywords that were used by at least 5 unique users.
 
-## sumMapFiltered
+## sumMapFiltered {#summapfiltered}
 
-This function behaves the same as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys.
+This function behaves the same as [sumMap](/sql-reference/aggregate-functions/reference/summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys.
 
 **Syntax**
 
@@ -616,9 +616,9 @@ Result:
    └─────────────────────────────────────────────────────────────────┘
 ```
 
-## sumMapFilteredWithOverflow
+## sumMapFilteredWithOverflow {#summapfilteredwithoverflow}
 
-This function behaves the same as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys. It differs from the [sumMapFiltered](#summapfiltered) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
+This function behaves the same as [sumMap](/sql-reference/aggregate-functions/reference/summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys. It differs from the [sumMapFiltered](#summapfiltered) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
 **Syntax**
 
@@ -678,7 +678,7 @@ Result:
    └──────────────────────┴────────────────────────────────────┘
 ```
 
-## sequenceNextNode
+## sequenceNextNode {#sequencenextnode}
 
 Returns a value of the next event that matched an event chain.
 
@@ -704,7 +704,7 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 
 **Arguments**
 
-- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types.
+- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](/sql-reference/data-types/datetime) and other unsigned integer types.
 - `event_column` — Name of the column containing the value of the next event to be returned. Data types supported: [String](../../sql-reference/data-types/string.md) and [Nullable(String)](../../sql-reference/data-types/nullable.md).
 - `base_condition` — Condition that the base point must fulfill.
 - `event1`, `event2`, ... — Conditions describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).

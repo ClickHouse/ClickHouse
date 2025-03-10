@@ -20,7 +20,7 @@ histogram(number_of_bins)(values)
 
 **Аргументы**
 
-`values` — [выражение](../syntax.md#syntax-expressions), предоставляющее входные значения.
+`values` — [выражение](/sql-reference/syntax#expressions), предоставляющее входные значения.
 
 **Параметры**
 
@@ -55,7 +55,7 @@ FROM (
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-С помощью функции [bar](../../sql-reference/aggregate-functions/parametric-functions.md#function-bar) можно визуализировать гистограмму, например:
+С помощью функции [bar](/sql-reference/functions/other-functions#bar) можно визуализировать гистограмму, например:
 
 ``` sql
 WITH histogram(5)(rand() % 100) AS hist
