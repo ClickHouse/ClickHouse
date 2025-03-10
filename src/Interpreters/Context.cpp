@@ -420,6 +420,7 @@ struct ContextSharedPart : boost::noncopyable
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
     UInt64 concurrent_threads_soft_limit_ratio_to_cores TSA_GUARDED_BY(mutex) = 0;
+    String concurrent_threads_scheduler TSA_GUARDED_BY(mutex);
     std::unique_ptr<AccessControl> access_control TSA_GUARDED_BY(mutex);
     mutable OnceFlag resource_manager_initialized;
     mutable ResourceManagerPtr resource_manager;
@@ -1926,9 +1927,24 @@ UInt64 Context::getConcurrentThreadsSoftLimitRatioToCores() const
     return shared->concurrent_threads_soft_limit_ratio_to_cores;
 }
 
-UInt64 Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores)
+String Context::getConcurrentThreadsScheduler() const
 {
     std::lock_guard lock(shared->mutex);
+    return shared->concurrent_threads_scheduler;
+}
+
+std::pair<UInt64, String> Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler)
+{
+    std::lock_guard lock(shared->mutex);
+
+    // Set the scheduler
+    bool ok = ConcurrencyControl::instance().setScheduler(scheduler);
+    if (ok)
+        shared->concurrent_threads_scheduler = scheduler;
+    else
+        LOG_ERROR(shared->log, "Invalid value '{}' is set for the server setting 'concurrent_threads_scheduler'. Scheduler was not changed.", scheduler);
+
+    // Set the limit
     SlotCount concurrent_threads_soft_limit = UnlimitedSlots;
     if (num > 0 && num < concurrent_threads_soft_limit)
         concurrent_threads_soft_limit = num;
@@ -1941,7 +1957,7 @@ UInt64 Context::setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores)
     ConcurrencyControl::instance().setMaxConcurrency(concurrent_threads_soft_limit);
     shared->concurrent_threads_soft_limit_num = num;
     shared->concurrent_threads_soft_limit_ratio_to_cores = ratio_to_cores;
-    return concurrent_threads_soft_limit;
+    return { concurrent_threads_soft_limit, ConcurrencyControl::instance().getScheduler() };
 }
 
 
@@ -3086,7 +3102,7 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
 
 void Context::waitForDictionariesLoad() const
 {
-    LOG_TRACE(shared->log, "Waiting for dictionaries to be loaded");
+    LOG_INFO(shared->log, "Waiting for dictionaries to be loaded");
     auto results = getExternalDictionariesLoader().tryLoadAll<ExternalLoader::LoadResults>();
     bool all_dictionaries_loaded = true;
     for (const auto & result : results)
@@ -3781,7 +3797,12 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
 
 ThrottlerPtr Context::getRemoteReadThrottler() const
 {
-    ThrottlerPtr throttler = shared->remote_read_throttler;
+    ThrottlerPtr throttler;
+    {
+        std::lock_guard lock(shared->mutex);
+        throttler = shared->remote_read_throttler;
+    }
+
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_read_network_bandwidth])
     {
         std::lock_guard lock(mutex);
@@ -3794,7 +3815,12 @@ ThrottlerPtr Context::getRemoteReadThrottler() const
 
 ThrottlerPtr Context::getRemoteWriteThrottler() const
 {
-    ThrottlerPtr throttler = shared->remote_write_throttler;
+    ThrottlerPtr throttler;
+    {
+        std::lock_guard lock(shared->mutex);
+        throttler = shared->remote_write_throttler;
+    }
+
     if (auto bandwidth = getSettingsRef()[Setting::max_remote_write_network_bandwidth])
     {
         std::lock_guard lock(mutex);
@@ -3852,6 +3878,29 @@ ThrottlerPtr Context::getMutationsThrottler() const
 ThrottlerPtr Context::getMergesThrottler() const
 {
     return shared->merges_throttler;
+}
+
+void Context::reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
+{
+    if (read_bandwidth)
+    {
+        std::lock_guard lock(shared->mutex);
+        if (!shared->remote_read_throttler)
+            shared->remote_read_throttler = std::make_shared<Throttler>(read_bandwidth);
+    }
+
+    if (shared->remote_read_throttler)
+        shared->remote_read_throttler->setMaxSpeed(read_bandwidth);
+
+    if (write_bandwidth)
+    {
+        std::lock_guard lock(shared->mutex);
+        if (!shared->remote_write_throttler)
+            shared->remote_write_throttler = std::make_shared<Throttler>(write_bandwidth);
+    }
+
+    if (shared->remote_write_throttler)
+        shared->remote_write_throttler->setMaxSpeed(write_bandwidth);
 }
 
 bool Context::hasDistributedDDL() const

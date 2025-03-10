@@ -200,6 +200,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 compiled_expression_cache_size;
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_num;
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_ratio_to_cores;
+    extern const ServerSettingsString concurrent_threads_scheduler;
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
@@ -251,6 +252,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
     extern const ServerSettingsUInt64 max_part_num_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
+    extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
     extern const ServerSettingsUInt64 max_table_num_to_warn;
@@ -1848,14 +1851,24 @@ try
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
+
+            size_t read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
+            size_t write_bandwidth = new_server_settings[ServerSetting::max_remote_write_network_bandwidth_for_server];
+
+            global_context->reloadRemoteThrottlerConfig(read_bandwidth,write_bandwidth);
+            LOG_INFO(log, "Setting max_remote_read_network_bandwidth_for_server was set to {}", read_bandwidth);
+            LOG_INFO(log, "Setting max_remote_write_network_bandwidth_for_server was set to {}", write_bandwidth);
+
             /// Only for system.server_settings
             global_context->setConfigReloaderInterval(new_server_settings[ServerSetting::config_reload_interval_ms]);
 
-            auto concurrent_threads_soft_limit = global_context->setConcurrentThreadsSoftLimit(
+            auto [concurrent_threads_soft_limit, concurrency_control_scheduler] = global_context->setConcurrentThreadsSoftLimit(
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
-                new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores]);
-            LOG_INFO(log, "ConcurrencyControl limit is set to {}",
-                concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit));
+                new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores],
+                new_server_settings[ServerSetting::concurrent_threads_scheduler]);
+            LOG_INFO(log, "ConcurrencyControl limit is set to {} CPU slots with '{}' scheduler",
+                concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit),
+                concurrency_control_scheduler);
 
             global_context->getProcessList().setMaxSize(new_server_settings[ServerSetting::max_concurrent_queries]);
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);

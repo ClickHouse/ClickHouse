@@ -305,6 +305,10 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             {
                 getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                 {
+                    /// Skip ephemeral subcolumns that don't store any real data.
+                    if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                        return;
+
                     auto stream_name = getStreamNameForColumn(name_type, substream_path, checksums);
                     if (!stream_name)
                         throw Exception(
