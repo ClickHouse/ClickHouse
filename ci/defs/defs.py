@@ -212,6 +212,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/keeper-persistent-watcher",
+        path="./docker/test/integration/keeper_persistent_watcher",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/python-bottle",
         path="./docker/test/integration/resolver",
         platforms=Docker.Platforms.arm_amd,
