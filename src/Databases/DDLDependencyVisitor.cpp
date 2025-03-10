@@ -1,12 +1,13 @@
+#include <Core/Settings.h>
 #include <Databases/DDLDependencyVisitor.h>
-#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Databases/removeWhereConditionPlaceholder.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/misc.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -15,11 +16,10 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/StorageMaterializedView.h>
+#include <Poco/String.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/quoteString.h>
-#include <Core/Settings.h>
-#include <Poco/String.h>
-
 
 namespace DB
 {
@@ -117,6 +117,14 @@ namespace
             /// an actual dependency as it will be executed only once to fill the table.
             if (create.select && !create.isView())
                 skip_asts.insert(create.select);
+
+            /// Add the inner table of a MV into the dependencies if exists.
+            if (create.is_materialized_view_with_inner_table())
+            {
+                auto inner_table_name
+                    = StorageMaterializedView::generateInnerTableName({create.getDatabase(), create.getTable(), create.uuid});
+                dependencies.insert(QualifiedTableName{create.getDatabase(), inner_table_name});
+            }
         }
 
         /// The definition of a dictionary: SOURCE(CLICKHOUSE(...)) LAYOUT(...) LIFETIME(...)

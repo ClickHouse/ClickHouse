@@ -73,13 +73,6 @@ namespace ActionLocks
     extern const StorageActionBlockType ViewRefresh;
 }
 
-static inline String generateInnerTableName(const StorageID & view_id)
-{
-    if (view_id.hasUUID())
-        return ".inner_id." + toString(view_id.uuid);
-    return ".inner." + view_id.getTableName();
-}
-
 /// Remove columns from target_header that does not exist in src_header
 static void removeNonCommonColumns(const Block & src_header, Block & target_header)
 {
@@ -100,6 +93,13 @@ namespace
             if (!target_table_columns.has(column.name))
                 throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Column {} does not exist in the materialized view's inner table", column.name);
     }
+}
+
+String StorageMaterializedView::generateInnerTableName(const StorageID & view_id)
+{
+    if (view_id.hasUUID())
+        return ".inner_id." + toString(view_id.uuid);
+    return ".inner." + view_id.getTableName();
 }
 
 StorageMaterializedView::StorageMaterializedView(
