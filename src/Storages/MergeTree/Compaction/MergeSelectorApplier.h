@@ -1,13 +1,10 @@
 #pragma once
 
-#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeType.h>
 
 #include <Storages/StorageInMemoryMetadata.h>
-
-#include <optional>
 
 namespace DB
 {
@@ -20,19 +17,20 @@ struct MergeSelectorChoice
     /// If this merges down to a single part in a partition
     bool final = false;
 };
+using MergeSelectorChoices = std::vector<MergeSelectorChoice>;
 
 class MergeSelectorApplier
 {
 public:
-    const size_t max_total_size_to_merge = 0;
+    const std::vector<size_t> max_merge_sizes;
     const bool merge_with_ttl_allowed = false;
     const bool aggressive = false;
     const IMergeSelector::RangeFilter range_filter = nullptr;
 
-    std::optional<MergeSelectorChoice> chooseMergeFrom(
+    MergeSelectorChoices chooseMergesFrom(
         const PartsRanges & ranges,
         const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeSettingsPtr & data_settings,
+        const MergeTreeSettingsPtr & merge_tree_settings,
         const PartitionIdToTTLs & next_delete_times,
         const PartitionIdToTTLs & next_recompress_times,
         bool can_use_ttl_merges,
