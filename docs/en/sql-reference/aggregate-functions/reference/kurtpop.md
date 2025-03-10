@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/kurtpop
+slug: /sql-reference/aggregate-functions/reference/kurtpop
 sidebar_position: 157
+title: "kurtPop"
+description: "Computes the kurtosis of a sequence."
 ---
 
 # kurtPop
@@ -13,7 +15,7 @@ kurtPop(expr)
 
 **Arguments**
 
-`expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
+`expr` — [Expression](/sql-reference/syntax#expressions) returning a number.
 
 **Returned value**
 

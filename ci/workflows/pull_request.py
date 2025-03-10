@@ -1,9 +1,9 @@
 from praktika import Workflow
 
-from ci.jobs.scripts.workflow_hooks.should_skip_job import should_skip_job
+from ci.defs.defs import BASE_BRANCH, SECRETS, ArtifactConfigs, JobNames
+from ci.defs.job_configs import JobConfigs
+from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
-from ci.workflows.defs import ARTIFACTS, BASE_BRANCH, SECRETS, JobNames
-from ci.workflows.job_configs import JobConfigs
 
 workflow = Workflow.Config(
     name="PR",
@@ -18,6 +18,10 @@ workflow = Workflow.Config(
         *[
             job.set_dependency([JobNames.STYLE_CHECK, JobNames.FAST_TEST])
             for job in JobConfigs.build_jobs
+        ],
+        *[
+            job.set_dependency([JobNames.STYLE_CHECK, JobNames.FAST_TEST])
+            for job in JobConfigs.special_build_jobs
         ],
         *JobConfigs.unittest_jobs,
         JobConfigs.docker_sever,
@@ -39,7 +43,18 @@ workflow = Workflow.Config(
         *JobConfigs.performance_comparison_amd_jobs,
         *JobConfigs.performance_comparison_arm_jobs,
     ],
-    artifacts=ARTIFACTS,
+    artifacts=[
+        *ArtifactConfigs.unittests_binaries,
+        *ArtifactConfigs.clickhouse_binaries,
+        ArtifactConfigs.fast_test,
+        *ArtifactConfigs.clickhouse_debians,
+        *ArtifactConfigs.clickhouse_rpms,
+        *ArtifactConfigs.clickhouse_tgzs,
+        ArtifactConfigs.fuzzers,
+        ArtifactConfigs.fuzzers_corpus,
+        *ArtifactConfigs.performance_packages,
+        *ArtifactConfigs.performance_reports,
+    ],
     # dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
@@ -56,6 +71,7 @@ workflow = Workflow.Config(
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
     ],
 )
 
