@@ -540,6 +540,19 @@ void IColumnHelper<Derived, Parent>::collectSerializedValueSizes(PaddedPODArray<
     }
 }
 
+template <typename Derived, typename Parent>
+IColumnInsertFromFunc IColumnHelper<Derived, Parent>::getInsertFromFunc() const
+{
+    return [](IColumn & dst, const IColumn & src, size_t n) { static_cast<Derived &>(dst).insertFrom(src, n); };
+}
+
+template <typename Derived, typename Parent>
+IColumnInsertRangeFromFunc IColumnHelper<Derived, Parent>::getInsertRangeFromFunc() const
+{
+    return [](IColumn & dst, const IColumn & src, size_t start, size_t length)
+    { static_cast<Derived &>(dst).insertRangeFrom(src, start, length); };
+}
+
 template class IColumnHelper<ColumnVector<UInt8>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UInt16>, ColumnFixedSizeHelper>;
 template class IColumnHelper<ColumnVector<UInt32>, ColumnFixedSizeHelper>;

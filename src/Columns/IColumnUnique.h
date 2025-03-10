@@ -187,6 +187,16 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method hasEqualValues is not supported for ColumnUnique.");
     }
 
+    IColumnInsertFromFunc getInsertFromFunc() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getInsertFromFunc is not supported for ColumnUnique.");
+    }
+
+    IColumnInsertRangeFromFunc getInsertRangeFromFunc() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getInsertRangeFromFunc is not supported for ColumnUnique.");
+    }
+
     /** Given some value (usually, of type @e ColumnType) @p value that is convertible to StringRef, obtains its
      * index in the DB::ColumnUnique::reverse_index hashtable.
      *

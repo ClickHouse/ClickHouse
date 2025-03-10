@@ -36,40 +36,10 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
 
     insert_from_functions.resize(columns.size());
     insert_range_from_functions.resize(columns.size());
-
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        auto & insert_from = insert_from_functions[i];
-        auto & insert_range_from = insert_range_from_functions[i];
-
-#define DISPATCH(TYPE) \
-        else if (dynamic_cast<TYPE *>(columns[i].get())) \
-        { \
-            insert_from = [](IColumn & dst, const IColumn & src, size_t n) { dynamic_cast<TYPE &>(dst).insertFrom(src, n); }; \
-            insert_range_from = [](IColumn & dst, const IColumn & src, size_t start, size_t length) \
-            { dynamic_cast<TYPE &>(dst).insertRangeFrom(src, start, length); }; \
-        }
-
-        if (false);
-        DISPATCH(ColumnUInt8)
-        DISPATCH(ColumnUInt16)
-        DISPATCH(ColumnUInt32)
-        DISPATCH(ColumnUInt64)
-        DISPATCH(ColumnInt8)
-        DISPATCH(ColumnInt16)
-        DISPATCH(ColumnInt32)
-        DISPATCH(ColumnInt64)
-        DISPATCH(ColumnFloat32)
-        DISPATCH(ColumnFloat64)
-        DISPATCH(ColumnString)
-        DISPATCH(ColumnFixedString)
-        else
-        {
-            insert_from = [](IColumn & dst, const IColumn & src, size_t n) { dst.insertFrom(src, n); };
-            insert_range_from
-                = [](IColumn & dst, const IColumn & src, size_t start, size_t length) { dst.insertRangeFrom(src, start, length); };
-        }
-#undef DISPATCH
+        insert_from_functions[i] = columns[i]->getInsertFromFunc();
+        insert_range_from_functions[i] = columns[i]->getInsertRangeFromFunc();
     }
 }
 
@@ -79,7 +49,7 @@ void MergedData::insertRow(const ColumnRawPtrs & raw_columns, size_t row, size_t
     size_t num_columns = raw_columns.size();
     chassert(columns.size() == num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        columns[i]->insertFrom(*raw_columns[i], row);
+        insert_from_functions[i](*columns[i], *raw_columns[i], row);
 
     ++total_merged_rows;
     ++merged_rows;
@@ -93,15 +63,9 @@ void MergedData::insertRows(const ColumnRawPtrs & raw_columns, size_t start_inde
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (length == 1)
-        {
-            // columns[i]->insertFrom(*raw_columns[i], start_index);
             insert_from_functions[i](*columns[i], *raw_columns[i], start_index);
-        }
         else
-        {
-            // columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
             insert_range_from_functions[i](*columns[i], *raw_columns[i], start_index, length);
-        }
     }
 
     total_merged_rows += length;

@@ -70,6 +70,20 @@ Chunk MergeSorter::read()
         return res;
     }
 
+    if (insert_from_functions.empty() || insert_range_from_functions.empty())
+    {
+        size_t num_columns = chunks[0].getNumColumns();
+        const auto & columns = chunks[0].getColumns();
+
+        insert_from_functions.resize(num_columns);
+        insert_range_from_functions.resize(num_columns);
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            insert_from_functions[i] = columns[i]->getInsertFromFunc();
+            insert_range_from_functions[i] = columns[i]->getInsertRangeFromFunc();
+        }
+    }
+
     Chunk result = queue_variants.callOnBatchVariant([&](auto & queue)
     {
         return mergeBatchImpl(queue);
@@ -116,9 +130,9 @@ Chunk MergeSorter::mergeBatchImpl(TSortingQueue & queue)
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (batch_size == 1)
-                merged_columns[i]->insertFrom(*current->all_columns[i], current->getRow());
+                insert_from_functions[i](*merged_columns[i], *current->all_columns[i], current->getRow());
             else
-                merged_columns[i]->insertRangeFrom(*current->all_columns[i], current->getRow(), batch_size);
+                insert_range_from_functions[i](*merged_columns[i], *current->all_columns[i], current->getRow(), batch_size);
         }
 
         total_merged_rows += batch_size;

@@ -31,6 +31,8 @@ class IDataType;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
+using IColumnInsertFromFunc = std::function<void(IColumn & dst, const IColumn & src, size_t n)>;
+using IColumnInsertRangeFromFunc = std::function<void(IColumn & dst, const IColumn & src, size_t start, size_t length)>;
 
 /// A range of column values between row indexes `from` and `to`. The name "equal range" is due to table sorting as its main use case: With
 /// a PRIMARY KEY (c_pk1, c_pk2, ...), the first PK column is fully sorted. The second PK column is sorted within equal-value runs of the
@@ -265,6 +267,12 @@ public:
       * Parameter begin should be used with Arena::allocContinue.
       */
     virtual StringRef serializeValueIntoArena(size_t /* n */, Arena & /* arena */, char const *& /* begin */) const;
+
+    /// Get std::function corresponding to insertFrom method to avoid indirect call introduced by virtual method.
+    virtual IColumnInsertFromFunc getInsertFromFunc() const = 0;
+
+    /// Get std::function corresponding to insertRangeFrom method to avoid indirect call introduced by virtual method.
+    virtual IColumnInsertRangeFromFunc getInsertRangeFromFunc() const = 0;
 
     /// Same as above but serialize into already allocated continuous memory.
     /// Return pointer to the end of the serialization data.
@@ -805,6 +813,9 @@ private:
     StringRef serializeValueIntoArenaWithNull(size_t n, Arena & arena, char const *& begin, const UInt8 * is_null) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
+
+    IColumnInsertFromFunc getInsertFromFunc() const override;
+    IColumnInsertRangeFromFunc getInsertRangeFromFunc() const override;
 };
 
 }

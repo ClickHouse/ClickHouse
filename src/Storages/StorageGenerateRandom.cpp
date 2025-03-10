@@ -37,7 +37,6 @@
 #include <Functions/FunctionFactory.h>
 
 
-
 namespace DB
 {
 namespace Setting
