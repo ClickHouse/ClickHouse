@@ -193,17 +193,19 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     }
     ff->set_path(nfile.generic_string());
 
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         SQLType * tp = entry.getBottomType();
 
         buf += fmt::format(
-            "{}{} {}{}",
+            "{}{} {}{}{}{}",
             first ? "" : ", ",
             entry.getBottomName(),
+            entry.path.size() > 1 ? "Array(" : "",
             tp->typeName(true),
-            entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
+            entry.path.size() > 1 ? ")" : "",
+            (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         /// ArrowStream doesn't support UUID
         if (outf == OutFormat::OUT_ArrowStream && tp->getTypeClass() == SQLTypeClass::UUID)
@@ -256,7 +258,7 @@ void QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable &
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         gen.columnPathRef(entry, ins->add_cols());
@@ -644,7 +646,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
         jtf->set_final(t.supportsFinal());
-        gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+        gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {
             gen.columnPathRef(colRef, ins->add_cols());

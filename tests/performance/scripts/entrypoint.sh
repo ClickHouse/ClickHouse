@@ -29,6 +29,11 @@ function find_reference_sha
 {
     git -C right/ch log -1 origin/master
     git -C right/ch log -1 pr
+
+    # Ensure that trees are available
+    git -C right/ch show -s origin/master
+    git -C right/ch show -s pr
+
     # Go back from the revision to be tested, trying to find the closest published
     # testing release. The PR branch may be either pull/*/head which is the
     # author's branch, or pull/*/merge, which is head merged with some master
@@ -121,9 +126,12 @@ then
     # tests for use by compare.sh. Compare to merge base, because master might be
     # far in the future and have unrelated test changes.
     base=$(git -C right/ch merge-base pr origin/master)
+
+    set -o pipefail
     git -C right/ch diff --name-only "$base" pr -- . | tee all-changed-files.txt
     git -C right/ch diff --name-only --diff-filter=d "$base" pr -- tests/performance/*.xml | tee changed-test-definitions.txt
     git -C right/ch diff --name-only "$base" pr -- :!tests/performance/*.xml :!docker/test/performance-comparison | tee other-changed-files.txt
+    set +o pipefail
 fi
 
 # Set python output encoding so that we can print queries with non-ASCII letters.
