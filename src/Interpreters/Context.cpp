@@ -56,8 +56,8 @@
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/Cache/FileCache.h>
-#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/SessionTracker.h>
 #include <Core/ServerSettings.h>
 #include <Interpreters/PreparedSets.h>
@@ -442,10 +442,10 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
     mutable SkippingIndexCachePtr skipping_index_cache TSA_GUARDED_BY(mutex);         /// Cache of deserialized secondary index granules.
+    mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
-    mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Mark filter for caching query conditions
     AsynchronousMetrics * asynchronous_metrics TSA_GUARDED_BY(mutex) = nullptr;       /// Points to asynchronous metrics
     mutable PageCachePtr page_cache TSA_GUARDED_BY(mutex);                            /// Userspace page cache.
     ProcessList process_list;                                   /// Executing queries at the moment.
@@ -3604,6 +3604,42 @@ void Context::clearMMappedFileCache() const
         cache->clear();
 }
 
+void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark filter cache has been already create.");
+
+    shared->query_condition_cache = std::make_shared<QueryConditionCache>(cache_policy, max_size_in_bytes, size_ratio);
+}
+
+QueryConditionCachePtr Context::getQueryConditionCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->query_condition_cache;
+}
+
+void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->query_condition_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
+
+    size_t max_size_in_bytes = config.getUInt64("query_condition_cache_size", DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE);
+    shared->query_condition_cache->setMaxSizeInBytes(max_size_in_bytes);
+}
+
+void Context::clearQueryConditionCache() const
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->query_condition_cache)
+        shared->query_condition_cache->clear();
+}
+
+
 void Context::setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows)
 {
     std::lock_guard lock(shared->mutex);
@@ -3643,41 +3679,6 @@ void Context::clearQueryResultCache(const std::optional<String> & tag) const
         cache->clear(tag);
 }
 
-void Context::setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->query_condition_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mark filter cache has been already create.");
-
-    shared->query_condition_cache = std::make_shared<QueryConditionCache>(cache_policy, max_size_in_bytes, size_ratio);
-}
-
-QueryConditionCachePtr Context::getQueryConditionCache() const
-{
-    SharedLockGuard lock(shared->mutex);
-    return shared->query_condition_cache;
-}
-
-void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config)
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->query_condition_cache)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
-
-    size_t max_size_in_bytes = config.getUInt64("query_condition_cache_size", DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE);
-    shared->query_condition_cache->setMaxSizeInBytes(max_size_in_bytes);
-}
-
-void Context::clearQueryConditionCache() const
-{
-    std::lock_guard lock(shared->mutex);
-
-    if (shared->query_condition_cache)
-        shared->query_condition_cache->clear();
-}
-
 void Context::clearCaches() const
 {
     std::lock_guard lock(shared->mutex);
@@ -3710,11 +3711,11 @@ void Context::clearCaches() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mmapped file cache was not created yet.");
     shared->mmap_cache->clear();
 
-    /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
-
     if (!shared->query_condition_cache)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query condition cache was not created yet.");
     shared->query_condition_cache->clear();
+
+    /// Intentionally not clearing the query result cache which is transactionally inconsistent by design.
 }
 
 void Context::setAsynchronousMetrics(AsynchronousMetrics * asynchronous_metrics_)
