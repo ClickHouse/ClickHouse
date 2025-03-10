@@ -34,21 +34,21 @@ When the `Distributed` table is pointing to a table on the current server you ca
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
-### Distributed Parameters
+### Distributed Parameters {#distributed-parameters}
 
-#### cluster
+#### cluster {#cluster}
 
 `cluster` - the cluster name in the server's config file
 
-#### database
+#### database {#database}
 
 `database` - the name of a remote database
 
-#### table
+#### table {#table}
 
 `table` - the name of a remote table
 
-#### sharding_key
+#### sharding_key {#sharding_key}
 
 `sharding_key` - (optionally) sharding key
 
@@ -57,7 +57,7 @@ Specifying the `sharding_key` is necessary for the following:
 - For `INSERTs` into a distributed table (as the table engine needs the `sharding_key` to determine how to split the data). However, if `insert_distributed_one_random_shard` setting is enabled, then `INSERTs` do not need the sharding key.
 - For use with `optimize_skip_unused_shards` as the `sharding_key` is necessary to determine what shards should be queried
 
-#### policy_name
+#### policy_name {#policy_name}
 
 `policy_name` - (optionally) policy name, it will be used to store temporary files for background send
 
@@ -66,49 +66,49 @@ Specifying the `sharding_key` is necessary for the following:
  - [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
  - [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
-### Distributed Settings
+### Distributed Settings {#distributed-settings}
 
-#### fsync_after_insert
+#### fsync_after_insert {#fsync_after_insert}
 
 `fsync_after_insert` - do the `fsync` for the file data after background insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.
 
-#### fsync_directories
+#### fsync_directories {#fsync_directories}
 
 `fsync_directories` - do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc.).
 
-#### skip_unavailable_shards
+#### skip_unavailable_shards {#skip_unavailable_shards}
 
 `skip_unavailable_shards` - If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard. Default false.
 
-#### bytes_to_throw_insert
+#### bytes_to_throw_insert {#bytes_to_throw_insert}
 
 `bytes_to_throw_insert` - if more than this number of compressed bytes will be pending for background INSERT, an exception will be thrown. 0 - do not throw. Default 0.
 
-#### bytes_to_delay_insert
+#### bytes_to_delay_insert {#bytes_to_delay_insert}
 
 `bytes_to_delay_insert` - if more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay. Default 0.
 
-#### max_delay_to_insert
+#### max_delay_to_insert {#max_delay_to_insert}
 
 `max_delay_to_insert` - max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for background send. Default 60.
 
-#### background_insert_batch
+#### background_insert_batch {#background_insert_batch}
 
 `background_insert_batch` - same as [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch)
 
-#### background_insert_split_batch_on_failure
+#### background_insert_split_batch_on_failure {#background_insert_split_batch_on_failure}
 
 `background_insert_split_batch_on_failure` - same as [distributed_background_insert_split_batch_on_failure](../../../operations/settings/settings.md#distributed_background_insert_split_batch_on_failure)
 
-#### background_insert_sleep_time_ms
+#### background_insert_sleep_time_ms {#background_insert_sleep_time_ms}
 
 `background_insert_sleep_time_ms` - same as [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms)
 
-#### background_insert_max_sleep_time_ms
+#### background_insert_max_sleep_time_ms {#background_insert_max_sleep_time_ms}
 
 `background_insert_max_sleep_time_ms` - same as [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)
 
-#### flush_on_detach
+#### flush_on_detach {#flush_on_detach}
 
 `flush_on_detach` - Flush data to remote nodes on DETACH/DROP/server shutdown. Default true.
 
@@ -122,7 +122,7 @@ Specifying the `sharding_key` is necessary for the following:
 For **Insert limit settings** (`..._insert`) see also:
 
 - [distributed_foreground_insert](../../../operations/settings/settings.md#distributed_foreground_insert) setting
-- [prefer_localhost_replica](../../../operations/settings/settings.md#prefer-localhost-replica) setting
+- [prefer_localhost_replica](/operations/settings/settings#prefer_localhost_replica) setting
 - `bytes_to_throw_insert` handled before `bytes_to_delay_insert`, so you should not set it to the value less then `bytes_to_delay_insert`
 :::
 
@@ -166,7 +166,7 @@ Clusters are configured in the [server configuration file](../../../operations/c
             <!-- Optional. Shard weight when writing data. Default: 1. -->
             <weight>1</weight>
             <!-- Optional. The shard name.  Must be non-empty and unique among shards in the cluster. If not specified, will be empty. -->
-            <shard_name>shard_01</shard_name>
+            <name>shard_01</name>
             <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
             <internal_replication>false</internal_replication>
             <replica>
@@ -182,7 +182,7 @@ Clusters are configured in the [server configuration file](../../../operations/c
         </shard>
         <shard>
             <weight>2</weight>
-            <shard_name>shard_02</shard_name>
+            <name>shard_02</name>
             <internal_replication>false</internal_replication>
             <replica>
                 <host>example01-02-1</host>
@@ -248,7 +248,7 @@ You should be concerned about the sharding scheme in the following cases:
 - Queries are used that require joining data (`IN` or `JOIN`) by a specific key. If data is sharded by this key, you can use local `IN` or `JOIN` instead of `GLOBAL IN` or `GLOBAL JOIN`, which is much more efficient.
 - A large number of servers is used (hundreds or more) with a large number of small queries, for example, queries for data of individual clients (e.g. websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, you can set up bi-level sharding: divide the entire cluster into "layers", where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. `Distributed` tables are created for each layer, and a single shared distributed table is created for global queries.
 
-Data is written in background. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The periodicity for sending data is managed by the [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms) and [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) setting.
+Data is written in background. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The periodicity for sending data is managed by the [distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms) and [distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`. The number of threads performing background tasks can be set by [background_distributed_schedule_pool_size](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting.
 
 If the server ceased to exist or had a rough restart (for example, due to a hardware failure) after an `INSERT` to a `Distributed` table, the inserted data might be lost. If a damaged data part is detected in the table directory, it is transferred to the `broken` subdirectory and no longer used.
 
@@ -258,11 +258,11 @@ When querying a `Distributed` table, `SELECT` queries are sent to all shards and
 
 When the `max_parallel_replicas` option is enabled, query processing is parallelized across all replicas within a single shard. For more information, see the section [max_parallel_replicas](../../../operations/settings/settings.md#max_parallel_replicas).
 
-To learn more about how distributed `in` and `global in` queries are processed, refer to [this](../../../sql-reference/operators/in.md#select-distributed-subqueries) documentation.
+To learn more about how distributed `in` and `global in` queries are processed, refer to [this](/sql-reference/operators/in#distributed-subqueries) documentation.
 
 ## Virtual Columns {#virtual-columns}
 
-#### _shard_num
+#### _shard_num {#_shard_num}
 
 `_shard_num` — Contains the `shard_num` value from the table `system.clusters`. Type: [UInt32](../../../sql-reference/data-types/int-uint.md).
 
@@ -273,5 +273,5 @@ Since [remote](../../../sql-reference/table-functions/remote.md) and [cluster](.
 **See Also**
 
 - [Virtual columns](../../../engines/table-engines/index.md#table_engines-virtual_columns) description
-- [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) setting
+- [background_distributed_schedule_pool_size](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) setting
 - [shardNum()](../../../sql-reference/functions/other-functions.md#shardnum) and [shardCount()](../../../sql-reference/functions/other-functions.md#shardcount) functions

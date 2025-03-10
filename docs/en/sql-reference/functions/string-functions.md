@@ -10,11 +10,11 @@ import VersionBadge from '@theme/badges/VersionBadge';
 
 Functions for [searching](string-search-functions.md) in strings and for [replacing](string-replace-functions.md) in strings are described separately.
 
-## empty
+## empty {#empty}
 
 Checks whether the input string is empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
-The function is also available for [arrays](array-functions.md#function-empty) and [UUIDs](uuid-functions.md#empty).
+The function is also available for [arrays](/sql-reference/functions/array-functions#empty) and [UUIDs](uuid-functions.md#empty).
 
 **Syntax**
 
@@ -44,11 +44,11 @@ Result:
 └───────────┘
 ```
 
-## notEmpty
+## notEmpty {#notempty}
 
 Checks whether the input string is non-empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
-The function is also available for [arrays](array-functions.md#function-notempty) and [UUIDs](uuid-functions.md#notempty).
+The function is also available for [arrays](/sql-reference/functions/array-functions#notempty) and [UUIDs](uuid-functions.md#notempty).
 
 **Syntax**
 
@@ -78,7 +78,7 @@ Result:
 └──────────────────┘
 ```
 
-## length
+## length {#length}
 
 Returns the length of a string in bytes rather than in characters or Unicode code points. The function also works for arrays.
 
@@ -129,7 +129,7 @@ Result:
 ```
 
 
-## lengthUTF8
+## lengthUTF8 {#lengthutf8}
 
 Returns the length of a string in Unicode code points rather than in bytes or characters. It assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
@@ -167,7 +167,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## left
+## left {#left}
 
 Returns a substring of string `s` with a specified `offset` starting from the left.
 
@@ -214,7 +214,7 @@ Result:
 He
 ```
 
-## leftUTF8
+## leftUTF8 {#leftutf8}
 
 Returns a substring of a UTF-8 encoded string `s` with a specified `offset` starting from the left.
 
@@ -261,7 +261,7 @@ Result:
 Пр
 ```
 
-## leftPad
+## leftPad {#leftpad}
 
 Pads a string from the left with spaces or with a specified string (multiple times, if needed) until the resulting string reaches the specified `length`.
 
@@ -297,7 +297,7 @@ Result:
 └────────────────────────┴───────────────────┘
 ```
 
-## leftPadUTF8
+## leftPadUTF8 {#leftpadutf8}
 
 Pads the string from the left with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Unlike [leftPad](#leftpad) which measures the string length in bytes, the string length is measured in code points.
 
@@ -331,7 +331,7 @@ Result:
 └─────────────────────────────┴────────────────────────┘
 ```
 
-## right
+## right {#right}
 
 Returns a substring of string `s` with a specified `offset` starting from the right.
 
@@ -378,7 +378,7 @@ Result:
 lo
 ```
 
-## rightUTF8
+## rightUTF8 {#rightutf8}
 
 Returns a substring of UTF-8 encoded string `s` with a specified `offset` starting from the right.
 
@@ -425,7 +425,7 @@ Result:
 ет
 ```
 
-## rightPad
+## rightPad {#rightpad}
 
 Pads a string from the right with spaces or with a specified string (multiple times, if needed) until the resulting string reaches the specified `length`.
 
@@ -461,7 +461,7 @@ Result:
 └─────────────────────────┴────────────────────┘
 ```
 
-## rightPadUTF8
+## rightPadUTF8 {#rightpadutf8}
 
 Pads the string from the right with spaces or a specified string (multiple times, if needed) until the resulting string reaches the given length. Unlike [rightPad](#rightpad) which measures the string length in bytes, the string length is measured in code points.
 
@@ -495,7 +495,7 @@ Result:
 └──────────────────────────────┴─────────────────────────┘
 ```
 
-## compareSubstrings
+## compareSubstrings {#comparesubstrings}
 
 Compare two strings lexicographically.
 
@@ -535,7 +535,7 @@ Result:
 └────────┘
 ```
 
-## lower
+## lower {#lower}
 
 Converts the ASCII Latin symbols in a string to lowercase.
 
@@ -569,7 +569,7 @@ SELECT lower('CLICKHOUSE');
 └─────────────────────┘
 ```
 
-## upper
+## upper {#upper}
 
 Converts the ASCII Latin symbols in a string to uppercase.
 
@@ -603,7 +603,7 @@ SELECT upper('clickhouse');
 └─────────────────────┘
 ```
 
-## lowerUTF8
+## lowerUTF8 {#lowerutf8}
 
 Converts a string to lowercase, assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
@@ -641,7 +641,7 @@ Result:
 └───────────┘
 ```
 
-## upperUTF8
+## upperUTF8 {#upperutf8}
 
 Converts a string to uppercase, assuming that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
@@ -679,7 +679,7 @@ Result:
 └───────────┘
 ```
 
-## isValidUTF8
+## isValidUTF8 {#isvalidutf8}
 
 Returns 1, if the set of bytes constitutes valid UTF-8-encoded text, otherwise 0.
 
@@ -711,7 +711,7 @@ Result:
 └───────┴─────────┘
 ```
 
-## toValidUTF8
+## toValidUTF8 {#tovalidutf8}
 
 Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
 
@@ -741,7 +741,7 @@ SELECT toValidUTF8('\x61\xF0\x80\x80\x80b');
 └───────────────────────┘
 ```
 
-## repeat
+## repeat {#repeat}
 
 Concatenates a string as many times with itself as specified.
 
@@ -776,7 +776,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## space
+## space {#space}
 
 Concatenates a space (` `) as many times with itself as specified.
 
@@ -812,15 +812,15 @@ Result:
 └──────────────┘
 ```
 
-## reverse
+## reverse {#reverse}
 
 Reverses the sequence of bytes in a string.
 
-## reverseUTF8
+## reverseUTF8 {#reverseutf8}
 
 Reverses a sequence of Unicode code points in a string. Assumes that the string contains valid UTF-8 encoded text. If this assumption is violated, no exception is thrown and the result is undefined.
 
-## concat
+## concat {#concat}
 
 Concatenates the given arguments.
 
@@ -876,7 +876,7 @@ Result:
 Use the || operator for string concatenation as a concise alternative to `concat()`. For example, `'Hello, ' || 'World!'` is equivalent to `concat('Hello, ', 'World!')`.
 :::
 
-## concatAssumeInjective
+## concatAssumeInjective {#concatassumeinjective}
 
 Like [concat](#concat) but assumes that `concat(s1, s2, ...) → sn` is injective. Can be used for optimization of GROUP BY.
 
@@ -931,7 +931,7 @@ Result:
 └────────────────────┴────────────┘
 ```
 
-## concatWithSeparator
+## concatWithSeparator {#concatwithseparator}
 
 Concatenates the given strings with a given separator.
 
@@ -968,13 +968,13 @@ Result:
 └──────────────────────────────────────────────┘
 ```
 
-## concatWithSeparatorAssumeInjective
+## concatWithSeparatorAssumeInjective {#concatwithseparatorassumeinjective}
 
 Like `concatWithSeparator` but assumes that `concatWithSeparator(sep, expr1, expr2, expr3...) → result` is injective. Can be used for optimization of GROUP BY.
 
 A function is called injective if it returns for different arguments different results. In other words: different arguments never produce identical result.
 
-## substring
+## substring {#substring}
 
 Returns the substring of a string `s` which starts at the specified byte index `offset`. Byte counting starts from 1. If `offset` is 0, an empty string is returned. If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning. An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 
@@ -1013,7 +1013,7 @@ Result:
 └──────────┴──────────────────────────┴─────────────────────────────┘
 ```
 
-## substringUTF8
+## substringUTF8 {#substringutf8}
 
 Returns the substring of a string `s` which starts at the specified byte index `offset` for Unicode code points. Byte counting starts from `1`. If `offset` is `0`, an empty string is returned. If `offset` is negative, the substring starts `pos` characters from the end of the string, rather than from the beginning. An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 
@@ -1051,7 +1051,7 @@ SELECT 'Täglich grüßt das Murmeltier.' AS str,
 Täglich grüßt das Murmeltier.	grüßt das Murmeltier.	grüßt
 ```
 
-## substringIndex
+## substringIndex {#substringindex}
 
 Returns the substring of `s` before `count` occurrences of the delimiter `delim`, as in Spark or MySQL.
 
@@ -1082,7 +1082,7 @@ Result:
 └──────────────────────────────────────────────┘
 ```
 
-## substringIndexUTF8
+## substringIndexUTF8 {#substringindexutf8}
 
 Returns the substring of `s` before `count` occurrences of the delimiter `delim`, specifically for Unicode code points.
 
@@ -1118,7 +1118,7 @@ SELECT substringIndexUTF8('www.straßen-in-europa.de', '.', 2)
 www.straßen-in-europa
 ```
 
-## appendTrailingCharIfAbsent
+## appendTrailingCharIfAbsent {#appendtrailingcharifabsent}
 
 Appends character `c` to string `s` if `s` is non-empty and does not end with character `c`.
 
@@ -1128,7 +1128,7 @@ Appends character `c` to string `s` if `s` is non-empty and does not end with ch
 appendTrailingCharIfAbsent(s, c)
 ```
 
-## convertCharset
+## convertCharset {#convertcharset}
 
 Returns string `s` converted from the encoding `from` to encoding `to`.
 
@@ -1138,7 +1138,7 @@ Returns string `s` converted from the encoding `from` to encoding `to`.
 convertCharset(s, from, to)
 ```
 
-## base58Encode
+## base58Encode {#base58encode}
 
 Encodes a string using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) in the "Bitcoin" alphabet.
 
@@ -1170,7 +1170,7 @@ Result:
 └─────────────────────────┘
 ```
 
-## base58Decode
+## base58Decode {#base58decode}
 
 Accepts a string and decodes it using [Base58](https://datatracker.ietf.org/doc/html/draft-msporny-base58) encoding scheme using "Bitcoin" alphabet.
 
@@ -1202,7 +1202,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## tryBase58Decode
+## tryBase58Decode {#trybase58decode}
 
 Like `base58Decode` but returns an empty string in case of error.
 
@@ -1234,7 +1234,7 @@ SELECT tryBase58Decode('3dc8KtHrwM') as res, tryBase58Decode('invalid') as res_i
 └─────────┴─────────────┘
 ```
 
-## base64Encode
+## base64Encode {#base64encode}
 
 Encodes a String or FixedString as base64, according to [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-4).
 
@@ -1268,7 +1268,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## base64URLEncode
+## base64URLEncode {#base64urlencode}
 
 Encodes an URL (String or FixedString) as base64 with URL-specific modifications, according to [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-5).
 
@@ -1300,7 +1300,7 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## base64Decode
+## base64Decode {#base64decode}
 
 Accepts a String and decodes it from base64, according to [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-4). Throws an exception in case of an error.
 
@@ -1334,7 +1334,7 @@ Result:
 └──────────────────────────────────┘
 ```
 
-## base64URLDecode
+## base64URLDecode {#base64urldecode}
 
 Accepts a base64-encoded URL and decodes it from base64 with URL-specific modifications, according to [RFC 4648](https://datatracker.ietf.org/doc/html/rfc4648#section-5). Throws an exception in case of an error.
 
@@ -1366,7 +1366,7 @@ Result:
 └─────────────────────────────────────────────────┘
 ```
 
-## tryBase64Decode
+## tryBase64Decode {#trybase64decode}
 
 Like `base64Decode` but returns an empty string in case of error.
 
@@ -1398,7 +1398,7 @@ SELECT tryBase64Decode('RW5jb2RlZA==') as res, tryBase64Decode('invalid') as res
 └────────────┴─────────────┘
 ```
 
-## tryBase64URLDecode
+## tryBase64URLDecode {#trybase64urldecode}
 
 Like `base64URLDecode` but returns an empty string in case of error.
 
@@ -1440,7 +1440,7 @@ Returns whether string `str` ends with `suffix`.
 endsWith(str, suffix)
 ```
 
-## endsWithUTF8
+## endsWithUTF8 {#endswithutf8}
 
 Returns whether string `str` ends with `suffix`, the difference between `endsWithUTF8` and `endsWith` is that `endsWithUTF8` match `str` and `suffix` by UTF-8 characters.
 
@@ -1480,7 +1480,7 @@ startsWith(str, prefix)
 SELECT startsWith('Spider-Man', 'Spi');
 ```
 
-## startsWithUTF8
+## startsWithUTF8 {#startswithutf8}
 
 <VersionBadge minVersion='23.8' />
 
@@ -1501,7 +1501,7 @@ Result:
 └────────────────────────────┴────────────────────────┘
 ```
 
-## trim
+## trim {#trim}
 
 Removes the specified characters from the start or end of a string. If not specified otherwise, the function removes whitespace (ASCII-character 32).
 
@@ -1534,7 +1534,7 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-## trimLeft
+## trimLeft {#trimleft}
 
 Removes the consecutive occurrences of whitespace (ASCII-character 32) from the start of a string.
 
@@ -1569,7 +1569,7 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## trimRight
+## trimRight {#trimright}
 
 Removes the consecutive occurrences of whitespace (ASCII-character 32) from the end of a string.
 
@@ -1604,7 +1604,7 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-## trimBoth
+## trimBoth {#trimboth}
 
 Removes the consecutive occurrences of whitespace (ASCII-character 32) from both ends of a string.
 
@@ -1639,25 +1639,25 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## CRC32
+## CRC32 {#crc32}
 
 Returns the CRC32 checksum of a string using CRC-32-IEEE 802.3 polynomial and initial value `0xffffffff` (zlib implementation).
 
 The result type is UInt32.
 
-## CRC32IEEE
+## CRC32IEEE {#crc32ieee}
 
 Returns the CRC32 checksum of a string, using CRC-32-IEEE 802.3 polynomial.
 
 The result type is UInt32.
 
-## CRC64
+## CRC64 {#crc64}
 
 Returns the CRC64 checksum of a string, using CRC-64-ECMA polynomial.
 
 The result type is UInt64.
 
-## normalizeUTF8NFC
+## normalizeUTF8NFC {#normalizeutf8nfc}
 
 Converts a string to [NFC normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string is valid UTF8-encoded text.
 
@@ -1689,7 +1689,7 @@ Result:
 └─────────────┴─────┴─────────┘
 ```
 
-## normalizeUTF8NFD
+## normalizeUTF8NFD {#normalizeutf8nfd}
 
 Converts a string to [NFD normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string is valid UTF8-encoded text.
 
@@ -1721,7 +1721,7 @@ Result:
 └─────────────┴─────┴─────────┘
 ```
 
-## normalizeUTF8NFKC
+## normalizeUTF8NFKC {#normalizeutf8nfkc}
 
 Converts a string to [NFKC normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string is valid UTF8-encoded text.
 
@@ -1753,7 +1753,7 @@ Result:
 └─────────────┴──────┴──────────┘
 ```
 
-## normalizeUTF8NFKD
+## normalizeUTF8NFKD {#normalizeutf8nfkd}
 
 Converts a string to [NFKD normalized form](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms), assuming the string is valid UTF8-encoded text.
 
@@ -1785,7 +1785,7 @@ Result:
 └─────────────┴──────┴──────────┘
 ```
 
-## encodeXMLComponent
+## encodeXMLComponent {#encodexmlcomponent}
 
 Escapes characters with special meaning in XML such that they can afterwards be place into a XML text node or attribute.
 
@@ -1824,7 +1824,7 @@ Hello, &quot;world&quot;!
 &apos;foo&apos;
 ```
 
-## decodeXMLComponent
+## decodeXMLComponent {#decodexmlcomponent}
 
 Un-escapes substrings with special meaning in XML. These substrings are: `&quot;` `&amp;` `&apos;` `&gt;` `&lt;`
 
@@ -1858,7 +1858,7 @@ Result:
 < Σ >
 ```
 
-## decodeHTMLComponent
+## decodeHTMLComponent {#decodehtmlcomponent}
 
 Un-escapes substrings with special meaning in HTML. For example: `&hbar;` `&gt;` `&diamondsuit;` `&heartsuit;` `&lt;` etc.
 
@@ -1892,7 +1892,7 @@ Result:
 I♥ClickHouse'
 ```
 
-## extractTextFromHTML
+## extractTextFromHTML {#extracttextfromhtml}
 
 This function extracts plain text from HTML or XHTML.
 
@@ -1963,7 +1963,7 @@ If `s` is empty, the result is 0. If the first character is not an ASCII charact
 ascii(s)
 ```
 
-## soundex
+## soundex {#soundex}
 
 Returns the [Soundex code](https://en.wikipedia.org/wiki/Soundex) of a string.
 
@@ -1995,7 +1995,7 @@ Result:
 └──────────────────┘
 ```
 
-## punycodeEncode
+## punycodeEncode {#punycodeencode}
 
 Returns the [Punycode](https://en.wikipedia.org/wiki/Punycode) representation of a string.
 The string must be UTF8-encoded, otherwise the behavior is undefined.
@@ -2028,7 +2028,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## punycodeDecode
+## punycodeDecode {#punycodedecode}
 
 Returns the UTF8-encoded plaintext of a [Punycode](https://en.wikipedia.org/wiki/Punycode)-encoded string.
 If no valid Punycode-encoded string is given, an exception is thrown.
@@ -2061,11 +2061,11 @@ Result:
 └──────────────────────────────┘
 ```
 
-## tryPunycodeDecode
+## tryPunycodeDecode {#trypunycodedecode}
 
 Like `punycodeDecode` but returns an empty string if no valid Punycode-encoded string is given.
 
-## idnaEncode
+## idnaEncode {#idnaencode}
 
 Returns the ASCII representation (ToASCII algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
 The input string must be UTF-encoded and translatable to an ASCII string, otherwise an exception is thrown.
@@ -2099,11 +2099,11 @@ Result:
 └─────────────────────────────────────┘
 ```
 
-## tryIdnaEncode
+## tryIdnaEncode {#tryidnaencode}
 
 Like `idnaEncode` but returns an empty string in case of an error instead of throwing an exception.
 
-## idnaDecode
+## idnaDecode {#idnadecode}
 
 Returns the Unicode (UTF-8) representation (ToUnicode algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
 In case of an error (e.g. because the input is invalid), the input string is returned.
@@ -2137,7 +2137,7 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-## byteHammingDistance
+## byteHammingDistance {#bytehammingdistance}
 
 Calculates the [hamming distance](https://en.wikipedia.org/wiki/Hamming_distance) between two byte strings.
 
@@ -2163,7 +2163,7 @@ Result:
 
 Alias: `mismatches`
 
-## stringJaccardIndex
+## stringJaccardIndex {#stringjaccardindex}
 
 Calculates the [Jaccard similarity index](https://en.wikipedia.org/wiki/Jaccard_index) between two byte strings.
 
@@ -2187,11 +2187,11 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## stringJaccardIndexUTF8
+## stringJaccardIndexUTF8 {#stringjaccardindexutf8}
 
 Like [stringJaccardIndex](#stringjaccardindex) but for UTF8-encoded strings.
 
-## editDistance
+## editDistance {#editdistance}
 
 Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two byte strings.
 
@@ -2217,7 +2217,7 @@ Result:
 
 Alias: `levenshteinDistance`
 
-## editDistanceUTF8
+## editDistanceUTF8 {#editdistanceutf8}
 
 Calculates the [edit distance](https://en.wikipedia.org/wiki/Edit_distance) between two UTF8 strings.
 
@@ -2243,7 +2243,7 @@ Result:
 
 Alias: `levenshteinDistanceUTF8`
 
-## damerauLevenshteinDistance
+## damerauLevenshteinDistance {#dameraulevenshteindistance}
 
 Calculates the [Damerau-Levenshtein distance](https://en.wikipedia.org/wiki/Damerau%E2%80%93Levenshtein_distance) between two byte strings.
 
@@ -2267,7 +2267,7 @@ Result:
 └───────────────────────────────────────────────────┘
 ```
 
-## jaroSimilarity
+## jaroSimilarity {#jarosimilarity}
 
 Calculates the [Jaro similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro_similarity) between two byte strings.
 
@@ -2291,7 +2291,7 @@ Result:
 └───────────────────────────────────────┘
 ```
 
-## jaroWinklerSimilarity
+## jaroWinklerSimilarity {#jarowinklersimilarity}
 
 Calculates the [Jaro-Winkler similarity](https://en.wikipedia.org/wiki/Jaro%E2%80%93Winkler_distance#Jaro%E2%80%93Winkler_similarity) between two byte strings.
 
@@ -2315,7 +2315,7 @@ Result:
 └──────────────────────────────────────────────┘
 ```
 
-## initcap
+## initcap {#initcap}
 
 Convert the first letter of each word to upper case and the rest to lower case. Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
 
@@ -2367,7 +2367,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## initcapUTF8
+## initcapUTF8 {#initcaputf8}
 
 Like [initcap](#initcap), `initcapUTF8` converts the first letter of each word to upper case and the rest to lower case. Assumes that the string contains valid UTF-8 encoded text. 
 If this assumption is violated, no exception is thrown and the result is undefined.
@@ -2407,7 +2407,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## firstLine
+## firstLine {#firstline}
 
 Returns the first line from a multi-line string.
 
@@ -2439,3 +2439,59 @@ Result:
 │ foo                        │
 └────────────────────────────┘
 ```
+
+## stringCompare {#stringcompare}
+
+Compare two strings lexicographically.
+
+**Syntax**
+
+```sql
+stringCompare(string1, string2[, str1_off, string2_offset, num_bytes]);
+```
+
+**Arguments**
+
+- `string1` — The first string to compare. [String](../data-types/string.md)
+- `string2` - The second string to compare.[String](../data-types/string.md)
+- `string1_offset` — The position (zero-based) in `string1` from which the comparison starts. Optional, positive number.
+- `string2_offset` — The position (zero-based index) in `string2` from which the comparison starts. Optional, positive number.
+- `num_bytes` — The maximum number of bytes to compare in both strings. If `string_offset` + `num_bytes` exceeds the end of an input string, `num_bytes` will be reduced accordingly.
+
+**Returned value**
+
+- -1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] < `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
+If `string1_offset` >= len(`string1`) and `string2_offset` < len(`string2`).
+- 0 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] = `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
+If `string1_offset` >= len(`string1`) and `string2_offset` >= len(`string2`).
+- 1 — If `string1`[`string1_offset`: `string1_offset` + `num_bytes`] > `string2`[`string2_offset`:`string2_offset` + `num_bytes`] and `string1_offset` < len(`string1`) and `string2_offset` < len(`string2`).
+If `string1_offset` < len(`string1`) and `string2_offset` >= len(`string2`).
+
+**Example**
+
+```sql
+SELECT
+    stringCompare('alice', 'bob', 0, 0, 3) as result1,
+    stringCompare('alice', 'alicia', 0, 0, 3) as result2,
+    stringCompare('bob', 'alice', 0, 0, 3) as result3
+```
+Result:
+```result
+   ┌─result1─┬─result2─┬─result3─┐
+1. │      -1 │       0 │       1 │
+   └─────────┴─────────┴─────────┘
+```
+
+```sql
+SELECT
+    stringCompare('alice', 'alicia') as result2,
+    stringCompare('alice', 'alice') as result1,
+    stringCompare('bob', 'alice') as result3
+```
+Result:
+```result
+   ┌─result2─┬─result1─┬─result3─┐
+1. │      -1 │       0 │       1 │
+   └─────────┴─────────┴─────────┘
+```
+

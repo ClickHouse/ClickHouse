@@ -4,6 +4,8 @@ sidebar_position: 19
 sidebar_label: HTTP Interface
 ---
 
+import PlayUI from '@site/static/images/play.png';
+
 # HTTP Interface
 
 The HTTP interface lets you use ClickHouse on any platform from any programming language in a form of REST API. The HTTP interface is more limited than the native interface, but it has better language support.
@@ -29,7 +31,7 @@ It has a secret feature for displaying charts and graphs for query pipelines.
 
 Web UI is designed for professionals like you.
 
-![Web UI](../images/play.png)
+<img src={PlayUI} alt="ClickHouse Web UI screenshot" />
 
 In health-check scripts use `GET /ping` request. This handler always returns "Ok." (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 
@@ -270,7 +272,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.
 You can also use the URL parameters to specify any settings for processing a single query or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-For more information, see the [Settings](../operations/settings/overview) section.
+For more information, see the [Settings](/operations/settings/settings) section.
 
 ``` bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
@@ -288,7 +290,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For information about other parameters, see the section "SET".
 
-## Using ClickHouse sessions in the HTTP protocol 
+## Using ClickHouse sessions in the HTTP protocol {#using-clickhouse-sessions-in-the-http-protocol}
 
 You can also use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout (in seconds), modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
@@ -396,7 +398,7 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-### Tabs in URL Parameters
+### Tabs in URL Parameters {#tabs-in-url-parameters}
 
 Query parameters are parsed from the "escaped" format. This has some benefits, such as the possibility to unambiguously parse nulls as `\N`. This means the tab character should be encoded as `\t` (or `\` and a tab). For example, the following contains an actual tab between `abc` and `123` and the input string is split into two values:
 

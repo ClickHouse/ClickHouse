@@ -158,14 +158,14 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
 {
 }
 
-TableJoin::TableJoin(const JoinSettings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_, ContextPtr query_context)
+TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
-    , default_max_bytes(query_context ? query_context->getSettingsRef()[Setting::default_max_bytes_in_join] : settings.max_bytes_in_join)
-    , join_use_nulls(settings.join_use_nulls)
+    , default_max_bytes(settings.default_max_bytes_in_join)
+    , join_use_nulls(join_use_nulls_)
     , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
     , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
     , max_joined_block_rows(settings.max_joined_block_size_rows)
-    , join_algorithms(settings.join_algorithm)
+    , join_algorithms(settings.join_algorithms)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
