@@ -197,8 +197,8 @@ struct JoinSettings
     UInt64 join_to_sort_minimum_perkey_rows;
     UInt64 join_to_sort_maximum_table_rows;
 
-    static JoinSettings create(const Settings & query_settings);
-    static JoinSettings create(const QueryPlanSerializationSettings & settings);
+    explicit JoinSettings(const Settings & query_settings);
+    explicit JoinSettings(const QueryPlanSerializationSettings & settings);
 };
 
 

@@ -654,12 +654,23 @@ size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id
     const auto registry_path = zookeeper_path / "registry";
     const auto table_path = registry_path / getProcessorID(storage_id);
 
-    zk_client->tryRemove(table_path);
+    auto code = zk_client->tryRemove(table_path);
     const size_t remaining_nodes_num = zk_client->getChildren(registry_path).size();
 
-    LOG_TRACE(
-        log, "Removed {} from active registry (remaining: {})",
-        storage_id.getFullTableName(), remaining_nodes_num);
+    const auto self = Info::create(storage_id);
+    if (code == Coordination::Error::ZOK)
+    {
+        LOG_TRACE(log, "Table '{}' has been removed from the active registry (remaining nodes: {})", self.table_id, remaining_nodes_num);
+    }
+    else
+    {
+        LOG_DEBUG(
+            log,
+            "Cannot remove table '{}' from the active registry, reason: {} (remaining nodes: {})",
+            self.table_id,
+            Coordination::errorMessage(code),
+            remaining_nodes_num);
+    }
 
     return remaining_nodes_num;
 }
@@ -707,12 +718,15 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
             }
         }
         if (!found)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: not registered");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
 
         code = zk_client->trySet(registry_path, new_registry_str, stat.version);
 
         if (code == Coordination::Error::ZOK)
+        {
+            LOG_TRACE(log, "Table '{}' has been removed from the registry", self.table_id);
             return count;
+        }
 
         if (Coordination::isHardwareError(code)
             || code == Coordination::Error::ZBADVERSION)
