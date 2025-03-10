@@ -481,18 +481,19 @@ REGISTER_FUNCTION(HashFixedStrings)
 #   if USE_SHA3IUF
     using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
     factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
-        .description = R"(Calculates the keccak-256 hash of the given string.)",
-        .syntax = "SELECT keccak256(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
+        .description = R"(Calculates the Keccak-256 cryptographic hash of the given string. 
+        This hash function is widely used in blockchain applications, particularly Ethereum.)",
+        .syntax = "SELECT keccak256(message)",
+        .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
         .returned_value
-        = "The keccak-256 hash of the given input string returned as a [FixedString(32)](../../sql-reference/data-types/fixedstring.md).",
+        = "A [FixedString(32)](../../sql-reference/data-types/fixedstring.md) containing the 32-byte Keccak-256 hash of the input string.",
         .examples
         = {{"",
-            "SELECT HEX(keccak256('hello'));",
+            "SELECT hex(keccak256('hello'))",
             R"(
-    ┌─hex(KECCAK256('hello'))──────────────────────────────────────────┐
-    │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
-    └──────────────────────────────────────────────────────────────────┘
+   ┌─hex(keccak256('hello'))──────────────────────────────────────────┐
+1. │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
+   └──────────────────────────────────────────────────────────────────┘
         )"}}});
 #    endif
 }
