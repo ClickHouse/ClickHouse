@@ -615,9 +615,13 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
 
 void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 {
+    String buf;
     const uint32_t noption = rg.nextLargeNumber();
     ExprSchemaTable * est = ins->mutable_est();
     const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(attached_tables));
+    std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
+    std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+    std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
     if (t.db)
     {
@@ -634,9 +638,6 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 
     if (noption < 801)
     {
-        String buf;
-        std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
-        std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
         const uint64_t nrows = rows_dist(rg.generator);
         InsertStringQuery * iquery = ins->mutable_query();
 
@@ -696,11 +697,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
         if (noption < 901)
         {
             /// Use generateRandom
-            String buf;
             bool first = true;
-            std::uniform_int_distribution<uint64_t> rows_dist(1, 16384);
-            std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
-            std::uniform_int_distribution<uint64_t> nested_rows_dist(1, 1024);
             SelectStatementCore * ssc = sel->mutable_select_core();
             GenerateRandomFunc * grf = ssc->mutable_from()
                                            ->mutable_tos()
