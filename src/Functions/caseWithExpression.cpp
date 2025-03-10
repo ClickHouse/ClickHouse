@@ -1,6 +1,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
+#include <DataTypes/DataTypesNumber.h>
 
 
 namespace DB
@@ -107,7 +108,7 @@ public:
         dst_array_col.column = fun_array->build(dst_array_elems)->execute(dst_array_elems, dst_array_type, input_rows_count, /* dry_run = */ false);
 
         /// If we have non-constant arguments, we execute the transform function, which is highly optimized, which uses precomputed lookup tables.
-        /// Else we should use the straightforward implementation, checking values row-by-row
+        /// Else we should use the multiIf implementation
         if (all_when_values_constant)
         {
             ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
@@ -116,31 +117,28 @@ public:
         }
         else
         {
-            auto expr_column = args[0].column;
-            auto else_column = args.back().column;
-            auto result_column = result_type->createColumn();
+            ColumnsWithTypeAndName multi_if_args;
 
-            for (size_t row = 0; row < input_rows_count; ++row)
+            // Convert CASE expression into multiIf(expr = when1, then1, expr = when2, then2, ..., else)
+            for (size_t i = 1; i < args.size() - 1; i += 2)
             {
-                bool matched = false;
-                Field expr_value = (*expr_column)[row];
+                // Add condition: expr_column = when_column
+                auto equals_func = FunctionFactory::instance().get("equals", context);
+                ColumnsWithTypeAndName equals_args{args.front(), args[i]};
+                auto condition = equals_func->build(equals_args)
+                                    ->execute(equals_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
 
-                for (size_t i = 1; i < args.size() - 1; i += 2)
-                {
-                    Field when_value = (*args[i].column)[row];
-                    if (expr_value == when_value)
-                    {
-                        result_column->insert((*args[i + 1].column)[row]);
-                        matched = true;
-                        break;
-                    }
-                }
-
-                if (!matched)
-                    result_column->insert((*else_column)[row]);
+                multi_if_args.push_back({condition, std::make_shared<DataTypeUInt8>(), ""});
+                multi_if_args.push_back(args[i + 1]); // Then value
             }
 
-            return result_column;
+            // Add an ELSE value
+            multi_if_args.push_back(args.back());
+
+            // Execute multiIf
+            return FunctionFactory::instance().get("multiIf", context)
+                ->build(multi_if_args)
+                ->execute(multi_if_args, result_type, input_rows_count, false);
         }
     }
 
