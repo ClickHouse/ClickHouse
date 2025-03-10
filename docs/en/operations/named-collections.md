@@ -575,7 +575,7 @@ BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
 
 For the description of parameters see [mongodb](../sql-reference/table-functions/mongodb.md).
 
-### DDL example {#ddl-example}
+### DDL example {#ddl-example-5}
 
 ```sql
 CREATE NAMED COLLECTION mymongo AS
@@ -588,7 +588,7 @@ collection = 'my_collection',
 options = 'connectTimeoutMS=10000'
 ```
 
-### XML example {#xml-example}
+### XML example {#xml-example-5}
 
 ```xml
 <clickhouse>
