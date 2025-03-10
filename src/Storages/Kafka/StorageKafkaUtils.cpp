@@ -1,5 +1,6 @@
 #include <Storages/Kafka/StorageKafkaUtils.h>
 
+
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -90,6 +91,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
 }
+
 
 void registerStorageKafka(StorageFactory & factory)
 {
@@ -275,6 +277,7 @@ void registerStorageKafka(StorageFactory & factory)
             info.level = 0;
             (*kafka_settings)[KafkaSetting::kafka_replica_name].value = context->getMacros()->expand((*kafka_settings)[KafkaSetting::kafka_replica_name].value, info);
         }
+
 
         auto * settings_query = args.storage_def->settings;
         chassert(has_settings && "Unexpected settings query in StorageKafka");
@@ -495,6 +498,7 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
     return result;
 }
 
+
 bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
 {
     // Check if all dependencies are attached
@@ -521,6 +525,7 @@ bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
 
     return true;
 }
+
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)
 {
