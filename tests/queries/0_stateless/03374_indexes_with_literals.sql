@@ -1,3 +1,5 @@
+-- Tags: no-random-settings
+
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
 (
