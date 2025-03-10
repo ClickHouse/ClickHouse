@@ -31,7 +31,6 @@ node2 = cluster.add_instance(
 )
 node4 = cluster.add_instance(
     "node4",
-    main_configs=["configs/full_storage_only.xml"],
     with_remote_database_disk=False,
 )
 
