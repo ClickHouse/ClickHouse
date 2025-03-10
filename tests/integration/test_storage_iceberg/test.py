@@ -201,6 +201,8 @@ def get_creation_expression(
     table_function=False,
     allow_dynamic_metadata_for_data_lakes=False,
     run_on_cluster=False,
+    storage_type_as_arg=False,
+    storage_type_in_named_collection=False,
     **kwargs,
 ):
     allow_dynamic_metadata_for_datalakes_suffix = (
@@ -208,6 +210,20 @@ def get_creation_expression(
         if allow_dynamic_metadata_for_data_lakes
         else ""
     )
+
+    storage_arg = storage_type
+    engine_part = ""
+    if (storage_type_in_named_collection):
+        storage_arg += "_with_type"
+    elif (storage_type_as_arg):
+        storage_arg += f", storage_type='{storage_type}'"
+    else:
+        if (storage_type == "s3"):
+            engine_part = "S3"
+        elif (storage_type == "azure"):
+            engine_part = "Azure"
+        elif (storage_type == "local"):
+            engine_part = "Local"
 
     if storage_type == "s3":
         if "bucket" in kwargs:
@@ -535,6 +551,52 @@ def test_types(started_cluster, format_version, storage_type):
         ]
     )
 
+    # Test storage type as function argument
+    table_function_expr = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        storage_type_as_arg=True,
+    )
+    assert (
+        instance.query(f"SELECT a, b, c, d, e FROM {table_function_expr}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    )
+
+    assert instance.query(f"DESCRIBE {table_function_expr} FORMAT TSV") == TSV(
+        [
+            ["a", "Nullable(Int32)"],
+            ["b", "Nullable(String)"],
+            ["c", "Nullable(Date)"],
+            ["d", "Array(Nullable(String))"],
+            ["e", "Nullable(Bool)"],
+        ]
+    )
+
+    # Test storage type as field in named collection
+    table_function_expr = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        storage_type_in_named_collection=True,
+    )
+    assert (
+        instance.query(f"SELECT a, b, c, d, e FROM {table_function_expr}").strip()
+        == "123\tstring\t2000-01-01\t['str1','str2']\ttrue"
+    )
+
+    assert instance.query(f"DESCRIBE {table_function_expr} FORMAT TSV") == TSV(
+        [
+            ["a", "Nullable(Int32)"],
+            ["b", "Nullable(String)"],
+            ["c", "Nullable(Date)"],
+            ["d", "Array(Nullable(String))"],
+            ["e", "Nullable(Bool)"],
+        ]
+    )
+
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
@@ -598,16 +660,58 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
         table_function=True,
         run_on_cluster=True,
     )
+    cluster_query_id = uuid.uuid4().hex
     select_cluster = (
-        instance.query(f"SELECT * FROM {table_function_expr_cluster}").strip().split()
+        instance.query(
+            f"SELECT * FROM {table_function_expr_cluster}",
+            query_id=cluster_query_id,
+        ).strip().split()
+    )
+
+    # Cluster Query with node1 as coordinator and storage type as arg
+    table_function_expr_cluster_with_type_arg = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        run_on_cluster=True,
+        storage_type_as_arg=True,
+    )
+    cluster_with_type_arg_query_id = uuid.uuid4().hex
+    select_cluster_with_type_arg = (
+        instance.query(
+            f"SELECT * FROM {table_function_expr_cluster_with_type_arg}",
+            query_id=cluster_with_type_arg_query_id,
+        ).strip().split()
+    )
+
+    # Cluster Query with node1 as coordinator and storage type in named collection
+    table_function_expr_cluster_with_type_in_nc = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=True,
+        run_on_cluster=True,
+        storage_type_in_named_collection=True,
+    )
+    cluster_with_type_in_nc_query_id = uuid.uuid4().hex
+    select_cluster_with_type_in_nc = (
+        instance.query(
+            f"SELECT * FROM {table_function_expr_cluster_with_type_in_nc}",
+            query_id=cluster_with_type_in_nc_query_id,
+        ).strip().split()
     )
 
     # Simple size check
     assert len(select_regular) == 600
     assert len(select_cluster) == 600
+    assert len(select_cluster_with_type_arg) == 600
+    assert len(select_cluster_with_type_in_nc) == 600
 
     # Actual check
     assert select_cluster == select_regular
+    assert select_cluster_with_type_arg == select_regular
+    assert select_cluster_with_type_in_nc == select_regular
 
     # Check query_log
     for replica in started_cluster.instances.values():
@@ -620,9 +724,7 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
                 SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
                 WHERE
                     type = 'QueryStart' AND
-                    positionCaseInsensitive(query, '{storage_type}Cluster') != 0 AND
-                    position(query, '{TABLE_NAME}') != 0 AND
-                    position(query, 'system.query_log') = 0 AND
+                    initial_query_id='{cluster_query_id}' AND
                     NOT is_initial_query
             """
             )
@@ -634,6 +736,44 @@ def test_cluster_table_function(started_cluster, format_version, storage_type):
             f"[{node_name}] cluster_secondary_queries: {cluster_secondary_queries}"
         )
         assert len(cluster_secondary_queries) == 1
+
+        cluster_with_type_arg_secondary_queries = (
+            replica.query(
+                f"""
+                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
+                WHERE
+                    type = 'QueryStart' AND
+                    initial_query_id='{cluster_with_type_arg_query_id}' AND
+                    NOT is_initial_query
+            """
+            )
+            .strip()
+            .split("\n")
+        )
+
+        logging.info(
+            f"[{node_name}] cluster_secondary_queries: {cluster_with_type_arg_secondary_queries}"
+        )
+        assert len(cluster_with_type_arg_secondary_queries) == 1
+
+        cluster_with_type_in_nc_secondary_queries = (
+            replica.query(
+                f"""
+                SELECT query, type, is_initial_query, read_rows, read_bytes FROM system.query_log
+                WHERE
+                    type = 'QueryStart' AND
+                    initial_query_id='{cluster_with_type_in_nc_query_id}' AND
+                    NOT is_initial_query
+            """
+            )
+            .strip()
+            .split("\n")
+        )
+
+        logging.info(
+            f"[{node_name}] cluster_secondary_queries: {cluster_with_type_in_nc_secondary_queries}"
+        )
+        assert len(cluster_with_type_in_nc_secondary_queries) == 1
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
