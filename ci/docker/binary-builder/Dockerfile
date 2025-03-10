@@ -71,6 +71,7 @@ RUN arch=${TARGETARCH:-amd64} \
 ENV PATH="$PATH:/usr/local/go/bin"
 ENV GOPATH=/workdir/go
 ENV GOCACHE=/workdir/
+RUN mkdir /workdir && chmod 777 /workdir
 
 # toolchain and SDK for Darwin
 RUN curl -sL -O https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz \
