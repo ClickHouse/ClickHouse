@@ -30,7 +30,7 @@ public:
         , max_tries{params.max_tries}
         , retry_initial_backoff_ms{params.retry_initial_backoff_ms}
         , retry_max_backoff_ms{params.retry_max_backoff_ms}
-        , forward_headers{params.forward_headers}
+        , headers{params.forward_headers}
         , uri{params.uri}
         , parser{parser_}
     {
@@ -64,14 +64,14 @@ public:
     }
 
     const Poco::URI & getURI() const { return uri; }
-    const std::vector<String> getForwardHeaders() const { return forward_headers; }
+    const std::vector<String> & getHeaders() const { return headers; }
 
 private:
     const ConnectionTimeouts timeouts;
     const size_t max_tries;
     const size_t retry_initial_backoff_ms;
     const size_t retry_max_backoff_ms;
-    const std::vector<String> forward_headers;
+    const std::vector<String> headers;
     const Poco::URI uri;
     TResponseParser parser;
 };
@@ -84,12 +84,12 @@ public:
     using HTTPAuthClient<TResponseParser>::HTTPAuthClient;
     using Result = HTTPAuthClient<TResponseParser>::Result;
 
-    Result authenticate(const String & user_name, const String & password, const std::unordered_map<String, String> headers) const
+    Result authenticate(const String & user_name, const String & password, const std::unordered_map<String, String> & headers) const
     {
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
 
-        for (const auto & k : this->getForwardHeaders())
+        for (const auto & k : this->getHeaders())
         {
             auto it = headers.find(k);
             if (it == headers.end())
