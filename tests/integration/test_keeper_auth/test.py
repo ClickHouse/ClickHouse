@@ -85,6 +85,7 @@ def test_remove_acl(started_cluster, get_zk):
                     admin=False,
                 )
             ],
+            ephemeral=True,
         )
         auth_connection.create(
             "/test_remove_acl2",
@@ -100,11 +101,13 @@ def test_remove_acl(started_cluster, get_zk):
                     admin=False,
                 )
             ],
+            ephemeral=True,
         )
         auth_connection.create(
             "/test_remove_acl3",
             b"dataX",
             acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", all=True)],
+            ephemeral=True,
         )
 
         auth_connection.delete("/test_remove_acl2")
@@ -123,6 +126,7 @@ def test_remove_acl(started_cluster, get_zk):
                     admin=False,
                 )
             ],
+            ephemeral=True,
         )
 
         acls, stat = auth_connection.get_acls("/test_remove_acl3")
@@ -145,15 +149,23 @@ def test_digest_auth_basic(started_cluster, get_zk):
         auth_connection = get_zk()
         auth_connection.add_auth("digest", "user1:password1")
 
-        auth_connection.create("/test_no_acl", b"")
         auth_connection.create(
-            "/test_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_no_acl",
+            b"",
+            ephemeral=True,
+        )
+        auth_connection.create(
+            "/test_all_acl",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
+            ephemeral=True,
         )
         # Consistent with zookeeper, accept generated digest
         auth_connection.create(
             "/test_all_digest_acl",
             b"dataX",
             acl=[make_acl("digest", "user1:XDkd2dsEuhc9ImU3q8pa8UOdtpI=", all=True)],
+            ephemeral=True,
         )
 
         assert auth_connection.get("/test_all_acl")[0] == b"data"
@@ -198,7 +210,11 @@ def test_digest_auth_basic(started_cluster, get_zk):
             no_auth_connection.get("/test_all_digest_acl")
 
         # but can access some non restricted nodes
-        no_auth_connection.create("/some_allowed_node", b"data")
+        no_auth_connection.create(
+            "/some_allowed_node",
+            b"data",
+            ephemeral=True,
+        )
 
         # auth added, go on
         no_auth_connection.add_auth("digest", "user1:password1")
@@ -214,20 +230,25 @@ def test_super_auth(started_cluster):
     auth_connection = get_fake_zk()
     try:
         auth_connection.add_auth("digest", "user1:password1")
-        auth_connection.create("/test_super_no_acl", b"")
         auth_connection.create(
-            "/test_super_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_super_no_acl",
+            b"",
+            ephemeral=True,
         )
-    finally:
-        zk_stop_and_close(auth_connection)
+        auth_connection.create(
+            "/test_super_all_acl",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
+            ephemeral=True,
+        )
 
-    super_connection = get_fake_zk()
-    try:
+        super_connection = get_fake_zk()
         super_connection.add_auth("digest", "super:admin")
         for path in ["/test_super_no_acl", "/test_super_all_acl"]:
             super_connection.set(path, b"value")
             assert super_connection.get(path)[0] == b"value"
     finally:
+        zk_stop_and_close(auth_connection)
         zk_stop_and_close(super_connection)
 
 
@@ -244,7 +265,10 @@ def test_digest_auth_multiple(started_cluster, get_zk):
         auth_connection.add_auth("digest", "user3:password3")
 
         auth_connection.create(
-            "/test_multi_all_acl", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_multi_all_acl",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
+            ephemeral=True,
         )
 
         one_auth_connection = get_zk()
@@ -327,9 +351,12 @@ def test_partial_auth(started_cluster, get_zk):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
         with pytest.raises(NoAuthError):
-            auth_connection.create("/test_partial_acl_create/subnode")
+            auth_connection.create(
+                "/test_partial_acl_create/subnode",
+            )
 
         auth_connection.create(
             "/test_partial_acl_set",
@@ -345,6 +372,7 @@ def test_partial_auth(started_cluster, get_zk):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
         with pytest.raises(NoAuthError):
             auth_connection.set("/test_partial_acl_set", b"X")
@@ -365,10 +393,31 @@ def test_partial_auth(started_cluster, get_zk):
                 )
             ],
         )
-        auth_connection.create("/test_partial_acl_delete/subnode")
+        auth_connection.create(
+            "/test_partial_acl_delete/subnode",
+        )
         with pytest.raises(NoAuthError):
             auth_connection.delete("/test_partial_acl_delete/subnode")
     finally:
+        auth_connection.delete("/test_partial_acl/subnode")
+        auth_connection.delete("/test_partial_acl")
+
+        auth_connection.set_acls(
+            "/test_partial_acl_delete",
+            acls=[
+                make_acl(
+                    "auth",
+                    "",
+                    read=True,
+                    write=True,
+                    create=True,
+                    delete=True,
+                    admin=True,
+                )
+            ],
+        )
+        auth_connection.delete("/test_partial_acl_delete/subnode")
+        auth_connection.delete("/test_partial_acl_delete")
         zk_stop_and_close(auth_connection)
 
 
@@ -461,6 +510,7 @@ def test_bad_auth_9(started_cluster):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
@@ -484,6 +534,7 @@ def test_bad_auth_10(started_cluster):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
@@ -501,6 +552,7 @@ def test_bad_auth_11(started_cluster):
                     "", "", read=True, write=False, create=True, delete=True, admin=True
                 )
             ],
+            ephemeral=True,
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
@@ -524,6 +576,7 @@ def test_bad_auth_12(started_cluster):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
@@ -547,6 +600,7 @@ def test_bad_auth_13(started_cluster):
                     admin=True,
                 )
             ],
+            ephemeral=True,
         )
     zk_auth_failure_workaround()
     zk_stop_and_close(auth_connection)
@@ -562,19 +616,26 @@ def test_auth_snapshot(started_cluster):
         connection.add_auth("digest", "user1:password1")
 
         connection.create(
-            "/test_snapshot_acl", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_snapshot_acl",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
         )
 
         connection1 = get_fake_zk()
         connection1.add_auth("digest", "user2:password2")
 
         connection1.create(
-            "/test_snapshot_acl1", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_snapshot_acl1",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
         )
 
         connection2 = get_fake_zk()
 
-        connection2.create("/test_snapshot_acl2", b"data")
+        connection2.create(
+            "/test_snapshot_acl2",
+            b"data",
+        )
 
         for i in range(100):
             connection.create(
@@ -621,6 +682,11 @@ def test_auth_snapshot(started_cluster):
         with pytest.raises(NoAuthError):
             connection2.get("/test_snapshot_acl1")
     finally:
+        for i in range(100):
+            connection.delete(f"/test_snapshot_acl/path{i}")
+        connection.delete("/test_snapshot_acl")
+        connection.delete("/test_snapshot_acl1")
+        connection.delete("/test_snapshot_acl2")
         zk_stop_and_close(connection)
         zk_stop_and_close(connection1)
         zk_stop_and_close(connection2)
@@ -636,7 +702,10 @@ def test_get_set_acl(started_cluster, get_zk):
         auth_connection.add_auth("digest", "username2:secret2")
 
         auth_connection.create(
-            "/test_set_get_acl", b"data", acl=[make_acl("auth", "", all=True)]
+            "/test_set_get_acl",
+            b"data",
+            acl=[make_acl("auth", "", all=True)],
+            ephemeral=True,
         )
 
         acls, stat = auth_connection.get_acls("/test_set_get_acl")

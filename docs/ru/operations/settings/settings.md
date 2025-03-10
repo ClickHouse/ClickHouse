@@ -529,7 +529,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 Поддерживаемые форматы:
 
-- [CSVWithNamesAndTypes](/docs/interfaces/formats/CSVWithNamesAndTypes)
+- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
 - [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
 - [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
 - [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)

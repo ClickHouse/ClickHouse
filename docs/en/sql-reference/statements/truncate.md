@@ -36,3 +36,7 @@ TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
 Removes all tables from a database but keeps the database itself. When the clause `IF EXISTS` is omitted, the query returns an error if the database does not exist.
+
+:::note
+`TRUNCATE DATABASE` is not supported for `Replicated` databases. Instead, just `DROP` and `CREATE` the database.
+:::
