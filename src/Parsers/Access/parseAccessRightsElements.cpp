@@ -176,7 +176,6 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
                 element.parameter = parameter;
                 element.wildcard = wildcard;
                 element.default_database = default_database;
-                element.replaceDeprecated();
                 res_elements.emplace_back(std::move(element));
             }
 
@@ -186,6 +185,7 @@ bool parseAccessRightsElementsWithoutOptions(IParser::Pos & pos, Expected & expe
         if (!ParserList::parseUtil(pos, expected, parse_around_on, false))
             return false;
 
+        res_elements.replaceDeprecated();
         elements = std::move(res_elements);
         return true;
     });

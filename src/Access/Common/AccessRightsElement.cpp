@@ -344,6 +344,12 @@ void AccessRightsElements::eraseNotGrantable()
     });
 }
 
+void AccessRightsElements::replaceDeprecated()
+{
+    for (auto & element : *this)
+        element.replaceDeprecated();
+}
+
 void AccessRightsElements::replaceEmptyDatabase(const String & current_database)
 {
     for (auto & element : *this)

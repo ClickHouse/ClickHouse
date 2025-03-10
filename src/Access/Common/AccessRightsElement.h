@@ -125,6 +125,9 @@ public:
     /// Resets flags which cannot be granted.
     void eraseNotGrantable();
 
+    /// For each element checks if the current access type is deprecated and replaces it with the correct one.
+    void replaceDeprecated();
+
     /// If the database is empty, replaces it with `current_database`. Otherwise does nothing.
     void replaceEmptyDatabase(const String & current_database);
 

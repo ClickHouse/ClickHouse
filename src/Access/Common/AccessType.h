@@ -19,6 +19,7 @@ namespace ErrorCodes
 namespace AccessTypeObjects
 {
 
+/// Represents parameter for the SOURCE access type level. Uses corresponding table engine names as an alias.
 enum class Source : uint8_t
 {
 #define APPLY_FOR_SOURCE(M) \
