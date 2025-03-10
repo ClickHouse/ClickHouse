@@ -49,6 +49,9 @@ public:
     {
         return DB::DatabaseDataLakeCatalogType::GLUE;
     }
+
+
+    DB::StorageObjectStorageSettingsPtr createStorageSettingsFromMetadata(const TableMetadata & metadata) const override;
 private:
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
