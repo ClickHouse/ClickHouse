@@ -2,6 +2,8 @@
 slug: /sql-reference/aggregate-functions/reference/largestTriangleThreeBuckets
 sidebar_position: 159
 sidebar_label: largestTriangleThreeBuckets
+title: "largestTriangleThreeBuckets"
+description: "Applies the Largest-Triangle-Three-Buckets algorithm to the input data."
 ---
 
 # largestTriangleThreeBuckets

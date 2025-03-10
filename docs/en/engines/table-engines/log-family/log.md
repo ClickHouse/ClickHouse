@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Log
 ```
 
-See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 ## Writing the Data {#table_engines-log-writing-the-data}
 
@@ -32,7 +32,7 @@ The `Log` engine efficiently stores data by writing each column to its own file.
 - `<column>.bin`: A data file for each column, containing the serialized and compressed data.
 `__marks.mrk`: A marks file, storing offsets and row counts for each data block inserted. Marks are used to facilitate efficient query execution by allowing the engine to skip irrelevant data blocks during reads.
 
-### Writing Process
+### Writing Process {#writing-process}
 
 When data is written to a `Log` table:
 

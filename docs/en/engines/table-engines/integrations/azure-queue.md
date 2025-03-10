@@ -26,7 +26,7 @@ CREATE TABLE test (name String, value UInt32)
 
 `AzureQueue` parameters are the same as `AzureBlobStorage` table engine supports. See parameters section [here](../../../engines/table-engines/integrations/azureBlobStorage.md).
 
-Similar to the [AzureBlobStorage](/docs/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage).
+Similar to the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage).
 
 **Example**
 
@@ -79,11 +79,11 @@ SELECT * FROM stats ORDER BY key;
 
 For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
-## Introspection
+## Introspection {#introspection}
 
 Enable logging for the table via the table setting `enable_logging_to_s3queue_log=1`.
 
-Introspection capabilities are the same as the [S3Queue table engine](/docs/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
+Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
 1. Use the `system.azure_queue` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue` (it would contain information for `azure` tables as well).
 2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.

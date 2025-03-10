@@ -10,7 +10,7 @@ description: "This engine provides a read-only integration with existing Delta L
 
 This engine provides a read-only integration with existing [Delta Lake](https://github.com/delta-io/delta) tables in Amazon S3.
 
-## Create Table
+## Create Table {#create-table}
 
 Note that the Delta Lake table must already exist in S3, this command does not take DDL parameters to create a new table.
 
@@ -24,7 +24,7 @@ CREATE TABLE deltalake
 - `url` — Bucket url with path to the existing Delta Lake table.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
 
-Engine parameters can be specified using [Named Collections](/docs/operations/named-collections.md).
+Engine parameters can be specified using [Named Collections](/operations/named-collections.md).
 
 **Example**
 
@@ -54,6 +54,6 @@ CREATE TABLE deltalake ENGINE=DeltaLake(deltalake_conf, filename = 'test_table')
 
 `Iceberg` table engine and table function support data caching same as `S3`, `AzureBlobStorage`, `HDFS` storages. See [here](../../../engines/table-engines/integrations/s3.md#data-cache).
 
-## See also
+## See also {#see-also}
 
 - [deltaLake table function](../../../sql-reference/table-functions/deltalake.md)
