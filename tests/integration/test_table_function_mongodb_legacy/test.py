@@ -1,5 +1,6 @@
 import pymongo
 import pytest
+import urllib
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
@@ -28,23 +29,19 @@ def started_cluster(request):
 def get_mongo_connection(started_cluster, secure=False, with_credentials=True):
     connection_str = ""
     if with_credentials:
-        connection_str = "mongodb://root:clickhouse@localhost:{}".format(
-            started_cluster.mongo_secure_port if secure else started_cluster.mongo_port
-        )
+        connection_str = f"mongodb://root:{urllib.parse.quote_plus(mongo_pass)}@localhost:{started_cluster.mongo_secure_port if secure else started_cluster.mongo_port}"
     else:
-        connection_str = "mongodb://localhost:{}".format(
-            started_cluster.mongo_no_cred_port
-        )
+        connection_str = f"mongodb://localhost:{started_cluster.mongo_no_cred_port}"
     if secure:
         connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
-    return pymongo.MongoClient(connection_str)
 
+    return pymongo.MongoClient(connection_str)
 
 @pytest.mark.parametrize("started_cluster", [False], indirect=["started_cluster"])
 def test_simple_select(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
 
     node = started_cluster.instances["node"]
@@ -84,7 +81,8 @@ def test_simple_select(started_cluster):
 def test_complex_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", mysql_pass)
+    db.command("dropAllUsersFromDatabase")
+    db.command("createUser", "root", pwd=mongo_pass, roles=["readWrite"])
     incomplete_mongo_table = db["complex_table"]
     data = []
     for i in range(0, 100):
@@ -119,7 +117,7 @@ def test_complex_data_type(started_cluster):
 def test_incorrect_data_type(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     strange_mongo_table = db["strange_table"]
     data = []
     for i in range(0, 100):
@@ -140,7 +138,7 @@ def test_incorrect_data_type(started_cluster):
 def test_secure_connection(started_cluster):
     mongo_connection = get_mongo_connection(started_cluster, secure=True)
     db = mongo_connection["test"]
-    db.add_user("root", "clickhouse")
+    db.add_user("root", mongo_pass)
     simple_mongo_table = db["simple_table"]
     data = []
     for i in range(0, 100):
