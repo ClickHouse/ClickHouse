@@ -16,6 +16,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_SEEK_THROUGH_FILE;
+    extern const int LOGICAL_ERROR;
+
 }
 
 ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
@@ -162,7 +164,29 @@ void ReadBufferFromRemoteFSGather::setReadUntilPosition(size_t position)
     if (position == read_until_position)
         return;
 
+    if (position < file_offset_of_buffer_end)
+    {
+        /// file has been read beyond new read until position already
+        if (available() >= file_offset_of_buffer_end - position)
+        {
+            /// new read until position is after the current position in the working buffer
+            working_buffer.resize(working_buffer.size() - (file_offset_of_buffer_end - position));
+            file_offset_of_buffer_end = position;
+            pos = std::min(pos, working_buffer.end());
+        }
+        else
+        {
+            /// new read until position is before the current position in the working buffer
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Attempt to set read until position before already read data ({} > {})",
+                position,
+                getPosition());
+        }
+    }
+
     reset();
+    LOG_TEST(log, "Set read until to {}, current file_offset_buffer_end {}", position, file_offset_of_buffer_end);
     read_until_position = position;
 }
 
@@ -214,6 +238,7 @@ off_t ReadBufferFromRemoteFSGather::seek(off_t offset, int whence)
         reset();
     }
 
+    LOG_TEST(log, "Seeking to {}", offset);
     file_offset_of_buffer_end = offset;
     return file_offset_of_buffer_end;
 }
