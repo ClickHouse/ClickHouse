@@ -127,6 +127,14 @@ def _build_dockers(workflow, job_name):
 
     if job_status == Result.Status.SUCCESS:
         for docker in dockers:
+            if amd_only and Docker.Platforms.AMD not in docker.platforms:
+                continue
+            elif arm_only and Docker.Platforms.ARM not in docker.platforms:
+                continue
+            if any(p not in Docker.Platforms.arm_amd for p in docker.platforms):
+                Utils.raise_with_error(
+                    f"TODO: add support for all docker platforms [{docker.platforms}]"
+                )
             assert (
                 docker.name not in ready
             ), f"All docker names must be uniq [{dockers}]"
