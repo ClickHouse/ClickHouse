@@ -205,7 +205,7 @@ void KafkaConsumer::commit()
 
     if (hasMorePolledMessages())
     {
-        LOG_WARNING(log, "Logical error. Non all polled messages were processed.");
+        LOG_WARNING(log, "Logical error. Not all polled messages were processed.");
     }
 
     if (offsets_stored > 0)
@@ -274,9 +274,9 @@ void KafkaConsumer::subscribe()
     if (stalled_status != CONSUMER_STOPPED)
         stalled_status = NO_MESSAGES_RETURNED;
 
-    auto subcription = consumer->get_subscription();
+    auto subscription = consumer->get_subscription();
 
-    if (!subcription.empty())
+    if (!subscription.empty())
     {
         LOG_TRACE(log, "Already subscribed to topics: [{}]", boost::algorithm::join(subcription, ", "));
 
@@ -297,7 +297,7 @@ void KafkaConsumer::subscribe()
 
         if (stopped)
         {
-            LOG_TRACE(log, "Consumer is stopped. Can't subscribe.");
+            LOG_TRACE(log, "Consumer is stopped; cannot subscribe.");
             return;
         }
 
@@ -318,9 +318,9 @@ void KafkaConsumer::subscribe()
             throw;
         }
 
-        subcription = consumer->get_subscription();
+        subscription = consumer->get_subscription();
 
-        if (subcription.empty())
+        if (subscription.empty())
         {
             if (max_retries > 0)
             {
@@ -334,13 +334,14 @@ void KafkaConsumer::subscribe()
         }
         else
         {
-            LOG_TRACE(log, "Subscribed to topics: [{}]", boost::algorithm::join(subcription, ", "));
+            LOG_TRACE(log, "Subscribed to topics: [{}]", boost::algorithm::join(subscription, ", "));
             break;
         }
     }
 
     current_subscription_valid = true;
 
+    // Immediately poll for messages (+callbacks) after successful subscription.
     doPoll();
 }
 
@@ -353,11 +354,11 @@ void KafkaConsumer::cleanUnprocessed()
 
 void KafkaConsumer::markDirty()
 {
-    LOG_TRACE(log, "Will mark claimed consumer dirty after failure, so it will re-subscribe on the next usage.");
+    LOG_TRACE(log, "Marking consumer as dirty after failure, so it will rejoin consumer group on the next usage.");
 
     cleanUnprocessed();
 
-    // next subscribe call will redo subscription, leading to rebalance / offset reset / potential duplicates
+    // Next subscribe call will redo subscription, causing a rebalance/offset reset and potential duplicates.
     current_subscription_valid = false;
 }
 
@@ -365,7 +366,7 @@ void KafkaConsumer::resetToLastCommitted(const char * msg)
 {
     if (!assignment.has_value() || assignment->empty())
     {
-        LOG_TRACE(log, "Not assigned. Can't reset to last committed position.");
+        LOG_TRACE(log, "Not assigned; cannot reset to last committed position.");
         return;
     }
     auto committed_offset = consumer->get_offsets_committed(consumer->get_assignment());
@@ -396,6 +397,7 @@ void KafkaConsumer::doPoll()
                             std::chrono::milliseconds(actual_poll_timeout_ms));
         last_poll_timestamp = timeInSeconds(std::chrono::system_clock::now());
 
+        // Remove messages with errors and log any exceptions.
         auto num_errors = StorageKafkaUtils::eraseMessageErrors(new_messages, log, [this](const cppkafka::Error & err) { setExceptionInfo(err); });
         num_messages_read += new_messages.size();
 
@@ -412,7 +414,7 @@ void KafkaConsumer::doPoll()
                 // we have polled something just after rebalance.
                 // we will not use current batch, so we need to return to last committed position
                 // otherwise we will continue polling from that position
-                resetToLastCommitted("Rewind last poll after rebalance.");
+                resetToLastCommitted("Rewinding last poll after rebalance.");
             }
             return;
         }
@@ -423,7 +425,7 @@ void KafkaConsumer::doPoll()
             // If we're doing a manual select then it's better to get something after a wait, then immediate nothing.
             if (!assignment.has_value())
             {
-                waited_for_assignment += poll_timeout; // slightly inaccurate, but rough calculation is ok.
+                waited_for_assignment += poll_timeout; // Rough calculation for total wait time.
                 if (waited_for_assignment < MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS)
                 {
                     continue;
