@@ -57,6 +57,12 @@ protected:
     const bool use_average_block_size = false;
 
     bool need_flush = false;
+
+    using InsetFromFunc = void (*)(IColumn & dst, const IColumn & src, size_t n);
+    std::vector<InsetFromFunc> insert_from_functions;
+
+    using InsertRangeFromFunc = void (*)(IColumn & dst, const IColumn & src, size_t start, size_t length);
+    std::vector<InsertRangeFromFunc> insert_range_from_functions;
 };
 
 }
