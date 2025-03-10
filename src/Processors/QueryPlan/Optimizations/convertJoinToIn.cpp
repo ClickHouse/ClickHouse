@@ -134,7 +134,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     /// IN function
     auto func_in = FunctionFactory::instance().get("in", nullptr);
-    auto & in_node = dag->addFunction(func_in, {in_lhs_arg, in_rhs_arg}, "");
+    const auto & in_node = dag->addFunction(func_in, {in_lhs_arg, in_rhs_arg}, "");
     dag->getOutputs().push_back(&in_node);
 
     /// Attach IN to FilterStep
