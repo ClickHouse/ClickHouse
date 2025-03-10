@@ -153,5 +153,5 @@ Result:
 
 **See Also**
 
-- [UNION](union.md#union-clause)
-- [EXCEPT](except.md#except-clause)
+- [UNION](/sql-reference/statements/select/union)
+- [EXCEPT](/sql-reference/statements/select/except)

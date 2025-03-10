@@ -5364,17 +5364,23 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 void MergeTreeData::checkAlterPartitionIsPossible(
     const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr local_context) const
 {
-    for (const auto & disk : getDisks())
-        if (!disk->supportsHardLinks())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE PARTITION is not supported for immutable disk '{}'", disk->getName());
-
+    const auto disks = getDisks();
+    auto disk_without_hardlink_support_it
+        = std::find_if(disks.begin(), disks.end(), [](const auto & disk_ptr) { return !disk_ptr->supportsHardLinks(); });
     for (const auto & command : commands)
     {
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION && !settings[Setting::allow_drop_detached])
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                 "Cannot execute query: DROP DETACHED PART "
                                 "is disabled (see allow_drop_detached setting)");
+
+        if (disk_without_hardlink_support_it != disks.end() && command.type != PartitionCommand::DROP_PARTITION
+            && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Partition operation ALTER TABLE {} is not supported for immutable disk '{}'",
+                command.typeToString(),
+                (*disk_without_hardlink_support_it)->getName());
 
         if (command.partition && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
         {

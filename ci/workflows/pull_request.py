@@ -2,7 +2,7 @@ from praktika import Workflow
 
 from ci.defs.defs import BASE_BRANCH, SECRETS, ArtifactConfigs, JobNames
 from ci.defs.job_configs import JobConfigs
-from ci.jobs.scripts.workflow_hooks.should_skip_job import should_skip_job
+from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
 
 workflow = Workflow.Config(
@@ -71,6 +71,7 @@ workflow = Workflow.Config(
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/feature_docs.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/can_be_merged.py",
     ],
 )
 

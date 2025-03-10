@@ -25,7 +25,7 @@ INSERT INTO part_log_profile_events_r1 SELECT number FROM numbers(1000);
 
 SYSTEM SYNC REPLICA part_log_profile_events_r2;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT
     count() > 1
