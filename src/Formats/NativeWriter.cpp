@@ -11,7 +11,9 @@
 #include <Formats/NativeWriter.h>
 
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnLazy.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
@@ -64,6 +66,12 @@ static void writeData(const ISerialization & serialization, const ColumnPtr & co
       * The same for compressed columns in-memory.
       */
     ColumnPtr full_column = column->convertToFullColumnIfConst()->decompress();
+
+    if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(full_column.get()))
+    {
+        const auto & columns = column_lazy->getColumns();
+        full_column = ColumnTuple::create(columns);
+    }
 
     ISerialization::SerializeBinaryBulkSettings settings;
     settings.getter = [&ostr](ISerialization::SubstreamPath) -> WriteBuffer * { return &ostr; };
@@ -155,7 +163,15 @@ size_t NativeWriter::write(const Block & block)
 
         /// Serialization. Dynamic, if client supports it.
         SerializationPtr serialization;
-        if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
+        bool skip_writing = false;
+        if (const auto * column_lazy = checkAndGetColumn<ColumnLazy>(column.column.get()))
+        {
+            if (!column_lazy->getColumns().empty())
+                serialization = column_lazy->getDefaultSerialization();
+            else
+                skip_writing = true;
+        }
+        else if (client_revision >= DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION)
         {
             auto info = column.type->getSerializationInfo(*column.column);
             bool has_custom = false;
@@ -182,7 +198,7 @@ size_t NativeWriter::write(const Block & block)
         }
 
         /// Data
-        if (rows)    /// Zero items of data is always represented as zero number of bytes.
+        if (!skip_writing && rows)    /// Zero items of data is always represented as zero number of bytes.
             writeData(*serialization, column.column, ostr, format_settings, 0, 0, client_revision);
 
         if (index)
