@@ -89,7 +89,7 @@ private:
     NATSConnectionPtr consumers_connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
-    size_t num_created_consumers = 0;
+    std::atomic<size_t> num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
     std::vector<NATSConsumerPtr> consumers; /// available NATS consumers
@@ -101,7 +101,7 @@ private:
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
     BackgroundSchedulePoolTaskHolder streaming_task;
-    BackgroundSchedulePoolTaskHolder subscribe_consumers_task;
+    BackgroundSchedulePoolTaskHolder initialize_consumers_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
@@ -121,11 +121,14 @@ private:
     bool isSubjectInSubscriptions(const std::string & subject);
 
     /// Functions working in the background
+    void initializeConsumersFunc();
     void streamingToViewsFunc();
-    void subscribeConsumersFunc();
 
+    void createConsumersConnection();
     void createConsumers();
+    
     bool subscribeConsumers();
+    void unsubscribeConsumers();
 
     void stopEventLoop();
 
