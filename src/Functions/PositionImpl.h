@@ -219,7 +219,7 @@ struct PositionImpl
             if (const ColumnConst * start_pos_const = typeid_cast<const ColumnConst *>(&*start_pos))
             {
                 /// Needle is empty and start_pos is constant
-                UInt64 start = std::max(start_pos_const->getUInt(0), static_cast<UInt64>(1));
+                auto start = static_cast<size_t>(std::max(start_pos_const->getInt(0), static_cast<Int64>(1)));
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     size_t haystack_size = Impl::countChars(
@@ -237,9 +237,8 @@ struct PositionImpl
             {
                 size_t haystack_size = Impl::countChars(
                     reinterpret_cast<const char *>(pos), reinterpret_cast<const char *>(pos + haystack_offsets[i] - prev_offset - 1));
-                UInt64 start = start_pos->getUInt(i);
-                start = std::max(static_cast<UInt64>(1), start);
-                res[i] = (start <= haystack_size + 1) ? start : 0;
+                auto start = static_cast<size_t>(std::max(static_cast<Int64>(1), start_pos->getInt(i)));
+                res[i] = start <= haystack_size + 1 ? start : 0;
 
                 pos = begin + haystack_offsets[i];
                 prev_offset = haystack_offsets[i];
@@ -261,7 +260,7 @@ struct PositionImpl
                 res[i] = 0;
                 ++i;
             }
-            auto start = start_pos != nullptr ? start_pos->getUInt(i) : 0;
+            auto start = static_cast<size_t>(start_pos != nullptr ? std::max<Int64>(start_pos->getInt(i), 0) : 0);
 
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() < begin + haystack_offsets[i])
@@ -338,7 +337,7 @@ struct PositionImpl
         size_t size = start_pos != nullptr ? start_pos->size() : 0;
         for (size_t i = 0; i < size; ++i)
         {
-            auto start = start_pos->getUInt(i);
+            auto start = static_cast<size_t>(std::max<Int64>(start_pos->getInt(i), 0));
 
             if (start > haystack_size + 1)
             {
@@ -375,7 +374,7 @@ struct PositionImpl
                 reinterpret_cast<const char *>(&haystack_data[prev_haystack_offset]),
                 reinterpret_cast<const char *>(&haystack_data[haystack_offsets[i] - 1]));
 
-            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
+            auto start = static_cast<size_t>(start_pos != nullptr ? std::max(start_pos->getInt(i), Int64(1)) : Int64(1));
 
             if (start > haystack_chars_size + 1)
             {
@@ -439,7 +438,7 @@ struct PositionImpl
         {
             size_t needle_size = needle_offsets[i] - prev_needle_offset - 1;
 
-            auto start = start_pos != nullptr ? std::max(start_pos->getUInt(i), UInt64(1)) : UInt64(1);
+            auto start = static_cast<size_t>(start_pos != nullptr ? std::max(start_pos->getInt(i), Int64(1)) : Int64(1));
 
             if (start > haystack_size + 1)
             {
