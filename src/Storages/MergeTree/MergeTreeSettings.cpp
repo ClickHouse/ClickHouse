@@ -275,6 +275,7 @@ namespace ErrorCodes
     DECLARE(Bool, force_read_through_cache_for_merges, false, "Force read-through filesystem cache for merges", EXPERIMENTAL) \
     DECLARE(Bool, cache_populated_by_fetch, false, "When using zero-copy replication or SharedMergeTree, eagerly read the file into cache for each added part. This approximates the behavior and performance of using ReplicatedMergeTree on direct-attached storage. When enabling this, please make sure to also enable cache_on_write_operations in disks config.", 0) \
     DECLARE(Bool, allow_experimental_replacing_merge_with_cleanup, false, "Allow experimental CLEANUP merges for ReplacingMergeTree with is_deleted column.", EXPERIMENTAL) \
+    DECLARE(Bool, enable_replacing_merge_with_cleanup_for_min_age_to_force_merge, false, "Whether to use CLEANUP merges for ReplacingMergeTree when merging partitions down to a single part. Requires allow_experimental_replacing_merge_with_cleanup, min_age_to_force_merge_seconds and min_age_to_force_merge_on_partition_only to be enabled.", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_reverse_key, false, "Allow descending sorting key in MergeTree tables (experimental feature).", EXPERIMENTAL) \
     DECLARE(Bool, notify_newest_block_number, false, "Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud", EXPERIMENTAL) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, false, "Enables writing attributes into virtual parts and committing blocks in keeper", EXPERIMENTAL) \
