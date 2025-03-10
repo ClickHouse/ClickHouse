@@ -255,6 +255,19 @@ Type: `UInt64`
 
 Default: `0`
 
+## concurrent_threads_scheduler {#concurrent_threads_scheduler}
+
+The policy on how to perform a scheduling of CPU slots specified by `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`. Algorithm used to govern how limited number of CPU slots are distributed among concurrent queries. Scheduler may be changed at runtime without server restart.
+
+Type: String
+
+Default: `round_robin`
+
+Possible values:
+
+- `round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads` CPU slots. One slot per thread. On contention CPU slot are granted to queries using round-robin. Note that the first slot is granted unconditionally, which could lead to unfairness and increased latency of queries having high `max_threads` in presence of high number of queries with `max_threads` = 1.
+- `fair_round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads - 1` CPU slots. Variation of `round_robin` that does not require a CPU slot for the first thread of every query. This way queries having `max_threads` = 1 do not require any slot and could not unfairly allocate all slots. There are no slots granted unconditionally.
+
 ## default_database {#default_database}
 
 The default database name.
@@ -431,6 +444,34 @@ Default: `5368709120`
 ## mark_cache_size_ratio {#mark_cache_size_ratio}
 
 The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.
+
+Type: `Double`
+
+Default: `0.5`
+
+## query_condition_cache_policy {#query_condition_cache_policy}
+
+Query condition cache policy name.
+
+Type: `String`
+
+Default: `SLRU`
+
+## query_condition_cache_size {#query_condition_cache_size}
+
+Maximum size of the query condition cache.
+
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
+Type: `UInt64`
+
+Default: `1073741824` (100 MiB)
+
+## query_condition_cache_size_ratio {#query_condition_cache_size_ratio}
+
+The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.
 
 Type: `Double`
 

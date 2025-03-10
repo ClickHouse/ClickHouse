@@ -133,7 +133,7 @@ Like [position](#position) but with arguments `haystack` and `locate` switched.
 The behavior of this function depends on the ClickHouse version:
 - in versions < v24.3, `locate` was an alias of function `position` and accepted arguments `(haystack, needle[, start_pos])`.
 - in versions >= 24.3,, `locate` is an individual function (for better compatibility with MySQL) and accepts arguments `(needle, haystack[, start_pos])`. The previous behavior
-  can be restored using setting [function_locate_has_mysql_compatible_argument_order = false](../../operations/settings/settings.md#function-locate-has-mysql-compatible-argument-order);
+  can be restored using setting [function_locate_has_mysql_compatible_argument_order = false](/operations/settings/settings#function_locate_has_mysql_compatible_argument_order);
 
 **Syntax**
 
@@ -1085,7 +1085,7 @@ Alias: `haystack NOT ILIKE pattern` (operator)
 
 ## ngramDistance {#ngramdistance}
 
-Calculates the 4-gram distance between a `haystack` string and a `needle` string. For this, it counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns a [Float32](../data-types/float.md/#float32-float64) between 0 and 1. The smaller the result is, the more similar the strings are to each other.
+Calculates the 4-gram distance between a `haystack` string and a `needle` string. For this, it counts the symmetric difference between two multisets of 4-grams and normalizes it by the sum of their cardinalities. Returns a [Float32](/sql-reference/data-types/float) between 0 and 1. The smaller the result is, the more similar the strings are to each other.
 
 Functions [`ngramDistanceCaseInsensitive`](#ngramdistancecaseinsensitive), [`ngramDistanceUTF8`](#ngramdistanceutf8), [`ngramDistanceCaseInsensitiveUTF8`](#ngramdistancecaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
 
@@ -1097,12 +1097,12 @@ ngramDistance(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First comparison string. [String literal](../syntax#string)
-- `needle`: Second comparison string. [String literal](../syntax#string)
+- `haystack`: First comparison string. [String literal](/sql-reference/syntax#string)
+- `needle`: Second comparison string. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
-- Value between 0 and 1 representing the similarity between the two strings. [Float32](../data-types/float.md/#float32-float64)
+- Value between 0 and 1 representing the similarity between the two strings. [Float32](/sql-reference/data-types/float)
 
 **Implementation details**
 
@@ -1151,12 +1151,12 @@ ngramDistanceCaseInsensitive(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First comparison string. [String literal](../syntax#string)
-- `needle`: Second comparison string. [String literal](../syntax#string)
+- `haystack`: First comparison string. [String literal](/sql-reference/syntax#string)
+- `needle`: Second comparison string. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
-- Value between 0 and 1 representing the similarity between the two strings. [Float32](../data-types/float.md/#float32-float64)
+- Value between 0 and 1 representing the similarity between the two strings. [Float32](/sql-reference/data-types/float)
 
 **Examples**
 
@@ -1200,12 +1200,12 @@ ngramDistanceUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
+- `haystack`: First UTF-8 encoded comparison string. [String literal](/sql-reference/syntax#string)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
-- Value between 0 and 1 representing the similarity between the two strings. [Float32](../data-types/float.md/#float32-float64)
+- Value between 0 and 1 representing the similarity between the two strings. [Float32](/sql-reference/data-types/float)
 
 **Example**
 
@@ -1233,12 +1233,12 @@ ngramDistanceCaseInsensitiveUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
+- `haystack`: First UTF-8 encoded comparison string. [String literal](/sql-reference/syntax#string)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
-- Value between 0 and 1 representing the similarity between the two strings. [Float32](../data-types/float.md/#float32-float64)
+- Value between 0 and 1 representing the similarity between the two strings. [Float32](/sql-reference/data-types/float)
 
 **Example**
 
@@ -1256,7 +1256,7 @@ Result:
 
 ## ngramSearch {#ngramsearch}
 
-Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from the needle minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a [Float32](../data-types/float.md/#float32-float64) between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function [`soundex`](../../sql-reference/functions/string-functions#soundex).
+Like `ngramDistance` but calculates the non-symmetric difference between a `needle` string and a `haystack` string, i.e. the number of n-grams from the needle minus the common number of n-grams normalized by the number of `needle` n-grams. Returns a [Float32](/sql-reference/data-types/float) between 0 and 1. The bigger the result is, the more likely `needle` is in the `haystack`. This function is useful for fuzzy string search. Also see function [`soundex`](../../sql-reference/functions/string-functions#soundex).
 
 Functions [`ngramSearchCaseInsensitive`](#ngramsearchcaseinsensitive), [`ngramSearchUTF8`](#ngramsearchutf8), [`ngramSearchCaseInsensitiveUTF8`](#ngramsearchcaseinsensitiveutf8) provide case-insensitive and/or UTF-8 variants of this function.
 
@@ -1268,12 +1268,12 @@ ngramSearch(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First comparison string. [String literal](../syntax#string)
-- `needle`: Second comparison string. [String literal](../syntax#string)
+- `haystack`: First comparison string. [String literal](/sql-reference/syntax#string)
+- `needle`: Second comparison string. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
-- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../data-types/float.md/#float32-float64)
+- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](/sql-reference/data-types/float)
 
 **Implementation details**
 
@@ -1307,12 +1307,12 @@ ngramSearchCaseInsensitive(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First comparison string. [String literal](../syntax#string)
-- `needle`: Second comparison string. [String literal](../syntax#string)
+- `haystack`: First comparison string. [String literal](/sql-reference/syntax#string)
+- `needle`: Second comparison string. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
-- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../data-types/float.md/#float32-float64)
+- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](/sql-reference/data-types/float)
 
 The bigger the result is, the more likely `needle` is in the `haystack`.
 
@@ -1342,12 +1342,12 @@ ngramSearchUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
+- `haystack`: First UTF-8 encoded comparison string. [String literal](/sql-reference/syntax#string)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
-- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../data-types/float.md/#float32-float64)
+- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](/sql-reference/data-types/float)
 
 The bigger the result is, the more likely `needle` is in the `haystack`.
 
@@ -1377,12 +1377,12 @@ ngramSearchCaseInsensitiveUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack`: First UTF-8 encoded comparison string. [String literal](../syntax#string)
-- `needle`: Second UTF-8 encoded comparison string. [String literal](../syntax#string)
+- `haystack`: First UTF-8 encoded comparison string. [String literal](/sql-reference/syntax#string)
+- `needle`: Second UTF-8 encoded comparison string. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
-- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](../data-types/float.md/#float32-float64)
+- Value between 0 and 1 representing the likelihood of the `needle` being in the `haystack`. [Float32](/sql-reference/data-types/float)
 
 The bigger the result is, the more likely `needle` is in the `haystack`.
 

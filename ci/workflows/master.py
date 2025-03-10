@@ -2,7 +2,7 @@ from praktika import Workflow
 
 from ci.defs.defs import BASE_BRANCH, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
-from ci.jobs.scripts.workflow_hooks.should_skip_job import should_skip_job
+from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
 workflow = Workflow.Config(
     name="MasterCI",
@@ -51,6 +51,7 @@ workflow = Workflow.Config(
     pre_hooks=[
         "python3 ./ci/jobs/scripts/workflow_hooks/store_data.py",
         "python3 ./ci/jobs/scripts/workflow_hooks/version_log.py",
+        "python3 ./ci/jobs/scripts/workflow_hooks/merge_sync_pr.py",
     ],
     workflow_filter_hooks=[should_skip_job],
     post_hooks=[],
