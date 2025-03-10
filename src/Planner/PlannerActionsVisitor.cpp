@@ -317,7 +317,9 @@ public:
 
     static String calculateConstantActionNodeName(const Field & constant_literal, const DataTypePtr & constant_type)
     {
-        auto constant_name = applyVisitor(FieldVisitorToString(), constant_literal);
+        auto constant_name = (isBool(constant_type) && isInt64OrUInt64FieldType(constant_literal.getType())) ?
+            applyVisitor(FieldVisitorToString(), Field(constant_literal.safeGet<UInt64>() != 0)) :
+            applyVisitor(FieldVisitorToString(), constant_literal);
         return constant_name + "_" + constant_type->getName();
     }
 
