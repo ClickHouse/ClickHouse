@@ -74,7 +74,6 @@ ParquetReader::ParquetReader(
         auto name = case_insensitive ? Poco::toLower(node->name()) : node->name();
         parquet_columns.emplace(name, node);
     }
-    chunk_reader = getSubRowGroupRangeReader(row_groups_indices);
     if (!io_pool)
     {
         io_pool = std::make_shared<ThreadPool>(
@@ -83,9 +82,10 @@ ParquetReader::ParquetReader(
             CurrentMetrics::IOThreadsScheduled,
             1);
     }
+    chunk_reader = getSubRowGroupRangeReader(row_groups_indices);
 }
 
-Block ParquetReader::read()
+Block ParquetReader::read() const
 {
     Chunk chunk = chunk_reader->read(max_block_size);
     if (!chunk)
@@ -116,7 +116,6 @@ ParquetReader::getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr 
 }
 
 extern arrow::io::ReadRange getColumnRange(const parquet::ColumnChunkMetaData & column_metadata);
-
 
 std::unique_ptr<SubRowGroupRangeReader> ParquetReader::getSubRowGroupRangeReader(std::vector<Int32> row_group_indices_)
 {

@@ -3,7 +3,6 @@
 #include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/Impl/Parquet/RowGroupChunkReader.h>
 #include <Processors/Formats/Impl/Parquet/SelectiveColumnReader.h>
@@ -61,13 +60,13 @@ public:
         std::shared_ptr<parquet::FileMetaData> metadata = nullptr,
         std::shared_ptr<ThreadPool> io_pool_ = nullptr);
 
-    Block read();
+    Block read() const;
     void setSourceArrowFile(std::shared_ptr<arrow::io::RandomAccessFile> arrow_file_);
     void pushDownFilter(FilterSplitResultPtr filter_split_result);
     std::unique_ptr<RowGroupChunkReader>
     getRowGroupChunkReader(size_t row_group_idx, RowGroupPrefetchPtr conditions_prefetch, RowGroupPrefetchPtr prefetch);
     std::unique_ptr<SubRowGroupRangeReader> getSubRowGroupRangeReader(std::vector<Int32> row_group_indices);
-    const parquet::FileMetaData & metaData() { return *meta_data; }
+    const parquet::FileMetaData & metaData() const { return *meta_data; }
     const parquet::ReaderProperties & readerProperties() const { return settings.reader_properties; }
     parquet::schema::NodePtr getParquetColumn(const String & column_name);
     bool hasFilter() const { return filter_split_result.operator bool(); }
