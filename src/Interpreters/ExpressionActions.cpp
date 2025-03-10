@@ -1161,14 +1161,14 @@ void AdaptiveExpressionActions::accumulateProfile(ExpressionActions::Action & ac
         const auto & func_arg_pos = arg_profile.first;
         if (func_arg_pos >= function_action->arguments.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid argument pos: {}. action argument size: {}. action:{}\naction DAG:{}", func_arg_pos, function_action->arguments.size(), function_action->toString(), actions_dag.dumpDAG());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument index({}) out of bounds. action argument size: {}. action:{}\naction DAG:{}", func_arg_pos, function_action->arguments.size(), function_action->toString(), actions_dag.dumpDAG());
         }
-        if (function_action->arguments[func_arg_pos].actions_pos >= actions.size())
+        size_t actions_pos = function_action->arguments[func_arg_pos].actions_pos;
+        if (actions_pos >= actions.size())
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid action pos: {}. actions size: {}", function_action->arguments[func_arg_pos].actions_pos, actions.size());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Actions index({}) out of bounds. actions size: {}", actions_pos, actions.size());
         }
-        auto & arg_action = actions[function_action->arguments[func_arg_pos].actions_pos];
-        // LOG_TRACE(getLogger("AdaptiveExpressionActions"), "visit arg. pos: {}, action: {}", func_arg_pos, arg_action.toString());
+        auto & arg_action = actions[actions_pos];
         accumulateProfile(arg_action, arg_profile.second);
     }
 }
