@@ -2001,6 +2001,32 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
     ret += ")";
 }
 
+CONV_FN(GenerateRandomFunc, grfunc)
+{
+    ret += "generateRandom('";
+    ret += grfunc.structure();
+    ret += "'";
+    if (grfunc.has_random_seed())
+    {
+        ret += ", '";
+        ret += std::to_string(grfunc.random_seed());
+        ret += "'";
+    }
+    if (grfunc.has_max_string_length())
+    {
+        ret += ", '";
+        ret += std::to_string(grfunc.max_string_length());
+        ret += "'";
+    }
+    if (grfunc.has_max_array_length())
+    {
+        ret += ", '";
+        ret += std::to_string(grfunc.max_array_length());
+        ret += "'";
+    }
+    ret += ")";
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -2046,6 +2072,9 @@ CONV_FN(TableFunction, tf)
             ret += "loop(";
             TableOrFunctionToString(ret, true, tf.loop());
             ret += ")";
+            break;
+        case TableFunctionType::kGrandom:
+            GenerateRandomFuncToString(ret, tf.grandom());
             break;
         default:
             ret += "numbers(10)";

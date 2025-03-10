@@ -1270,6 +1270,7 @@ const std::vector<CHFunction> CHTableFuncs = {
     CHFunction(SQLTableFunc::TFfileCluster, 0, 0, 2, 5),
     CHFunction(SQLTableFunc::TFformat, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFgenerateSeries, 0, 0, 2, 3),
+    CHFunction(SQLTableFunc::TFgenerateRandom, 0, 0, 1, 4),
     CHFunction(SQLTableFunc::TFmerge, 0, 0, 1, 2),
     CHFunction(SQLTableFunc::TFmergeTreeIndex, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFmysql, 0, 0, 5, 7),

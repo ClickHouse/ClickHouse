@@ -1551,17 +1551,18 @@ enum SQLTableFunc {
     TFfileCluster = 4;
     TFformat = 5;
     TFgenerateSeries = 6;
-    TFmerge = 7;
-    TFmergeTreeIndex = 8;
-    TFmysql = 9;
-    TFpostgresql = 10;
-    TFremote = 11;
-    TFremoteSecure = 12;
-    TFS3 = 13;
-    TFS3Cluster = 14;
-    TFsqlite = 15;
-    TFurl = 16;
-    TFurlCluster = 17;
+    TFgenerateRandom = 7;
+    TFmerge = 8;
+    TFmergeTreeIndex = 9;
+    TFmysql = 10;
+    TFpostgresql = 11;
+    TFremote = 12;
+    TFremoteSecure = 13;
+    TFS3 = 14;
+    TFS3Cluster = 15;
+    TFsqlite = 16;
+    TFurl = 17;
+    TFurlCluster = 18;
 }
 
 message Database {
@@ -2480,6 +2481,13 @@ message MergeTreeIndexFunc {
     optional bool with_marks = 3;
 }
 
+message GenerateRandomFunc {
+    required string structure = 1;
+    optional uint32 random_seed = 2;
+    optional uint32 max_string_length = 3;
+    optional uint32 max_array_length = 4;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
@@ -2495,6 +2503,7 @@ message TableFunction {
         ClusterFunc cluster = 11;
         MergeTreeIndexFunc mtindex = 12;
         TableOrFunction loop = 13;
+        GenerateRandomFunc grandom = 14;
     }
 }
 

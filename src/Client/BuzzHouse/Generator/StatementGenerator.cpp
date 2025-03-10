@@ -632,7 +632,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
         columnPathRef(entry, ins->add_cols());
     }
 
-    if (noption < 901)
+    if (noption < 801)
     {
         String buf;
         std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
@@ -691,15 +691,56 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
     else if (noption < 951)
     {
         InsertSelect * isel = ins->mutable_insert_select();
+        Select * sel = isel->mutable_select();
 
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        if (rg.nextMediumNumber() < 13)
+        if (noption < 901)
         {
-            this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
+            /// Use generateRandom
+            String buf;
+            bool first = true;
+            std::uniform_int_distribution<uint32_t> rows_dist(1, 16384);
+            std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+            std::uniform_int_distribution<uint64_t> nested_rows_dist(1, 1024);
+            SelectStatementCore * ssc = sel->mutable_select_core();
+            GenerateRandomFunc * grf = ssc->mutable_from()
+                                           ->mutable_tos()
+                                           ->mutable_join_clause()
+                                           ->mutable_tos()
+                                           ->mutable_joined_table()
+                                           ->mutable_tof()
+                                           ->mutable_tfunc()
+                                           ->mutable_grandom();
+
+            for (const auto & entry : this->entries)
+            {
+                SQLType * tp = entry.getBottomType();
+
+                buf += fmt::format(
+                    "{}{} {}{}{}",
+                    first ? "" : ", ",
+                    entry.getBottomName(),
+                    entry.path.size() > 1 ? "Array(" : "",
+                    tp->typeName(true),
+                    entry.path.size() > 1 ? ")" : "");
+                columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
+                first = false;
+            }
+            grf->set_structure(std::move(buf));
+            grf->set_random_seed(rg.nextRandomUInt32());
+            grf->set_max_string_length(string_length_dist(rg.generator));
+            grf->set_max_array_length(nested_rows_dist(rg.generator));
+            ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
         }
-        generateSelect(
-            rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), isel->mutable_select());
-        this->levels.clear();
+        else
+        {
+            this->levels[this->current_level] = QueryLevel(this->current_level);
+            if (rg.nextMediumNumber() < 13)
+            {
+                this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
+            }
+            generateSelect(rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), sel);
+            this->levels.clear();
+        }
         if (rg.nextSmallNumber() < 3)
         {
             generateSettingValues(rg, serverSettings, isel->mutable_setting_values());
