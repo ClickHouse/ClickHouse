@@ -1296,6 +1296,8 @@ arrayJoin
 arrayLast
 arrayLastIndex
 arrayLastOrNull
+arrayLevenshtein
+arrayLevenshteinWeighted
 arrayMap
 arrayMax
 arrayMin
@@ -1323,6 +1325,7 @@ arrayShiftLeft
 arrayShiftRight
 arrayShingles
 arrayShuffle
+arraySimilarity
 arraySlice
 arraySort
 arraySplit
