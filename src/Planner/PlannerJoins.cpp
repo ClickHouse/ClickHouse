@@ -1187,6 +1187,7 @@ JoinAlgorithmSettings::JoinAlgorithmSettings(const Context & context)
 
 JoinAlgorithmSettings::JoinAlgorithmSettings(
     const JoinSettings & join_settings,
+    UInt64 max_threads_,
     UInt64 max_entries_for_hash_table_stats_,
     String initial_query_id_,
     std::chrono::milliseconds lock_acquire_timeout_)
@@ -1200,7 +1201,7 @@ JoinAlgorithmSettings::JoinAlgorithmSettings(
     grace_hash_join_max_buckets = join_settings.grace_hash_join_max_buckets;
 
     max_size_to_preallocate_for_joins = join_settings.max_size_to_preallocate_for_joins;
-    max_threads = join_settings.max_threads;
+    max_threads = max_threads_;
 
     initial_query_id = std::move(initial_query_id_);
     lock_acquire_timeout = lock_acquire_timeout_;

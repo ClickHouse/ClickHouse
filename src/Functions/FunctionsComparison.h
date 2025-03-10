@@ -1216,19 +1216,25 @@ public:
                     " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
         }
 
-        if (left_tuple && right_tuple)
+        bool both_tuples = left_tuple && right_tuple;
+        if (both_tuples || (left_tuple && right.isStringOrFixedString()) || (left.isStringOrFixedString() && right_tuple))
         {
             auto func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(params));
 
             bool has_nullable = false;
             bool has_null = false;
 
-            size_t size = left_tuple->getElements().size();
+            const DataTypeTuple * any_tuple = left_tuple ? left_tuple : right_tuple;
+            size_t size = any_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
-                ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
-                                               {nullptr, right_tuple->getElements()[i], ""}};
-                auto element_type = func->build(args)->getResultType();
+                DataTypePtr element_type = any_tuple->getElement(i);
+                if (both_tuples)
+                {
+                    ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
+                                                   {nullptr, right_tuple->getElements()[i], ""}};
+                    element_type = func->build(args)->getResultType();
+                }
                 has_nullable = has_nullable || element_type->isNullable();
                 has_null = has_null || element_type->onlyNull();
             }

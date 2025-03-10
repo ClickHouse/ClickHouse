@@ -36,7 +36,7 @@ tupleElement(tuple, name, [, default_value])
 
 ## untuple {#untuple}
 
-Performs syntactic substitution of [tuple](../data-types/tuple.md#tuplet1-t2) elements in the call location.
+Performs syntactic substitution of [tuple](/sql-reference/data-types/tuple) elements in the call location.
 
 The names of the result columns are implementation-specific and subject to change. Do not assume specific column names after `untuple`.
 

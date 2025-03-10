@@ -94,7 +94,8 @@ Chunk NATSSource::generate()
     {
         auto timeout = std::chrono::milliseconds(context->getSettingsRef()[Setting::rabbitmq_max_wait_ms].totalMilliseconds());
         consumer = storage.popConsumer(timeout);
-        consumer->subscribe();
+        if (consumer)
+            consumer->subscribe();
     }
 
     if (!consumer || is_finished)

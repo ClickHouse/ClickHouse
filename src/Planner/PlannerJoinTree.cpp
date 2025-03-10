@@ -445,7 +445,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             columns_names.size(),
-            settings[Setting::max_columns_to_read]);
+            settings[Setting::max_columns_to_read].value);
 }
 
 void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info,
@@ -1437,7 +1437,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             for (const auto & key_name : key_names)
                 sort_description.emplace_back(key_name);
 
-            SortingStep::Settings sort_settings(*query_context);
+            SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
             auto sorting_step = std::make_unique<SortingStep>(
                 plan.getCurrentHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);

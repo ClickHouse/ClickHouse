@@ -33,7 +33,7 @@ done
 
 ${CLICKHOUSE_CLIENT} --ignore-error --query "select * from data_02572; select * from copy_02572;"
 
-${CLICKHOUSE_CLIENT} --query="system flush logs;"
+${CLICKHOUSE_CLIENT} --query="system flush logs query_views_log;"
 ${CLICKHOUSE_CLIENT} --query="select count() > 0, lower(status::String), errorCodeToName(exception_code)
     from system.query_views_log where
     view_name = concatWithSeparator('.', currentDatabase(), 'mv_02572') and

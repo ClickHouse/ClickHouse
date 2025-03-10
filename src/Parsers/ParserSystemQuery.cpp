@@ -2,6 +2,7 @@
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserSetQuery.h>
@@ -199,6 +200,15 @@ enum class SystemQueryTargetType : uint8_t
     return true;
 }
 
+[[nodiscard]] static bool parseDropCatalogReplica(std::shared_ptr<ASTSystemQuery> & res, IParser::Pos & pos, Expected & expected)
+{
+    ASTPtr ast;
+    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+        return false;
+    res->replica = ast->as<ASTLiteral &>().value.safeGet<String>();
+    return true;
+}
+
 bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
     if (!ParserKeyword{Keyword::SYSTEM}.ignore(pos, expected))
@@ -253,6 +263,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::DROP_DATABASE_REPLICA:
         {
             if (!parseDropReplica(res, pos, expected, /* database */ true))
+                return false;
+            break;
+        }
+        case Type::DROP_CATALOG_REPLICA:
+        {
+            if (!parseDropCatalogReplica(res, pos, expected))
                 return false;
             break;
         }
@@ -413,6 +429,10 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::START_PULLING_REPLICATION_LOG:
         case Type::STOP_CLEANUP:
         case Type::START_CLEANUP:
+        case Type::STOP_VIRTUAL_PARTS_UPDATE:
+        case Type::START_VIRTUAL_PARTS_UPDATE:
+        case Type::STOP_REDUCE_BLOCKING_PARTS:
+        case Type::START_REDUCE_BLOCKING_PARTS:
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             parseDatabaseAndTableAsAST(pos, expected, res->database, res->table);
@@ -474,7 +494,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ParserLiteral tag_parser;
             ASTPtr ast;
             if (ParserKeyword{Keyword::TAG}.ignore(pos, expected) && tag_parser.parse(pos, ast, expected))
-                res->query_cache_tag = std::make_optional<String>(ast->as<ASTLiteral>()->value.safeGet<String>());
+                res->query_result_cache_tag = std::make_optional<String>(ast->as<ASTLiteral>()->value.safeGet<String>());
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
             break;
@@ -495,6 +515,25 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             }
             if (!parseQueryWithOnCluster(res, pos, expected))
                 return false;
+            break;
+        }
+        case Type::DROP_DISTRIBUTED_CACHE:
+        {
+            ParserLiteral parser;
+            ASTPtr ast;
+            if (parser.parse(pos, ast, expected))
+            {
+                res->distributed_cache_servive_id = ast->as<ASTLiteral>()->value.safeGet<String>();
+            }
+            else if (ParserKeyword{Keyword::CONNECTIONS}.ignore(pos, expected))
+            {
+                res->distributed_cache_drop_connections = true;
+            }
+            else
+            {
+                return false;
+            }
+
             break;
         }
         case Type::SYNC_FILESYSTEM_CACHE:
@@ -555,6 +594,27 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {
                 return false;
             }
+            break;
+        }
+        case Type::UNLOCK_SNAPSHOT:
+        {
+
+            ASTPtr ast;
+            if (ParserStringLiteral{}.parse(pos, ast, expected))
+            {
+                res->backup_name = ast->as<ASTLiteral &>().value.safeGet<String>();
+            }
+            else
+                return false;
+
+            if (ParserKeyword{Keyword::FROM}.ignore(pos, expected) && ParserIdentifierWithOptionalParameters{}.parse(pos, ast, expected))
+            {
+                ast->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+                res->backup_source = ast;
+            }
+            else
+                return false;
+
             break;
         }
 
