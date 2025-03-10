@@ -69,7 +69,7 @@ The `SimpleAggregateFunction` type has better performance than the `AggregateFun
 for the same aggregate functions.
 :::
 
-## Example
+## Example {#example}
 
 ```sql
 CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE=AggregatingMergeTree ORDER BY id;
