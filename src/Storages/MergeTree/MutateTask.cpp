@@ -14,7 +14,6 @@
 #include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
@@ -38,6 +37,8 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <Common/ProfileEventsScope.h>
 #include <Core/ColumnsWithTypeAndName.h>
+#include <DataTypes/NestedUtils.h>
+#include <Processors/Transforms/ExtractColumnsTransform.h>
 
 
 namespace ProfileEvents
@@ -84,6 +85,7 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 enum class ExecuteTTLType : uint8_t
@@ -1015,6 +1017,29 @@ void finalizeMutatedPart(
     new_data_part->default_codec = codec;
 }
 
+NamesAndTypesList getSubcolumnsUsedInExpression(const Block & header, const ExpressionActionsPtr & expr)
+{
+    NamesAndTypesList subcolumns;
+    for (const auto & name : expr->getRequiredColumns())
+    {
+        if (!header.has(name))
+        {
+            auto [column_name, subcolumn_name] = Nested::splitName(name);
+            const auto * column = header.findByName(column_name);
+            if (!column)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Column {} from sorting key/index expression is not found in block {}", column_name, header.dumpStructure());
+
+            auto subcolumn_type = column->type->tryGetSubcolumnType(subcolumn_name);
+            if (!subcolumn_type)
+                throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Subcolumn {} from sorting key/index expression is not found in block {}", name, header.dumpStructure());
+
+            subcolumns.emplace_back(column_name, subcolumn_name, column->type, subcolumn_type);
+        }
+    }
+
+    return subcolumns;
+}
+
 }
 
 struct MutationContext
@@ -1589,10 +1614,19 @@ private:
 
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
-            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
-            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
-            if (!extracting_subcolumns_dag.getNodes().empty())
-                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
+            auto indices_expression = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices);
+            auto subcolumns = MutationHelpers::getSubcolumnsUsedInExpression(builder->getHeader(), indices_expression);
+            /// If index expressions contain subcolumns, we need to add additional step
+            /// that will extract these subcolumns and add them to the block.
+            if (!subcolumns.empty())
+            {
+                NamesAndTypesList required_columns = builder->getHeader().getNamesAndTypesList();
+                required_columns.splice(required_columns.end(), subcolumns);
+                auto extract_columns_transform = std::make_unique<ExtractColumnsTransform>(builder->getHeader(), required_columns);
+                builder->addTransform(std::move(extract_columns_transform));
+            }
+
+            auto indices_expression_dag = indices_expression->getActionsDAG().clone();
 
             builder->addTransform(std::make_shared<ExpressionTransform>(
                 builder->getHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
