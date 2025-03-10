@@ -208,4 +208,9 @@ Chunk cloneConstWithDefault(const Chunk & chunk, size_t num_rows)
     return Chunk(std::move(columns), num_rows);
 }
 
+void MarkRangesInfo::addMarkRanges(const MarkRanges & mark_ranges_)
+{
+    mark_ranges.insert(mark_ranges.end(), mark_ranges_.begin(), mark_ranges_.end());
+}
+
 }
