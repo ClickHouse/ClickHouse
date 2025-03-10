@@ -171,10 +171,13 @@ public:
 
     std::shared_ptr<const IMergeTreeDataPart> getDataPart() const { return data_part; }
     const MarkRanges & getMarkRanges() const { return mark_ranges; }
+    void addMarkRanges(const MarkRanges & mark_ranges_);
 private:
     std::shared_ptr<const IMergeTreeDataPart> data_part;
     MarkRanges mark_ranges;
 };
+
+using MarkRangesInfoPtr = std::shared_ptr<MarkRangesInfo>;
 
 /// Converts all columns to full serialization in chunk.
 /// It's needed, when you have to access to the internals of the column,
