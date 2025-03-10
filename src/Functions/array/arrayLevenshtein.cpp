@@ -289,7 +289,7 @@ Calculates Levenshtein distance for two arrays.
          .arguments{{"lhs", "left-hand side array"}, {"rhs", "right-hand side array"}},
          .returned_value{"Levenshtein distance between left-hand and right-hand arrays"},
          .examples{{{
-             "Example",
+             "Query",
              "SELECT arrayLevenshtein([1, 2, 3, 4], [1, 2, 3, 4])",
              R"(
 ┌─arrayLevenshtein([1, 2, 4], [1, 2, 3])─┐
@@ -312,7 +312,7 @@ Calculates Levenshtein distance for two arrays with custom weights for each elem
          },
          .returned_value{"Levenshtein distance between left-hand and right-hand arrays with custom weights for each element"},
          .examples{{{
-            "Example",
+            "Query",
             "SELECT arrayLevenshteinWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])",
             R"(
 ┌─arrayLevenshteinWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
@@ -335,7 +335,7 @@ Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance.
          },
          .returned_value{"Similarity of two arrays based on the weighted Levenshtein distance"},
          .examples{{{
-            "Example",
+            "Query",
             "SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])",
             R"(
 ┌─arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐

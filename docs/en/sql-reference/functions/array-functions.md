@@ -3374,6 +3374,121 @@ Result:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+## arrayLevenshtein {#arraylevenshtein}
+
+Calculates Levenshtein distance for two arrays.
+
+**Syntax**
+
+```sql
+arrayLevenshtein(lhs, rhs)
+```
+
+**Arguments**
+
+- `lhs`: left-hand side array
+- `rhs`: right-hand side array
+
+**Returned Value**
+
+- Levenshtein distance between left-hand and right-hand arrays
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayLevenshtein([1, 2, 3, 4], [1, 2, 3, 4])
+```
+
+Result:
+
+``` text
+
+┌─arrayLevenshtein([1, 2, 4], [1, 2, 3])─┐
+│                                      1 │
+└────────────────────────────────────────┘
+
+```
+
+## arrayLevenshteinWeighted {#arraylevenshteinweighted}
+
+Calculates Levenshtein distance for two arrays with custom weights for each element. Number of elements for array and its weights should match
+
+**Syntax**
+
+```sql
+arrayLevenshteinWeighted(lhs, rhs, lhs_weights, rhs_weights)
+```
+
+**Arguments**
+
+- `lhs`: left-hand side array
+- `rhs`: right-hand side array
+- `lhs_weights`: right-hand side weights
+- `rhs_weights`: right-hand side weights
+
+**Returned Value**
+
+- Levenshtein distance between left-hand and right-hand arrays with custom weights for each element
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arrayLevenshteinWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])
+```
+
+Result:
+
+``` text
+
+┌─arrayLevenshteinWeighted(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
+│                                                                                   14 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+
+```
+
+## arraySimilarity {#arraysimilarity}
+
+Calculates arrays' similarity from 0 to 1 based on weighed Levenshtein distance. Accepts the same arguments as `arrayLevenshteinWeighted` function.
+
+**Syntax**
+
+```sql
+arraySimilarity(lhs, rhs, lhs_weights, rhs_weights)
+```
+
+**Arguments**
+
+- `lhs`: left-hand side array
+- `rhs`: right-hand side array
+- `lhs_weights`: right-hand side weights
+- `rhs_weights`: right-hand side weights
+
+**Returned Value**
+
+- Similarity of two arrays based on the weighted Levenshtein distance
+
+**Examples**
+
+Query:
+
+``` sql
+SELECT arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])
+```
+
+Result:
+
+``` text
+
+┌─arraySimilarity(['A', 'B', 'C'], ['A', 'K', 'L'], [1.0, 2, 3], [3.0, 4, 5])─┐
+│                                                          0.2222222222222222 │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+```
+
 ## Distance functions {#distance-functions}
 
 All supported functions are described in [distance functions documentation](../../sql-reference/functions/distance-functions.md).
