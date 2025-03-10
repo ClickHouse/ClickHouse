@@ -1024,8 +1024,11 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())));
     };
 
-    const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+    const auto construct_future_part = [&](MergeSelectorChoices choices) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
     {
+        chassert(choices.size() == 1);
+        MergeSelectorChoice choice = std::move(choices[0]);
+
         auto future_part = [&]()
         {
             if (txn != nullptr)
@@ -1070,7 +1073,11 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         auto select_result = merger_mutator.selectPartsToMerge(
             parts_collector,
             merge_predicate,
-            MergeSelectorApplier{max_source_parts_size, merge_with_ttl_allowed, aggressive},
+            MergeSelectorApplier{
+                .max_merge_sizes = {max_source_parts_size},
+                .merge_with_ttl_allowed = merge_with_ttl_allowed,
+                .aggressive = aggressive,
+            },
             /*partitions_hint=*/std::nullopt);
 
         return select_result.and_then(construct_future_part);

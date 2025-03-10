@@ -4085,7 +4085,10 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             partitions_to_merge_in = merger_mutator.getPartitionsThatMayBeMerged(
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, local_merge_pred),
                 local_merge_pred,
-                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed});
+                MergeSelectorApplier{
+                    .max_merge_sizes = {max_source_parts_size_for_merge},
+                    .merge_with_ttl_allowed = merge_with_ttl_allowed,
+                });
 
             if (partitions_to_merge_in.empty())
                 can_assign_merge = false;
@@ -4099,12 +4102,16 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             auto select_merge_result = merger_mutator.selectPartsToMerge(
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
                 merge_predicate,
-                MergeSelectorApplier{max_source_parts_size_for_merge, merge_with_ttl_allowed},
+                MergeSelectorApplier{
+                    .max_merge_sizes = {max_source_parts_size_for_merge},
+                    .merge_with_ttl_allowed = merge_with_ttl_allowed,
+                },
                 partitions_to_merge_in);
 
             if (select_merge_result.has_value())
             {
-                future_merged_part = constructFuturePart(*this, select_merge_result.value(), {MergeTreeDataPartState::Active});
+                chassert(select_merge_result.value().size() == 1);
+                future_merged_part = constructFuturePart(*this, select_merge_result.value()[0], {MergeTreeDataPartState::Active});
                 if (!future_merged_part)
                 {
                     LOG_DEBUG(log,
@@ -6171,7 +6178,7 @@ bool StorageReplicatedMergeTree::optimize(
             auto merge_predicate = queue.getMergePredicate(zookeeper, std::move(partition_ids_hint));
             auto parts_collector = std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate);
 
-            const auto select_merge = [&]() -> std::expected<MergeSelectorChoice, SelectMergeFailure>
+            const auto select_merge = [&]() -> std::expected<MergeSelectorChoices, SelectMergeFailure>
             {
                 if (partition_id.empty())
                 {
@@ -6179,7 +6186,7 @@ bool StorageReplicatedMergeTree::optimize(
                         parts_collector,
                         merge_predicate,
                         MergeSelectorApplier{
-                            .max_total_size_to_merge = (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool],
+                            .max_merge_sizes = {(*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]},
                             .merge_with_ttl_allowed = false,
                             .aggressive = true,
                         },
@@ -6197,8 +6204,11 @@ bool StorageReplicatedMergeTree::optimize(
                 }
             };
 
-            const auto construct_future_part = [&](MergeSelectorChoice choice) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
+            const auto construct_future_part = [&](MergeSelectorChoices choices) -> std::expected<FutureMergedMutatedPartPtr, SelectMergeFailure>
             {
+                chassert(choices.size() == 1);
+                MergeSelectorChoice choice = std::move(choices[0]);
+
                 auto future_part = constructFuturePart(*this, choice, {MergeTreeDataPartState::Active});
                 if (!future_part)
                     return std::unexpected(SelectMergeFailure{
