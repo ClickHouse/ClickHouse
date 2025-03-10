@@ -27,7 +27,7 @@ ReadSettings getReadSettingsForMetadata()
 {
     ReadSettings read_settings = getReadSettings();
     read_settings.local_fs_method = LocalFSReadMethod::read;
-    read_settings.remote_fs_method = RemoteFSReadMethod::prefetch;
+    read_settings.remote_fs_method = RemoteFSReadMethod::threadpool;
     read_settings.remote_fs_prefetch = 0;
     read_settings.enable_filesystem_cache = false;
     read_settings.read_through_distributed_cache = false;
