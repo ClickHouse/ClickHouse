@@ -2,10 +2,8 @@
 
 #include <chrono>
 #include <string>
-#include <sstream>
+#include <ostream>
 #include <cctz/time_zone.h>
-
-import fmt;
 
 
 inline std::string to_string(const std::time_t & time)
@@ -48,23 +46,3 @@ std::ostream & operator<<(std::ostream & o, const std::chrono::duration<Rep, Per
 {
     return o << to_string(duration);
 }
-
-template <typename Clock, typename Duration>
-struct fmt::formatter<std::chrono::time_point<Clock, Duration>> : fmt::formatter<std::string>
-{
-    template <typename FormatCtx>
-    auto format(const std::chrono::time_point<Clock, Duration> & tp, FormatCtx & ctx) const
-    {
-        return fmt::formatter<std::string>::format(::to_string(tp), ctx);
-    }
-};
-
-template <typename Rep, typename Period>
-struct fmt::formatter<std::chrono::duration<Rep, Period>> : fmt::formatter<std::string>
-{
-    template <typename FormatCtx>
-    auto format(const std::chrono::duration<Rep, Period> & duration, FormatCtx & ctx) const
-    {
-        return fmt::formatter<std::string>::format(::to_string(duration), ctx);
-    }
-};

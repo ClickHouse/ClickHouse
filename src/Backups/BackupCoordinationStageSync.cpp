@@ -1,6 +1,5 @@
 #include <Backups/BackupCoordinationStageSync.h>
 
-#include <base/chrono_io.h>
 #include <Common/ZooKeeper/Common.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/KeeperException.h>

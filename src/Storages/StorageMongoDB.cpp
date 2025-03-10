@@ -102,13 +102,13 @@ MongoDBConfiguration StorageMongoDB::getConfiguration(ASTs engine_args, ContextP
     {
         if (named_collection->has("uri"))
         {
-            validateNamedCollection(*named_collection, {"uri", "collection"}, {"oid_columns"});
+            validateNamedCollection(*named_collection, std::unordered_set<std::string>{"uri", "collection"}, std::unordered_set<std::string>{"oid_columns"});
             configuration.uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
         }
         else
         {
-            validateNamedCollection(*named_collection, {
-                "host", "port", "user", "password", "database", "collection"}, {"options", "oid_columns"});
+            validateNamedCollection(*named_collection, std::unordered_set<std::string>{
+                "host", "port", "user", "password", "database", "collection"}, std::unordered_set<std::string>{"options", "oid_columns"});
             String user = named_collection->get<String>("user");
             String auth_string;
             if (!user.empty())

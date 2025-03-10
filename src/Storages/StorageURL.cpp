@@ -95,11 +95,12 @@ static constexpr auto bad_arguments_error_message = "Storage URL requires 1-4 ar
                                                     "url, name of used format (taken from file extension by default), "
                                                     "optional compression method, optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
 
-static const std::unordered_set<std::string_view> required_configuration_keys = {
+/// TODO: FMT module should work with fmt::join<std::string_view>
+static const std::unordered_set<std::string> required_configuration_keys = {
     "url",
 };
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
+static const std::unordered_set<std::string> optional_configuration_keys = {
     "format",
     "compression",
     "compression_method",
