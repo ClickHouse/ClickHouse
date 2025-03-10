@@ -14,6 +14,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace Setting
 {
     extern const SettingsBool use_uncompressed_cache;
@@ -120,7 +125,13 @@ void MergeTreeLazilyReader::readLazyColumns(
     {
         auto part_index = it.first;
         const auto & row_offsets = it.second;
-        MergeTreeData::DataPartPtr data_part = (*data_parts_info)[part_index].data_part;
+        auto it_part_info = data_parts_info->find(part_index);
+        if (it_part_info == data_parts_info->end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part index '{}' not found in data parts info", part_index);
+
+        const auto & data_part_info = it_part_info->second;
+        const auto & data_part = data_part_info.data_part;
+        const auto & alter_conversions = data_part_info.alter_conversions;
         MarkRanges mark_ranges;
 
         for (const auto & row_offset_with_idx : row_offsets)
@@ -129,8 +140,6 @@ void MergeTreeLazilyReader::readLazyColumns(
             MarkRange mark_range = data_part->index_granularity->getMarkRangeForRowOffset(row_offset);
             mark_ranges.push_back(mark_range);
         }
-
-        AlterConversionsPtr alter_conversions = (*data_parts_info)[part_index].alter_conversions;
 
         Names tmp_requested_column_names(requested_column_names.begin(), requested_column_names.end());
         injectRequiredColumns(
