@@ -254,6 +254,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"hdfs_ignore_file_doesnt_exist", CHSetting(trueOrFalse, {}, false)},
     {"hdfs_skip_empty_files", CHSetting(trueOrFalse, {}, false)},
     {"hdfs_throw_on_zero_files_match", CHSetting(trueOrFalse, {}, false)},
+    {"hnsw_candidate_list_size_for_search",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
+         {"2", "4", "8", "32", "64", "1024", "4096", "1000000"},
+         false)},
     {"http_make_head_request", CHSetting(trueOrFalse, {}, false)},
     {"http_native_compression_disable_checksumming_on_decompress", CHSetting(trueOrFalse, {}, false)},
     {"http_response_buffer_size",
@@ -265,6 +270,7 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"ignore_on_cluster_for_replicated_access_entities_queries", CHSetting(trueOrFalse, {}, false)},
     {"ignore_on_cluster_for_replicated_named_collections_queries", CHSetting(trueOrFalse, {}, false)},
     {"ignore_on_cluster_for_replicated_udf_queries", CHSetting(trueOrFalse, {}, false)},
+    {"implicit_transaction", CHSetting(trueOrFalse, {}, false)},
     {"input_format_allow_seeks", CHSetting(trueOrFalse, {}, false)},
     {"input_format_arrow_allow_missing_columns", CHSetting(trueOrFalse, {}, false)},
     {"input_format_arrow_case_insensitive_column_matching", CHSetting(trueOrFalse, {}, false)},
@@ -989,6 +995,7 @@ static std::unordered_map<String, CHSetting> serverSettings3
        {"stream_like_engine_allow_direct_select", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"system_events_show_zero_values", CHSetting(trueOrFalse, {}, false)},
        {"throw_on_error_from_cache_on_write_operations", CHSetting(trueOrFalse, {}, false)},
+       {"throw_on_unsupported_query_inside_transaction", CHSetting(trueOrFalse, {}, false)},
        {"temporary_files_codec",
         CHSetting(
             [](RandomGenerator & rg)
@@ -1044,6 +1051,15 @@ static std::unordered_map<String, CHSetting> serverSettings3
        {"validate_experimental_and_suspicious_types_inside_nested_types", CHSetting(trueOrFalse, {}, false)},
        {"validate_mutation_query", CHSetting(trueOrFalse, {}, false)},
        {"validate_polygons", CHSetting(trueOrFalse, {}, false)},
+       {"wait_changes_become_visible_after_commit_mode",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'async'", "'wait'", "'wait_unknown'"};
+                return rg.pickRandomlyFromVector(choices);
+            },
+            {},
+            false)},
        /// {"wait_for_async_insert", CHSetting(trueOrFalse, {}, false)},
        {"write_through_distributed_cache", CHSetting(trueOrFalse, {}, false)}};
 
