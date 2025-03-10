@@ -861,6 +861,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          },
          {"'sampling_key'", "'read_tasks'", "'custom_key_range'", "'custom_key_sampling'", "'auto'"},
          false)},
+    {"parallel_replicas_only_with_analyzer", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_replicas_prefer_local_join", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallel_view_processing", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"parallelize_output_from_storages", CHSetting(trueOrFalse, {"0", "1"}, false)},
