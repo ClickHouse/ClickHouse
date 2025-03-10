@@ -8,6 +8,12 @@
 
 #include "config.h"
 
+namespace Poco::Net
+{
+    class HTTPRequest;
+    class SocketAddress;
+}
+
 namespace DB
 {
 
