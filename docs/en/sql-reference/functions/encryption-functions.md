@@ -237,7 +237,7 @@ decrypt('mode', 'ciphertext', 'key' [, iv, aad])
 - `mode` — Decryption mode. [String](/sql-reference/data-types/string).
 - `ciphertext` — Encrypted text that needs to be decrypted. [String](/sql-reference/data-types/string).
 - `key` — Decryption key. [String](/sql-reference/data-types/string).
-- `iv` — Initialization vector. Required for `-gcm` modes, Optional for others. [String](../data-types/string.md#string).
+- `iv` — Initialization vector. Required for `-gcm` modes, Optional for others. [String](/sql-reference/data-types/string).
 - `aad` — Additional authenticated data. Won't decrypt if this value is incorrect. Works only in `-gcm` modes, for others would throw an exception. [String](/sql-reference/data-types/string).
 
 **Returned value**

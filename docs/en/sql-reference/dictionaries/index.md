@@ -36,7 +36,7 @@ The configuration of dictionaries can be located in one or more xml-files. The p
 
 Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load) setting.
 
-The [dictionaries](../../operations/system-tables/dictionaries.md#system_tables-dictionaries) system table contains information about dictionaries configured at server. For each dictionary you can find there:
+The [dictionaries](/operations/system-tables/dictionaries) system table contains information about dictionaries configured at server. For each dictionary you can find there:
 
 - Status of the dictionary.
 - Configuration parameters.
@@ -1132,7 +1132,7 @@ When a dictionary with source `FILE` is created via DDL command (`CREATE DICTION
 
 **See Also**
 
-- [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
+- [Dictionary function](/sql-reference/table-functions/dictionary)
 
 ### Executable File {#executable-file}
 
@@ -2175,7 +2175,7 @@ Example of a polygon dictionary configuration:
 </dictionary>
 ```
 
-The corresponding [DDL-query](../../sql-reference/statements/create/dictionary.md#create-dictionary-query):
+The corresponding [DDL-query](/sql-reference/statements/create/dictionary):
 ``` sql
 CREATE DICTIONARY polygon_dict_name (
     key Array(Array(Array(Array(Float64)))),
