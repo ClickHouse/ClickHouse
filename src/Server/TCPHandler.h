@@ -239,6 +239,10 @@ private:
     std::optional<UInt64> nonce;
     String cluster;
 
+    /// For tracking connection lifetime and query count
+    UInt64 query_count = 0;
+    Poco::Timestamp connection_start_time;
+
     /// `callback_mutex` protects using `out` (WriteBuffer), `in` (ReadBuffer) and other members concurrent inside callbacks.
     /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.
     std::mutex callback_mutex;

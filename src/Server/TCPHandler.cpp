@@ -121,6 +121,8 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsBool validate_tcp_client_information;
+    extern const ServerSettingsUInt64 tcp_close_connection_after_queries_num;
+    extern const ServerSettingsUInt64 tcp_close_connection_after_queries_seconds;
 }
 }
 
@@ -2174,6 +2176,22 @@ void TCPHandler::processQuery(std::optional<QueryState> & state)
     /// controls when we start a new trace. It can be changed via Native protocol,
     /// so we have to apply the changes first.
     state->query_context->setCurrentQueryId(state->query_id);
+
+    /// After query execution, check if we need to close the connection
+    ++query_count;
+    const auto & server_settings = server.context()->getServerSettings();
+    UInt64 max_queries = server_settings[ServerSetting::tcp_close_connection_after_queries_num];
+    UInt64 max_seconds = server_settings[ServerSetting::tcp_close_connection_after_queries_seconds];
+
+    auto elapsed_seconds = static_cast<UInt64>((Poco::Timestamp() - connection_start_time) / Poco::Timestamp::resolution());
+
+    if ((max_queries > 0 && query_count >= max_queries) ||
+        (max_seconds > 0 && elapsed_seconds >= max_seconds))
+    {
+        LOG_INFO(log, "Closing connection due to limits: queries={}, seconds={}", query_count, elapsed_seconds);
+        socket().close();
+        return;
+    }
 
     state->query_context->addQueryParameters(passed_params.toNameToNameMap());
 
