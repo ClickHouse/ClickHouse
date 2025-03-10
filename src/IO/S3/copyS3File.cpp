@@ -930,9 +930,16 @@ void copyS3File(
             object_metadata);
     };
 
+    /// Check whether the native copy is allowed and possible.
     if (!settings[S3RequestSetting::allow_native_copy])
     {
         LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
+        fallback_method();
+        return;
+    }
+    if (src_s3_client->getCredentials() != dest_s3_client->getCredentials())
+    {
+        LOG_TRACE(getLogger("copyS3File"), "Native copy is not possible for {} because credentials are different", src_key);
         fallback_method();
         return;
     }
