@@ -68,9 +68,6 @@ public:
 
     const String & getFormatName() const { return format_name; }
 
-    void incrementReader();
-    void decrementReader();
-
 private:
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
@@ -98,7 +95,6 @@ private:
     /// to setup size of inner consumer for received messages
     uint32_t queue_size;
 
-    std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
     BackgroundSchedulePoolTaskHolder streaming_task;
     BackgroundSchedulePoolTaskHolder initialize_consumers_task;
@@ -108,9 +104,6 @@ private:
     /// Needed for tell MV or producer background tasks
     /// that they must finish as soon as possible.
     std::atomic<bool> shutdown_called{false};
-    /// For select query we must be aware of the end of streaming
-    /// to be able to turn off the loop.
-    std::atomic<size_t> readers_count = 0;
     std::atomic<bool> mv_attached = false;
 
     mutable bool drop_table = false;

@@ -61,14 +61,11 @@ NATSSource::NATSSource(
     , non_virtual_header(std::move(headers.first))
     , virtual_header(std::move(headers.second))
 {
-    storage.incrementReader();
 }
 
 
 NATSSource::~NATSSource()
 {
-    storage.decrementReader();
-
     if (!consumer)
         return;
 

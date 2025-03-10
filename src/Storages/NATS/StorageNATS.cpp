@@ -237,18 +237,6 @@ void StorageNATS::stopEventLoop()
     LOG_TRACE(log, "Event loop thread finished in {} ms.", watch.elapsedMilliseconds());
 }
 
-void StorageNATS::incrementReader()
-{
-    ++readers_count;
-}
-
-
-void StorageNATS::decrementReader()
-{
-    --readers_count;
-}
-
-
 void StorageNATS::initializeConsumersFunc()
 {
     if (consumers_ready)
