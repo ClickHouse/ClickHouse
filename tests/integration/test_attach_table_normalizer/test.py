@@ -3,7 +3,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True)
+node = cluster.add_instance("node", stay_alive=True, with_remote_database_disk=False)
 
 
 @pytest.fixture(scope="module")

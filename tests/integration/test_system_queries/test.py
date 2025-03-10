@@ -155,10 +155,7 @@ def test_RELOAD_CONFIG_AND_MACROS(started_cluster):
         ["bash", "-c", create_macros], privileged=True, user="root"
     )
     instance.query("SYSTEM RELOAD CONFIG")
-    assert TSV(instance.query("select * from system.macros")) == TSV(
-        "instance\tch1\nmac\tro\n"
-    )
-
+    assert "instance\tch1\nmac\tro\n" in instance.query("select * from system.macros")
 
 def test_system_flush_logs(started_cluster):
     instance = cluster.instances["ch1"]

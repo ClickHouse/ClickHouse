@@ -9,7 +9,10 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 node = cluster.add_instance(
-    "node", main_configs=["configs/remote_servers.xml"], stay_alive=True
+    "node",
+    main_configs=["configs/remote_servers.xml"],
+    stay_alive=True,
+    with_remote_database_disk=False,
 )
 
 

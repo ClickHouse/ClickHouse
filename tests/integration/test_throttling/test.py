@@ -45,6 +45,7 @@ node = cluster.add_instance(
     ],
     with_minio=True,
     minio_certs_dir="minio_certs",
+    with_remote_database_disk=False,
 )
 
 

@@ -17,6 +17,7 @@ node1 = cluster.add_instance(
         "configs/long_names.xml",
     ],
     with_zookeeper=True,
+    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -26,9 +27,12 @@ node2 = cluster.add_instance(
         "configs/long_names.xml",
     ],
     with_zookeeper=True,
+    with_remote_database_disk=False,
 )
-node4 = cluster.add_instance("node4")
-
+node4 = cluster.add_instance(
+    "node4",
+    with_remote_database_disk=False,
+)
 
 @pytest.fixture(scope="module")
 def start_cluster():

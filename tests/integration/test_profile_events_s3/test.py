@@ -21,6 +21,7 @@ def cluster():
                 "configs/ssl_conf.xml",
             ],
             with_minio=True,
+            with_remote_database_disk=False,
         )
 
         logging.info("Starting cluster...")

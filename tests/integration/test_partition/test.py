@@ -15,6 +15,7 @@ instance = cluster.add_instance(
     main_configs=[
         "configs/testkeeper.xml",
     ],
+    with_remote_database_disk=False,
 )
 q = instance.query
 path_to_data = "/var/lib/clickhouse/"
