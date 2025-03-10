@@ -23,7 +23,7 @@ commonly used with the `AggregateFunction` type:
   function combinator, which is used to get the final result of an aggregation 
   from the intermediate states.
 
-## Syntax
+## Syntax {#syntax}
 
 ```sql
 AggregateFunction(aggregate_function_name, types_of_arguments...)
