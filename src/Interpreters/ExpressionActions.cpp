@@ -342,6 +342,23 @@ static std::unordered_set<const ActionsDAG::Node *> processShortCircuitFunctions
     return lazy_executed_nodes;
 }
 
+static bool isNoExceptNode(const ActionsDAG::NodeRawConstPtrs & nodes)
+{
+    for (const auto * node : nodes)
+    {
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (!node->function_base->isNoExcept())
+            {
+                return false;
+            }
+            if (!isNoExceptNode(node->children))
+                return false;
+        }
+    }
+    return true;
+}
+
 void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsDAG::Node *> & lazy_executed_nodes)
 {
     /// This function does the topological sort on DAG and fills all the fields of ExpressionActions.
@@ -378,6 +395,7 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
     /// Every argument will have fixed position in columns list.
     /// If argument is removed, it's position may be reused by other action.
     std::stack<size_t> free_positions;
+    std::unordered_map<const Node *, size_t> node_in_actions_pos;
 
     while (!ready_nodes.empty() || !ready_array_joins.empty())
     {
@@ -417,6 +435,8 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             ExpressionActions::Argument argument;
             argument.pos = arg.position;
             argument.needed_later = arg_info.used_in_result || arg.num_created_parents != arg_info.parents.size();
+            assert(node_in_actions_pos.contains(arg.node));
+            argument.actions_pos = node_in_actions_pos[arg.node];
 
             if (!argument.needed_later)
                 free_positions.push(argument.pos);
@@ -434,7 +454,13 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
             //required_columns.push_back({node->result_name, node->result_type});
         }
 
-        actions.push_back({node, arguments, free_position, lazy_executed_nodes.contains(node)});
+        node_in_actions_pos[node] = actions.size();
+        IFunctionBase::ShortCircuitSettings short_circuit_settings;
+        bool could_lazy_executed = lazy_executed_nodes.contains(node);
+        bool is_lazy_execution_efficient = node->type == ActionsDAG::ActionType::FUNCTION
+            && node->function_base->isShortCircuit(short_circuit_settings, node->children.size()) && !node->children.empty();
+        is_lazy_execution_efficient = is_lazy_execution_efficient || could_lazy_executed;
+        actions.emplace_back(node, arguments, free_position, isNoExceptNode({node}), could_lazy_executed, is_lazy_execution_efficient);
 
         for (const auto & parent : cur_info.parents)
         {
@@ -472,7 +498,31 @@ void ExpressionActions::linearizeActions(const std::unordered_set<const ActionsD
         required_columns.push_back({input->result_name, input->result_type});
         input_positions[input->result_name].emplace_back(pos);
     }
+
+    for (size_t i = 0; i < actions.size(); ++i)
+    {
+        const auto & action = actions[i];
+        for (const auto & arg : action.arguments)
+        {
+            actions[arg.actions_pos].parents_actions_pos.push_back(i);
+        }
+    }
 }
+
+ExpressionActions::Action::Action(
+    const ExpressionActions::Node * node_,
+    const ExpressionActions::Arguments & arguments_,
+    size_t result_position_,
+    bool is_no_except_,
+    bool could_lazy_executed_,
+    bool is_lazy_execution_efficient_)
+    : node(node_)
+    , arguments(arguments_)
+    , result_position(result_position_)
+    , is_no_except(is_no_except_)
+    , could_lazy_executed(could_lazy_executed_)
+    , is_lazy_execution_efficient(is_lazy_execution_efficient_)
+{}
 
 
 static WriteBuffer & operator << (WriteBuffer & out, const ExpressionActions::Argument & argument)
@@ -566,27 +616,74 @@ void ExpressionActions::checkLimits(const ColumnsWithTypeAndName & columns) cons
     }
 }
 
-namespace
+static bool shouldExecuteLazily(const ExpressionActions::Action & action)
 {
-    /// This struct stores context needed to execute actions.
-    ///
-    /// Execution model is following:
-    ///   * execution is performed over list of columns (with fixed size = ExpressionActions::num_columns)
-    ///   * every argument has fixed position in columns list, every action has fixed position for result
-    ///   * if argument is not needed anymore (Argument::needed_later == false), it is removed from list
-    ///   * argument for INPUT is in inputs[inputs_pos[argument.pos]]
-    ///
-    /// Columns on positions `ExpressionActions::result_positions` are inserted back into block.
-    struct ExecutionContext
-    {
-        ColumnsWithTypeAndName & inputs;
-        ColumnsWithTypeAndName columns = {};
-        std::vector<ssize_t> inputs_pos = {};
-        size_t num_rows = 0;
-    };
+    return action.could_lazy_executed  && action.is_lazy_execution_efficient;
 }
 
-static void executeAction(const ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run, bool allow_duplicates_in_input)
+void ExpressionActions::executeFunctionAction(
+    ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run)
+{
+    auto & columns = execution_context.columns;
+    auto & num_rows = execution_context.num_rows;
+    auto & res_column = columns[action.result_position];
+    if (res_column.type || res_column.column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty");
+
+    res_column.type = action.node->result_type;
+    res_column.name = action.node->result_name;
+
+    if (action.node->column)
+    {
+        /// Do not execute function if it's result is already known.
+        res_column.column = action.node->column->cloneResized(num_rows);
+        /// But still need to remove unused arguments.
+        for (const auto & argument : action.arguments)
+        {
+            if (!argument.needed_later)
+                columns[argument.pos] = {};
+        }
+        return;
+    }
+
+    ColumnsWithTypeAndName arguments(action.arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        if (!action.arguments[i].needed_later)
+            arguments[i] = std::move(columns[action.arguments[i].pos]);
+        else
+            arguments[i] = columns[action.arguments[i].pos];
+    }
+
+    if (shouldExecuteLazily(action))
+        res_column.column
+            = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::FunctionExecute);
+        if (action.node->is_function_compiled)
+            ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+
+        res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
+        if (res_column.column->getDataType() != res_column.type->getColumnType())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
+                action.node->function->getName(),
+                res_column.type->getName(),
+                res_column.column->getName(),
+                action.toString(),
+                Block(arguments).dumpStructure());
+        }
+    }
+}
+
+void ExpressionActions::executeAction(
+    ExpressionActions::Action & action,
+    ExecutionContext & execution_context,
+    bool dry_run,
+    bool allow_duplicates_in_input)
 {
     auto & inputs = execution_context.inputs;
     auto & columns = execution_context.columns;
@@ -596,56 +693,7 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
     {
         case ActionsDAG::ActionType::FUNCTION:
         {
-            auto & res_column = columns[action.result_position];
-            if (res_column.type || res_column.column)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty");
-
-            res_column.type = action.node->result_type;
-            res_column.name = action.node->result_name;
-
-            if (action.node->column)
-            {
-                /// Do not execute function if it's result is already known.
-                res_column.column = action.node->column->cloneResized(num_rows);
-                /// But still need to remove unused arguments.
-                for (const auto & argument : action.arguments)
-                {
-                    if (!argument.needed_later)
-                        columns[argument.pos] = {};
-                }
-                break;
-            }
-
-            ColumnsWithTypeAndName arguments(action.arguments.size());
-            for (size_t i = 0; i < arguments.size(); ++i)
-            {
-                if (!action.arguments[i].needed_later)
-                    arguments[i] = std::move(columns[action.arguments[i].pos]);
-                else
-                    arguments[i] = columns[action.arguments[i].pos];
-            }
-
-            if (action.is_lazy_executed)
-                res_column.column = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::FunctionExecute);
-                if (action.node->is_function_compiled)
-                    ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
-
-                res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run);
-                if (res_column.column->getDataType() != res_column.type->getColumnType())
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
-                        action.node->function->getName(),
-                        res_column.type->getName(),
-                        res_column.column->getName(),
-                        action.toString(),
-                        Block(arguments).dumpStructure());
-                }
-            }
+            executeFunctionAction(action, execution_context, dry_run);
             break;
         }
 
@@ -733,7 +781,13 @@ static void executeAction(const ExpressionActions::Action & action, ExecutionCon
     }
 }
 
-void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input) const
+
+void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
+{
+    executeImpl(block, num_rows, dry_run, allow_duplicates_in_input);
+}
+
+void ExpressionActions::executeImpl(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
 {
     ExecutionContext execution_context
     {
@@ -763,7 +817,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
 
     execution_context.columns.resize(num_columns);
 
-    for (const auto & action : actions)
+    for (auto & action : actions)
     {
         try
         {
@@ -809,7 +863,7 @@ void ExpressionActions::execute(Block & block, size_t & num_rows, bool dry_run, 
     num_rows = execution_context.num_rows;
 }
 
-void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input) const
+void ExpressionActions::execute(Block & block, bool dry_run, bool allow_duplicates_in_input)
 {
     size_t num_rows = block.rows();
 
@@ -987,6 +1041,230 @@ bool ExpressionActions::checkColumnIsAlwaysFalse(const String & column_name) con
     }
 
     return false;
+}
+
+AdaptiveExpressionActions::AdaptiveExpressionActions(ActionsDAG actions_dag_, const ExpressionActionsSettings & settings_, bool project_inputs_)
+    : ExpressionActions(std::move(actions_dag_), settings_, project_inputs_)
+{}
+
+void AdaptiveExpressionActions::executeImpl(Block & block, size_t & num_rows, bool dry_run, bool allow_duplicates_in_input)
+{
+    ExpressionActions::executeImpl(block, num_rows, dry_run, allow_duplicates_in_input);
+    updateActionsLazyExecutionFlag(num_rows);
+}
+
+void AdaptiveExpressionActions::executeFunctionAction(
+    ExpressionActions::Action & action, ExecutionContext & execution_context, bool dry_run)
+{
+    auto & columns = execution_context.columns;
+    auto & num_rows = execution_context.num_rows;
+    auto & res_column = columns[action.result_position];
+    if (res_column.type || res_column.column)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Result column is not empty");
+
+    res_column.type = action.node->result_type;
+    res_column.name = action.node->result_name;
+
+    if (action.node->column)
+    {
+        /// Do not execute function if it's result is already known.
+        res_column.column = action.node->column->cloneResized(num_rows);
+        /// But still need to remove unused arguments.
+        for (const auto & argument : action.arguments)
+        {
+            if (!argument.needed_later)
+                columns[argument.pos] = {};
+        }
+        return;
+    }
+
+    ColumnsWithTypeAndName arguments(action.arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+    {
+        if (!action.arguments[i].needed_later)
+            arguments[i] = std::move(columns[action.arguments[i].pos]);
+        else
+            arguments[i] = columns[action.arguments[i].pos];
+    }
+
+    if (shouldExecuteLazily(action))
+    {
+        res_column.column
+            = ColumnFunction::create(num_rows, action.node->function_base, std::move(arguments), true, action.node->is_function_compiled);
+    }
+    else
+    {
+        ProfileEvents::increment(ProfileEvents::FunctionExecute);
+        if (action.node->is_function_compiled)
+            ProfileEvents::increment(ProfileEvents::CompiledFunctionExecute);
+
+        FunctionExecutionProfile profile;
+        if (action.could_lazy_executed)
+        {
+            for (size_t i = 0; i < arguments.size(); ++i)
+            {
+                auto & argument = arguments[i];
+                if (const auto * fun_col = typeid_cast<const ColumnFunction *>(argument.column.get()))
+                {
+                    profile.argument_profiles.emplace_back(std::make_pair(i, FunctionExecutionProfile()));
+                    auto & arg_profile = profile.argument_profiles.back();
+                    argument.column = fun_col->reduce(&arg_profile.second).column;
+                    profile.execution_elapsed += arg_profile.second.execution_elapsed;
+                }
+            }
+        }
+
+        res_column.column = action.node->function->execute(arguments, res_column.type, num_rows, dry_run, &profile);
+
+        accumulateProfile(action, profile);
+        if (res_column.column->getDataType() != res_column.type->getColumnType())
+        {
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unexpected return type from {}. Expected {}. Got {}. Action:\n{},\ninput block structure:{}",
+                action.node->function->getName(),
+                res_column.type->getName(),
+                res_column.column->getName(),
+                action.toString(),
+                Block(arguments).dumpStructure());
+        }
+    }
+}
+
+void AdaptiveExpressionActions::accumulateProfile(ExpressionActions::Action & action, const FunctionExecutionProfile & profile)
+{
+    // LOG_TRACE(getLogger("AdaptiveExpressionActions"), "Accumulate profile  for action:{}", action.toString());
+    ExpressionActions::Action * function_action = &action;
+    // We need to eliminate aliases and access the true function node, taking into account the potential presence of nested aliases.
+    while (function_action->node->type == ActionsDAG::ActionType::ALIAS)
+    {
+        function_action = &actions[function_action->arguments[0].actions_pos];
+    }
+
+    if (function_action->node->type != ActionsDAG::ActionType::FUNCTION)
+    {
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Function node is expected, but got \n{}. The actions DAG is\n{}", action.toString(), actions_dag.dumpDAG());
+    }
+
+    auto accumulate_profile = [](FunctionExecutionProfile & a, const FunctionExecutionProfile & b)
+    {
+        a.executed_rows = b.executed_rows;
+        a.execution_elapsed += b.execution_elapsed;
+        a.lazy_executed_additional_elapsed += b.lazy_executed_additional_elapsed;
+    };
+
+    accumulate_profile(function_action->current_round_profile, profile);
+    accumulate_profile(function_action->total_profile, profile);
+
+    // update the profiles of its lazy executed arguments.
+    for (const auto & arg_profile : profile.argument_profiles)
+    {
+        const auto & func_arg_pos = arg_profile.first;
+        if (func_arg_pos >= function_action->arguments.size())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Argument index({}) out of bounds. action argument size: {}. action:{}\naction DAG:{}", func_arg_pos, function_action->arguments.size(), function_action->toString(), actions_dag.dumpDAG());
+        }
+        size_t actions_pos = function_action->arguments[func_arg_pos].actions_pos;
+        if (actions_pos >= actions.size())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Actions index({}) out of bounds. actions size: {}", actions_pos, actions.size());
+        }
+        auto & arg_action = actions[actions_pos];
+        accumulateProfile(arg_action, arg_profile.second);
+    }
+}
+
+void AdaptiveExpressionActions::updateActionsLazyExecutionFlag(size_t current_batch_rows)
+{
+    const size_t update_on_every_rows = 20000;
+
+    current_round_input_rows += current_batch_rows;
+    if (current_round_input_rows < update_on_every_rows)
+        return;
+
+    updateActionsParentsProfile();
+    identifyNonBeneficialLazyActions();
+
+    for (auto & action : actions)
+    {
+        action.current_round_profile = FunctionExecutionProfile();
+    }
+    current_round_input_rows = 0;
+}
+
+void AdaptiveExpressionActions::updateActionsParentsProfile()
+{
+    for (auto & action : actions)
+    {
+        if (action.could_lazy_executed && !shouldExecuteLazily(action))
+        {
+            // The parent should take into account this child's execution elapsed.
+            updateActionParentProfile(action, action.current_round_profile.execution_elapsed);
+        }
+    }
+}
+
+void AdaptiveExpressionActions::updateActionParentProfile(ExpressionActions::Action & action, size_t extra_elapsed)
+{
+    if (!extra_elapsed)
+        return;
+    for (auto pos : action.parents_actions_pos)
+    {
+        auto & parent_action = actions[pos];
+        parent_action.current_round_profile.execution_elapsed += extra_elapsed;
+        if (shouldExecuteLazily(parent_action))
+        {
+            updateActionParentProfile(parent_action, extra_elapsed);
+        }
+    }
+}
+
+void AdaptiveExpressionActions::identifyNonBeneficialLazyActions()
+{
+    for (auto & action : actions)
+    {
+        if (!action.could_lazy_executed)
+            continue;
+        const auto & round_profile = action.current_round_profile;
+        if (!round_profile.executed_rows)
+            continue;
+        /// We leave the action unchanged if its function throws exception for invalid inputs.
+        if (!action.is_no_except)
+            continue;
+
+        auto round_execution_elapsed = round_profile.execution_elapsed - round_profile.lazy_executed_additional_elapsed;
+        auto round_per_row_elapsed = static_cast<double>(round_execution_elapsed) / round_profile.executed_rows;
+        if (!action.is_lazy_execution_efficient)
+        {
+            const auto & total_profile = action.total_profile;
+            auto execution_elapsed = total_profile.execution_elapsed - total_profile.lazy_executed_additional_elapsed;
+            auto per_row_elapsed = static_cast<double>(execution_elapsed) / total_profile.executed_rows;
+            /// If the execution time of this action increases significantly during the current round,
+            /// mark it as eligible for lazy evaluation again.
+            if (round_per_row_elapsed > per_row_elapsed * 1.5)
+            {
+                LOG_TRACE(getLogger("AdaptiveExpressionActions"), "Enable lazy execution again: {}", action.node->result_name);
+                action.is_lazy_execution_efficient = true;
+            }
+        }
+        else
+        {
+            auto estimate_full_execute_elapsed = round_per_row_elapsed * current_round_input_rows;
+            LOG_TRACE(getLogger("AdaptiveExpressionActions"), "Check node:{}\n"
+                "round input rows:{}, executed rows:{}\n"
+                "round execute elapsed:{}, round side elapsed:{}, estimate full execute elapsed:{}",
+                action.node->result_name,
+                current_round_input_rows,
+                round_profile.executed_rows,
+                round_profile.execution_elapsed,
+                round_profile.lazy_executed_additional_elapsed,
+                estimate_full_execute_elapsed);
+            if (estimate_full_execute_elapsed < round_profile.execution_elapsed)
+            {
+                LOG_TRACE(getLogger("AdaptiveExpressionActions"), "Non-beneficial lazy execution node: {}", action.node->result_name);
+                action.is_lazy_execution_efficient = false;
+            }
+        }
+    }
 }
 
 void ExpressionActionsChain::addStep(NameSet non_constant_inputs)

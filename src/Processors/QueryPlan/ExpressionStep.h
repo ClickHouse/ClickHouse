@@ -13,6 +13,7 @@ class ExpressionStep : public ITransformingStep
 {
 public:
     explicit ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_);
+    explicit ExpressionStep(const Header & input_header_, ActionsDAG actions_dag_, bool enable_adaptive_short_circuit_);
     String getName() const override { return "Expression"; }
 
     void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings) override;
@@ -21,6 +22,7 @@ public:
 
     ActionsDAG & getExpression() { return actions_dag; }
     const ActionsDAG & getExpression() const { return actions_dag; }
+    bool enableAdaptiveShortCircuit() const { return enable_adaptive_short_circuit; }
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
@@ -33,6 +35,7 @@ private:
     void updateOutputHeader() override;
 
     ActionsDAG actions_dag;
+    bool enable_adaptive_short_circuit = false;
 };
 
 }
