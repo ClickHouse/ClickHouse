@@ -246,12 +246,14 @@ void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
 }
 
-void QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
+void QueryOracle::generateImportQuery(
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
 {
     Insert * ins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = ins->mutable_insert_file();
     const FileFunc & ff = sq2.explain().inner_query().insert().tfunction().file();
     ExprSchemaTable * est = ins->mutable_est();
+    const OutFormat & outf = ff.outformat();
 
     if (t.db)
     {
@@ -265,18 +267,27 @@ void QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable &
     }
     gen.entries.clear();
     iff->set_path(ff.path());
-    iff->set_format(out_in.at(ff.outformat()));
+    iff->set_format(out_in.at(outf));
     if (ff.has_fcomp())
     {
         iff->set_fcomp(ff.fcomp());
     }
-    if (iff->format() == IN_CSV)
+    if (outf == OutFormat::OUT_CSV || outf == OutFormat::OUT_Parquet)
     {
-        SettingValues * vals = iff->mutable_settings();
-        SetValue * sv = vals->mutable_set_value();
+        SetValue * sv = iff->mutable_settings()->mutable_set_value();
 
-        sv->set_property("input_format_csv_detect_header");
-        sv->set_value("0");
+        if (outf == OutFormat::OUT_CSV)
+        {
+            /// The oracle expects to read all the lines from the file
+            sv->set_property("input_format_csv_detect_header");
+            sv->set_value("0");
+        }
+        else
+        {
+            /// Use available Parquet readers
+            sv->set_property("input_format_parquet_use_native_reader");
+            sv->set_value(rg.nextBool() ? "1" : "0");
+        }
     }
 }
 
