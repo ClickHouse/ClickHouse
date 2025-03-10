@@ -844,6 +844,37 @@ def test_fixed_string_type(started_cluster):
     node1.query("DROP TABLE test_fixed_string")
 
 
+def test_fixed_string_type_conversions(started_cluster):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_fixed_string_type_conversions")
+    cursor.execute(
+        "CREATE TABLE test_fixed_string_type_conversions (str CHAR(10))"
+    )
+    cursor.execute("INSERT INTO test_fixed_string_type_conversions VALUES ('012')")
+
+    # Reading PostgreSQL fixed-sized strings
+    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV")
+    assert result.strip() == "012"
+
+    node1.query("DROP TABLE IF EXISTS test_fixed_string_type_conversions")
+    node1.query(
+        "CREATE TABLE test_fixed_string_type_conversions(str FixedString(10)) Engine = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV"
+    )
+    result = node1.query("SELECT * FROM test_fixed_string_type_conversions")
+    assert result.strip() == "012"
+
+    # Inserting into PostgreSQL fixed-sized strings
+    node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') VALUES ('345')")
+    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV")
+    assert result.strip() == "012\t345"
+
+    node1.query("INSERT INTO test_fixed_string_type_conversions VALUES ('345')")
+    result = node1.query("SELECT * FROM test_fixed_string_type_conversions")
+    assert result.strip() == "012\t345"
+
+    node1.query("DROP TABLE test_fixed_string_type_conversions")
+
+
 def test_parameters_validation_for_postgresql_function(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
 

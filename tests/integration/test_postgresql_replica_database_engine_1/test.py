@@ -147,8 +147,8 @@ def test_different_data_types(started_cluster):
                 f integer[][][] NOT NULL,                   -- Int32
                 g Text[][][][][] NOT NULL,                  -- String
                 h Integer[][][],                            -- Nullable(Int32)
-                i Char(2)[][][][],                          -- Nullable(String)
-                k Char(2)[]                                 -- Nullable(String)
+                i Char(2)[][][][],                          -- Nullable(FixedString(2))
+                k Char(2)[]                                 -- Nullable(FixedString(2))
            )"""
     )
 
