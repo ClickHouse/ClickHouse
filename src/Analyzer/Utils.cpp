@@ -320,7 +320,10 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
     return predicate_value > 0;
 }
 
-static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expression_node)
+static ASTPtr convertIntoTableExpressionAST(
+    const QueryTreeNodePtr & table_expression_node,
+    const ConvertToASTOptions & convert_to_ast_options
+)
 {
     ASTPtr table_expression_node_ast;
     auto node_type = table_expression_node->getNodeType();
@@ -343,7 +346,7 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     }
     else
     {
-        table_expression_node_ast = table_expression_node->toAST();
+        table_expression_node_ast = table_expression_node->toAST(convert_to_ast_options);
     }
 
     auto result_table_expression = std::make_shared<ASTTableExpression>();
@@ -394,7 +397,11 @@ static ASTPtr convertIntoTableExpressionAST(const QueryTreeNodePtr & table_expre
     return result_table_expression;
 }
 
-void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const IQueryTreeNode::ConvertToASTOptions & convert_to_ast_options)
+void addTableExpressionOrJoinIntoTablesInSelectQuery(
+    ASTPtr & tables_in_select_query_ast,
+    const QueryTreeNodePtr & table_expression,
+    const ConvertToASTOptions & convert_to_ast_options
+)
 {
     auto table_expression_node_type = table_expression->getNodeType();
 
@@ -410,7 +417,7 @@ void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_q
             [[fallthrough]];
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            auto table_expression_ast = convertIntoTableExpressionAST(table_expression);
+            auto table_expression_ast = convertIntoTableExpressionAST(table_expression, convert_to_ast_options);
 
             auto tables_in_select_query_element_ast = std::make_shared<ASTTablesInSelectQueryElement>();
             tables_in_select_query_element_ast->children.push_back(std::move(table_expression_ast));
