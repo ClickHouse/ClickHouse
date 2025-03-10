@@ -91,23 +91,6 @@ void BasicCredentials::setPassword(const String & password_)
     password = password_;
 }
 
-void HTTPCredentials::setHeaders(const Poco::Net::HTTPRequest & request)
-{
-    for (const auto & header : request)
-    {
-        /// These headers can contain authentication info and shouldn't be accessible by the user.
-        String key_lowercase = Poco::toLower(header.first);
-        if (key_lowercase.starts_with("x-clickhouse") || key_lowercase == "authentication")
-            continue;
-        http_headers[header.first] = header.second;
-    }
-}
-
-std::unordered_map<String, String> HTTPCredentials::getHeaders() const
-{
-    return http_headers;
-}
-
 const String & BasicCredentials::getPassword() const
 {
     if (!isReady())

@@ -81,17 +81,6 @@ private:
     bool allow_interactive_basic_authentication_in_the_browser = false;
 };
 
-class HTTPCredentials
-    : public BasicCredentials
-{
-public:
-    void setHeaders(const Poco::Net::HTTPRequest & request);
-    std::unordered_map<String, String> getHeaders() const;
-
-private:
-    std::unordered_map<String, String> http_headers;
-};
-
 class CredentialsWithScramble : public Credentials
 {
 public:
