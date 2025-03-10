@@ -110,7 +110,7 @@ void IColumn::getPermutationImpl(
     if (data_size == 0)
         return;
 
-    res.resize(data_size);
+    res.resize_exact(data_size);
 
     if (limit >= data_size)
         limit = 0;

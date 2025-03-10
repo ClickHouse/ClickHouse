@@ -1,11 +1,15 @@
 #pragma once
 
 #include <optional>
+#include <pcg_random.hpp>
 #include <Storages/IStorage.h>
 
 
 namespace DB
 {
+ColumnPtr fillColumnWithRandomData(
+    DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, ContextPtr context);
+
 /* Generates random data for given schema.
  */
 class StorageGenerateRandom final : public IStorage
