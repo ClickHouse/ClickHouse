@@ -490,16 +490,14 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
 
         if (noption < 51)
         {
-            ExprColumnList * ecl = noption < 26 ? dde->mutable_col_list() : dde->mutable_ded_star_except();
+            ColumnPathList * clist = noption < 26 ? dde->mutable_col_list() : dde->mutable_ded_star_except();
             flatTableColumnPath(flat_tuple | flat_nested | skip_nested_node, t, [](const SQLColumn &) { return true; });
             const uint32_t ocols
                 = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
             std::shuffle(entries.begin(), entries.end(), rg.generator);
             for (uint32_t i = 0; i < ocols; i++)
             {
-                ExprColumn * col = i == 0 ? ecl->mutable_col() : ecl->add_extra_cols();
-
-                columnPathRef(this->entries[i], col->mutable_path());
+                columnPathRef(entries[i], i == 0 ? clist->mutable_col() : clist->add_other_cols());
             }
             entries.clear();
         }

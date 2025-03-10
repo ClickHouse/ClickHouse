@@ -3231,9 +3231,9 @@ message DescTable {
 
 message DeduplicateExpr {
     oneof deduplicate_oneof {
-        ExprColumnList col_list = 1;
+        ColumnPathList col_list = 1;
         bool ded_star = 2;
-        ExprColumnList ded_star_except = 3;
+        ColumnPathList ded_star_except = 3;
     }
 }
 

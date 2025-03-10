@@ -3276,7 +3276,7 @@ CONV_FN(DeduplicateExpr, de)
     if (de.has_col_list())
     {
         ret += " BY ";
-        ExprColumnListToString(ret, de.col_list());
+        ColumnPathListToString(ret, 0, de.col_list());
     }
     else if (de.has_ded_star())
     {
@@ -3285,7 +3285,7 @@ CONV_FN(DeduplicateExpr, de)
     else if (de.has_ded_star_except())
     {
         ret += " BY * EXCEPT (";
-        ExprColumnListToString(ret, de.ded_star_except());
+        ColumnPathListToString(ret, 0, de.ded_star_except());
         ret += ")";
     }
 }
