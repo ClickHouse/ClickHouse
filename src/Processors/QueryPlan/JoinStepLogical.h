@@ -52,6 +52,7 @@ public:
         SortingStep::Settings sorting_settings_);
 
     String getName() const override { return "JoinLogical"; }
+    String getSerializationName() const override { return "Join"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
@@ -86,6 +87,11 @@ public:
 
     const JoinSettings & getSettings() const { return join_settings; }
     bool useNulls() const { return use_nulls; }
+
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serialize(Serialization & ctx) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 protected:
     void updateOutputHeader() override;
