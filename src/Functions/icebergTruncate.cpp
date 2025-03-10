@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
-#include <Common/logger_useful.h>
 
 namespace DB
 {
