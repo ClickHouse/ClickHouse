@@ -98,7 +98,6 @@ def test_header_failed(started_cluster):
         ["curl", "-s", "-u", "good_user:bad_password", "-H", "Custom-Header: ok",  "--data", f"SELECT 2+2", f"http://localhost:8123"],
         nothrow=True,
     )
-    logging.debug(f"Reply1: {ping_response}")
     assert ping_response == "4\n"
 
 def test_session_settings_from_auth_response(started_cluster):

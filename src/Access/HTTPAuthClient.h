@@ -64,7 +64,7 @@ public:
     }
 
     const Poco::URI & getURI() const { return uri; }
-    const std::vector<String> getForwardHeaders() const { return forward_headers; }
+    const std::vector<String> & getForwardHeaders() const { return forward_headers; }
 
 private:
     const ConnectionTimeouts timeouts;
@@ -84,7 +84,7 @@ public:
     using HTTPAuthClient<TResponseParser>::HTTPAuthClient;
     using Result = HTTPAuthClient<TResponseParser>::Result;
 
-    Result authenticate(const String & user_name, const String & password, const std::unordered_map<String, String> headers) const
+    Result authenticate(const String & user_name, const String & password, const std::unordered_map<String, String> & headers) const
     {
         Poco::Net::HTTPRequest request{
             Poco::Net::HTTPRequest::HTTP_GET, this->getURI().getPathAndQuery(), Poco::Net::HTTPRequest::HTTP_1_1};
@@ -92,11 +92,8 @@ public:
         for (const auto & k : this->getForwardHeaders())
         {
             auto it = headers.find(k);
-            if (it == headers.end())
-            {
-                continue;
-            }
-            request.add(k, it->second);
+            if (it != headers.end())
+                request.add(k, it->second);
         }
 
         Poco::Net::HTTPBasicCredentials basic_credentials{user_name, password};

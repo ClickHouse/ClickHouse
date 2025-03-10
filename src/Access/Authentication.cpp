@@ -120,6 +120,7 @@ namespace
         const BasicCredentials * basic_credentials,
         const AuthenticationData & authentication_method,
         const ExternalAuthenticators & external_authenticators,
+        const ClientInfo & client_info,
         SettingsChanges & settings)
     {
         switch (authentication_method.getType())
@@ -154,7 +155,7 @@ namespace
                 if (authentication_method.getHTTPAuthenticationScheme() == HTTPAuthenticationScheme::BASIC)
                 {
                     return external_authenticators.checkHTTPBasicCredentials(
-                        authentication_method.getHTTPAuthenticationServerName(), *basic_credentials, settings);
+                        authentication_method.getHTTPAuthenticationServerName(), *basic_credentials, client_info, settings);
                 }
                 break;
             }
@@ -233,6 +234,7 @@ bool Authentication::areCredentialsValid(
     const Credentials & credentials,
     const AuthenticationData & authentication_method,
     const ExternalAuthenticators & external_authenticators,
+    const ClientInfo & client_info,
     SettingsChanges & settings)
 {
     if (!credentials.isReady())
@@ -248,9 +250,9 @@ bool Authentication::areCredentialsValid(
         return checkMySQLAuthentication(mysql_credentials, authentication_method);
     }
 
-    if (const auto * basic_credentials = dynamic_cast<const BasicCredentials *>(&credentials))
+    if (const auto * basic_credentials = typeid_cast<const BasicCredentials *>(&credentials))
     {
-        return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, settings);
+        return checkBasicAuthentication(basic_credentials, authentication_method, external_authenticators, client_info, settings);
     }
 
     if (const auto * ssl_certificate_credentials = typeid_cast<const SSLCertificateCredentials *>(&credentials))

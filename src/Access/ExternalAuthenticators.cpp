@@ -7,6 +7,7 @@
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/ClientInfo.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -557,18 +558,12 @@ HTTPAuthClientParams ExternalAuthenticators::getHTTPAuthenticationParams(const S
 }
 
 bool ExternalAuthenticators::checkHTTPBasicCredentials(
-    const String & server, const BasicCredentials & credentials, SettingsChanges & settings) const
+    const String & server, const BasicCredentials & credentials, const ClientInfo & client_info, SettingsChanges & settings) const
 {
     auto params = getHTTPAuthenticationParams(server);
     HTTPBasicAuthClient<SettingsAuthResponseParser> client(params);
 
-    std::unordered_map<String, String> headers;
-    if (const auto * http_credentials = typeid_cast<const HTTPCredentials *>(&credentials))
-    {
-        headers = http_credentials->getHeaders();
-    }
-
-    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword(), headers);
+    auto [is_ok, settings_from_auth_server] = client.authenticate(credentials.getUserName(), credentials.getPassword(), client_info.http_headers);
 
     if (is_ok)
         std::ranges::move(settings_from_auth_server, std::back_inserter(settings));

@@ -366,7 +366,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     try
     {
         auto auth_result =
-            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedForHost());
+            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
