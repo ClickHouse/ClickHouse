@@ -4,6 +4,8 @@
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -68,9 +70,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"allow_special_bool_values_inside_variant", true, false, "Don't allow special bool values during Variant type parsing"},
             {"cast_string_to_variant_use_inference", true, true, "New setting to enable/disable types inference during CAST from String to Variant"},
+            {"use_page_cache_with_distributed_cache", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
+            /// Release closed. Please use 25.3
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
@@ -85,8 +89,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_pretty_max_rows", 10000, 1000, "It is better for usability - less amount to scroll."},
             {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
             {"use_query_condition_cache", false, false, "New setting."},
-            {"parallel_replicas_only_with_analyzer", false, true, "Parallel replicas is supported only with analyzer enabled"},
+            {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
             {"s3_allow_multipart_copy", true, true, "New setting."},
+            /// Release closed. Please use 25.3
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -672,6 +677,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
+            /// Release closed. Please use 25.3
             {"shared_merge_tree_initial_parts_update_backoff_ms", 50, 50, "New setting"},
             {"shared_merge_tree_max_parts_update_backoff_ms", 5000, 5000, "New setting"},
             {"shared_merge_tree_interserver_http_connection_timeout_ms", 100, 100, "New setting"},
@@ -680,6 +686,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_reduce_blocking_parts_task", false, true, "Now SMT will remove stale blocking parts from ZooKeeper by default"},
             {"shared_merge_tree_max_suspicious_broken_parts", 0, 0, "Max broken parts for SMT, if more - deny automatic detach"},
             {"shared_merge_tree_max_suspicious_broken_parts_bytes", 0, 0, "Max size of all broken parts for SMT, if more - deny automatic detach"},
+            /// Release closed. Please use 25.3
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {
