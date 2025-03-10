@@ -739,7 +739,8 @@ void RemoteQueryExecutor::processReadTaskRequest()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Distributed task iterator is not initialized");
 
     ProfileEvents::increment(ProfileEvents::ReadTaskRequestsReceived);
-    auto response = (*extension->task_iterator)();
+
+    auto response = (*extension->task_iterator)(connections->getLastPacketConnection());
     connections->sendReadTaskResponse(response);
 }
 
