@@ -1,13 +1,14 @@
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Interpreters/Context.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeString.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
+#include "Access/ContextAccess.h"
 
 
 namespace DB
@@ -87,8 +88,9 @@ namespace
                     profile_ids = context->getEnabledProfiles();
                     break;
                 case Kind::defaultProfiles:
-                    if (context->getUserID())
-                        profile_ids = context->getUser()->settings.toProfileIDs();
+                    const auto user = context->getAccess()->tryGetUser();
+                    if (user)
+                        profile_ids = user->settings.toProfileIDs();
                     break;
             }
 
