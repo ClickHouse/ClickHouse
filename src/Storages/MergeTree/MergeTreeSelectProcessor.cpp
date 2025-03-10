@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/ExpressionActions.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
@@ -15,7 +16,6 @@
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <city.h>
 
 namespace
@@ -174,10 +174,11 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             auto data_part = task->getInfo().data_part;
                             auto storage_id = data_part->storage.getStorageID();
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            query_condition_cache->write(storage_id.uuid,
+                            query_condition_cache->write(
+                                storage_id.uuid,
                                 data_part->name,
                                 dag->getHash(),
-                                task->getPreWhereUnmatchedMarks(),
+                                task->getPrewhereUnmatchedMarks(),
                                 data_part->index_granularity->getMarksCount(),
                                 data_part->index_granularity->hasFinalMark());
                             break;
@@ -221,13 +222,11 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             if (reader_settings.use_query_condition_cache)
             {
-                chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(data_part, res.read_mark_ranges));
-                LOG_DEBUG(
-                    log,
-                    "Chunk mark ranges info, part_name: {}, num_read_rows: {}, ranges: {}",
-                    data_part->name,
-                    res.num_read_rows,
-                    toString(res.read_mark_ranges));
+                chunk.getChunkInfos().add(
+                    std::make_shared<MarkRangesInfo>(
+                        data_part->storage.getStorageID().uuid, data_part->name,
+                        data_part->index_granularity->getMarksCount(), data_part->index_granularity->hasFinalMark(),
+                        res.read_mark_ranges));
             }
 
             return ChunkAndProgress{
@@ -237,7 +236,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 .is_finished = false};
         }
         if (reader_settings.use_query_condition_cache && prewhere_info)
-            task->addPreWhereUnmatchedMarks(res.read_mark_ranges);
+            task->addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
         return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
     }
