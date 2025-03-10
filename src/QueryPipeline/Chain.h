@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/IProcessor.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -34,7 +35,9 @@ public:
 
     void addSource(ProcessorPtr processor);
     void addSink(ProcessorPtr processor);
-    void appendChain(Chain chain);
+    Chain & appendChain(Chain chain);
+    Chain & appendChainNotStrict(Chain chain);
+
 
     IProcessor & getSource();
     IProcessor & getSink();
@@ -51,6 +54,8 @@ public:
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addInterpreterContext(ContextPtr context) { holder.interpreter_context.emplace_back(std::move(context)); }
+    void addViewsManager(std::shared_ptr<ViewsManager> view_manager) { holder.views_holder.emplace_back(std::move(view_manager)); }
+
 
     void attachResources(QueryPlanResourceHolder holder_)
     {

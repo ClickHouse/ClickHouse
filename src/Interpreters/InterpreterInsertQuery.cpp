@@ -1,3 +1,4 @@
+#include <memory>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 
@@ -21,6 +22,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Interpreters/InsertToViews.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -48,14 +50,8 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
-#include "base/defines.h"
+#include <Processors/Sinks/SinkToStorage.h>
 
-
-namespace ProfileEvents
-{
-    extern const Event InsertQueriesWithSubqueries;
-    extern const Event QueriesWithSubqueries;
-}
 
 namespace DB
 {
@@ -77,6 +73,7 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 parallel_distributed_insert_select;
     extern const SettingsBool enable_parsing_to_custom_serialization;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
 }
 
 namespace MergeTreeSetting
@@ -316,75 +313,6 @@ static bool isTrivialSelect(const ASTPtr & select)
     return false;
 }
 
-Chain InterpreterInsertQuery::buildChain(
-    const StoragePtr & table,
-    size_t view_level,
-    const StorageMetadataPtr & metadata_snapshot,
-    const Names & columns,
-    ThreadStatusesHolderPtr thread_status_holder,
-    std::atomic_uint64_t * elapsed_counter_ms,
-    bool check_access)
-{
-    IInterpreter::checkStorageSupportsTransactionsIfNeeded(table, getContext());
-
-    ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
-    ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
-
-    ThreadGroupPtr running_group;
-    if (current_thread)
-        running_group = current_thread->getThreadGroup();
-    if (!running_group)
-        running_group = std::make_shared<ThreadGroup>(getContext());
-
-    auto sample = getSampleBlockImpl(columns, table, metadata_snapshot, no_destination, allow_materialized);
-    if (check_access)
-        getContext()->checkAccess(AccessType::INSERT, table->getStorageID(), sample.getNames());
-
-    Chain sink = buildSink(table, view_level, metadata_snapshot, thread_status_holder, running_group, elapsed_counter_ms);
-    Chain chain = buildPreSinkChain(sink.getInputHeader(), table, metadata_snapshot, sample);
-
-    chain.appendChain(std::move(sink));
-    return chain;
-}
-
-Chain InterpreterInsertQuery::buildSink(
-    const StoragePtr & table,
-    size_t view_level,
-    const StorageMetadataPtr & metadata_snapshot,
-    ThreadStatusesHolderPtr thread_status_holder,
-    ThreadGroupPtr running_group,
-    std::atomic_uint64_t * elapsed_counter_ms)
-{
-    ThreadStatus * thread_status = current_thread;
-
-    if (!thread_status_holder)
-        thread_status = nullptr;
-
-    auto context_ptr = getContext();
-
-    Chain out;
-
-    /// Keep a reference to the context to make sure it stays alive until the chain is executed and destroyed
-    out.addInterpreterContext(context_ptr);
-
-    /// NOTE: we explicitly ignore bound materialized views when inserting into Kafka Storage.
-    ///       Otherwise we'll get duplicates when MV reads same rows again from Kafka.
-    if (table->noPushingToViews() && !no_destination)
-    {
-        auto sink = table->write(query_ptr, metadata_snapshot, context_ptr, async_insert);
-        sink->setRuntimeData(thread_status, elapsed_counter_ms);
-        out.addSource(std::move(sink));
-    }
-    else
-    {
-        out = buildPushingToViewsChain(table, metadata_snapshot, context_ptr,
-            query_ptr, view_level, no_destination,
-            thread_status_holder, running_group, elapsed_counter_ms, async_insert);
-    }
-
-    return out;
-}
-
 void InterpreterInsertQuery::addBuffer(std::unique_ptr<ReadBuffer> buffer)
 {
     owned_buffers.push_back(std::move(buffer));
@@ -399,122 +327,6 @@ bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & tab
     /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
     return !(settings[Setting::distributed_foreground_insert] && table->isRemote()) && !async_insert && !no_squash;
 }
-
-Chain InterpreterInsertQuery::buildPreSinkChain(
-    const Block & subsequent_header,
-    const StoragePtr & table,
-    const StorageMetadataPtr & metadata_snapshot,
-    const Block & query_sample_block)
-{
-    auto context_ptr = getContext();
-
-    const ASTInsertQuery * query = nullptr;
-    if (query_ptr)
-        query = query_ptr->as<ASTInsertQuery>();
-
-    bool null_as_default = query && query->select && context_ptr->getSettingsRef()[Setting::insert_null_as_default];
-
-    /// We create a pipeline of several streams, into which we will write data.
-    Chain out;
-
-    auto input_header = [&]() -> const Block &
-    {
-        return out.empty() ? subsequent_header : out.getInputHeader();
-    };
-
-    /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
-
-    /// Add transform to check if the sizes of arrays - elements of nested data structures doesn't match.
-    /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
-    /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
-    /// but currently we don't have methods for serialization of nested structures "as a whole".
-    out.addSource(std::make_shared<NestedElementsValidationTransform>(input_header()));
-
-    /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
-
-    /// Add implicit sign constraint for Collapsing and VersionedCollapsing tables.
-    auto constraints = metadata_snapshot->getConstraints();
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(table);
-    if (storage_merge_tree
-        && (storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::Collapsing
-            || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
-        && (*storage_merge_tree->getSettings())[MergeTreeSetting::add_implicit_sign_column_constraint_for_collapsing_engine])
-    {
-        auto sign_column_check_constraint = std::make_unique<ASTConstraintDeclaration>();
-        sign_column_check_constraint->name = "_implicit_sign_column_constraint";
-        sign_column_check_constraint->type = ASTConstraintDeclaration::Type::CHECK;
-
-        Array valid_values_array;
-        valid_values_array.emplace_back(-1);
-        valid_values_array.emplace_back(1);
-
-        auto valid_values_ast = std::make_unique<ASTLiteral>(std::move(valid_values_array));
-        auto sign_column_ast = std::make_unique<ASTIdentifier>(storage_merge_tree->merging_params.sign_column);
-        sign_column_check_constraint->set(sign_column_check_constraint->expr, makeASTFunction("in", std::move(sign_column_ast), std::move(valid_values_ast)));
-
-        auto constraints_ast = constraints.getConstraints();
-        constraints_ast.push_back(std::move(sign_column_check_constraint));
-        constraints = ConstraintsDescription(constraints_ast);
-    }
-
-    if (!constraints.empty())
-        out.addSource(std::make_shared<CheckConstraintsTransform>(
-            table->getStorageID(), input_header(), constraints, context_ptr));
-
-    auto adding_missing_defaults_dag = addMissingDefaults(
-        query_sample_block,
-        input_header().getNamesAndTypesList(),
-        metadata_snapshot->getColumns(),
-        context_ptr,
-        null_as_default);
-
-    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(query_sample_block, adding_missing_defaults_dag.getRequiredColumnsNames(), context_ptr);
-    auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
-
-    /// Actually we don't know structure of input blocks from query/table,
-    /// because some clients break insertion protocol (columns != header)
-    out.addSource(std::make_shared<ConvertingTransform>(query_sample_block, adding_missing_defaults_actions));
-
-    return out;
-}
-
-std::pair<std::vector<Chain>, std::vector<Chain>> InterpreterInsertQuery::buildPreAndSinkChains(
-    size_t presink_streams,
-    size_t sink_streams,
-    StoragePtr table,
-    size_t view_level,
-    const StorageMetadataPtr & metadata_snapshot,
-    const Block & query_sample_block)
-{
-    chassert(presink_streams > 0);
-    chassert(sink_streams > 0);
-
-    ThreadGroupPtr running_group;
-    if (current_thread)
-        running_group = current_thread->getThreadGroup();
-    if (!running_group)
-        running_group = std::make_shared<ThreadGroup>(getContext());
-
-    std::vector<Chain> sink_chains;
-    std::vector<Chain> presink_chains;
-
-    for (size_t i = 0; i < sink_streams; ++i)
-    {
-        auto out = buildSink(table, view_level, metadata_snapshot, /* thread_status_holder= */ nullptr,
-            running_group, /* elapsed_counter_ms= */ nullptr);
-
-        sink_chains.emplace_back(std::move(out));
-    }
-
-    for (size_t i = 0; i < presink_streams; ++i)
-    {
-        auto out = buildPreSinkChain(sink_chains[0].getInputHeader(), table, metadata_snapshot, query_sample_block);
-        presink_chains.emplace_back(std::move(out));
-    }
-
-    return {std::move(presink_chains), std::move(sink_chains)};
-}
-
 
 QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table)
 {
@@ -698,9 +510,30 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         sink_streams_size = 1;
     }
 
-    auto [presink_chains, sink_chains] = buildPreAndSinkChains(
-        presink_streams_size, sink_streams_size,
-        table, /* view_level */ 0, metadata_snapshot, query_sample_block);
+    auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block, getContext());
+
+    std::vector<Chain> presink_chains;
+    for (size_t i = 0; i < presink_streams_size; ++i)
+    {
+        auto out = views_manager->createPreSink(table->getStorageID());
+        out.addViewsManager(views_manager);
+        presink_chains.emplace_back(std::move(out));
+    }
+
+    std::vector<Chain> sink_chains;
+    for (size_t i = 0; i < sink_streams_size; ++i)
+    {
+        Chain out;
+        out.addViewsManager(views_manager);
+
+        if (!no_destination)
+            out.appendChainNotStrict(views_manager->createSink(table->getStorageID()));
+
+        if (!table->noPushingToViews())
+            out.appendChainNotStrict(views_manager->createPostSink(table->getStorageID()));
+
+        sink_chains.emplace_back(std::move(out));
+    }
 
     pipeline.resize(presink_chains.size());
 
@@ -749,16 +582,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
 
-    Chain chain;
+    auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block, getContext());
 
-    {
-        auto [presink_chains, sink_chains] = buildPreAndSinkChains(
-            /* presink_streams */1, /* sink_streams */1,
-            table, /* view_level */ 0, metadata_snapshot, query_sample_block);
-
-        chain = std::move(presink_chains.front());
-        chain.appendChain(std::move(sink_chains.front()));
-    }
+    Chain chain = views_manager->createPreSink(table->getStorageID());
+    chain.appendChainNotStrict(views_manager->createSink(table->getStorageID()));
+    chain.appendChainNotStrict(views_manager->createPostSink(table->getStorageID()));
+    chain.addViewsManager(views_manager);
 
     if (!settings[Setting::insert_deduplication_token].value.empty())
     {
@@ -827,6 +656,7 @@ BlockIO InterpreterInsertQuery::execute()
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
 
     StoragePtr table = getTable(query);
+
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
 
     if (query.partition_by && !table->supportsPartitionBy())
