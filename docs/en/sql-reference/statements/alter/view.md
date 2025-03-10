@@ -193,7 +193,7 @@ SELECT * FROM mv;
 
 ## ALTER LIVE VIEW Statement {#alter-live-view-statement}
 
-`ALTER LIVE VIEW ... REFRESH` statement refreshes a [Live view](../create/view.md#live-view). See [Force Live View Refresh](../create/view.md#live-view-alter-refresh).
+`ALTER LIVE VIEW ... REFRESH` statement refreshes a [Live view](/sql-reference/statements/create/view#live-view). See [Force Live View Refresh](/sql-reference/statements/create/view#live-view).
 
 ## ALTER TABLE ... MODIFY REFRESH Statement {#alter-table--modify-refresh-statement}
 

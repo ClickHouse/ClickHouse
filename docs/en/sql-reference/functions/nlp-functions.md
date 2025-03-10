@@ -253,7 +253,7 @@ lemmatize('language', word)
 *Arguments*
 
 - `language` — Language which rules will be applied. [String](/sql-reference/data-types/string).
-- `word` — Word that needs to be lemmatized. Must be lowercase. [String](../d/sql-reference/data-types/string).
+- `word` — Word that needs to be lemmatized. Must be lowercase. [String](/sql-reference/data-types/string).
 
 *Examples*
 

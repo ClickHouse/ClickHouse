@@ -92,7 +92,7 @@ void logQueryFinish(
     const QueryPipeline & query_pipeline,
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
-    QueryCacheUsage query_cache_usage,
+    QueryResultCacheUsage query_result_cache_usage,
     bool internal);
 
 void logQueryException(

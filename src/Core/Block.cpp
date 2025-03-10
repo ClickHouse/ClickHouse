@@ -376,10 +376,9 @@ ColumnWithTypeAndName Block::getColumnOrSubcolumnByName(const std::string & name
 bool Block::has(const std::string & name, bool case_insensitive) const
 {
     if (case_insensitive)
-        return std::find_if(data.begin(), data.end(), [&](const auto & column) { return boost::iequals(column.name, name); })
-            != data.end();
-
-    return index_by_name.end() != index_by_name.find(name);
+        return std::ranges::find_if(data, [&](const auto & column) { return boost::iequals(column.name, name); }) != data.end();
+    else
+        return index_by_name.find(name) != index_by_name.end();
 }
 
 

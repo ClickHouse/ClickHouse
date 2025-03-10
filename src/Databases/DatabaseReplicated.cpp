@@ -1691,7 +1691,6 @@ void DatabaseReplicated::shutdown()
     DatabaseAtomic::shutdown();
 }
 
-
 void DatabaseReplicated::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
     waitDatabaseStarted();

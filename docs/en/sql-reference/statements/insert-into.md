@@ -89,7 +89,7 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-You can insert data separately from the query by using the [command-line client](/operations/utilities/clickhouse-local) or the [HTTP interface](/docs/interfaces/http/).
+You can insert data separately from the query by using the [command-line client](/operations/utilities/clickhouse-local) or the [HTTP interface](/interfaces/http/).
 
 :::note
 If you want to specify `SETTINGS` for `INSERT` query then you have to do it _before_ the `FORMAT` clause since everything after `FORMAT format_name` is treated as data. For example:
@@ -261,7 +261,6 @@ When you are inserting large amounts of data, ClickHouse will optimize write per
 **See Also**
 
 - [async_insert](/operations/settings/settings#async_insert)
-- [async_insert_threads](/operations/settings/settings#async-insert-threads)
 - [wait_for_async_insert](/operations/settings/settings#wait_for_async_insert)
 - [wait_for_async_insert_timeout](/operations/settings/settings#wait_for_async_insert_timeout)
 - [async_insert_max_data_size](/operations/settings/settings#async_insert_max_data_size)

@@ -36,6 +36,7 @@ Alias: `visitParamHas`.
 - `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
 
+
 **Returned value**
 
 - Returns `1` if the field exists, `0` otherwise. [UInt8](../data-types/int-uint.md).
