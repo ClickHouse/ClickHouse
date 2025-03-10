@@ -53,7 +53,7 @@
 #include <base/types.h>
 #include <base/wide_integer_to_string.h>
 #include <Common/Arena.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -2664,9 +2664,9 @@ public:
                 if (right.column && isColumnConst(*right.column))
                 {
                     auto constant = (*right.column)[0];
-                    if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
+                    if (accurateEquals(constant, Field(0)))
                         return {false, true, false}; // variable / 0 is undefined, let's treat it as non-monotonic
-                    bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
+                    bool is_constant_positive = accurateLess(Field(0), constant);
 
                     // division is saturated to `inf`, thus it doesn't have overflow issues.
                     return {true, is_constant_positive, true};
@@ -2676,7 +2676,7 @@ public:
         }
 
         // For simplicity, we treat every single value interval as positive monotonic.
-        if (applyVisitor(FieldVisitorAccurateEquals(), left_point, right_point))
+        if (accurateEquals(left_point, right_point))
             return {true, true, false, false};
 
         if (name_view == "minus" || name_view == "plus")
@@ -2703,8 +2703,8 @@ public:
                     return point_transformed;
                 };
 
-                bool is_positive_monotonicity = applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
-                            == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point));
+                bool is_positive_monotonicity = accurateLess(left_point, right_point)
+                            == accurateLess(transform(left_point), transform(right_point));
 
                 if (name_view == "plus")
                 {
@@ -2739,8 +2739,7 @@ public:
                 };
 
                 // Check if there is an overflow
-                if (applyVisitor(FieldVisitorAccurateLess(), left_point, right_point)
-                    == applyVisitor(FieldVisitorAccurateLess(), transform(left_point), transform(right_point)))
+                if (accurateLess(left_point, right_point) == accurateLess(transform(left_point), transform(right_point)))
                     return {true, true, false, true};
                 return {false, true, false, false};
             }
@@ -2753,17 +2752,17 @@ public:
             if (left.column && isColumnConst(*left.column))
             {
                 auto constant = (*left.column)[0];
-                if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
+                if (accurateEquals(constant, Field(0)))
                     return {true, true, false, false}; // 0 / 0 is undefined, thus it's not always monotonic
 
-                bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
-                if (applyVisitor(FieldVisitorAccurateLess(), left_point, Field(0))
-                    && applyVisitor(FieldVisitorAccurateLess(), right_point, Field(0)))
+                bool is_constant_positive = accurateLess(Field(0), constant);
+                if (accurateLess(left_point, Field(0))
+                    && accurateLess(right_point, Field(0)))
                 {
                     return {true, is_constant_positive, false, is_strict};
                 }
-                if (applyVisitor(FieldVisitorAccurateLess(), Field(0), left_point)
-                    && applyVisitor(FieldVisitorAccurateLess(), Field(0), right_point))
+                if (accurateLess(Field(0), left_point)
+                    && accurateLess(Field(0), right_point))
                 {
                     return {true, !is_constant_positive, false, is_strict};
                 }
@@ -2772,10 +2771,10 @@ public:
             else if (right.column && isColumnConst(*right.column))
             {
                 auto constant = (*right.column)[0];
-                if (applyVisitor(FieldVisitorAccurateEquals(), constant, Field(0)))
+                if (accurateEquals(constant, Field(0)))
                     return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
 
-                bool is_constant_positive = applyVisitor(FieldVisitorAccurateLess(), Field(0), constant);
+                bool is_constant_positive = accurateLess(Field(0), constant);
                 // division is saturated to `inf`, thus it doesn't have overflow issues.
                 return {true, is_constant_positive, true, is_strict};
             }

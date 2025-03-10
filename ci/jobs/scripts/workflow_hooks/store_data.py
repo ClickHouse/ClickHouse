@@ -25,7 +25,7 @@ if __name__ == "__main__":
         )
     else:
         changed_files_str = Shell.get_output(
-            f"gh api view repos/{info.repo_name}/commits/{info.sha} | jq -r '.files[].filename'",
+            f"gh api repos/{info.repo_name}/commits/{info.sha} | jq -r '.files[].filename'",
         )
     if changed_files_str:
         changed_files = changed_files_str.split("\n")

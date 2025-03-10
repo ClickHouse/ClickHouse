@@ -154,7 +154,7 @@ block()
     # to another CMake generator, but expects a value without spaces.
     # We may replace spaces with semicolons to ensure it is unwrapped correctly later.
     if (CMAKE_CXX_COMPILER_LAUNCHER)
-        string(REPLACE " " ";" CMAKE_CXX_COMPILER_LAUNCHER "${LLVM_CMAKE_CXX_COMPILER_LAUNCHER}")
+        string(REPLACE " " ";" LLVM_CMAKE_CXX_COMPILER_LAUNCHER "${CMAKE_CXX_COMPILER_LAUNCHER}")
     endif()
     set (CMAKE_CXX_COMPILER_LAUNCHER "${LLVM_CMAKE_CXX_COMPILER_LAUNCHER}")
 

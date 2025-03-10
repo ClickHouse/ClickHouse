@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/intersect
+slug: /sql-reference/statements/select/intersect
 sidebar_label: INTERSECT
 ---
 
@@ -24,12 +24,12 @@ FROM table2
 ```
 The condition could be any expression based on your requirements.
 
-## Examples
+## Examples {#examples}
 
 Here is a simple example that intersects the numbers 1 to 10 with the numbers 3 to 8:
 
 ```sql
-SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,6);
+SELECT number FROM numbers(1,10) INTERSECT SELECT number FROM numbers(3,8);
 ```
 
 Result:
@@ -130,7 +130,7 @@ Result:
 
 This means at some point in time, Bitcoin and Ethereum traded above $100, and DOGEFI and Bitcoin Diamond have never traded above $100 (at least using the data we have here in this example).
 
-## INTERSECT DISTINCT
+## INTERSECT DISTINCT {#intersect-distinct}
 
 Notice in the previous query we had multiple Bitcoin and Ethereum holdings that traded above $100. It might be nice to remove duplicate rows (since they only repeat what we already know). You can add `DISTINCT` to `INTERSECT` to eliminate duplicate rows from the result:
 
@@ -153,5 +153,5 @@ Result:
 
 **See Also**
 
-- [UNION](union.md#union-clause)
-- [EXCEPT](except.md#except-clause)
+- [UNION](/sql-reference/statements/select/union)
+- [EXCEPT](/sql-reference/statements/select/except)
