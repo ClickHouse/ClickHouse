@@ -59,7 +59,7 @@ template <bool join_data_sorted, typename ColumnType>
 static void fillTypedColumn(ColumnType * col, const size_t right_index, const DataTypePtr & type, const size_t output_row_count, const PaddedPODArray<UInt64> & row_refs)
 {
     col->reserve(col->size() + output_row_count);
-    for (auto row_ref_i : row_refs)
+    for (UInt64 row_ref_i : row_refs)
     {
         if (row_ref_i)
         {
