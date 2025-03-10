@@ -293,11 +293,10 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
     }
 }
 
-bool StatementGenerator::joinedTableOrFunction(
-    RandomGenerator & rg, const String & rel_name, const uint32_t allowed_clauses, const bool under_remote, TableOrFunction * tof)
+template <bool RequireMergeTree>
+auto StatementGenerator::getQueryTableLambda()
 {
-    bool set_final = false;
-    const auto has_table_lambda = [&](const SQLTable & tt)
+    return [&](const SQLTable & tt)
     {
         return tt.isAttached()
             /* When comparing query success results, don't use tables from other RDBMS, SQL is very undefined */
@@ -305,11 +304,22 @@ bool StatementGenerator::joinedTableOrFunction(
             /* When a query is going to be compared against another ClickHouse server, make sure all tables exist in that server */
             && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer())
             /* Don't use tables backing not deterministic views in query oracles */
-            && (tt.is_deterministic || this->allow_not_deterministic);
+            && (tt.is_deterministic || this->allow_not_deterministic)
+            /* May require MergeTree table */
+            && (!RequireMergeTree || tt.isMergeTreeFamily());
     };
+}
+
+bool StatementGenerator::joinedTableOrFunction(
+    RandomGenerator & rg, const String & rel_name, const uint32_t allowed_clauses, const bool under_remote, TableOrFunction * tof)
+{
+    bool set_final = false;
+    const auto has_table_lambda = getQueryTableLambda<false>();
+    const auto has_mergetree_table_lambda = getQueryTableLambda<true>();
     const auto has_view_lambda
         = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
+    const bool has_mergetree_table = collectionHas<SQLTable>(has_mergetree_table_lambda);
     const bool has_view = collectionHas<SQLView>(has_view_lambda);
     const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
 
@@ -323,7 +333,7 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t merge_udf = 2 * static_cast<uint32_t>(this->allow_engine_udf);
     const uint32_t cluster_udf
         = 5 * static_cast<uint32_t>(!fc.clusters.empty() && this->allow_engine_udf && (can_recurse || has_table || has_view));
-    const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_table && this->allow_engine_udf);
+    const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
     const uint32_t prob_space = derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf
         + cluster_udf + merge_index_udf + loop_udf;
@@ -613,7 +623,7 @@ bool StatementGenerator::joinedTableOrFunction(
         SQLRelation rel(rel_name);
         TableFunction * tf = tof->mutable_tfunc();
         MergeTreeIndexFunc * mtudf = tf->mutable_mtindex();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_mergetree_table_lambda));
 
         mtudf->set_mdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
         mtudf->set_mtable("t" + std::to_string(t.tname));
