@@ -2,6 +2,7 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 
 
 namespace DB
@@ -117,6 +118,23 @@ public:
         }
         else
         {
+            bool needs_nullable = args.front().type->isNullable();
+            for (size_t i = 1; i < args.size() - 1; i += 2)
+            {
+                if (args[i].type->isNullable())
+                {
+                    needs_nullable = true;
+                    break;
+                }
+            }
+
+            /// the correct return type for equals(), it should respect NULLs
+            DataTypePtr equals_return_type;
+            if (needs_nullable)
+                equals_return_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+            else
+                equals_return_type = std::make_shared<DataTypeUInt8>();
+
             ColumnsWithTypeAndName multi_if_args;
 
             // Convert CASE expression into multiIf(expr = when1, then1, expr = when2, then2, ..., else)
@@ -126,9 +144,9 @@ public:
                 auto equals_func = FunctionFactory::instance().get("equals", context);
                 ColumnsWithTypeAndName equals_args{args.front(), args[i]};
                 auto condition = equals_func->build(equals_args)
-                                    ->execute(equals_args, std::make_shared<DataTypeUInt8>(), input_rows_count, false);
+                    ->execute(equals_args, equals_return_type, input_rows_count, false);
 
-                multi_if_args.push_back({condition, std::make_shared<DataTypeUInt8>(), ""});
+                multi_if_args.push_back({condition, equals_return_type, ""});
                 multi_if_args.push_back(args[i + 1]); // Then value
             }
 
