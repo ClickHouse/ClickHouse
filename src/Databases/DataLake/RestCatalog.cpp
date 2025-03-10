@@ -34,6 +34,11 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace DB::StorageObjectStorageSetting
+{
+    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+}
+
 namespace DataLake
 {
 
@@ -652,8 +657,44 @@ bool RestCatalog::getTableMetadataImpl(
         }
     }
 
+    if (result.requiresDataLakeSpecificMetadata())
+    {
+        if (object->has("metadata-location") && !object->get("metadata-location").isEmpty())
+        {
+            auto metadata_location = object->get("metadata-location").extract<String>();
+            result.setDataLakeSpecificMetadata(DataLakeSpecificMetadata{.iceberg_metadata_file_location = metadata_location});
+        }
+    }
+
     return true;
 }
+
+DB::StorageObjectStorageSettingsPtr RestCatalog::createStorageSettingsFromMetadata(const TableMetadata & metadata) const
+{
+    auto storage_settings = std::make_shared<DB::StorageObjectStorageSettings>();
+    if (auto table_specific_metadata = metadata.getDataLakeSpecificMetadata(); table_specific_metadata.has_value())
+    {
+        auto metadata_location = table_specific_metadata->iceberg_metadata_file_location;
+        if (!metadata_location.empty())
+        {
+            auto location = metadata.getLocation();
+            if (metadata_location.starts_with(location))
+            {
+                LOG_DEBUG(log, "Metadata location {}, location {} position {}", metadata_location, location, metadata_location[location.size()]);
+                size_t remove_slash = 0;
+                if (metadata_location[location.size()] == '/')
+                    remove_slash = 1;
+                metadata_location = metadata_location.substr(location.size() + remove_slash);
+            }
+
+        }
+
+        (*storage_settings)[DB::StorageObjectStorageSetting::iceberg_metadata_file_path] = metadata_location;
+    }
+
+    return storage_settings;
+}
+
 
 }
 

@@ -45,9 +45,8 @@ namespace DB::Setting
 
 namespace DB::StorageObjectStorageSetting
 {
-extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
 }
-
 
 namespace
 {
