@@ -747,6 +747,8 @@ The server successfully detected this situation and will download merged part fr
     M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries", ValueType::Microseconds) \
     M(BackupEntriesCollectorForTablesDataMicroseconds, "Time spent making backup entries for tables data", ValueType::Microseconds) \
     M(BackupEntriesCollectorRunPostTasksMicroseconds, "Time spent running post tasks after making backup entries", ValueType::Microseconds) \
+    M(RestorePartsSkippedFiles, "Number of files skipped while restoring parts", ValueType::Number) \
+    M(RestorePartsSkippedBytes, "Total size of files skipped while restoring parts", ValueType::Number) \
     \
     M(ReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for s3Cluster table function and similar). Measured on the initiator server side.", ValueType::Number) \
     M(MergeTreeReadTaskRequestsReceived, "The number of callbacks requested from the remote server back to the initiator server to choose the read task (for MergeTree tables). Measured on the initiator server side.", ValueType::Number) \

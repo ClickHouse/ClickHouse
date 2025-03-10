@@ -222,7 +222,11 @@ StorageKafka::StorageKafka(
     });
 }
 
-StorageKafka::~StorageKafka() = default;
+StorageKafka::~StorageKafka()
+{
+    if (!shutdown_called)
+        shutdown(false);
+}
 
 void StorageKafka::read(
     QueryPlan & query_plan,
