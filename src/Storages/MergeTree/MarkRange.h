@@ -3,10 +3,10 @@
 #include <cstddef>
 #include <deque>
 
-#include <fmt/format.h>
-
 #include <IO/WriteBuffer.h>
 #include <IO/ReadBuffer.h>
+
+import fmt;
 
 namespace DB
 {

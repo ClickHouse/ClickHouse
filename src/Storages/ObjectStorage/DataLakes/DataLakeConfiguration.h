@@ -21,7 +21,7 @@
 
 #include <Common/ErrorCodes.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 
 namespace DB

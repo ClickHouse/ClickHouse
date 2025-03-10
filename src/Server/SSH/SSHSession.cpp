@@ -2,9 +2,10 @@
 
 #if USE_SSH && defined(OS_LINUX)
 
-#include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/clibssh.h>
+
+import fmt;
 
 namespace DB
 {

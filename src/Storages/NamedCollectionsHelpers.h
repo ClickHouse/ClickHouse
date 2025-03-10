@@ -7,9 +7,7 @@
 
 #include <string_view>
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>
-
+import fmt;
 
 namespace DB
 {

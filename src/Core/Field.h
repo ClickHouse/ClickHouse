@@ -9,7 +9,7 @@
 #include <base/IPv4andIPv6.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
-#include <fmt/format.h>
+import fmt;
 
 namespace DB
 {

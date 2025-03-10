@@ -10,7 +10,6 @@
 #include <bit>
 #include <cmath>
 #include <cfloat>
-#include <cassert>
 #include <tuple>
 #include <limits>
 

@@ -1,7 +1,5 @@
 #include <Analyzer/QueryNode.h>
 
-#include <fmt/core.h>
-
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
@@ -23,6 +21,8 @@
 #include <Analyzer/InterpolateNode.h>
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/Utils.h>
+
+import fmt;
 
 namespace DB
 {

@@ -3,7 +3,7 @@
 #include <Common/getRandomASCIIString.h>
 #include <Common/MatchGenerator.h>
 
-#include <fmt/format.h>
+import fmt;
 
 
 class GeneratorWithTemplate : public DB::IObjectStorageKeysGenerator

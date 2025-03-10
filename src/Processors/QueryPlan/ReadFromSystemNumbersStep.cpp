@@ -9,12 +9,12 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/System/StorageSystemNumbers.h>
-#include <fmt/format.h>
 #include <Common/iota.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
 
+import fmt;
 
 namespace DB
 {

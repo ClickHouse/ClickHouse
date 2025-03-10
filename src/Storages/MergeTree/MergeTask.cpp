@@ -3,7 +3,6 @@
 #include <Storages/MergeTree/MergeTask.h>
 
 #include <memory>
-#include <fmt/format.h>
 
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
@@ -60,6 +59,7 @@
     #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #endif
 
+import fmt;
 
 namespace ProfileEvents
 {

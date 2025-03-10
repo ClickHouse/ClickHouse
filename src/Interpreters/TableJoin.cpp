@@ -644,9 +644,10 @@ static std::optional<ActionsDAG> createWrapWithTupleActions(
         actions_dag.addOrReplaceInOutputs(dst_node);
     }
 
+    /// TODO: FMT module should work with fmt::join<std::string_view>
     if (!column_names_to_wrap.empty())
-        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Can't find columns {} in input columns [{}]",
-                        fmt::join(column_names_to_wrap, ", "), Block(source_columns).dumpNames());
+        throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Can't find columns 'FMT' in input columns [{}]",
+                        /* fmt::join(column_names_to_wrap, ", "), */ Block(source_columns).dumpNames());
 
     return actions_dag;
 }

@@ -38,7 +38,6 @@
 #include <Storages/MergeTree/Compaction/PartsCollectors/MergeTreePartsCollector.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/buildQueryTreeForShard.h>
-#include <fmt/core.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -47,6 +46,8 @@
 #include <Common/escapeForFileName.h>
 #include "Core/Names.h"
 #include <IO/SharedThreadPools.h>
+
+import fmt;
 
 namespace DB
 {

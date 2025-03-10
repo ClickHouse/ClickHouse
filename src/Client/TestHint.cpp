@@ -7,7 +7,7 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace DB::ErrorCodes
 {

@@ -49,7 +49,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
-#include <fmt/core.h>
+import fmt;
 
 
 namespace ProfileEvents

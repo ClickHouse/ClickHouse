@@ -48,12 +48,14 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
         {
             if (named_collection->has("uri"))
             {
-                validateNamedCollection(*named_collection, {"collection"}, {});
+                /// TODO: FMT module should work with fmt::join<std::string_view>
+                validateNamedCollection(*named_collection, std::unordered_set<std::string>{"collection"}, {});
                 configuration->uri = std::make_unique<mongocxx::uri>(named_collection->get<String>("uri"));
             }
             else
             {
-                validateNamedCollection(*named_collection, {"host", "db", "collection"}, {"port", "user", "password", "options"});
+                /// TODO: FMT module should work with fmt::join<std::string_view>
+                validateNamedCollection(*named_collection, std::unordered_set<std::string>{"host", "db", "collection"}, std::unordered_set<std::string>{"port", "user", "password", "options"});
                 String user = named_collection->get<String>("user");
                 String auth_string;
                 if (!user.empty())

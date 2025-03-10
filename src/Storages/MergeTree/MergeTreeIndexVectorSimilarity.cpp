@@ -22,7 +22,7 @@
 
 #include <ranges>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace ProfileEvents
 {
