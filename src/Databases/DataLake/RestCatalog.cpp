@@ -1,8 +1,8 @@
 #include "config.h"
 
 #if USE_AVRO
-#include <Databases/Iceberg/RestCatalog.h>
-#include <Databases/Iceberg/StorageCredentials.h>
+#include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/StorageCredentials.h>
 
 #include <base/find_symbols.h>
 #include <Core/Settings.h>
@@ -29,12 +29,17 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int ICEBERG_CATALOG_ERROR;
+    extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Iceberg
+namespace DB::StorageObjectStorageSetting
+{
+    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+}
+
+namespace DataLake
 {
 
 static constexpr auto CONFIG_ENDPOINT = "config";
@@ -417,7 +422,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
             "Code: {}, status: {}, message: {}",
             e.code(), e.getHTTPStatus(), e.displayText());
 
-        throw DB::Exception(DB::ErrorCodes::ICEBERG_CATALOG_ERROR, "{}", message);
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", message);
     }
 }
 
@@ -540,7 +545,7 @@ void RestCatalog::getTableMetadata(
     TableMetadata & result) const
 {
     if (!getTableMetadataImpl(namespace_name, table_name, result))
-        throw DB::Exception(DB::ErrorCodes::ICEBERG_CATALOG_ERROR, "No response from iceberg catalog");
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from iceberg catalog");
 }
 
 bool RestCatalog::getTableMetadataImpl(
@@ -591,9 +596,16 @@ bool RestCatalog::getTableMetadataImpl(
     std::string location;
     if (result.requiresLocation())
     {
-        location = metadata_object->get("location").extract<String>();
-        result.setLocation(location);
-        LOG_TEST(log, "Location for table {}: {}", table_name, location);
+        if (metadata_object->has("location"))
+        {
+            location = metadata_object->get("location").extract<String>();
+            result.setLocation(location);
+            LOG_TEST(log, "Location for table {}: {}", table_name, location);
+        }
+        else if (!result.isLightweight())
+        {
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No location in response");
+        }
     }
 
     if (result.requiresSchema())
@@ -645,8 +657,44 @@ bool RestCatalog::getTableMetadataImpl(
         }
     }
 
+    if (result.requiresDataLakeSpecificMetadata())
+    {
+        if (object->has("metadata-location") && !object->get("metadata-location").isEmpty())
+        {
+            auto metadata_location = object->get("metadata-location").extract<String>();
+            result.setDataLakeSpecificMetadata(DataLakeSpecificMetadata{.iceberg_metadata_file_location = metadata_location});
+        }
+    }
+
     return true;
 }
+
+DB::StorageObjectStorageSettingsPtr RestCatalog::createStorageSettingsFromMetadata(const TableMetadata & metadata) const
+{
+    auto storage_settings = std::make_shared<DB::StorageObjectStorageSettings>();
+    if (auto table_specific_metadata = metadata.getDataLakeSpecificMetadata(); table_specific_metadata.has_value())
+    {
+        auto metadata_location = table_specific_metadata->iceberg_metadata_file_location;
+        if (!metadata_location.empty())
+        {
+            auto location = metadata.getLocation();
+            if (metadata_location.starts_with(location))
+            {
+                LOG_DEBUG(log, "Metadata location {}, location {} position {}", metadata_location, location, metadata_location[location.size()]);
+                size_t remove_slash = 0;
+                if (metadata_location[location.size()] == '/')
+                    remove_slash = 1;
+                metadata_location = metadata_location.substr(location.size() + remove_slash);
+            }
+
+        }
+
+        (*storage_settings)[DB::StorageObjectStorageSetting::iceberg_metadata_file_path] = metadata_location;
+    }
+
+    return storage_settings;
+}
+
 
 }
 

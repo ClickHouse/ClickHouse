@@ -2,7 +2,7 @@
 #include "config.h"
 
 #if USE_AVRO
-#include <Databases/Iceberg/ICatalog.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
@@ -15,7 +15,7 @@ namespace DB
 class ReadBuffer;
 }
 
-namespace Iceberg
+namespace DataLake
 {
 
 class RestCatalog final : public ICatalog, private DB::WithContext
@@ -50,6 +50,12 @@ public:
 
     std::optional<StorageType> getStorageType() const override;
 
+    DB::DatabaseDataLakeCatalogType getCatalogType() const override
+    {
+        return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
+    }
+
+    DB::StorageObjectStorageSettingsPtr createStorageSettingsFromMetadata(const TableMetadata & metadata) const override;
 private:
     struct Config
     {

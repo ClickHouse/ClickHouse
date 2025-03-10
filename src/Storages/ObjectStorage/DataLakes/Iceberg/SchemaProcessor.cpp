@@ -157,7 +157,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
         return DataTypeFactory::instance().get("Bool");
     if (type_name == "int")
         return std::make_shared<DataTypeInt32>();
-    if (type_name == "long")
+    if (type_name == "long" || type_name == "bigint")
         return std::make_shared<DataTypeInt64>();
     if (type_name == "float")
         return std::make_shared<DataTypeFloat32>();

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import glob
 import json
 import logging
@@ -30,11 +31,12 @@ from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
 
-BASE_URL = "http://rest:8181/v1"
-BASE_URL_LOCAL = "http://localhost:8182/v1"
-BASE_URL_LOCAL_RAW = "http://localhost:8182"
+import boto3
 
-CATALOG_NAME = "demo"
+CATALOG_NAME = "test"
+
+BASE_URL = "http://glue:3000"
+BASE_URL_LOCAL_HOST = "http://localhost:3000"
 
 DEFAULT_SCHEMA = Schema(
     NestedField(
@@ -69,26 +71,23 @@ DEFAULT_PARTITION_SPEC = PartitionSpec(
 DEFAULT_SORT_ORDER = SortOrder(SortField(source_id=2, transform=IdentityTransform()))
 
 
-def list_namespaces():
-    response = requests.get(f"{BASE_URL_LOCAL}/namespaces")
-    if response.status_code == 200:
-        return response.json()
-    else:
-        raise Exception(f"Failed to list namespaces: {response.status_code}")
+def list_databases():
+    client = boto3.client("glue", region_name="us-east-1", endpoint_url=BASE_URL_LOCAL_HOST)
+    databases = client.get_databases()
+    return databases
 
 
 def load_catalog_impl(started_cluster):
     return load_catalog(
-        CATALOG_NAME,
+        CATALOG_NAME, # name is not important
         **{
-            "uri": BASE_URL_LOCAL_RAW,
-            "type": "rest",
-            "s3.endpoint": f"http://localhost:9002",
+            "type": "glue",
+            "glue.endpoint": BASE_URL_LOCAL_HOST,
+            "glue.region": "us-east-1",
+            "s3.endpoint": "http://localhost:9002",
             "s3.access-key-id": "minio",
             "s3.secret-access-key": "minio123",
-        },
-    )
-
+        },)
 
 def create_table(
     catalog,
@@ -117,13 +116,14 @@ def generate_record():
     }
 
 
-def create_clickhouse_iceberg_database(
+def create_clickhouse_glue_database(
     started_cluster, node, name, additional_settings={}
 ):
     settings = {
-        "catalog_type": "iceberg_rest",
-        "warehouse": "demo",
+        "catalog_type": "glue",
+        "warehouse": "test",
         "storage_endpoint": "http://minio:9000/warehouse",
+        "region": "us-east-1",
     }
 
     settings.update(additional_settings)
@@ -131,7 +131,7 @@ def create_clickhouse_iceberg_database(
     node.query(
         f"""
 DROP DATABASE IF EXISTS {name};
-SET allow_experimental_database_iceberg=true;
+SET allow_experimental_database_glue_catalog=true;
 CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', 'minio123')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
@@ -140,7 +140,7 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
 
 def print_objects():
     minio_client = Minio(
-        f"localhost:9002",
+        f"minio:9002",
         access_key="minio",
         secret_key="minio123",
         secure=False,
@@ -157,20 +157,21 @@ def print_objects():
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
+        # We must add some credentials, otherwise moto (AWS Mock)
+        # will reject boto connection
+        os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+        os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "node1",
             main_configs=[],
             user_configs=[],
             stay_alive=True,
-            with_iceberg_catalog=True,
+            with_glue_catalog=True,
         )
 
         logging.info("Starting cluster...")
         cluster.start()
-
-        # TODO: properly wait for container
-        time.sleep(10)
 
         yield cluster
 
@@ -182,8 +183,8 @@ def test_list_tables(started_cluster):
     node = started_cluster.instances["node1"]
 
     root_namespace = f"clickhouse_{uuid.uuid4()}"
-    namespace_1 = f"{root_namespace}.testA.A"
-    namespace_2 = f"{root_namespace}.testB.B"
+    namespace_1 = f"{root_namespace}_testA_A"
+    namespace_2 = f"{root_namespace}_testB_B"
     namespace_1_tables = ["tableA", "tableB"]
     namespace_2_tables = ["tableC", "tableD"]
 
@@ -192,24 +193,10 @@ def test_list_tables(started_cluster):
     for namespace in [namespace_1, namespace_2]:
         catalog.create_namespace(namespace)
 
-    found = False
-    for namespace_list in list_namespaces()["namespaces"]:
-        if root_namespace == namespace_list[0]:
-            found = True
-            break
-    assert found
-
-    found = False
-    for namespace_list in catalog.list_namespaces():
-        if root_namespace == namespace_list[0]:
-            found = True
-            break
-    assert found
-
     for namespace in [namespace_1, namespace_2]:
         assert len(catalog.list_tables(namespace)) == 0
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
 
     tables_list = ""
     for table in namespace_1_tables:
@@ -239,43 +226,13 @@ def test_list_tables(started_cluster):
     )
 
     expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace_2, "tableC")
+    print("Expected", expected)
+    print("Got", node.query(
+        f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
+    ))
     assert expected == node.query(
         f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace_2}.tableC`"
     )
-
-
-def test_many_namespaces(started_cluster):
-    node = started_cluster.instances["node1"]
-    root_namespace_1 = f"A_{uuid.uuid4()}"
-    root_namespace_2 = f"B_{uuid.uuid4()}"
-    namespaces = [
-        f"{root_namespace_1}",
-        f"{root_namespace_1}.B.C",
-        f"{root_namespace_1}.B.C.D",
-        f"{root_namespace_1}.B.C.D.E",
-        f"{root_namespace_2}",
-        f"{root_namespace_2}.C",
-        f"{root_namespace_2}.CC",
-    ]
-    tables = ["A", "B", "C"]
-    catalog = load_catalog_impl(started_cluster)
-
-    for namespace in namespaces:
-        catalog.create_namespace(namespace)
-        for table in tables:
-            create_table(catalog, namespace, table)
-
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    for namespace in namespaces:
-        for table in tables:
-            table_name = f"{namespace}.{table}"
-            assert int(
-                node.query(
-                    f"SELECT count() FROM system.tables WHERE database = '{CATALOG_NAME}' and name = '{table_name}'"
-                )
-            )
-
 
 def test_select(started_cluster):
     node = started_cluster.instances["node1"]
@@ -284,12 +241,11 @@ def test_select(started_cluster):
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
 
-    namespace = f"{root_namespace}.A.B.C"
     namespaces_to_create = [
         root_namespace,
-        f"{root_namespace}.A",
-        f"{root_namespace}.A.B",
-        f"{root_namespace}.A.B.C",
+        f"{root_namespace}_A",
+        f"{root_namespace}_B",
+        f"{root_namespace}_C",
     ]
 
     catalog = load_catalog_impl(started_cluster)
@@ -298,23 +254,24 @@ def test_select(started_cluster):
         catalog.create_namespace(namespace)
         assert len(catalog.list_tables(namespace)) == 0
 
-    table = create_table(catalog, namespace, table_name)
+    for namespace in namespaces_to_create:
+        table = create_table(catalog, namespace, table_name)
 
-    num_rows = 10
-    data = [generate_record() for _ in range(num_rows)]
-    df = pa.Table.from_pylist(data)
-    table.append(df)
+        num_rows = 10
+        data = [generate_record() for _ in range(num_rows)]
+        df = pa.Table.from_pylist(data)
+        table.append(df)
 
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
 
-    expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
-    assert expected == node.query(
-        f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
-    )
+        expected = DEFAULT_CREATE_TABLE.format(CATALOG_NAME, namespace, table_name)
+        assert expected == node.query(
+            f"SHOW CREATE TABLE {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )
 
-    assert num_rows == int(
-        node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
-    )
+        assert num_rows == int(
+            node.query(f"SELECT count() FROM {CATALOG_NAME}.`{namespace}.{table_name}`")
+        )
 
 
 def test_hide_sensitive_info(started_cluster):
@@ -324,24 +281,17 @@ def test_hide_sensitive_info(started_cluster):
     table_name = f"{test_ref}_table"
     root_namespace = f"{test_ref}_namespace"
 
-    namespace = f"{root_namespace}.A"
+    namespace = f"{root_namespace}_A"
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(namespace)
 
     table = create_table(catalog, namespace, table_name)
 
-    create_clickhouse_iceberg_database(
+    create_clickhouse_glue_database(
         started_cluster,
         node,
         CATALOG_NAME,
-        additional_settings={"catalog_credential": "SECRET_1"},
+        additional_settings={"aws_access_key_id": "SECRET_1", "aws_secret_access_key": "SECRET_2"},
     )
     assert "SECRET_1" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
-
-    create_clickhouse_iceberg_database(
-        started_cluster,
-        node,
-        CATALOG_NAME,
-        additional_settings={"auth_header": "SECRET_2"},
-    )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
