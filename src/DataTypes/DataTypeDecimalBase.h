@@ -139,6 +139,8 @@ public:
 
     static T getScaleMultiplier(UInt32 scale);
 
+    bool canBeInsideLowCardinality() const override { return true; }
+
 protected:
     const UInt32 precision;
     const UInt32 scale;
