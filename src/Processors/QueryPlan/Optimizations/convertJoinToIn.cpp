@@ -123,14 +123,9 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         &dag->addFunction(func_tuple_builder, std::move(left_columns), {});
 
     /// right parameter of IN function
-    auto context = join->getContext();
-    const auto & settings = context->getSettingsRef();
     auto future_set = std::make_shared<FutureSetFromSubquery>(
         CityHash_v1_0_2::uint128(),
-        right_predicate_header.getColumnsWithTypeAndName(),
-        settings[Setting::transform_null_in],
-        PreparedSets::getSizeLimitsForSet(settings),
-        settings[Setting::use_index_for_in_with_subqueries_max_values]);
+        right_predicate_header.getColumnsWithTypeAndName());
 
     chassert(future_set->get() == nullptr);
     ColumnPtr set_col = ColumnSet::create(1, future_set);
@@ -138,7 +133,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         &dag->addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
 
     /// IN function
-    auto func_in = FunctionFactory::instance().get("in", context);
+    auto func_in = FunctionFactory::instance().get("in", nullptr);
     auto & in_node = dag->addFunction(func_in, {in_lhs_arg, in_rhs_arg}, "");
     dag->getOutputs().push_back(&in_node);
 
@@ -155,7 +150,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     creating_sets_step->setStepDescription("Create sets before main query execution");
 
     /// creating_set_step as right subtree
-    auto creating_set_step = future_set->build(right_predicate_header, context);
+    auto creating_set_step = future_set->build(right_predicate_header);
 
     /// Modify the plan tree
     QueryPlan::Node * left_tree = parent_node->children[0];

@@ -147,10 +147,7 @@ public:
 
     FutureSetFromSubquery(
         Hash hash_,
-        const ColumnsWithTypeAndName & header,
-        bool transform_null_in,
-        SizeLimits size_limits,
-        size_t max_size_for_index);
+        const ColumnsWithTypeAndName & header);
 
     ~FutureSetFromSubquery() override;
 
@@ -161,7 +158,7 @@ public:
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
     std::unique_ptr<QueryPlan> build(const ContextPtr & context);
-    std::unique_ptr<IQueryPlanStep> build(const Header & input_header, const ContextPtr & context);
+    std::unique_ptr<IQueryPlanStep> build(const Header & input_header);
     void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }

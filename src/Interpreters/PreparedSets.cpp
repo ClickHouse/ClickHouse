@@ -170,16 +170,13 @@ FutureSetFromSubquery::FutureSetFromSubquery(
 
 FutureSetFromSubquery::FutureSetFromSubquery(
     Hash hash_,
-    const ColumnsWithTypeAndName & header,
-    bool transform_null_in,
-    SizeLimits size_limits,
-    size_t max_size_for_index)
+    const ColumnsWithTypeAndName & header)
     : hash(hash_)
 {
     set_and_key = std::make_shared<SetAndKey>();
     set_and_key->key = PreparedSets::toString(hash_, {});
 
-    set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
+    set_and_key->set = std::make_shared<Set>(SizeLimits(), 0, false);
     set_and_key->set->setHeader(header);
 }
 
@@ -231,22 +228,17 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & conte
     return plan;
 }
 
-std::unique_ptr<IQueryPlanStep> FutureSetFromSubquery::build(
-    const Header & input_header, const ContextPtr & context)
+std::unique_ptr<IQueryPlanStep> FutureSetFromSubquery::build(const Header & input_header)
 {
     if (set_and_key->set->isCreated())
         return nullptr;
-
-    const auto & settings = context->getSettingsRef();
 
     auto creating_set = std::make_unique<CreatingSetStep>(
         input_header,
         set_and_key,
         nullptr,
-        SizeLimits(settings[Setting::max_rows_to_transfer],
-                   settings[Setting::max_bytes_to_transfer],
-                   settings[Setting::transfer_overflow_mode]),
-        context);
+        SizeLimits(),
+        nullptr);
     creating_set->setStepDescription("Create set for subquery");
     return creating_set;
 }
