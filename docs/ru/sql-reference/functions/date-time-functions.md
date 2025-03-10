@@ -514,9 +514,11 @@ SELECT toStartOfInterval(toDateTime('2023-01-01 14:45:00'), INTERVAL 1 MINUTE, t
 **См. также**
 - [date_trunc](#date_trunc)
 
-## toTime {#totime}
+## toTimeWithFixedDate {#totimewithfixeddate}
 
 Переводит дату-с-временем на некоторую фиксированную дату, сохраняя при этом время.
+
+Синоним: `toTime` - может быть использован, только когда флаг `use_legacy_to_time` включён.
 
 ## toRelativeYearNum {#torelativeyearnum}
 

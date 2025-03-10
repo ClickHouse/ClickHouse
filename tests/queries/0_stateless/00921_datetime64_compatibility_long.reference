@@ -153,7 +153,7 @@ Code: 43
 "DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
 "DateTime('Asia/Istanbul')","2019-09-16 19:20:00"
 ------------------------------------------
-SELECT toTime(N, \'Asia/Istanbul\')
+SELECT toTimeWithFixedDate(N, \'Asia/Istanbul\')
 Code: 43
 "DateTime('Asia/Istanbul')","1970-01-02 19:20:11"
 "DateTime('Asia/Istanbul')","1970-01-02 19:20:11"
