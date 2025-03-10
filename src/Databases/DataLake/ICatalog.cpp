@@ -52,7 +52,7 @@ StorageType parseStorageTypeFromLocation(const std::string & location)
 
 void TableMetadata::setLocation(const std::string & location_)
 {
-    if (!with_location && !with_location_if_exists)
+    if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
     /// Location has format:
@@ -82,7 +82,7 @@ void TableMetadata::setLocation(const std::string & location_)
 
 std::string TableMetadata::getLocation() const
 {
-    if (!with_location && !with_location_if_exists)
+    if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
     if (!endpoint.empty())
@@ -93,10 +93,10 @@ std::string TableMetadata::getLocation() const
 
 std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_) const
 {
-    if (!with_location && !with_location_if_exists)
+    if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
-    if (endpoint_.empty())
+    if (endpoint_.empty() && !isLightweight())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Passed endpoint is empty");
 
     return constructLocation(endpoint_);
@@ -112,6 +112,11 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_) cons
         return std::filesystem::path(location) / path / "";
     else
         return std::filesystem::path(location) / bucket / path / "";
+}
+
+bool TableMetadata::isLightweight() const
+{
+    return with_lightweight;
 }
 
 void TableMetadata::setEndpoint(const std::string & endpoint_)
@@ -151,6 +156,16 @@ std::shared_ptr<IStorageCredentials> TableMetadata::getStorageCredentials() cons
     return storage_credentials;
 }
 
+void TableMetadata::setDataLakeSpecificMetadata(std::optional<DataLakeSpecificMetadata> && metadata)
+{
+    data_lake_specific_metadata = metadata;
+}
+
+std::optional<DataLakeSpecificMetadata> TableMetadata::getDataLakeSpecificMetadata() const
+{
+    return data_lake_specific_metadata;
+}
+
 StorageType TableMetadata::getStorageType() const
 {
     return parseStorageTypeFromLocation(location_without_path);
@@ -169,5 +184,9 @@ bool TableMetadata::hasStorageCredentials() const
     return storage_credentials != nullptr;
 }
 
+DB::StorageObjectStorageSettingsPtr ICatalog::createStorageSettingsFromMetadata(const TableMetadata &) const
+{
+    return std::make_shared<DB::StorageObjectStorageSettings>();
+}
 
 }

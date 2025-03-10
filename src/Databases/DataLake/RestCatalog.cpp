@@ -589,11 +589,18 @@ bool RestCatalog::getTableMetadataImpl(
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
     std::string location;
-    if (result.requiresLocation() || (result.requiresLocationIfExists() && metadata_object->has("location")))
+    if (result.requiresLocation())
     {
-        location = metadata_object->get("location").extract<String>();
-        result.setLocation(location);
-        LOG_TEST(log, "Location for table {}: {}", table_name, location);
+        if (metadata_object->has("location"))
+        {
+            location = metadata_object->get("location").extract<String>();
+            result.setLocation(location);
+            LOG_TEST(log, "Location for table {}: {}", table_name, location);
+        }
+        else if (!result.isLightweight())
+        {
+            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No location in response");
+        }
     }
 
     if (result.requiresSchema())
