@@ -56,6 +56,16 @@ public:
         if (args.empty())
             throw Exception(ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION, "Function {} expects at least 1 argument", getName());
 
+        bool all_when_values_constant = true;
+        for (size_t i = 1; i < args.size() - 1; i += 2)
+        {
+            if (!isColumnConst(*args[i].column))
+            {
+                all_when_values_constant = false;
+                break;
+            }
+        }
+
         /// In the following code, we turn the construction:
         /// CASE expr WHEN val[0] THEN branch[0] ... WHEN val[N-1] then branch[N-1] ELSE branchN
         /// into the construction transform(expr, src, dest, branchN)
@@ -96,9 +106,42 @@ public:
         src_array_col.column = fun_array->build(src_array_elems)->execute(src_array_elems, src_array_type, input_rows_count, /* dry_run = */ false);
         dst_array_col.column = fun_array->build(dst_array_elems)->execute(dst_array_elems, dst_array_type, input_rows_count, /* dry_run = */ false);
 
-        /// Execute transform.
-        ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
-        return FunctionFactory::instance().get("transform", context)->build(transform_args)->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
+        /// If we have non-constant arguments, we execute the transform function, which is highly optimized, which uses precomputed lookup tables.
+        /// Else we should use the straightforward implementation, checking values row-by-row
+        if (all_when_values_constant)
+        {
+            ColumnsWithTypeAndName transform_args{args.front(), src_array_col, dst_array_col, args.back()};
+            return FunctionFactory::instance().get("transform", context)->build(transform_args)
+                ->execute(transform_args, result_type, input_rows_count, /* dry_run = */ false);
+        }
+        else
+        {
+            auto expr_column = args[0].column;
+            auto else_column = args.back().column;
+            auto result_column = result_type->createColumn();
+
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                bool matched = false;
+                Field expr_value = (*expr_column)[row];
+
+                for (size_t i = 1; i < args.size() - 1; i += 2)
+                {
+                    Field when_value = (*args[i].column)[row];
+                    if (expr_value == when_value)
+                    {
+                        result_column->insert((*args[i + 1].column)[row]);
+                        matched = true;
+                        break;
+                    }
+                }
+
+                if (!matched)
+                    result_column->insert((*else_column)[row]);
+            }
+
+            return result_column;
+        }
     }
 
 private:
