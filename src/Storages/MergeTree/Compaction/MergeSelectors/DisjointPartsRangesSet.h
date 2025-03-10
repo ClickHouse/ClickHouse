@@ -9,7 +9,7 @@ namespace DB
 using RangesIterator = PartsRanges::const_iterator;
 using PartsIterator = PartsRange::const_iterator;
 
-/// Class that maintaints disjoint sets for each independant parts range returned from collector.
+/// Class that maintaints disjoint sets for each independent parts range returned from collector.
 class DisjointPartsRangesSet
 {
     struct PartsRangeBoundaries
@@ -22,9 +22,9 @@ class DisjointPartsRangesSet
     {
         using is_transparent = void;
 
-        bool operator()(const PartsRangeBoundaries& lhs, const PartsRangeBoundaries& rhs) const noexcept;
-        bool operator()(const PartsRangeBoundaries& lhs, const PartsIterator& rhs) const noexcept;
-        bool operator()(const PartsIterator& lhs, const PartsRangeBoundaries& rhs) const noexcept;
+        bool operator()(const PartsRangeBoundaries & lhs, const PartsRangeBoundaries & rhs) const noexcept;
+        bool operator()(const PartsRangeBoundaries & lhs, const PartsIterator & rhs) const noexcept;
+        bool operator()(const PartsIterator & lhs, const PartsRangeBoundaries & rhs) const noexcept;
     };
 
     using SortedPartsRanges = std::set<PartsRangeBoundaries, BoundariesComparator>;

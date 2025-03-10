@@ -3,17 +3,17 @@
 namespace DB
 {
 
-bool DisjointPartsRangesSet::BoundariesComparator::operator()(const PartsRangeBoundaries& lhs, const PartsRangeBoundaries& rhs) const noexcept
+bool DisjointPartsRangesSet::BoundariesComparator::operator()(const PartsRangeBoundaries & lhs, const PartsRangeBoundaries & rhs) const noexcept
 {
     return lhs.range_begin < rhs.range_begin;
 }
 
-bool DisjointPartsRangesSet::BoundariesComparator::operator()(const PartsRangeBoundaries& lhs, const PartsIterator& rhs) const noexcept
+bool DisjointPartsRangesSet::BoundariesComparator::operator()(const PartsRangeBoundaries & lhs, const PartsIterator & rhs) const noexcept
 {
     return lhs.range_begin < rhs;
 }
 
-bool DisjointPartsRangesSet::BoundariesComparator::operator()(const PartsIterator& lhs, const PartsRangeBoundaries& rhs) const noexcept
+bool DisjointPartsRangesSet::BoundariesComparator::operator()(const PartsIterator & lhs, const PartsRangeBoundaries & rhs) const noexcept
 {
     return lhs < rhs.range_begin;
 }

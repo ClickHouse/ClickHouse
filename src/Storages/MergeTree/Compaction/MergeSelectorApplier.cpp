@@ -57,7 +57,8 @@ struct ChooseContext
 MergeSelectorChoices tryChooseTTLMerge(const ChooseContext ctx)
 {
     /// Delete parts - 1 priority
-    if (!ctx.max_merge_sizes.empty()) {
+    if (!ctx.max_merge_sizes.empty())
+    {
         std::vector<size_t> max_sizes(ctx.max_merge_sizes.size(), ctx.merge_tree_settings[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]);
         TTLPartDeleteMergeSelector drop_ttl_selector(ctx.next_delete_times, ctx.current_time);
 
@@ -134,8 +135,7 @@ MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     bool can_use_ttl_merges,
     time_t current_time) const
 {
-    ChooseContext ctx
-    {
+    ChooseContext ctx{
         .ranges = ranges,
         .range_filter = range_filter,
         .max_merge_sizes = max_merge_sizes,
