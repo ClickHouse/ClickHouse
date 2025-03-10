@@ -1133,7 +1133,7 @@ class MergeTreeSettingsRandomizer:
         "compress_primary_key": lambda: random.randint(0, 1),
         "marks_compress_block_size": lambda: random.randint(8000, 100000),
         "primary_key_compress_block_size": lambda: random.randint(8000, 100000),
-        "replace_long_file_name_to_hash": 0,
+        "replace_long_file_name_to_hash": lambda: 0,
         "max_file_name_length": threshold_generator(0.3, 0.3, 0, 128),
         "min_bytes_for_full_part_storage": threshold_generator(
             0.3, 0.3, 0, 512 * 1024 * 1024

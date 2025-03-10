@@ -452,7 +452,7 @@ public:
 
     struct StreamFileNameSettings
     {
-        StreamFileNameSettings() {}
+        StreamFileNameSettings() = default;
         explicit StreamFileNameSettings(const MergeTreeSettings & merge_tree_settings);
 
         bool escape_variant_substreams = true;
