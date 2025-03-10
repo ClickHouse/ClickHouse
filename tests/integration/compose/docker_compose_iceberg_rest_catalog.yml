@@ -22,7 +22,7 @@ services:
       - 8182:8181
     environment:
       - AWS_ACCESS_KEY_ID=minio
-      - AWS_SECRET_ACCESS_KEY=minio123
+      - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
       - AWS_REGION=us-east-1
       - CATALOG_WAREHOUSE=s3://iceberg_data/
       - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
@@ -38,7 +38,7 @@ services:
     container_name: minio
     environment:
       - MINIO_ROOT_USER=minio
-      - MINIO_ROOT_PASSWORD=minio123
+      - MINIO_ROOT_PASSWORD=ClickHouse_Minio_P@ssw0rd
       - MINIO_DOMAIN=minio
     networks:
       default:
@@ -55,11 +55,11 @@ services:
     container_name: mc
     environment:
       - AWS_ACCESS_KEY_ID=minio
-      - AWS_SECRET_ACCESS_KEY=minio123
+      - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
       - AWS_REGION=us-east-1
     entrypoint: >
       /bin/sh -c "
-      until (/usr/bin/mc config host add minio http://minio:9000 minio minio123) do echo '...waiting...' && sleep 1; done;
+      until (/usr/bin/mc config host add minio http://minio:9000 minio ClickHouse_Minio_P@ssw0rd) do echo '...waiting...' && sleep 1; done;
       /usr/bin/mc rm -r --force minio/warehouse;
       /usr/bin/mc mb minio/warehouse --ignore-existing;
       /usr/bin/mc policy set public minio/warehouse;
