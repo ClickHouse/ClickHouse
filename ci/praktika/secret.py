@@ -27,7 +27,7 @@ class Secret:
                 return self.get_aws_ssm_var()
             if self.type == Secret.Type.AWS_SSM_SECRET:
                 return self.get_aws_ssm_secret()
-            elif self.type == Secret.Type.GH_SECRET:
+            elif self.type in (Secret.Type.GH_SECRET, Secret.Type.GH_VAR):
                 return self.get_gh_secret()
             else:
                 assert False, f"Not supported secret type, secret [{self}]"
