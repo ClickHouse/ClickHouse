@@ -352,6 +352,7 @@
     -->
     <concurrent_threads_soft_limit_num>0</concurrent_threads_soft_limit_num>
     <concurrent_threads_soft_limit_ratio_to_cores>2</concurrent_threads_soft_limit_ratio_to_cores>
+    <concurrent_threads_scheduler>fair_round_robin</concurrent_threads_scheduler>
 
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>1000</max_concurrent_queries>
