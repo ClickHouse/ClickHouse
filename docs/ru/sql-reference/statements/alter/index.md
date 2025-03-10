@@ -31,7 +31,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 :::
 Следующие запросы `ALTER` управляют представлениями:
 
--   [ALTER TABLE ... MODIFY QUERY](../../../sql-reference/statements/alter/view.md) — изменяет структуру [Materialized view](../create/view.md#materialized).
+-   [ALTER TABLE ... MODIFY QUERY](../../../sql-reference/statements/alter/view.md) — изменяет структуру [Materialized view](/sql-reference/statements/create/view#materialized-view).
 -   [ALTER LIVE VIEW](../../../sql-reference/statements/alter/view.md#alter-live-view) — обновляет [Live view](../create/view.md#live-view).
 
 Следующие запросы `ALTER` изменяют сущности, связанные с управлением доступом на основе ролей:

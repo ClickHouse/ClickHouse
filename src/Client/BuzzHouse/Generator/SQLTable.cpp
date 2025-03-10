@@ -723,8 +723,6 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     }
 }
 
-const DB::Strings & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
-
 void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     SettingValues * svs = nullptr;
@@ -887,6 +885,8 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             te->add_params()->set_in_out(b.file_format);
             if (rg.nextSmallNumber() < 4)
             {
+                static const DB::Strings & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
+
                 b.file_comp = rg.pickRandomly(s3_compress);
                 te->add_params()->set_svalue(b.file_comp);
             }
@@ -1012,10 +1012,16 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         }
     }
     /// Shared and Replicated MergeTree are to be used with cluster
-    /// If the database already has a cluster, don't set on the table
-    if (!fc.clusters.empty() && (!b.db || !b.db->cluster.has_value()) && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
+    if (!fc.clusters.empty() && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
     {
-        b.cluster = rg.pickRandomly(fc.clusters);
+        if (b.db && b.db->cluster.has_value() && rg.nextSmallNumber() < 9)
+        {
+            b.cluster = b.db->cluster;
+        }
+        else
+        {
+            b.cluster = rg.pickRandomly(fc.clusters);
+        }
     }
 }
 
