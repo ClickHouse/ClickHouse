@@ -79,7 +79,7 @@ public:
     using DescriptorSet = IClientDescriptorSet::DescriptorSet;
 
     explicit ChannelCallback(::ssh::SSHChannel && channel_, std::unique_ptr<Session> && dbSession_)
-        : channel(std::move(channel_)), db_session(std::move(dbSession_)), log(&Poco::Logger::get("SSHChannelCallback"))
+        : channel(std::move(channel_)), db_session(std::move(dbSession_)), log(getLogger("SSHChannelCallback"))
     {
         channel_cb.userdata = this;
         channel_cb.channel_pty_request_function = ptyRequestAdapter<ssh_session, ssh_channel, const char *, int, int, int, int>;
@@ -100,7 +100,7 @@ public:
     std::unique_ptr<Session> db_session;
     NameToNameMap env;
     std::optional<ClientEmbeddedRunner> client_runner;
-    Poco::Logger * log;
+    LoggerPtr log;
 
 private:
     int ptyRequest(ssh_session, ssh_channel, const char * term, int width, int height, int width_pixels, int height_pixels) noexcept
@@ -309,7 +309,7 @@ class SessionCallback
 {
 public:
     explicit SessionCallback(::ssh::SSHSession & session, IServer & server, const Poco::Net::SocketAddress & address_)
-        : server_context(server.context()), peer_address(address_), log(&Poco::Logger::get("SSHSessionCallback"))
+        : server_context(server.context()), peer_address(address_), log(getLogger("SSHSessionCallback"))
     {
         server_cb.userdata = this;
         server_cb.auth_pubkey_function = authPublickeyAdapter<ssh_session, const char *, ssh_key, char>;
@@ -326,7 +326,7 @@ public:
     DB::ContextMutablePtr server_context;
     Poco::Net::SocketAddress peer_address;
     std::unique_ptr<ChannelCallback> channel_callback;
-    Poco::Logger * log;
+    LoggerPtr log;
 
     ssh_channel channelOpen(ssh_session session) noexcept
     {
@@ -413,7 +413,7 @@ SSHPtyHandler::SSHPtyHandler(
     unsigned int event_poll_interval_milliseconds_)
     : Poco::Net::TCPServerConnection(socket)
     , server(server_)
-    , log(&Poco::Logger::get("SSHPtyHandler"))
+    , log(getLogger("SSHPtyHandler"))
     , session(std::move(session_))
     , max_auth_attempts(max_auth_attempts_)
     , auth_timeout_seconds(auth_timeout_seconds_)

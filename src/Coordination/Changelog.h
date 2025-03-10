@@ -4,6 +4,7 @@
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/SharedMutex.h>
+#include <Common/Logger_fwd.h>
 
 #include <map>
 #include <variant>
@@ -18,13 +19,6 @@ namespace nuraft
     struct buffer;
     struct raft_server;
 }
-
-namespace Poco
-{
-    class Logger;
-}
-
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 namespace DB
 {

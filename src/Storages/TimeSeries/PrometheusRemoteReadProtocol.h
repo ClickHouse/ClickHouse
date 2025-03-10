@@ -28,7 +28,7 @@ public:
 
 private:
     std::shared_ptr<const StorageTimeSeries> time_series_storage;
-    Poco::LoggerPtr log;
+    LoggerPtr log;
 };
 
 }

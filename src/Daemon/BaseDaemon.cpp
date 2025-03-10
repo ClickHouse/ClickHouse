@@ -51,6 +51,8 @@
 #include <Interpreters/Context.h>
 #include <filesystem>
 
+#include <quill/Backend.h>
+
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 
@@ -62,6 +64,7 @@
 #   define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
+
 
 namespace fs = std::filesystem;
 
@@ -97,7 +100,7 @@ static std::string createDirectory(const std::string & file)
 }
 
 
-static bool tryCreateDirectories(Poco::Logger * logger, const std::string & path)
+static bool tryCreateDirectories(LoggerPtr logger, const std::string & path)
 {
     try
     {
@@ -146,7 +149,7 @@ BaseDaemon::~BaseDaemon()
     }
     catch (...)
     {
-        tryLogCurrentException(&logger());
+        tryLogCurrentException(getLogger("Application"));
     }
 
     disableLogging();
@@ -370,12 +373,11 @@ void BaseDaemon::initialize(Application & self)
             throw Poco::Exception("Cannot change directory to /tmp");
     }
 
-    /// sensitive data masking rules are not used here
-    buildLoggers(config(), logger(), self.commandName());
-
     /// After initialized loggers but before initialized signal handling.
     if (should_setup_watchdog)
         setupWatchdog();
+    else
+        buildLoggers(config(), logger(), self.commandName());
 
     /// Create pid file.
     if (config().has("pid"))
@@ -391,12 +393,12 @@ void BaseDaemon::initialize(Application & self)
         if (core_path.empty())
             core_path = getDefaultCorePath();
 
-        tryCreateDirectories(&logger(), core_path);
+        tryCreateDirectories(getLogger("Application"), core_path);
 
         if (!(fs::exists(core_path) && fs::is_directory(core_path)))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
-            tryCreateDirectories(&logger(), core_path);
+            tryCreateDirectories(getLogger("Application"), core_path);
         }
 
         if (0 != chdir(core_path.c_str()))
@@ -423,7 +425,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         /// In release builds send it to sentry (if it is configured)
         if (auto * sentry = SentryWriter::getInstance())
         {
-            LOG_DEBUG(&logger(), "Enable sending LOGICAL_ERRORs to sentry");
+            LOG_DEBUG(getLogger("Application"), "Enable sending LOGICAL_ERRORs to sentry");
             Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
             {
                 if (!remote && code == ErrorCodes::LOGICAL_ERROR)
@@ -469,11 +471,11 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    logger().information("Starting " + std::string{VERSION_FULL}
+    LOG_INFO(getLogger("Application"), fmt::runtime("Starting " + std::string{VERSION_FULL}
         + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", git hash: " + std::string(GIT_HASH)
         + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"
-        + ", PID " + std::to_string(getpid()));
+        + ", PID " + std::to_string(getpid())));
 }
 
 void BaseDaemon::defineOptions(Poco::Util::OptionSet & new_options)
@@ -530,11 +532,11 @@ void BaseDaemon::handleSignal(int signal_id)
 void BaseDaemon::onInterruptSignals(int signal_id)
 {
     is_cancelled = true;
-    LOG_INFO(&logger(), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
+    LOG_INFO(getLogger("Application"), "Received termination signal ({})", strsignal(signal_id)); // NOLINT(concurrency-mt-unsafe) // it is not thread-safe but ok in this context
 
     if (terminate_signals_counter >= 2)
     {
-        LOG_INFO(&logger(), "This is the second termination signal. Immediately terminate.");
+        LOG_INFO(getLogger("Application"), "This is the second termination signal. Immediately terminate.");
         call_default_signal_handler(signal_id);
         /// If the above did not help.
         _exit(128 + signal_id);
@@ -583,6 +585,7 @@ void BaseDaemon::setupWatchdog()
 
         if (0 == pid)
         {
+            buildLoggers(config(), logger());
             updateCurrentThreadIdAfterFork();
             logger().information("Forked a child process to watch");
 #if defined(OS_LINUX)
@@ -601,6 +604,8 @@ void BaseDaemon::setupWatchdog()
 
             return;
         }
+
+        quill::Backend::start();
 
 #if defined(OS_LINUX)
         /// Tell the service manager the actual main process is not this one but the forked process

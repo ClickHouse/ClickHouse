@@ -158,6 +158,7 @@ function clone_submodules
             contrib/incbin
             contrib/yaml-cpp
             contrib/corrosion
+            contrib/quill
         )
 
         git submodule sync

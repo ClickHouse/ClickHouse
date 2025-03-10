@@ -13,19 +13,17 @@ std::unordered_map<UInt64, std::pair<time_t, size_t>> LogFrequencyLimiterImpl::l
 time_t LogFrequencyLimiterImpl::last_cleanup = 0;
 std::mutex LogFrequencyLimiterImpl::mutex;
 
-void LogFrequencyLimiterImpl::log(Poco::Message & message)
+bool LogFrequencyLimiterImpl::shouldLogMessage(Poco::Message & message)
 {
     std::string_view pattern = message.getFormatString();
     if (pattern.empty())
     {
         /// Do not filter messages without a format string
-        if (auto * channel = logger->getChannel())
-            channel->log(message);
-        return;
+        return true;
     }
 
     SipHash hash;
-    hash.update(logger->name());
+    hash.update(logger->getName());
     /// Format strings are compile-time constants, so they are uniquely identified by pointer and size
     hash.update(reinterpret_cast<uintptr_t>(pattern.data()));
     hash.update(pattern.size());
@@ -59,13 +57,12 @@ void LogFrequencyLimiterImpl::log(Poco::Message & message)
     /// The message it too frequent, skip it for now
     /// NOTE It's not optimal because we format the message first and only then check if we need to actually write it, see LOG_IMPL macro
     if (!need_log)
-        return;
+        return false;
 
     if (skipped_similar_messages)
         message.appendText(fmt::format(" (skipped {} similar messages)", skipped_similar_messages));
 
-    if (auto * channel = logger->getChannel())
-        channel->log(message);
+    return true;
 }
 
 void LogFrequencyLimiterImpl::cleanup(time_t too_old_threshold_s)
@@ -97,7 +94,7 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
     }
 
     time_t now = time(nullptr);
-    UInt128 name_hash = sipHash128(logger->name().c_str(), logger->name().size());
+    UInt128 name_hash = sipHash128(logger->getName().data(), logger->getName().size());
 
     std::lock_guard lock(mutex);
 
@@ -136,7 +133,7 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
             DateLUT::instance().timeToString(now),
             accepted_count,
             total_count,
-            logger->name());
+            logger->getName());
 
         register_as_first();
         return;
@@ -150,19 +147,17 @@ LogSeriesLimiter::LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, tim
     ++total_count;
 }
 
-void LogSeriesLimiter::log(Poco::Message & message)
+bool LogSeriesLimiter::shouldLogMessage(Poco::Message & message)
 {
     std::string_view pattern = message.getFormatString();
     if (pattern.empty())
     {
         /// Do not filter messages without a format string
-        if (auto * channel = logger->getChannel())
-            channel->log(message);
-        return;
+        return true;
     }
 
     if (!accepted)
-        return;
+        return false;
 
     if (!debug_message.empty())
     {
@@ -170,6 +165,14 @@ void LogSeriesLimiter::log(Poco::Message & message)
         debug_message.clear();
     }
 
-    if (auto * channel = logger->getChannel())
-        channel->log(message);
+    return true;
+}
+
+bool LogToStrImpl::shouldLogMessage(Poco::Message & message)
+{
+    out_str = message.getText();
+    if (!propagate_to_actual_log)
+        return false;
+
+    return true;
 }

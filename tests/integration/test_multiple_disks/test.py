@@ -493,10 +493,10 @@ def test_no_warning_about_zero_max_data_part_size(start_cluster):
         )
         node.query("DROP TABLE IF EXISTS default.test_warning_table SYNC")
         log = get_log(node)
-        assert not re.search("Warning.*Volume.*special_warning_zero_volume", log)
-        assert not re.search("Warning.*Volume.*special_warning_default_volume", log)
-        assert re.search("Warning.*Volume.*special_warning_small_volume", log)
-        assert not re.search("Warning.*Volume.*special_warning_big_volume", log)
+        assert not node.grep_in_log("Warning.*Volume.*special_warning_zero_volume")
+        assert not node.grep_in_log("Warning.*Volume.*special_warning_default_volume")
+        assert node.grep_in_log("Warning.*Volume.*special_warning_small_volume")
+        assert not node.grep_in_log("Warning.*Volume.*special_warning_big_volume")
 
 
 @pytest.mark.parametrize(
