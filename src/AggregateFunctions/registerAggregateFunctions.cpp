@@ -108,6 +108,8 @@ void registerAggregateFunctionCombinatorsArgMinArgMax(AggregateFunctionCombinato
 
 void registerWindowFunctions(AggregateFunctionFactory & factory);
 
+void registerAggregateFunctionsNumericIndexedVector(AggregateFunctionFactory & factory);
+
 void registerAggregateFunctions()
 {
     {
@@ -197,6 +199,8 @@ void registerAggregateFunctions()
         registerAggregateFunctionDistinctJSONPathsAndTypes(factory);
 
         registerWindowFunctions(factory);
+
+        registerAggregateFunctionsNumericIndexedVector(factory);
     }
 
     {
