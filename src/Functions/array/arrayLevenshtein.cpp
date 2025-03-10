@@ -18,10 +18,9 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-extern const int LOGICAL_ERROR;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int SIZES_OF_ARRAYS_DONT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LOGICAL_ERROR;
+    extern const int SIZES_OF_ARRAYS_DONT_MATCH;
 }
 
 /// arrayLevenshtein([1,2,3,4], [1,3,2,4]) = 2
@@ -35,7 +34,6 @@ public:
 
     String getName() const override { return name; }
 
-    bool isVariadic() const override { return false; }
     size_t getNumberOfArguments() const override { return T::arguments; }
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -43,45 +41,36 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.size() != T::arguments)
-          throw Exception(
-                  ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                  "Function {}'s arguments number must be {}.",
-                  getName(),
-                  T::arguments);
-
-        DataTypes arguments_types;
-        for (size_t index = 0; index < arguments.size(); ++index)
-        {
-            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
-
-            if (!array_type)
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Argument {} of function {} must be array. Found {} instead.",
-                    toString(index + 1),
-                    getName(),
-                    arguments[index].type->getName());
-
-            auto nested_type = array_type->getNestedType();
-            arguments_types.emplace_back(nested_type);
-        }
-
+        FunctionArgumentDescriptors args_descriptors;
         switch (T::impl)
         {
             case 0:
+                args_descriptors = FunctionArgumentDescriptors{
+                    {"from", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+                    {"to", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+                };
+                validateFunctionArguments(*this, arguments, args_descriptors);
                 return std::make_shared<DataTypeUInt32>();
             case 1:
             case 2:
+                args_descriptors = FunctionArgumentDescriptors{
+                    {"from", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+                    {"to", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+                    {"from_weights", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+                    {"to_weights", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+                };
+                validateFunctionArguments(*this, arguments, args_descriptors);
                 for (size_t index = 2; index < 4; ++index)
                 {
-                  if (!WhichDataType(arguments_types[index]).isFloat64())
-                    throw Exception(
-                        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                        "Argument {} of function {} must be array of Float64. Found {} instead.",
-                        toString(index + 1),
-                        getName(),
-                        arguments_types[index]->getName());
+                    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
+                    auto nested_type = array_type->getNestedType();
+                    if (!WhichDataType(nested_type).isFloat64())
+                        throw Exception(
+                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                            "Argument {} of function {} must be array of Float64. Found {} instead.",
+                            toString(index + 1),
+                            getName(),
+                            nested_type->getName());
                 }
                 return std::make_shared<DataTypeFloat64>();
         }
