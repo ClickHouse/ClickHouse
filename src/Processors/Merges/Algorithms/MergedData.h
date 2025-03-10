@@ -2,6 +2,7 @@
 
 #include <Processors/Chunk.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+#include "Columns/IColumn.h"
 
 namespace DB
 {
@@ -57,6 +58,12 @@ protected:
     const bool use_average_block_size = false;
 
     bool need_flush = false;
+
+    using InsertFromFunc = IColumnInsertFromFunc;
+    std::vector<InsertFromFunc> insert_from_functions;
+
+    using InsertRangeFromFunc = IColumnInsertRangeFromFunc;
+    std::vector<InsertRangeFromFunc> insert_range_from_functions;
 };
 
 }

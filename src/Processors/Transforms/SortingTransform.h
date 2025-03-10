@@ -31,6 +31,12 @@ private:
 
     bool has_collation = false;
 
+    using InsertFromFunc = IColumnInsertFromFunc;
+    std::vector<InsertFromFunc> insert_from_functions;
+
+    using InsertRangeFromFunc = IColumnInsertRangeFromFunc;
+    std::vector<InsertRangeFromFunc> insert_range_from_functions;
+
     /** Two different cursors are supported - with and without Collation.
       * Templates are used (instead of virtual functions in SortCursor) for zero-overhead.
       */

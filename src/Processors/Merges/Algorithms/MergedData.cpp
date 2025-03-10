@@ -1,3 +1,6 @@
+#include <Columns/ColumnFixedString.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
@@ -30,14 +33,23 @@ void MergedData::initialize(const Block & header, const IMergingAlgorithm::Input
         if (columns[i]->hasDynamicStructure())
             columns[i]->takeDynamicStructureFromSourceColumns(source_columns[i]);
     }
+
+    insert_from_functions.resize(columns.size());
+    insert_range_from_functions.resize(columns.size());
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        insert_from_functions[i] = columns[i]->getInsertFromFunc();
+        insert_range_from_functions[i] = columns[i]->getInsertRangeFromFunc();
+    }
 }
 
 void MergedData::insertRow(const ColumnRawPtrs & raw_columns, size_t row, size_t block_size)
 {
+
     size_t num_columns = raw_columns.size();
     chassert(columns.size() == num_columns);
     for (size_t i = 0; i < num_columns; ++i)
-        columns[i]->insertFrom(*raw_columns[i], row);
+        insert_from_functions[i](*columns[i], *raw_columns[i], row);
 
     ++total_merged_rows;
     ++merged_rows;
@@ -51,9 +63,9 @@ void MergedData::insertRows(const ColumnRawPtrs & raw_columns, size_t start_inde
     for (size_t i = 0; i < num_columns; ++i)
     {
         if (length == 1)
-            columns[i]->insertFrom(*raw_columns[i], start_index);
+            insert_from_functions[i](*columns[i], *raw_columns[i], start_index);
         else
-            columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
+            insert_range_from_functions[i](*columns[i], *raw_columns[i], start_index, length);
     }
 
     total_merged_rows += length;
