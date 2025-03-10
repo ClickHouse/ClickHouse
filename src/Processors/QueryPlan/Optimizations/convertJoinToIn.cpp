@@ -13,9 +13,6 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Storages/System/StorageSystemColumns.h>
-#include <Storages/System/StorageSystemReplicas.h>
-#include <Storages/System/StorageSystemTables.h>
 
 
 namespace DB::Setting
@@ -30,14 +27,8 @@ namespace DB::QueryPlanOptimizations
 static bool findReadingStep(QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
-    if (dynamic_cast<ISourceStep *>(step))
-    {
-        /// might be more cases here
-        if (typeid_cast<DB::ReadFromSystemColumns *>(step) || typeid_cast<DB::ReadFromSystemReplicas *>(step)
-            || typeid_cast<DB::ReadFromSystemOneBlock *>(step) || typeid_cast<DB::ReadFromSystemTables *>(step))
-            return false;
+    if (typeid_cast<ReadFromMergeTree *>(step))
         return true;
-    }
 
     if (node.children.size() != 1)
         return false;
