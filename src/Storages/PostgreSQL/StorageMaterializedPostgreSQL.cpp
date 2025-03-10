@@ -29,6 +29,7 @@
 #include <Parsers/formatAST.h>
 
 #include <Interpreters/applyTableOverride.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 
 #include <Storages/StorageFactory.h>

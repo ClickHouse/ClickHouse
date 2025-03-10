@@ -2688,6 +2688,9 @@ def test_registry(started_cluster):
 
     node1.query(f"DROP TABLE {db_name}.{table_name} SYNC")
 
+    node1.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node2.query(f"DROP DATABASE IF EXISTS {db_name}")
+
     assert zk.exists(keeper_path) is None
 
 
