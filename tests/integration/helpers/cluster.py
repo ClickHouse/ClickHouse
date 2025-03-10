@@ -1555,7 +1555,7 @@ class ClickHouseCluster:
         with_nginx=False,
         with_redis=False,
         with_minio=False,
-        with_remote_database_disk=None,
+        with_remote_database_disk=False,
         with_azurite=False,
         with_cassandra=False,
         with_ldap=False,
