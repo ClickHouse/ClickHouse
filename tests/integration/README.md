@@ -191,7 +191,7 @@ It can be rebuild with
 
 ```
 cd docker/test/integration/runner
-docker build -t clickhouse/integration-test-runner .
+docker build -t clickhouse/integration-tests-runner .
 ```
 
 If your docker configuration doesn't allow access to public internet with docker build command you may also need to add option --network=host if you rebuild image for a local integration testsing.
