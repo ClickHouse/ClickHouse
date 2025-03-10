@@ -782,14 +782,23 @@ def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_
     size = 1000
     if use_multipart_copy:
         size = 10000000
-    (backup_events, _) = check_backup_and_restore(
+    (backup_events, restore_events) = check_backup_and_restore(
         storage_policy,
         backup_destination,
         backup_settings=settings,
         restore_settings=settings,
         size=size
     )
+
     check_system_tables(backup_events["query_id"])
+
+    for events in [backup_events, restore_events]:
+        assert "S3WriteRequestsErrors" not in events
+        assert "DiskS3WriteRequestsErrors" not in events
+        assert "S3ReadRequestsErrors" not in events
+        assert "DiskS3ReadRequestsErrors" not in events
+        assert "S3CopyObject" not in events  # Native copy is not possible due to different credentials
+        assert ("S3CreateMultipartUpload" in events) == use_multipart_copy
 
 
 def test_backup_restore_system_tables_with_plain_rewritable_disk():
