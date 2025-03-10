@@ -1268,7 +1268,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
                 scope,
                 identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */))
             {
-                return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::ALIASES };
+                return IdentifierResolveResult(resolved_identifier, IdentifierResolvePlace::ALIASES);
             }
             return {};
         }
@@ -1283,7 +1283,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         }
     }
 
-    return { .resolved_identifier = alias_node, .resolve_place = IdentifierResolvePlace::ALIASES };
+    return IdentifierResolveResult(alias_node, IdentifierResolvePlace::ALIASES);
 }
 
 /** Try to resolve identifier recursively in parent scopes.
@@ -1533,7 +1533,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
         if (cte_query_node_it != scope.cte_name_to_query_node.end()
             && !ctes_in_resolve_process.contains(cte_query_node_it->second))
         {
-            resolve_result = { .resolved_identifier = cte_query_node_it->second, .resolve_place = IdentifierResolvePlace::CTE };
+            resolve_result = IdentifierResolveResult(cte_query_node_it->second, IdentifierResolvePlace::CTE);
         }
     }
 
@@ -4358,8 +4358,9 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
 
                 scope.popExpressionNode();
 
-                auto resolved_identifier = table_identifier_resolve_result.resolved_identifier;
+                table_identifier_resolve_result.rethrow();
 
+                auto resolved_identifier = table_identifier_resolve_result.resolved_identifier;
                 if (!resolved_identifier)
                     throw Exception(ErrorCodes::UNKNOWN_TABLE,
                         "Unknown table expression identifier '{}' in scope {}",
