@@ -666,7 +666,26 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 /// Not all requests can be retried in that way.
                 /// Requests that read out response body to build the result are possible to retry.
                 /// Requests that expose the response stream as an answer are not retried with that code. E.g. GetObject.
-                return request_fn_(request_);
+                auto outcome = request_fn_(request_);
+
+                if (!outcome.IsSuccess())
+                {
+                    auto error = outcome.GetError();
+                    if ((error.GetErrorType() == CoreErrors::ACCESS_DENIED) && credentials_provider)
+                    {
+                        auto old_credentials = credentials_provider->GetAWSCredentials();
+                        credentials_provider->Reload();
+                        if (credentials_provider->GetAWSCredentials() != old_credentials)
+                        {
+                            auto sleep_ms = client_configuration.retryStrategy->CalculateDelayBeforeNextRetry(error, attempt_no);
+                            LOG_WARNING(log, "Request failed, now waiting {} ms before attempting again", sleep_ms);
+                            sleepForMilliseconds(sleep_ms);
+                            continue;
+                        }
+                    }
+                }
+
+                return outcome;
             }
             catch (Poco::Net::NetException &)
             {
