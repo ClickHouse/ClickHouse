@@ -101,16 +101,15 @@ JoinStepLogical::JoinStepLogical(
     JoinInfo join_info_,
     JoinExpressionActions join_expression_actions_,
     Names required_output_columns_,
-    ContextPtr query_context_)
+    bool use_nulls_,
+    JoinSettings join_settings_,
+    SortingStep::Settings sorting_settings_)
     : expression_actions(std::move(join_expression_actions_))
     , join_info(std::move(join_info_))
     , required_output_columns(std::move(required_output_columns_))
-    , use_nulls(query_context_->getSettingsRef()[Setting::join_use_nulls])
-    , join_settings(JoinSettings::create(query_context_->getSettingsRef()))
-    , sorting_settings(*query_context_)
-    , expression_actions_settings(query_context_->getSettingsRef())
-    , tmp_volume(query_context_->getGlobalTemporaryVolume())
-    , tmp_data(query_context_->getTempDataOnDisk())
+    , use_nulls(use_nulls_) // query_context_->getSettingsRef()[Setting::join_use_nulls])
+    , join_settings(std::move(join_settings_)) // JoinSettings::create(query_context_->getSettingsRef()))
+    , sorting_settings(std::move(sorting_settings_)) //*query_context_)
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -519,9 +518,12 @@ JoinPtr JoinStepLogical::convertToPhysical(
     UInt64 max_threads,
     UInt64 max_entries_for_hash_table_stats,
     String initial_query_id,
-    std::chrono::milliseconds lock_acquire_timeout)
+    std::chrono::milliseconds lock_acquire_timeout,
+    const ExpressionActionsSettings & actions_settings)
 {
-    auto table_join = std::make_shared<TableJoin>(join_settings, use_nulls, tmp_volume, tmp_data);
+    auto table_join = std::make_shared<TableJoin>(join_settings, use_nulls,
+        Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
+        Context::getGlobalContextInstance()->getTempDataOnDisk());
 
     auto & join_expression = join_info.expression;
 
@@ -687,7 +689,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
             }
         }
         ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
-        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), expression_actions_settings);
+        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), actions_settings);
     }
 
     NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
