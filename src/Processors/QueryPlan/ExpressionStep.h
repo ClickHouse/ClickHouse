@@ -25,6 +25,8 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
 
     void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:

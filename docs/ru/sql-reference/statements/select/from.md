@@ -26,7 +26,7 @@ sidebar_label: FROM
 -   [Replicated](../../../engines/table-engines/mergetree-family/replication.md) варианты исполнения `MergeTree` движков.
 -   [View](../../../engines/table-engines/special/view.md), [Buffer](../../../engines/table-engines/special/buffer.md), [Distributed](../../../engines/table-engines/special/distributed.md), и [MaterializedView](../../../engines/table-engines/special/materializedview.md), которые работают поверх других движков, если они созданы для таблиц с движками семейства `MergeTree`.
 
-Теперь `SELECT` запросы с `FINAL` выполняются параллельно и, следовательно, немного быстрее. Но имеются серьезные недостатки при их использовании (смотрите ниже). Настройка [max_final_threads](../../../operations/settings/settings.md#max-final-threads) устанавливает максимальное количество потоков.
+Теперь `SELECT` запросы с `FINAL` выполняются параллельно и, следовательно, немного быстрее. Но имеются серьезные недостатки при их использовании (смотрите ниже). Настройка [max_final_threads](/operations/settings/settings#max_final_threads) устанавливает максимальное количество потоков.
 
 ### Недостатки {#drawbacks}
 

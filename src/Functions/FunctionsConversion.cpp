@@ -45,7 +45,8 @@ FunctionBasePtr createFunctionBaseCast(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type)
+    CastType cast_type,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
 {
     DataTypes data_types(arguments.size());
 
@@ -75,7 +76,8 @@ FunctionBasePtr createFunctionBaseCast(
     {
     }
 
-    return std::make_unique<detail::FunctionCast>(context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
+    return std::make_unique<detail::FunctionCast>(
+        context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, date_time_overflow_behavior);
 }
 
 }

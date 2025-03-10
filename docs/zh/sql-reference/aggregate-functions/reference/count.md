@@ -28,7 +28,7 @@ ClickHouse支持以下 `count` 语法:
 
 **详细信息**
 
-ClickHouse支持 `COUNT(DISTINCT ...)` 语法，这种结构的行为取决于 [count_distinct_implementation](../../../operations/settings/settings.md#settings-count_distinct_implementation) 设置。 它定义了用于执行该操作的 [uniq\*](/sql-reference/aggregate-functions/reference/uniq)函数。 默认值是 [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)函数。
+ClickHouse支持 `COUNT(DISTINCT ...)` 语法，这种结构的行为取决于 [count_distinct_implementation](../../../operations/settings/settings.md#settings-count_distinct_implementation) 设置。 它定义了用于执行该操作的 [uniq\*](/sql-reference/aggregate-functions/reference/uniq)函数。 默认值是 [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)函数。
 
 `SELECT count() FROM table` 这个查询未被优化，因为表中的条目数没有单独存储。 它从表中选择一个小列并计算其值的个数。
 

@@ -11,7 +11,7 @@ INSERT INTO 语句主要用于向系统中添加数据.
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), ...
 ```
 
-您可以在查询中指定要插入的列的列表，如：`[(c1, c2, c3)]`。您还可以使用列[匹配器](../../sql-reference/statements/select/index.md#asterisk)的表达式，例如`*`和/或[修饰符](../../sql-reference/statements/select/index.md#select-modifiers)，例如 [APPLY](../../sql-reference/statements/select/index.md#apply-modifier)， [EXCEPT](../../sql-reference/statements/select/index.md#apply-modifier)， [REPLACE](../../sql-reference/statements/select/index.md#replace-modifier)。
+您可以在查询中指定要插入的列的列表，如：`[(c1, c2, c3)]`。您还可以使用列[匹配器](../../sql-reference/statements/select/index.md#asterisk)的表达式，例如`*`和/或[修饰符](../../sql-reference/statements/select/index.md#select-modifiers)，例如 [APPLY](/sql-reference/statements/select#apply)， [EXCEPT](/sql-reference/statements/select#apply)， [REPLACE](/sql-reference/statements/select#replace)。
 
 例如，考虑该表:
 
@@ -62,7 +62,7 @@ SELECT * FROM insert_select_testtable;
 
 如果 [strict_insert_defaults=1](../../operations/settings/settings.md)，你必须在查询中列出所有没有定义`DEFAULT`表达式的列。
 
-数据可以以ClickHouse支持的任何 [输入输出格式](../../interfaces/formats.md#formats) 传递给INSERT。格式的名称必须显示的指定在查询中：
+数据可以以ClickHouse支持的任何 [输入输出格式](/sql-reference/formats) 传递给INSERT。格式的名称必须显示的指定在查询中：
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
@@ -145,7 +145,7 @@ INSERT INTO [TABLE] FUNCTION table_func ...
 
 **例如**
 
-可以这样使用[remote](../../sql-reference/table-functions/index.md#remote) 表函数:
+可以这样使用[remote](/sql-reference/table-functions/remote) 表函数:
 
 ``` sql
 CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;

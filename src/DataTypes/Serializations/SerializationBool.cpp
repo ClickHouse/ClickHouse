@@ -225,7 +225,8 @@ ReturnType deserializeImpl(
 void SerializationBool::deserializeBinary(DB::Field & field, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
 {
     nested_serialization->deserializeBinary(field, istr, settings);
-    field = bool(field.safeGet<bool>());
+    if (!settings.binary.read_bool_field_as_int)
+        field = bool(field.safeGet<bool>());
 }
 
 SerializationBool::SerializationBool(const SerializationPtr &nested_)
