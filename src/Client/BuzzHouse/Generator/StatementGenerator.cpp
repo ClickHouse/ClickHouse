@@ -3845,14 +3845,14 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
                 {
                     if (val.db && val.db->dname == dname)
                     {
-                        newb.tables[key] = this->tables[key];
+                        newb.tables[key] = val;
                     }
                 }
                 for (const auto & [key, val] : this->views)
                 {
                     if (val.db && val.db->dname == dname)
                     {
-                        newb.views[key] = this->views[key];
+                        newb.views[key] = val;
                     }
                 }
                 newb.databases[dname] = this->databases[dname];
@@ -3865,17 +3865,23 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
             if (!backup.partition_id.has_value())
             {
-                for (const auto & [key, _] : backup.tables)
+                for (const auto & [key, val] : backup.databases)
                 {
-                    this->tables[key] = backup.tables.at(key);
+                    this->databases[key] = val;
                 }
-                for (const auto & [key, _] : backup.views)
+                for (const auto & [key, val] : backup.tables)
                 {
-                    this->views[key] = backup.views.at(key);
+                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    {
+                        this->tables[key] = val;
+                    }
                 }
-                for (const auto & [key, _] : backup.databases)
+                for (const auto & [key, val] : backup.views)
                 {
-                    this->databases[key] = backup.databases.at(key);
+                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    {
+                        this->views[key] = val;
+                    }
                 }
             }
         }
