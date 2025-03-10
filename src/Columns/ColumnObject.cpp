@@ -8,7 +8,6 @@
 #include <IO/ReadBufferFromString.h>
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
-#include <base/EnumReflection.h>
 
 namespace DB
 {
@@ -1756,10 +1755,10 @@ void ColumnObject::fillPathColumnFromSharedData(IColumn & path_column, StringRef
 }
 
 /// Class that allows to iterate over paths inside single row in ColumnObject in sorted order.
-class ColumnObject::SortedPathIterator
+class ColumnObject::SortedPathsIterator
 {
 public:
-    SortedPathIterator(const ColumnObject & column_object_, size_t row_)
+    SortedPathsIterator(const ColumnObject & column_object_, size_t row_)
         : column_object(column_object_)
         , typed_paths_it(column_object.sorted_typed_paths.begin())
         , typed_paths_end(column_object.sorted_typed_paths.end())
@@ -1794,7 +1793,7 @@ public:
 
     /// Compare paths and values of 2 iterators.
     /// Returns -1, 0, 1 if this iterator is less, equal or greater than rhs.
-    int compare(const SortedPathIterator & rhs, int nan_direction_hint) const
+    int compare(const SortedPathsIterator & rhs, int nan_direction_hint) const
     {
         /// First, compare paths as strings.
         auto path = getCurrentPath();
@@ -1960,8 +1959,8 @@ int ColumnObject::doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_d
     /// We compare objects lexicographically like maps.
     const ColumnObject & rhs_object = assert_cast<const ColumnObject &>(rhs);
     /// Iterate over paths in both columns in sorted order.
-    SortedPathIterator it(*this, n);
-    SortedPathIterator rhs_it(rhs_object, m);
+    SortedPathsIterator it(*this, n);
+    SortedPathsIterator rhs_it(rhs_object, m);
 
     while (!it.end() && !rhs_it.end())
     {
