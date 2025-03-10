@@ -2483,9 +2483,9 @@ message MergeTreeIndexFunc {
 
 message GenerateRandomFunc {
     required string structure = 1;
-    optional uint32 random_seed = 2;
-    optional uint32 max_string_length = 3;
-    optional uint32 max_array_length = 4;
+    optional uint64 random_seed = 2;
+    optional uint64 max_string_length = 3;
+    optional uint64 max_array_length = 4;
 }
 
 message TableFunction {

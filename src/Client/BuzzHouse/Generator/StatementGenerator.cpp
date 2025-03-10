@@ -698,7 +698,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             /// Use generateRandom
             String buf;
             bool first = true;
-            std::uniform_int_distribution<uint32_t> rows_dist(1, 16384);
+            std::uniform_int_distribution<uint64_t> rows_dist(1, 16384);
             std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
             std::uniform_int_distribution<uint64_t> nested_rows_dist(1, 1024);
             SelectStatementCore * ssc = sel->mutable_select_core();
@@ -726,7 +726,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                 first = false;
             }
             grf->set_structure(std::move(buf));
-            grf->set_random_seed(rg.nextRandomUInt32());
+            grf->set_random_seed(rg.nextRandomUInt64());
             grf->set_max_string_length(string_length_dist(rg.generator));
             grf->set_max_array_length(nested_rows_dist(rg.generator));
             ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));

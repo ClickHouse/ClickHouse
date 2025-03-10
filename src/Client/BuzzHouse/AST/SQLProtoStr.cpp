@@ -2008,21 +2008,18 @@ CONV_FN(GenerateRandomFunc, grfunc)
     ret += "'";
     if (grfunc.has_random_seed())
     {
-        ret += ", '";
+        ret += ", ";
         ret += std::to_string(grfunc.random_seed());
-        ret += "'";
     }
     if (grfunc.has_max_string_length())
     {
-        ret += ", '";
+        ret += ", ";
         ret += std::to_string(grfunc.max_string_length());
-        ret += "'";
     }
     if (grfunc.has_max_array_length())
     {
-        ret += ", '";
+        ret += ", ";
         ret += std::to_string(grfunc.max_array_length());
-        ret += "'";
     }
     ret += ")";
 }
