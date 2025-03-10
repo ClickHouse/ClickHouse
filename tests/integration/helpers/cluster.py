@@ -50,7 +50,7 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from kazoo.client import KazooClient
+from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
@@ -3215,13 +3215,17 @@ class ClickHouseCluster:
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
 
-    def get_kazoo_client(self, zoo_instance_name, timeout: float = 30.0, retries=10):
+    def get_kazoo_client(
+        self, zoo_instance_name, timeout: float = 30.0, retries=10, external_port=None
+    ):
         use_ssl = False
         if self.with_zookeeper_secure:
             port = self.zookeeper_secure_port
             use_ssl = True
         elif self.with_zookeeper:
             port = self.zookeeper_port
+        elif external_port is not None:
+            port = external_port
         else:
             raise Exception("Cluster has no ZooKeeper")
 
@@ -3232,7 +3236,7 @@ class ClickHouseCluster:
         kazoo_retry = {
             "max_tries": retries,
         }
-        zk = KazooClient(
+        zk = KazooClientWithImplicitRetries(
             hosts=f"{ip}:{port}",
             timeout=timeout,
             connection_retry=kazoo_retry,

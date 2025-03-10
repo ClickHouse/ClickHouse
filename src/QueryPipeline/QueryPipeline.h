@@ -35,7 +35,7 @@ class ReadProgressCallback;
 struct ColumnWithTypeAndName;
 using ColumnsWithTypeAndName = std::vector<ColumnWithTypeAndName>;
 
-class QueryCacheWriter;
+class QueryResultCacheWriter;
 
 class SourceFromChunks;
 
@@ -110,9 +110,9 @@ public:
     void setLimitsAndQuota(const StreamLocalLimits & limits, std::shared_ptr<const EnabledQuota> quota_);
     bool tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const;
 
-    void writeResultIntoQueryCache(std::shared_ptr<QueryCacheWriter> query_cache_writer);
-    void finalizeWriteInQueryCache();
-    void readFromQueryCache(
+    void writeResultIntoQueryResultCache(std::shared_ptr<QueryResultCacheWriter> query_result_cache_writer);
+    void finalizeWriteInQueryResultCache();
+    void readFromQueryResultCache(
         std::unique_ptr<SourceFromChunks> source,
         std::unique_ptr<SourceFromChunks> source_totals,
         std::unique_ptr<SourceFromChunks> source_extremes);

@@ -66,6 +66,8 @@ class Labels:
     RELEASE_LTS = "release-lts"
     SUBMODULE_CHANGED = "submodule changed"
 
+    CI_PERFORMANCE = "ci-performance"
+
     # automatic backport for critical bug fixes
     AUTO_BACKPORT = {"pr-critical-bugfix"}
 
