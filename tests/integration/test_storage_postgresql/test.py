@@ -846,33 +846,62 @@ def test_fixed_string_type(started_cluster):
 
 def test_fixed_string_type_conversions(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
+
     cursor.execute("DROP TABLE IF EXISTS test_fixed_string_type_conversions")
     cursor.execute(
         "CREATE TABLE test_fixed_string_type_conversions (str CHAR(10))"
     )
-    cursor.execute("INSERT INTO test_fixed_string_type_conversions VALUES ('012')")
+    cursor.execute("INSERT INTO test_fixed_string_type_conversions VALUES ('123')")
 
     # Reading PostgreSQL fixed-sized strings
     result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV")
-    assert result.strip() == "012"
+    assert result == "123       \n"
 
     node1.query("DROP TABLE IF EXISTS test_fixed_string_type_conversions")
     node1.query(
         "CREATE TABLE test_fixed_string_type_conversions(str FixedString(10)) Engine = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV"
     )
     result = node1.query("SELECT * FROM test_fixed_string_type_conversions")
-    assert result.strip() == "012"
+    assert result == "123       \n"
 
     # Inserting into PostgreSQL fixed-sized strings
-    node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') VALUES ('345')")
+    node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') VALUES ('456')")
     result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV")
-    assert result.strip() == "012\t345"
+    assert result == "123       \n456       \n"
 
-    node1.query("INSERT INTO test_fixed_string_type_conversions VALUES ('345')")
-    result = node1.query("SELECT * FROM test_fixed_string_type_conversions")
-    assert result.strip() == "012\t345"
+    node1.query("INSERT INTO test_fixed_string_type_conversions VALUES ('789')")
+    result = node1.query("SELECT * FROM test_fixed_string_type_conversions FORMAT TSV")
+    assert result == "123       \n456       \n789       \n"
 
     node1.query("DROP TABLE test_fixed_string_type_conversions")
+
+    cursor.execute("DROP TABLE IF EXISTS test_fixed_string_type_conversions_array")
+    cursor.execute(
+        "CREATE TABLE test_fixed_string_type_conversions_array (str CHAR(10)[])"
+    )
+    cursor.execute("INSERT INTO test_fixed_string_type_conversions_array VALUES (ARRAY['123'])")
+
+    # Reading PostgreSQL fixed-sized strings
+    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV")
+    assert result.strip() == "['123       ']"
+
+    node1.query("DROP TABLE IF EXISTS test_fixed_string_type_conversions_array")
+    node1.query(
+        "CREATE TABLE test_fixed_string_type_conversions_array(str Array(FixedString(10))) Engine = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV"
+    )
+    result = node1.query("SELECT * FROM test_fixed_string_type_conversions_array")
+    assert result.strip() == "['123       ']"
+
+    # Inserting into PostgreSQL fixed-sized strings
+    node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') VALUES (['456'])")
+    result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV")
+    assert result.strip() == "['123       ', '456       ']"
+
+    node1.query("INSERT INTO test_fixed_string_type_conversions_array VALUES (ARRAY['789'])")
+    result = node1.query("SELECT * FROM test_fixed_string_type_conversions_array FORMAT TSV")
+    assert result.strip() == "['123       ', '456       ', '789       ']"
+
+    node1.query("DROP TABLE test_fixed_string_type_conversions_array")
 
 
 def test_parameters_validation_for_postgresql_function(started_cluster):

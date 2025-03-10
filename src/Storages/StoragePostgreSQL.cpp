@@ -288,6 +288,11 @@ public:
                     }
 
                     row[j] = ostr.str();
+
+                    /// pqxx throws an error when trying to ingest strings ending in \0:
+                    /// pqxx::data_exception: Failure during '[END COPY]': ERROR:  invalid byte sequence for encoding "UTF8": 0x00
+                    if (row[j].has_value() && isFixedString(removeNullable(data_types[j])))
+                        row[j] = row[j]->substr(0, row[j]->find(('\0')));
                 }
             }
 
