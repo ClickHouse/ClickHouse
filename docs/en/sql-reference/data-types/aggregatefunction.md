@@ -46,6 +46,14 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
+## Supported functions {#supported-functions}
+
+The following aggregate functions are supported for use with `AggregateState` in ClickHouse:
+
+- [uniq](/sql-reference/aggregate-functions/reference/uniq)
+- anyIf ([any](/sql-reference/aggregate-functions/reference/any)+[If](/sql-reference/aggregate-functions/combinators#-if))
+- [quantiles](../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
+
 ## Usage {#usage}
 
 ### Data Insertion {#data-insertion}
