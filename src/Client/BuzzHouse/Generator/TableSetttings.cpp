@@ -13,6 +13,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"allow_experimental_block_number_column", CHSetting(trueOrFalse, {}, false)},
     {"allow_experimental_replacing_merge_with_cleanup", CHSetting(trueOrFalse, {}, false)},
     {"allow_floating_point_partition_key", CHSetting(trueOrFalse, {}, false)},
+    {"allow_reduce_blocking_parts_task", CHSetting(trueOrFalse, {}, false)},
     {"allow_remote_fs_zero_copy_replication", CHSetting(trueOrFalse, {}, false)},
     {"allow_suspicious_indices", CHSetting(trueOrFalse, {}, false)},
     {"allow_vertical_merges_from_compact_to_wide_parts", CHSetting(trueOrFalse, {}, false)},
@@ -203,14 +204,29 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
 
 std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting>> allTableSettings;
 
+std::unordered_map<String, CHSetting> restoreSettings
+    = {{"allow_different_database_def", CHSetting(trueOrFalse, {}, false)},
+       {"allow_different_table_def", CHSetting(trueOrFalse, {}, false)},
+       {"allow_non_empty_tables", CHSetting(trueOrFalse, {}, false)},
+       {"allow_s3_native_copy", CHSetting(trueOrFalse, {}, false)},
+       {"async", CHSetting(trueOrFalse, {}, false)},
+       {"internal", CHSetting(trueOrFalse, {}, false)},
+       {"restore_broken_parts_as_detached", CHSetting(trueOrFalse, {}, false)},
+       {"skip_unresolved_access_dependencies", CHSetting(trueOrFalse, {}, false)},
+       {"structure_only", CHSetting(trueOrFalse, {}, false)},
+       {"update_access_entities_dependents", CHSetting(trueOrFalse, {}, false)},
+       {"use_same_password_for_base_backup", CHSetting(trueOrFalse, {}, false)},
+       {"use_same_s3_credentials_for_base_backup", CHSetting(trueOrFalse, {}, false)}};
+
 void loadFuzzerTableSettings(const FuzzConfig & fc)
 {
     if (!fc.storage_policies.empty())
     {
         merge_storage_policies.insert(merge_storage_policies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
-        mergeTreeTableSettings.insert(
-            {{"storage_policy",
-              CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(merge_storage_policies) + "'"; }, {}, false)}});
+        const auto & storage_policy
+            = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(merge_storage_policies) + "'"; }, {}, false);
+        mergeTreeTableSettings.insert({{"storage_policy", storage_policy}});
+        restoreSettings.insert({{"storage_policy", storage_policy}});
     }
     allTableSettings.insert(
         {{MergeTree, mergeTreeTableSettings},
@@ -239,7 +255,8 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
          {Hudi, {}},
          {DeltaLake, {}},
          {IcebergS3, {}},
-         {Merge, {}}});
+         {Merge, {}},
+         {Distributed, distributedTableSettings}});
 }
 
 }

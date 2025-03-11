@@ -387,7 +387,8 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    MemoryWorker memory_worker(config().getUInt64("memory_worker_period_ms", 0));
+    MemoryWorker memory_worker(
+        config().getUInt64("memory_worker_period_ms", 0), config().getBool("memory_worker_correct_memory_tracker", false), /*use_cgroup*/ true, /*page_cache*/ nullptr);
     memory_worker.start();
 
     static ServerErrorHandler error_handler;

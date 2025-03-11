@@ -15,18 +15,13 @@
 #include <Common/StringUtils.h>
 #include <Common/CurrentMetrics.h>
 #include <Storages/MutationCommands.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
 #include <Parsers/formatAST.h>
 #include <base/sort.h>
 #include <cassert>
 #include <ranges>
 #include <Poco/Timestamp.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric ActiveDataMutations;
-    extern const Metric ActiveMetadataMutations;
-}
 
 namespace DB
 {
@@ -61,11 +56,6 @@ ReplicatedMergeTreeQueue::ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & 
     log = getLogger(logger_name);
 }
 
-ReplicatedMergeTreeQueue::~ReplicatedMergeTreeQueue()
-{
-    clear();
-}
-
 void ReplicatedMergeTreeQueue::clear()
 {
     auto locks = lockQueue();
@@ -77,10 +67,6 @@ void ReplicatedMergeTreeQueue::clear()
     mutations_by_znode.clear();
     mutations_by_partition.clear();
     mutation_pointer.clear();
-
-    CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
-    CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
-
     num_data_mutations_to_apply = 0;
     num_metadata_mutations_to_apply = 0;
 }
@@ -1563,7 +1549,7 @@ bool ReplicatedMergeTreeQueue::shouldExecuteLogEntry(
                 {
                     constexpr auto fmt_string = "Not executing log entry {} for part {} because {} merges with TTL already executing, maximum {}.";
                     LOG_DEBUG(LogToStr(out_postpone_reason, log), fmt_string, entry.znode_name, entry.new_part_name, total_merges_with_ttl,
-                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool]);
+                              (*data_settings)[MergeTreeSetting::max_number_of_merges_with_ttl_in_pool].value);
                     return false;
                 }
             }
@@ -2087,6 +2073,18 @@ MergeTreeData::MutationsSnapshotPtr ReplicatedMergeTreeQueue::getMutationsSnapsh
     }
 
     return res;
+}
+
+UInt64 ReplicatedMergeTreeQueue::getNumberOnFlyDataMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return num_data_mutations_to_apply;
+}
+
+UInt64 ReplicatedMergeTreeQueue::getNumberOnFlyMetadataMutations() const
+{
+    std::lock_guard lock(state_mutex);
+    return num_metadata_mutations_to_apply;
 }
 
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(

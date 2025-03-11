@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/first_value
+slug: /sql-reference/aggregate-functions/reference/first_value
 sidebar_position: 137
+title: "first_value"
+description: "It is an alias for any but it was introduced for compatibility with Window Functions, where sometimes it's necessary to process `NULL` values (by default all ClickHouse aggregate functions ignore NULL values)."
 ---
 
 # first_value
@@ -12,7 +14,7 @@ It supports declaring a modifier to respect nulls (`RESPECT NULLS`), both under 
 As with `any`, without Window Functions the result will be random if the source stream is not ordered and the return type
 matches the input type (Null is only returned if the input is Nullable or -OrNull combinator is added).
 
-## examples
+## examples {#examples}
 
 ```sql
 CREATE TABLE test_data
@@ -25,7 +27,7 @@ ENGINE = Memory;
 INSERT INTO test_data (a, b) Values (1,null), (2,3), (4, 5), (6,null);
 ```
 
-### example1
+### example1 {#example1}
 By default, the NULL value is ignored.
 ```sql
 select first_value(b) from test_data;
@@ -37,7 +39,7 @@ select first_value(b) from test_data;
 └────────┘
 ```
 
-### example2
+### example2 {#example2}
 The NULL value is ignored.
 ```sql
 select first_value(b) ignore nulls from test_data
@@ -49,7 +51,7 @@ select first_value(b) ignore nulls from test_data
 └──────────────────────┘
 ```
 
-### example3
+### example3 {#example3}
 The NULL value is accepted.
 ```sql
 select first_value(b) respect nulls from test_data
@@ -61,7 +63,7 @@ select first_value(b) respect nulls from test_data
 └───────────────────────┘
 ```
 
-### example4
+### example4 {#example4}
 Stabilized result using the sub-query with `ORDER BY`.
 ```sql
 SELECT

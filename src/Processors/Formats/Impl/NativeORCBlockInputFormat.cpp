@@ -1,6 +1,7 @@
 #include "NativeORCBlockInputFormat.h"
 
 #if USE_ORC
+#    include <base/MemorySanitizer.h>
 #    include <Columns/ColumnDecimal.h>
 #    include <Columns/ColumnFixedString.h>
 #    include <Columns/ColumnMap.h>
@@ -31,14 +32,13 @@
 #    include <IO/ReadBufferFromMemory.h>
 #    include <IO/WriteHelpers.h>
 #    include <IO/copyData.h>
+#    include <Interpreters/Set.h>
 #    include <Interpreters/castColumn.h>
 #    include <Storages/MergeTree/KeyCondition.h>
 #    include <orc/MemoryPool.hh>
-#    include <Common/Allocator.h>
-#    include <Common/FieldVisitorsAccurateComparison.h>
-#    include <Common/MemorySanitizer.h>
-#    include <Common/quoteString.h>
 #    include <orc/Vector.hh>
+#    include <Common/Allocator.h>
+#    include <Common/quoteString.h>
 
 #    include "ArrowBufferedStreams.h"
 
@@ -543,7 +543,7 @@ static void buildORCSearchArgumentImpl(
             ///     For queries with where condition like "a > 10", if a column contains negative values such as "-1", pushing or not pushing
             ///     down filters would result in different outputs.
             bool skipped = false;
-            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped));
+            auto expect_type = makeNullableRecursively(parseORCType(orc_type, true, false, nullptr, skipped), format_settings);
             const ColumnWithTypeAndName * column = header.findByName(column_name, format_settings.orc.case_insensitive_column_matching);
             if (!expect_type || !column)
             {
@@ -1086,7 +1086,7 @@ NamesAndTypesList NativeORCSchemaReader::readSchema()
     }
 
     if (format_settings.schema_inference_make_columns_nullable == 1)
-        return getNamesAndRecursivelyNullableTypes(header);
+        return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
 }
 
@@ -1781,16 +1781,19 @@ ColumnWithTypeAndName ORCColumnToCHColumn::readColumnFromORCColumn(
             const auto * orc_struct_column = dynamic_cast<const orc::StructVectorBatch *>(orc_column);
             for (size_t i = 0; i < orc_type->getSubtypeCount(); ++i)
             {
-                const auto & field_name = orc_type->getFieldName(i);
+                auto field_name = orc_type->getFieldName(i);
 
                 DataTypePtr nested_type_hint;
                 if (tuple_type_hint)
                 {
                     if (tuple_type_hint->haveExplicitNames())
                     {
-                        auto pos = tuple_type_hint->tryGetPositionByName(field_name);
+                        auto pos = tuple_type_hint->tryGetPositionByName(field_name, case_insensitive_matching);
                         if (pos)
+                        {
                             nested_type_hint = tuple_type_hint->getElement(*pos);
+                            field_name = tuple_type_hint->getNameByPosition(*pos + 1);
+                        }
                     }
                     else if (i < tuple_type_hint->getElements().size())
                         nested_type_hint = tuple_type_hint->getElement(i);

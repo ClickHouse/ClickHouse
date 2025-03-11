@@ -25,7 +25,7 @@ $CLICKHOUSE_CLIENT --query_id "$QUERY_ID" -m -q "
 SET enable_filesystem_cache_log = 1;
 SYSTEM DROP FILESYSTEM CACHE;
 SELECT * FROM test WHERE NOT ignore() LIMIT 1 FORMAT Null;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS filesystem_cache_log;
 "
 
 query="
