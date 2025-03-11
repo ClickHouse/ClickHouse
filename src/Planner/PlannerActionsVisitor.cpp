@@ -678,6 +678,9 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (column_node.hasExpression())
     {
         auto expression = column_node.getExpression();
+        /// In case of constant expression, prefer constant value from QueryTree vs. re-calculating the expression.
+        /// It is possible that during the execution of distributed queries
+        /// source columns from constant expression are removed, so that the attempt to recalculate it fails.
         if (expression->getNodeType() == QueryTreeNodeType::CONSTANT)
             return visitConstant(expression);
         else if (!use_column_identifier_as_action_node_name)
