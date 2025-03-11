@@ -47,11 +47,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsUInt64 max_entries_for_hash_table_stats;
-}
-
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     const Settings & from,
     UInt64 max_entries_for_hash_table_stats_,
