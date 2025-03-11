@@ -40,6 +40,7 @@ RUN apt-get update \
 RUN apt-get update \
     && apt-get install \
         clang-${LLVM_VERSION} \
+        clang-tidy-${LLVM_VERSION} \
         cmake \
         libclang-${LLVM_VERSION}-dev \
         libclang-rt-${LLVM_VERSION}-dev \
