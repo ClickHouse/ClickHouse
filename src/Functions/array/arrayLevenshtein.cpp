@@ -102,6 +102,35 @@ private:
             T::name);
     }
 
+    template<typename N>
+    UInt32 levenshteinDistance(const std::vector<N> from, const std::vector<N> to) const
+    {
+        const size_t m = from.size();
+        const size_t n = to.size();
+        if (m==0 || n==0)
+        {
+            return static_cast<UInt32>(std::max(m, n));
+        }
+        PODArrayWithStackMemory<size_t, 32> v0(n + 1);
+
+        iota(v0.data() + 1, n, size_t(1));
+
+        for (size_t j = 1; j <= m; ++j)
+        {
+            v0[0] = j;
+            size_t prev = j - 1;
+            for (size_t i = 1; i <= n; ++i)
+            {
+                size_t old = v0[i];
+                v0[i] = std::min(prev + (from[j - 1] != to[i - 1]),
+                        std::min(v0[i - 1], v0[i]) + 1);
+                prev = old;
+            }
+        }
+        return static_cast<UInt32>(v0[n]);
+
+    }
+
     template <typename N>
     bool simpleLevenshteinString(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
     {
@@ -119,32 +148,23 @@ private:
         {
             const size_t m = from_offsets[row] - prev_from_offset;
             const size_t n = to_offsets[row] - prev_to_offset;
-            if (m==0 || n==0)
+            const std::vector<StringRef> & from = [&]()
             {
-                prev_from_offset = from_offsets[row];
-                prev_to_offset = to_offsets[row];
-                res_values[row] = static_cast<UInt32>(std::max(m, n));
-                continue;
-            }
-            PODArrayWithStackMemory<size_t, 32> v0(n + 1);
-
-            iota(v0.data() + 1, n, size_t(1));
-
-            for (size_t j = 1; j <= m; ++j)
+                std::vector<StringRef> temp;
+                temp.reserve(m);
+                for (size_t j = 0; j < m; ++j) { temp.emplace_back(from_data->getDataAt(prev_from_offset + j)); }
+                return temp;
+            }();
+            const std::vector<StringRef> & to = [&]()
             {
-                v0[0] = j;
-                size_t prev = j - 1;
-                for (size_t i = 1; i <= n; ++i)
-                {
-                    size_t old = v0[i];
-                    v0[i] = std::min(prev + (from_data->getDataAt(prev_from_offset + j - 1) != to_data->getDataAt(prev_to_offset + i - 1)),
-                            std::min(v0[i - 1], v0[i]) + 1);
-                    prev = old;
-                }
-            }
+                std::vector<StringRef> temp;
+                temp.reserve(m);
+                for (size_t j = 0; j < n; ++j) { temp.emplace_back(to_data->getDataAt(prev_to_offset + j)); }
+                return temp;
+            }();
             prev_from_offset = from_offsets[row];
             prev_to_offset = to_offsets[row];
-            res_values[row] = static_cast<UInt32>(v0[n]);
+            res_values[row] = levenshteinDistance<StringRef>(from, to);
         }
         return true;
     }
@@ -166,36 +186,29 @@ private:
 
         for (size_t row = 0; row < columns[0]->size(); row++)
         {
-            const PaddedPODArray<N> from(vec_from.begin() + prev_from_offset, vec_from.begin() + from_offsets[row]);
+            const std::vector<N> from(vec_from.begin() + prev_from_offset, vec_from.begin() + from_offsets[row]);
             prev_from_offset = from_offsets[row];
-            const PaddedPODArray<N> to(vec_to.begin() + prev_to_offset, vec_to.begin() + to_offsets[row]);
+            const std::vector<N> to(vec_to.begin() + prev_to_offset, vec_to.begin() + to_offsets[row]);
             prev_to_offset = to_offsets[row];
-            const size_t m = from.size();
-            const size_t n = to.size();
-            if (m==0 || n==0)
-            {
-                res_values[row] = static_cast<UInt32>(std::max(m, n));
-                continue;
-            }
-            PODArrayWithStackMemory<size_t, 32> v0(n + 1);
 
-            iota(v0.data() + 1, n, size_t(1));
-
-            for (size_t j = 1; j <= m; ++j)
-            {
-                v0[0] = j;
-                size_t prev = j - 1;
-                for (size_t i = 1; i <= n; ++i)
-                {
-                    size_t old = v0[i];
-                    v0[i] = std::min(prev + (from[j - 1] != to[i - 1]),
-                            std::min(v0[i - 1], v0[i]) + 1);
-                    prev = old;
-                }
-            }
-            res_values[row] = static_cast<UInt32>(v0[n]);
+            res_values[row] = levenshteinDistance<N>(from, to);
         }
         return true;
+    }
+
+    void SimpleLevenshteinGeneric(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
+    {
+        const ColumnArray * column_from = columns[0];
+        const ColumnArray * column_to = columns[1];
+        for (size_t row = 0; row < column_from->size(); row++)
+        {
+            // Effective Levenshtein realization from Common/levenshteinDistance
+            Array from = (*column_from)[row].safeGet<Array>();
+            Array to = (*column_to)[row].safeGet<Array>();
+            const std::vector<Field> from_vec(from.begin(), from.end());
+            const std::vector<Field> to_vec(to.begin(), to.end());
+            res_values[row] = levenshteinDistance<Field>(from_vec, to_vec);
+        }
     }
 
     ColumnPtr weightedLevenshteinImpl(std::vector<const ColumnArray *> columns, bool similarity) const
@@ -312,11 +325,9 @@ DataTypePtr FunctionArrayLevenshtein<SimpleLevenshtein>::getReturnTypeImpl(const
 template <>
 ColumnPtr FunctionArrayLevenshtein<SimpleLevenshtein>::execute(std::vector<const ColumnArray *> columns) const
 {
-    const ColumnArray * column_lhs = columns[0];
-    const ColumnArray * column_rhs = columns[1];
     auto res = ColumnUInt32::create();
     ColumnUInt32::Container & res_values = res->getData();
-    res_values.resize(column_lhs->size());
+    res_values.resize(columns[0]->size());
     if (simpleLevenshteinNumber<UInt8>(columns, res_values) || simpleLevenshteinNumber<UInt16>(columns, res_values)
         || simpleLevenshteinNumber<UInt32>(columns, res_values) || simpleLevenshteinNumber<UInt64>(columns, res_values)
         || simpleLevenshteinNumber<UInt128>(columns, res_values) || simpleLevenshteinNumber<UInt256>(columns, res_values)
@@ -327,38 +338,9 @@ ColumnPtr FunctionArrayLevenshtein<SimpleLevenshtein>::execute(std::vector<const
         || simpleLevenshteinNumber<Decimal32>(columns, res_values) || simpleLevenshteinNumber<Decimal64>(columns, res_values)
         || simpleLevenshteinNumber<Decimal128>(columns, res_values) || simpleLevenshteinNumber<Decimal256>(columns, res_values)
         || simpleLevenshteinNumber<DateTime64>(columns, res_values)
-        || simpleLevenshteinString<ColumnString>(columns, res_values) || simpleLevenshteinString<ColumnFixedString>(columns, res_values) )
+        || simpleLevenshteinString<ColumnString>(columns, res_values) || simpleLevenshteinString<ColumnFixedString>(columns, res_values))
         return res;
-    for (size_t row = 0; row < column_lhs->size(); row++)
-    {
-        // Effective Levenshtein realization from Common/levenshteinDistance
-        Array lhs = (*column_lhs)[row].safeGet<Array>();
-        Array rhs = (*column_rhs)[row].safeGet<Array>();
-        const size_t m = lhs.size();
-        const size_t n = rhs.size();
-        if (m==0 || n==0)
-        {
-            res_values[row] = static_cast<UInt32>(std::max(m, n));
-            continue;
-        }
-        PODArrayWithStackMemory<size_t, 32> v0(n + 1);
-
-        iota(v0.data() + 1, n, size_t(1));
-
-        for (size_t j = 1; j <= m; ++j)
-        {
-            v0[0] = j;
-            size_t prev = j - 1;
-            for (size_t i = 1; i <= n; ++i)
-            {
-                size_t old = v0[i];
-                v0[i] = std::min(prev + (lhs[j - 1] != rhs[i - 1]),
-                                 std::min(v0[i - 1], v0[i]) + 1);
-                prev = old;
-            }
-        }
-        res_values[row] = static_cast<UInt32>(v0[n]);
-    }
+    SimpleLevenshteinGeneric(columns, res_values);
     return res;
 }
 
