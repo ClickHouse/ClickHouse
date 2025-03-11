@@ -37,6 +37,7 @@ struct LocalQueryState
     std::unique_ptr<PullingAsyncPipelineExecutor> input_pipeline_executor;
 
     InternalProfileEventsQueuePtr profile_queue;
+    InternalTextLogsQueuePtr logs_queue;
 
     std::unique_ptr<Exception> exception;
 
@@ -171,6 +172,7 @@ private:
     bool pollImpl();
 
     bool needSendProgressOrMetrics();
+    bool needSendLogs();
 
     ContextMutablePtr query_context;
     std::unique_ptr<Session> session;

@@ -1775,7 +1775,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         return;
     }
 
-    if (isEmbeeddedClient())
+    if (isEmbeeddedClient() && parsed_insert_query.infile)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading from INFILE is disabled when you are running client embedded into server.");
 
     query_interrupt_handler.start();
@@ -2176,18 +2176,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
             writeString(fmt::format(fmt::runtime(query_id_format.second), fmt::arg("query_id", client_context->getCurrentQueryId())), *std_out);
             writeChar('\n', *std_out);
             std_out->next();
-        }
-    }
-
-    if (const auto * set_query = parsed_query->as<ASTSetQuery>())
-    {
-        const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
-        if (logs_level_field)
-        {
-            auto logs_level = logs_level_field->safeGet<String>();
-            /// Check that setting value is correct before updating logger level.
-            SettingFieldLogsLevelTraits::fromString(logs_level);
-            updateLoggerLevel(logs_level);
         }
     }
 
