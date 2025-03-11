@@ -43,13 +43,13 @@ void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::un
     {
         const String & next = rg.pickKeyRandomlyFromMap(settings);
 
-        if (i == 0)
+        if (sl->has_setting())
         {
-            sl->set_setting(next);
+            sl->add_other_settings(next);
         }
         else
         {
-            sl->add_other_settings(next);
+            sl->set_setting(next);
         }
     }
 }
@@ -1016,8 +1016,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             const uint32_t column_remove_property = 2;
             const uint32_t column_modify_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
             const uint32_t column_remove_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
-            const uint32_t table_modify_setting = 2 * static_cast<uint32_t>(!allTableSettings.at(t.teng).empty());
-            const uint32_t table_remove_setting = 2 * static_cast<uint32_t>(!allTableSettings.at(t.teng).empty());
+            const uint32_t table_modify_setting = 2;
+            const uint32_t table_remove_setting = 2;
             const uint32_t add_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily());
             const uint32_t remove_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
             const uint32_t materialize_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
@@ -1433,9 +1433,19 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + 1))
             {
-                const auto & tsettings = allTableSettings.at(t.teng);
+                SettingValues * svs = ati->mutable_table_modify_setting();
+                const auto & engineSettings = allTableSettings.at(t.teng);
 
-                generateSettingValues(rg, tsettings, ati->mutable_table_modify_setting());
+                if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+                {
+                    /// Modify table engine settings
+                    generateSettingValues(rg, engineSettings, svs);
+                }
+                if (!svs->has_set_value() || rg.nextSmallNumber() < 4)
+                {
+                    /// Modify server settings
+                    generateSettingValues(rg, serverSettings, svs);
+                }
             }
             else if (
                 table_remove_setting
@@ -1445,9 +1455,19 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + 1))
             {
-                const auto & tsettings = allTableSettings.at(t.teng);
+                SettingList * sl = ati->mutable_table_remove_setting();
+                const auto & engineSettings = allTableSettings.at(t.teng);
 
-                generateSettingList(rg, tsettings, ati->mutable_table_remove_setting());
+                if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+                {
+                    /// Remove table engine settings
+                    generateSettingList(rg, engineSettings, sl);
+                }
+                if (!sl->has_setting() || rg.nextSmallNumber() < 4)
+                {
+                    /// Remove server settings
+                    generateSettingList(rg, serverSettings, sl);
+                }
             }
             else if (
                 add_projection
