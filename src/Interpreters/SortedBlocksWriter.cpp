@@ -278,7 +278,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
 class TemporaryFileLazySource : public ISource
 {
 public:
-    TemporaryFileLazySource(TemporaryBlockStreamReaderHolder reader_)
+    explicit TemporaryFileLazySource(TemporaryBlockStreamReaderHolder reader_)
         : ISource(reader_->getHeader(), true)
         , reader(std::move(reader_))
         , done(false)
