@@ -216,5 +216,5 @@ Result:
 
 **See Also**
 
-- [UNION](union.md#union-clause)
-- [INTERSECT](intersect.md#intersect-clause)
+- [UNION](/sql-reference/statements/select/union)
+- [INTERSECT](/sql-reference/statements/select/intersect)

@@ -36,6 +36,7 @@ namespace Setting
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_limit_for_ann_queries;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
@@ -49,7 +50,8 @@ namespace ServerSetting
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     const Settings & from,
     UInt64 max_entries_for_hash_table_stats_,
-    String initial_query_id_)
+    String initial_query_id_,
+    ExpressionActionsSettings actions_settings_)
 {
     optimize_plan = from[Setting::query_plan_enable_optimizations];
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
@@ -92,10 +94,13 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
     initial_query_id = initial_query_id_;
     lock_acquire_timeout = from[Setting::lock_acquire_timeout];
+    actions_settings = std::move(actions_settings_);
+
+    max_threads = from[Setting::max_threads];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
-    : QueryPlanOptimizationSettings(from->getSettingsRef(), from->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats], from->getInitialQueryId())
+    : QueryPlanOptimizationSettings(from->getSettingsRef(), from->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats], from->getInitialQueryId(), ExpressionActionsSettings(from))
 {
 }
 

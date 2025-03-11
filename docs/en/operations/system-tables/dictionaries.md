@@ -27,7 +27,7 @@ Columns:
 - `key.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [key names](/operations/system-tables/dictionaries) provided by the dictionary.
 - `key.types` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Corresponding array of [key types](/sql-reference/dictionaries#dictionary-key-and-fields) provided by the dictionary.
 - `attribute.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [attribute names](/sql-reference/dictionaries#dictionary-key-and-fields) provided by the dictionary.
-- `attribute.types` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Corresponding array of [attribute types](/sql-reference/dictionaries#attributes) provided by the dictionary.
+- `attribute.types` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Corresponding array of [attribute types](/sql-reference/dictionaries#dictionary-key-and-fields) provided by the dictionary.
 - `bytes_allocated` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Amount of RAM allocated for the dictionary.
 - `query_count` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of queries since the dictionary was loaded or since the last successful reboot.
 - `hit_rate` ([Float64](../../sql-reference/data-types/float.md)) — For cache dictionaries, the percentage of uses for which the value was in the cache.

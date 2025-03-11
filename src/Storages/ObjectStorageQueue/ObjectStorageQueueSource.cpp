@@ -561,7 +561,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
                 LOG_TEST(log, "Cache of bucket {} is empty", bucket);
             }
 
-            if (iterator_finished)
+            if (current_bucket_holder && iterator_finished)
             {
                 /// Bucket is fully processed, but we will release it later
                 /// - once we write and commit files via commit() method.

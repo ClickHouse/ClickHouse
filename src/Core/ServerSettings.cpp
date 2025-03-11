@@ -516,7 +516,12 @@ namespace DB
     \
     DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).)", 0) \
     DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache policy name.", 0) \
-    DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, "Size of the query condition cache.", 0) \
+    DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
+    Maximum size of the query condition cache.
+    :::note
+    This setting can be modified at runtime and will take effect immediately.
+    :::
+    )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue in the query condition cache relative to the cache's total size.", 0) \
     \
     DECLARE(Bool, disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
@@ -568,6 +573,15 @@ namespace DB
 
     ``` xml
     <max_table_num_to_warn>400</max_table_num_to_warn>
+    ```
+    )", 0) \
+    DECLARE(UInt64, max_pending_mutations_to_warn, 500lu, R"(
+    If the number of pending mutations exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+
+    **Example**
+
+    ``` xml
+    <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
     ```
     )", 0) \
     DECLARE(UInt64, max_view_num_to_warn, 10000lu, R"(
@@ -702,6 +716,14 @@ namespace DB
     :::
     )", 0) \
     DECLARE(UInt64, concurrent_threads_soft_limit_ratio_to_cores, 0, "Same as concurrent_threads_soft_limit_num, but with ratio to cores.", 0) \
+    DECLARE(String, concurrent_threads_scheduler, "round_robin", R"(
+    The policy on how to perform a scheduling of CPU slots in Concurrency Control. Algorithm used to govern how limited number `concurrent_threads_soft_limit` of CPU slots are distributed among concurrent queries. Scheduler may be changed at runtime without server restart.
+
+    Possible values:
+
+    - `round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads` CPU slots. One slot per thread. On contention CPU slot are granted to queries using round-robin. Note that the first slot is granted unconditionally, which could lead to unfairness and increased latency of queries having high `max_threads` in presence of high number of queries with `max_threads` = 1.
+    - `fair_round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads - 1` CPU slots. Variation of `round_robin` that does not require a CPU slot for the first thread of every query. This way queries having `max_threads` = 1 do not require any slot and could not unfairly allocate all slots. There are no slots granted unconditionally.
+    )", 0) \
     DECLARE(UInt64, background_pool_size, 16, R"(
     Sets the number of threads performing background merges and mutations for tables with MergeTree engines.
 
@@ -943,6 +965,7 @@ namespace DB
     Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.
     )", 0) \
     \
+    DECLARE(String, license_key, "", "License key for ClickHouse Enterprise Edition", 0) \
     DECLARE(UInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
     DECLARE(UInt64, prefetch_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(UInt64, load_marks_threadpool_pool_size, 50, R"(Size of background pool for marks loading)", 0) \
@@ -1108,6 +1131,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_waiting_queries", {std::to_string(context->getProcessList().getMaxWaitingQueriesAmount()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_soft_limit_num", {std::to_string(context->getConcurrentThreadsSoftLimitNum()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_soft_limit_ratio_to_cores", {std::to_string(context->getConcurrentThreadsSoftLimitRatioToCores()), ChangeableWithoutRestart::Yes}},
+            {"concurrent_threads_scheduler", {context->getConcurrentThreadsScheduler(), ChangeableWithoutRestart::Yes}},
 
             {"background_buffer_flush_schedule_pool_size",
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundBufferFlushSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},

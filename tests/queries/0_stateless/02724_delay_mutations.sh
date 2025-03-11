@@ -44,7 +44,7 @@ DROP TABLE IF EXISTS t_delay_mutations SYNC;
 "
 
 ${CLICKHOUSE_CLIENT} --query "
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     query,
