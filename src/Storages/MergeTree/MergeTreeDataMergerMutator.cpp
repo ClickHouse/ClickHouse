@@ -289,12 +289,16 @@ MergeSelectorChoices chooseMergeFrom(
         ranges, metadata_snapshot, data_settings, next_delete_times, next_recompress_times,
         can_use_ttl_merges, current_time);
 
-    LOG_INFO(log, "Selected {} merge ranges. Merge selecting phase took: {}ms", choices.size(), watch.elapsed() / 1000);
-    for (size_t i = 0; i < choices.size(); ++i)
+    if (!choices.empty())
     {
-        const auto & range = choices[i].range;
-        ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, range.size());
-        LOG_INFO(log, "Merge #{} with {} parts from {} to {}", i, range.size(), range.front().name, range.back().name);
+        LOG_INFO(log, "Selected {} merge ranges. Merge selecting phase took: {}ms", choices.size(), watch.elapsed() / 1000);
+
+        for (size_t i = 0; i < choices.size(); ++i)
+        {
+            const auto & range = choices[i].range;
+            ProfileEvents::increment(ProfileEvents::MergerMutatorSelectRangePartsCount, range.size());
+            LOG_INFO(log, "Merge #{} with {} parts from {} to {}", i, range.size(), range.front().name, range.back().name);
+        }
     }
 
     return choices;
@@ -525,7 +529,7 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     }
 
     LOG_INFO(log, "Selected {} parts from {} to {}", parts.size(), parts.front().name, parts.back().name);
-    return MergeSelectorChoices{MergeSelectorChoice{std::move(parts), MergeType::Regular}};
+    return MergeSelectorChoices{{std::move(parts), MergeType::Regular, final}};
 }
 
 /// parts should be sorted.
