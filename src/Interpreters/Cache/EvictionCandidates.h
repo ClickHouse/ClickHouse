@@ -40,6 +40,7 @@ public:
     {
         KeyMetadataPtr key_metadata;
         std::vector<FileSegmentMetadataPtr> candidates;
+        std::vector<std::string> error_messages;
     };
 
     /// Get eviction candidates which failed to be evicted during evict().
@@ -48,7 +49,12 @@ public:
         std::vector<KeyCandidates> failed_candidates_per_key;
         size_t total_cache_size = 0;
         size_t total_cache_elements = 0;
+
+        size_t size() const { return failed_candidates_per_key.size(); }
+
+        std::string getFirstErrorMessage() const;
     };
+
     FailedCandidates getFailedCandidates() const { return failed_candidates; }
 
     size_t size() const { return candidates_size; }

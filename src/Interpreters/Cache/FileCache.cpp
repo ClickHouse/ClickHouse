@@ -1020,6 +1020,22 @@ bool FileCache::tryReserve(
             throw;
         }
 
+        const auto & failed_candidates = eviction_candidates.getFailedCandidates();
+        if (failed_candidates.size() > 0)
+        {
+            /// Process this case the same as any other exception
+            /// from eviction_candidates.evict() above.
+            {
+                cache_lock.lock();
+                /// Invalidate queue entries if some succeeded to be removed.
+                eviction_candidates.finalize(query_context.get(), cache_lock);
+            }
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Failed to evict {} file segments (first error: {})",
+                failed_candidates.size(), failed_candidates.getFirstErrorMessage());
+        }
+
         cache_lock.lock();
 
         /// Invalidate and remove queue entries and execute finalize func.
@@ -1755,7 +1771,7 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                             cache_lock);
 
                         /// Add failed candidates back to queue.
-                        for (const auto & [key_metadata, key_candidates] : failed_candidates.failed_candidates_per_key)
+                        for (const auto & [key_metadata, key_candidates, _] : failed_candidates.failed_candidates_per_key)
                         {
                             chassert(!key_candidates.empty());
 

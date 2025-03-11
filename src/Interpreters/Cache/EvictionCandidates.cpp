@@ -9,6 +9,7 @@ namespace ProfileEvents
     extern const Event FilesystemCacheEvictMicroseconds;
     extern const Event FilesystemCacheEvictedBytes;
     extern const Event FilesystemCacheEvictedFileSegments;
+    extern const Event FilesystemCacheFailedEvictionCandidates;
 }
 
 namespace DB
@@ -22,6 +23,19 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char file_cache_dynamic_resize_fail_to_evict[];
+}
+
+std::string EvictionCandidates::FailedCandidates::getFirstErrorMessage() const
+{
+    if (failed_candidates_per_key.empty())
+        return "";
+
+    const auto & first_failed = failed_candidates_per_key[0];
+    if (!first_failed.error_messages.empty())
+        return first_failed.error_messages[0];
+
+    chassert(false);
+    return "";
 }
 
 EvictionCandidates::EvictionCandidates()
@@ -192,8 +206,13 @@ void EvictionCandidates::evict()
                 failed_candidates.total_cache_elements += 1;
                 failed_key_candidates.candidates.push_back(candidate);
 
+                const auto error_message = getCurrentExceptionMessage(true);
+                failed_key_candidates.error_messages.push_back(error_message);
+
+                ProfileEvents::increment(ProfileEvents::FilesystemCacheFailedEvictionCandidates);
+
                 LOG_ERROR(log, "Failed to evict file segment ({}): {}",
-                          candidate->file_segment->getInfoForLog(), getCurrentExceptionMessage(true));
+                          candidate->file_segment->getInfoForLog(), error_message);
             }
 
             key_candidates.candidates.pop_back();
