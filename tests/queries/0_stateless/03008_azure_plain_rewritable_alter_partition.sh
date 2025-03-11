@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+# Tags: no-fasttest, no-shared-merge-tree, no-distributed-cache
 # Tag no-fasttest: requires Azure
 # Tag no-shared-merge-tree: does not support replication
 # Tag no-distributed-cache: Not supported auth type
