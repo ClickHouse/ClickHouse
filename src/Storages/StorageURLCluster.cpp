@@ -1,26 +1,28 @@
 #include "Interpreters/Context_fwd.h"
 
-#include <Storages/StorageURLCluster.h>
-
 #include <Common/HTTPHeaderFilter.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
+
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
-#include <Interpreters/getHeaderForProcessingStage.h>
-#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
-#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Interpreters/TranslateQualifiedNamesVisitor.h>
+#include <Interpreters/getHeaderForProcessingStage.h>
 
-#include <Processors/Transforms/AddingDefaultsTransform.h>
-
-#include <Processors/Sources/RemoteSource.h>
 #include <Parsers/queryToString.h>
+#include <Processors/Sources/RemoteSource.h>
+#include <Processors/Transforms/AddingDefaultsTransform.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageURL.h>
-#include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <Storages/StorageURLCluster.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/extractTableFunctionFromSelectQuery.h>
 
 #include <TableFunctions/TableFunctionURLCluster.h>
 
@@ -79,8 +81,19 @@ StorageURLCluster::StorageURLCluster(
         storage_metadata.setColumns(columns_);
     }
 
+    auto virtual_columns_desc = VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, getSampleURI(uri, context));
+    if (!storage_metadata.getColumns().has("_headers"))
+    {
+        virtual_columns_desc.addEphemeral(
+            "_headers",
+            std::make_shared<DataTypeMap>(
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+                std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())),
+            "");
+    }
+
     storage_metadata.setConstraints(constraints_);
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context, getSampleURI(uri, context)));
+    setVirtuals(virtual_columns_desc);
     setInMemoryMetadata(storage_metadata);
 }
 

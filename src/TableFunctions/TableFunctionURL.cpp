@@ -94,15 +94,16 @@ StoragePtr TableFunctionURL::getStorage(
     const std::string & table_name, const String & compression_method_, bool is_insert_query) const
 {
     const auto & settings = global_context->getSettingsRef();
+    const auto is_secondary_query = global_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
     const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
     const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
         && settings[Setting::parallel_replicas_for_cluster_engines]
         && global_context->canUseTaskBasedParallelReplicas()
-        && !global_context->isDistributed();
+        && !global_context->isDistributed()
+        && !is_secondary_query
+        && !is_insert_query;
 
-    const auto is_secondary_query = global_context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
+    if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(
             global_context,
