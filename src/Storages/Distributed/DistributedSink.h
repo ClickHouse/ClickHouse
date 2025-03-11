@@ -12,7 +12,6 @@
 #include <Common/ThreadPool.h>
 #include <atomic>
 #include <memory>
-#include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
 
