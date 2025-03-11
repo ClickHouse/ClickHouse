@@ -45,7 +45,7 @@ Read about setting the partition expression in a section [How to set the partiti
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
-This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](/docs/operations/system-tables/replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
+This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](/operations/system-tables/replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
 
 ## DROP PARTITION\|PART {#drop-partitionpart}
 
@@ -364,6 +364,6 @@ All the rules above are also true for the [OPTIMIZE](/sql-reference/statements/o
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
-`IN PARTITION` specifies the partition to which the [UPDATE](/sql-reference/statements/alter/partition#update-in-partition) or [DELETE](/sql-reference/statements/alter/delete.md/#alter-mutations) expressions are applied as a result of the `ALTER TABLE` query. New parts are created only from the specified partition. In this way, `IN PARTITION` helps to reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
+`IN PARTITION` specifies the partition to which the [UPDATE](/sql-reference/statements/alter/update) or [DELETE](/sql-reference/statements/alter/delete) expressions are applied as a result of the `ALTER TABLE` query. New parts are created only from the specified partition. In this way, `IN PARTITION` helps to reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
 
 The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).

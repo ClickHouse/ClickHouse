@@ -2465,7 +2465,7 @@ Result:
 
 ## initializeAggregation {#initializeaggregation}
 
-Calculates the result of an aggregate function based on a single value. This function can be used to initialize aggregate functions with combinator [-State](/sql-reference/aggregate-functions/combinators#-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](/sql-reference/data-types/aggregatefunctione) or use initialized aggregates as default values.
+Calculates the result of an aggregate function based on a single value. This function can be used to initialize aggregate functions with combinator [-State](/sql-reference/aggregate-functions/combinators#-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](/sql-reference/data-types/aggregatefunction) or use initialized aggregates as default values.
 
 **Syntax**
 
@@ -2550,7 +2550,7 @@ finalizeAggregation(state)
 
 **Arguments**
 
-- `state` — State of aggregation. [AggregateFunction](/sql-reference/data-types/aggregatefunctione).
+- `state` — State of aggregation. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
 
 **Returned value(s)**
 
@@ -2658,7 +2658,7 @@ runningAccumulate(agg_state[, grouping]);
 
 **Arguments**
 
-- `agg_state` — State of the aggregate function. [AggregateFunction](/sql-reference/data-types/aggregatefunctione).
+- `agg_state` — State of the aggregate function. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
 - `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../data-types/index.md) for which the equality operator is defined.
 
 **Returned value**
@@ -3060,11 +3060,11 @@ Result:
 
 **See Also**
 
-- [Custom Settings](/operations/settings/overview#custom_settings)
+- [Custom Settings](/operations/settings/query-level#custom_settings)
 
 ## getSettingOrDefault {#getsettingordefault}
 
-Returns the current value of a [custom setting](/operations/settings/overview#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
+Returns the current value of a [custom setting](/operations/settings/query-level#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
 
 **Syntax**
 
@@ -3099,7 +3099,7 @@ NULL
 
 **See Also**
 
-- [Custom Settings](/operations/settings/overview#custom_settings)
+- [Custom Settings](/operations/settings/query-level#custom_settings)
 
 ## isDecimalOverflow {#isdecimaloverflow}
 

@@ -93,7 +93,7 @@ wait
 
 $CLICKHOUSE_CLIENT -q 'select count() from dedup_test'
 
-$CLICKHOUSE_CLIENT -q 'system flush logs'
+$CLICKHOUSE_CLIENT -q 'system flush logs text_log'
 
 # Ensure that thread_cancel actually did something
 $CLICKHOUSE_CLIENT -q "select count() > 0 from system.text_log where event_date >= yesterday() and query_id like '$TEST_MARK%' and (
