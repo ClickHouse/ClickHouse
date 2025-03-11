@@ -260,7 +260,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     node.type = ActionType::INPUT;
     node.result_type = std::move(column.type);
     node.result_name = std::move(column.name);
-    //node.column = std::move(column.column);
+    node.column = std::move(column.column);
 
     return addNode(std::move(node));
 }
