@@ -106,12 +106,12 @@ public:
     virtual ~IIcebergSchemaTransform() = default;
 
 protected:
-    /// Get real pathes from template
-    std::vector<std::vector<size_t>> traverseAllPathes(const ComplexNode & initial_node);
+    /// Get real paths from template
+    std::vector<std::vector<size_t>> traverseAllPaths(const ComplexNode & initial_node);
 
-    /// index_path is a template for real pathes
+    /// index_path is a template for real paths
     /// If current node is ARRAY, then index in path will be equals to -1
-    /// In `traverseAllPathes` function this -1 will be replaced to values 0,1,...length_array
+    /// In `traverseAllPaths` function this -1 will be replaced to values 0,1,...length_array
     std::vector<int> index_path;
     std::vector<IcebergChangeSchemaOperation::Edge> path;
 };
@@ -157,7 +157,7 @@ public:
     {
     }
 
-    String getName() const override { return "IdentityFunctionStruct"; }
+    String getName() const override { return "EvolutionFunctionStruct"; }
 
     const DataTypes & getArgumentTypes() const override { return old_types; }
 
