@@ -1,4 +1,3 @@
-#include <memory>
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Interpreters/Context.h>
@@ -11,7 +10,9 @@
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Processors/IProcessor.h>
-#include "Processors/Chunk.h"
+#include <Processors/Chunk.h>
+
+#include <memory>
 
 namespace ProfileEvents
 {
