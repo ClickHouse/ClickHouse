@@ -2,7 +2,6 @@
 
 #if USE_MYSQL
 
-#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -15,8 +14,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
+#include <filesystem>
 #include <base/FnTraits.h>
-#include <Disks/IDisk.h>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -150,8 +151,7 @@ static bool checkSyncUserPrivImpl(const mysqlxx::PoolWithFailover::Entry & conne
         {std::make_shared<DataTypeString>(), "current_user_grants"}
     };
 
-    String grants_query;
-    String sub_privs;
+    String grants_query, sub_privs;
     StreamSettings mysql_input_stream_settings(global_settings);
     auto input = std::make_unique<MySQLSource>(connection, "SHOW GRANTS FOR CURRENT_USER();", sync_user_privs_header, mysql_input_stream_settings);
     QueryPipeline pipeline(std::move(input));
@@ -221,15 +221,14 @@ bool MaterializeMetadata::checkBinlogFileExists(const mysqlxx::PoolWithFailover:
 
 void commitMetadata(Fn<void()> auto && function, const String & persistent_tmp_path, const String & persistent_path)
 {
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
     try
     {
         function();
-        db_disk->replaceFile(persistent_tmp_path, persistent_path);
+        fs::rename(persistent_tmp_path, persistent_path);
     }
     catch (...)
     {
-        db_disk->removeFileIfExists(persistent_tmp_path);
+        (void)fs::remove(persistent_tmp_path);
         throw;
     }
 }
@@ -243,20 +242,18 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
     String persistent_tmp_path = persistent_path + ".tmp";
 
     {
-        auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-        auto out = db_disk->writeFile(persistent_tmp_path, 1024, WriteMode::Rewrite, getWriteSettingsForMetadata());
+        WriteBufferFromFile out(persistent_tmp_path, DBMS_DEFAULT_BUFFER_SIZE, O_WRONLY | O_TRUNC | O_CREAT);
 
         /// TSV format metadata file.
-        writeString("Version:\t" + toString(meta_version), *out);
-        writeString("\nBinlog File:\t" + binlog_file, *out);
-        writeString("\nExecuted GTID:\t" + executed_gtid_set, *out);
-        writeString("\nBinlog Position:\t" + toString(binlog_position), *out);
-        writeString("\nData Version:\t" + toString(data_version), *out);
+        writeString("Version:\t" + toString(meta_version), out);
+        writeString("\nBinlog File:\t" + binlog_file, out);
+        writeString("\nExecuted GTID:\t" + executed_gtid_set, out);
+        writeString("\nBinlog Position:\t" + toString(binlog_position), out);
+        writeString("\nData Version:\t" + toString(data_version), out);
 
-        out->next();
-        out->sync();
-        out->finalize();
-        out.reset();
+        out.next();
+        out.sync();
+        out.close();
     }
 
     commitMetadata(fun, persistent_tmp_path, persistent_path);
@@ -264,21 +261,19 @@ void MaterializeMetadata::transaction(const MySQLReplication::Position & positio
 
 MaterializeMetadata::MaterializeMetadata(const String & path_, const Settings & settings_) : persistent_path(path_), settings(settings_)
 {
-    auto db_disk = Context::getGlobalContextInstance()->getDatabaseDisk();
-
-    if (db_disk->existsFile(persistent_path))
+    if (fs::exists(persistent_path))
     {
-        auto in = db_disk->readFile(persistent_path, getReadSettingsForMetadata());
+        ReadBufferFromFile in(persistent_path, DBMS_DEFAULT_BUFFER_SIZE);
+        assertString("Version:\t" + toString(meta_version), in);
+        assertString("\nBinlog File:\t", in);
+        readString(binlog_file, in);
+        assertString("\nExecuted GTID:\t", in);
+        readString(executed_gtid_set, in);
+        assertString("\nBinlog Position:\t", in);
+        readIntText(binlog_position, in);
+        assertString("\nData Version:\t", in);
+        readIntText(data_version, in);
 
-        assertString("Version:\t" + toString(meta_version), *in);
-        assertString("\nBinlog File:\t", *in);
-        readString(binlog_file, *in);
-        assertString("\nExecuted GTID:\t", *in);
-        readString(executed_gtid_set, *in);
-        assertString("\nBinlog Position:\t", *in);
-        readIntText(binlog_position, *in);
-        assertString("\nData Version:\t", *in);
-        readIntText(data_version, *in);
     }
 }
 

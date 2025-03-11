@@ -2,13 +2,16 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <Common/Allocator.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Allocator.h>
+#include <Common/GWPAsan.h>
 
 #include <Common/Exception.h>
 #include <Core/Defines.h>
 
 #include <base/arithmeticOverflow.h>
+
+#include "config.h"
 
 
 namespace ProfileEvents

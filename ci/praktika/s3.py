@@ -30,11 +30,9 @@ class S3:
             return True
 
     @classmethod
-    def clean_s3_directory(cls, s3_path, include=""):
+    def clean_s3_directory(cls, s3_path):
         assert len(s3_path.split("/")) > 2, "check to not delete too much"
         cmd = f"aws s3 rm s3://{s3_path} --recursive"
-        if include:
-            cmd += f' --include "{include}"'
         cls.run_command_with_retries(cmd, retries=1)
         return
 
@@ -83,8 +81,9 @@ class S3:
             for k, v in metadata.items():
                 command += f" --metadata {k}={v}"
 
+        cmd = f"aws s3 cp {local_path} s3://{s3_full_path}"
         if text:
-            command += " --content-type text/plain"
+            cmd += " --content-type text/plain"
         res = cls.run_command_with_retries(command)
         return res
 
@@ -133,7 +132,7 @@ class S3:
         if recursive:
             cmd += " --recursive"
         if include_pattern:
-            cmd += f' --exclude "*" --include "{include_pattern}"'
+            cmd += f" --include {include_pattern}"
         res = cls.run_command_with_retries(cmd)
         return res
 
@@ -185,19 +184,3 @@ class S3:
             )
             return html_link
         return f"file://{Path(local_file_path).absolute()}"
-
-    @classmethod
-    def _dump_urls(cls, s3_path):
-        # TODO: add support for path with '*'
-        bucket, name = s3_path.split("/")[0], s3_path.split("/")[-1]
-        endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
-
-        with open(Settings.ARTIFACT_URLS_FILE, "w", encoding="utf-8") as f:
-            json.dump(
-                {
-                    name: quote(
-                        f"https://{s3_path}".replace(bucket, endpoint), safe=":/?&="
-                    )
-                },
-                f,
-            )

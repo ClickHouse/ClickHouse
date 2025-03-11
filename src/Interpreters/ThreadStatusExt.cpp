@@ -58,7 +58,6 @@ namespace Setting
     extern const SettingsInt64 os_thread_priority;
     extern const SettingsUInt64 query_profiler_cpu_time_period_ns;
     extern const SettingsUInt64 query_profiler_real_time_period_ns;
-    extern const SettingsBool enable_adaptive_memory_spill_scheduler;
 }
 
 namespace ErrorCodes
@@ -72,7 +71,6 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, FatalErrorCallback fatal_err
     , query_context(query_context_)
     , global_context(query_context_->getGlobalContext())
     , fatal_error_callback(fatal_error_callback_)
-    , memory_spill_scheduler(query_context_->getSettingsRef()[Setting::enable_adaptive_memory_spill_scheduler])
 {
     shared_data.query_is_canceled_predicate = [this] () -> bool {
             if (auto context_locked = query_context.lock())

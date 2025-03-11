@@ -154,7 +154,7 @@ class FTResultsProcessor:
                 status=test[1],
                 start_time=None,
                 duration=float(test[2]),
-                info="".join(test[3])[:16384],
+                info="".join(test[3])[:8192],
             )
             for test in test_results
         ]

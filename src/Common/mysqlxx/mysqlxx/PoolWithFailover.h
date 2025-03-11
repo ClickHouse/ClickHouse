@@ -3,12 +3,10 @@
 #include "Pool.h"
 
 
-/// NOLINTBEGIN(modernize-macro-to-enum)
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_START_CONNECTIONS 1
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_CONNECTIONS 16
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES 3
 #define MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT 5 /// in seconds
-/// NOLINTEND(modernize-macro-to-enum)
 
 
 namespace mysqlxx
@@ -85,8 +83,6 @@ namespace mysqlxx
         bool shareable;
         /// Timeout for waiting free connection.
         uint64_t wait_timeout = 0;
-        /// Attempt to reconnect in background thread
-        bool bg_reconnect = false;
 
     public:
         using Entry = Pool::Entry;
@@ -128,8 +124,7 @@ namespace mysqlxx
             size_t max_tries_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_MAX_TRIES,
             uint64_t wait_timeout_ = MYSQLXX_POOL_WITH_FAILOVER_DEFAULT_CONNECTION_WAIT_TIMEOUT,
             size_t connect_timeout = MYSQLXX_DEFAULT_TIMEOUT,
-            size_t rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT,
-            bool bg_reconnect_ = false);
+            size_t rw_timeout = MYSQLXX_DEFAULT_RW_TIMEOUT);
 
         PoolWithFailover(const PoolWithFailover & other);
 

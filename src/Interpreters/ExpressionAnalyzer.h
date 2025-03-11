@@ -4,10 +4,7 @@
 #include <Columns/FilterDescription.h>
 #include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/ArrayJoin.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
 #include <Interpreters/JoinUtils.h>
@@ -129,7 +126,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    PreparedSetsPtr & getPreparedSets() { return prepared_sets; }
+    PreparedSetsPtr getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }

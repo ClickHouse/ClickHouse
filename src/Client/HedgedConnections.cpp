@@ -18,7 +18,6 @@ namespace Setting
 {
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 connections_with_failover_max_tries;
     extern const SettingsDialect dialect;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
@@ -36,7 +35,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int ALL_CONNECTION_TRIES_FAILED;
-    extern const int NOT_IMPLEMENTED;
 }
 
 HedgedConnections::HedgedConnections(
@@ -54,9 +52,7 @@ HedgedConnections::HedgedConnections(
           timeouts_,
           context_->getSettingsRef()[Setting::connections_with_failover_max_tries].value,
           context_->getSettingsRef()[Setting::fallback_to_stale_replicas_for_distributed_queries].value,
-          context_->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value > 0
-            ? context_->getSettingsRef()[Setting::max_parallel_replicas].value
-            : 1,
+          context_->getSettingsRef()[Setting::max_parallel_replicas].value,
           context_->getSettingsRef()[Setting::skip_unavailable_shards].value,
           table_to_check_,
           priority_func)
@@ -343,11 +339,6 @@ Packet HedgedConnections::receivePacket()
 {
     std::lock_guard lock(cancel_mutex);
     return receivePacketUnlocked({});
-}
-
-UInt64 HedgedConnections::receivePacketTypeUnlocked(AsyncCallback)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'receivePacketTypeUnlocked()' not implemented for HedgedConnections");
 }
 
 Packet HedgedConnections::receivePacketUnlocked(AsyncCallback async_callback)

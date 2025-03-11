@@ -1,11 +1,4 @@
----
-slug: /en/operations/system-tables/processors_profile_log
----
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # processors_profile_log
-
-<SystemTableCloud/>
 
 This table contains profiling on processors level (that you can find in [`EXPLAIN PIPELINE`](../../sql-reference/statements/explain.md#explain-pipeline)).
 

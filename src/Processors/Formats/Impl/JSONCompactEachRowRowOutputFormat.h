@@ -12,7 +12,7 @@ namespace DB
 
 /** The stream for outputting data in JSON format, by JSON array per line.
   */
-class JSONCompactEachRowRowOutputFormat : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
+class JSONCompactEachRowRowOutputFormat final : public RowOutputFormatWithExceptionHandlerAdaptor<RowOutputFormatWithUTF8ValidationAdaptor, bool>
 {
 public:
     JSONCompactEachRowRowOutputFormat(
@@ -20,11 +20,12 @@ public:
         const Block & header_,
         const FormatSettings & settings_,
         bool with_names_,
-        bool with_types_);
+        bool with_types_,
+        bool yield_strings_);
 
     String getName() const override { return "JSONCompactEachRowRowOutputFormat"; }
 
-protected:
+private:
     void writePrefix() override;
 
     void writeTotals(const Columns & columns, size_t row_num) override;
@@ -37,12 +38,16 @@ protected:
 
     void resetFormatterImpl() override;
 
+    bool supportTotals() const override { return true; }
+    void consumeTotals(Chunk) override;
+
     void writeLine(const std::vector<String> & values);
 
     FormatSettings settings;
     bool with_names;
     bool with_types;
+    bool yield_strings;
+
     WriteBuffer * ostr;
 };
-
 }

@@ -21,7 +21,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/FunctionSecretArgumentsFinder.h>
 
 #include <Storages/StorageView.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -34,9 +33,6 @@
 
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
-#include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
-
 
 namespace DB
 {
@@ -44,7 +40,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_statistics_optimize;
-    extern const SettingsBool format_display_secrets_in_show_and_select;
 }
 
 namespace ErrorCodes
@@ -92,36 +87,6 @@ namespace
     };
 
     using ExplainAnalyzedSyntaxVisitor = InDepthNodeVisitor<ExplainAnalyzedSyntaxMatcher, true>;
-
-    class TableFunctionSecretsVisitor : public InDepthQueryTreeVisitor<TableFunctionSecretsVisitor>
-    {
-        friend class InDepthQueryTreeVisitor;
-        bool needChildVisit(VisitQueryTreeNodeType & parent [[maybe_unused]], VisitQueryTreeNodeType & child [[maybe_unused]])
-        {
-            QueryTreeNodeType type = parent->getNodeType();
-            return type == QueryTreeNodeType::QUERY || type == QueryTreeNodeType::JOIN || type == QueryTreeNodeType::TABLE_FUNCTION;
-        }
-
-        void visitImpl(VisitQueryTreeNodeType & query_tree_node)
-        {
-            auto * table_function_node_ptr = query_tree_node->as<TableFunctionNode>();
-            if (!table_function_node_ptr)
-                return;
-
-            if (FunctionSecretArgumentsFinder::Result secret_arguments = TableFunctionSecretArgumentsFinderTreeNode(*table_function_node_ptr).getResult(); secret_arguments.count)
-            {
-                auto & argument_nodes = table_function_node_ptr->getArgumentsNode()->as<ListNode &>().getNodes();
-
-                for (size_t n = secret_arguments.start; n < secret_arguments.start + secret_arguments.count; ++n)
-                {
-                    if (secret_arguments.are_named)
-                        argument_nodes[n]->as<FunctionNode&>().getArguments().getNodes()[1]->as<ConstantNode&>().setMaskId();
-                    else
-                        argument_nodes[n]->as<ConstantNode&>().setMaskId();
-                }
-            }
-        }
-    };
 
 }
 
@@ -231,11 +196,10 @@ struct QueryTreeSettings
 
 struct QueryPlanSettings
 {
-    ExplainPlanOptions query_plan_options;
+    QueryPlan::ExplainPlanOptions query_plan_options;
 
     /// Apply query plan optimizations.
     bool optimize = true;
-    bool keep_logical_steps = false;
     bool json = false;
 
     constexpr static char name[] = "PLAN";
@@ -249,8 +213,6 @@ struct QueryPlanSettings
             {"optimize", optimize},
             {"json", json},
             {"sorting", query_plan_options.sorting},
-            {"distributed", query_plan_options.distributed},
-            {"keep_logical_steps", keep_logical_steps},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -404,8 +366,6 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     SelectQueryOptions options;
     options.setExplain();
 
-    ContextPtr query_context = getContext();
-
     switch (ast.getKind())
     {
         case ASTExplainQuery::ParsedAST:
@@ -413,7 +373,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
             if (settings.optimize)
             {
-                ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+                ExplainAnalyzedSyntaxVisitor::Data data(getContext());
                 ExplainAnalyzedSyntaxVisitor(data).visit(query);
             }
 
@@ -427,7 +387,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
 
-            ExplainAnalyzedSyntaxVisitor::Data data(query_context);
+            ExplainAnalyzedSyntaxVisitor::Data data(getContext());
             ExplainAnalyzedSyntaxVisitor(data).visit(query);
 
             ast.getExplainedQuery()->format(buf, IAST::FormatSettings(settings.oneline));
@@ -435,7 +395,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         }
         case ASTExplainQuery::QueryTree:
         {
-            if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (!getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "EXPLAIN QUERY TREE is only supported with a new analyzer. Set allow_experimental_analyzer = 1.");
 
@@ -446,18 +406,12 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!settings.dump_tree && !settings.dump_ast)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Either 'dump_tree' or 'dump_ast' must be set for EXPLAIN QUERY TREE query");
 
-            auto query_tree = buildQueryTree(ast.getExplainedQuery(), query_context);
+            auto query_tree = buildQueryTree(ast.getExplainedQuery(), getContext());
             bool need_newline = false;
-
-            if (!getContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
-            {
-                TableFunctionSecretsVisitor visitor;
-                visitor.visit(query_tree);
-            }
 
             if (settings.run_passes)
             {
-                auto query_tree_pass_manager = QueryTreePassManager(query_context);
+                auto query_tree_pass_manager = QueryTreePassManager(getContext());
                 addQueryTreePasses(query_tree_pass_manager);
 
                 size_t pass_index = settings.passes < 0 ? query_tree_pass_manager.getPasses().size() : static_cast<size_t>(settings.passes);
@@ -485,10 +439,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 if (need_newline)
                     buf << "\n\n";
 
-                IAST::FormatSettings format_settings(false);
-                format_settings.show_secrets = getContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
-
-                query_tree->toAST()->format(buf, format_settings);
+                query_tree->toAST()->format(buf, IAST::FormatSettings(false));
             }
 
             break;
@@ -503,38 +454,31 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             ContextPtr context;
 
-            if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
             {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
                 interpreter.buildQueryPlan(plan);
                 context = interpreter.getContext();
             }
 
             if (settings.optimize)
-            {
-                auto optimization_settings = QueryPlanOptimizationSettings(context);
-                optimization_settings.keep_logical_steps = settings.keep_logical_steps;
-                plan.optimize(optimization_settings);
-            }
+                plan.optimize(QueryPlanOptimizationSettings::fromContext(context));
 
             if (settings.json)
             {
-                if (settings.query_plan_options.distributed)
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Option 'distributed' is not supported with option 'json'");
-
                 /// Add extra layers to make plan look more like from postgres.
                 auto plan_map = std::make_unique<JSONBuilder::JSONMap>();
                 plan_map->add("Plan", plan.explainPlan(settings.query_plan_options));
                 auto plan_array = std::make_unique<JSONBuilder::JSONArray>();
                 plan_array->add(std::move(plan_map));
 
-                auto format_settings = getFormatSettings(query_context);
+                auto format_settings = getFormatSettings(getContext());
                 format_settings.json.quote_64bit_integers = false;
 
                 JSONBuilder::FormatSettings json_format_settings{.settings = format_settings};
@@ -556,20 +500,22 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
                 QueryPlan plan;
                 ContextPtr context;
 
-                if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+                if (getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
                 {
-                    InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, options);
+                    InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), options);
                     context = interpreter.getContext();
                     plan = std::move(interpreter).extractQueryPlan();
                 }
                 else
                 {
-                    InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, options);
+                    InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), options);
                     interpreter.buildQueryPlan(plan);
                     context = interpreter.getContext();
                 }
 
-                auto pipeline = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+                auto pipeline = plan.buildQueryPipeline(
+                    QueryPlanOptimizationSettings::fromContext(context),
+                    BuildQueryPipelineSettings::fromContext(context));
 
                 if (settings.graph)
                 {
@@ -592,7 +538,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             {
                 InterpreterInsertQuery insert(
                     ast.getExplainedQuery(),
-                    query_context,
+                    getContext(),
                     /* allow_materialized */ false,
                     /* no_squash */ false,
                     /* no_destination */ false,
@@ -613,17 +559,17 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
             auto settings = checkAndGetSettings<QueryPlanSettings>(ast.getSettings());
             QueryPlan plan;
-            ContextPtr context = query_context;
+            ContextPtr context = getContext();
 
             if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
             {
-                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
+                InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
                 context = interpreter.getContext();
                 plan = std::move(interpreter).extractQueryPlan();
             }
             else
             {
-                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), query_context, SelectQueryOptions());
+                InterpreterSelectWithUnionQuery interpreter(ast.getExplainedQuery(), getContext(), SelectQueryOptions());
                 context = interpreter.getContext();
                 interpreter.buildQueryPlan(plan);
             }
@@ -631,7 +577,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             // Collect the selected marks, rows, parts during build query pipeline.
             // Hold on to the returned QueryPipelineBuilderPtr because `plan` may have pointers into
             // it (through QueryPlanResourceHolder).
-            auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
+            auto builder = plan.buildQueryPipeline(
+                QueryPlanOptimizationSettings::fromContext(context),
+                BuildQueryPipelineSettings::fromContext(context));
 
             plan.explainEstimate(res_columns);
             insert_buf = false;
@@ -643,7 +591,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             {
                 throw Exception(ErrorCodes::INCORRECT_QUERY, "EXPLAIN TABLE OVERRIDE is not supported for the {}() table function", table_function->name);
             }
-            auto storage = query_context->getQueryContext()->executeTableFunction(ast.getTableFunction());
+            auto storage = getContext()->getQueryContext()->executeTableFunction(ast.getTableFunction());
             auto metadata_snapshot = storage->getInMemoryMetadata();
             TableOverrideAnalyzer::Result override_info;
             TableOverrideAnalyzer override_analyzer(ast.getTableOverride());
@@ -656,7 +604,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (ast.getSettings())
                 throw Exception(ErrorCodes::UNKNOWN_SETTING, "Settings are not supported for EXPLAIN CURRENT TRANSACTION query.");
 
-            if (auto txn = query_context->getCurrentTransaction())
+            if (auto txn = getContext()->getCurrentTransaction())
             {
                 String dump = txn->dumpDescription();
                 buf.write(dump.data(), dump.size());

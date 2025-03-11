@@ -31,7 +31,6 @@ function download
     # Test all of them.
     declare -a urls_to_try=(
         "$S3_URL/PRs/$left_pr/$left_sha/$BUILD_NAME/performance.tar.zst"
-        "$S3_URL/REFs/master/$left_sha/$BUILD_NAME/performance.tar.zst"
     )
 
     for path in "${urls_to_try[@]}"

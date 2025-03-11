@@ -4,6 +4,7 @@
 #if USE_CAPNP
 
 #include <Formats/FormatSchemaInfo.h>
+#include <Formats/FormatSettings.h>
 #include <Core/Block.h>
 #include <capnp/schema-parser.h>
 #include <capnp/dynamic.h>

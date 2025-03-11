@@ -26,9 +26,9 @@ REGISTER_FUNCTION(Locate)
                                                       {"start_pos", "Position (1-based) in `haystack` at which the search starts (UInt*)."}};
     FunctionDocumentation::ReturnedValue doc_returned_value = "Starting position in bytes and counting from 1, if the substring was found. 0, if the substring was not found.";
     FunctionDocumentation::Examples doc_examples = {{"Example", "SELECT locate('abcabc', 'ca');", "3"}};
-    FunctionDocumentation::Category doc_category = {"Strings - Searching"};
+    FunctionDocumentation::Categories doc_categories = {"String search"};
 
 
-    factory.registerFunction<FunctionLocate>({doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_category}, FunctionFactory::Case::Insensitive);
+    factory.registerFunction<FunctionLocate>({doc_description, doc_syntax, doc_arguments, doc_returned_value, doc_examples, doc_categories}, FunctionFactory::Case::Insensitive);
 }
 }

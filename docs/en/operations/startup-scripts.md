@@ -17,10 +17,6 @@ ClickHouse can run arbitrary SQL queries from the server configuration during st
             <query>CREATE TABLE TestTable (id UInt64) ENGINE=TinyLog</query>
             <condition>SELECT 1;</condition>
         </scripts>
-        <scripts>
-            <query>CREATE DICTIONARY test_dict (...) SOURCE(CLICKHOUSE(...))</query>
-            <user>default</user>
-        </scripts>
     </startup_scripts>
 </clickhouse>
 ```

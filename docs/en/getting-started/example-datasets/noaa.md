@@ -1,10 +1,11 @@
 ---
-description: "2.5 billion rows of climate data for the last 120 yrs"
 slug: /en/getting-started/example-datasets/noaa
 sidebar_label: NOAA Global Historical Climatology Network 
 sidebar_position: 1
-title: "NOAA Global Historical Climatology Network"
+description: 2.5 billion rows of climate data for the last 120 yrs
 ---
+
+# NOAA Global Historical Climatology Network 
 
 This dataset contains weather measurements for the last 120 years. Each row is a measurement for a point in time and station.
 
@@ -19,8 +20,6 @@ More precisely and according to the [origin of this data](https://github.com/aws
     - Snowfall
     - Snow depth
     - Other elements where available
-
-The sections below give a brief overview of the steps that were involved in bringing this dataset into ClickHouse. If you're interested in reading about each step in more detail, we recommend to take a look at our blog post titled ["Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse"](https://clickhouse.com/blog/real-world-data-noaa-climate-data).
 
 ## Downloading the data
 
@@ -98,7 +97,7 @@ Summarizing the format documentation and the columns in order:
     - WSFG - Peak gust wind speed (tenths of meters per second)
     - WT** = Weather Type where ** defines the weather type. Full list of weather types here.
 - DATA VALUE = 5 character data value for ELEMENT i.e. the value of the measurement.
-- M-FLAG = 1 character Measurement Flag. This has 10 possible values. Some of these values indicate questionable data accuracy. We accept data where this is set to "P" - identified as missing presumed zero, as this is only relevant to the PRCP, SNOW and SNWD measurements.
+- M-FLAG = 1 character Measurement Flag. This has 10 possible values. Some of these values indicate questionable data accuracy. We accept data where this is set to “P” - identified as missing presumed zero, as this is only relevant to the PRCP, SNOW and SNWD measurements.
 - Q-FLAG is the measurement quality flag with 14 possible values. We are only interested in data with an empty value i.e. it did not fail any quality assurance checks.
 - S-FLAG is the source flag for the observation. Not useful for our analysis and ignored.
 - OBS-TIME = 4-character time of observation in hour-minute format (i.e. 0700 =7:00 am). Typically not present in older data. We ignore this for our purposes.
@@ -116,7 +115,7 @@ FROM file('*.csv.gz', CSV, 'station_id String, date String, measurement String, 
 2679264563
 ```
 
-With over 2.6 billion rows, this isn't a fast query since it involves parsing all the files. On our 8 core  machine, this takes around 160 seconds.
+With over 2.6 billion rows, this isn’t a fast query since it involves parsing all the files. On our 8 core  machine, this takes around 160 seconds.
 
 
 ### Pivot data

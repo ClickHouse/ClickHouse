@@ -895,6 +895,7 @@ SELECT dictGet('my_ip_trie_dictionary', ('asn', 'cca2'), IPv6StringToNum('2001:d
 ## LIFETIMEを使用したディクショナリデータの更新
 
 ClickHouseは、`LIFETIME`タグ（秒単位で定義）に基づいて定期的にディクショナリを更新します。`LIFETIME`は完全にダウンロードされたディクショナリの更新間隔であり、キャッシュされたディクショナリの無効化間隔です。
+```
 更新の間、古いバージョンのDictionaryは依然としてクエリ可能です。Dictionaryの更新（初めてDictionaryをロードする場合を除く）はクエリをブロックしません。更新中にエラーが発生した場合、エラーはサーバーログに記録され、クエリは古いバージョンのDictionaryを使用して続行できます。Dictionaryの更新が成功した場合、古いバージョンのDictionaryはアトミックに置き換えられます。
 
 設定の例:

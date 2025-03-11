@@ -1,34 +1,19 @@
 #include "config.h"
 
 #include <Common/ProfileEvents.h>
-#include <Common/FailPoint.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Common/getRandomASCIIString.h>
-#include <Common/parseGlobs.h>
 #include <Core/Settings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueUnorderedFileMetadata.h>
-#include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Disks/ObjectStorages/ObjectStorageIterator.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
 
 namespace ProfileEvents
 {
     extern const Event ObjectStorageQueuePullMicroseconds;
-    extern const Event ObjectStorageQueueFailedToBatchSetProcessing;
-    extern const Event ObjectStorageQueueTrySetProcessingSucceeded;
-    extern const Event ObjectStorageQueueListedFiles;
-    extern const Event ObjectStorageQueueFilteredFiles;
-    extern const Event ObjectStorageQueueReadFiles;
-    extern const Event ObjectStorageQueueReadRows;
-    extern const Event ObjectStorageQueueReadBytes;
-    extern const Event ObjectStorageQueueExceptionsDuringRead;
-    extern const Event ObjectStorageQueueExceptionsDuringInsert;
-    extern const Event ObjectStorageQueueCancelledFiles;
 }
 
 namespace DB
@@ -47,18 +32,10 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 max_processing_time_sec_before_commit;
 }
 
-namespace FailPoints
-{
-    extern const char object_storage_queue_fail_in_the_middle_of_file[];
-}
-
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-    extern const int QUERY_WAS_CANCELLED;
-    extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_COMPILE_REGEXP;
-    extern const int UNKNOWN_EXCEPTION;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
@@ -71,59 +48,19 @@ ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObject
 
 ObjectStorageQueueSource::FileIterator::FileIterator(
     std::shared_ptr<ObjectStorageQueueMetadata> metadata_,
+    std::unique_ptr<Source::GlobIterator> glob_iterator_,
     ObjectStoragePtr object_storage_,
-    ConfigurationPtr configuration_,
-    const StorageID & storage_id_,
-    size_t list_objects_batch_size_,
-    const ActionsDAG::Node * predicate_,
-    const NamesAndTypesList & virtual_columns_,
-    ContextPtr context_,
-    LoggerPtr logger_,
-    bool enable_hash_ring_filtering_,
     bool file_deletion_on_processed_enabled_,
-    std::atomic<bool> & shutdown_called_)
-    : IIterator("ObjectStorageQueueFileIterator")
-    , WithContext(context_)
+    std::atomic<bool> & shutdown_called_,
+    LoggerPtr logger_)
+    : StorageObjectStorageSource::IIterator("ObjectStorageQueueIterator")
     , metadata(metadata_)
     , object_storage(object_storage_)
-    , configuration(configuration_)
-    , virtual_columns(virtual_columns_)
+    , glob_iterator(std::move(glob_iterator_))
     , file_deletion_on_processed_enabled(file_deletion_on_processed_enabled_)
-    , mode(metadata->getTableMetadata().getMode())
-    , enable_hash_ring_filtering(enable_hash_ring_filtering_)
-    , storage_id(storage_id_)
     , shutdown_called(shutdown_called_)
     , log(logger_)
 {
-    if (configuration->isNamespaceWithGlobs())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression can not have wildcards inside namespace name");
-
-    if (!configuration->isPathWithGlobs())
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Using glob iterator with path without globs is not allowed (used path: {})",
-            configuration->getPath());
-    }
-
-    const auto globbed_key = configuration_->getPath();
-    object_storage_iterator = object_storage->iterate(configuration->getPathWithoutGlobs(), list_objects_batch_size_);
-
-    matcher = std::make_unique<re2::RE2>(makeRegexpPatternFromGlobs(globbed_key));
-    if (!matcher->ok())
-    {
-        throw Exception(
-            ErrorCodes::CANNOT_COMPILE_REGEXP,
-            "Cannot compile regex from glob ({}): {}",
-            globbed_key, matcher->error());
-    }
-
-    recursive = globbed_key == "/**";
-    if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(predicate_, virtual_columns))
-    {
-        VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_);
-        filter_expr = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-    }
 }
 
 bool ObjectStorageQueueSource::FileIterator::isFinished() const
@@ -136,223 +73,16 @@ bool ObjectStorageQueueSource::FileIterator::isFinished() const
 
 size_t ObjectStorageQueueSource::FileIterator::estimatedKeysCount()
 {
-    /// Copied from StorageObjectStorageSource::estimateKeysCount().
-    if (object_infos.empty() && !is_finished && object_storage_iterator->isValid())
-        return std::numeric_limits<size_t>::max();
-    else
-        return object_infos.size();
-}
-
-std::pair<ObjectStorageQueueSource::Source::ObjectInfoPtr, ObjectStorageQueueSource::FileMetadataPtr>
-ObjectStorageQueueSource::FileIterator::next()
-{
-    std::lock_guard lock(next_mutex);
-
-    bool current_batch_processed = object_infos.empty() || index >= object_infos.size();
-    if (is_finished && current_batch_processed)
-        return {};
-
-    if (current_batch_processed)
-    {
-        file_metadatas.clear();
-        Source::ObjectInfos new_batch;
-        while (new_batch.empty())
-        {
-            auto result = object_storage_iterator->getCurrentBatchAndScheduleNext();
-            if (!result.has_value())
-            {
-                is_finished = true;
-                return {};
-            }
-
-            LOG_TEST(log, "Received batch of size: {}", result->size());
-
-            new_batch = std::move(result.value());
-            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueListedFiles, new_batch.size());
-
-            for (auto it = new_batch.begin(); it != new_batch.end();)
-            {
-                if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
-                    it = new_batch.erase(it);
-                else
-                    ++it;
-            }
-
-            if (filter_expr)
-            {
-                std::vector<String> paths;
-                paths.reserve(new_batch.size());
-                for (const auto & object_info : new_batch)
-                    paths.push_back(Source::getUniqueStoragePathIdentifier(*configuration, *object_info, false));
-
-                VirtualColumnUtils::filterByPathOrFile(
-                    new_batch, paths, filter_expr, virtual_columns, getContext());
-
-                LOG_TEST(logger, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
-            }
-
-            size_t previous_size = new_batch.size();
-
-            /// Filter out files which we know we would not need to process.
-            filterProcessableFiles(new_batch);
-
-            LOG_TEST(logger, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
-
-            if (!new_batch.empty()
-                && enable_hash_ring_filtering
-                && mode == ObjectStorageQueueMode::UNORDERED)
-            {
-                file_metadatas.resize(new_batch.size());
-
-                std::vector<ObjectStorageQueueIFileMetadata::SetProcessingResponseIndexes> result_indexes;
-                result_indexes.resize(new_batch.size());
-
-                Coordination::Requests requests;
-                size_t num_successful_objects = 0;
-                for (size_t i = 0; i < new_batch.size(); ++i)
-                {
-                    file_metadatas[i] = metadata->getFileMetadata(
-                        new_batch[i]->relative_path,
-                        /* bucket_info */{}); /// No buckets for Unordered mode.
-
-                    auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests);
-                    if (set_processing_result.has_value())
-                    {
-                        result_indexes[i] = set_processing_result.value();
-                        ++num_successful_objects;
-                    }
-                    else
-                    {
-                        new_batch[i] = nullptr;
-                        file_metadatas[i] = nullptr;
-                    }
-                }
-
-                Coordination::Responses responses;
-                auto zk_client = Context::getGlobalContextInstance()->getZooKeeper();
-                auto code = zk_client->tryMulti(requests, responses);
-                if (code == Coordination::Error::ZOK)
-                {
-                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded, num_successful_objects);
-
-                    LOG_TEST(log, "Successfully set {} files as processing", new_batch.size());
-
-                    for (size_t i = 0; i < new_batch.size(); ++i)
-                    {
-                        if (!new_batch[i])
-                            continue;
-
-                        const auto & response_indexes = result_indexes[i];
-                        const auto & set_response = dynamic_cast<const Coordination::SetResponse &>(
-                            *responses[response_indexes.set_processing_id_node_idx].get());
-
-                        file_metadatas[i]->finalizeProcessing(set_response.stat.version);
-                    }
-                }
-                else
-                {
-                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedToBatchSetProcessing);
-
-                    auto failed_idx = zkutil::getFailedOpIndex(code, responses);
-
-                    LOG_TRACE(log, "Failed to set files as processing in one request: {} ({})",
-                              code, requests[failed_idx]->getPath());
-
-                    file_metadatas.clear();
-                }
-
-                if (num_successful_objects != new_batch.size())
-                {
-                    size_t batch_i = 0;
-                    for (size_t i = 0; i < num_successful_objects; ++i, ++batch_i)
-                    {
-                        while (batch_i < new_batch.size() && !new_batch[batch_i])
-                            ++batch_i;
-
-                        if (batch_i == new_batch.size())
-                        {
-                            throw Exception(
-                                ErrorCodes::LOGICAL_ERROR,
-                                "Mismatch num_successful_objects ({}) is less than the number of valid objects",
-                                num_successful_objects);
-                        }
-
-                        new_batch[i] = new_batch[batch_i];
-                        file_metadatas[i] = file_metadatas[batch_i];
-                    }
-                    new_batch.resize(num_successful_objects);
-                    file_metadatas.resize(num_successful_objects);
-                }
-
-                chassert(file_metadatas.empty() || new_batch.size() == file_metadatas.size());
-            }
-        }
-
-        index = 0;
-        object_infos = std::move(new_batch);
-
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFilteredFiles, object_infos.size());
-    }
-
-    if (index >= object_infos.size())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Index out of bound for blob metadata. Index: {}, size: {}",
-            index, object_infos.size());
-    }
-
-    auto result = std::make_pair(
-        object_infos[index],
-        file_metadatas.empty() ? nullptr : file_metadatas[index]);
-
-    if (result.second && result.first->getPath() != result.second->getPath())
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Mismatch {} and {}", result.first->getPath(), result.second->getPath());
-    }
-
-    ++index;
-    return result;
-}
-
-void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(Source::ObjectInfos & objects)
-{
-    std::vector<std::string> paths;
-    paths.reserve(objects.size());
-    for (const auto & object : objects)
-        paths.push_back(object->getPath());
-
-    if (enable_hash_ring_filtering && mode == ObjectStorageQueueMode::UNORDERED)
-        metadata->filterOutForProcessor(paths, storage_id);
-
-    if (mode == ObjectStorageQueueMode::UNORDERED)
-        ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), log);
-    else
-        ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(paths, metadata->getPath(), metadata->getBucketsNum(), log);
-
-    std::unordered_set<std::string> paths_set;
-    std::ranges::move(paths, std::inserter(paths_set, paths_set.end()));
-
-    Source::ObjectInfos result;
-    result.reserve(paths_set.size());
-    for (auto & object : objects)
-    {
-        if (paths_set.contains(object->getPath()))
-            result.push_back(std::move(object));
-    }
-    objects = std::move(result);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method estimateKeysCount is not implemented");
 }
 
 ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIterator::nextImpl(size_t processor)
 {
+    Source::ObjectInfoPtr object_info;
+    ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
+
     while (!shutdown_called)
     {
-        FileMetadataPtr file_metadata;
-        Source::ObjectInfoPtr object_info;
-        ObjectStorageQueueOrderedFileMetadata::BucketInfoPtr bucket_info;
-
         if (metadata->useBucketsForProcessing())
         {
             std::lock_guard lock(mutex);
@@ -363,7 +93,7 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
             std::lock_guard lock(mutex);
             if (objects_to_retry.empty())
             {
-                std::tie(object_info, file_metadata) = next();
+                object_info = glob_iterator->next(processor);
                 if (!object_info)
                     iterator_finished = true;
             }
@@ -386,44 +116,41 @@ ObjectStorageQueueSource::Source::ObjectInfoPtr ObjectStorageQueueSource::FileIt
             return {};
         }
 
-        if (!file_metadata)
+        auto file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
+        if (file_metadata->setProcessing())
         {
-            file_metadata = metadata->getFileMetadata(object_info->relative_path, bucket_info);
-            if (!file_metadata->trySetProcessing())
+            if (file_deletion_on_processed_enabled
+                && !object_storage->exists(StoredObject(object_info->relative_path)))
+            {
+                /// Imagine the following case:
+                /// Replica A processed fileA and deletes it afterwards.
+                /// Replica B has a list request batch (by default list batch is 1000 elements)
+                /// and this batch was collected from object storage before replica A processed fileA.
+                /// fileA could be somewhere in the middle of this batch of replica B
+                /// and replica A processed it before replica B reached fileA in this batch.
+                /// All would be alright, unless user has tracked_files_size_limit or tracked_files_ttl_limit
+                /// which could expire before replica B reached fileA in this list batch.
+                /// It would mean that replica B listed this file while it no longer
+                /// exists in object storage at the moment it wants to process it, but
+                /// because of tracked_files_size(ttl)_limit expiration - we no longer
+                /// have information in keeper that the file was actually processed before,
+                /// so replica B would successfully set itself as processor of this file in keeper
+                /// and face "The specified key does not exist" after that.
+                ///
+                /// This existence check here is enough,
+                /// only because we do applyActionAfterProcessing BEFORE setting file as processed
+                /// and because at this exact place we already successfully set file as processing,
+                /// e.g. file deletion and marking file as processed in keeper already took place.
+                ///
+                /// Note: this all applies only for Unordered mode.
+                LOG_TRACE(log, "Ignoring {} because of the race with list & delete", object_info->getPath());
+
+                file_metadata->resetProcessing();
                 continue;
+            }
+
+            return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, file_metadata);
         }
-
-        if (file_deletion_on_processed_enabled
-            && !object_storage->exists(StoredObject(object_info->relative_path)))
-        {
-            /// Imagine the following case:
-            /// Replica A processed fileA and deletes it afterwards.
-            /// Replica B has a list request batch (by default list batch is 1000 elements)
-            /// and this batch was collected from object storage before replica A processed fileA.
-            /// fileA could be somewhere in the middle of this batch of replica B
-            /// and replica A processed it before replica B reached fileA in this batch.
-            /// All would be alright, unless user has tracked_files_size_limit or tracked_files_ttl_limit
-            /// which could expire before replica B reached fileA in this list batch.
-            /// It would mean that replica B listed this file while it no longer
-            /// exists in object storage at the moment it wants to process it, but
-            /// because of tracked_files_size(ttl)_limit expiration - we no longer
-            /// have information in keeper that the file was actually processed before,
-            /// so replica B would successfully set itself as processor of this file in keeper
-            /// and face "The specified key does not exist" after that.
-            ///
-            /// This existence check here is enough,
-            /// only because we do applyActionAfterProcessing BEFORE setting file as processed
-            /// and because at this exact place we already successfully set file as processing,
-            /// e.g. file deletion and marking file as processed in keeper already took place.
-            ///
-            /// Note: this all applies only for Unordered mode.
-            LOG_TRACE(log, "Ignoring {} because of the race with list & delete", object_info->getPath());
-
-            file_metadata->resetProcessing();
-            continue;
-        }
-
-        return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, std::move(file_metadata));
     }
     return {};
 }
@@ -491,7 +218,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
 
     while (true)
     {
-        /// Each processing thread gets next path
+        /// Each processing thread gets next path from glob_iterator->next()
         /// and checks if corresponding bucket is already acquired by someone.
         /// In case it is already acquired, they put the key into listed_keys_cache,
         /// so that the thread who acquired the bucket will be able to see
@@ -616,8 +343,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             return {};
         }
 
-        auto [object_info, file_metadata] = next();
-        chassert(!file_metadata);
+        auto object_info = glob_iterator->next(processor);
         if (object_info)
         {
             const auto bucket = metadata->getBucketForPath(object_info->relative_path);
@@ -678,7 +404,6 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     std::shared_ptr<FileIterator> file_iterator_,
     ConfigurationPtr configuration_,
     ObjectStoragePtr object_storage_,
-    ProcessingProgressPtr progress_,
     const ReadFromFormatInfo & read_from_format_info_,
     const std::optional<FormatSettings> & format_settings_,
     const CommitSettings & commit_settings_,
@@ -698,13 +423,11 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , file_iterator(file_iterator_)
     , configuration(configuration_)
     , object_storage(object_storage_)
-    , progress(progress_)
     , read_from_format_info(read_from_format_info_)
     , format_settings(format_settings_)
     , commit_settings(commit_settings_)
     , files_metadata(files_metadata_)
     , max_block_size(max_block_size_)
-    , mode(files_metadata->getTableMetadata().getMode())
     , shutdown_called(shutdown_called_)
     , table_is_being_dropped(table_is_being_dropped_)
     , system_queue_log(system_queue_log_)
@@ -735,8 +458,9 @@ Chunk ObjectStorageQueueSource::generate()
     }
 
     if (!chunk && commit_once_processed)
+    {
         commit(true);
-
+    }
     return chunk;
 }
 
@@ -744,75 +468,11 @@ Chunk ObjectStorageQueueSource::generateImpl()
 {
     while (true)
     {
-        if (isCancelled())
-        {
-            if (reader)
-                reader->cancel();
-
-            /// Are there any started, but not finished files?
-            if (processed_files.empty() || processed_files.back().state != FileState::Processing)
-            {
-                /// No unfinished files, just stop processing.
-                break;
-            }
-
-            auto started_file = processed_files.back().metadata;
-            /// Something must have been already read.
-            chassert(started_file->getFileStatus()->processed_rows > 0);
-            /// Mark file as Cancelled, such files will not be set as Failed.
-            processed_files.back().state = FileState::Cancelled;
-            /// Throw exception to avoid inserting half processed file to destination table.
-            throw Exception(
-                ErrorCodes::QUERY_WAS_CANCELLED,
-                "Processing was cancelled (having unfinished file: {})", started_file->getPath());
-        }
-
-        if (shutdown_called)
-        {
-            LOG_TEST(log, "Shutdown was called");
-
-            /// Are there any started, but not finished files?
-            if (processed_files.empty() || processed_files.back().state != FileState::Processing)
-            {
-                /// No unfinished files, just stop processing.
-                break;
-            }
-
-            auto started_file = processed_files.back().metadata;
-            if (table_is_being_dropped)
-            {
-                /// Something must have been already read.
-                chassert(started_file->getFileStatus()->processed_rows > 0);
-                /// Mark file as Cancelled, such files will not be set as Failed.
-                processed_files.back().state = FileState::Cancelled;
-                /// Throw exception to avoid inserting half processed file to destination table.
-                throw Exception(
-                    ErrorCodes::QUERY_WAS_CANCELLED,
-                    "Table is being dropped (having unfinished file: {})", started_file->getPath());
-            }
-
-            LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
-                     "Will process the file fully and then shutdown",
-                     started_file->getPath(), started_file->getFileStatus()->processed_rows);
-        }
-
-        FileMetadataPtr file_metadata;
-        if (reader)
-        {
-            chassert(processed_files.back().state == FileState::Processing, toString(processed_files.back().state));
-            chassert(
-                processed_files.back().metadata->getPath() == reader.getObjectInfo()->getPath(),
-                fmt::format("Mismatch {} vs {}", processed_files.back().metadata->getPath(),
-                            reader.getObjectInfo()->getPath()));
-
-            file_metadata = processed_files.back().metadata;
-        }
-        else
+        if (!reader)
         {
             if (shutdown_called)
             {
                 LOG_TEST(log, "Shutdown called");
-                /// Stop processing.
                 break;
             }
 
@@ -837,130 +497,157 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 LOG_TEST(log, "No reader");
                 break;
             }
-
-            const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
-            file_metadata = object_info->file_metadata;
-            processed_files.emplace_back(file_metadata);
-            progress->processed_files += 1;
         }
 
-        chassert(file_metadata);
+        const auto * object_info = dynamic_cast<const ObjectStorageQueueObjectInfo *>(reader.getObjectInfo().get());
+        auto file_metadata = object_info->file_metadata;
         auto file_status = file_metadata->getFileStatus();
-        const auto & path = file_metadata->getPath();
+        const auto & path = reader.getObjectInfo()->getPath();
 
-        LOG_TEST(log, "Processing file: {}", path);
+        if (isCancelled())
+        {
+            reader->cancel();
 
-        Chunk chunk;
-        bool result = false;
+            if (processed_rows_from_file)
+            {
+                try
+                {
+                    file_metadata->setFailed("Cancelled", /* reduce_retry_count */true, /* overwrite_status */false);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
+                             object_info->relative_path, getCurrentExceptionMessage(true));
+                }
+            }
+
+            LOG_TEST(log, "Query is cancelled");
+            break;
+        }
+
+        if (shutdown_called)
+        {
+            LOG_TEST(log, "Shutdown called");
+
+            if (processed_rows_from_file == 0)
+                break;
+
+            if (table_is_being_dropped)
+            {
+                LOG_DEBUG(
+                    log, "Table is being dropped, {} rows are already processed from {}, but file is not fully processed",
+                    processed_rows_from_file, path);
+
+                try
+                {
+                    file_metadata->setFailed("Table is dropped", /* reduce_retry_count */true, /* overwrite_status */false);
+                }
+                catch (...)
+                {
+                    LOG_ERROR(log, "Failed to set file {} as failed: {}",
+                              object_info->relative_path, getCurrentExceptionMessage(true));
+                }
+
+                /// Leave the file half processed. Table is being dropped, so we do not care.
+                break;
+            }
+
+            LOG_DEBUG(log, "Shutdown called, but file {} is partially processed ({} rows). "
+                     "Will process the file fully and then shutdown",
+                     path, processed_rows_from_file);
+        }
 
         try
         {
-            if (file_status->processed_rows > 0)
-            {
-                fiu_do_on(FailPoints::object_storage_queue_fail_in_the_middle_of_file, {
-                    throw Exception(
-                        ErrorCodes::UNKNOWN_EXCEPTION,
-                        "Failed to read file. Processed rows: {}", file_status->processed_rows);
-                });
-            }
-
             auto timer = DB::CurrentThread::getProfileEvents().timer(ProfileEvents::ObjectStorageQueuePullMicroseconds);
 
-            result = reader->pull(chunk);
+            Chunk chunk;
+            if (reader->pull(chunk))
+            {
+                LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), path);
+
+                file_status->processed_rows += chunk.getNumRows();
+                processed_rows_from_file += chunk.getNumRows();
+                total_processed_rows += chunk.getNumRows();
+                total_processed_bytes += chunk.bytes();
+
+                VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
+                    chunk, read_from_format_info.requested_virtual_columns,
+                    {
+                        .path = path,
+                        .size = reader.getObjectInfo()->metadata->size_bytes
+                    }, getContext());
+
+                return chunk;
+            }
         }
         catch (...)
         {
             const auto message = getCurrentExceptionMessage(true);
-            LOG_ERROR(
-                log,
-                "Got an error while pulling chunk: {}. Will set file {} as failed (processed rows: {})",
-                message, path, file_status->processed_rows);
+            LOG_ERROR(log, "Got an error while pulling chunk. Will set file {} as failed. Error: {} ", path, message);
 
-            processed_files.back().state = FileState::ErrorOnRead;
-            processed_files.back().exception_during_read = message;
+            failed_during_read_files.push_back(file_metadata);
+            file_status->onFailed(getCurrentExceptionMessage(true));
 
-             if (file_status->processed_rows > 0)
-             {
-                 /// Fail the whole insert.
-                 throw;
-             }
-
-            if (mode == ObjectStorageQueueMode::ORDERED)
+            if (processed_rows_from_file == 0)
             {
-                /// Stop processing and commit what is already processed.
-                /// because we must preserve order.
+                if (file_status->retries < file_metadata->getMaxTries())
+                    file_iterator->returnForRetry(reader.getObjectInfo());
+
+                /// If we did not process any rows from the failed file,
+                /// commit all previously processed files,
+                /// not to lose the work already done.
                 return {};
             }
-            else
-            {
-                /// Continue processing.
-                /// This failed file will be committed along with processed files.
-                reader = {};
-                continue;
-            }
+
+            throw;
         }
 
-        if (result)
-        {
-            LOG_TEST(log, "Read {} rows from file: {}", chunk.getNumRows(), path);
-
-            file_status->processed_rows += chunk.getNumRows();
-            progress->processed_rows += chunk.getNumRows();
-            progress->processed_bytes += chunk.bytes();
-
-            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadRows, chunk.getNumRows());
-            ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadBytes, chunk.bytes());
-
-            VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
-                chunk, read_from_format_info.requested_virtual_columns,
-                {
-                    .path = path,
-                    .size = reader.getObjectInfo()->metadata->size_bytes
-                }, getContext());
-
-            return chunk;
-        }
-
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueReadFiles);
-
-        processed_files.back().state = FileState::Processed;
         file_status->setProcessingEndTime();
         file_status.reset();
         reader = {};
 
+        processed_rows_from_file = 0;
+        processed_files.push_back(file_metadata);
+
         if (commit_settings.max_processed_files_before_commit
-            && progress->processed_files == commit_settings.max_processed_files_before_commit)
+            && processed_files.size() == commit_settings.max_processed_files_before_commit)
         {
             LOG_TRACE(log, "Number of max processed files before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
-                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
 
         if (commit_settings.max_processed_rows_before_commit
-            && progress->processed_rows == commit_settings.max_processed_rows_before_commit)
+            && total_processed_rows == commit_settings.max_processed_rows_before_commit)
         {
             LOG_TRACE(log, "Number of max processed rows before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
-                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
+                      "(rows: {}, bytes: {}, files: {})",
+                      total_processed_rows, total_processed_bytes, processed_files.size());
             break;
         }
-
-        if (commit_settings.max_processed_bytes_before_commit
-            && progress->processed_bytes == commit_settings.max_processed_bytes_before_commit)
+        if (commit_settings.max_processed_bytes_before_commit && total_processed_bytes == commit_settings.max_processed_bytes_before_commit)
         {
-            LOG_TRACE(log, "Number of max processed bytes before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
-                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
+            LOG_TRACE(
+                log,
+                "Number of max processed bytes before commit reached "
+                "(rows: {}, bytes: {}, files: {})",
+                total_processed_rows,
+                total_processed_bytes,
+                processed_files.size());
             break;
         }
-
         if (commit_settings.max_processing_time_sec_before_commit
-            && progress->elapsed_time.elapsedSeconds() >= commit_settings.max_processing_time_sec_before_commit)
+            && total_stopwatch.elapsedSeconds() >= commit_settings.max_processing_time_sec_before_commit)
         {
-            LOG_TRACE(log, "Max processing time before commit reached "
-                      "(rows: {}, bytes: {}, files: {}, time: {})",
-                      progress->processed_rows, progress->processed_bytes, progress->processed_files, progress->elapsed_time.elapsedSeconds());
+            LOG_TRACE(
+                log,
+                "Max processing time before commit reached "
+                "(rows: {}, bytes: {}, files: {})",
+                total_processed_rows,
+                total_processed_bytes,
+                processed_files.size());
             break;
         }
     }
@@ -968,210 +655,57 @@ Chunk ObjectStorageQueueSource::generateImpl()
     return {};
 }
 
-void ObjectStorageQueueSource::prepareCommitRequests(
-    Coordination::Requests & requests,
-    bool insert_succeeded,
-    StoredObjects & successful_files,
-    const std::string & exception_message)
+void ObjectStorageQueueSource::commit(bool success, const std::string & exception_message)
 {
-    if (processed_files.empty())
-        return;
+    LOG_TEST(log, "Having {} files to set as {}, failed files: {}",
+             processed_files.size(), success ? "Processed" : "Failed", failed_during_read_files.size());
 
-    LOG_TEST(
-        log,
-        "Having {} files to set as {}",
-        processed_files.size(),
-        insert_succeeded ? "Processed" : "Failed");
-
-    const bool is_ordered_mode = files_metadata->getTableMetadata().getMode() == ObjectStorageQueueMode::ORDERED;
-    const bool use_buckets_for_processing = files_metadata->useBucketsForProcessing();
-    std::map<size_t, size_t> last_processed_file_idx_per_bucket;
-
-    /// For Ordered mode collect a map: bucket_id -> max_processed_path.
-    /// If no buckets are used, we still do this for Ordered mode,
-    /// just consider there will be only one bucket with id 0.
-    if (insert_succeeded && is_ordered_mode)
+    for (const auto & file_metadata : processed_files)
     {
-        for (size_t i = 0; i < processed_files.size(); ++i)
+        if (success)
         {
-            const auto & file_metadata = processed_files[i].metadata;
-            const auto & file_path = file_metadata->getPath();
-            const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
-
-            auto [it, inserted] = last_processed_file_idx_per_bucket.emplace(bucket, i);
-            if (!inserted
-                && file_path > processed_files[it->second].metadata->getPath())
-            {
-                it->second = i;
-            }
+            applyActionAfterProcessing(file_metadata->getPath());
+            file_metadata->setProcessed();
         }
+        else
+        {
+            file_metadata->setFailed(
+                exception_message,
+                /* reduce_retry_count */false,
+                /* overwrite_status */true);
+
+        }
+        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */success);
     }
 
-    for (size_t i = 0; i < processed_files.size(); ++i)
+    for (const auto & file_metadata : failed_during_read_files)
     {
-        const auto & [file_state, file_metadata, exception_during_read] = processed_files[i];
-        switch (file_state)
-        {
-            case FileState::Processed:
-            {
-                chassert(exception_during_read.empty());
-                if (insert_succeeded)
-                {
-                    if (is_ordered_mode)
-                    {
-                        /// For Ordered mode we need to commit as Processed
-                        /// only one max_processed_file per each bucket,
-                        /// for all other files we only remove Processing nodes.
-                        const auto bucket = use_buckets_for_processing ? file_metadata->getBucket() : 0;
-                        if (last_processed_file_idx_per_bucket[bucket] == i)
-                        {
-                            file_metadata->prepareProcessedRequests(requests);
-                        }
-                        else
-                        {
-                            file_metadata->prepareResetProcessingRequests(requests);
-                        }
-                    }
-                    else
-                    {
-                        file_metadata->prepareProcessedRequests(requests);
-                    }
-                    successful_files.push_back(StoredObject(file_metadata->getPath()));
-                }
-                else
-                {
-                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringInsert);
+        /// `exception` from commit args is from insertion to storage.
+        /// Here we do not used it as failed_during_read_files were not inserted into storage, but skipped.
+        file_metadata->setFailed(
+            file_metadata->getFileStatus()->getException(),
+            /* reduce_retry_count */true,
+            /* overwrite_status */false);
 
-                    file_metadata->prepareFailedRequests(
-                        requests,
-                        exception_message,
-                        /* reduce_retry_count */false);
-                }
-                break;
-            }
-            case FileState::Cancelled: [[fallthrough]];
-            case FileState::Processing:
-            {
-                chassert(exception_during_read.empty());
-                if (insert_succeeded)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected state {} of file {} while insert succeeded",
-                        file_state, file_metadata->getPath());
-                }
-
-                if (file_state == FileState::Cancelled)
-                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueCancelledFiles);
-                else
-                    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringInsert);
-
-                file_metadata->prepareFailedRequests(
-                    requests,
-                    exception_message,
-                    /* reduce_retry_count */false);
-                break;
-            }
-            case FileState::ErrorOnRead:
-            {
-                ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringRead);
-
-                chassert(!exception_during_read.empty());
-                file_metadata->prepareFailedRequests(
-                    requests,
-                    exception_during_read,
-                    /* reduce_retry_count */true);
-                break;
-            }
-        }
+        appendLogElement(file_metadata->getPath(), *file_metadata->getFileStatus(), /* processed */false);
     }
 }
 
-void ObjectStorageQueueSource::finalizeCommit(bool insert_succeeded, const std::string & exception_message)
+void ObjectStorageQueueSource::applyActionAfterProcessing(const String & path)
 {
-    if (processed_files.empty())
-        return;
-
-    for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
+    if (files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
     {
-        switch (file_state)
-        {
-            case FileState::Processed:
-            {
-                if (insert_succeeded)
-                {
-                    file_metadata->finalizeProcessed();
-                }
-                else
-                {
-                    file_metadata->finalizeFailed(exception_message);
-                }
-                break;
-            }
-            case FileState::Cancelled: [[fallthrough]];
-            case FileState::Processing:
-            {
-                if (insert_succeeded)
-                {
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected state {} of file {} while insert succeeded",
-                        file_state, file_metadata->getPath());
-                }
-
-                file_metadata->finalizeFailed(exception_message);
-                break;
-            }
-            case FileState::ErrorOnRead:
-            {
-                chassert(!exception_during_read.empty());
-                file_metadata->finalizeFailed(exception_during_read);
-                break;
-            }
-        }
-
-        appendLogElement(
-            file_metadata,
-            /* processed */insert_succeeded && file_state == FileState::Processed);
+        object_storage->removeObjectIfExists(StoredObject(path));
     }
-}
-
-void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string & exception_message)
-{
-    /// This method is only used for SELECT query, not for streaming to materialized views.
-    /// Which is defined by passing a flag commit_once_processed.
-
-    Coordination::Requests requests;
-    StoredObjects successful_objects;
-    prepareCommitRequests(requests, insert_succeeded, successful_objects, exception_message);
-
-    if (!successful_objects.empty()
-        && files_metadata->getTableMetadata().after_processing == ObjectStorageQueueAction::DELETE)
-    {
-        /// We do need to apply after-processing action before committing requests to keeper.
-        /// See explanation in ObjectStorageQueueSource::FileIterator::nextImpl().
-        object_storage->removeObjectsIfExist(successful_objects);
-    }
-
-    auto zk_client = getContext()->getZooKeeper();
-    Coordination::Responses responses;
-    auto code = zk_client->tryMulti(requests, responses);
-    if (code != Coordination::Error::ZOK)
-        throw zkutil::KeeperMultiException(code, requests, responses);
-
-    finalizeCommit(insert_succeeded, exception_message);
-    LOG_TRACE(log, "Successfully committed {} requests", requests.size());
 }
 
 void ObjectStorageQueueSource::appendLogElement(
-    const ObjectStorageQueueMetadata::FileMetadataPtr & file_metadata_,
+    const std::string & filename,
+    ObjectStorageQueueMetadata::FileStatus & file_status_,
     bool processed)
 {
     if (!system_queue_log)
         return;
-
-    const auto & file_path = file_metadata_->getPath();
-    const auto & file_status = *file_metadata_->getFileStatus();
 
     ObjectStorageQueueLogElement elem{};
     {
@@ -1181,12 +715,12 @@ void ObjectStorageQueueSource::appendLogElement(
             .database = storage_id.database_name,
             .table = storage_id.table_name,
             .uuid = toString(storage_id.uuid),
-            .file_name = file_path,
-            .rows_processed = file_status.processed_rows,
+            .file_name = filename,
+            .rows_processed = file_status_.processed_rows,
             .status = processed ? ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Processed : ObjectStorageQueueLogElement::ObjectStorageQueueStatus::Failed,
-            .processing_start_time = file_status.processing_start_time,
-            .processing_end_time = file_status.processing_end_time,
-            .exception = file_status.getException(),
+            .processing_start_time = file_status_.processing_start_time,
+            .processing_end_time = file_status_.processing_end_time,
+            .exception = file_status_.getException(),
         };
     }
     system_queue_log->add(std::move(elem));

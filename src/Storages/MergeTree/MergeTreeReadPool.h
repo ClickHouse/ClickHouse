@@ -87,7 +87,7 @@ private:
     };
 
     const BackoffSettings backoff_settings;
-    BackoffState backoff_state TSA_GUARDED_BY(mutex);
+    BackoffState backoff_state;
 
     struct ThreadTask
     {
@@ -101,8 +101,8 @@ private:
         std::vector<size_t> sum_marks_in_parts;
     };
 
-    std::vector<ThreadTask> threads_tasks TSA_GUARDED_BY(mutex);
-    std::set<size_t> remaining_thread_tasks TSA_GUARDED_BY(mutex);
+    std::vector<ThreadTask> threads_tasks;
+    std::set<size_t> remaining_thread_tasks;
 
     LoggerPtr log = getLogger("MergeTreeReadPool");
 };

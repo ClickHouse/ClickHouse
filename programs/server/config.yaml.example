@@ -136,12 +136,11 @@ interserver_http_port: 9009
 # Allow multiple servers to listen on the same address:port. This is not recommended.
 # listen_reuse_port: 0
 
-# listen_backlog: 4096
-
-# max_connections: 4096
+# listen_backlog: 64
+max_connections: 4096
 
 # For 'Connection: keep-alive' in HTTP 1.1
-keep_alive_timeout: 10
+keep_alive_timeout: 3
 
 # gRPC protocol (see src/Server/grpc_protos/clickhouse_grpc.proto for the API)
 # grpc_port: 9100
@@ -734,13 +733,6 @@ part_log:
 metric_log:
     database: system
     table: metric_log
-    flush_interval_milliseconds: 7500
-    collect_interval_milliseconds: 1000
-
-# Latency log contains rows with current values of latency buckets collected with "collect_interval_milliseconds" interval.
-latency_log:
-    database: system
-    table: latency_log
     flush_interval_milliseconds: 7500
     collect_interval_milliseconds: 1000
 

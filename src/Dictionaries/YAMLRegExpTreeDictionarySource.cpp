@@ -54,6 +54,7 @@ inline const String kYAMLRegExpTree = "yamlregexptree";
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
     extern const int INCORRECT_DICTIONARY_DEFINITION;
     extern const int CANNOT_OPEN_FILE;
@@ -76,7 +77,7 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
         if (dict_struct.has_expressions)
         {
             throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED, "Dictionary source of type `{}` does not support attribute expressions", kYAMLRegExpTree);
+                ErrorCodes::LOGICAL_ERROR, "Dictionary source of type `{}` does not support attribute expressions", kYAMLRegExpTree);
         }
 
         if (!dict_struct.key.has_value() || dict_struct.key.value().size() != 1 || (*dict_struct.key)[0].type->getName() != "String")

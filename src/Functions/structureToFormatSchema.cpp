@@ -1,4 +1,3 @@
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -117,7 +116,7 @@ Function that converts ClickHouse table structure to CapnProto format schema
 "    x @1 : UInt32;\n"
 "}"},
             },
-            .category{"Other"}
+            .categories{"Other"}
         });
 }
 
@@ -138,7 +137,7 @@ Function that converts ClickHouse table structure to Protobuf format schema
 "    uint32 x = 2;\n"
 "}"},
             },
-            .category{"Other"}
+            .categories{"Other"}
         });
 }
 

@@ -2211,7 +2211,7 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 
 If the index falls outside of the bounds of an array, it returns some default value (0 for numbers, an empty string for strings, etc.), except for the case with a non-constant array and a constant index 0 (in this case there will be an error `Array indices are 1-based`).
         )",
-        .category{"Array"}});
+        .categories{"Array"}});
     factory.registerFunction<FunctionArrayElement<ArrayElementExceptionMode::Null>>(FunctionDocumentation{
         .description = R"(
 Get the element with the index `n`from the array `arr`. `n` must be any integer type. Indexes in an array begin from one.
@@ -2220,6 +2220,6 @@ Negative indexes are supported. In this case, it selects the corresponding eleme
 
 If the index falls outside of the bounds of an array, it returns `NULL` instead of a default value.
         )",
-        .category{"Array"}});
+        .categories{"Array"}});
 }
 }

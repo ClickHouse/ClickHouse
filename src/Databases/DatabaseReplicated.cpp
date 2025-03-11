@@ -15,7 +15,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadSettings.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Cluster.h>
@@ -49,7 +48,6 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/threadPoolCallbackRunner.h>
 
 namespace DB
 {
@@ -101,6 +99,8 @@ static constexpr const char * DROPPED_MARK = "DROPPED";
 static constexpr const char * BROKEN_TABLES_SUFFIX = "_broken_tables";
 static constexpr const char * BROKEN_REPLICATED_TABLES_SUFFIX = "_broken_replicated_tables";
 static constexpr const char * FIRST_REPLICA_DATABASE_NAME = "first_replica_database_name";
+
+static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 zkutil::ZooKeeperPtr DatabaseReplicated::getZooKeeper() const
 {
@@ -809,7 +809,7 @@ void DatabaseReplicated::dumpLocalTablesForDebugOnly(const ContextPtr & local_co
 
 void DatabaseReplicated::dumpTablesInZooKeeperForDebugOnly() const
 {
-    UInt32 max_log_ptr{};
+    UInt32 max_log_ptr;
     auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
     for (const auto & [table_name, create_table_query] : table_name_to_metadata)
     {
@@ -827,7 +827,7 @@ void DatabaseReplicated::dumpTablesInZooKeeperForDebugOnly() const
 
 void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const
 {
-    UInt32 max_log_ptr{};
+    UInt32 max_log_ptr;
     auto table_name_to_metadata_in_zk = tryGetConsistentMetadataSnapshot(getZooKeeper(), max_log_ptr);
     auto table_names_local = getAllTableNames(local_context);
 
@@ -1083,7 +1083,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     entry.setSettingsIfRequired(query_context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.is_backup_restore = flags.distributed_backup_restore;
-    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context, flags.internal);
+    String node_path = ddl_worker->tryEnqueueAndExecuteEntry(entry, query_context);
 
     Strings hosts_to_wait;
     Strings unfiltered_hosts = getZooKeeper()->getChildren(zookeeper_path + "/replicas");
@@ -1844,8 +1844,10 @@ void DatabaseReplicated::removeDetachedPermanentlyFlag(ContextPtr local_context,
 
 String DatabaseReplicated::readMetadataFile(const String & table_name) const
 {
-    auto file_path = getObjectMetadataPath(table_name);
-    return DB::readMetadataFile(db_disk, file_path);
+    String statement;
+    ReadBufferFromFile in(getObjectMetadataPath(table_name), METADATA_FILE_BUFFER_SIZE);
+    readStringUntilEOF(statement, in);
+    return statement;
 }
 
 

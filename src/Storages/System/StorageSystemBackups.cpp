@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeMap.h>
-#include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>

@@ -28,29 +28,10 @@ runs:
       run: |
           # to remove every leftovers
           sudo rm -fr "$TEMP_PATH" && mkdir -p "$TEMP_PATH"
-    # https://github.com/google/sanitizers/issues/856
     - name: Tune vm.mmap_rnd_bits for sanitizers
       shell: bash
       run: |
           sudo sysctl vm.mmap_rnd_bits
+          # https://github.com/google/sanitizers/issues/856
+          echo "Tune vm.mmap_rnd_bits for sanitizers"
           sudo sysctl vm.mmap_rnd_bits=28
-    - name: Tune kernel.task_delayacct=1 for OSIOWaitMicroseconds
-      shell: bash
-      run: |
-          sudo sysctl kernel.task_delayacct
-          sudo sysctl kernel.task_delayacct=1
-    - name: Avoid relying on internal AWS DNS
-      shell: bash
-      run: |
-          fqdn=$(hostname --fqdn)
-          echo "Current FQDN: $fqdn"
-          echo "127.0.0.1 $fqdn" | sudo tee -a /etc/hosts
-          resolvectl flush-caches
-          resolvectl query "$fqdn"
-          # Sometimes it tries to resolve the address using NSes:
-          #
-          #     ip-172-31-33-98.ec2.internal has address 127.0.0.1
-          #     Host ip-172-31-33-98.ec2.internal not found: 3(NXDOMAIN)
-          #
-          # So let's ignore the error
-          host "$fqdn" || true

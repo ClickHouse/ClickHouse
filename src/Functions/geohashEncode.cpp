@@ -8,7 +8,7 @@
 
 #include <string>
 
-constexpr size_t GEOHASH_MAX_TEXT_LENGTH = 16;
+#define GEOHASH_MAX_TEXT_LENGTH 16
 
 
 namespace DB

@@ -17,7 +17,7 @@ public:
 
     String getName() const override {return "PostgreSQLOutputFormat";}
 
-    void flushImpl() override;
+    void flush() override;
 
 private:
     void writePrefix() override;

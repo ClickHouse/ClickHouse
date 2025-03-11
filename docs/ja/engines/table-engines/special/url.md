@@ -102,8 +102,8 @@ SELECT * FROM url_engine_table
 
 ## 仮想カラム {#virtual-columns}
 
-- `_path` — `URL`へのパスです。型: `LowCardinality(String)`。
-- `_file` — `URL`のリソース名です。型: `LowCardinality(String)`。
+- `_path` — `URL`へのパスです。型: `LowCardinalty(String)`。
+- `_file` — `URL`のリソース名です。型: `LowCardinalty(String)`。
 - `_size` — リソースのバイト単位のサイズです。型: `Nullable(UInt64)`。サイズが不明な場合、値は`NULL`です。
 - `_time` — ファイルの最終更新時間です。型: `Nullable(DateTime)`。時間が不明な場合、値は`NULL`です。
 - `_headers` - HTTP応答ヘッダーです。型: `Map(LowCardinality(String), LowCardinality(String))`。

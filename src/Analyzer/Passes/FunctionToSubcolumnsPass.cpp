@@ -12,15 +12,14 @@
 
 #include <Interpreters/Context.h>
 
-#include <Analyzer/ColumnNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/FunctionNode.h>
-#include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
-#include <Analyzer/JoinNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/ConstantNode.h>
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Analyzer/JoinNode.h>
 
 #include <Core/Settings.h>
 
@@ -322,12 +321,6 @@ public:
             return;
         }
 
-        if (const auto * /*cross_join_node*/ _ = node->as<CrossJoinNode>())
-        {
-            can_wrap_result_columns_with_nullable |= getContext()->getSettingsRef()[Setting::join_use_nulls];
-            return;
-        }
-
         if (const auto * query_node = node->as<QueryNode>())
         {
             if (query_node->isGroupByWithCube() || query_node->isGroupByWithRollup() || query_node->isGroupByWithGroupingSets())
@@ -387,10 +380,7 @@ private:
     void enterImpl(const TableNode & table_node)
     {
         auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
-
-        /// If table occurs in query several times (e.g., in subquery), process only once
-        /// because we collect only static properties of the table, which are the same for each occurrence.
-        if (!processed_tables.emplace(table_name).second)
+        if (processed_tables.emplace(table_name).second)
             return;
 
         auto add_key_columns = [&](const auto & key_columns)

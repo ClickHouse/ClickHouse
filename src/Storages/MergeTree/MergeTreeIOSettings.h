@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <Compression/CompressionFactory.h>
 #include <Compression/ICompressionCodec.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>

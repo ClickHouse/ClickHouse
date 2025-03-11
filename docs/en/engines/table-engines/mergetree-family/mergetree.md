@@ -4,9 +4,6 @@ sidebar_position: 11
 sidebar_label:  MergeTree
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
 # MergeTree
 
 The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree` ) are the most commonly used and most robust table engines in ClickHouse.
@@ -143,7 +140,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 - `date-column` — The name of a column of the [Date](/docs/en/sql-reference/data-types/date.md) type. ClickHouse automatically creates partitions by month based on this column. The partition names are in the `"YYYYMM"` format.
 - `sampling_expression` — An expression for sampling.
 - `(primary, key)` — Primary key. Type: [Tuple()](/docs/en/sql-reference/data-types/tuple.md)
-- `index_granularity` — The granularity of an index. The number of data rows between the "marks" of an index. The value 8192 is appropriate for most tasks.
+- `index_granularity` — The granularity of an index. The number of data rows between the “marks” of an index. The value 8192 is appropriate for most tasks.
 
 **Example**
 
@@ -166,7 +163,7 @@ Data parts can be stored in `Wide` or `Compact` format. In `Wide` format each co
 
 Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the table engine. If the number of bytes or rows in a data part is less then the corresponding setting's value, the part is stored in `Compact` format. Otherwise it is stored in `Wide` format. If none of these settings is set, data parts are stored in `Wide` format.
 
-Each data part is logically divided into granules. A granule is the smallest indivisible data set that ClickHouse reads when selecting data. ClickHouse does not split rows or values, so each granule always contains an integer number of rows. The first row of a granule is marked with the value of the primary key for the row. For each data part, ClickHouse creates an index file that stores the marks. For each column, whether it's in the primary key or not, ClickHouse also stores the same marks. These marks let you find data directly in column files.
+Each data part is logically divided into granules. A granule is the smallest indivisible data set that ClickHouse reads when selecting data. ClickHouse does not split rows or values, so each granule always contains an integer number of rows. The first row of a granule is marked with the value of the primary key for the row. For each data part, ClickHouse creates an index file that stores the marks. For each column, whether it’s in the primary key or not, ClickHouse also stores the same marks. These marks let you find data directly in column files.
 
 The granule size is restricted by the `index_granularity` and `index_granularity_bytes` settings of the table engine. The number of rows in a granule lays in the `[1, index_granularity]` range, depending on the size of the rows. The size of a granule can exceed `index_granularity_bytes` if the size of a single row is greater than the value of the setting. In this case, the size of the granule equals the size of the row.
 
@@ -191,11 +188,11 @@ The examples above show that it is always more effective to use an index than a 
 
 A sparse index allows extra data to be read. When reading a single range of the primary key, up to `index_granularity * 2` extra rows in each data block can be read.
 
-Sparse indexes allow you to work with a very large number of table rows, because in most cases, such indexes fit in the computer's RAM.
+Sparse indexes allow you to work with a very large number of table rows, because in most cases, such indexes fit in the computer’s RAM.
 
 ClickHouse does not require a unique primary key. You can insert multiple rows with the same primary key.
 
-You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](/docs/en/operations/settings/merge-tree-settings/#allow_nullable_key) setting. The [NULLS_LAST](/docs/en/sql-reference/statements/select/order-by.md/#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
+You can use `Nullable`-typed expressions in the `PRIMARY KEY` and `ORDER BY` clauses but it is strongly discouraged. To allow this feature, turn on the [allow_nullable_key](/docs/en/operations/settings/settings.md/#allow-nullable-key) setting. The [NULLS_LAST](/docs/en/sql-reference/statements/select/order-by.md/#sorting-of-special-values) principle applies for `NULL` values in the `ORDER BY` clause.
 
 ### Selecting a Primary Key {#selecting-a-primary-key}
 
@@ -239,7 +236,7 @@ For `SELECT` queries, ClickHouse analyzes whether an index can be used. An index
 
 Thus, it is possible to quickly run queries on one or many ranges of the primary key. In this example, queries will be fast when run for a specific tracking tag, for a specific tag and date range, for a specific tag and date, for multiple tags with a date range, and so on.
 
-Let's look at the engine configured as follows:
+Let’s look at the engine configured as follows:
 ```sql
 ENGINE MergeTree()
 PARTITION BY toYYYYMM(EventDate)
@@ -267,9 +264,9 @@ AND (CounterID = 101500 OR EventDate != toDate('2014-05-01'))
 
 ClickHouse will use the primary key index to trim improper data and the monthly partitioning key to trim partitions that are in improper date ranges.
 
-The queries above show that the index is used even for complex expressions. Reading from the table is organized so that using the index can't be slower than a full scan.
+The queries above show that the index is used even for complex expressions. Reading from the table is organized so that using the index can’t be slower than a full scan.
 
-In the example below, the index can't be used.
+In the example below, the index can’t be used.
 
 ``` sql
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
@@ -351,7 +348,7 @@ Syntax: `minmax`
 
 #### Set
 
-Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means "no limits"). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
+Stores unique values of the specified expression (no more than `max_rows` rows, `max_rows=0` means “no limits”). Uses the values to check if the `WHERE` expression is not satisfiable on a block of data.
 
 Syntax: `set(max_rows)`
 
@@ -445,10 +442,10 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [multiSearchAny](/docs/en/sql-reference/functions/string-search-functions.md/#multisearchany)              | ✗           | ✗      | ✔          | ✗          | ✗            | ✔         |
 | [in](/docs/en/sql-reference/functions/in-functions)                                                        | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
 | [notIn](/docs/en/sql-reference/functions/in-functions)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         |
-| [less (`<`)](/docs/en/sql-reference/functions/comparison-functions.md/#less)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [greater (`>`)](/docs/en/sql-reference/functions/comparison-functions.md/#greater)                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [lessOrEquals (`<=`)](/docs/en/sql-reference/functions/comparison-functions.md/#lessorequals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [greaterOrEquals (`>=`)](/docs/en/sql-reference/functions/comparison-functions.md/#greaterorequals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [less (<)](/docs/en/sql-reference/functions/comparison-functions.md/#less)                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [greater (>)](/docs/en/sql-reference/functions/comparison-functions.md/#greater)                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [lessOrEquals (<=)](/docs/en/sql-reference/functions/comparison-functions.md/#lessorequals)                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
+| [greaterOrEquals (>=)](/docs/en/sql-reference/functions/comparison-functions.md/#greaterorequals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [empty](/docs/en/sql-reference/functions/array-functions/#empty)                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [notEmpty](/docs/en/sql-reference/functions/array-functions/#notempty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [has](/docs/en/sql-reference/functions/array-functions/#has)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
@@ -459,7 +456,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
 | hasTokenCaseInsensitiveOrNull (*)                                                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
 
-Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
+Functions with a constant argument that is less than ngram size can’t be used by `ngrambf_v1` for query optimization.
 
 (*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
@@ -544,7 +541,7 @@ TTL date_time + INTERVAL 15 HOUR
 
 When the values in the column expire, ClickHouse replaces them with the default values for the column data type. If all the column values in the data part expire, ClickHouse deletes this column from the data part in a filesystem.
 
-The `TTL` clause can't be used for key columns.
+The `TTL` clause can’t be used for key columns.
 
 **Examples**
 
@@ -694,10 +691,10 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 In addition to local block devices, ClickHouse supports these storage types:
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
 - [`gcs` for GCS](/docs/en/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
-- [`blob_storage_disk` for Azure Blob Storage](/docs/en/engines/table-engines/integrations/azureBlobStorage#table_engine-mergetree-azure-blob-storage)
-- [`hdfs` for HDFS](/docs/en/engines/table-engines/integrations/hdfs)
-- [`web` for read-only from web](/docs/en/operations/storing-data#web-storage)
-- [`cache` for local caching](/docs/en/operations/storing-data#using-local-cache)
+- [`blob_storage_disk` for Azure Blob Storage](#table_engine-mergetree-azure-blob-storage)
+- [`hdfs` for HDFS](#hdfs-storage)
+- [`web` for read-only from web](#web-storage)
+- [`cache` for local caching](/docs/en/operations/storing-data.md/#using-local-cache)
 - [`s3_plain` for backups to S3](/docs/en/operations/backup#backuprestore-using-an-s3-disk)
 - [`s3_plain_rewritable` for immutable, non-replicated tables in S3](/docs/en/operations/storing-data.md#s3-plain-rewritable-storage)
 
@@ -705,7 +702,7 @@ In addition to local block devices, ClickHouse supports these storage types:
 
 ### Introduction {#introduction}
 
-`MergeTree` family table engines can store data on multiple block devices. For example, it can be useful when the data of a certain table are implicitly split into "hot" and "cold". The most recent data is regularly requested but requires only a small amount of space. On the contrary, the fat-tailed historical data is requested rarely. If several disks are available, the "hot" data may be located on fast disks (for example, NVMe SSDs or in memory), while the "cold" data - on relatively slow ones (for example, HDD).
+`MergeTree` family table engines can store data on multiple block devices. For example, it can be useful when the data of a certain table are implicitly split into “hot” and “cold”. The most recent data is regularly requested but requires only a small amount of space. On the contrary, the fat-tailed historical data is requested rarely. If several disks are available, the “hot” data may be located on fast disks (for example, NVMe SSDs or in memory), while the “cold” data - on relatively slow ones (for example, HDD).
 
 Data part is the minimum movable unit for `MergeTree`-engine tables. The data belonging to one part are stored on one disk. Data parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](/docs/en/sql-reference/statements/alter/partition.md/#alter_move-partition) queries.
 
@@ -725,7 +722,7 @@ Disks, volumes and storage policies should be declared inside the `<storage_conf
 :::tip
 Disks can also be declared in the `SETTINGS` section of a query.  This is useful
 for ad-hoc analysis to temporarily attach a disk that is, for example, hosted at a URL.
-See [dynamic storage](/docs/en/operations/storing-data#dynamic-configuration) for more details.
+See [dynamic storage](#dynamic-storage) for more details.
 :::
 
 Configuration structure:
@@ -755,7 +752,7 @@ Configuration structure:
 Tags:
 
 - `<disk_name_N>` — Disk name. Names must be different for all disks.
-- `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with '/'.
+- `path` — path under which a server will store data (`data` and `shadow` folders), should be terminated with ‘/’.
 - `keep_free_space_bytes` — the amount of free disk space to be reserved.
 
 The order of the disk definition is not important.
@@ -795,7 +792,7 @@ Tags:
 - `policy_name_N` — Policy name. Policy names must be unique.
 - `volume_name_N` — Volume name. Volume names must be unique.
 - `disk` — a disk within a volume.
-- `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume's disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
+- `max_data_part_size_bytes` — the maximum size of a part that can be stored on any of the volume’s disks. If the a size of a merged part estimated to be bigger than `max_data_part_size_bytes` then this part will be written to a next volume. Basically this feature allows to keep new/small parts on a hot (SSD) volume and move them to a cold (HDD) volume when they reach large size. Do not use this setting if your policy has only one volume.
 - `move_factor` — when the amount of available space gets lower than this factor, data automatically starts to move on the next volume if any (by default, 0.1). ClickHouse sorts existing parts by size from largest to smallest (in descending order) and selects parts with the total size that is sufficient to meet the `move_factor` condition. If the total size of all parts is insufficient, all parts will be moved.
 - `perform_ttl_move_on_insert` — Disables TTL move on data part INSERT. By default (if enabled) if we insert a data part that already expired by the TTL move rule it immediately goes to a volume/disk declared in move rule. This can significantly slowdown insert in case if destination volume/disk is slow (e.g. S3). If disabled then already expired data part is written into a default volume and then right after moved to TTL volume.
 - `load_balancing` - Policy for disk balancing, `round_robin` or `least_used`.
@@ -967,10 +964,7 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 - `_sample_factor` — Sample factor (from the query).
 - `_block_number` — Block number of the row, it is persisted on merges when `allow_experimental_block_number_column` is set to true.
 
-## Column Statistics {#column-statistics}
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+## Column Statistics (Experimental) {#column-statistics}
 
 The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 
@@ -1033,7 +1027,7 @@ They can be used for prewhere optimization only if we enable `set allow_statisti
 
 ### Supported Operations {#supported-operations}
 
-|           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
+|           | Equality filters (==) | Range filters (>, >=, <, <=) |
 |-----------|-----------------------|------------------------------|
 | CountMin  | ✔                     | ✗                            |
 | MinMax    | ✗                     | ✔                            |

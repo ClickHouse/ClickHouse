@@ -11,7 +11,7 @@ sidebar_label: List of tools and utilities
 - [clickhouse-format](../../operations/utilities/clickhouse-format.md) — Enables formatting input queries.
 - [ClickHouse obfuscator](../../operations/utilities/clickhouse-obfuscator.md) — Obfuscates data.
 - [ClickHouse compressor](../../operations/utilities/clickhouse-compressor.md) — Compresses and decompresses data.
-- [clickhouse-disks](../../operations/utilities/clickhouse-disks.md) — Provides filesystem-like operations
+- [clickhouse-disks](../../operations/utilities/clickhouse-disks.md) -- Provides filesystem-like operations
  on files among different ClickHouse disks.
 - [clickhouse-odbc-bridge](../../operations/utilities/odbc-bridge.md) — A proxy server for ODBC driver.
 - [clickhouse_backupview](../../operations/utilities/backupview.md) — A python module to analyze ClickHouse backups.

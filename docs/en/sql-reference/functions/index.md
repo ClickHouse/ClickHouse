@@ -6,12 +6,12 @@ sidebar_label: Overview
 
 # Regular Functions
 
-There are at least\* two types of functions - regular functions (they are just called "functions") and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function does not depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
+There are at least\* two types of functions - regular functions (they are just called “functions”) and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function does not depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).
 
-In this section we discuss regular functions. For aggregate functions, see the section "Aggregate functions".
+In this section we discuss regular functions. For aggregate functions, see the section “Aggregate functions”.
 
 :::note 
-There is a third type of function that the ['arrayJoin' function](../functions/array-join.md) belongs to. And [table functions](../table-functions/index.md) can also be mentioned separately.
+There is a third type of function that the [‘arrayJoin’ function](../functions/array-join.md) belongs to. And [table functions](../table-functions/index.md) can also be mentioned separately.
 :::
 
 ## Strong Typing
@@ -30,7 +30,7 @@ All functions return a single value as the result (not several values, and not z
 
 For simplicity, certain functions can only work with constants for some arguments. For example, the right argument of the LIKE operator must be a constant.
 Almost all functions return a constant for constant arguments. The exception is functions that generate random numbers.
-The 'now' function returns different values for queries that were run at different times, but the result is considered a constant, since constancy is only important within a single query.
+The ‘now’ function returns different values for queries that were run at different times, but the result is considered a constant, since constancy is only important within a single query.
 A constant expression is also considered a constant (for example, the right half of the LIKE operator can be constructed from multiple constants).
 
 Functions can be implemented in different ways for constant and non-constant arguments (different code is executed). But the results for a constant and for a true column containing only the same value should match each other.
@@ -44,7 +44,7 @@ Functions have the following behaviors:
 
 ## Constancy
 
-Functions can't change the values of their arguments – any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
+Functions can’t change the values of their arguments – any changes are returned as the result. Thus, the result of calculating separate functions does not depend on the order in which the functions are written in the query.
 
 ## Higher-order functions, `->` operator and lambda(params, expr) function
 

@@ -67,7 +67,7 @@ GRANT ALTER DELETE ON db.table to username;
 
 1. **A "mask" is applied to affected rows**
 
-   When a `DELETE FROM table ...` query is executed, ClickHouse saves a mask where each row is marked as either "existing" or as "deleted". Those "deleted" rows are omitted for subsequent queries. However, rows are actually only removed later by subsequent merges. Writing this mask is much more lightweight than what is done by an `ALTER TABLE ... DELETE` query.
+   When a `DELETE FROM table ...` query is executed, ClickHouse saves a mask where each row is marked as either “existing” or as “deleted”. Those “deleted” rows are omitted for subsequent queries. However, rows are actually only removed later by subsequent merges. Writing this mask is much more lightweight than what is done by an `ALTER TABLE ... DELETE` query.
 
    The mask is implemented as a hidden `_row_exists` system column that stores `True` for all visible rows and `False` for deleted ones. This column is only present in a part if some rows in the part were deleted. This column does not exist when a part has all values equal to `True`.
 

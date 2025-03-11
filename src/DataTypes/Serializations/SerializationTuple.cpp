@@ -285,7 +285,7 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
             if (!first)
                 writeCString(",\n", ostr);
 
-            writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+            writeChar(' ', (indent + 1) * 4, ostr);
             writeJSONString(elems[i]->getElementName(), ostr, settings);
             writeCString(": ", ostr);
             elems[i]->serializeTextJSONPretty(extractElementColumn(column, i), row_num, ostr, settings, indent + 1);
@@ -293,7 +293,7 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
         }
 
         writeChar('\n', ostr);
-        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+        writeChar(' ', indent * 4, ostr);
         writeChar('}', ostr);
     }
     else
@@ -303,11 +303,11 @@ void SerializationTuple::serializeTextJSONPretty(const IColumn & column, size_t 
         {
             if (i != 0)
                 writeCString(",\n", ostr);
-            writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+            writeChar(' ', (indent + 1) * 4, ostr);
             elems[i]->serializeTextJSONPretty(extractElementColumn(column, i), row_num, ostr, settings, indent + 1);
         }
         writeChar('\n', ostr);
-        writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+        writeChar(' ', indent * 4, ostr);
         writeChar(']', ostr);
     }
 }

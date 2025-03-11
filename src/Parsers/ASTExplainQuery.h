@@ -119,23 +119,23 @@ protected:
         if (ast_settings)
         {
             ostr << ' ';
-            ast_settings->format(ostr, settings, state, frame);
+            ast_settings->formatImpl(ostr, settings, state, frame);
         }
 
         if (query)
         {
             ostr << settings.nl_or_ws;
-            query->format(ostr, settings, state, frame);
+            query->formatImpl(ostr, settings, state, frame);
         }
         if (table_function)
         {
             ostr << settings.nl_or_ws;
-            table_function->format(ostr, settings, state, frame);
+            table_function->formatImpl(ostr, settings, state, frame);
         }
         if (table_override)
         {
             ostr << settings.nl_or_ws;
-            table_override->format(ostr, settings, state, frame);
+            table_override->formatImpl(ostr, settings, state, frame);
         }
     }
 

@@ -31,7 +31,6 @@
 #include <filesystem>
 #include <mutex>
 
-
 namespace DB
 {
 namespace ErrorCodes
@@ -39,7 +38,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_SETTING;
     extern const int AUTHENTICATION_FAILED;
-    extern const int REQUIRED_PASSWORD;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int BAD_ARGUMENTS;
 }
@@ -591,9 +589,9 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         /// This is required for correct behavior in this situation:
         /// User has 1 login failures quota.
         /// * At the first login with an invalid password: Increase the quota counter. 1 (used) > 1 (max) is false.
-        ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
+        ///   Then try to authenticate the user and throw an AUTHENTICATION_FAILED error.
         /// * In case of the second try: increase quota counter, 2 (used) > 1 (max), then throw QUOTA_EXCEED
-        ///   and don't let the user authenticate.
+        ///   and don't let the user authenticate.
         ///
         /// The authentication failures counter will be reset after successful authentication.
         authentication_quota->used(QuotaType::FAILED_SEQUENTIAL_AUTHENTICATIONS, 1);
@@ -612,35 +610,25 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
     {
         tryLogCurrentException(getLogger(), "from: " + address.toString() + ", user: " + credentials.getUserName()  + ": Authentication failed", LogsLevel::information);
 
-        int error_code = ErrorCodes::AUTHENTICATION_FAILED;
-
         WriteBufferFromOwnString message;
         message << credentials.getUserName() << ": Authentication failed: password is incorrect, or there is no user with such name.";
 
         /// Better exception message for usability.
         /// It is typical when users install ClickHouse, type some password and instantly forget it.
         if (credentials.getUserName().empty() || credentials.getUserName() == "default")
-        {
-            error_code = ErrorCodes::REQUIRED_PASSWORD;
-            message << R"(
-
-If you use ClickHouse Cloud, the password can be reset at https://clickhouse.cloud/
-on the settings page for the corresponding service.
-
-If you have installed ClickHouse and forgot password you can reset it in the configuration file.
-The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml
-and deleting this file will reset the password.
-See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.
-
-)";
-        }
+            message << "\n\n"
+                << "If you have installed ClickHouse and forgot password you can reset it in the configuration file.\n"
+                << "The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml\n"
+                << "and deleting this file will reset the password.\n"
+                << "See also /etc/clickhouse-server/users.xml on the server where ClickHouse is installed.\n\n";
 
         /// We use the same message for all authentication failures because we don't want to give away any unnecessary information for security reasons.
         /// Only the log ((*), above) will show the exact reason. Note that (*) logs at information level instead of the default error level as
         /// authentication failures are not an unusual event.
         throw Exception(PreformattedMessage{message.str(),
-            "{}: Authentication failed: password is incorrect, or there is no user with such name",
-            std::vector<std::string>{credentials.getUserName()}}, error_code);
+                                            "{}: Authentication failed: password is incorrect, or there is no user with such name",
+                                            std::vector<std::string>{credentials.getUserName()}},
+                        ErrorCodes::AUTHENTICATION_FAILED);
     }
 }
 

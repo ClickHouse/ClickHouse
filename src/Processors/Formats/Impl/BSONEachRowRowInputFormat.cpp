@@ -414,11 +414,11 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
             auto try_get_index = data_type_tuple->tryGetPositionByName(name.toString());
             if (!try_get_index)
                 throw Exception(
-                    ErrorCodes::INCORRECT_DATA,
-                    "Cannot parse tuple column with type {} from BSON array/embedded document field: "
-                    "tuple doesn't have element with name \"{}\"",
-                    data_type->getName(),
-                    name.toView());
+                                ErrorCodes::INCORRECT_DATA,
+                                "Cannot parse tuple column with type {} from BSON array/embedded document field: "
+                                "tuple doesn't have element with name \"{}\"",
+                                data_type->getName(),
+                                name);
             index = *try_get_index;
         }
 
@@ -803,7 +803,7 @@ bool BSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
         else
         {
             if (seen_columns[index])
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name.toView());
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Duplicate field found while parsing BSONEachRow format: {}", name);
 
             seen_columns[index] = true;
             read_columns[index] = readField(*columns[index], types[index], BSONType(type));

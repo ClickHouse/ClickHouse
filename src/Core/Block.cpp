@@ -12,7 +12,6 @@
 #include <DataTypes/NestedUtils.h>
 
 #include <iterator>
-#include <ranges>
 
 #include <boost/algorithm/string.hpp>
 
@@ -574,12 +573,10 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
 
     if (num_columns != columns.size())
     {
-        auto dump_columns = std::views::transform([](const auto & col) { return col->dumpStructure(); });
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot clone block with columns because block [{}] has {} columns, but {} columns given [{}]",
-            dumpStructure(), num_columns,
-            columns.size(), fmt::join(columns | dump_columns, ", "));
+            "Cannot clone block with columns because block has {} columns, but {} columns given",
+            num_columns, columns.size());
     }
 
     res.reserve(num_columns);
@@ -599,12 +596,10 @@ Block Block::cloneWithColumns(const Columns & columns) const
 
     if (num_columns != columns.size())
     {
-        auto dump_columns = std::views::transform([](const auto & col) { return col->dumpStructure(); });
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "Cannot clone block with columns because block [{}] has {} columns, but {} columns given [{}]",
-            dumpStructure(), num_columns,
-            columns.size(), fmt::join(columns | dump_columns, ", "));
+            "Cannot clone block with columns because block has {} columns, but {} columns given",
+            num_columns, columns.size());
     }
 
     res.reserve(num_columns);

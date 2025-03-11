@@ -3,8 +3,6 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, List, Optional
 
-from praktika.utils import Utils
-
 
 class Job:
     @dataclass
@@ -38,7 +36,7 @@ class Job:
 
         job_requirements: Optional["Job.Requirements"] = None
 
-        timeout: int = 5 * 3600
+        timeout: int = 1 * 3600
 
         digest_config: Optional["Job.CacheDigestConfig"] = None
 
@@ -133,23 +131,3 @@ class Job:
 
         def __repr__(self):
             return self.name
-
-        def copy(self):
-            """
-            To create an instant copy of a job config used in multiple workflows
-            :return: Job.Config
-            """
-            return copy.deepcopy(self)
-
-        def set_dependency(self, job):
-            res = copy.deepcopy(self)
-            if not (isinstance(job, list) or isinstance(job, tuple)):
-                job = [job]
-            for job_ in job:
-                if isinstance(job_, str):
-                    res.requires.append(job_)
-                elif isinstance(job_, Job.Config):
-                    res.requires.append(job_.name)
-                else:
-                    Utils.raise_with_error(f"Invalid dependency type [{job_}]")
-            return res

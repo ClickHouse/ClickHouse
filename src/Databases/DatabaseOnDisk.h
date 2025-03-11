@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Databases/DatabasesCommon.h>
-#include <Disks/IDisk.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Storages/IStorage.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
+#include <Databases/DatabasesCommon.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
@@ -69,8 +68,7 @@ public:
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.getTable()); }
     String getMetadataPath() const override { return metadata_path; }
 
-    static ASTPtr parseQueryFromMetadata(
-        LoggerPtr log, ContextPtr context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
+    static ASTPtr parseQueryFromMetadata(LoggerPtr log, ContextPtr context, const String & metadata_file_path, bool throw_on_error = true, bool remove_empty = false);
 
     /// will throw when the table we want to attach already exists (in active / detached / detached permanently form)
     void checkMetadataFilenameAvailability(const String & to_table_name) const override;

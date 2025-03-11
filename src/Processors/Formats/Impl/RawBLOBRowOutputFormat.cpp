@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/RawBLOBRowOutputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <IO/WriteBuffer.h>

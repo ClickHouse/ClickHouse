@@ -37,7 +37,6 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
 #include <memory>
 #include <cmath>

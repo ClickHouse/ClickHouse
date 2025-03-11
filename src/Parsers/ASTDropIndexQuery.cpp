@@ -34,7 +34,7 @@ void ASTDropIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings
     ostr << (settings.hilite ? hilite_keyword : "") << indent_str;
 
     ostr << "DROP INDEX " << (if_exists ? "IF EXISTS " : "");
-    index_name->format(ostr, settings, state, frame);
+    index_name->formatImpl(ostr, settings, state, frame);
     ostr << " ON ";
 
     ostr << (settings.hilite ? hilite_none : "");
@@ -43,12 +43,12 @@ void ASTDropIndexQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings
     {
         if (database)
         {
-            database->format(ostr, settings, state, frame);
+            database->formatImpl(ostr, settings, state, frame);
             ostr << '.';
         }
 
         chassert(table);
-        table->format(ostr, settings, state, frame);
+        table->formatImpl(ostr, settings, state, frame);
     }
 
     formatOnCluster(ostr, settings);

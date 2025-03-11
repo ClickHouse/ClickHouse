@@ -74,7 +74,7 @@ def get_options(i: int, upgrade_check: bool) -> str:
     # TODO: After release 24.3 use ignore_drop_queries_probability for both
     #       stress test and upgrade check
     if not upgrade_check:
-        client_options.append("ignore_drop_queries_probability=0.2")
+        client_options.append("ignore_drop_queries_probability=0.5")
 
     if random.random() < 0.2:
         client_options.append("enable_parallel_replicas=1")

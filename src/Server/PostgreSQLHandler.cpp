@@ -7,7 +7,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Poco/Util/LayeredConfiguration.h>
 #include <Server/TCPServer.h>
 #include <base/scope_guard.h>
 #include <pcg_random.hpp>
@@ -18,11 +17,8 @@
 #include <Core/Settings.h>
 
 #if USE_SSL
-#    include <Server/CertificateReloader.h>
-#    include <Poco/Net/SSLManager.h>
-#    include <Poco/Net/SecureStreamSocket.h>
-#    include <Poco/Net/Utility.h>
-#    include <Poco/StringTokenizer.h>
+#   include <Poco/Net/SecureStreamSocket.h>
+#   include <Poco/Net/SSLManager.h>
 #endif
 
 namespace DB
@@ -43,9 +39,6 @@ namespace ErrorCodes
 
 PostgreSQLHandler::PostgreSQLHandler(
     const Poco::Net::StreamSocket & socket_,
-#if USE_SSL
-    const std::string & prefix_,
-#endif
     IServer & server_,
     TCPServer & tcp_server_,
     bool ssl_enabled_,
@@ -54,10 +47,6 @@ PostgreSQLHandler::PostgreSQLHandler(
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
-#if USE_SSL
-    , config(server_.config())
-    , prefix(prefix_)
-#endif
     , server(server_)
     , tcp_server(tcp_server_)
     , ssl_enabled(ssl_enabled_)
@@ -67,66 +56,6 @@ PostgreSQLHandler::PostgreSQLHandler(
     , authentication_manager(auth_methods_)
 {
     changeIO(socket());
-
-#if USE_SSL
-    params.privateKeyFile = config.getString(prefix + Poco::Net::SSLManager::CFG_PRIV_KEY_FILE, "");
-    params.certificateFile = config.getString(prefix + Poco::Net::SSLManager::CFG_CERTIFICATE_FILE, params.privateKeyFile);
-    if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
-    {
-        auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
-        params.caLocation = config.getString(prefix + Poco::Net::SSLManager::CFG_CA_LOCATION, ctx->getCAPaths().caLocation);
-
-        params.verificationMode = Poco::Net::SSLManager::VAL_VER_MODE;
-        if (config.hasProperty(prefix + Poco::Net::SSLManager::CFG_VER_MODE))
-        {
-            std::string mode = config.getString(prefix + Poco::Net::SSLManager::CFG_VER_MODE);
-            params.verificationMode = Poco::Net::Utility::convertVerificationMode(mode);
-        }
-
-        params.verificationDepth = config.getInt(prefix + Poco::Net::SSLManager::CFG_VER_DEPTH, Poco::Net::SSLManager::VAL_VER_DEPTH);
-        params.loadDefaultCAs
-            = config.getBool(prefix + Poco::Net::SSLManager::CFG_ENABLE_DEFAULT_CA, Poco::Net::SSLManager::VAL_ENABLE_DEFAULT_CA);
-        params.cipherList = config.getString(prefix + Poco::Net::SSLManager::CFG_CIPHER_LIST, Poco::Net::SSLManager::VAL_CIPHER_LIST);
-        params.cipherList
-            = config.getString(prefix + Poco::Net::SSLManager::CFG_CYPHER_LIST, params.cipherList); // for backwards compatibility
-
-        bool require_tlsv1 = config.getBool(prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1, false);
-        bool require_tlsv1_1 = config.getBool(prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1_1, false);
-        bool require_tlsv1_2 = config.getBool(prefix + Poco::Net::SSLManager::CFG_REQUIRE_TLSV1_2, false);
-        if (require_tlsv1_2)
-            usage = Poco::Net::Context::TLSV1_2_SERVER_USE;
-        else if (require_tlsv1_1)
-            usage = Poco::Net::Context::TLSV1_1_SERVER_USE;
-        else if (require_tlsv1)
-            usage = Poco::Net::Context::TLSV1_SERVER_USE;
-        else
-            usage = Poco::Net::Context::SERVER_USE;
-
-        params.dhParamsFile = config.getString(prefix + Poco::Net::SSLManager::CFG_DH_PARAMS_FILE, "");
-        params.ecdhCurve = config.getString(prefix + Poco::Net::SSLManager::CFG_ECDH_CURVE, "");
-
-        std::string disabled_protocols_list = config.getString(prefix + Poco::Net::SSLManager::CFG_DISABLE_PROTOCOLS, "");
-        Poco::StringTokenizer dp_tok(
-            disabled_protocols_list, ";,", Poco::StringTokenizer::TOK_TRIM | Poco::StringTokenizer::TOK_IGNORE_EMPTY);
-        disabled_protocols = 0;
-        for (const auto & token : dp_tok)
-        {
-            if (token == "sslv2")
-                disabled_protocols |= Poco::Net::Context::PROTO_SSLV2;
-            else if (token == "sslv3")
-                disabled_protocols |= Poco::Net::Context::PROTO_SSLV3;
-            else if (token == "tlsv1")
-                disabled_protocols |= Poco::Net::Context::PROTO_TLSV1;
-            else if (token == "tlsv1_1")
-                disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_1;
-            else if (token == "tlsv1_2")
-                disabled_protocols |= Poco::Net::Context::PROTO_TLSV1_2;
-        }
-
-        extended_verification = config.getBool(prefix + Poco::Net::SSLManager::CFG_EXTENDED_VERIFICATION, false);
-        prefer_server_ciphers = config.getBool(prefix + Poco::Net::SSLManager::CFG_PREFER_SERVER_CIPHERS, false);
-    }
-#endif
 }
 
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
@@ -280,22 +209,9 @@ void PostgreSQLHandler::establishSecureConnection(Int32 & payload_size, Int32 & 
 void PostgreSQLHandler::makeSecureConnectionSSL()
 {
     message_transport->send('S', true);
-    auto ctx = Poco::Net::SSLManager::instance().defaultServerContext();
-    if (!params.privateKeyFile.empty() && !params.certificateFile.empty())
-    {
-        ctx = Poco::Net::SSLManager::instance().getCustomServerContext(prefix);
-        if (!ctx)
-        {
-            ctx = new Poco::Net::Context(usage, params);
-            ctx->disableProtocols(disabled_protocols);
-            ctx->enableExtendedCertificateVerification(extended_verification);
-            if (prefer_server_ciphers)
-                ctx->preferServerCiphers();
-            CertificateReloader::instance().tryLoad(config, ctx->sslContext(), prefix);
-            ctx = Poco::Net::SSLManager::instance().setCustomServerContext(prefix, ctx);
-        }
-    }
-    ss = std::make_shared<Poco::Net::SecureStreamSocket>(Poco::Net::SecureStreamSocket::attach(socket(), ctx));    changeIO(*ss);
+    ss = std::make_shared<Poco::Net::SecureStreamSocket>(
+        Poco::Net::SecureStreamSocket::attach(socket(), Poco::Net::SSLManager::instance().defaultServerContext()));
+    changeIO(*ss);
 }
 #else
 void PostgreSQLHandler::makeSecureConnectionSSL() {}

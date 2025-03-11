@@ -5,7 +5,7 @@ sidebar_label: Joining Tables
 
 # JOIN Clause
 
-Join produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as "self-join".
+Join produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as “self-join”.
 
 **Syntax**
 
@@ -16,7 +16,7 @@ FROM <left_table>
 (ON <expr_list>)|(USING <column_list>) ...
 ```
 
-Expressions from `ON` clause and columns from `USING` clause are called "join keys". Unless otherwise stated, join produces a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from rows with matching "join keys", which might produce results with much more rows than the source tables.
+Expressions from `ON` clause and columns from `USING` clause are called “join keys”. Unless otherwise stated, join produces a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from rows with matching “join keys”, which might produce results with much more rows than the source tables.
 
 ## Related Content
 
@@ -33,14 +33,14 @@ All standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) types are supp
 - `LEFT OUTER JOIN`, non-matching rows from left table are returned in addition to matching rows.
 - `RIGHT OUTER JOIN`, non-matching rows from right table are returned in addition to matching rows.
 - `FULL OUTER JOIN`, non-matching rows from both tables are returned in addition to matching rows.
-- `CROSS JOIN`, produces cartesian product of whole tables, "join keys" are **not** specified.
+- `CROSS JOIN`, produces cartesian product of whole tables, “join keys” are **not** specified.
 
 `JOIN` without specified type implies `INNER`. Keyword `OUTER` can be safely omitted. Alternative syntax for `CROSS JOIN` is specifying multiple tables in [FROM clause](../../../sql-reference/statements/select/from.md) separated by commas.
 
 Additional join types available in ClickHouse:
 
-- `LEFT SEMI JOIN` and `RIGHT SEMI JOIN`, a whitelist on "join keys", without producing a cartesian product.
-- `LEFT ANTI JOIN` and `RIGHT ANTI JOIN`, a blacklist on "join keys", without producing a cartesian product.
+- `LEFT SEMI JOIN` and `RIGHT SEMI JOIN`, a whitelist on “join keys”, without producing a cartesian product.
+- `LEFT ANTI JOIN` and `RIGHT ANTI JOIN`, a blacklist on “join keys”, without producing a cartesian product.
 - `LEFT ANY JOIN`, `RIGHT ANY JOIN` and `INNER ANY JOIN`, partially (for opposite side of `LEFT` and `RIGHT`) or completely (for `INNER` and `FULL`) disables the cartesian product for standard `JOIN` types.
 - `ASOF JOIN` and `LEFT ASOF JOIN`, joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 - `PASTE JOIN`, performs a horizontal concatenation of two tables.
@@ -286,7 +286,7 @@ Algorithm requires the special column in tables. This column:
 
 - Must contain an ordered sequence.
 - Can be one of the following types: [Int, UInt](../../../sql-reference/data-types/int-uint.md), [Float](../../../sql-reference/data-types/float.md), [Date](../../../sql-reference/data-types/date.md), [DateTime](../../../sql-reference/data-types/datetime.md), [Decimal](../../../sql-reference/data-types/decimal.md).
-- For `hash` join algorithm it can't be the only column in the `JOIN` clause.
+- For `hash` join algorithm it can’t be the only column in the `JOIN` clause.
 
 Syntax `ASOF JOIN ... ON`:
 
@@ -323,7 +323,7 @@ For example, consider the following tables:
     event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
                   ...                               ...
 
-`ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can't be joined.
+`ASOF JOIN` can take the timestamp of a user event from `table_1` and find an event in `table_2` where the timestamp is closest to the timestamp of the event from `table_1` corresponding to the closest match condition. Equal timestamp values are the closest if available. Here, the `user_id` column can be used for joining on equality and the `ev_time` column can be used for joining on the closest match. In our example, `event_1_1` can be joined with `event_2_1` and `event_1_2` can be joined with `event_2_3`, but `event_2_2` can’t be joined.
 
 :::note
 `ASOF JOIN` is supported only by `hash` and `full_sorting_merge` join algorithms.
@@ -464,7 +464,7 @@ Each time a query is run with the same `JOIN`, the subquery is run again because
 
 In some cases, it is more efficient to use [IN](../../../sql-reference/operators/in.md) instead of `JOIN`.
 
-If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a "dictionaries" feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
+If you need a `JOIN` for joining with dimension tables (these are relatively small tables that contain dimension properties, such as names for advertising campaigns), a `JOIN` might not be very convenient due to the fact that the right table is re-accessed for every query. For such cases, there is a “dictionaries” feature that you should use instead of `JOIN`. For more information, see the [Dictionaries](../../../sql-reference/dictionaries/index.md) section.
 
 ### Memory Limitations
 

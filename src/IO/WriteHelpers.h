@@ -1143,7 +1143,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
 }
 
 template <typename T>
-void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros = false,
+void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
                bool fixed_fractional_length = false, UInt32 fractional_length = 0)
 {
     T part = DecimalUtils::getWholePart(x, scale);
@@ -1324,14 +1324,6 @@ inline String toString(const T & x)
 {
     WriteBufferFromOwnString buf;
     writeText(x, buf);
-    return buf.str();
-}
-
-template <is_decimal T>
-inline String toString(const T & x, UInt32 scale)
-{
-    WriteBufferFromOwnString buf;
-    writeText(x, scale, buf);
     return buf.str();
 }
 

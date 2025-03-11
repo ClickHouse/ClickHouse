@@ -1,5 +1,4 @@
-#include <Dictionaries/readInvalidateQuery.h>
-#include <Columns/IColumn.h>
+#include "readInvalidateQuery.h"
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <IO/WriteBufferFromString.h>

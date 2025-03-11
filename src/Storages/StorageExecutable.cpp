@@ -200,7 +200,7 @@ void StorageExecutable::read(
     }
 
     auto pipe = coordinator->createPipe(script_path, settings->script_arguments, std::move(inputs), std::move(sample_block), context, configuration);
-    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, shared_from_this());
+    IStorage::readFromPipe(query_plan, std::move(pipe), column_names, storage_snapshot, query_info, context, getName());
     query_plan.addResources(std::move(resources));
 }
 
@@ -271,7 +271,6 @@ void registerStorageExecutable(StorageFactory & factory)
 
     StorageFactory::StorageFeatures storage_features;
     storage_features.supports_settings = true;
-    storage_features.has_builtin_setting_fn = ExecutableSettings::hasBuiltin;
 
     factory.registerStorage("Executable", [&](const StorageFactory::Arguments & args)
     {

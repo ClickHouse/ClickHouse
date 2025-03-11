@@ -16,20 +16,7 @@ Columns:
     - `YYYYMM` for automatic partitioning by month.
     - `any_string` when partitioning manually.
 
-- `name` ([String](../../sql-reference/data-types/string.md)) – Name of the data part. The part naming structure can be used to determine many aspects of the data, ingest, and merge patterns. The part naming format is the following:
-
-```
-<partition_id>_<minimum_block_number>_<maximum_block_number>_<level>_<data_version>
-```
-
-* Definitions:
-     - `partition_id` - identifies the partition key
-     - `minimum_block_number` - identifies the minimum block number in the part. ClickHouse always merges continuous blocks
-     - `maximum_block_number` - identifies the maximum block number in the part
-     - `level` - incremented by one with each additional merge on the part. A level of 0 indicates this is a new part that has not been merged. It is important to remember that all parts in ClickHouse are always immutable
-     - `data_version` - optional value, incremented when a part is mutated (again, mutated data is always only written to a new part, since parts are immutable)
-
-- `uuid` ([UUID](../../sql-reference/data-types/uuid.md)) -  The UUID of data part.
+- `name` ([String](../../sql-reference/data-types/string.md)) – Name of the data part.
 
 - `part_type` ([String](../../sql-reference/data-types/string.md)) — The data part storing format.
 
@@ -40,7 +27,7 @@ Columns:
 
     Data storing format is controlled by the `min_bytes_for_wide_part` and `min_rows_for_wide_part` settings of the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) table.
 
-- `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
+- `active` ([UInt8](../../sql-reference/data-types/int-uint.md)) – Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
 
 - `marks` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint does not work for adaptive granularity).
 
@@ -78,9 +65,9 @@ Columns:
 
 - `partition_id` ([String](../../sql-reference/data-types/string.md)) – ID of the partition.
 
-- `min_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The minimum data block number that makes up the current part after merging.
+- `min_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The minimum number of data parts that make up the current part after merging.
 
-- `max_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The maximum data block number that makes up the current part after merging.
+- `max_block_number` ([UInt64](../../sql-reference/data-types/int-uint.md)) – The maximum number of data parts that make up the current part after merging.
 
 - `level` ([UInt32](../../sql-reference/data-types/int-uint.md)) – Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts.
 

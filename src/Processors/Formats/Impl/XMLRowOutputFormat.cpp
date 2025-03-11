@@ -178,6 +178,11 @@ void XMLRowOutputFormat::writeExtremesElement(const char * title, const Columns 
 }
 
 
+void XMLRowOutputFormat::onProgress(const Progress & value)
+{
+    statistics.progress.incrementPiecewiseAtomically(value);
+}
+
 void XMLRowOutputFormat::finalizeImpl()
 {
     writeCString("\t<rows>", *ostr);

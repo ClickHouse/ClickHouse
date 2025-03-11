@@ -988,7 +988,7 @@ struct ToStartOfNanosecondImpl
         }
         if (scale_multiplier <= 1000000000)
         {
-            return common::mulIgnoreOverflow(datetime64, 1000000000 / scale_multiplier);
+            return datetime64 * (1000000000 / scale_multiplier);
         }
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of argument for function {}, DateTime64 expected", name);

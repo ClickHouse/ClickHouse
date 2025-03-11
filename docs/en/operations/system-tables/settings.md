@@ -9,13 +9,13 @@ Columns:
 
 - `name` ([String](../../sql-reference/data-types/string.md)) — Setting name.
 - `value` ([String](../../sql-reference/data-types/string.md)) — Setting value.
-- `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the setting was explicitly defined in the config or explicitly changed.
+- `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
 - `description` ([String](../../sql-reference/data-types/string.md)) — Short setting description.
 - `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Minimum value of the setting, if any is set via [constraints](../../operations/settings/constraints-on-settings.md#constraints-on-settings). If the setting has no minimum value, contains [NULL](../../sql-reference/syntax.md#null-literal).
 - `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Maximum value of the setting, if any is set via [constraints](../../operations/settings/constraints-on-settings.md#constraints-on-settings). If the setting has no maximum value, contains [NULL](../../sql-reference/syntax.md#null-literal).
 - `readonly` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows whether the current user can change the setting:
     - `0` — Current user can change the setting.
-    - `1` — Current user can't change the setting.
+    - `1` — Current user can’t change the setting.
 - `default` ([String](../../sql-reference/data-types/string.md)) — Setting default value.
 - `is_obsolete` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) - Shows whether a setting is obsolete.
 - `tier` ([Enum8](../../sql-reference/data-types/enum.md)) — Support level for this feature. ClickHouse features are organized in tiers, varying depending on the current status of their development and the expectations one might have when using them. Values:

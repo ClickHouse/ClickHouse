@@ -1,5 +1,3 @@
-#include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnVariant.h>
 
 #include <Columns/ColumnCompressed.h>
@@ -404,15 +402,6 @@ void ColumnVariant::get(size_t n, Field & res) const
         res = Null();
     else
         variants[discr]->get(offsetAt(n), res);
-}
-
-std::pair<String, DataTypePtr> ColumnVariant::getValueNameAndType(size_t n) const
-{
-    Discriminator discr = localDiscriminatorAt(n);
-    if (discr == NULL_DISCRIMINATOR)
-        return {"NULL", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNothing>())};
-
-    return variants[discr]->getValueNameAndType(offsetAt(n));
 }
 
 bool ColumnVariant::isDefaultAt(size_t n) const
@@ -1384,7 +1373,7 @@ void ColumnVariant::getExtremes(Field & min, Field & max) const
     max = Null();
 }
 
-void ColumnVariant::forEachMutableSubcolumn(MutableColumnCallback callback)
+void ColumnVariant::forEachSubcolumn(MutableColumnCallback callback)
 {
     callback(local_discriminators);
     callback(offsets);
@@ -1392,36 +1381,14 @@ void ColumnVariant::forEachMutableSubcolumn(MutableColumnCallback callback)
         callback(variant);
 }
 
-void ColumnVariant::forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback)
-{
-    callback(*local_discriminators);
-    local_discriminators->forEachMutableSubcolumnRecursively(callback);
-    callback(*offsets);
-    offsets->forEachMutableSubcolumnRecursively(callback);
-
-    for (auto & variant : variants)
-    {
-        callback(*variant);
-        variant->forEachMutableSubcolumnRecursively(callback);
-    }
-}
-
-void ColumnVariant::forEachSubcolumn(ColumnCallback callback) const
-{
-    callback(local_discriminators);
-    callback(offsets);
-    for (const auto & variant : variants)
-        callback(variant);
-}
-
-void ColumnVariant::forEachSubcolumnRecursively(RecursiveColumnCallback callback) const
+void ColumnVariant::forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback)
 {
     callback(*local_discriminators);
     local_discriminators->forEachSubcolumnRecursively(callback);
     callback(*offsets);
     offsets->forEachSubcolumnRecursively(callback);
 
-    for (const auto & variant : variants)
+    for (auto & variant : variants)
     {
         callback(*variant);
         variant->forEachSubcolumnRecursively(callback);

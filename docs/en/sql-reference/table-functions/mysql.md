@@ -143,7 +143,7 @@ WHERE id > (SELECT max(id) from mysql_copy);
 
 **See Also**
 
-- [The 'MySQL' table engine](../../engines/table-engines/integrations/mysql.md)
+- [The ‘MySQL’ table engine](../../engines/table-engines/integrations/mysql.md)
 - [Using MySQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)
 - [mysql_datatypes_support_level](/docs/en/operations/settings/settings.md#mysql_datatypes_support_level)
 - [mysql_map_fixed_string_to_text_in_show_columns](/docs/en/operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)

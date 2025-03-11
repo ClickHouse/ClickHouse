@@ -1,11 +1,7 @@
 ---
 slug: /en/operations/system-tables/query_metric_log
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
-
 # query_metric_log
-
-<SystemTableCloud/>
 
 Contains history of memory and metric values from table `system.events` for individual queries, periodically flushed to disk.
 

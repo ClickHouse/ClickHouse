@@ -30,7 +30,7 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         frame.expression_list_prepend_whitespace = false;
 
         ostr << " (";
-        aliases->format(ostr, settings, state, frame);
+        aliases->formatImpl(ostr, settings, state, frame);
         ostr << ")";
 
         frame.expression_list_prepend_whitespace = prep_whitespace;

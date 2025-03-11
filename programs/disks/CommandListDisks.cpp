@@ -10,7 +10,7 @@ namespace DB
 class CommandListDisks final : public ICommand
 {
 public:
-    explicit CommandListDisks() : ICommand("CommandListDisks")
+    explicit CommandListDisks() : ICommand()
     {
         command_name = "list-disks";
         description = "Lists all available disks";
@@ -18,24 +18,15 @@ public:
 
     void executeImpl(const CommandLineOptions &, DisksClient & client) override
     {
-        const std::vector<String> initialized_disks = client.getInitializedDiskNames();
-        std::set<String> sorted_and_selected_disk_state;
-
-
-        for (const auto & disk_name : initialized_disks)
+        std::vector<String> sorted_and_selected{};
+        for (const auto & disk_name : client.getAllDiskNames())
         {
-            sorted_and_selected_disk_state.insert(disk_name + ":" + client.getDiskWithPath(disk_name).getAbsolutePath(""));
+            sorted_and_selected.push_back(disk_name + ":" + client.getDiskWithPath(disk_name).getAbsolutePath(""));
         }
-        if (!sorted_and_selected_disk_state.empty())
+        std::sort(sorted_and_selected.begin(), sorted_and_selected.end());
+        for (const auto & disk_name : sorted_and_selected)
         {
-            std::cout << "Initialized disks:\n" << fmt::format("{}", fmt::join(sorted_and_selected_disk_state, "\n")) << "\n";
-        }
-
-        std::vector<String> uninitialized_disks = client.getUninitializedDiskNames();
-        if (!uninitialized_disks.empty())
-        {
-            std::set<String> sorted_uninitialized_disks(uninitialized_disks.begin(), uninitialized_disks.end());
-            std::cout << "Uninitialized disks:\n" << fmt::format("{}", fmt::join(sorted_uninitialized_disks, "\n")) << "\n";
+            std::cout << disk_name << "\n";
         }
     }
 

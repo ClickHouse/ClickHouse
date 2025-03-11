@@ -12,14 +12,14 @@ pagination_next: 'en/operations/system-tables/asynchronous_metric_log'
 System tables provide information about:
 
 - Server states, processes, and environment.
-- Server's internal processes.
+- Server’s internal processes.
 - Options used when the ClickHouse binary was built.
 
 System tables:
 
 - Located in the `system` database.
 - Available only for reading data.
-- Can't be dropped or altered, but can be detached.
+- Can’t be dropped or altered, but can be detached.
 
 Most of system tables store their data in RAM. A ClickHouse server creates such system tables at the start.
 
@@ -82,83 +82,6 @@ If procfs is supported and enabled on the system, ClickHouse server collects the
 `OSIOWaitMicroseconds` is disabled by default in Linux kernels starting from 5.14.x.
 You can enable it using `sudo sysctl kernel.task_delayacct=1` or by creating a `.conf` file in `/etc/sysctl.d/` with `kernel.task_delayacct = 1`
 :::
-
-## System tables in ClickHouse Cloud
-
-In ClickHouse Cloud, system tables provide critical insights into the state and performance of the service, just as they do in self-managed deployments. Some system tables operate at the cluster-wide level, especially those that derive their data from Keeper nodes, which manage distributed metadata. These tables reflect the collective state of the cluster and should be consistent when queried on individual nodes. For example, the [`parts`](/docs/en/operations/system-tables/parts) should be consistent irrespective of the node it is queried from:
-
-
-```sql
-SELECT hostname(), count()
-FROM system.parts
-WHERE `table` = 'pypi'
-
-┌─hostname()────────────────────┬─count()─┐
-│ c-ecru-qn-34-server-vccsrty-0 │      26 │
-└───────────────────────────────┴─────────┘
-
-1 row in set. Elapsed: 0.005 sec.
-
-SELECT
- hostname(),
-    count()
-FROM system.parts
-WHERE `table` = 'pypi'
-
-┌─hostname()────────────────────┬─count()─┐
-│ c-ecru-qn-34-server-w59bfco-0 │      26 │
-└───────────────────────────────┴─────────┘
-
-1 row in set. Elapsed: 0.004 sec.
-```
-
-Conversely, other system tables are node-specific e.g. in-memory or persisting their data using the MergeTree table engine. This is typical for data such as logs and metrics. This persistence ensures that historical data remains available for analysis. However, these node-specific tables are inherently unique to each node.
-
-To comprehensively view the entire cluster, users can leverage the [`clusterAllReplicas`](/docs/en/sql-reference/table-functions/cluster) function. This function allows querying system tables across all replicas within the "default" cluster, consolidating node-specific data into a unified result. This approach is particularly valuable for monitoring and debugging cluster-wide operations, ensuring users can effectively analyze the health and performance of their ClickHouse Cloud deployment.
-
-:::note
-ClickHouse Cloud provides clusters of multiple replicas for redundancy and failover. This enables its features, such as dynamic autoscaling and zero-downtime upgrades. At a certain moment in time, new nodes could be in the process of being added to the cluster or removed from the cluster. To skip these nodes, add `SETTINGS skip_unavailable_shards = 1` to queries using `clusterAllReplicas` as shown below.
-:::
-
-For example, consider the difference when querying the `query_log` table - often essential to analysis.
-
-```sql
-SELECT
-    hostname() AS host,
-    count()
-FROM system.query_log
-WHERE (event_time >= '2024-12-20 12:30:00') AND (event_time <= '2024-12-20 14:30:00')
-GROUP BY host
-
-┌─host──────────────────────────┬─count()─┐
-│ c-ecru-oc-31-server-ectk72m-0 │   84132 │
-└───────────────────────────────┴─────────┘
-
-1 row in set. Elapsed: 0.010 sec. Processed 154.63 thousand rows, 618.55 KB (16.12 million rows/s., 64.49 MB/s.)
-
-
-SELECT
-    hostname() AS host,
-    count()
-FROM clusterAllReplicas('default', system.query_log)
-WHERE (event_time >= '2024-12-20 12:30:00') AND (event_time <= '2024-12-20 14:30:00')
-GROUP BY host SETTINGS skip_unavailable_shards = 1
-
-┌─host──────────────────────────┬─count()─┐
-│ c-ecru-oc-31-server-ectk72m-0 │   84132 │
-│ c-ecru-oc-31-server-myt0lr4-0 │   81473 │
-│ c-ecru-oc-31-server-5mp9vn3-0 │   84292 │
-└───────────────────────────────┴─────────┘
-
-3 rows in set. Elapsed: 0.309 sec. Processed 686.09 thousand rows, 2.74 MB (2.22 million rows/s., 8.88 MB/s.)
-Peak memory usage: 6.07 MiB.
-```
-
-In general, the following rules can be applied when determining if a system table is node-specific:
-
-- System tables with a `_log` suffix.
-- System tables that expose metrics e.g. `metrics`, `asynchronous_metrics`, `events`.
-- System tables that expose ongoing processes e.g. `processes`, `merges`.
 
 ## Related content
 

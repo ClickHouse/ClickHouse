@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeIPv4andIPv6.h>
+#include <Columns/IColumn.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -33,8 +34,6 @@
 
 namespace DB
 {
-
-using IColumnPermutation = PaddedPODArray<size_t>;
 
 namespace ErrorCodes
 {
@@ -72,7 +71,7 @@ struct SortCursorImpl
     /** We could use SortCursorImpl in case when columns aren't sorted
       *  but we have their sorted permutation
       */
-    IColumnPermutation * permutation = nullptr;
+    IColumn::Permutation * permutation = nullptr;
 
 #if USE_EMBEDDED_COMPILER
     std::vector<ColumnData> raw_sort_columns_data;
@@ -80,7 +79,7 @@ struct SortCursorImpl
 
     SortCursorImpl() = default;
 
-    SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0, IColumnPermutation * perm = nullptr)
+    SortCursorImpl(const Block & block, const SortDescription & desc_, size_t order_ = 0, IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
     {
         reset(block, perm);
@@ -92,7 +91,7 @@ struct SortCursorImpl
         size_t num_rows,
         const SortDescription & desc_,
         size_t order_ = 0,
-        IColumnPermutation * perm = nullptr)
+        IColumn::Permutation * perm = nullptr)
         : desc(desc_), sort_columns_size(desc.size()), order(order_), need_collation(desc.size())
     {
         reset(columns, header, num_rows, perm);
@@ -101,7 +100,7 @@ struct SortCursorImpl
     bool empty() const { return rows == 0; }
 
     /// Set the cursor to the beginning of the new block.
-    void reset(const Block & block, IColumnPermutation * perm = nullptr)
+    void reset(const Block & block, IColumn::Permutation * perm = nullptr)
     {
         if (block.getColumns().empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty column list in block");
@@ -109,7 +108,7 @@ struct SortCursorImpl
     }
 
     /// Set the cursor to the beginning of the new block.
-    void reset(const Columns & columns, const Block & block, UInt64 num_rows, IColumnPermutation * perm = nullptr)
+    void reset(const Columns & columns, const Block & block, UInt64 num_rows, IColumn::Permutation * perm = nullptr)
     {
         all_columns.clear();
         sort_columns.clear();

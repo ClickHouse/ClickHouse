@@ -95,9 +95,4 @@ void ExecutableSettings::applyChanges(const SettingsChanges & changes)
 {
     impl->applyChanges(changes);
 }
-
-bool ExecutableSettings::hasBuiltin(std::string_view name)
-{
-    return ExecutableSettingsImpl::hasBuiltin(name);
-}
 }
