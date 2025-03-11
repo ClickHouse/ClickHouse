@@ -26,6 +26,8 @@ function test_database_comments()
         $CLICKHOUSE_CLIENT -mq "CREATE DATABASE ${databasename} ENGINE = Atomic COMMENT 'Test database with comment';"
     elif [ "$ENGINE_NAME" = "Lazy" ]; then
         $CLICKHOUSE_CLIENT -mq "CREATE DATABASE ${databasename} ENGINE = Lazy(1) COMMENT 'Test database with comment';"
+    elif [ "$ENGINE_NAME" = "Memory" ]; then
+        $CLICKHOUSE_CLIENT -mq "CREATE DATABASE ${databasename} ENGINE = Memory COMMENT 'Test database with comment';"
     else
         echo "Unknown ENGINE_NAME: $ENGINE_NAME"
     fi
@@ -56,3 +58,4 @@ function test_database_comments()
 
 test_database_comments "Atomic"
 test_database_comments "Lazy"
+test_database_comments "Memory"
