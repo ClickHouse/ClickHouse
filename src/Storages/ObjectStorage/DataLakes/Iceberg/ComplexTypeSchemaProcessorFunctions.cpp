@@ -25,6 +25,9 @@ IIcebergSchemaTransform::IIcebergSchemaTransform(std::vector<IcebergChangeSchema
 
 std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const ComplexNode & initial_node)
 {
+    if (path.empty())
+        return {{}};
+
     std::vector<std::vector<size_t>> result;
 
     struct State
