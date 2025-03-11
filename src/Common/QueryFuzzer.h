@@ -67,6 +67,21 @@ private:
     // This field is reset for each fuzzMain() call.
     size_t current_ast_depth = 0;
 
+    // Similar to current_ast_depth, this is a limit on some measure of query size or number of
+    // steps we take. Without it, with small probability, query size may explode even when depth is
+    // limited. In particular, array lengths and depths in fuzzField() were seen to do that:
+    // https://github.com/ClickHouse/ClickHouse/issues/77408
+    //
+    // I don't fully understand how this happens, but my impression is that recursive random
+    // generators like this just generally tend to produce size distribution with heavy tail.
+    // Maybe if the query size/depth/some-other-property reaches some critical mass, each recursive
+    // call on average causes more than one additional recursive call (e.g. by copying a huge subtree
+    // with some small-but-not-tiny probability), so the expected number of calls becomes infinite.
+    // Despite infinite expected tree size, the p99 size may still be moderate
+    // (see e.g. "St. Petersburg lottery"), so the failures can be rare in practice.
+    size_t iteration_count = 0;
+    const size_t iteration_limit = 500000;
+
     // These arrays hold parts of queries that we can substitute into the query
     // we are currently fuzzing. We add some part from each new query we are asked
     // to fuzz, and keep this state between queries, so the fuzzing output becomes
@@ -116,6 +131,7 @@ private:
     void addTableLike(ASTPtr ast);
     void addColumnLike(ASTPtr ast);
     void collectFuzzInfoRecurse(ASTPtr ast);
+    void checkIterationLimit();
 };
 
 }
