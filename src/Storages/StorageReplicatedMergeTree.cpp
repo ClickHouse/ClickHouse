@@ -930,7 +930,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
     return table_created;
 }
 
-bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMetadataPtr &  metadata_snapshot, QueryStatusPtr process_list_element) const
+bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMetadataPtr & metadata_snapshot, QueryStatusPtr process_list_element) const
 {
     auto zookeeper = getZooKeeper();
     zookeeper->createAncestors(zookeeper_path);
