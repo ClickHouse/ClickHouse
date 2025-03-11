@@ -383,6 +383,13 @@ echo "Files in root directory"
 ls -la /
 
 clickhouse-client -q "system flush logs" ||:
+if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    clickhouse-client --port 19000 -q "system flush logs" ||:
+    clickhouse-client --port 29000 -q "system flush logs" ||:
+fi
+if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+    clickhouse-client --port 19000 -q "system flush logs" ||:
+fi
 
 # stop logs replication to make it possible to dump logs tables via clickhouse-local
 stop_logs_replication
@@ -461,15 +468,15 @@ function clickhouse_local_system()
 
 for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latency_log
 do
-    clickhouse_local_system "$data_path_config" -q "select * from system.$table into outfile '/test_output/$table.tsv.zst'"
+    clickhouse_local_system "$data_path_config" -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"
 
     if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        clickhouse_local_system --path /var/lib/clickhouse1/ -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst'"
-        clickhouse_local_system --path /var/lib/clickhouse2/ -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst'"
+        clickhouse_local_system --path /var/lib/clickhouse1/ -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes"
+        clickhouse_local_system --path /var/lib/clickhouse2/ -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"
     fi
 
     if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-        clickhouse_local_system --path /var/lib/clickhouse1/ -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst'"
+        clickhouse_local_system --path /var/lib/clickhouse1/ -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"
     fi
 done
 
