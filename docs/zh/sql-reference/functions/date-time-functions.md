@@ -393,9 +393,11 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 `toStartOfInterval（t，INTERVAL 1 day）`返回与`toStartOfDay（t）`相同的结果，
 `toStartOfInterval（t，INTERVAL 15 minute）`返回与`toStartOfFifteenMinutes（t）`相同的结果。
 
-## toTime {#totime}
+## toTimeWithFixedDate {#totimewithfixeddate}
 
 将DateTime中的日期转换为一个固定的日期，同时保留时间部分。
+
+別名: `toTime` - 只能在啟用 `use_legacy_to_time` 設定時使用。
 
 ## toRelativeYearNum {#torelativeyearnum}
 

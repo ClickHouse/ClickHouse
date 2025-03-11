@@ -179,7 +179,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         which_from_type = WhichDataType(*from_type_hint);
     }
 
-    /// Conversion between Date and DateTime and vice versa.
+    /// Conversion between Date and DateTime, Time and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
         return static_cast<UInt16>(static_cast<const DataTypeDateTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
@@ -212,6 +212,39 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         return DecimalField(
             DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, date_time64_type.getScaleMultiplier()),
             date_time64_type.getScale());
+    }
+    if (which_type.isDate() && which_from_type.isTime())
+    {
+        return static_cast<UInt16>(static_cast<const DataTypeTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
+    }
+    if (which_type.isDate32() && which_from_type.isTime())
+    {
+        return static_cast<Int32>(
+            static_cast<const DataTypeTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
+    }
+    if (which_type.isTime() && which_from_type.isDate())
+    {
+        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(src.safeGet<UInt64>()));
+    }
+    if (which_type.isTime() && which_from_type.isDate32())
+    {
+        return static_cast<const DataTypeTime &>(type).getTimeZone().fromDayNum(DayNum(src.safeGet<Int32>()));
+    }
+    if (which_type.isTime64() && which_from_type.isDate())
+    {
+        const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
+        const auto value = time64_type.getTimeZone().fromDayNum(DayNum(src.safeGet<UInt16>()));
+        return DecimalField(
+            DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
+            time64_type.getScale());
+    }
+    if (which_type.isTime64() && which_from_type.isDate32())
+    {
+        const auto & time64_type = static_cast<const DataTypeTime64 &>(type);
+        const auto value = time64_type.getTimeZone().fromDayNum(ExtendedDayNum(static_cast<Int32>(src.safeGet<Int32>())));
+        return DecimalField(
+            DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, time64_type.getScaleMultiplier()),
+            time64_type.getScale());
     }
     if (type.isValueRepresentedByNumber() && src.getType() != Field::Types::String)
     {
@@ -268,6 +301,18 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return src;
         }
 
+        if ((which_type.isDate() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
+        {
+            /// We don't need any conversion UInt64 is under type of Date and Time
+            return src;
+        }
+
+        if (which_type.isTime() && src.getType() == Field::Types::Int64)
+        {
+            /// We don't need any conversion Int64 is under type of Date32
+            return src;
+        }
+
         if (which_type.isDate32() && src.getType() == Field::Types::Int64)
         {
             /// We don't need any conversion Int64 is under type of Date32
@@ -293,6 +338,25 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return DecimalField(DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(value, 0, 1), scale_to);
         }
 
+        if (which_type.isTime64() && src.getType() == Field::Types::Decimal64)
+        {
+            const auto & from_type = src.safeGet<Decimal64>();
+            const auto & to_type = static_cast<const DataTypeTime64 &>(type);
+
+            const auto scale_from = from_type.getScale();
+            const auto scale_to = to_type.getScale();
+            const auto scale_multiplier_diff = scale_from > scale_to ? from_type.getScaleMultiplier() / to_type.getScaleMultiplier()
+                                                                     : to_type.getScaleMultiplier() / from_type.getScaleMultiplier();
+
+            if (scale_multiplier_diff == 1) /// Already in needed type.
+                return src;
+
+            /// in case if we need to make Time64(a) from Time64(b), a != b, we need to convert time value to the right scale
+            const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
+                                                       : from_type.getValue().value * scale_multiplier_diff;
+            return DecimalField(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
+        }
+
         /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
         /// produce wrong result in some special cases.
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
@@ -314,6 +378,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const auto decimal_value
                 = DecimalUtils::decimalFromComponents<DateTime64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
             return Field(DecimalField<DateTime64>(decimal_value, scale));
+        }
+
+        if (which_type.isTime64()
+            && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64 || src.getType() == Field::Types::Decimal64))
+        {
+            const auto scale = static_cast<const DataTypeTime64 &>(type).getScale();
+            const auto decimal_value
+                = DecimalUtils::decimalFromComponents<Time64>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), src), 0, scale);
+            return Field(DecimalField<Time64>(decimal_value, scale));
         }
 
         if (which_type.isIPv4() && src.getType() == Field::Types::IPv4)
