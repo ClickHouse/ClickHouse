@@ -131,8 +131,8 @@ MergeSelectorApplier::MergeSelectorApplier(
     , aggressive(aggressive_)
     , range_filter(std::move(range_filter_))
 {
-    chassert(!max_merge_sizes_.empty(), "At least one merge size constraint should be passed");
-    chassert(std::is_sorted(max_merge_sizes_.rbegin(), max_merge_sizes_.rend()), "Merge size constraints must be sorted in desc order");
+    chassert(!max_merge_sizes.empty(), "At least one merge size constraint should be passed");
+    chassert(std::is_sorted(max_merge_sizes.rbegin(), max_merge_sizes.rend()), "Merge size constraints must be sorted in desc order");
 }
 
 MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
