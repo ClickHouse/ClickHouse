@@ -1,5 +1,6 @@
 #include <QueryPipeline/ExecutionSpeedLimits.h>
 
+#include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
@@ -8,6 +9,8 @@
 namespace ProfileEvents
 {
     extern const Event ThrottlerSleepMicroseconds;
+    extern const Event OverflowBreak;
+    extern const Event OverflowThrow;
 }
 
 
@@ -17,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_SLOW;
+    extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
 }
 
@@ -96,6 +100,22 @@ void ExecutionSpeedLimits::throttle(
             if (max_execution_bps && bytes_per_second >= max_execution_bps)
                 limitProgressingSpeed(read_bytes, max_execution_bps, total_elapsed_microseconds);
         }
+    }
+}
+
+template <typename... Args>
+static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args)
+{
+    switch (mode)
+    {
+        case OverflowMode::THROW:
+            ProfileEvents::increment(ProfileEvents::OverflowThrow);
+            throw Exception(code, std::move(fmt), std::forward<Args>(args)...);
+        case OverflowMode::BREAK:
+            ProfileEvents::increment(ProfileEvents::OverflowBreak);
+            return false;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown overflow mode");
     }
 }
 

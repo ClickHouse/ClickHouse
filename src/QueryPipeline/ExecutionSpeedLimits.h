@@ -2,25 +2,12 @@
 
 #include <Poco/Timespan.h>
 #include <base/types.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
 #include <QueryPipeline/SizeLimits.h>
 
 class Stopwatch;
 
-namespace ProfileEvents
-{
-    extern const Event OverflowBreak;
-    extern const Event OverflowThrow;
-}
-
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /// Limits for query execution speed.
 class ExecutionSpeedLimits
@@ -43,21 +30,9 @@ public:
         OverflowMode timeout_overflow_mode) const;
 
     bool checkTimeLimit(const UInt64 & elapsed_ns, OverflowMode overflow_mode) const;
+
     template <typename... Args>
-    static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args)
-    {
-        switch (mode)
-        {
-            case OverflowMode::THROW:
-                ProfileEvents::increment(ProfileEvents::OverflowThrow);
-                throw Exception(code, std::move(fmt), std::forward<Args>(args)...);
-            case OverflowMode::BREAK:
-                ProfileEvents::increment(ProfileEvents::OverflowBreak);
-                return false;
-            default:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown overflow mode");
-        }
-    }
+    static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args);
 };
 
 }
