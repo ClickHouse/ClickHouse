@@ -268,7 +268,7 @@ void FilterTransform::writeIntoQueryConditionCache(MarkRangesInfoPtr mark_info)
         if (!matching_mark_info)
             return;
 
-        const auto & data_part = mark_info->getDataPart();
+        const auto & data_part = matching_mark_info->getDataPart();
         auto storage_id = data_part->storage.getStorageID();
         query_condition_cache->write(
             storage_id.uuid,
