@@ -64,7 +64,7 @@ Result:
 ```
 
 :::note
-The result above will differ based on the default compression codec of the server. See [Column Compression Codecs](../../../sql-reference/statements/create/table.md#column-compression-codecs).
+The result above will differ based on the default compression codec of the server. See [Column Compression Codecs](/sql-reference/statements/create/table#column-compression-codecs).
 :::
 
 Query:
