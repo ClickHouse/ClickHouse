@@ -1,0 +1,12 @@
+[FROM, TO] Query 1 result:
+101	Hello, ClickHouse!	-1
+101	Granules are the smallest chunks of data read	3.14159
+102	Insert a lot of rows per batch	1.41421
+[FROM, TO] Query 2 result:
+101	Hello, ClickHouse!	-1
+101	Granules are the smallest chunks of data read	3.14159
+102	Insert a lot of rows per batch	1.41421
+[FROM, TO] Query 3 result:
+101	Granules are the smallest chunks of data read	3.14159
+102	Insert a lot of rows per batch	1.41421
+[FROM, TO] Query 4 result:
