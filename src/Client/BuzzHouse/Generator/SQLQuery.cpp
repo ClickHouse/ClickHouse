@@ -786,7 +786,9 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
         const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+        /// Most of the times disallow aggregates and window functions inside predicates
+        this->levels[this->current_level].allow_aggregates = rg.nextSmallNumber() < 3;
+        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         generateExpression(rg, jc->mutable_on_expr());
         this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
@@ -956,7 +958,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
         }
         this->width -= nclauses;
     }
-    else if (noption < 10)
+    else if (noption < 9)
     {
         /// Predicate
         generatePredicate(rg, expr);
@@ -1036,7 +1038,7 @@ void StatementGenerator::generateGroupByExpr(
 {
     const uint32_t next_option = rg.nextSmallNumber();
 
-    if (!available_cols.empty() && (enforce_having || next_option < 9))
+    if (!available_cols.empty() && (enforce_having || next_option < 8))
     {
         const SQLRelationCol & rel_col = available_cols[offset];
         ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
@@ -1051,7 +1053,7 @@ void StatementGenerator::generateGroupByExpr(
         addColNestedAccess(rg, ecol, 6);
         gcols.emplace_back(GroupCol(rel_col, expr));
     }
-    else if (ncols && next_option < 10)
+    else if (ncols && next_option < 9)
     {
         LiteralValue * lv = expr->mutable_lit_val();
 
@@ -1212,11 +1214,11 @@ void StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nc
             const uint32_t next_option = rg.nextSmallNumber();
 
             this->width++;
-            if (!available_cols.empty() && next_option < 9)
+            if (!available_cols.empty() && next_option < 7)
             {
                 refColumn(rg, available_cols[i], expr);
             }
-            else if (ncols && next_option < 10)
+            else if (ncols && next_option < 9)
             {
                 LiteralValue * lv = expr->mutable_lit_val();
 
@@ -1454,7 +1456,9 @@ void StatementGenerator::generateSelect(
         const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+        /// Most of the times disallow aggregates and window functions inside predicates
+        this->levels[this->current_level].allow_aggregates = rg.nextSmallNumber() < 3;
+        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextSmallNumber() < 2)
         {
             generateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());
