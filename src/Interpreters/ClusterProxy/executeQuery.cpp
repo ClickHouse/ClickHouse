@@ -1,6 +1,5 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
-
 #include <Core/UUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
