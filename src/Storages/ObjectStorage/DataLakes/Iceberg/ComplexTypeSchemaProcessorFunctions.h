@@ -43,7 +43,7 @@ public:
     struct Edge
     {
         String path;
-        TransformType child_type;
+        TransformType parent_type;
     };
 
     explicit IcebergChangeSchemaOperation(ChangeType change_type_, const std::vector<Edge> & root_) : change_type(change_type_), root(root_)

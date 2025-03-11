@@ -41,7 +41,7 @@ std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const
         walk_stack.pop();
 
         size_t height = current_path.size();
-        if (path[height].child_type == TransformType::STRUCT)
+        if (path[height].parent_type == TransformType::STRUCT)
         {
             current_path.push_back(index_path[height]);
 
@@ -97,18 +97,18 @@ std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const
 
 void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
 {
-    auto current_node = initial_node;
-    ComplexNode result_node = current_node;
-
-    std::vector<ComplexNode> nodes_in_path;
-
     auto all_paths_to_transform = traverseAllPaths(initial_node);
     for (const auto & path_to_transform : all_paths_to_transform)
     {
+        auto current_node = initial_node;
+        ComplexNode result_node = current_node;
+
+        std::vector<ComplexNode> nodes_in_path;
+
         for (size_t i = 0; i < path_to_transform.size(); ++i)
         {
             auto subfield_index = path_to_transform[i];
-            auto edge_type = path[i].child_type;
+            auto edge_type = path[i].parent_type;
             nodes_in_path.push_back(current_node);
             if (edge_type == TransformType::STRUCT)
             {
@@ -148,7 +148,7 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
         ComplexNode fixed_node = std::move(current_node);
         for (int j = static_cast<int>(path_to_transform.size()) - 1; j >= 0; --j)
         {
-            if (path[j].child_type == TransformType::STRUCT)
+            if (path[j].parent_type == TransformType::STRUCT)
             {
                 if (std::holds_alternative<Tuple>(fixed_node))
                     std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(fixed_node);
@@ -179,7 +179,7 @@ public:
         for (size_t height = 0; height < operation_.getPath().size(); ++height)
         {
             auto path = operation_.getPath()[height];
-            if (path.child_type == TransformType::STRUCT)
+            if (path.parent_type == TransformType::STRUCT)
             {
                 auto current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
                 auto element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
@@ -236,7 +236,7 @@ public:
     {
         for (const auto & path : operation_.getPath())
         {
-            if (path.child_type == TransformType::STRUCT)
+            if (path.parent_type == TransformType::STRUCT)
             {
                 current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
                 auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
@@ -296,7 +296,7 @@ public:
     {
         for (const auto & path : operation_.getPath())
         {
-            if (path.child_type == TransformType::STRUCT)
+            if (path.parent_type == TransformType::STRUCT)
             {
                 current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
                 auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
