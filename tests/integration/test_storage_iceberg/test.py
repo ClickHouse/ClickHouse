@@ -1091,9 +1091,9 @@ def test_evolved_schema_simple(
         ],
     )
 
-@pytest.mark.parametrize("format_version", ["2"])
-@pytest.mark.parametrize("storage_type", ["local"])
-@pytest.mark.parametrize("is_table_function", [False])
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("is_table_function", [False, True])
 def test_tuple_evolved_simple(
     started_cluster, format_version, storage_type, is_table_function
 ):
@@ -1230,9 +1230,9 @@ def test_tuple_evolved_simple(
         ],
     )
 
-@pytest.mark.parametrize("format_version", ["2"])
-@pytest.mark.parametrize("storage_type", ["local"])
-@pytest.mark.parametrize("is_table_function", [False])
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("is_table_function", [False, True])
 def test_tuple_evolved_simple(
     started_cluster, format_version, storage_type, is_table_function
 ):
@@ -1481,11 +1481,10 @@ def test_tuple_evolved_simple(
         ],
     )
 
-@pytest.mark.parametrize("format_version", ["2"])
-@pytest.mark.parametrize("storage_type", ["local"])
-@pytest.mark.parametrize("is_table_function", [False])
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_array_evolved_with_struct(
-    started_cluster, format_version, storage_type, is_table_function
+    started_cluster, format_version, storage_type
 ):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -1682,9 +1681,9 @@ def test_array_evolved_with_struct(
     )
 
 
-@pytest.mark.parametrize("format_version", ["2"])
-@pytest.mark.parametrize("storage_type", ["local"])
-@pytest.mark.parametrize("is_table_function", [False])
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("is_table_function", [False, True])
 def test_tuple_evolved_nested(
     started_cluster, format_version, storage_type, is_table_function
 ):

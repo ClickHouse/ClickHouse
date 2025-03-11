@@ -23,7 +23,7 @@ IIcebergSchemaTransform::IIcebergSchemaTransform(std::vector<IcebergChangeSchema
 {
 }
 
-std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPathes(const ComplexNode & initial_node)
+std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const ComplexNode & initial_node)
 {
     std::vector<std::vector<size_t>> result;
 
@@ -102,8 +102,8 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
 
     std::vector<ComplexNode> nodes_in_path;
 
-    auto all_pathes_to_transform = traverseAllPathes(initial_node);
-    for (const auto & path_to_transform : all_pathes_to_transform)
+    auto all_paths_to_transform = traverseAllPaths(initial_node);
+    for (const auto & path_to_transform : all_paths_to_transform)
     {
         for (size_t i = 0; i < path_to_transform.size(); ++i)
         {
