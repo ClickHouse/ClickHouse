@@ -2,7 +2,6 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
-#include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
 #include <base/sleep.h>
 
