@@ -8,7 +8,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
@@ -146,14 +145,12 @@ namespace ErrorCodes
 
 
 ConcurrentHashJoin::ConcurrentHashJoin(
-    ContextPtr context_,
     std::shared_ptr<TableJoin> table_join_,
     size_t slots_,
     const Block & right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_)
-    : context(context_)
-    , table_join(table_join_)
+    : table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
@@ -581,7 +578,11 @@ IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_ta
 
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash)
 {
-    chassert(table_join && table_join->oneDisjunct());
+    // This condition is always true for ConcurrentHashJoin (see `TableJoin::allowParallelHashJoin()`),
+    // but this method is called from generic code.
+    if (!table_join || !table_join->oneDisjunct())
+        return 0;
+
     const auto keys
         = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};
     for (const auto & name : keys)
@@ -592,52 +593,54 @@ UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode
 
 void ConcurrentHashJoin::onBuildPhaseFinish()
 {
-    for (auto & hash_join : hash_joins)
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
-        // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
-        hash_join->data->onBuildPhaseFinish();
-    }
-
-    if (!hash_joins[0]->data->twoLevelMapIsUsed())
-        return;
-
-    // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.
-    // It is done in two steps:
-    //     1. Merge hash maps into a single one. For that, we iterate over all sub-maps and move buckets from the current `HashJoin` instance to the common map.
-    for (size_t i = 1; i < slots; ++i)
-    {
-        auto move_buckets = [&](auto & lhs_maps, HashJoin::Type type, auto & rhs_maps, size_t idx)
+        // At this point, the build phase is finished. We need to build a shared common hash map to be used in the probe phase.
+        // It is done in two steps:
+        //     1. Merge hash maps into a single one. For that, we iterate over all sub-maps and move buckets from the current `HashJoin` instance to the common map.
+        for (size_t i = 1; i < slots; ++i)
         {
-            APPLY_TO_MAP(
-                INVOKE_WITH_MAPS,
-                type,
-                lhs_maps,
-                rhs_maps,
-                [&](auto & lhs_map, auto & rhs_map)
-                {
-                    for (size_t j = idx; j < lhs_map.NUM_BUCKETS; j += slots)
-                    {
-                        if (!lhs_map.impls[j].empty())
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected non-empty map");
-                        lhs_map.impls[j] = std::move(rhs_map.impls[j]);
-                    }
-                })
-        };
-
-        std::visit(
-            [&](auto & lhs_map)
+            auto move_buckets = [&](auto & lhs_maps, HashJoin::Type type, auto & rhs_maps, size_t idx)
             {
-                using T = std::decay_t<decltype(lhs_map)>;
-                move_buckets(lhs_map, getData(hash_joins[0])->type, std::get<T>(getData(hash_joins[i])->maps.at(0)), i);
-            },
-            getData(hash_joins[0])->maps.at(0));
+                APPLY_TO_MAP(
+                    INVOKE_WITH_MAPS,
+                    type,
+                    lhs_maps,
+                    rhs_maps,
+                    [&](auto & lhs_map, auto & rhs_map)
+                    {
+                        for (size_t j = idx; j < lhs_map.NUM_BUCKETS; j += slots)
+                        {
+                            if (!lhs_map.impls[j].empty())
+                                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected non-empty map");
+                            lhs_map.impls[j] = std::move(rhs_map.impls[j]);
+                        }
+                    })
+            };
+
+            std::visit(
+                [&](auto & lhs_map)
+                {
+                    using T = std::decay_t<decltype(lhs_map)>;
+                    move_buckets(lhs_map, getData(hash_joins[0])->type, std::get<T>(getData(hash_joins[i])->maps.at(0)), i);
+                },
+                getData(hash_joins[0])->maps.at(0));
+        }
     }
 
-    //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
-    for (size_t i = 1; i < slots; ++i)
+    // `onBuildPhaseFinish` cannot be called concurrently with other IJoin methods, so we don't need a lock to access internal joins.
+    // The following calls must be done after the final common map is constructed, otherwise we will incorrectly initialize `used_flags`.
+    for (const auto & hash_join : hash_joins)
+        hash_join->data->onBuildPhaseFinish();
+
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
     {
-        getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
-        hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
+        //     2. Copy this common map to all the `HashJoin` instances along with the `used_flags` data structure.
+        for (size_t i = 1; i < slots; ++i)
+        {
+            getData(hash_joins[i])->maps = getData(hash_joins[0])->maps;
+            hash_joins[i]->data->getUsedFlags() = hash_joins[0]->data->getUsedFlags();
+        }
     }
 }
 }

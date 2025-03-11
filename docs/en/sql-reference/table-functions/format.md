@@ -1,10 +1,12 @@
 ---
-slug: /en/sql-reference/table-functions/format
+slug: /sql-reference/table-functions/format
 sidebar_position: 65
 sidebar_label: format
+title: "format"
+description: "Parses data from arguments according to specified input format. If structure argument is not specified, it's extracted from the data."
 ---
 
-# format
+# format Table Function
 
 Parses data from arguments according to specified input format. If structure argument is not specified, it's extracted from the data.
 
@@ -16,7 +18,7 @@ format(format_name, [structure], data)
 
 **Parameters**
 
-- `format_name` — The [format](../../interfaces/formats.md#formats) of the data.
+- `format_name` — The [format](/sql-reference/formats) of the data.
 - `structure` - Structure of the table. Optional. Format 'column1_name column1_type, column2_name column2_type, ...'.
 - `data` — String literal or constant expression that returns a string containing data in specified format
 

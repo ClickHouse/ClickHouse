@@ -1616,8 +1616,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         && metadata.setBackgroundDownloadQueueSizeLimit(new_settings[FileCacheSetting::background_download_queue_size_limit]))
     {
         LOG_INFO(log, "Changed background_download_queue_size from {} to {}",
-                 actual_settings[FileCacheSetting::background_download_queue_size_limit],
-                 new_settings[FileCacheSetting::background_download_queue_size_limit]);
+                 actual_settings[FileCacheSetting::background_download_queue_size_limit].value,
+                 new_settings[FileCacheSetting::background_download_queue_size_limit].value);
 
         actual_settings[FileCacheSetting::background_download_queue_size_limit] = new_settings[FileCacheSetting::background_download_queue_size_limit];
     }
@@ -1638,8 +1638,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         if (updated)
         {
             LOG_INFO(log, "Changed background_download_threads from {} to {}",
-                    actual_settings[FileCacheSetting::background_download_threads],
-                    new_settings[FileCacheSetting::background_download_threads]);
+                    actual_settings[FileCacheSetting::background_download_threads].value,
+                    new_settings[FileCacheSetting::background_download_threads].value);
 
             actual_settings[FileCacheSetting::background_download_threads] = new_settings[FileCacheSetting::background_download_threads];
         }
@@ -1650,8 +1650,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         background_download_max_file_segment_size = new_settings[FileCacheSetting::background_download_max_file_segment_size];
 
         LOG_INFO(log, "Changed background_download_max_file_segment_size from {} to {}",
-                actual_settings[FileCacheSetting::background_download_max_file_segment_size],
-                new_settings[FileCacheSetting::background_download_max_file_segment_size]);
+                actual_settings[FileCacheSetting::background_download_max_file_segment_size].value,
+                new_settings[FileCacheSetting::background_download_max_file_segment_size].value);
 
         actual_settings[FileCacheSetting::background_download_max_file_segment_size] = new_settings[FileCacheSetting::background_download_max_file_segment_size];
     }
@@ -1802,8 +1802,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
         if (modified_size_limit)
         {
             LOG_INFO(log, "Changed max_size from {} to {}, max_elements from {} to {}",
-                    actual_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_size],
-                    actual_settings[FileCacheSetting::max_elements], new_settings[FileCacheSetting::max_elements]);
+                    actual_settings[FileCacheSetting::max_size].value, new_settings[FileCacheSetting::max_size].value,
+                    actual_settings[FileCacheSetting::max_elements].value, new_settings[FileCacheSetting::max_elements].value);
         }
         else
         {
@@ -1812,8 +1812,8 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                 "`max_size` and `max_elements` settings will remain inconsistent with config.xml. "
                 "Next attempt to update them will happen on the next config reload. "
                 "You can trigger it with SYSTEM RELOAD CONFIG.",
-                actual_settings[FileCacheSetting::max_size], new_settings[FileCacheSetting::max_size],
-                actual_settings[FileCacheSetting::max_elements], new_settings[FileCacheSetting::max_elements]);
+                actual_settings[FileCacheSetting::max_size].value, new_settings[FileCacheSetting::max_size].value,
+                actual_settings[FileCacheSetting::max_elements].value, new_settings[FileCacheSetting::max_elements].value);
         }
 
         chassert(main_priority->getSizeApprox() <= actual_settings[FileCacheSetting::max_size]);

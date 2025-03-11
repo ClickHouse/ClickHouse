@@ -1,5 +1,6 @@
 import os
 import time
+from urllib.parse import urlparse
 
 ALL_HTTP_METHODS = {"POST", "PUT", "GET", "HEAD", "CONNECT"}
 
@@ -67,6 +68,14 @@ def build_s3_endpoint(protocol, bucket):
     return f"{protocol}://minio1:9001/root/data/{bucket}/test.csv"
 
 
+def remove_existing_s3_endpoint(minio_client, endpoint):
+    endpoint_path = urlparse(endpoint).path
+    path_parts = endpoint_path.strip("/").split("/")
+    bucket = path_parts[0]
+    object_path = "/".join(path_parts[1:])
+    minio_client.remove_object(bucket, object_path)
+
+
 def perform_simple_queries(node, minio_endpoint):
     node.query(
         f"""
@@ -93,6 +102,7 @@ def perform_simple_queries(node, minio_endpoint):
 
 def simple_test(cluster, proxies, protocol, bucket):
     minio_endpoint = build_s3_endpoint(protocol, bucket)
+    remove_existing_s3_endpoint(cluster.minio_client, minio_endpoint)
     node = cluster.instances[bucket]
 
     perform_simple_queries(node, minio_endpoint)
@@ -127,6 +137,7 @@ def simple_storage_test(cluster, node, proxies, policy):
 
 def simple_test_assert_no_proxy(cluster, proxies, protocol, bucket):
     minio_endpoint = build_s3_endpoint(protocol, bucket)
+    remove_existing_s3_endpoint(cluster.minio_client, minio_endpoint)
     node = cluster.instances[bucket]
     perform_simple_queries(node, minio_endpoint)
 

@@ -39,7 +39,7 @@ ClickHouse поддерживает управление доступом на �
 
 1. [Включите](#enabling-access-control) SQL-ориентированное управление доступом для пользователя `default`.
 2. Войдите под пользователем `default` и создайте всех необходимых пользователей. Не забудьте создать аккаунт администратора (`GRANT ALL ON *.* TO admin_user_account WITH GRANT OPTION`).
-3. [Ограничьте разрешения](settings/permissions-for-queries.md#permissions_for_queries) для пользователя `default` и отключите для него SQL-ориентированное управление доступом.
+3. [Ограничьте разрешения](/operations/settings/permissions-for-queries) для пользователя `default` и отключите для него SQL-ориентированное управление доступом.
 
 ### Особенности реализации {#access-control-properties}
 
@@ -58,14 +58,14 @@ ClickHouse поддерживает управление доступом на �
 - Настройки и их ограничения, которые применяются по умолчанию при входе пользователя.
 - Присвоенные профили настроек.
 
-Привилегии присваиваются аккаунту пользователя с помощью запроса [GRANT](../sql-reference/statements/grant.md) или через назначение [ролей](#role-management). Отозвать привилегию можно с помощью запроса [REVOKE](../sql-reference/statements/revoke.md). Чтобы вывести список присвоенных привилегий, используется выражение [SHOW GRANTS](../sql-reference/statements/show.md#show-grants-statement).
+Привилегии присваиваются аккаунту пользователя с помощью запроса [GRANT](../sql-reference/statements/grant.md) или через назначение [ролей](#role-management). Отозвать привилегию можно с помощью запроса [REVOKE](../sql-reference/statements/revoke.md). Чтобы вывести список присвоенных привилегий, используется выражение [SHOW GRANTS](/sql-reference/statements/show#show-grants).
 
 Запросы управления:
 
-- [CREATE USER](../sql-reference/statements/create/user.md#create-user-statement)
+- [CREATE USER](/sql-reference/statements/create/user)
 - [ALTER USER](../sql-reference/statements/alter/user.md)
 - [DROP USER](../sql-reference/statements/drop.md#drop-user)
-- [SHOW CREATE USER](../sql-reference/statements/show.md#show-create-user-statement)
+- [SHOW CREATE USER](/sql-reference/statements/show#show-create-user)
 
 ### Применение настроек {#access-control-settings-applying}
 
@@ -89,7 +89,7 @@ ClickHouse поддерживает управление доступом на �
 
 Запросы управления:
 
-- [CREATE ROLE](../sql-reference/statements/create/index.md#create-role-statement)
+- [CREATE ROLE](/sql-reference/statements/create/role)
 - [ALTER ROLE](../sql-reference/statements/alter/role.md)
 - [DROP ROLE](../sql-reference/statements/drop.md#drop-role)
 - [SET ROLE](../sql-reference/statements/set-role.md)
