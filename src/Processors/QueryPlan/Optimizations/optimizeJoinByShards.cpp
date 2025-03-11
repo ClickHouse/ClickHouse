@@ -30,9 +30,6 @@ ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
         if (reading->isParallelReadingEnabled())
             return nullptr;
 
-        // if (reading->readsInOrder())
-        //     return nullptr;
-
         return reading;
     }
 
@@ -52,8 +49,6 @@ bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 {
     if (node.children.size() != 1)
         return false;
-
-    // std::cerr << "============ Update for " << node.step->getName() << std::endl;
 
     IQueryPlanStep * step = node.step.get();
 
@@ -96,13 +91,15 @@ bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
     return false;
 }
 
+/// This function finds the common prefix of PK for left and right tables,
+/// which is also used in JOIN equality condition.
+///
+/// Only the prefix size is needed, but here we additionally return names for debugging.
 JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     ReadFromMergeTree * lhs_reading, const ActionsDAG & lhs_dag,
     ReadFromMergeTree * rhs_reading, const ActionsDAG & rhs_dag,
     const TableJoin::JoinOnClause & clause)
 {
-    // std::cerr << "optimizeJoinByLayers 4\n";
-
     const auto & lhs_pk = lhs_reading->getStorageMetadata()->getPrimaryKey();
     if (lhs_pk.column_names.empty())
         return {};
@@ -119,6 +116,7 @@ JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     for (const auto & output : rhs_dag.getOutputs())
         rhs_outputs.emplace(output->result_name, output);
 
+    /// Here we match the DAG of PK and the DAG which is used in the query.
     const auto & lhs_pk_dag = lhs_pk.expression->getActionsDAG();
     const auto & lhs_pk_colum_names = lhs_pk.column_names;
     auto lhs_matches = matchTrees(lhs_pk_dag.getOutputs(), lhs_dag, false);
@@ -130,16 +128,16 @@ JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
 
     for (size_t pos = 0; pos < lhs_pk_colum_names.size() && pos < rhs_pk_colum_names.size(); ++pos)
     {
-        // std::cerr << "Checking pos " << pos << std::endl;
-
         const auto * lhs_pk_output = lhs_pk_dag.tryFindInOutputs(lhs_pk_colum_names[pos]);
         const auto * rhs_pk_output = rhs_pk_dag.tryFindInOutputs(rhs_pk_colum_names[pos]);
 
+        /// This should never happen.
         if (!lhs_pk_output || !rhs_pk_output)
             break;
 
         size_t keys_size = clause.key_names_left.size();
 
+        /// Check all the equality conditions
         for (size_t i = 0; i < keys_size && sharding.size() <= pos; ++i)
         {
             const auto & left_name = clause.key_names_left[i];
@@ -149,24 +147,25 @@ JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
 
             auto it = lhs_outputs.find(left_name);
             auto jt = rhs_outputs.find(right_name);
+
+            /// This ideally should not happen as well.
             if (it == lhs_outputs.end() || jt == rhs_outputs.end())
                 continue;
 
+            /// Check if both keys any match the PK expression.
             auto lhs_match = lhs_matches.find(it->second);
             auto rhs_match = rhs_matches.find(jt->second);
             if (lhs_match == lhs_matches.end() || rhs_match == rhs_matches.end())
                 continue;
 
+            /// Match wrapped into monotonic function is not supported,
+            /// but strict monotonic functions should work.
             if (lhs_match->second.monotonicity || rhs_match->second.monotonicity)
                 continue;
 
+            /// Check if both keys matched exactly to expected PK nodes.
             if (lhs_match->second.node == lhs_pk_output && rhs_match->second.node == rhs_pk_output)
-            {
-                // std::cerr << lhs_pk_dag.dumpDAG() << std::endl;
-                // std::cerr << rhs_pk_dag.dumpDAG() << std::endl;
-                // std::cerr << "==== match\n";
                 sharding.emplace_back(lhs_pk_colum_names[pos], rhs_pk_colum_names[pos]);
-            }
         }
 
         if (sharding.size() <= pos)
@@ -176,8 +175,11 @@ JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     return sharding;
 }
 
+/// We can apply shardin for multiple join steps at the same time.
+/// We only need to check that sharding is the same for all the sources.
 struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
 {
+    /// Join step and sharding prefix which can be applied.
     struct JoinAndSharding
     {
         JoinStep * join;
@@ -185,12 +187,20 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
     };
 
     std::list<JoinAndSharding> joins;
+    /// Separately, store joins which use full sorting merge algorithm.
+    /// We should mark this joins to keep the number of streams for the left table the same.
     std::list<JoinStep *> joins_to_keep_in_order;
+    /// Source steps are kept according to in-order traverse.
+    /// The important part that the first source is the left-most.
     std::list<ReadFromMergeTree *> sources;
+    /// For sorting steps which are created for full sorting merge algorithm,
+    /// We need to change the sorting mode to sort partitions independently.
     std::list<SortingStep *> sorting_steps;
+    /// Apply the minimum prefix in case of multiple joins.
     size_t common_prefix = std::numeric_limits<size_t>::max();
 };
 
+/// Apply the sharding optimization for the chosen joins.
 static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 {
     // std::cerr << "... apply for prefix " << data.common_prefix << " and joins " << data.joins.size() << std::endl;
@@ -198,6 +208,8 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     if (data.common_prefix == 0 || data.joins.empty())
         return;
 
+    /// Here we take all the parts from all the sources.
+    /// Update part index to restore back the set of parts.
     RangesInDataParts all_parts;
     std::vector<ReadFromMergeTree::AnalysisResultPtr> analysis_results;
     for (auto & source : data.sources)
@@ -219,6 +231,9 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
         analysis_results.push_back(std::move(analysis_result));
     }
 
+    /// Split all the parts by layers.
+    /// Generally, it should work because we don't use the part a lot. The only needed info is the PK prefix.
+    /// The types of PK prefix expression always match because JOIN equality is applied to identical types (after conversions).
     auto logger = getLogger("optimizeJoinByLayers");
     auto all_split = splitIntersectingPartsRangesIntoLayers(all_parts, data.sources.front()->getNumStreams(), data.common_prefix, false, logger);
     std::vector<SplitPartsByRanges> splits(analysis_results.size());
@@ -226,6 +241,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     for (size_t i = 1; i < splits.size(); ++i)
         splits[i].borders = splits[0].borders;
 
+    /// After we got a layers, restore the part source back.
     for (auto & layer : all_split.layers)
     {
         std::sort(layer.begin(), layer.end(),
@@ -248,28 +264,51 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
         }
     }
 
+    /// Attach split parts to analysis result. Hopefully no other optimization would be done.
     for (size_t i = 0; i < splits.size(); ++i)
         analysis_results[i]->split_parts = std::move(splits[i]);
 
+    /// Apply sharding to joins with the minimum prefix.
     for (auto & join_and_sharding : data.joins)
     {
         join_and_sharding.sharding.resize(data.common_prefix);
         join_and_sharding.join->enableJoinByLayers(std::move(join_and_sharding.sharding));
     }
 
+    /// Apply sharding for JOIN sorting steps.
     for (const auto & sorting_step : data.sorting_steps)
         sorting_step->convertToPartitionedFinishSorting();
 
+    /// Do not breake shards after full_sorting_merge JOIN. For hash join it is automatically true.
     for (const auto & join_step : data.joins_to_keep_in_order)
         join_step->keepLeftPipelineInOrder();
 }
 
+/// Join can be executed by independent shards if the same sharding can apply for the keft and right part,
+/// and also the join condition can be applied within shard independently (only equality is supported).
+///
+/// In case if left and right tables are reading from MergeTree, we check for PK prefix
+/// and enable the special reading mode where each output port correspond to the independent shard.
+///
+/// The case with multiple joins is supported.
+/// Generally, we can apply sharding to JOIN if
+/// * the leftmost source of the left subtree and the leftmost source of the right subtree is reading from MergerTree
+/// * no steps from source to JOIN can breake sharding
+///
+/// The last criteria
+/// * true for Expression, Filter, HashJoin steps
+/// * can be enforced for fill_sorting_merge JOIN and Sorting step added for it
+///
+/// The algorithm finds as many JOIN steps as it can and apply optimization for the minimum possible prefix.
 void optimizeJoinByShards(QueryPlan::Node & root)
 {
+    /// The algorithm is basically DFS which build the Result structur for the every child step,
+    /// And then update the Result for the current step or apply the optimization.
     struct Result
     {
         JoinsAndSourcesWithCommonPrimaryKeyPrefix joins;
-        ActionsDAG dag; /// For the leftmost source
+        /// For the leftmost source, we are building the DAG which represent expression execution.
+        ActionsDAG dag;
     };
 
     struct Frame
@@ -301,12 +340,6 @@ void optimizeJoinByShards(QueryPlan::Node & root)
         if (auto * join_step = typeid_cast<JoinStep *>(frame.node->step.get()))
         {
             const auto & join = join_step->getJoin();
-
-            // std::cerr << "Processing Join\n";
-            // WriteBufferFromOwnString out;
-            // IQueryPlanStep::FormatSettings settings{out};
-            // join_step->describeActions(settings);
-            // std::cerr << out.stringView() << std::endl;
 
             auto * hash_join = typeid_cast<HashJoin *>(join.get());
             auto * concurrent_hash_join = typeid_cast<ConcurrentHashJoin *>(join.get());
@@ -388,7 +421,6 @@ void optimizeJoinByShards(QueryPlan::Node & root)
             /// The SortingStep can potentially apper from ORDER BY,
             /// but it would be useless because JOIN does not enforce sorting by itself.
 
-            // std::cerr << "============ Apply for sorting\n";
             if (frame.results.size() == 1 && frame.results[0])
             {
                 result = std::move(frame.results[0]);
