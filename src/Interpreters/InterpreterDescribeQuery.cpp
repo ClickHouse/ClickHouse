@@ -3,6 +3,7 @@
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/queryToString.h>
+#include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <TableFunctions/ITableFunction.h>
@@ -180,6 +181,11 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     auto table_id = getContext()->resolveStorageID(table_expression.database_and_table_name);
     getContext()->checkAccess(AccessType::SHOW_COLUMNS, table_id);
     auto table = DatabaseCatalog::instance().getTable(table_id, getContext());
+    if (table->hasExternalDynamicMetadata())
+    {
+        table->updateExternalDynamicMetadata(getContext());
+    }
+
     auto table_lock = table->lockForShare(getContext()->getInitialQueryId(), settings[Setting::lock_acquire_timeout]);
 
     auto metadata_snapshot = table->getInMemoryMetadataPtr();

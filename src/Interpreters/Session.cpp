@@ -12,20 +12,21 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Cluster.h>
 
-#include <magic_enum.hpp>
+#include <base/EnumReflection.h>
 
-#include <atomic>
 #include <condition_variable>
-#include <deque>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {
@@ -127,7 +128,7 @@ public:
             if (!thread.joinable())
                 thread = ThreadFromGlobalPool{&NamedSessionsStorage::cleanThread, this};
 
-            LOG_TRACE(log, "Create new session with session_id: {}, user_id: {}", key.second, key.first);
+            LOG_TRACE(log, "Create new session with session_id: {}, user_id: {}", key.second, toString(key.first));
 
             return {session, true};
         }
@@ -135,7 +136,7 @@ public:
         /// Use existing session.
         const auto & session = it->second;
 
-        LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, key.first);
+        LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, toString(key.first));
 
         if (!isSharedPtrUnique(session))
             throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
@@ -170,7 +171,7 @@ public:
         auto it = sessions.find(key);
         if (it == sessions.end())
         {
-            LOG_INFO(log, "Session {} not found for user {}, probably it's already closed", session_id, user_id);
+            LOG_INFO(log, "Session {} not found for user {}, probably it's already closed", session_id, toString(user_id));
             return;
         }
 
@@ -217,7 +218,7 @@ private:
         bucket_sessions.insert(session.key);
 
         LOG_TEST(log, "Schedule closing session with session_id: {}, user_id: {}",
-            session.key.second, session.key.first);
+            session.key.second, toString(session.key.first));
     }
 
     void cleanThread()
@@ -254,14 +255,14 @@ private:
                 if (session.use_count() != 1)
                 {
                     LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
-                        key.second, key.first, session.use_count());
+                        key.second, toString(key.first), session.use_count());
 
                     session->timeout = std::chrono::steady_clock::duration{0};
                     scheduleCloseSession(*session, lock);
                     continue;
                 }
 
-                LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, key.first);
+                LOG_TRACE(log, "Close session with session_id: {}, user_id: {}", key.second, toString(key.first));
 
                 sessions.erase(session_it);
             }
@@ -366,7 +367,8 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
 
     try
     {
-        auto auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedFor());
+        auto auth_result =
+            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo().getLastForwardedForHost());
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
@@ -388,7 +390,7 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     }
 
     prepared_client_info->current_user = credentials_.getUserName();
-    prepared_client_info->current_address = address;
+    prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
 }
 
 void Session::checkIfUserIsStillValid()
@@ -409,7 +411,7 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
     {
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
-        info_for_log.current_address = address_;
+        info_for_log.current_address = std::make_shared<Poco::Net::SocketAddress>(address_);
         session_log->addLoginFailure(auth_id, info_for_log, user_name, e);
     }
 }
@@ -674,7 +676,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     if (prepared_client_info && !prepared_client_info->current_user.empty())
     {
         query_context->setCurrentUserName(prepared_client_info->current_user);
-        query_context->setCurrentAddress(prepared_client_info->current_address);
+        query_context->setCurrentAddress(*prepared_client_info->current_address);
     }
 
     /// Set parameters of initial query.
@@ -684,7 +686,7 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         query_context->setInitialUserName(query_context->getClientInfo().current_user);
-        query_context->setInitialAddress(query_context->getClientInfo().current_address);
+        query_context->setInitialAddress(*query_context->getClientInfo().current_address);
     }
 
     /// Set user information for the new context: current profiles, roles, access rights.

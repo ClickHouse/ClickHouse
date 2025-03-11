@@ -4,8 +4,13 @@
 
 #if USE_USEARCH
 
-#include <Storages/MergeTree/VectorSimilarityCondition.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Logger.h>
+
+/// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
+#if defined(__x86_64__) || defined(__i386__)
+#include <immintrin.h>
+#endif
 #include <usearch/index_dense.hpp>
 
 namespace DB
@@ -60,6 +65,8 @@ public:
     };
 
     Statistics getStatistics() const;
+
+    size_t memoryUsageBytes() const;
 };
 
 using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization>;
@@ -86,6 +93,8 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return !index || index->size() == 0; }
+
+    size_t memoryUsageBytes() const override { return index->memoryUsageBytes(); }
 
     const String index_name;
     const unum::usearch::metric_kind_t metric_kind;
@@ -131,9 +140,8 @@ struct MergeTreeIndexAggregatorVectorSimilarity final : IMergeTreeIndexAggregato
 class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCondition
 {
 public:
-    MergeTreeIndexConditionVectorSimilarity(
-        const IndexDescription & index_description,
-        const SelectQueryInfo & query,
+    explicit MergeTreeIndexConditionVectorSimilarity(
+        const std::optional<VectorSearchParameters> & parameters_,
         unum::usearch::metric_kind_t metric_kind_,
         ContextPtr context);
 
@@ -144,7 +152,7 @@ public:
     std::vector<UInt64> calculateApproximateNearestNeighbors(MergeTreeIndexGranulePtr granule) const override;
 
 private:
-    const VectorSimilarityCondition vector_similarity_condition;
+    std::optional<VectorSearchParameters> parameters;
     const unum::usearch::metric_kind_t metric_kind;
     const size_t expansion_search;
 };
@@ -163,8 +171,8 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
-    MergeTreeIndexConditionPtr createIndexCondition(const SelectQueryInfo & query, ContextPtr context) const;
-    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG *, ContextPtr) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
+    MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG * filter_actions_dag, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const override;
     bool isVectorSimilarityIndex() const override { return true; }
 
 private:

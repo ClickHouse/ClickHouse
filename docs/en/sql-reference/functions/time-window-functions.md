@@ -1,14 +1,21 @@
 ---
-slug: /en/sql-reference/functions/time-window-functions
+slug: /sql-reference/functions/time-window-functions
 sidebar_position: 175
 sidebar_label: Time Window
 ---
 
+import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+
 # Time Window Functions
 
-Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with [WindowView](../statements/create/view.md/#window-view-experimental) are listed below:
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
-## tumble
+Time window functions return the inclusive lower and exclusive upper bound of the corresponding window. The functions for working with [WindowView](/sql-reference/statements/create/view#window-view) are listed below:
+
+## tumble {#tumble}
 
 A tumbling time window assigns records to non-overlapping, continuous windows with a fixed duration (`interval`).
 
@@ -43,7 +50,7 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-## tumbleStart
+## tumbleStart {#tumblestart}
 
 Returns the inclusive lower bound of the corresponding [tumbling window](#tumble).
 
@@ -58,8 +65,6 @@ tumbleStart(time_attr, interval [, timezone]);
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
 - `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
-
-The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
 
 **Returned values**
 
@@ -81,7 +86,7 @@ Result:
 └────────────────────────────────────────┘
 ```
 
-## tumbleEnd
+## tumbleEnd {#tumbleend}
 
 Returns the exclusive upper bound of the corresponding [tumbling window](#tumble).
 
@@ -96,8 +101,6 @@ tumbleEnd(time_attr, interval [, timezone]);
 - `time_attr` — Date and time. [DateTime](../data-types/datetime.md).
 - `interval` — Window interval in [Interval](../data-types/special-data-types/interval.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
-
-The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
 
 **Returned values**
 
@@ -119,7 +122,7 @@ Result:
 └──────────────────────────────────────┘
 ```
 
-## hop
+## hop {#hop}
 
 A hopping time window has a fixed duration (`window_interval`) and hops by a specified hop interval (`hop_interval`). If the `hop_interval` is smaller than the `window_interval`, hopping windows are overlapping. Thus, records can be assigned to multiple windows.
 
@@ -158,7 +161,7 @@ Result:
 └────────────────────────────────────────────────────┘
 ```
 
-## hopStart
+## hopStart {#hopstart}
 
 Returns the inclusive lower bound of the corresponding [hopping window](#hop).
 
@@ -173,8 +176,6 @@ hopStart(time_attr, hop_interval, window_interval [, timezone]);
 - `hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
 - `window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
-
-The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
 
 **Returned values**
 
@@ -200,7 +201,7 @@ Result:
 └─────────────────────────────────────────────────────────┘
 ```
 
-## hopEnd
+## hopEnd {#hopend}
 
 Returns the exclusive upper bound of the corresponding [hopping window](#hop).
 
@@ -215,8 +216,6 @@ hopEnd(time_attr, hop_interval, window_interval [, timezone]);
 - `hop_interval` — Positive Hop interval. [Interval](../data-types/special-data-types/interval.md).
 - `window_interval` — Positive Window interval. [Interval](../data-types/special-data-types/interval.md).
 - `timezone` — [Timezone name](../../operations/server-configuration-parameters/settings.md#timezone) (optional).
-
-The parameters above can also be passed to the function as a [tuple](../data-types/tuple.md).
 
 **Returned values**
 
@@ -243,6 +242,6 @@ Result:
 
 ```
 
-## Related content
+## Related content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

@@ -39,7 +39,7 @@ bool MergePlainMergeTreeTask::executeStep()
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_list_entry)
     {
-        switcher.emplace((*merge_list_entry)->thread_group);
+        switcher.emplace((*merge_list_entry)->thread_group, "", /*allow_existing_group*/ true);
     }
 
     switch (state)
@@ -152,13 +152,15 @@ void MergePlainMergeTreeTask::finish()
     ThreadFuzzer::maybeInjectSleep();
     ThreadFuzzer::maybeInjectMemoryLimitException();
 
-    if (auto mark_cache = storage.getMarkCacheToPrewarm())
+    size_t bytes_uncompressed = new_part->getBytesUncompressedOnDisk();
+
+    if (auto mark_cache = storage.getMarkCacheToPrewarm(bytes_uncompressed))
     {
         auto marks = merge_task->releaseCachedMarks();
         addMarksToCache(*new_part, marks, mark_cache.get());
     }
 
-    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm())
+    if (auto index_cache = storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
     {
         /// Move index to cache and reset it here because we need
         /// a correct part name after rename for a key of cache entry.

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaConsumer.h>
@@ -92,6 +92,9 @@ public:
 
     SafeConsumers getSafeConsumers() { return {shared_from_this(), std::unique_lock(mutex), consumers};  }
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
+
 private:
     friend class ReadFromStorageKafka;
 
@@ -121,9 +124,9 @@ private:
     // Stream thread
     struct TaskContext
     {
-        BackgroundSchedulePool::TaskHolder holder;
+        BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled {false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder&& task_) : holder(std::move(task_))
+        explicit TaskContext(BackgroundSchedulePoolTaskHolder&& task_) : holder(std::move(task_))
         {
         }
     };

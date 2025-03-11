@@ -7,6 +7,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnFunction.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
@@ -39,7 +40,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int ILLEGAL_COLUMN;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -512,44 +512,6 @@ ColumnPtr basicExecuteImpl(ColumnRawPtrs arguments, size_t input_rows_count)
 
 }
 
-namespace FunctionsLogicalDetail
-{
-
-#if USE_EMBEDDED_COMPILER
-
-/// Cast LLVM value with type to ternary
-llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const DataTypePtr & from_type, llvm::Value * value)
-{
-    auto * result_type = llvm::Type::getInt8Ty(b.getContext());
-
-    if (from_type->isNullable())
-    {
-        auto * ternary_null = llvm::ConstantInt::get(result_type, 1);
-        auto * inner = nativeTernaryCast(b, removeNullable(from_type), b.CreateExtractValue(value, {0}));
-        auto * is_null = b.CreateExtractValue(value, {1});
-        return b.CreateSelect(is_null, ternary_null, inner);
-    }
-
-    auto * zero = llvm::Constant::getNullValue(value->getType());
-    auto * ternary_true = llvm::ConstantInt::get(result_type, 2);
-    auto * ternary_false = llvm::ConstantInt::get(result_type, 0);
-    if (value->getType()->isIntegerTy())
-        return b.CreateSelect(b.CreateICmpNE(value, zero), ternary_true, ternary_false);
-    else if (value->getType()->isFloatingPointTy())
-        return b.CreateSelect(b.CreateFCmpONE(value, zero), ternary_true, ternary_false);
-    else
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot cast non-number {} to ternary", from_type->getName());
-}
-
-/// Cast LLVM value with type to ternary
-llvm::Value * nativeTernaryCast(llvm::IRBuilderBase & b, const ValueWithType & value_with_type)
-{
-    return nativeTernaryCast(b, value_with_type.type, value_with_type.value);
-}
-
-#endif
-}
-
 template <typename Impl, typename Name>
 DataTypePtr FunctionAnyArityLogical<Impl, Name>::getReturnTypeImpl(const DataTypes & arguments) const
 {
@@ -689,8 +651,42 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImpl(
     ColumnsWithTypeAndName arguments = args;
 
     /// Special implementation for short-circuit arguments.
-    if (checkShortCircuitArguments(arguments) != -1)
-        return executeShortCircuit(arguments, result_type);
+    if constexpr (std::is_same_v<Name, NameAnd> || std::is_same_v<Name, NameOr>)
+    {
+        /// To apply short circuit execution on non function column arguments has negative return, since it needs to
+        /// run `filter` and `expand` on a column. For `and` and `or`, the execution order for arguments doesn't
+        /// affect the correctness of result. So we first to calculate a map column from all non function column
+        /// arguments, and combine it with the remaining function column arguments, use them as the input of
+        /// `exeucteShortCircuit` to calculate the final result.
+        ColumnRawPtrs not_short_circuit_args;
+        std::vector<size_t> short_circuit_args_index;
+        ColumnsWithTypeAndName new_args;
+
+        for (size_t i = 0, n = args.size(); i < n; ++i)
+        {
+            if (checkAndGetShortCircuitArgument(arguments[i].column))
+                short_circuit_args_index.emplace_back(i);
+            else
+                not_short_circuit_args.emplace_back(arguments[i].column.get());
+        }
+
+        ColumnPtr partial_result = nullptr;
+        if (not_short_circuit_args.size() > 1)
+        {
+            partial_result = result_type->isNullable()
+                ? executeForTernaryLogicImpl<Impl>(std::move(not_short_circuit_args), result_type, input_rows_count)
+                : basicExecuteImpl<Impl>(std::move(not_short_circuit_args), input_rows_count);
+            if (short_circuit_args_index.empty())
+                return partial_result;
+            new_args.emplace_back(partial_result, result_type, "__partial_result");
+            for (const auto & index : short_circuit_args_index)
+                new_args.emplace_back(std::move(arguments[index]));
+        }
+        else
+            new_args.swap(arguments);
+
+        return executeShortCircuit(new_args, result_type);
+    }
 
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
@@ -755,12 +751,12 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::getConstantResultForNonConstArgum
     if constexpr (std::is_same_v<Impl, AndImpl>)
     {
         if (has_false_constant)
-            result_column = result_type->createColumnConst(0, static_cast<UInt8>(false));
+            result_column = result_type->createColumnConst(1, static_cast<UInt8>(false));
     }
     else if constexpr (std::is_same_v<Impl, OrImpl>)
     {
         if (has_true_constant)
-            result_column = result_type->createColumnConst(0, static_cast<UInt8>(true));
+            result_column = result_type->createColumnConst(1, static_cast<UInt8>(true));
     }
 
     return result_column;

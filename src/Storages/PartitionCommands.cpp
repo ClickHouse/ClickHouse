@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/DataDestinationType.h>

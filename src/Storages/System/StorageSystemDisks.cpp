@@ -1,4 +1,6 @@
 #include <Storages/System/StorageSystemDisks.h>
+
+#include <Columns/ColumnString.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
 #include <Interpreters/Context.h>
@@ -7,10 +9,10 @@
 namespace DB
 {
 
-namespace ErrorCodes
+namespace FileCacheSetting
 {
+    extern const FileCacheSettingsString path;
 }
-
 
 StorageSystemDisks::StorageSystemDisks(const StorageID & table_id_)
     : IStorage(table_id_)
@@ -84,7 +86,7 @@ Pipe StorageSystemDisks::read(
 
         String cache_path;
         if (disk_ptr->supportsCache())
-            cache_path = FileCacheFactory::instance().getByName(disk_ptr->getCacheName())->getSettings().base_path;
+            cache_path = FileCacheFactory::instance().getByName(disk_ptr->getCacheName())->getSettings()[FileCacheSetting::path];
 
         col_cache_path->insert(cache_path);
     }

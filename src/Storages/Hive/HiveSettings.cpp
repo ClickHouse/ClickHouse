@@ -105,5 +105,9 @@ void HiveSettings::loadFromQuery(ASTStorage & storage_def)
     }
 }
 
+bool HiveSettings::hasBuiltin(std::string_view name)
+{
+    return HiveSettingsImpl::hasBuiltin(name);
+}
 }
 #endif

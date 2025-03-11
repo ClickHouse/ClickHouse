@@ -1,5 +1,6 @@
 import json
 import time
+from typing import Any
 
 from ._environment import _Environment
 from .result import Result
@@ -18,7 +19,7 @@ class GH:
             ret_code, out, err = Shell.get_res_stdout_stderr(command, verbose=True)
             res = ret_code == 0
             if not res and "Validation Failed" in err:
-                print(f"ERROR: GH command validation error.")
+                print(f"ERROR: GH command validation error {[err]}")
                 break
             if not res and "Bad credentials" in err:
                 print("ERROR: GH credentials/auth failure")
@@ -69,10 +70,43 @@ class GH:
 
     @classmethod
     def post_commit_status(cls, name, status, description, url):
+        """
+        Sets GH commit status
+        :param name: commit status name
+        :param status:
+        :param description:
+        :param url:
+        :param repo:
+        :return: True or False in case of error
+        """
+        status = cls.convert_to_gh_status(status)
+        repo = _Environment.get().REPOSITORY
+        command = (
+            f"gh api -X POST -H 'Accept: application/vnd.github.v3+json' "
+            f"/repos/{repo}/statuses/{_Environment.get().SHA} "
+            f"-f state='{status}' -f target_url='{url}' "
+            f"-f description='{description}' -f context='{name}'"
+        )
+        return cls.do_command_with_retries(command)
+
+    @classmethod
+    def post_foreign_commit_status(
+        cls, name, status, description, url, repo, commit_sha
+    ):
+        """
+        Sets GH commit status in foreign repo or commit
+        :param name: commit status name
+        :param status:
+        :param description:
+        :param url:
+        :param repo: Foreign repo
+        :param commit_sha: Commit in a foreign repo
+        :return: True or False in case of error
+        """
         status = cls.convert_to_gh_status(status)
         command = (
             f"gh api -X POST -H 'Accept: application/vnd.github.v3+json' "
-            f"/repos/{_Environment.get().REPOSITORY}/statuses/{_Environment.get().SHA} "
+            f"/repos/{repo}/statuses/{commit_sha} "
             f"-f state='{status}' -f target_url='{url}' "
             f"-f description='{description}' -f context='{name}'"
         )
@@ -93,6 +127,23 @@ class GH:
             assert (
                 False
             ), f"Invalid status [{status}] to be set as GH commit status.state"
+
+    @classmethod
+    def print_log_in_group(cls, group_name: str, lines: Any):
+        if not isinstance(lines, (list, tuple, set)):
+            lines = [lines]
+
+        print(f"::group::{group_name}")
+        for line in lines:
+            print(line)
+        print("::endgroup::")
+
+    @classmethod
+    def print_actions_debug_info(cls):
+        cls.print_log_in_group("GITHUB_ENVS", Shell.get_output("env | grep ^GITHUB_"))
+        cls.print_log_in_group(
+            "GITHUB_EVENT", Shell.get_output("cat $GITHUB_EVENT_PATH")
+        )
 
 
 if __name__ == "__main__":

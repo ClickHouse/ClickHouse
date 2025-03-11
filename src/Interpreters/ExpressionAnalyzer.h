@@ -1,13 +1,14 @@
 #pragma once
 
-#include <Core/ColumnNumbers.h>
 #include <Columns/FilterDescription.h>
-#include <Interpreters/ActionsVisitor.h>
+#include <Core/ColumnNumbers.h>
+#include <Interpreters/ActionsMatcher.h>
 #include <Interpreters/AggregateDescription.h>
+#include <Interpreters/ArrayJoin.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
-#include <Interpreters/JoinUtils.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -38,12 +39,23 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
+class Set;
+using SetPtr = std::shared_ptr<Set>;
+
+class QueryPlan;
+
+namespace ExpressionActionsChainSteps
+{
+struct Step;
+}
+
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
+    ExpressionAnalyzerData();
     ~ExpressionAnalyzerData();
 
     PreparedSetsPtr prepared_sets;
@@ -126,7 +138,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    PreparedSetsPtr getPreparedSets() { return prepared_sets; }
+    PreparedSetsPtr & getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
@@ -401,7 +413,7 @@ private:
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
-    void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
+    void appendSelectSkipWindowExpressions(ExpressionActionsChainSteps::Step & step, ASTPtr const & node);
 
     void appendGroupByModifiers(ActionsDAG & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 

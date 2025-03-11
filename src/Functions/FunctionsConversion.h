@@ -11,6 +11,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObjectDeprecated.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnTuple.h>
@@ -20,6 +21,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <Core/Types.h>
+#include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -73,10 +75,6 @@
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
-#if USE_EMBEDDED_COMPILER
-#    include "DataTypes/Native.h"
-#endif
-
 
 namespace DB
 {
@@ -120,43 +118,6 @@ namespace ErrorCodes
 
 namespace detail
 {
-
-#if USE_EMBEDDED_COMPILER
-bool castType(const IDataType * type, auto && f)
-{
-    using Types = TypeList<
-        DataTypeUInt8,
-        DataTypeUInt16,
-        DataTypeUInt32,
-        DataTypeUInt64,
-        DataTypeUInt128,
-        DataTypeUInt256,
-        DataTypeInt8,
-        DataTypeInt16,
-        DataTypeInt32,
-        DataTypeInt64,
-        DataTypeInt128,
-        DataTypeInt256,
-        DataTypeFloat32,
-        DataTypeFloat64,
-        DataTypeDecimal32,
-        DataTypeDecimal64,
-        DataTypeDecimal128,
-        DataTypeDecimal256,
-        DataTypeDate,
-        DataTypeDateTime,
-        DataTypeFixedString,
-        DataTypeString,
-        DataTypeInterval>;
-    return castTypeToEither(Types{}, type, std::forward<decltype(f)>(f));
-}
-
-template <typename F>
-bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
-{
-    return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
-}
-#endif
 
 /** Type conversion functions.
   * toType - conversion in "natural way";
@@ -1678,8 +1639,8 @@ struct ConvertImpl
                 && !(std::is_same_v<DataTypeDateTime64, FromDataType> || std::is_same_v<DataTypeDateTime64, ToDataType>)
                 && (!IsDataTypeDecimalOrNumber<FromDataType> || !IsDataTypeDecimalOrNumber<ToDataType>))
             {
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                    named_from.column->getName(), Name::name);
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {}/{} of first argument of function {}",
+                    named_from.column->getName(), typeid(FromDataType).name(), Name::name);
             }
 
             const ColVecFrom * col_from = checkAndGetColumn<ColVecFrom>(named_from.column.get());
@@ -1993,6 +1954,119 @@ struct ConvertImplGenericFromString
     }
 };
 
+struct ConvertImplFromDynamicToColumn
+{
+    static ColumnPtr execute(
+        const ColumnsWithTypeAndName & arguments,
+        const DataTypePtr & result_type,
+        size_t input_rows_count,
+        const std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr)> & nested_convert)
+    {
+        /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
+        /// and construct the result based on discriminators.
+        const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
+        const auto & variant_column = column_dynamic.getVariantColumn();
+        const auto & variant_info = column_dynamic.getVariantInfo();
+
+        /// First, cast usual variants to result type.
+        const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+        std::vector<ColumnPtr> cast_variant_columns(variant_types.size());
+        for (size_t i = 0; i != variant_types.size(); ++i)
+        {
+            /// Skip shared variant, it will be processed later.
+            if (i == column_dynamic.getSharedVariantDiscriminator())
+                continue;
+
+            ColumnsWithTypeAndName new_args = arguments;
+            new_args[0] = {variant_column.getVariantPtrByGlobalDiscriminator(i), variant_types[i], ""};
+            cast_variant_columns[i] = nested_convert(new_args, result_type);
+        }
+
+        /// Second, collect all variants stored in shared variant and cast them to result type.
+        std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
+        DataTypes variant_types_from_shared_variant;
+        /// We will need to know what variant to use when we see discriminator of a shared variant.
+        /// To do it, we remember what variant was extracted from each row and what was it's offset.
+        PaddedPODArray<UInt64> shared_variant_indexes;
+        PaddedPODArray<UInt64> shared_variant_offsets;
+        std::unordered_map<String, UInt64> shared_variant_to_index;
+        const auto & shared_variant = column_dynamic.getSharedVariant();
+        const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
+        const auto & local_discriminators = variant_column.getLocalDiscriminators();
+        const auto & offsets = variant_column.getOffsets();
+        if (!shared_variant.empty())
+        {
+            shared_variant_indexes.reserve(input_rows_count);
+            shared_variant_offsets.reserve(input_rows_count);
+            FormatSettings format_settings;
+            const auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_discr);
+            for (size_t i = 0; i != input_rows_count; ++i)
+            {
+                if (local_discriminators[i] == shared_variant_local_discr)
+                {
+                    auto value = shared_variant.getDataAt(offsets[i]);
+                    ReadBufferFromMemory buf(value.data, value.size);
+                    auto type = decodeDataType(buf);
+                    auto type_name = type->getName();
+                    auto it = shared_variant_to_index.find(type_name);
+                    /// Check if we didn't create column for this variant yet.
+                    if (it == shared_variant_to_index.end())
+                    {
+                        it = shared_variant_to_index.emplace(type_name, variant_columns_from_shared_variant.size()).first;
+                        variant_columns_from_shared_variant.push_back(type->createColumn());
+                        variant_types_from_shared_variant.push_back(type);
+                    }
+
+                    shared_variant_indexes.push_back(it->second);
+                    shared_variant_offsets.push_back(variant_columns_from_shared_variant[it->second]->size());
+                    type->getDefaultSerialization()->deserializeBinary(*variant_columns_from_shared_variant[it->second], buf, format_settings);
+                }
+                else
+                {
+                    shared_variant_indexes.emplace_back();
+                    shared_variant_offsets.emplace_back();
+                }
+            }
+        }
+
+        /// Cast all extracted variants into result type.
+        std::vector<ColumnPtr> cast_shared_variant_columns(variant_types_from_shared_variant.size());
+        for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
+        {
+            ColumnsWithTypeAndName new_args = arguments;
+            new_args[0] = {variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""};
+            cast_shared_variant_columns[i] = nested_convert(new_args, result_type);
+        }
+
+        /// Construct result column from all cast variants.
+        auto res = result_type->createColumn();
+        res->reserve(input_rows_count);
+        for (size_t i = 0; i != input_rows_count; ++i)
+        {
+            auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
+            if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+            {
+                res->insertDefault();
+            }
+            else if (global_discr == shared_variant_discr)
+            {
+                if (cast_shared_variant_columns[shared_variant_indexes[i]])
+                    res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
+                else
+                    res->insertDefault();
+            }
+            else
+            {
+                if (cast_variant_columns[global_discr])
+                    res->insertFrom(*cast_variant_columns[global_discr], offsets[i]);
+                else
+                    res->insertDefault();
+            }
+        }
+
+        return res;
+    }
+};
 
 /// Declared early because used below.
 struct NameToDate { static constexpr auto name = "toDate"; };
@@ -2069,8 +2143,21 @@ public:
     static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
     static constexpr bool to_decimal = IsDataTypeDecimal<ToDataType> && !to_datetime64;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionConvert>(context); }
-    explicit FunctionConvert(ContextPtr context_) : context(context_) {}
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionConvert>(context, default_date_time_overflow_behavior);
+    }
+
+    static FunctionPtr createWithOverflow(ContextPtr context, FormatSettings::DateTimeOverflowBehavior _datetime_overflow_behavior)
+    {
+        return std::make_shared<FunctionConvert>(context, _datetime_overflow_behavior);
+    }
+
+    explicit FunctionConvert(ContextPtr context_, FormatSettings::DateTimeOverflowBehavior _datetime_overflow_behavior)
+        : context(context_)
+        , datetime_overflow_behavior(_datetime_overflow_behavior)
+    {
+    }
 
     String getName() const override
     {
@@ -2249,52 +2336,6 @@ public:
         }
     }
 
-#if USE_EMBEDDED_COMPILER
-    bool isCompilableImpl(const DataTypes & types, const DataTypePtr & result_type) const override
-    {
-        if (types.size() != 1)
-            return false;
-
-        if (!canBeNativeType(types[0]) || !canBeNativeType(result_type))
-            return false;
-
-        return castBothTypes(types[0].get(), result_type.get(), [](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
-                return true;
-
-            return false;
-        });
-    }
-
-    llvm::Value *
-    compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
-    {
-        llvm::Value * result = nullptr;
-        castBothTypes(
-            arguments[0].type.get(),
-            result_type.get(),
-            [&](const auto & left, const auto & right)
-            {
-                using LeftDataType = std::decay_t<decltype(left)>;
-                using RightDataType = std::decay_t<decltype(right)>;
-
-                if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
-                {
-                    result = nativeCast(builder, arguments[0], result_type);
-                    return true;
-                }
-
-                return false;
-            });
-
-        return result;
-    }
-#endif
-
     bool hasInformationAboutMonotonicity() const override
     {
         return Monotonic::has();
@@ -2307,6 +2348,7 @@ public:
 
 private:
     ContextPtr context;
+    FormatSettings::DateTimeOverflowBehavior datetime_overflow_behavior;
     mutable bool checked_return_type = false;
     mutable bool to_nullable = false;
 
@@ -2321,10 +2363,20 @@ private:
         const DataTypePtr from_type = removeNullable(arguments[0].type);
         ColumnPtr result_column;
 
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
+        FormatSettings::DateTimeOverflowBehavior context_datetime_overflow_behavior = datetime_overflow_behavior;
 
         if (context)
-            date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
+            context_datetime_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior].value;
+
+        if (isDynamic(from_type))
+        {
+            auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & to_type) -> ColumnPtr
+            {
+                return executeInternal(args, to_type, args[0].column->size());
+            };
+
+            return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
+        }
 
         auto call = [&](const auto & types, BehaviourOnErrorFromString from_string_tag) -> bool
         {
@@ -2348,7 +2400,7 @@ private:
                 const ColumnWithTypeAndName & scale_column = arguments[1];
                 UInt32 scale = extractToDecimalScale(scale_column);
 
-                switch (date_time_overflow_behavior)
+                switch (context_datetime_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
                         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, scale);
@@ -2364,7 +2416,7 @@ private:
             else if constexpr (IsDataTypeDateOrDateTime<RightDataType> && std::is_same_v<LeftDataType, DataTypeDateTime64>)
             {
                 const auto * dt64 = assert_cast<const DataTypeDateTime64 *>(arguments[0].type.get());
-                switch (date_time_overflow_behavior)
+                switch (context_datetime_overflow_behavior)
                 {
                     case FormatSettings::DateTimeOverflowBehavior::Throw:
                         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::Throw>::execute(arguments, result_type, input_rows_count, from_string_tag, dt64->getScale());
@@ -2385,7 +2437,7 @@ private:
         result_column = ConvertImpl<LeftDataType, RightDataType, Name, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
             arguments, result_type, input_rows_count, from_string_tag); \
         break;
-                switch (date_time_overflow_behavior)
+                switch (context_datetime_overflow_behavior)
                 {
                     GENERATE_OVERFLOW_MODE_CASE(Throw)
                     GENERATE_OVERFLOW_MODE_CASE(Ignore)
@@ -2597,13 +2649,13 @@ public:
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
                 res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
             else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "MaterializedMySQL is a bug.");
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected behavior for function {}: DataTypeDateTime64 is not expected here.", getName());
             else if constexpr (to_decimal)
             {
                 UInt64 scale = extractToDecimalScale(arguments[1]);
                 res = createDecimalMaxPrecision<typename ToDataType::FieldType>(scale);
                 if (!res)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Something wrong with toDecimalNNOrZero() or toDecimalNNOrNull()");
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected behavior for function {}: createDecimalMaxPrecision didn't return any value.", getName());
             }
             else
                 res = std::make_shared<ToDataType>();
@@ -3039,17 +3091,10 @@ template <> struct FunctionTo<DataTypeBFloat16> { using Type = FunctionToBFloat1
 template <> struct FunctionTo<DataTypeFloat32> { using Type = FunctionToFloat32; };
 template <> struct FunctionTo<DataTypeFloat64> { using Type = FunctionToFloat64; };
 
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDate, date_time_overflow_behavior> { using Type = FunctionToDate; };
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDate32, date_time_overflow_behavior> { using Type = FunctionToDate32; };
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDateTime, date_time_overflow_behavior> { using Type = FunctionToDateTime; };
-
-template <FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior>
-struct FunctionTo<DataTypeDateTime64, date_time_overflow_behavior> { using Type = FunctionToDateTime64; };
+template <> struct FunctionTo<DataTypeDate> { using Type = FunctionToDate; };
+template <> struct FunctionTo<DataTypeDate32> { using Type = FunctionToDate32; };
+template <> struct FunctionTo<DataTypeDateTime> { using Type = FunctionToDateTime; };
+template <> struct FunctionTo<DataTypeDateTime64> { using Type = FunctionToDateTime64; };
 
 template <> struct FunctionTo<DataTypeUUID> { using Type = FunctionToUUID; };
 template <> struct FunctionTo<DataTypeIPv4> { using Type = FunctionToIPv4; };
@@ -3378,11 +3423,13 @@ public:
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
             , std::optional<CastDiagnostic> diagnostic_
-            , CastType cast_type_)
+            , CastType cast_type_
+            , FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
         : cast_name(cast_name_), monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_), return_type(return_type_), diagnostic(std::move(diagnostic_))
         , cast_type(cast_type_)
         , context(context_)
+        , function_date_time_overflow_behavior(date_time_overflow_behavior)
     {
     }
 
@@ -3419,60 +3466,6 @@ public:
         return monotonicity_for_range(type, left, right);
     }
 
-#if USE_EMBEDDED_COMPILER
-    bool isCompilable() const override
-    {
-        if (getName() != "CAST" || argument_types.size() != 2)
-            return false;
-
-        const auto & from_type = argument_types[0];
-        const auto & to_type = return_type;
-        auto denull_from_type = removeNullable(from_type);
-        auto denull_to_type = removeNullable(to_type);
-        if (!canBeNativeType(denull_from_type) || !canBeNativeType(denull_to_type))
-            return false;
-
-        return castBothTypes(denull_from_type.get(), denull_to_type.get(), [](const auto & left, const auto & right)
-        {
-            using LeftDataType = std::decay_t<decltype(left)>;
-            using RightDataType = std::decay_t<decltype(right)>;
-
-            if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
-                return true;
-
-            return false;
-        });
-    }
-
-    llvm::Value * compile(llvm::IRBuilderBase & builder, const ValuesWithType & arguments) const override
-    {
-        llvm::Value * result = nullptr;
-
-        const auto & from_type = arguments[0].type;
-        const auto & to_type = return_type;
-        auto denull_from_type = removeNullable(from_type);
-        auto denull_to_type = removeNullable(to_type);
-        castBothTypes(
-            denull_from_type.get(),
-            denull_to_type.get(),
-            [&](const auto & left, const auto & right)
-            {
-                using LeftDataType = std::decay_t<decltype(left)>;
-                using RightDataType = std::decay_t<decltype(right)>;
-
-                if constexpr (IsDataTypeNativeNumber<LeftDataType> && IsDataTypeNativeNumber<RightDataType>)
-                {
-                    result = nativeCast(builder, arguments[0], return_type);
-                    return true;
-                }
-
-                return false;
-            });
-
-        return result;
-    }
-#endif
-
 private:
     const char * cast_name;
     MonotonicityForRange monotonicity_for_range;
@@ -3483,6 +3476,7 @@ private:
     std::optional<CastDiagnostic> diagnostic;
     CastType cast_type;
     ContextPtr context;
+    FormatSettings::DateTimeOverflowBehavior function_date_time_overflow_behavior;
 
     static WrapperType createFunctionAdaptor(FunctionPtr function, const DataTypePtr & from_type)
     {
@@ -3514,7 +3508,7 @@ private:
             && (which.isInt() || which.isUInt() || which.isFloat());
         can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
-        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = default_date_time_overflow_behavior;
+        FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior = function_date_time_overflow_behavior;
         if (context)
             date_time_overflow_behavior = context->getSettingsRef()[Setting::date_time_overflow_behavior];
 
@@ -3527,8 +3521,16 @@ private:
         }
         else if (!can_apply_accurate_cast)
         {
-            FunctionPtr function = FunctionTo<ToDataType>::Type::create(context);
-            return createFunctionAdaptor(function, from_type);
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+            {
+                FunctionPtr function = FunctionTo<DataTypeDateTime>::Type::createWithOverflow(context, date_time_overflow_behavior);
+                return createFunctionAdaptor(function, from_type);
+            }
+            else
+            {
+                FunctionPtr function = FunctionTo<ToDataType>::Type::create(context);
+                return createFunctionAdaptor(function, from_type);
+            }
         }
 
         return [wrapper_cast_type = cast_type, from_type_index, to_type, date_time_overflow_behavior]
@@ -3697,7 +3699,7 @@ private:
 
 #define GENERATE_INTERVAL_CASE(INTERVAL_KIND) \
             case IntervalKind::Kind::INTERVAL_KIND: \
-                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::create(context), from_type);
+                return createFunctionAdaptor(FunctionConvert<DataTypeInterval, NameToInterval##INTERVAL_KIND, PositiveMonotonicity>::createWithOverflow(context, function_date_time_overflow_behavior), from_type);
 
     WrapperType createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const
     {
@@ -4331,6 +4333,582 @@ private:
             "Cast to Object can be performed only from flatten named Tuple, Map or String. Got: {}", from_type->getName());
     }
 
+    /// We support nested Objects types. For example, in JSON we can have paths with type Array(JSON).
+    /// The parameters max_dynamic_types/max_dynamic_paths of these nested Object types depend on the
+    /// parameters of the original Object type (they are reduced by constant factors to avoid subcolumns
+    /// explosion). And this logic is used to read typed subcolumns without knowing the reduced parameters
+    /// like this: "SELECT json.a.b.:`Array(JSON)`" (or simply "SELECT json.a.b[]"). In this case we substitute the
+    /// nested JSON type name to the JSON type name with reduced parameters (see replaceJSONTypeNameIfNeeded function in DataTypeObject.cpp).
+    /// It's done to allow the user to request nested JSON subcolumns without specifying these parameters.
+    /// All this means that during conversion from one Object type to another the max_dynamic_types/max_dynamic_paths
+    /// parameters may change and we should change the parameters of all nested Object types recursively.
+    /// The next few functions are needed to do this conversion of nested Object types.
+
+    /// Convert all nested object types to new provided object type. Go inside Array and Tuple types.
+    DataTypePtr convertNestedObjectType(const DataTypePtr & type, const DataTypePtr & new_object_type) const
+    {
+        if (isObject(type))
+            return new_object_type;
+
+        if (const auto * type_array = checkAndGetDataType<DataTypeArray>(type.get()))
+            return std::make_shared<DataTypeArray>(convertNestedObjectType(type_array->getNestedType(), new_object_type));
+
+        if (const auto * type_tuple = checkAndGetDataType<DataTypeTuple>(type.get()))
+        {
+            const auto & elements = type_tuple->getElements();
+            DataTypes new_elements;
+            new_elements.reserve(elements.size());
+            for (const auto & element : elements)
+                new_elements.push_back(convertNestedObjectType(element, new_object_type));
+            return type_tuple->haveExplicitNames() ? std::make_shared<DataTypeTuple>(new_elements, type_tuple->getElementNames())
+                                                   : std::make_shared<DataTypeTuple>(new_elements);
+        }
+
+        return type;
+    }
+
+    /// Copy the value in a form <binary_encoded_type><binary_value> with converted Object type.
+    /// Such values are used in shared variant inside Dynamic column and shared data inside Object column.
+    void copySharedValueWithConvertedNestedObjectType(const ColumnString & old_values, ColumnString & new_values, const DataTypePtr & new_object_type, size_t row, const FormatSettings & format_settings) const
+    {
+        auto value = old_values.getDataAt(row);
+        ReadBufferFromMemory value_buf(value.data, value.size);
+        auto type = decodeDataType(value_buf);
+        if (type->hasDynamicSubcolumns())
+        {
+            /// Deserialize value into temporary column.
+            auto tmp_column = type->createColumn();
+            type->getDefaultSerialization()->deserializeBinary(*tmp_column, value_buf, format_settings);
+            /// Create new type and cast temporary column to it.
+            auto new_type = convertNestedObjectType(type, new_object_type);
+            auto wrapper = prepareUnpackDictionaries(type, new_type);
+            ColumnsWithTypeAndName args = {{tmp_column->getPtr(), type, ""}};
+            auto new_column = wrapper(args, new_type, nullptr, tmp_column->size());
+            /// Encode new type and serialize new value.
+            WriteBufferFromVector<ColumnString::Chars> new_value_buf(new_values.getChars(), AppendModeTag());
+            encodeDataType(new_type, new_value_buf);
+            new_type->getDefaultSerialization()->serializeBinary(*new_column, 0, new_value_buf, format_settings);
+            new_value_buf.finalize();
+            new_values.getChars().push_back(0);
+            new_values.getOffsets().push_back(new_values.getChars().size());
+        }
+        else
+        {
+            /// Just copy the value.
+            new_values.insertFrom(old_values, row);
+        }
+    }
+
+    /// Create new values of shared data/shared variant with all object types converted to new provided object type.
+    ColumnPtr getSharedValuesWithConvertedNestedObjectTypes(const ColumnString & old_values, const DataTypePtr & new_object_type) const
+    {
+        auto new_values = ColumnString::create();
+        new_values->reserve(old_values.size());
+        FormatSettings format_settings;
+        for (size_t i = 0; i != old_values.size(); ++i)
+            copySharedValueWithConvertedNestedObjectType(old_values, *new_values, new_object_type, i, format_settings);
+        return new_values;
+    }
+
+    bool checkIfSharedValuesContainNestedObjectsTypes(const ColumnString & values) const
+    {
+        for (size_t i = 0; i != values.size(); ++i)
+        {
+            auto value = values.getDataAt(i);
+            ReadBufferFromMemory buf(value.data, value.size);
+            auto type = decodeDataType(buf);
+            if (type->hasDynamicSubcolumns())
+                return true;
+        }
+
+        return false;
+    }
+
+    ColumnPtr getSharedDataWithConvertedNestedObjectTypes(const ColumnPtr & shared_data, const DataTypePtr & new_object_type) const
+    {
+        const auto & shared_data_array = assert_cast<const ColumnArray &>(*shared_data);
+        const auto & shared_data_offsets = shared_data_array.getOffsetsPtr();
+        const auto & shared_data_tuple = assert_cast<const ColumnTuple &>(shared_data_array.getData());
+        const auto & shared_data_paths = shared_data_tuple.getColumnPtr(0);
+        const auto & shared_data_values = shared_data_tuple.getColumnPtr(1);
+        const auto & shared_data_values_str = assert_cast<const ColumnString &>(*shared_data_values);
+
+        /// First check if we actually have any object type in the values.
+        /// If we don't have object types, just return the original shared data column.
+        if (!checkIfSharedValuesContainNestedObjectsTypes(shared_data_values_str))
+            return shared_data;
+
+        /// Otherwise we should create new shared data column with converted object types.
+        auto new_shared_data_values = getSharedValuesWithConvertedNestedObjectTypes(shared_data_values_str, new_object_type);
+        return ColumnArray::create(ColumnTuple::create(Columns{shared_data_paths, new_shared_data_values}), shared_data_offsets);
+    }
+
+    ColumnPtr getDynamicColumnWithConvertedNestedObjectTypes(const ColumnPtr & column, const DataTypePtr & new_object_type) const
+    {
+        const auto & dynamic_column = assert_cast<const ColumnDynamic &>(*column);
+        const auto & variant_info = dynamic_column.getVariantInfo();
+        const auto & variants_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
+
+        /// First check if we have any nested object type inside this dynamic column.
+        bool has_nested_object_type = false;
+        for (const auto & variant_type : variants_types)
+        {
+            if (variant_type->hasDynamicSubcolumns())
+            {
+                has_nested_object_type = true;
+                break;
+            }
+        }
+
+        /// If there are no variants with object type, check shared variant
+        if (!has_nested_object_type)
+            has_nested_object_type = checkIfSharedValuesContainNestedObjectsTypes(dynamic_column.getSharedVariant());
+
+        /// If there are no nested objects, don't do anything.
+        if (!has_nested_object_type)
+            return column;
+
+        /// If there are nested objects, we need to convert them to new object type.
+        const auto & variant_column = dynamic_column.getVariantColumn();
+        const auto & variants_columns = variant_column.getVariants();
+        auto shared_variant_global_discriminator = dynamic_column.getSharedVariantDiscriminator();
+        DataTypes new_variants_types;
+        new_variants_types.reserve(variants_types.size());
+        Columns new_variants_columns;
+        new_variants_columns.resize(variants_columns.size());
+        for (size_t global_discr = 0; global_discr != variants_types.size(); ++global_discr)
+        {
+            auto local_discr = variant_column.localDiscriminatorByGlobal(global_discr);
+            if (global_discr == shared_variant_global_discriminator)
+            {
+                new_variants_columns[local_discr] = getSharedValuesWithConvertedNestedObjectTypes(dynamic_column.getSharedVariant(), new_object_type);
+                new_variants_types.push_back(variants_types[global_discr]);
+            }
+            else if (variants_types[global_discr]->hasDynamicSubcolumns())
+            {
+                /// Cast variant to new type with converted object type.
+                auto new_variant_type = convertNestedObjectType(variants_types[global_discr], new_object_type);
+                auto wrapper = prepareUnpackDictionaries(variants_types[global_discr], new_variant_type);
+                ColumnsWithTypeAndName args = {{variants_columns[local_discr], variants_types[global_discr], ""}};
+                new_variants_columns[local_discr] = wrapper(args, new_variant_type, nullptr, variants_columns[local_discr]->size());
+                new_variants_types.push_back(new_variant_type);
+            }
+            else
+            {
+                new_variants_columns[local_discr] = variants_columns[local_discr];
+                new_variants_types.push_back(variants_types[global_discr]);
+            }
+        }
+
+        auto new_variant_type = std::make_shared<DataTypeVariant>(new_variants_types);
+        auto new_variant_column = ColumnVariant::create(variant_column.getLocalDiscriminatorsPtr(), variant_column.getOffsetsPtr(), new_variants_columns, variant_column.getLocalToGlobalDiscriminatorsMapping());
+        return ColumnDynamic::create(std::move(new_variant_column), new_variant_type, dynamic_column.getMaxDynamicTypes(), dynamic_column.getGlobalMaxDynamicTypes());
+    }
+
+    WrapperType createObjectToObjectWrapper(const DataTypeObject & from_object, const DataTypeObject & to_object) const
+    {
+        bool skip_rules_are_changed = from_object.getPathsToSkip() != to_object.getPathsToSkip() || from_object.getPathRegexpsToSkip() != to_object.getPathRegexpsToSkip();
+        bool typed_paths_are_changed = false;
+        bool have_new_typed_paths = false;
+        const auto & old_typed_paths_types = from_object.getTypedPaths();
+        const auto & new_typed_paths_types = to_object.getTypedPaths();
+        /// If numbers of typed paths are different - they are 100% different.
+        typed_paths_are_changed |= old_typed_paths_types.size() != new_typed_paths_types.size();
+        for (const auto & [new_typed_path, new_type] : new_typed_paths_types)
+        {
+            auto it = old_typed_paths_types.find(new_typed_path);
+            /// Check if there is no such path in from_object typed paths.
+            if (it == old_typed_paths_types.end())
+            {
+                typed_paths_are_changed = true;
+                have_new_typed_paths = true;
+                break;
+            }
+
+            /// Check if type is changed for this typed path.
+            if (!it->second->equals(*new_type))
+            {
+                typed_paths_are_changed = true;
+            }
+        }
+
+        auto new_max_dynamic_paths = to_object.getMaxDynamicPaths();
+        auto old_max_dynamic_types = from_object.getMaxDynamicTypes();
+        auto new_max_dynamic_types = to_object.getMaxDynamicTypes();
+        auto old_dynamic_type = std::make_shared<DataTypeDynamic>(old_max_dynamic_types);
+        auto new_dynamic_type = std::make_shared<DataTypeDynamic>(new_max_dynamic_types);
+        auto wrapper_from_old_to_new_dynamic_type = createDynamicToDynamicWrapper(*old_dynamic_type, *new_dynamic_type);
+        /// When object type changes, the type of nested objects (like Array(JSON)) also may change.
+        const auto & old_type_of_nested_objects = from_object.getTypeOfNestedObjects();
+        const auto & new_type_of_nested_objects = to_object.getTypeOfNestedObjects();
+        bool need_to_convert_nested_objects_type = !old_type_of_nested_objects->equals(*new_type_of_nested_objects);
+
+        /// Simple use case - when only max_dynamic_paths/max_dynamic_types parameters are changed and max_dynamic_paths is not decreased.
+        /// In this case we almost don't need to rewrite anything (except nested objects) and can process it separately.
+        if (!skip_rules_are_changed && !typed_paths_are_changed && from_object.getMaxDynamicPaths() <= to_object.getMaxDynamicPaths())
+        {
+            return [this,
+                    new_max_dynamic_paths,
+                    old_max_dynamic_types,
+                    new_max_dynamic_types,
+                    old_dynamic_type,
+                    new_dynamic_type,
+                    wrapper_from_old_to_new_dynamic_type,
+                    new_type_of_nested_objects,
+                    need_to_convert_nested_objects_type](
+                       ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t)
+            {
+                const auto & old_column_object = assert_cast<const ColumnObject &>(*arguments[0].column);
+                const auto & old_typed_paths = old_column_object.getTypedPaths();
+                const auto & old_dynamic_paths = old_column_object.getDynamicPaths();
+                const auto & old_shared_data = old_column_object.getSharedDataPtr();
+
+                std::unordered_map<String, ColumnPtr> new_typed_paths;
+                new_typed_paths.reserve(old_typed_paths.size());
+                for (const auto & [path, column] : old_typed_paths)
+                    new_typed_paths[path] = column;
+
+                std::unordered_map<String, ColumnPtr> new_dynamic_paths;
+                new_dynamic_paths.reserve(old_dynamic_paths.size());
+                if (old_max_dynamic_types == new_max_dynamic_types)
+                {
+                    for (const auto & [path, column] : old_dynamic_paths)
+                        new_dynamic_paths[path] = column;
+                }
+                else
+                {
+                    for (const auto & [path, column] : old_dynamic_paths)
+                    {
+                        ColumnsWithTypeAndName args = {ColumnWithTypeAndName(column, old_dynamic_type, path)};
+                        new_dynamic_paths[path] = wrapper_from_old_to_new_dynamic_type(args, new_dynamic_type, nullptr, column->size());
+                    }
+                }
+
+                ColumnPtr new_shared_data = old_shared_data;
+
+                /// Convert nested object types inside dynamic paths and shared data if needed.
+                if (need_to_convert_nested_objects_type)
+                {
+                    for (auto & [_, column] : new_dynamic_paths)
+                        column = getDynamicColumnWithConvertedNestedObjectTypes(column, new_type_of_nested_objects);
+                    new_shared_data = getSharedDataWithConvertedNestedObjectTypes(old_shared_data, new_type_of_nested_objects);
+                }
+
+                return ColumnObject::create(new_typed_paths, new_dynamic_paths, new_shared_data, old_column_object.getMaxDynamicPaths(), new_max_dynamic_paths, new_max_dynamic_types);
+            };
+        }
+
+        /// Create wrappers for:
+        ///  - typed paths with changed data type
+        ///  - typed paths that will be casted to new Dynamic
+        ///  - new typed paths from old Dynamic type.
+        std::unordered_map<String, WrapperType> typed_paths_wrappers;
+        if (typed_paths_are_changed)
+        {
+            for (const auto & [path, old_type] : old_typed_paths_types)
+            {
+                /// Check if this path remains in typed paths.
+                if (auto it = new_typed_paths_types.find(path); it != new_typed_paths_types.end())
+                {
+                    /// Check if the data type is changed.
+                    if (!old_type->equals(*it->second))
+                        typed_paths_wrappers[path] = prepareUnpackDictionaries(old_type, it->second);
+                }
+                /// Otherwise this path will be casted to Dynamic.
+                else
+                {
+                    typed_paths_wrappers[path] = createColumnToDynamicWrapper(old_type, *new_dynamic_type);
+                }
+            }
+
+            /// For new typed paths create a wrapper from old Dynamic type.
+            if (have_new_typed_paths)
+            {
+                for (const auto & [path, type] : new_typed_paths_types)
+                {
+                    if (!old_typed_paths_types.contains(path))
+                        typed_paths_wrappers[path] = createDynamicToColumnWrapper(type);
+                }
+            }
+        }
+
+        const auto & new_paths_to_skip = to_object.getPathsToSkip();
+        std::vector<String> new_paths_to_skip_sorted;
+        new_paths_to_skip_sorted.reserve(new_paths_to_skip.size());
+        for (const auto & path : new_paths_to_skip)
+            new_paths_to_skip_sorted.push_back(path);
+        std::sort(new_paths_to_skip_sorted.begin(), new_paths_to_skip_sorted.end());
+
+        auto should_skip_path =
+            [new_paths_to_skip,
+             new_paths_to_skip_sorted,
+             new_path_regexps_to_skip = to_object.getPathRegexpsToSkip()](const String & path)
+        {
+            /// Check if we have this path in skip list.
+            if (new_paths_to_skip.contains(path))
+                return true;
+
+            /// Check if skip list contains prefix of this path.
+            if (!new_paths_to_skip_sorted.empty())
+            {
+                auto it = std::lower_bound(new_paths_to_skip_sorted.begin(), new_paths_to_skip_sorted.end(), path);
+                if (it != new_paths_to_skip_sorted.begin() && path.starts_with(*std::prev(it)))
+                    return true;
+            }
+
+            /// Check if path matches any skip regexps.
+            for (const auto & path_regexp_to_skip : new_path_regexps_to_skip)
+            {
+                if (re2::RE2::FullMatch(path, path_regexp_to_skip))
+                    return true;
+            }
+
+            return false;
+        };
+
+        /// General case when we need to rewrite the data manually according to the new constraints
+        return [this,
+                skip_rules_are_changed,
+                typed_paths_are_changed,
+                have_new_typed_paths,
+                old_typed_paths_types,
+                new_typed_paths_types,
+                typed_paths_wrappers,
+                new_max_dynamic_paths,
+                new_max_dynamic_types,
+                old_dynamic_type,
+                new_dynamic_type,
+                wrapper_from_old_to_new_dynamic_type,
+                should_skip_path,
+                new_type_of_nested_objects,
+                need_to_convert_nested_objects_type](
+                   ColumnsWithTypeAndName & arguments,
+                   const DataTypePtr &,
+                   const ColumnNullable *,
+                   size_t)
+        {
+            const auto & old_column_object = assert_cast<const ColumnObject &>(*arguments[0].column);
+            const auto & old_typed_paths = old_column_object.getTypedPaths();
+            const auto & old_dynamic_paths = old_column_object.getDynamicPaths();
+            const auto & old_shared_data = old_column_object.getSharedDataPtr();
+            const auto & old_shared_data_offsets = old_column_object.getSharedDataOffsets();
+            const auto [old_shared_data_paths, old_shared_data_values] = old_column_object.getSharedDataPathsAndValues();
+
+            std::unordered_map<String, ColumnPtr> new_typed_paths;
+            new_typed_paths.reserve(new_typed_paths_types.size());
+            std::unordered_map<String, ColumnPtr> new_dynamic_paths;
+
+            /// If the set of typed paths was changed, we should distribute old typed paths to new_typed_paths or new_dynamic_paths.
+            if (typed_paths_are_changed)
+            {
+                for (const auto & [path, column] : old_typed_paths)
+                {
+                    /// Check if this path should remain in typed paths.
+                    if (auto new_types_it = new_typed_paths_types.find(path); new_types_it != new_typed_paths_types.end())
+                    {
+                        /// Check if we need to cast the column to another type.
+                        if (auto wrapper_it = typed_paths_wrappers.find(path); wrapper_it != typed_paths_wrappers.end())
+                        {
+                            ColumnsWithTypeAndName args = {{column, old_typed_paths_types.at(path), path}};
+                            new_typed_paths[path] = wrapper_it->second(args, new_types_it->second, nullptr, column->size());
+                        }
+                        /// Otherwise just reuse existing column.
+                        else
+                        {
+                            new_typed_paths[path] = column;
+                        }
+                    }
+                    /// Otherwise if this path is not skipped, move this path to dynamic paths.
+                    else if (!skip_rules_are_changed || !should_skip_path(path))
+                    {
+                        /// First cast column to Dynamic.
+                        ColumnsWithTypeAndName args = {{column, old_typed_paths_types.at(path), path}};
+                        new_dynamic_paths[path] = typed_paths_wrappers.at(path)(args, new_dynamic_type, nullptr, column->size());
+                    }
+                }
+            }
+            /// If the set of typed paths wasn't changed, just use the old typed paths.
+            else
+            {
+                for (const auto & [path, column] : old_typed_paths)
+                    new_typed_paths[path] = column;
+            }
+
+            /// Now iterate over old dynamic paths and distribute them to new_typed_paths or new_dynamic_paths.
+            for (const auto & [path, column] : old_dynamic_paths)
+            {
+                ColumnsWithTypeAndName args = {{column, old_dynamic_type, path}};
+                /// Check if we need to move this path to typed paths. If yes, cast dynamic column to the required type.
+                if (auto it = new_typed_paths_types.find(path); it != new_typed_paths_types.end())
+                    new_typed_paths[path] = typed_paths_wrappers.at(path)(args, it->second, nullptr, column->size());
+                /// Otherwise cast it to new Dynamic type and move it to new dynamic paths if not skipped.
+                else if (!skip_rules_are_changed || !should_skip_path(path))
+                    new_dynamic_paths[path] = wrapper_from_old_to_new_dynamic_type(args, new_dynamic_type, nullptr, column->size());
+            }
+
+            /// Convert nested object types inside dynamic paths if needed.
+            if (need_to_convert_nested_objects_type)
+            {
+                for (auto & [_, column] : new_dynamic_paths)
+                    column = getDynamicColumnWithConvertedNestedObjectTypes(column, new_type_of_nested_objects);
+            }
+
+            /// We could exceed the new_max_dynamic_paths limit in new_dynamic_paths.
+            /// In this case we keep the most frequent paths and move the rarest to the shared data.
+            std::vector<std::pair<String, ColumnPtr>> paths_for_shared_data;
+            if (new_dynamic_paths.size() > new_max_dynamic_paths)
+            {
+                std::vector<std::pair<size_t, String>> new_dynamic_paths_with_sizes;
+                new_dynamic_paths_with_sizes.reserve(new_dynamic_paths.size());
+                /// If column has statistics from the data part, use size from it for consistency for alters.
+                const auto & statistics = old_column_object.getStatistics();
+                for (const auto & [path, column] : new_dynamic_paths)
+                {
+                    size_t size = column->size() - column->getNumberOfDefaultRows();
+                    /// If this path was moved from old typed paths, we won't have it statistics but consider it as the most frequent.
+                    if (old_typed_paths_types.contains(path))
+                    {
+                        size = std::numeric_limits<size_t>::max();
+                    }
+                    else if (statistics)
+                    {
+                        auto it = statistics->dynamic_paths_statistics.find(path);
+                        if (it != statistics->dynamic_paths_statistics.end())
+                            size = it->second;
+                    }
+
+                    new_dynamic_paths_with_sizes.emplace_back(size, path);
+                }
+
+                std::sort(new_dynamic_paths_with_sizes.begin(), new_dynamic_paths_with_sizes.end(), std::greater());
+                paths_for_shared_data.reserve(new_dynamic_paths_with_sizes.size() - new_max_dynamic_paths);
+                /// Move the rarest paths into paths_for_shared_data.
+                for (size_t i = new_max_dynamic_paths; i != new_dynamic_paths_with_sizes.size(); ++i)
+                {
+                    auto it = new_dynamic_paths.find(new_dynamic_paths_with_sizes[i].second);
+                    paths_for_shared_data.emplace_back(it->first, it->second);
+                    new_dynamic_paths.erase(it);
+                }
+
+                /// Sort paths_for_shared_data. Paths in shared data are sorted, so it will be easier to insert data there.
+                std::sort(paths_for_shared_data.begin(), paths_for_shared_data.end());
+            }
+
+            /// Now we have new typed paths (possibly incomplete) and dynamic paths and we need to create new shared data column.
+            ColumnPtr new_shared_data;
+
+            /// We can reuse shared data from old column if:
+            ///   - there are no new typed paths
+            ///   - we don't have paths in paths_for_shared_data to be inserted into shared data
+            ///   - we don't have new skipped rules
+            if (!have_new_typed_paths && paths_for_shared_data.empty() && !skip_rules_are_changed)
+            {
+                /// Convert nested object types inside shared data if needed.
+                if (need_to_convert_nested_objects_type)
+                    new_shared_data = getSharedDataWithConvertedNestedObjectTypes(old_shared_data, new_type_of_nested_objects);
+                else
+                    new_shared_data = old_shared_data;
+            }
+            /// Otherwise we should iterate over old shared data and construct the new one.
+            else
+            {
+                auto new_shared_data_mutable = DataTypeObject::getTypeOfSharedData()->createColumn();
+                auto & new_shared_data_array = assert_cast<ColumnArray &>(*new_shared_data_mutable);
+                auto & new_shared_data_offsets = new_shared_data_array.getOffsets();
+                new_shared_data_offsets.reserve(old_shared_data_offsets.size());
+                auto & new_shared_data_tuple = assert_cast<ColumnTuple &>(new_shared_data_array.getData());
+                auto & new_shared_data_paths = assert_cast<ColumnString &>(new_shared_data_tuple.getColumn(0));
+                auto & new_shared_data_values = assert_cast<ColumnString &>(new_shared_data_tuple.getColumn(1));
+
+                /// Collect extracted values of new typed paths into separate dynamic columns.
+                /// These columns will be casted to the required type later and inserted into new typed paths.
+                std::unordered_map<String, MutableColumnPtr> extracted_new_typed_paths;
+                FormatSettings format_settings;
+                for (size_t i = 0; i != old_shared_data_offsets.size(); ++i)
+                {
+                    size_t start = old_shared_data_offsets[i - 1];
+                    size_t end = old_shared_data_offsets[i];
+                    size_t paths_for_shared_data_index = 0;
+                    for (size_t j = start; j != end; ++j)
+                    {
+                        auto path = old_shared_data_paths->getDataAt(j).toString();
+                        /// Check if we have this path in new typed paths.
+                        if (new_typed_paths_types.contains(path))
+                        {
+                            auto it = extracted_new_typed_paths.find(path);
+                            if (it == extracted_new_typed_paths.end())
+                            {
+                                it = extracted_new_typed_paths.emplace(path, new_dynamic_type->createColumn()).first;
+                                it->second->insertManyDefaults(i);
+                            }
+                            ColumnObject::deserializeValueFromSharedData(old_shared_data_values, j, *it->second);
+                        }
+                        /// Insert this path into new shared data if not skipped.
+                        else if (!skip_rules_are_changed || !should_skip_path(path))
+                        {
+                            /// Before inserting check if we need to insert paths from paths_for_shared_data before.
+                            while (paths_for_shared_data_index < paths_for_shared_data.size()
+                                   && paths_for_shared_data[paths_for_shared_data_index].first < path)
+                            {
+                                const auto & path_and_column = paths_for_shared_data[paths_for_shared_data_index];
+                                ColumnObject::serializePathAndValueIntoSharedData(&new_shared_data_paths, &new_shared_data_values, path_and_column.first, *path_and_column.second, i);
+                                ++paths_for_shared_data_index;
+                            }
+
+                            /// Insert path and value from old shared data to new shared data.
+                            new_shared_data_paths.insertFrom(*old_shared_data_paths, j);
+                            /// Convert nested object type inside the value if needed.
+                            if (need_to_convert_nested_objects_type)
+                                copySharedValueWithConvertedNestedObjectType(*old_shared_data_values, new_shared_data_values, new_type_of_nested_objects, j, format_settings);
+                            else
+                                new_shared_data_values.insertFrom(*old_shared_data_values, j);
+                        }
+                    }
+
+                    /// Insert remaining paths from paths_for_shared_data.
+                    for (; paths_for_shared_data_index < paths_for_shared_data.size(); ++paths_for_shared_data_index)
+                    {
+                        const auto & path_and_column = paths_for_shared_data[paths_for_shared_data_index];
+                        ColumnObject::serializePathAndValueIntoSharedData(&new_shared_data_paths, &new_shared_data_values, path_and_column.first, *path_and_column.second, i);
+                    }
+
+                    new_shared_data_offsets.push_back(new_shared_data_paths.size());
+
+                    /// Insert default value in all not visited typed paths in extracted_new_typed_paths.
+                    for (auto & [_, column] : extracted_new_typed_paths)
+                    {
+                        if (column->size() == i)
+                            column->insertDefault();
+                    }
+                }
+
+                new_shared_data = std::move(new_shared_data_mutable);
+
+                /// Fill remaining typed paths from extracted values (or with defaults if no values were extracted).
+                for (const auto & [path, type] : new_typed_paths_types)
+                {
+                    if (!new_typed_paths.contains(path))
+                    {
+                        /// Check if we have values extracted from shared data for this typed path.
+                        if (auto it = extracted_new_typed_paths.find(path); it != extracted_new_typed_paths.end())
+                        {
+                            ColumnsWithTypeAndName args = {{it->second->getPtr(), new_dynamic_type, path}};
+                            new_typed_paths[path] = typed_paths_wrappers.at(path)(args, type, nullptr, it->second->size());
+                        }
+                        /// Otherwise fill this typed path with default values.
+                        else
+                        {
+                            auto column = type->createColumn();
+                            column->insertManyDefaults(old_column_object.size());
+                            new_typed_paths[path] = std::move(column);
+                        }
+                    }
+                }
+            }
+
+            return ColumnObject::create(new_typed_paths, new_dynamic_paths, new_shared_data, new_dynamic_paths.size(), new_max_dynamic_paths, new_max_dynamic_types);
+        };
+    }
 
     WrapperType createObjectWrapper(const DataTypePtr & from_type, const DataTypeObject * to_object) const
     {
@@ -4354,6 +4932,7 @@ private:
                 auto & write_buffer = write_helper.getWriteBuffer();
                 FormatSettings format_settings = context ? getFormatSettings(context) : FormatSettings{};
                 auto serialization = arguments[0].type->getDefaultSerialization();
+                format_settings.json.quote_64bit_integers = false;
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
@@ -4366,8 +4945,11 @@ private:
             };
         }
 
+        if (const auto * from_object = checkAndGetDataType<DataTypeObject>(from_type.get()))
+            return createObjectToObjectWrapper(*from_object, *to_object);
+
         /// TODO: support CAST between JSON types with different parameters
-        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String/Map/Object/Tuple. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
+        throw Exception(ErrorCodes::TYPE_MISMATCH, "Cast to {} can be performed only from String/Map/Object/Tuple/JSON. Got: {}", magic_enum::enum_name(to_object->getSchemaFormat()), from_type->getName());
     }
 
     WrapperType createVariantToVariantWrapper(const DataTypeVariant & from_variant, const DataTypeVariant & to_variant) const
@@ -4691,138 +5273,28 @@ private:
 
     WrapperType createDynamicToColumnWrapper(const DataTypePtr &) const
     {
-        return [this]
+        auto nested_convert = [this](ColumnsWithTypeAndName & args, const DataTypePtr & result_type) -> ColumnPtr
+        {
+            WrapperType wrapper;
+            if (cast_type == CastType::accurateOrNull)
+            {
+                /// Create wrapper only if we support conversion from variant to the resulting type.
+                wrapper = createWrapperIfCanConvert(args[0].type, result_type);
+                if (!wrapper)
+                    return nullptr;
+            }
+            else
+            {
+                wrapper = prepareUnpackDictionaries(args[0].type, result_type);
+            }
+
+            return wrapper(args, result_type, nullptr, args[0].column->size());
+        };
+
+        return [nested_convert]
                (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
         {
-            /// When casting Dynamic to regular column we should cast all variants from current Dynamic column
-            /// and construct the result based on discriminators.
-            const auto & column_dynamic = assert_cast<const ColumnDynamic &>(*arguments.front().column.get());
-            const auto & variant_column = column_dynamic.getVariantColumn();
-            const auto & variant_info = column_dynamic.getVariantInfo();
-
-            /// First, cast usual variants to result type.
-            const auto & variant_types = assert_cast<const DataTypeVariant &>(*variant_info.variant_type).getVariants();
-            std::vector<ColumnPtr> cast_variant_columns;
-            cast_variant_columns.reserve(variant_types.size());
-            for (size_t i = 0; i != variant_types.size(); ++i)
-            {
-                /// Skip shared variant, it will be processed later.
-                if (i == column_dynamic.getSharedVariantDiscriminator())
-                {
-                    cast_variant_columns.push_back(nullptr);
-                    continue;
-                }
-
-                const auto & variant_col = variant_column.getVariantPtrByGlobalDiscriminator(i);
-                ColumnsWithTypeAndName variant = {{variant_col, variant_types[i], ""}};
-                WrapperType variant_wrapper;
-                if (cast_type == CastType::accurateOrNull)
-                    /// Create wrapper only if we support conversion from variant to the resulting type.
-                    variant_wrapper = createWrapperIfCanConvert(variant_types[i], result_type);
-                else
-                    variant_wrapper = prepareUnpackDictionaries(variant_types[i], result_type);
-
-                ColumnPtr cast_variant;
-                /// Check if we have wrapper for this variant.
-                if (variant_wrapper)
-                    cast_variant = variant_wrapper(variant, result_type, nullptr, variant_col->size());
-                cast_variant_columns.push_back(cast_variant);
-            }
-
-            /// Second, collect all variants stored in shared variant and cast them to result type.
-            std::vector<MutableColumnPtr> variant_columns_from_shared_variant;
-            DataTypes variant_types_from_shared_variant;
-            /// We will need to know what variant to use when we see discriminator of a shared variant.
-            /// To do it, we remember what variant was extracted from each row and what was it's offset.
-            PaddedPODArray<UInt64> shared_variant_indexes;
-            PaddedPODArray<UInt64> shared_variant_offsets;
-            std::unordered_map<String, UInt64> shared_variant_to_index;
-            const auto & shared_variant = column_dynamic.getSharedVariant();
-            const auto shared_variant_discr = column_dynamic.getSharedVariantDiscriminator();
-            const auto & local_discriminators = variant_column.getLocalDiscriminators();
-            const auto & offsets = variant_column.getOffsets();
-            if (!shared_variant.empty())
-            {
-                shared_variant_indexes.reserve(input_rows_count);
-                shared_variant_offsets.reserve(input_rows_count);
-                FormatSettings format_settings;
-                const auto shared_variant_local_discr = variant_column.localDiscriminatorByGlobal(shared_variant_discr);
-                for (size_t i = 0; i != input_rows_count; ++i)
-                {
-                    if (local_discriminators[i] == shared_variant_local_discr)
-                    {
-                        auto value = shared_variant.getDataAt(offsets[i]);
-                        ReadBufferFromMemory buf(value.data, value.size);
-                        auto type = decodeDataType(buf);
-                        auto type_name = type->getName();
-                        auto it = shared_variant_to_index.find(type_name);
-                        /// Check if we didn't create column for this variant yet.
-                        if (it == shared_variant_to_index.end())
-                        {
-                            it = shared_variant_to_index.emplace(type_name, variant_columns_from_shared_variant.size()).first;
-                            variant_columns_from_shared_variant.push_back(type->createColumn());
-                            variant_types_from_shared_variant.push_back(type);
-                        }
-
-                        shared_variant_indexes.push_back(it->second);
-                        shared_variant_offsets.push_back(variant_columns_from_shared_variant[it->second]->size());
-                        type->getDefaultSerialization()->deserializeBinary(*variant_columns_from_shared_variant[it->second], buf, format_settings);
-                    }
-                    else
-                    {
-                        shared_variant_indexes.emplace_back();
-                        shared_variant_offsets.emplace_back();
-                    }
-                }
-            }
-
-            /// Cast all extracted variants into result type.
-            std::vector<ColumnPtr> cast_shared_variant_columns;
-            cast_shared_variant_columns.reserve(variant_types_from_shared_variant.size());
-            for (size_t i = 0; i != variant_types_from_shared_variant.size(); ++i)
-            {
-                ColumnsWithTypeAndName variant = {{variant_columns_from_shared_variant[i]->getPtr(), variant_types_from_shared_variant[i], ""}};
-                WrapperType variant_wrapper;
-                if (cast_type == CastType::accurateOrNull)
-                    /// Create wrapper only if we support conversion from variant to the resulting type.
-                    variant_wrapper = createWrapperIfCanConvert(variant_types_from_shared_variant[i], result_type);
-                else
-                    variant_wrapper = prepareUnpackDictionaries(variant_types_from_shared_variant[i], result_type);
-
-                ColumnPtr cast_variant;
-                /// Check if we have wrapper for this variant.
-                if (variant_wrapper)
-                    cast_variant = variant_wrapper(variant, result_type, nullptr, variant_columns_from_shared_variant[i]->size());
-                cast_shared_variant_columns.push_back(cast_variant);
-            }
-
-            /// Construct result column from all cast variants.
-            auto res = result_type->createColumn();
-            res->reserve(input_rows_count);
-            for (size_t i = 0; i != input_rows_count; ++i)
-            {
-                auto global_discr = variant_column.globalDiscriminatorByLocal(local_discriminators[i]);
-                if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-                {
-                    res->insertDefault();
-                }
-                else if (global_discr == shared_variant_discr)
-                {
-                    if (cast_shared_variant_columns[shared_variant_indexes[i]])
-                        res->insertFrom(*cast_shared_variant_columns[shared_variant_indexes[i]], shared_variant_offsets[i]);
-                    else
-                        res->insertDefault();
-                }
-                else
-                {
-                    if (cast_variant_columns[global_discr])
-                        res->insertFrom(*cast_variant_columns[global_discr], offsets[i]);
-                    else
-                        res->insertDefault();
-                }
-            }
-
-            return res;
+            return ConvertImplFromDynamicToColumn::execute(arguments, result_type, input_rows_count, nested_convert);
         };
     }
 
@@ -4879,6 +5351,14 @@ private:
     {
         if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(from_type.get()))
             return createVariantToDynamicWrapper(*variant_type, dynamic_type);
+
+        if (from_type->onlyNull())
+            return [](ColumnsWithTypeAndName &, const DataTypePtr & result_type, const ColumnNullable *, size_t input_rows_count) -> ColumnPtr
+            {
+                auto result = result_type->createColumn();
+                result->insertManyDefaults(input_rows_count);
+                return result;
+            };
 
         if (context && context->getSettingsRef()[Setting::cast_string_to_dynamic_use_inference] && isStringOrFixedString(removeNullable(removeLowCardinality(from_type))))
             return createStringToDynamicThroughParsingWrapper();

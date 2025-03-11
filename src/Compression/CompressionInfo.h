@@ -4,10 +4,10 @@
 
 /** Common defines for compression */
 
-#define DBMS_MAX_COMPRESSED_SIZE 0x40000000ULL    /// 1GB
+constexpr uint64_t DBMS_MAX_COMPRESSED_SIZE = 0x40000000ULL;    /// 1GB
 
 /** one byte for method, 4 bytes for compressed size, 4 bytes for uncompressed size */
-#define COMPRESSED_BLOCK_HEADER_SIZE 9
+constexpr uint8_t COMPRESSED_BLOCK_HEADER_SIZE = 9;
 
 namespace DB
 {
@@ -46,6 +46,7 @@ enum class CompressionMethodByte : uint8_t
     AES_128_GCM_SIV = 0x96,
     AES_256_GCM_SIV = 0x97,
     FPC             = 0x98,
+    DeflateQpl      = 0x99,
     GCD             = 0x9a,
     ZSTD_QPL        = 0x9b,
 };

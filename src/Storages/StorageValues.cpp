@@ -3,6 +3,8 @@
 #include <Storages/StorageValues.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/Pipe.h>
 
 
@@ -68,7 +70,7 @@ Pipe StorageValues::read(
     /// Get only required columns.
     Block block;
     for (const auto & name : column_names)
-        block.insert(res_block.getByName(name));
+        block.insert(res_block.getColumnOrSubcolumnByName(name));
 
     Chunk chunk(block.getColumns(), block.rows());
     return Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));

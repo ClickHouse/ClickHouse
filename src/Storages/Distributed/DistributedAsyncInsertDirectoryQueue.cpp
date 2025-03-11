@@ -13,6 +13,7 @@
 #include <IO/ConnectionTimeouts.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Disks/IDisk.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/StringUtils.h>
 #include <Common/SipHash.h>
@@ -169,7 +170,7 @@ void DistributedAsyncInsertDirectoryQueue::flushAllData(const SettingsChanges & 
     std::lock_guard lock{mutex};
     if (!hasPendingFiles())
         return;
-    processFiles(settings_changes);
+    processFiles(/*force=*/true, settings_changes);
 }
 
 void DistributedAsyncInsertDirectoryQueue::shutdownAndDropAllData()
@@ -212,7 +213,7 @@ void DistributedAsyncInsertDirectoryQueue::run()
         {
             try
             {
-                processFiles();
+                processFiles(/*force=*/false);
                 /// No errors while processing existing files.
                 /// Let's see maybe there are more files to process.
                 do_sleep = false;
@@ -380,18 +381,18 @@ void DistributedAsyncInsertDirectoryQueue::initializeFilesFromDisk()
         status.broken_bytes_count = broken_bytes_count;
     }
 }
-void DistributedAsyncInsertDirectoryQueue::processFiles(const SettingsChanges & settings_changes)
+void DistributedAsyncInsertDirectoryQueue::processFiles(bool force, const SettingsChanges & settings_changes)
 try
 {
     if (should_batch_inserts)
-        processFilesWithBatching(settings_changes);
+        processFilesWithBatching(force, settings_changes);
     else
     {
         /// Process unprocessed file.
         if (!current_file.empty())
             processFile(current_file, settings_changes);
 
-        while (!pending_files.isFinished() && pending_files.tryPop(current_file))
+        while ((force || !monitor_blocker.isCancelled()) && !pending_files.isFinished() && pending_files.tryPop(current_file))
             processFile(current_file, settings_changes);
     }
 
@@ -539,7 +540,7 @@ DistributedAsyncInsertDirectoryQueue::Status DistributedAsyncInsertDirectoryQueu
     return current_status;
 }
 
-void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const SettingsChanges & settings_changes)
+void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(bool force, const SettingsChanges & settings_changes)
 {
     /// Possibly, we failed to send a batch on the previous iteration. Try to send exactly the same batch.
     if (fs::exists(current_batch_file_path))
@@ -547,18 +548,10 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
         LOG_DEBUG(log, "Restoring the batch");
 
         DistributedAsyncInsertBatch batch(*this);
-        batch.deserialize();
+        if (batch.recoverBatch())
+            batch.send(settings_changes, /*update_current_batch=*/ false);
 
-        /// In case of recovery it is possible that some of files will be
-        /// missing, if server had been restarted abnormally
-        /// (between unlink(*.bin) and unlink(current_batch.txt)).
-        ///
-        /// But current_batch_file_path should be removed anyway, since if some
-        /// file was missing, then the batch is not complete and there is no
-        /// point in trying to pretend that it will not break deduplication.
-        if (batch.valid())
-            batch.send(settings_changes);
-
+        /// Remove the batch info unconditionally since it is either valid and sent or broken and should be re-created from scratch.
         auto dir_sync_guard = getDirectorySyncGuard(relative_path);
         fs::remove(current_batch_file_path);
     }
@@ -569,7 +562,7 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
 
     try
     {
-        while (pending_files.tryPop(file_path))
+        while ((force || !monitor_blocker.isCancelled()) && !pending_files.isFinished() && pending_files.tryPop(file_path))
         {
             if (!fs::exists(file_path))
             {
@@ -637,15 +630,13 @@ void DistributedAsyncInsertDirectoryQueue::processFilesWithBatching(const Settin
             batch.total_bytes += total_bytes;
 
             if (batch.isEnoughSize())
-            {
-                batch.send(settings_changes);
-            }
+                batch.send(settings_changes, /*update_current_batch=*/ true);
         }
 
         for (auto & kv : header_to_batch)
         {
             DistributedAsyncInsertBatch & batch = kv.second;
-            batch.send(settings_changes);
+            batch.send(settings_changes, /*update_current_batch=*/ true);
         }
     }
     catch (...)

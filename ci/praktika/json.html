@@ -15,6 +15,8 @@
             --footer-background: #f1f1f1;
             --footer-text-color: #000;
             --status-width: 300px;
+            --pending-bar-color: #fae8c6;
+            --skipped-bar-color: #ccc;
         }
 
         body {
@@ -24,59 +26,74 @@
             margin: 0;
             display: flex;
             flex-direction: column;
-            font-family: 'IBM Plex Mono Condensed', monospace, sans-serif;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            letter-spacing: -0.5px;
             --header-background-color: #f4f4f4;
+            --link-color: blue;
+            --link-hover-color: darkblue;
+            --file-link-color: blue;
+            --file-link-hover-color: darkblue;
         }
 
         body.night-theme {
             --background-color: #1F1F1C;
-            --text-color: #fff;
-            --tile-background: black;
+            --text-color: #dedede;
+            --tile-background: #1F1F1C;
             --header-background-color: #1F1F1C;
+            --pending-bar-color: #595801;
+            --skipped-bar-color: #575757;
+            --table-border-color: #444;
+            --link-color: #ffea00;
+            --link-hover-color: #ffaa00;
+            --file-link-color: #007efc;
+            --file-link-hover-color: #004d9a;
         }
 
-        #info-container {
-            margin-left: calc(var(--status-width) + 20px);
-            margin-bottom: 10px;
-            background-color: var(--tile-background);
-            padding: 10px;
-            text-align: left;
+        .name-column a {
+            color: var(--link-color);
+            text-decoration: none;
+        }
+
+        .name-column a:hover {
+            color: var(--link-hover-color);
         }
 
         #status-container {
             position: fixed;
             top: 0;
-            bottom: 0;
+            bottom: 40px;
             left: 0;
             width: var(--status-width);
             background-color: var(--tile-background);
-            padding: 20px;
+            padding-left: 15px;
+            padding-right: 15px;
             box-sizing: border-box;
             font-size: 18px;
             margin: 0;
+            overflow-y: auto;
         }
-
-        #status-container a {
-            color: #007bff;
-            text-decoration: underline;
+        .file-link {
+            color: var(--file-link-color);
             font-weight: bold;
+            font-size: 0.7em;
+            font-family: 'Roboto Condensed', sans-serif;
+            font-stretch: ultra-condensed;
             cursor: pointer;
             display: inline-block;
             margin-top: 5px;
-            margin-left: 20px;
-            padding: 2px 0;
-            font-size: 0.8em;
+            text-decoration: none;
         }
 
-        #status-container a:hover {
-            color: #0056b3;
+        .file-link:hover {
+            color: var(--file-link-hover-color);
             text-decoration: none;
         }
 
         .key-value-pair {
             display: flex;               /* Enable Flexbox for alignment */
             justify-content: space-between; /* Distribute space between key and value */
-            margin-bottom: 20px;         /* Add space between each pair */
+            padding-bottom: 15px;
+            padding-top: 15px;
         }
 
         .json-key {
@@ -86,9 +103,26 @@
         .json-value {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
+        }
+        .external-link {
+            color: var(--file-link-color);
+            font-size: 18px;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            cursor: pointer;
+            display: inline-block;
+            text-decoration: none;
         }
 
+        .external-link:hover {
+            color: var(--file-link-hover-color);
+            text-decoration: underline;
+        }
+        .json-value-small {
+            font-weight: normal;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            font-size: 0.75rem;
+            justify-content: left;
+        }
         .dropdown-value {
             width: 100px;
             font-weight: normal;
@@ -102,18 +136,34 @@
 
         #result-container {
             background-color: var(--tile-background);
-            margin-left: calc(var(--status-width) + 20px);
+            position: fixed;
+            top: 0;
+            bottom: 40px;
+            left: calc(var(--status-width) + 10px); /* Align with status container */
+            right: 0; /* Stretch to the right edge */
+
             padding: 0;
             box-sizing: border-box;
-            text-align: center;
             font-size: 18px;
             font-weight: normal;
-            flex-grow: 1;
-            margin-bottom: 40px;
+
+            overflow: auto;
+            white-space: nowrap;
+        }
+
+        .info-text {
+            white-space: normal; /* Allow text to wrap */
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%; /* Prevent overflow */
+        }
+        #info-content {
+            text-align: left;
+            padding: 10px;
         }
 
         #footer {
-            padding: 10px;
+            padding: 5px;
             position: fixed;
             bottom: 0;
             left: 0;
@@ -135,7 +185,6 @@
             flex-grow: 1; /* Takes up all the available space */
         }
 
-        /* make some space around '/' in the navigation line */
         #footer .left span.separator {
             margin-left: 5px;
             margin-right: 5px;
@@ -144,6 +193,7 @@
         #footer .right, #footer .settings {
             display: flex;
             align-items: center;
+            margin-right: 20px;
         }
 
         #footer .right a::before {
@@ -154,7 +204,7 @@
 
         #footer .right::before, #footer .settings::before {
             content: "|"; /* Add separator before right and settings sections */
-            margin-left: 10px;
+            margin-left: 0px;
             margin-right: 10px;
             color: #e0e0e0;
         }
@@ -173,42 +223,20 @@
             text-decoration: underline;
         }
 
-        #links {
-            margin-top: 10px;
-            padding: 15px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            background-color: #f9f9f9;
-        }
-
-        #links a {
-            display: block;
-            margin-bottom: 5px;
-            padding: 5px 10px;
-            background-color: #D5D5D5;
-            color: black;
-            text-decoration: none;
-            border-radius: 5px;
-        }
-
-        #links a:hover {
-            background-color: #D5D5D5;
-        }
-
         table {
-            width: 100%;
+            table-layout: auto;
+            width: auto;
             border-collapse: collapse;
         }
 
         th.name-column, td.name-column {
-            min-width: 350px;
+            width: auto;
         }
 
         th.status-column, td.status-column {
-            max-width: 100px; /* Set the maximum width for the column */
+            width: 80px;
             white-space: nowrap; /* Prevent text from wrapping */
             overflow: hidden; /* Hide the overflowed text */
-            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
         }
 
         th.time-column, td.time-column {
@@ -223,7 +251,7 @@
 
         th, td {
             padding: 8px;
-            border: 1px solid #ddd;
+            border: 1px solid var(--table-border-color, #ccc);
             text-align: left;
         }
 
@@ -252,7 +280,7 @@
         }
 
         .status-run {
-            color: blue;
+            color: #0080ff;
             font-weight: bold;
         }
 
@@ -268,7 +296,6 @@
     </style>
 </head>
 <body>
-<div id="info-container"></div>
 <div id="status-container"></div>
 <div id="result-container"></div>
 
@@ -276,18 +303,17 @@
     <div class="left"></div>
     <div class="right"></div>
     <div class="settings">
-        <span id="theme-toggle">☀️</span>
+        <span id="theme-toggle">🔆️</span>
     </div>
 </footer>
 
 <script>
     function toggleTheme() {
         document.body.classList.toggle('night-theme');
-        const toggleIcon = document.getElementById('theme-toggle');
         if (document.body.classList.contains('night-theme')) {
-            toggleIcon.textContent = '☾'; // Moon for night mode
+            localStorage.setItem('theme', 'night');
         } else {
-            toggleIcon.textContent = '☀️'; // Sun for day mode
+            localStorage.setItem('theme', 'day');
         }
     }
 
@@ -297,7 +323,6 @@
         window.location.href = url.toString();
     }
 
-    // Attach the toggle function to the click event of the icon
     document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
 
     function formatTimestamp(timestamp, showDate = true) {
@@ -361,7 +386,15 @@
         return 'status-other';
     }
 
-    function addKeyValueToStatus(key, value, options = null) {
+    function addInfoLineToStatus(info) {
+        const statusContainer = document.getElementById('status-container');
+        const line = document.createElement('div');
+        line.className = 'json-value-small';
+        line.textContent = info;
+        statusContainer.appendChild(line);
+    }
+
+    function addKeyValueToStatus(key, value, options = null, optionValues = null, link = null) {
         const statusContainer = document.getElementById('status-container');
 
         let keyValuePair = document.createElement('div');
@@ -369,7 +402,7 @@
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
-        keyElement.textContent = key + ':';
+        keyElement.textContent = key !== "" ? key + ":" : "";
 
         let valueElement;
 
@@ -378,16 +411,15 @@
             valueElement = document.createElement('select');
             valueElement.className = 'dropdown-value';
 
-            options.forEach(optionValue => {
+            options.forEach((optionTextContent, i) => {
                 const option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = optionValue.slice(0, 10);
+                option.value = optionValues?.[i] ?? optionTextContent;
+                option.textContent = optionTextContent;
 
                 // Set the initially selected option
-                if (optionValue === value) {
+                if (option.value === value) {
                     option.selected = true;
                 }
-
                 valueElement.appendChild(option);
             });
 
@@ -397,10 +429,19 @@
                 updateUrlParameter(key, selectedValue);
             });
         } else {
-            // Create a simple text display if no options are provided
-            valueElement = document.createElement('div');
-            valueElement.className = 'json-value';
-            valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
+            if (link) {
+                // Create clickable link if `link` is provided
+                valueElement = document.createElement('a');
+                valueElement.href = link;
+                valueElement.className = "external-link";
+                valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
+                valueElement.target = "_blank"; // Open in a new tab
+            } else {
+                // Create a simple text display if no options or link are provided
+                valueElement = document.createElement('div');
+                valueElement.className = "json-value";
+                valueElement.textContent = value || 'N/A';
+            }
         }
 
         keyValuePair.appendChild(keyElement);
@@ -409,28 +450,189 @@
     }
 
     function addFileButtonToStatus(key, links) {
+        function getPRandShaFromLink(link) {
+            const url = new URL(link);
+            const params = new URLSearchParams(url.search);
+
+            const PR = params.get('PR');
+            const sha = params.get('sha');
+
+            return { PR, sha };
+        }
 
         if (links == null) {
             return
         }
-
         const statusContainer = document.getElementById('status-container');
 
         const keyElement = document.createElement('div');
         keyElement.className = 'json-key';
-        keyElement.textContent = columnSymbols[key] + ':' || key;
+        //keyElement.textContent = columnSymbols[key] + ':' || key;
+        keyElement.textContent = '';
         statusContainer.appendChild(keyElement);
 
         if (Array.isArray(links) && links.length > 0) {
+            let base_url = window.location.origin + window.location.pathname;
             links.forEach(link => {
                 const textLink = document.createElement('a');
                 textLink.href = link;
-                textLink.textContent = link.split('/').pop();
+
+                if (!link.includes(base_url)) {
+                    textLink.textContent = link.split('/').pop();
+                } else {
+                    // it's a link to another report:
+                    const {PR, sha} = getPRandShaFromLink(link)
+                    textLink.textContent = `Report PR#${PR}, sha#${sha.substring(0, 10)}`;
+                }
+                textLink.classList.add("file-link")
+
                 textLink.target = '_blank';
                 statusContainer.appendChild(textLink);
                 statusContainer.appendChild(document.createElement('br'));
             });
         }
+    }
+
+    function addTimeTraceWidget(results) {
+        const statusContainer = document.getElementById("status-container");
+        if (!results || results.length === 0) {
+            console.error("No results to visualize.");
+            return;
+        }
+
+        // Constants
+        const lineWidth = 5; // Height per task
+        const padding = 1; // Space between lines
+        const totalHeight = (lineWidth + padding) * results.length;
+
+        // Create and configure canvas
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+        const tooltip = document.createElement("div");
+
+        canvas.style.position = "absolute";
+        canvas.style.left = "0px"; // Force canvas to start from the very left
+        canvas.style.width = "100%"; // Make it stretch within container
+        canvas.style.height = `${totalHeight}px`;
+
+        function resizeCanvas() {
+            canvas.width = statusContainer.clientWidth; // Full width of container
+            canvas.height = totalHeight;
+            drawTimeline(); // Redraw after resizing
+        }
+
+        statusContainer.appendChild(canvas);
+        resizeCanvas();
+
+        // Tooltip styles
+        tooltip.style.position = "absolute";
+        tooltip.style.background = "black";
+        tooltip.style.color = "white";
+        tooltip.style.padding = "5px 10px";
+        tooltip.style.borderRadius = "4px";
+        tooltip.style.fontSize = "12px";
+        tooltip.style.display = "none";
+        tooltip.style.pointerEvents = "none";
+        statusContainer.appendChild(tooltip);
+
+        window.addEventListener("resize", resizeCanvas);
+
+        function getColorFromName(name) {
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash); // Simple hash function
+            }
+            const hue = Math.abs(hash % 360); // Map hash to 0-360 for color hue
+            return `hsl(${hue}, 70%, 60%)`; // Use HSL for vibrant, distinct colors
+        }
+
+        function drawTimeline() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Store task positions for hover detection
+            let taskRects = [];
+
+            const minStartTime = runtimeCache.json0.start_time;
+            const currentUtcTimestamp = Date.now() / 1000;
+            const maxTime = runtimeCache.json0?.duration ?? (currentUtcTimestamp - minStartTime);
+            const scaleX = canvas.width / maxTime;
+
+            results.forEach((task, index) => {
+                const y = index * (lineWidth + padding);
+                const height = lineWidth;
+
+                let x, width, color;
+                if (task.start_time === null) {
+                    x = 0;
+                    width = canvas.width;
+                    function getCssVariable(name) {
+                        return getComputedStyle(document.body).getPropertyValue(name).trim();
+                    }
+
+                    if (task.status === "pending") {
+                        color = getCssVariable('--pending-bar-color');
+                    } else {
+                        color = getCssVariable('--skipped-bar-color');
+                    }
+                } else if (task.duration === null) {
+                    x = (task.start_time - minStartTime) * scaleX;
+                    width = (maxTime - (task.start_time - minStartTime)) * scaleX;
+                    color = getColorFromName(task.name);
+                } else {
+                    x = (task.start_time - minStartTime) * scaleX;
+                    width = task.duration * scaleX;
+                    color = getColorFromName(task.name);
+                }
+
+                // Draw the bar
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, width, height);
+
+                // Store task row position (entire row for hover detection)
+                taskRects.push({ x, y, width, height, name: task.name });
+            });
+
+            // Mouse move event for hover detection
+            canvas.addEventListener("mousemove", (event) => {
+                const rect = canvas.getBoundingClientRect();
+                const tooltipRect = tooltip.getBoundingClientRect();
+                const mouseY = event.clientY - rect.top;
+
+                let hoveredTask = null;
+                for (let task of taskRects) {
+                    if (mouseY >= task.y && mouseY <= task.y + task.height) {
+                        hoveredTask = task;
+                        break;
+                    }
+                }
+
+                if (hoveredTask) {
+                    let tooltipX = event.clientX + 10; // Default tooltip position (right of mouse)
+                    // Prevent tooltip from going outside the right edge
+                    if (tooltipX + tooltipRect.width > rect.right) {
+                        tooltipX = rect.right - tooltipRect.width; // Stop moving right
+                    }
+                    tooltip.textContent = hoveredTask.name;
+                    tooltip.style.left = `${tooltipX}px`;
+                    tooltip.style.top = `${event.clientY + 10}px`;
+                    tooltip.style.display = "block";
+                } else {
+                    tooltip.style.display = "none";
+                }
+            });
+
+            // Hide tooltip on mouse out
+            canvas.addEventListener("mouseleave", () => {
+                tooltip.style.display = "none";
+            });
+        }
+
+        drawTimeline();
+
+        // Redraw traces every 5 seconds
+        setInterval(() => {
+            drawTimeline();
+        }, 5000);
     }
 
     function addStatusToStatus(status, start_time, duration) {
@@ -442,7 +644,8 @@
         let valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
+        //keyElement.textContent = columnSymbols['status'] + ':' || 'status:';
+        keyElement.textContent = '';
         valueElement.classList.add('status-value');
         valueElement.classList.add(getStatusClass(status));
         valueElement.textContent = status;
@@ -456,7 +659,8 @@
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
+        //keyElement.textContent = columnSymbols['start_time'] + ':' || 'start_time:';
+        keyElement.textContent = ''
         valueElement.textContent = formatTimestamp(start_time);
         keyValuePair.appendChild(keyElement);
         keyValuePair.appendChild(valueElement);
@@ -468,11 +672,19 @@
         valueElement = document.createElement('div');
         keyElement.className = 'json-key';
         valueElement.className = 'json-value';
-        keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
+        //keyElement.textContent = columnSymbols['duration'] + ':' || 'duration:';
+        keyElement.textContent = ''
         if (duration === null) {
             // Set initial value to 0 and add a unique ID or data attribute to identify the duration element
             valueElement.textContent = '00:00:00';
             valueElement.setAttribute('id', 'duration-value');
+            if (start_time) {
+                let duration = Math.floor(Date.now() / 1000 - start_time);
+                setInterval(() => {
+                    duration++;
+                    valueElement.textContent = formatDuration(duration, true);
+                }, 1000);
+            }
         } else {
             // Format the duration if it's a valid number
             valueElement.textContent = formatDuration(duration, true);
@@ -482,57 +694,16 @@
         statusContainer.appendChild(keyValuePair);
     }
 
-    function navigatePath(jsonObj, nameArray) {
-        let baseParams = new URLSearchParams(window.location.search);
-        let keysToDelete = [];
-        baseParams.forEach((value, key) => {
-            if (key.startsWith('name_')) {
-                keysToDelete.push(key); // Collect the keys to delete
-            }
-        });
-        keysToDelete.forEach((key) => baseParams.delete(key));
-        let pathNames = [];
-        let pathLinks = [];
-        let currentObj = jsonObj;
-
-        // Add the first entry (root level)
-        baseParams.set(`name_0`, currentObj.name);
-        pathNames.push(currentObj.name);
-        pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${currentObj.name}</a>`);
-        // Iterate through the nameArray starting at index 0
-        for (const [index, name] of nameArray.entries()) {
-            if (index === 0) continue;
-            if (currentObj && Array.isArray(currentObj.results)) {
-                const nextResult = currentObj.results.find(result => result.name === name);
-                if (nextResult) {
-                    baseParams.set(`name_${index}`, nextResult.name);
-                    pathNames.push(nextResult.name);  // Correctly push nextResult name, not currentObj.name
-                    pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}">${nextResult.name}</a>`);
-                    currentObj = nextResult; // Move to the next object in the hierarchy
-                } else {
-                    console.error(`Name "${name}" not found in results array.`);
-                    return null; // Name not found in results array
-                }
-            } else {
-                console.error(`Current object is not structured as expected.`);
-                return null; // Current object is not structured as expected
-            }
-        }
-        const footerLeft = document.querySelector('#footer .left');
-        footerLeft.innerHTML = pathLinks.join('');
-
-        return currentObj;
-    }
-
     // Define the fixed columns globally, so both functions can use it
-    const columns = ['name', 'status', 'start_time', 'duration', 'info'];
+    const columns = ['status', 'name', 'start_time', 'duration'];
+    // const columns = ['status', 'name', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
-        name: '🗂️',
-        status: '✅',
-        start_time: '🕒',
-        duration: '⏳',
-        info: '📝',
+        // name: '🗂️',
+        // status: '✅',
+        start_time: 'start',
+        duration: 'dur',
+        // info: '📝',
         files: '📎'
     };
 
@@ -555,7 +726,7 @@
             thead.appendChild(headerRow);
 
             // Create table rows
-            populateTableRows(tbody, results, columns, nest_level);
+            populateTableRows(tbody, results, nest_level);
 
             table.appendChild(thead);
             table.appendChild(tbody);
@@ -565,35 +736,42 @@
         return null;
     }
 
-    function populateTableRows(tbody, results, columns, nest_level) {
+    function populateTableRows(tbody, results, nest_level) {
         const currentUrl = new URL(window.location.href);  // Get the current URL
 
         // Clear existing rows if re-rendering (used in sorting)
         tbody.innerHTML = '';
 
-        results.forEach((result, index) => {
+        results.forEach((result, _index) => {
             const row = document.createElement('tr');
 
             columns.forEach(column => {
                 const td = document.createElement('td');
                 const value = result[column];
 
-                if (column === 'name') {
-                    // Create a link for the name field, using name_X
-                    const link = document.createElement('a');
-                    const newUrl = new URL(currentUrl); // Create a fresh copy of the URL for each row
-                    newUrl.searchParams.set(`name_${nest_level}`, value); // Use backticks for string interpolation
-                    link.href = newUrl.toString();
-                    link.textContent = value;
-                    td.classList.add('name-column');
-                    td.appendChild(link);
-                } else if (column === 'status') {
-                    // Apply status formatting
+                if (column === 'status') {
+                    // Apply status formatting and make it clickable
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
+                    if (result.info && result.info.trim() !== "") {
+                        span.style.cursor = "pointer";
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info));
+                    }
                     td.appendChild(span);
+
+                    // // Click event to toggle the info row
+                    // span.addEventListener('click', () => toggleInfoRow(row, result.info));
+                } else if (column === 'name') {
+                    // Create a link for the name field, using name_X
+                    const link = document.createElement('a');
+                    const newUrl = new URL(currentUrl);
+                    newUrl.searchParams.set(`name_${nest_level}`, value);
+                    link.href = newUrl.toString();
+                    link.textContent = value;
+                    td.classList.add('name-column');
+                    td.appendChild(link);
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
@@ -610,6 +788,32 @@
 
             tbody.appendChild(row);
         });
+    }
+
+    /**
+     * Toggles an additional row below the clicked row to display the "info" text.
+     */
+    function toggleInfoRow(row, infoText) {
+        if (!infoText) return; // Do nothing if there's no info
+
+        let nextRow = row.nextElementSibling;
+
+        // Check if the next row is already an "info" row
+        if (nextRow && nextRow.classList.contains('info-row')) {
+            nextRow.remove(); // If it's there, remove it
+        } else {
+            // Otherwise, create a new row for the info text
+            const infoRow = document.createElement('tr');
+            infoRow.classList.add('info-row');
+
+            const infoCell = document.createElement('td');
+            infoCell.colSpan = row.children.length; // Make it span the full width
+            infoCell.innerHTML = infoText.replace(/\n/g, '<br>'); // Preserve line breaks
+            infoCell.classList.add('info-text');
+
+            infoRow.appendChild(infoCell);
+            row.parentNode.insertBefore(infoRow, row.nextSibling); // Insert below the clicked row
+        }
     }
 
     function sortTable(results, column, key, tbody, nest_level, columns) {
@@ -635,117 +839,312 @@
         tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
-        populateTableRows(tbody, results, columns, nest_level);
+        populateTableRows(tbody, results, nest_level);
     }
 
-    function loadResultsJSON(PR, sha, nameParams) {
-        const infoElement = document.getElementById('info-container');
-        let lastModifiedTime = null;
-        const task = nameParams[0].toLowerCase();
+    async function fetchJson(path, lastModifiedTime = null, eTag = null) {
+        try {
+            // Set headers if lastModifiedTime or eTag are available
+            const headers = {};
+            if (lastModifiedTime) headers["If-Modified-Since"] = lastModifiedTime;
+            if (eTag) headers["If-None-Match"] = eTag;
 
-        // Construct the URL dynamically based on PR, sha, and name_X
-        const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
-        const path = `${baseUrl}/${encodeURIComponent(PR)}/${encodeURIComponent(sha)}/result_${task}.json`;
+            // Fetch with conditional headers
+            const response = await fetch(path, {
+                cache: "no-cache",
+                headers
+            });
 
-        fetch(path, {cache: "no-cache"})
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                lastModifiedTime = response.headers.get('Last-Modified');
-                return response.json();
-            })
-            .then(data => {
-                const linksDiv = document.getElementById('links');
-                const resultsDiv = document.getElementById('result-container');
-                const footerRight = document.querySelector('#footer .right');
+            // If the response is 304 (Not Modified), return existing metadata without fetching new data
+            if (response.status === 304) {
+                return { data: null, lastModifiedTime, eTag, updated: false };
+            } else if (response.status === 403)
+                return { data: null, lastModifiedTime: null, eTag: null, updated: true };
+            // Extract headers
+            const newLastModifiedTime = response.headers.get('Last-Modified');
+            const newETag = response.headers.get('ETag');
+            const jsonData = await response.json();
 
-                let targetData = navigatePath(data, nameParams);
-                let nest_level = nameParams.length;
-
-                // Add footer links from top-level  Result
-                if (Array.isArray(data.links) && data.links.length > 0) {
-                    data.links.forEach(link => {
-                        const a = document.createElement('a');
-                        a.href = link;
-                        a.textContent = link.split('/').pop();
-                        a.target = '_blank';
-                        footerRight.appendChild(a);
-                    });
-                }
-
-                if (targetData) {
-                    //infoElement.style.display = 'none';
-                    infoElement.innerHTML = (targetData.info || '').replace(/\n/g, '<br>');
-
-                    addStatusToStatus(targetData.status, targetData.start_time, targetData.duration)
-
-                    // Handle links
-                    addFileButtonToStatus('files', targetData.links)
-
-
-                    // Handle duration update if duration is null and start_time exists
-                    if (targetData.duration === null && targetData.start_time) {
-                        let duration = Math.floor(Date.now() / 1000 - targetData.start_time);
-                        const durationElement = document.getElementById('duration-value');
-
-                        const intervalId = setInterval(() => {
-                            duration++;
-                            durationElement.textContent = formatDuration(duration, true);
-                        }, 1000);
-                    }
-
-                    // If 'results' exists and is non-empty, create the table
-                    const resultsData = targetData.results;
-                    if (Array.isArray(resultsData) && resultsData.length > 0) {
-                        const table = createResultsTable(resultsData, nest_level);
-                        if (table) {
-                            resultsDiv.appendChild(table);
-                        }
-                    }
-                } else {
-                    infoElement.textContent = 'Object Not Found';
-                    infoElement.style.display = 'block';
-                }
-
-                // Set up auto-reload if Last-Modified header is present
-                if (lastModifiedTime) {
-                    setInterval(() => {
-                        checkForUpdate(path, lastModifiedTime);
-                    }, 30000); // 30000 milliseconds = 30 seconds
-                }
-            })
-            .catch(error => {
-                console.error('Error loading JSON:', error);
+            return { data: jsonData, lastModifiedTime: newLastModifiedTime, eTag: newETag, updated: true };
+        } catch (error) {
+            console.error('Error loading Results:', error);
+            if (infoElement) {
                 infoElement.textContent = 'Error loading data';
                 infoElement.style.display = 'block';
-            });
+            }
+            return { data: null, lastModifiedTime: null, eTag: null, updated: true };
+        }
     }
 
-    // Function to check if the JSON file is updated
-    function checkForUpdate(path, lastModifiedTime) {
-        fetch(path, {method: 'HEAD'})
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const newLastModifiedTime = response.headers.get('Last-Modified');
-                if (newLastModifiedTime && new Date(newLastModifiedTime) > new Date(lastModifiedTime)) {
-                    // If the JSON file has been updated, reload the page
-                    window.location.reload();
-                }
-            })
-            .catch(error => {
-                console.error('Error checking for update:', error);
-            });
+    const runtimeCache = {
+        commits: null,
+        json0: null,
+        json1: null,
+        prLink: null,
+        commitLink: null,
+        runLink: null,
+        sha: null
+    };
+
+    function storeLink(link) {
+        if (link.includes('/pull/')) runtimeCache.prLink = link;
+        else if (link.includes('/commit/')) runtimeCache.commitLink = link;
+        else if (link.includes('/actions/runs/')) runtimeCache.runLink = link;
     }
 
-    // Initialize the page and load JSON from URL parameter
-    function init() {
+    function getTargetResults(nameParams) {
+        let resolvedNames = [];
+        let data = runtimeCache.json0;
+
+        if (data !== null) {
+            resolvedNames.push(nameParams[0]);  // Initialize resolvedNames with the first parameter
+        } else {
+            return null;  // Return an object containing data and resolvedNames
+        }
+
+        // Check if we have more than one name to resolve
+        if (nameParams.length > 1) {
+            if (runtimeCache.json1) {
+                data = runtimeCache.json1;  // If json1 exists, use it directly
+            } else {
+                let found = false;
+                // Iterate through data.results to find the target name in json0
+                for (let result of data.results) {
+                    if (result.name === nameParams[1]) {
+                        resolvedNames.push(nameParams[1]);
+                        data = result;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    console.log("No data for", nameParams[1]);
+                    return data;  // Return current data and resolvedNames if no match is found
+                }
+            }
+
+            // Now resolve remaining names starting from index 2
+            for (let i = 2; i < nameParams.length; i++) {
+                let name = nameParams[i];
+                let found = false;
+
+                // Iterate through data.results to find the target name
+                for (let result of data.results) {
+                    if (result.name === name) {
+                        resolvedNames.push(name);
+                        data = result;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    console.log("No data for", name);
+                    return data;  // Return current data and resolvedNames if no match is found
+                }
+            }
+        }
+
+        return data;  // Return the resolved data and names at the end
+    }
+
+    function fillInNavigationBar(nameArray) {
+        let baseParams = new URLSearchParams(window.location.search);
+        let keysToDelete = [];
+        baseParams.forEach((value, key) => {
+            if (key.startsWith('name_')) {
+                keysToDelete.push(key);
+            }
+        });
+        keysToDelete.forEach((key) => baseParams.delete(key));
+
+        let pathNames = [];
+        let pathLinks = [];
+        for (const [index, name] of nameArray.entries()) {
+            baseParams.set(`name_${index}`, name);
+            pathNames.push(name);
+            pathLinks.push(`<span class="separator">/</span><a href="${window.location.pathname}?${baseParams.toString()}" class="nav-link">${name}</a>`);
+        }
+
+        const footerLeft = document.querySelector('#footer .left');
+        footerLeft.innerHTML = pathLinks.join('');
+    }
+
+    function renderFooter(nameParams) {
+        const footerRight = document.querySelector('#footer .right');
+        function createLinkElement(href, textContent, footer) {
+            const a = document.createElement('a');
+            a.href = href;
+            a.textContent = textContent;
+            a.target = '_blank';
+            footer.appendChild(a);
+        }
+        if (runtimeCache.prLink) createLinkElement(runtimeCache.prLink, 'PR', footerRight);
+        if (runtimeCache.commitLink) createLinkElement(runtimeCache.commitLink, 'Commit', footerRight);
+        if (runtimeCache.runLink) createLinkElement(runtimeCache.runLink, 'Run', footerRight);
+        const result = getTargetResults(nameParams)
+        let i = 1;
+        for (const name of nameParams) {
+            if (name === result.name) {
+                break;
+            }
+            i++;
+        }
+        fillInNavigationBar(nameParams.slice(0, i + 1))
+    }
+
+    async function renderResults(PR, sha, nameParams) {
+        const result = getTargetResults(nameParams)
+        let i = 1;
+        for (const name of nameParams) {
+            if (name === result.name) {
+                break;
+            }
+            i++;
+        }
+
+        const resultsDiv = document.getElementById('result-container');
+        const textDiv = document.createElement('div');
+        textDiv.id = 'info-content';
+        textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+        resultsDiv.appendChild(textDiv);
+
+        const resultsData = result.results;
+        if (Array.isArray(resultsData) && resultsData.length > 0) {
+            const table = createResultsTable(resultsData, i);
+            if (table) {
+                resultsDiv.appendChild(table); // Appends table correctly
+            }
+        }
+        // Status and info
+        if (PR > 0) {
+            addKeyValueToStatus("PR", PR, null, null, runtimeCache.prLink);
+        }
+        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1).sha || sha) : sha;
+        const shaSelectorText = [];
+        const shaSelectorValues = [];
+
+        runtimeCache.commits.forEach(({ sha, message }) => {
+            const shortSha = (sha || "").substring(0, 8);
+            shaSelectorText.push(message ? `${shortSha}: ${message}` : shortSha);
+            shaSelectorValues.push(sha);
+        });
+        shaSelectorText.push("latest");
+        shaSelectorValues.push("latest");
+        addKeyValueToStatus("sha", sha || "latest", shaSelectorText, shaSelectorValues);
+
+        if (PR > 0) {
+            const { pr_title, git_branch } = runtimeCache.json0?.ext || {};
+            if (pr_title) addInfoLineToStatus(pr_title);
+            if (git_branch) addInfoLineToStatus(git_branch);
+        }
+        addInfoLineToStatus(current_sha);
+        addStatusToStatus(result.status, result.start_time, result.duration);
+        if (nameParams.length > 1) {
+            addFileButtonToStatus('files', result.links);
+        } else {
+            addTimeTraceWidget(result.results)
+        }
+    }
+
+    async function fetchData(PR, REF, sha, nameParams) {
+        function normalizeTaskName(name) {
+            return name.toLowerCase()
+                .replace(/[^a-z0-9]/g, '_')
+                .replace(/_+/g, '_')
+                .replace(/_+$/, '');
+        }
+
+        const baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
+        let suffix = '';
+
+        if (PR) {
+            suffix = `PRs/${encodeURIComponent(PR)}`;
+        } else if (REF) {
+            suffix = `REFs/${encodeURIComponent(REF)}`;
+        }
+
+        let hasNewData = false;
+
+        if (!runtimeCache.commits || sha === 'latest') {
+            const { data, updated } = await fetchJson(`${baseUrl}/${suffix}/commits.json`);
+            if (updated) {
+                runtimeCache.commits = data ? data : [];
+                hasNewData = true;
+            }
+        }
+
+        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha : sha;
+
+        const fetchTasks = [];
+        if (nameParams.length > 1) {
+            const task1 = normalizeTaskName(nameParams[1]);
+            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task1}.json`;
+            fetchTasks.push(fetchJson(path1));
+        }
+
+        const task0 = normalizeTaskName(nameParams[0]);
+        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task0}.json`;
+        fetchTasks.push(fetchJson(path0));
+
+        // Run fetchJson calls in parallel
+        const results = await Promise.all(fetchTasks);
+
+        if (nameParams.length > 1) {
+            const { data, updated } = results[0]; // First request result
+            if (updated) {
+                runtimeCache.json1 = data;
+                hasNewData = true;
+            }
+        }
+
+        const { data, updated } = results[fetchTasks.length - 1]; // Last request result (always task0)
+        if (updated) {
+            runtimeCache.json0 = data;
+            hasNewData = true;
+            data.links.forEach(storeLink);
+        }
+
+        return hasNewData;
+    }
+
+    function startAutoRefresh(PR, REF, sha, nameParams) {
+        function clearPage() {
+            // Clear the main content areas
+            // document.getElementById('content').innerHTML = '';
+            document.getElementById('result-container').innerHTML = '';
+            document.getElementById('status-container').innerHTML = '';
+        }
+        async function checkForUpdates() {
+            if (await fetchData(PR, REF, sha, nameParams)) {
+                clearPage();
+                await renderResults(PR, sha, nameParams);
+            }
+        }
+        setInterval(checkForUpdates, 30000);
+    }
+
+    function updatePageTitle(PR, REF, sha, nameParams) {
+        let title = "";
+        if (Array.isArray(nameParams) && nameParams.length > 0) {
+            title += ` ${nameParams[0]}`;
+        }
+        if (Array.isArray(nameParams) && nameParams.length > 1) {
+            title += `/${nameParams[1]}`;
+        }
+        if (PR > 0) {
+            title += `, PR#${PR}`;
+        } else {
+            title += `, sha#${sha.substring(0, 8)}`;
+        }
+        document.title = title.trim();
+    }
+
+    async function init() {
         const urlParams = new URLSearchParams(window.location.search);
         const PR = urlParams.get('PR');
+        const REF = urlParams.get('REF');
         const sha = urlParams.get('sha');
-        const root_name = urlParams.get('name_0');
         const nameParams = [];
 
         urlParams.forEach((value, key) => {
@@ -755,65 +1154,29 @@
             }
         });
 
-        let path_commits_json = '';
-        let commitsArray = [];
+        await fetchData(PR, REF, sha, nameParams);
+        await renderResults(PR, sha, nameParams);
+        renderFooter(nameParams)
+        updatePageTitle(PR, REF, sha, nameParams)
 
-        if (PR) {
-            addKeyValueToStatus("PR", PR);
-            const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
-            path_commits_json = `${baseUrl}/${encodeURIComponent(PR)}/commits.json`;
-        } else {
-            // Placeholder for a different path when PR is missing
-            console.error("PR parameter is missing. Setting alternate commits path.");
-            path_commits_json = '/path/to/alternative/commits.json';
+        if (
+            (nameParams?.length === 1 &&
+                ["running", "pending"].includes(runtimeCache?.json0?.status)) ||
+            (nameParams?.length === 2 &&
+                (["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null))
+        ) {
+            console.log("Auto-reload started");
+            startAutoRefresh(PR, REF, sha, nameParams);
         }
-
-        function loadCommitsArray(path) {
-            return fetch(path, { cache: "no-cache" })
-                .then(response => {
-                    if (!response.ok) {
-                        console.error(`HTTP error! status: ${response.status}`)
-                        return [];
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    if (Array.isArray(data) && data.every(item => typeof item === 'object' && item.hasOwnProperty('sha'))) {
-                        return data.map(item => item.sha);
-                    } else {
-                        throw new Error('Invalid data format: expected array of objects with a "sha" key');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error loading commits JSON:', error);
-                    return []; // Return an empty array if an error occurs
-                });
-        }
-
-        loadCommitsArray(path_commits_json)
-            .then(data => {
-                commitsArray = data;
-            })
-            .finally(() => {
-                // Proceed with the rest of the initialization
-                addKeyValueToStatus("sha", sha || "latest", commitsArray.concat(["latest"]));
-
-                if (nameParams[1]) {
-                    addKeyValueToStatus("job", nameParams[1]);
-                }
-                addKeyValueToStatus("workflow", nameParams[0]);
-
-                // Check if all required parameters are present to load JSON
-                if (PR && sha && root_name) {
-                    const shaToLoad = (sha === 'latest') ? commitsArray[commitsArray.length - 1] : sha;
-                    loadResultsJSON(PR, shaToLoad, nameParams);
-                } else {
-                    document.getElementById('title').textContent = 'Error: Missing required URL parameters: PR, sha, or name_0';
-                }
-            });
     }
 
-    window.onload = init;
+    document.addEventListener('DOMContentLoaded', () => {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'night') {
+            document.body.classList.add('night-theme');
+        }
+        init();
+    });
 </script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/alter/user
+slug: /sql-reference/statements/alter/user
 sidebar_position: 45
 sidebar_label: USER
 title: "ALTER USER"
@@ -18,12 +18,17 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [VALID UNTIL datetime]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY | WRITABLE] | PROFILE 'profile_name'] [,...]
+    [DROP ALL PROFILES]
+    [DROP ALL SETTINGS]
+    [DROP SETTINGS variable [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
 ```
 
 To use `ALTER USER` you must have the [ALTER USER](../../../sql-reference/statements/grant.md#access-management) privilege.
 
-## GRANTEES Clause
+## GRANTEES Clause {#grantees-clause}
 
 Specifies users or roles which are allowed to receive [privileges](../../../sql-reference/statements/grant.md#privileges) from this user on the condition this user has also all required access granted with [GRANT OPTION](../../../sql-reference/statements/grant.md#granting-privilege-syntax). Options of the `GRANTEES` clause:
 
@@ -34,7 +39,7 @@ Specifies users or roles which are allowed to receive [privileges](../../../sql-
 
 You can exclude any user or role by using the `EXCEPT` expression. For example, `ALTER USER user1 GRANTEES ANY EXCEPT user2`. It means if `user1` has some privileges granted with `GRANT OPTION` it will be able to grant those privileges to anyone except `user2`.
 
-## Examples
+## Examples {#examples}
 
 Set assigned roles as default:
 
@@ -42,7 +47,7 @@ Set assigned roles as default:
 ALTER USER user DEFAULT ROLE role1, role2
 ```
 
-If roles aren’t previously assigned to a user, ClickHouse throws an exception.
+If roles aren't previously assigned to a user, ClickHouse throws an exception.
 
 Set all the assigned roles to default:
 
@@ -92,7 +97,7 @@ Reset authentication methods and keep the most recent added one:
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
 
-## VALID UNTIL Clause
+## VALID UNTIL Clause {#valid-until-clause}
 
 Allows you to specify the expiration date and, optionally, the time for an authentication method. It accepts a string as a parameter. It is recommended to use the `YYYY-MM-DD [hh:mm:ss] [timezone]` format for datetime. By default, this parameter equals `'infinity'`.
 The `VALID UNTIL` clause can only be specified along with an authentication method, except for the case where no authentication method has been specified in the query. In this scenario, the `VALID UNTIL` clause will be applied to all existing authentication methods.

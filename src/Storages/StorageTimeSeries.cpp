@@ -5,6 +5,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Parsers/ASTDropQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -475,6 +476,7 @@ void registerStorageTimeSeries(StorageFactory & factory)
     {
         .supports_settings = true,
         .supports_schema_inference = true,
+        .has_builtin_setting_fn = TimeSeriesSettings::hasBuiltin,
     });
 }
 

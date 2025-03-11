@@ -8,6 +8,7 @@
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
+#include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 
 #include <Parsers/CommonParsers.h>
@@ -412,6 +413,20 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         node = std::make_shared<ASTIdentifier>(std::move(parts), false, std::move(params));
 
     return true;
+}
+
+std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(const String & name)
+{
+    /// Identifier with special delimiter looks like this: <special_delimiter>`<identifier>`.
+    if (name.size() < 3
+        || (name[0] != char(SpecialDelimiter::JSON_PATH_DYNAMIC_TYPE) && name[0] != char(SpecialDelimiter::JSON_PATH_PREFIX))
+        || name[1] != '`' || name.back() != '`')
+        return std::nullopt;
+
+    String identifier;
+    ReadBufferFromMemory buf(name.data() + 1, name.size() - 1);
+    readBackQuotedString(identifier, buf);
+    return std::make_pair(name[0], identifier);
 }
 
 
@@ -1581,6 +1596,7 @@ const char * ParserAlias::restricted_keywords[] =
     "ON",
     "ONLY", /// YQL's synonym for ANTI. Note: YQL is the name of one of proprietary languages, completely unrelated to ClickHouse.
     "ORDER",
+    "PARALLEL",
     "PREWHERE",
     "RIGHT",
     "SAMPLE",
@@ -1708,7 +1724,7 @@ bool ParserColumnsTransformers::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             if (!parser_string_literal.parse(pos, ast_prefix_name, expected))
                 return false;
 
-            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<const String &>();
+            column_name_prefix = ast_prefix_name->as<ASTLiteral &>().value.safeGet<String>();
         }
 
         if (with_open_round_bracket)
@@ -2163,6 +2179,39 @@ bool ParserWithOptionalAlias::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return true;
 }
 
+bool ParserStorageOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserExpression elem_p;
+    ParserKeyword ascending(Keyword::ASCENDING);
+    ParserKeyword descending(Keyword::DESCENDING);
+    ParserKeyword asc(Keyword::ASC);
+    ParserKeyword desc(Keyword::DESC);
+
+    ASTPtr expr_elem;
+    if (!elem_p.parse(pos, expr_elem, expected))
+        return false;
+
+    if (!allow_order)
+    {
+        node = std::move(expr_elem);
+        return true;
+    }
+
+    int direction = 1;
+
+    if (descending.ignore(pos, expected) || desc.ignore(pos, expected))
+        direction = -1;
+    else
+        ascending.ignore(pos, expected) || asc.ignore(pos, expected);
+
+    auto storage_elem = std::make_shared<ASTStorageOrderByElement>();
+    storage_elem->children.push_back(std::move(expr_elem));
+    storage_elem->direction = direction;
+
+    node = std::move(storage_elem);
+    return true;
+}
+
 
 bool ParserOrderByElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -2402,7 +2451,7 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parser_string_literal.parse(pos, ast_space_name, expected))
             return false;
 
-        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<const String &>();
+        destination_name = ast_space_name->as<ASTLiteral &>().value.safeGet<String>();
     }
     else if (mode == TTLMode::GROUP_BY)
     {

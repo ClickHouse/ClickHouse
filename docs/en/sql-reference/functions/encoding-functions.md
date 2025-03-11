@@ -1,12 +1,12 @@
 ---
-slug: /en/sql-reference/functions/encoding-functions
+slug: /sql-reference/functions/encoding-functions
 sidebar_position: 65
 sidebar_label: Encoding
 ---
 
 # Encoding Functions
 
-## char
+## char {#char}
 
 Returns the string with the length as the number of passed arguments and each byte has the value of corresponding argument. Accepts multiple arguments of numeric types. If the value of argument is out of range of UInt8 data type, it is converted to UInt8 with possible rounding and overflow.
 
@@ -70,9 +70,9 @@ Result:
 └───────┘
 ```
 
-## hex
+## hex {#hex}
 
-Returns a string containing the argument’s hexadecimal representation.
+Returns a string containing the argument's hexadecimal representation.
 
 Alias: `HEX`.
 
@@ -84,7 +84,7 @@ hex(arg)
 
 The function is using uppercase letters `A-F` and not using any prefixes (like `0x`) or suffixes (like `h`).
 
-For integer arguments, it prints hex digits (“nibbles”) from the most significant to least significant (big-endian or “human-readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if the leading digit is zero.
+For integer arguments, it prints hex digits ("nibbles") from the most significant to least significant (big-endian or "human-readable" order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints both digits of every byte even if the leading digit is zero.
 
 Values of type [Date](../data-types/date.md) and [DateTime](../data-types/datetime.md) are formatted as corresponding integers (the number of days since Epoch for Date and the value of Unix Timestamp for DateTime).
 
@@ -161,11 +161,11 @@ Result:
 ```
 
 
-## unhex
+## unhex {#unhex}
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
 
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
+If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](/sql-reference/functions/type-conversion-functions) functions.
 
 :::note
 If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
@@ -183,7 +183,7 @@ unhex(arg)
 
 - `arg` — A string containing any number of hexadecimal digits. [String](../data-types/string.md), [FixedString](../data-types/fixedstring.md).
 
-Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn’t thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
+Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal digits does not have to be even. If it is odd, the last digit is interpreted as the least significant half of the `00-0F` byte. If the argument string contains anything other than hexadecimal digits, some implementation-defined result is returned (an exception isn't thrown). For a numeric argument the inverse of hex(N) is not performed by unhex().
 
 **Returned value**
 
@@ -217,9 +217,9 @@ Result:
 └──────┘
 ```
 
-## bin
+## bin {#bin}
 
-Returns a string containing the argument’s binary representation.
+Returns a string containing the argument's binary representation.
 
 **Syntax**
 
@@ -229,7 +229,7 @@ bin(arg)
 
 Alias: `BIN`.
 
-For integer arguments, it prints bin digits from the most significant to least significant (big-endian or “human-readable” order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints eight digits of every byte if the leading digit is zero.
+For integer arguments, it prints bin digits from the most significant to least significant (big-endian or "human-readable" order). It starts with the most significant non-zero byte (leading zero bytes are omitted) but always prints eight digits of every byte if the leading digit is zero.
 
 Values of type [Date](../data-types/date.md) and [DateTime](../data-types/datetime.md) are formatted as corresponding integers (the number of days since Epoch for `Date` and the value of Unix Timestamp for `DateTime`).
 
@@ -308,7 +308,7 @@ Result:
 ```
 
 
-## unbin
+## unbin {#unbin}
 
 Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to [bin](#bin).
 
@@ -320,13 +320,13 @@ unbin(arg)
 
 Alias: `UNBIN`.
 
-For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264) functions.
+For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](/sql-reference/functions/type-conversion-functions#reinterpret) functions.
 
 :::note
 If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
 :::
 
-Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn’t thrown).
+Supports binary digits `0` and `1`. The number of binary digits does not have to be multiples of eight. If the argument string contains anything other than binary digits, some implementation-defined result is returned (an exception isn't thrown).
 
 **Arguments**
 
@@ -366,15 +366,15 @@ Result:
 └─────┘
 ```
 
-## bitmaskToList(num)
+## bitmaskToList(num) {#bitmasktolistnum}
 
 Accepts an integer. Returns a string containing the list of powers of two that total the source number when summed. They are comma-separated without spaces in text format, in ascending order.
 
-## bitmaskToArray(num)
+## bitmaskToArray(num) {#bitmasktoarraynum}
 
 Accepts an integer. Returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed. Numbers in the array are in ascending order.
 
-## bitPositionsToArray(num)
+## bitPositionsToArray(num) {#bitpositionstoarraynum}
 
 Accepts an integer and converts it to an unsigned integer. Returns an array of `UInt64` numbers containing the list of positions of bits of `arg` that equal `1`, in ascending order.
 
@@ -422,7 +422,7 @@ Result:
 └───────────────────┘
 ```
 
-## mortonEncode
+## mortonEncode {#mortonencode}
 
 Calculates the Morton encoding (ZCurve) for a list of unsigned integers.
 
@@ -430,7 +430,7 @@ The function has two modes of operation:
 - Simple
 - Expanded
 
-### Simple mode
+### Simple mode {#simple-mode}
 
 Accepts up to 8 unsigned integers as arguments and produces a UInt64 code.
 
@@ -461,7 +461,7 @@ Result:
 53
 ```
 
-### Expanded mode
+### Expanded mode {#expanded-mode}
 
 Accepts a range mask ([tuple](../data-types/tuple.md)) as a first argument and up to 8 [unsigned integers](../data-types/int-uint.md) as other arguments.
 
@@ -581,7 +581,7 @@ Result:
 
 Please note that you can fit only so many bits of information into Morton code as [UInt64](../data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each, three arguments a range of max 2^21 (64/3) each and so on. All overflow will be clamped to zero.
 
-## mortonDecode
+## mortonDecode {#mortondecode}
 
 Decodes a Morton encoding (ZCurve) into the corresponding unsigned integer tuple.
 
@@ -589,7 +589,7 @@ As with the `mortonEncode` function, this function has two modes of operation:
 - Simple
 - Expanded
 
-### Simple mode
+### Simple mode {#simple-mode-1}
 
 Accepts a resulting tuple size as the first argument and the code as the second argument.
 
@@ -621,7 +621,7 @@ Result:
 ["1","2","3"]
 ```
 
-### Expanded mode
+### Expanded mode {#expanded-mode-1}
 
 Accepts a range mask (tuple) as a first argument and the code as the second argument.
 Each number in the mask configures the amount of range shrink:<br/>
@@ -701,7 +701,7 @@ Result:
 1	2	3	4	5	6	7	8
 ```
 
-## hilbertEncode
+## hilbertEncode {#hilbertencode}
 
 Calculates code for Hilbert Curve for a list of unsigned integers.
 
@@ -709,7 +709,7 @@ The function has two modes of operation:
 - Simple
 - Expanded
 
-### Simple mode
+### Simple mode {#simple-mode-2}
 
 Simple: accepts up to 2 unsigned integers as arguments and produces a UInt64 code.
 
@@ -742,7 +742,7 @@ Result:
 31
 ```
 
-### Expanded mode
+### Expanded mode {#expanded-mode-2}
 
 Accepts a range mask ([tuple](../../sql-reference/data-types/tuple.md)) as a first argument and up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) as other arguments.
 
@@ -853,7 +853,7 @@ Result:
 
 Please note that you can fit only so many bits of information into Hilbert code as [UInt64](../../sql-reference/data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each. All overflow will be clamped to zero.
 
-## hilbertDecode
+## hilbertDecode {#hilbertdecode}
 
 Decodes a Hilbert curve index back into a tuple of unsigned integers, representing coordinates in multi-dimensional space.
 
@@ -861,7 +861,7 @@ As with the `hilbertEncode` function, this function has two modes of operation:
 - Simple
 - Expanded
 
-### Simple mode
+### Simple mode {#simple-mode-3}
 
 Accepts up to 2 unsigned integers as arguments and produces a UInt64 code.
 
@@ -895,7 +895,7 @@ Result:
 ["3", "4"]
 ```
 
-### Expanded mode
+### Expanded mode {#expanded-mode-3}
 
 Accepts a range mask (tuple) as a first argument and up to 2 unsigned integers as other arguments.
 Each number in the mask configures the number of bits by which the corresponding argument will be shifted left, effectively scaling the argument within its range.

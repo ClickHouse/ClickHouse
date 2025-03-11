@@ -11,10 +11,7 @@ class Client : public ClientApplicationBase
 public:
     using Arguments = ClientApplicationBase::Arguments;
 
-    Client()
-    {
-        fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
-    }
+    Client() { fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr); }
 
     void initialize(Poco::Util::Application & self) override;
 
@@ -24,7 +21,8 @@ protected:
     Poco::Util::LayeredConfiguration & getClientConfiguration() override;
 
     bool processWithFuzzing(const String & full_query) override;
-    std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query);
+    bool buzzHouse() override;
+    std::optional<bool> processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, bool permissive);
 
     void connect() override;
 
@@ -32,9 +30,9 @@ protected:
 
     String getName() const override { return "client"; }
 
-    void printHelpMessage(const OptionsDescription & options_description, bool verbose) override;
+    void printHelpMessage(const OptionsDescription & options_description) override;
 
-    void addOptions(OptionsDescription & options_description) override;
+    void addExtraOptions(OptionsDescription & options_description) override;
 
     void processOptions(
         const OptionsDescription & options_description,
@@ -54,6 +52,10 @@ protected:
 private:
     void printChangedSettings() const;
     void showWarnings();
+#if USE_BUZZHOUSE
+    bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
+    bool processBuzzHouseQuery(const String & full_query);
+#endif
     void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
 };

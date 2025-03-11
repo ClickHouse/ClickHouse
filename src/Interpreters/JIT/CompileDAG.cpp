@@ -46,18 +46,14 @@ ValueWithType CompileDAG::compile(llvm::IRBuilderBase & builder, const ValuesWit
             {
                 ValuesWithType temporary_values;
                 temporary_values.reserve(node.arguments.size());
+
                 for (auto argument_index : node.arguments)
                 {
                     assert(compiled_values[argument_index].value != nullptr);
                     temporary_values.emplace_back(compiled_values[argument_index]);
                 }
 
-                ValueWithType compiled_value{node.function->compile(builder, temporary_values), node.function->getResultType()};
-                if (!node.result_type->equals(*node.function->getResultType()))
-                    compiled_values[compiled_values_index] = {nativeCast(b, compiled_value, node.result_type), node.result_type};
-                else
-                    compiled_values[compiled_values_index] = std::move(compiled_value);
-
+                compiled_values[compiled_values_index] = {node.function->compile(builder, temporary_values), node.result_type};
                 break;
             }
             case CompileType::INPUT:

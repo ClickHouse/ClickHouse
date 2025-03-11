@@ -38,6 +38,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
     const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
@@ -48,7 +49,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
     return std::make_unique<MergeTreeReaderCompactSingleBuffer>(
         read_info, columns_to_read, virtual_fields,
         storage_snapshot, uncompressed_cache,
-        mark_cache, mark_ranges, reader_settings,
+        mark_cache, deserialization_prefixes_cache, mark_ranges, reader_settings,
         avg_value_size_hints, profile_callback, CLOCK_MONOTONIC_COARSE);
 }
 
@@ -173,6 +174,16 @@ void MergeTreeDataPartCompact::loadMarksToCache(const Names & column_names, Mark
         columns.size());
 
     loader.loadMarks();
+}
+
+void MergeTreeDataPartCompact::removeMarksFromCache(MarkCache * mark_cache) const
+{
+    if (!mark_cache)
+        return;
+
+    auto mark_path = index_granularity_info.getMarksFilePath(DATA_FILE_NAME);
+    auto key = MarkCache::hash(fs::path(getRelativePathOfActivePart()) / mark_path);
+    mark_cache->remove(key);
 }
 
 bool MergeTreeDataPartCompact::hasColumnFiles(const NameAndTypePair & column) const

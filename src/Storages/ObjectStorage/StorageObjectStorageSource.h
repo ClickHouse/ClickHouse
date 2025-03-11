@@ -6,7 +6,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/DataLakes/PartitionColumns.h>
+#include <Storages/ObjectStorage/IObjectIterator.h>
 
 
 namespace DB
@@ -14,17 +14,14 @@ namespace DB
 
 class SchemaCache;
 
-class StorageObjectStorageSource : public SourceWithKeyCondition, WithContext
+class StorageObjectStorageSource : public SourceWithKeyCondition
 {
     friend class ObjectStorageQueueSource;
 public:
     using Configuration = StorageObjectStorage::Configuration;
     using ConfigurationPtr = StorageObjectStorage::ConfigurationPtr;
-    using ObjectInfo = StorageObjectStorage::ObjectInfo;
     using ObjectInfos = StorageObjectStorage::ObjectInfos;
-    using ObjectInfoPtr = StorageObjectStorage::ObjectInfoPtr;
 
-    class IIterator;
     class ReadTaskIterator;
     class GlobIterator;
     class KeysIterator;
@@ -38,7 +35,7 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         ContextPtr context_,
         UInt64 max_block_size_,
-        std::shared_ptr<IIterator> file_iterator_,
+        std::shared_ptr<IObjectIterator> file_iterator_,
         size_t max_parsing_threads_,
         bool need_only_count_);
 
@@ -50,7 +47,7 @@ public:
 
     Chunk generate() override;
 
-    static std::shared_ptr<IIterator> createFileIterator(
+    static std::shared_ptr<IObjectIterator> createFileIterator(
         ConfigurationPtr configuration,
         const StorageObjectStorage::QuerySettings & query_settings,
         ObjectStoragePtr object_storage,
@@ -75,6 +72,7 @@ protected:
     const String name;
     ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
+    const ContextPtr read_context;
     const std::optional<FormatSettings> format_settings;
     const UInt64 max_block_size;
     const bool need_only_count;
@@ -82,7 +80,7 @@ protected:
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
 
-    std::shared_ptr<IIterator> file_iterator;
+    std::shared_ptr<IObjectIterator> file_iterator;
     SchemaCache & schema_cache;
     bool initialized = false;
     size_t total_rows_in_file = 0;
@@ -124,7 +122,7 @@ protected:
     /// Recreate ReadBuffer and Pipeline for each file.
     static ReaderHolder createReader(
         size_t processor,
-        const std::shared_ptr<IIterator> & file_iterator,
+        const std::shared_ptr<IObjectIterator> & file_iterator,
         const ConfigurationPtr & configuration,
         const ObjectStoragePtr & object_storage,
         ReadFromFormatInfo & read_from_format_info,
@@ -145,38 +143,23 @@ protected:
     void lazyInitialize();
 };
 
-class StorageObjectStorageSource::IIterator
-{
-public:
-    explicit IIterator(const std::string & logger_name_);
-
-    virtual ~IIterator() = default;
-
-    virtual size_t estimatedKeysCount() = 0;
-
-    ObjectInfoPtr next(size_t processor);
-
-protected:
-    virtual ObjectInfoPtr nextImpl(size_t processor) = 0;
-    LoggerPtr logger;
-};
-
-class StorageObjectStorageSource::ReadTaskIterator : public IIterator
+class StorageObjectStorageSource::ReadTaskIterator : public IObjectIterator
 {
 public:
     ReadTaskIterator(const ReadTaskCallback & callback_, size_t max_threads_count);
 
+    ObjectInfoPtr next(size_t) override;
+
     size_t estimatedKeysCount() override { return buffer.size(); }
 
 private:
-    ObjectInfoPtr nextImpl(size_t) override;
 
     ReadTaskCallback callback;
     ObjectInfos buffer;
     std::atomic_size_t index = 0;
 };
 
-class StorageObjectStorageSource::GlobIterator : public IIterator, WithContext
+class StorageObjectStorageSource::GlobIterator : public IObjectIterator, WithContext
 {
 public:
     GlobIterator(
@@ -192,11 +175,12 @@ public:
 
     ~GlobIterator() override = default;
 
+    ObjectInfoPtr next(size_t processor) override;
+
     size_t estimatedKeysCount() override;
 
 private:
-    ObjectInfoPtr nextImpl(size_t processor) override;
-    ObjectInfoPtr nextImplUnlocked(size_t processor);
+    ObjectInfoPtr nextUnlocked(size_t processor);
     void createFilterAST(const String & any_key);
     void fillBufferForKey(const std::string & uri_key);
 
@@ -204,6 +188,7 @@ private:
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
     const bool throw_on_zero_files_match;
+    const LoggerPtr log;
 
     size_t index = 0;
 
@@ -225,7 +210,7 @@ private:
     std::function<void(FileProgress)> file_progress_callback;
 };
 
-class StorageObjectStorageSource::KeysIterator : public IIterator
+class StorageObjectStorageSource::KeysIterator : public IObjectIterator
 {
 public:
     KeysIterator(
@@ -238,11 +223,11 @@ public:
 
     ~KeysIterator() override = default;
 
+    ObjectInfoPtr next(size_t processor) override;
+
     size_t estimatedKeysCount() override { return keys.size(); }
 
 private:
-    ObjectInfoPtr nextImpl(size_t processor) override;
-
     const ObjectStoragePtr object_storage;
     const ConfigurationPtr configuration;
     const NamesAndTypesList virtual_columns;
@@ -263,15 +248,17 @@ private:
  * 2. When we have a certain pattern of files we want to read in each archive.
  *    For this purpose we create a filter defined as IArchiveReader::NameFilter.
  */
-class StorageObjectStorageSource::ArchiveIterator : public IIterator, private WithContext
+class StorageObjectStorageSource::ArchiveIterator : public IObjectIterator, private WithContext
 {
 public:
     explicit ArchiveIterator(
         ObjectStoragePtr object_storage_,
         ConfigurationPtr configuration_,
-        std::unique_ptr<IIterator> archives_iterator_,
+        std::unique_ptr<IObjectIterator> archives_iterator_,
         ContextPtr context_,
         ObjectInfos * read_keys_);
+
+    ObjectInfoPtr next(size_t processor) override;
 
     size_t estimatedKeysCount() override;
 
@@ -309,15 +296,15 @@ public:
     };
 
 private:
-    ObjectInfoPtr nextImpl(size_t processor) override;
     std::shared_ptr<IArchiveReader> createArchiveReader(ObjectInfoPtr object_info) const;
 
     const ObjectStoragePtr object_storage;
     const bool is_path_in_archive_with_globs;
     /// Iterator which iterates through different archives.
-    const std::unique_ptr<IIterator> archives_iterator;
+    const std::unique_ptr<IObjectIterator> archives_iterator;
     /// Used when files inside archive are defined with a glob
     const IArchiveReader::NameFilter filter = {};
+    const LoggerPtr log;
     /// Current file inside the archive.
     std::string path_in_archive = {};
     /// Read keys of files inside archives.

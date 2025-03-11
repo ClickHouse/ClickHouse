@@ -74,6 +74,10 @@ public:
 
     Field operator[](size_t n) const override { return (*getNestedColumn())[n]; }
     void get(size_t n, Field & res) const override { getNestedColumn()->get(n, res); }
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        return getNestedColumn()->getValueNameAndType(n);
+    }
     bool isDefaultAt(size_t n) const override { return n == 0; }
     StringRef getDataAt(size_t n) const override { return getNestedColumn()->getDataAt(n); }
     UInt64 get64(size_t n) const override { return getNestedColumn()->get64(n); }
@@ -87,10 +91,7 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     char * serializeValueIntoMemory(size_t n, char * memory) const override;
     const char * skipSerializedInArena(const char * pos) const override;
-    void updateHashWithValue(size_t n, SipHash & hash_func) const override
-    {
-        return getNestedColumn()->updateHashWithValue(n, hash_func);
-    }
+    void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     int compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
@@ -121,7 +122,7 @@ public:
         callback(column_holder);
     }
 
-    void forEachSubcolumn(IColumn::MutableColumnCallback callback) override
+    void forEachMutableSubcolumn(IColumn::MutableColumnCallback callback) override
     {
         callback(column_holder);
         reverse_index.setColumn(getRawColumnPtr());
@@ -135,10 +136,10 @@ public:
         column_holder->forEachSubcolumnRecursively(callback);
     }
 
-    void forEachSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
+    void forEachMutableSubcolumnRecursively(IColumn::RecursiveMutableColumnCallback callback) override
     {
         callback(*column_holder);
-        column_holder->forEachSubcolumnRecursively(callback);
+        column_holder->forEachMutableSubcolumnRecursively(callback);
         reverse_index.setColumn(getRawColumnPtr());
         if (is_nullable)
             nested_column_nullable = ColumnNullable::create(column_holder, nested_null_mask);
@@ -721,33 +722,6 @@ IColumnUnique::IndexesWithOverflow ColumnUnique<ColumnType>::uniqueInsertRangeWi
     return indexes_with_overflow;
 }
 
-template <typename ColumnType>
-UInt128 ColumnUnique<ColumnType>::IncrementalHash::getHash(const ColumnType & column)
-{
-    size_t column_size = column.size();
-    UInt128 cur_hash;
-
-    if (column_size != num_added_rows.load())
-    {
-        SipHash sip_hash;
-        for (size_t i = 0; i < column_size; ++i)
-            column.updateHashWithValue(i, sip_hash);
-
-        std::lock_guard lock(mutex);
-        hash = sip_hash.get128();
-        cur_hash = hash;
-        num_added_rows.store(column_size);
-    }
-    else
-    {
-        std::lock_guard lock(mutex);
-        cur_hash = hash;
-    }
-
-    return cur_hash;
-}
-
-
 extern template class ColumnUnique<ColumnInt8>;
 extern template class ColumnUnique<ColumnUInt8>;
 extern template class ColumnUnique<ColumnInt16>;
@@ -766,5 +740,12 @@ extern template class ColumnUnique<ColumnFloat64>;
 extern template class ColumnUnique<ColumnString>;
 extern template class ColumnUnique<ColumnFixedString>;
 extern template class ColumnUnique<ColumnDateTime64>;
+extern template class ColumnUnique<ColumnIPv4>;
+extern template class ColumnUnique<ColumnIPv6>;
+extern template class ColumnUnique<ColumnUUID>;
+extern template class ColumnUnique<ColumnDecimal<Decimal32>>;
+extern template class ColumnUnique<ColumnDecimal<Decimal64>>;
+extern template class ColumnUnique<ColumnDecimal<Decimal128>>;
+extern template class ColumnUnique<ColumnDecimal<Decimal256>>;
 
 }

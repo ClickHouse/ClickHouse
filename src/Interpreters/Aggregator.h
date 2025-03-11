@@ -5,36 +5,19 @@
 #include <type_traits>
 #include <variant>
 
+#include <AggregateFunctions/IAggregateFunction_fwd.h>
 
-#include <base/StringRef.h>
-#include <Common/HashTable/FixedHashMap.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/TwoLevelHashMap.h>
-#include <Common/HashTable/StringHashMap.h>
-#include <Common/HashTable/TwoLevelStringHashMap.h>
-
-#include <Common/ThreadPool.h>
-#include <Common/ColumnsHashing.h>
-#include <Common/assert_cast.h>
-#include <Common/filesystemHelpers.h>
+#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
+#include <Common/ThreadPool.h>
+#include <Common/filesystemHelpers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
-#include <Disks/SingleDiskVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
-
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
 
 #include <Parsers/IAST_fwd.h>
 
@@ -88,9 +71,10 @@ using GroupingSetsParamsList = std::vector<GroupingSetsParams>;
 class Aggregator final
 {
 public:
+    using AggregateFunctionContainer = PaddedPODArray<AggregateDataPtr>;
     using AggregateColumns = std::vector<ColumnRawPtrs>;
-    using AggregateColumnsData = std::vector<ColumnAggregateFunction::Container *>;
-    using AggregateColumnsConstData = std::vector<const ColumnAggregateFunction::Container *>;
+    using AggregateColumnsData = std::vector<AggregateFunctionContainer *>;
+    using AggregateColumnsConstData = std::vector<const AggregateFunctionContainer *>;
     using AggregateFunctionsPlainPtrs = std::vector<const IAggregateFunction *>;
 
     struct Params
@@ -131,19 +115,31 @@ public:
         bool only_merge = false;
         bool enable_prefetch = false;
         bool optimize_group_by_constant_keys = false;
-        const double min_hit_rate_to_use_consecutive_keys_optimization = 0.;
+        const float min_hit_rate_to_use_consecutive_keys_optimization = 0.;
         StatsCollectingParams stats_collecting_params;
 
+        static size_t getMaxBytesBeforeExternalGroupBy(size_t max_bytes_before_external_group_by, double max_bytes_ratio_before_external_group_by);
+
         Params(
-            const Settings & settings,
             const Names & keys_,
             const AggregateDescriptions & aggregates_,
             bool overflow_row_,
+            size_t max_rows_to_group_by_,
+            OverflowMode group_by_overflow_mode_,
             size_t group_by_two_level_threshold_,
             size_t group_by_two_level_threshold_bytes_,
+            size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             TemporaryDataOnDiskScopePtr tmp_data_scope_,
+            size_t max_threads_,
+            size_t min_free_disk_space_,
+            bool compile_aggregate_expressions_,
+            size_t min_count_to_compile_aggregate_expression_,
+            size_t max_block_size_,
+            bool enable_prefetch_,
             bool only_merge_, // true for projections
+            bool optimize_group_by_constant_keys_,
+            float min_hit_rate_to_use_consecutive_keys_optimization_,
             const StatsCollectingParams & stats_collecting_params_);
 
         /// Only parameters that matter during merge.
@@ -153,7 +149,7 @@ public:
             bool overflow_row_,
             size_t max_threads_,
             size_t max_block_size_,
-            double min_hit_rate_to_use_consecutive_keys_optimization_);
+            float min_hit_rate_to_use_consecutive_keys_optimization_);
 
         Params cloneWithKeys(const Names & keys_, bool only_merge_ = false)
         {
@@ -639,6 +635,7 @@ private:
         Arena * arena);
 };
 
+/// NOTE: For non-Analyzer it does not include the database name
 UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 
 /** Get the aggregation variant by its type. */

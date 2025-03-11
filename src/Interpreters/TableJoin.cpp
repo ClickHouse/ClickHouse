@@ -34,6 +34,7 @@
 #include <string>
 #include <type_traits>
 #include <vector>
+#include <ranges>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -126,6 +127,14 @@ bool forAllKeys(OnExpr & expressions, Func callback)
 
 }
 
+std::string TableJoin::formatClauses(const TableJoin::Clauses & clauses, bool short_format)
+{
+    std::vector<std::string> res;
+    for (const auto & clause : clauses)
+        res.push_back("[" + clause.formatDebug(short_format) + "]");
+    return fmt::format("{}", fmt::join(res, "; "));
+}
+
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
     : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
     , default_max_bytes(settings[Setting::default_max_bytes_in_join])
@@ -133,7 +142,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
     , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
     , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
-    , join_algorithm(settings[Setting::join_algorithm])
+    , join_algorithms(settings[Setting::join_algorithm])
     , partial_merge_join_rows_in_right_blocks(settings[Setting::partial_merge_join_rows_in_right_blocks])
     , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
     , max_files_to_merge(settings[Setting::join_on_disk_max_files_to_merge])
@@ -147,6 +156,76 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_, Temporary
     , tmp_data(tmp_data_)
     , enable_analyzer(settings[Setting::allow_experimental_analyzer])
 {
+}
+
+TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
+    : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
+    , default_max_bytes(settings.default_max_bytes_in_join)
+    , join_use_nulls(join_use_nulls_)
+    , cross_join_min_rows_to_compress(settings.cross_join_min_rows_to_compress)
+    , cross_join_min_bytes_to_compress(settings.cross_join_min_bytes_to_compress)
+    , max_joined_block_rows(settings.max_joined_block_size_rows)
+    , join_algorithms(settings.join_algorithms)
+    , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
+    , partial_merge_join_left_table_buffer_bytes(settings.partial_merge_join_left_table_buffer_bytes)
+    , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
+    , temporary_files_codec(settings.temporary_files_codec)
+    , output_by_rowlist_perkey_rows_threshold(settings.join_output_by_rowlist_perkey_rows_threshold)
+    , sort_right_minimum_perkey_rows(settings.join_to_sort_minimum_perkey_rows)
+    , sort_right_maximum_table_rows(settings.join_to_sort_maximum_table_rows)
+    , allow_join_sorting(settings.allow_experimental_join_right_table_sorting)
+    , max_memory_usage(settings.max_bytes_in_join)
+    , tmp_volume(tmp_volume_)
+    , tmp_data(tmp_data_)
+    , enable_analyzer(true)
+{
+}
+
+TableJoin::TableJoin(SizeLimits limits, bool use_nulls, JoinKind kind, JoinStrictness strictness, const Names & key_names_right)
+    : size_limits(limits)
+    , default_max_bytes(0)
+    , join_use_nulls(use_nulls)
+    , join_algorithms({JoinAlgorithm::DEFAULT})
+{
+    clauses.emplace_back().key_names_right = key_names_right;
+    table_join.kind = kind;
+    table_join.strictness = strictness;
+}
+
+
+JoinKind TableJoin::kind() const
+{
+    if (join_info)
+        return join_info->kind;
+    return table_join.kind;
+}
+
+void TableJoin::setKind(JoinKind kind)
+{
+    if (join_info)
+        join_info->kind = kind;
+    table_join.kind = kind;
+}
+
+JoinStrictness TableJoin::strictness() const
+{
+    if (join_info)
+        return join_info->strictness;
+    return table_join.strictness;
+}
+
+bool TableJoin::hasUsing() const
+{
+    if (join_info)
+        return join_info->expression.is_using;
+    return table_join.using_expression_list != nullptr;
+}
+
+bool TableJoin::hasOn() const
+{
+    if (join_info)
+        return !join_info->expression.is_using;
+    return table_join.on_expression != nullptr;
 }
 
 void TableJoin::resetKeys()
@@ -213,7 +292,6 @@ void TableJoin::setInputColumns(NamesAndTypesList left_output_columns, NamesAndT
     columns_from_left_table = std::move(left_output_columns);
     columns_from_joined_table = std::move(right_output_columns);
 }
-
 
 const NamesAndTypesList & TableJoin::getOutputColumns(JoinTableSide side)
 {
@@ -370,13 +448,36 @@ bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
     return forceNullableRight() && JoinCommon::canBecomeNullable(column_type);
 }
 
+void TableJoin::setUsedColumns(const Names & column_names)
+{
+    std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> left_columns_idx;
+    for (auto it = columns_from_left_table.begin(); it != columns_from_left_table.end(); ++it)
+        left_columns_idx[it->name] = it;
+
+    std::unordered_map<std::string_view, NamesAndTypesList::const_iterator> right_columns_idx;
+    for (auto it = columns_from_joined_table.begin(); it != columns_from_joined_table.end(); ++it)
+        right_columns_idx[it->name] = it;
+
+    for (const auto & column_name : column_names)
+    {
+        if (auto lit = left_columns_idx.find(column_name); lit != left_columns_idx.end())
+            setUsedColumn(*lit->second, JoinTableSide::Left);
+        else if (auto rit = right_columns_idx.find(column_name); rit != right_columns_idx.end())
+            setUsedColumn(*rit->second, JoinTableSide::Right);
+        else
+            throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK,
+                "Column {} not found in JOIN, left columns: [{}], right columns: [{}]", column_name,
+                fmt::join(columns_from_left_table | std::views::transform([](const auto & col) { return col.name; }), ", "),
+                fmt::join(columns_from_joined_table | std::views::transform([](const auto & col) { return col.name; }), ", "));
+    }
+}
+
 void TableJoin::setUsedColumn(const NameAndTypePair & joined_column, JoinTableSide side)
 {
     if (side == JoinTableSide::Left)
         result_columns_from_left_table.push_back(joined_column);
     else
         columns_added_by_join.push_back(joined_column);
-
 }
 
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
@@ -877,16 +978,6 @@ void TableJoin::setStorageJoin(std::shared_ptr<StorageJoin> storage)
     right_storage_join = storage;
 }
 
-void TableJoin::setRightStorageName(const std::string & storage_name)
-{
-    right_storage_name = storage_name;
-}
-
-const std::string & TableJoin::getRightStorageName() const
-{
-    return right_storage_name;
-}
-
 String TableJoin::renamedRightColumnName(const String & name) const
 {
     if (const auto it = renames.find(name); it != renames.end())
@@ -998,25 +1089,26 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    if (std::ranges::none_of(
-            join_algorithm, [](auto algo) { return algo == JoinAlgorithm::DEFAULT || algo == JoinAlgorithm::PARALLEL_HASH; }))
-        return false;
-    if (!right_storage_name.empty())
-        return false;
-    if (table_join.kind != JoinKind::Left && table_join.kind != JoinKind::Inner)
-        return false;
-    if (table_join.strictness == JoinStrictness::Asof)
-        return false;
-    if (isSpecialStorage() || !oneDisjunct())
-        return false;
-    return true;
+    return ::DB::allowParallelHashJoin(join_algorithms, kind(), strictness(), isSpecialStorage(), oneDisjunct());
 }
 
-ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context) const
+ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const
 {
     ASTPtr expression_list = rightKeysList();
     auto syntax_result = TreeRewriter(context).analyze(expression_list, columnsFromJoinedTable());
-    return ExpressionAnalyzer(expression_list, syntax_result, context).getActionsDAG(true, false);
+    ExpressionAnalyzer analyzer(expression_list, syntax_result, context);
+    analyzer.getPreparedSets() = std::move(prepared_sets);
+    return analyzer.getActionsDAG(true, false);
+}
+
+bool TableJoin::isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algorithms, JoinAlgorithm val)
+{
+    /// join_algorithm = 'default' has a hard-coded meaning as 'direct,hash' (it was deprecated with v24.12)
+    bool join_algorithm_is_default = std::ranges::find(join_algorithms, JoinAlgorithm::DEFAULT) != join_algorithms.end();
+    constexpr auto default_algorithms = std::array<JoinAlgorithm, 3>{JoinAlgorithm::DEFAULT, JoinAlgorithm::HASH, JoinAlgorithm::DIRECT};
+    if (join_algorithm_is_default && std::ranges::find(default_algorithms, val) != default_algorithms.end())
+        return true;
+    return std::ranges::find(join_algorithms, val) != join_algorithms.end();
 }
 
 size_t TableJoin::getMaxMemoryUsage() const
@@ -1040,10 +1132,8 @@ void TableJoin::swapSides()
     std::swap(columns_from_left_table, columns_from_joined_table);
     std::swap(result_columns_from_left_table, columns_added_by_join);
 
-    if (table_join.kind == JoinKind::Left)
-        table_join.kind = JoinKind::Right;
-    else if (table_join.kind == JoinKind::Right)
-        table_join.kind = JoinKind::Left;
+    JoinKind updated_kind = reverseJoinKind(kind());
+    setKind(updated_kind);
 }
 
 void TableJoin::assertEnableEnalyzer() const
@@ -1052,4 +1142,21 @@ void TableJoin::assertEnableEnalyzer() const
         throw DB::Exception(ErrorCodes::NOT_IMPLEMENTED, "TableJoin: analyzer is disabled");
 }
 
+bool allowParallelHashJoin(
+    const std::vector<JoinAlgorithm> & join_algorithms,
+    JoinKind kind,
+    JoinStrictness strictness,
+    bool is_special_storage,
+    bool one_disjunct)
+{
+    if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
+        return false;
+    if (kind != JoinKind::Left && kind != JoinKind::Inner)
+        return false;
+    if (strictness == JoinStrictness::Asof)
+        return false;
+    if (is_special_storage || !one_disjunct)
+        return false;
+    return true;
+}
 }

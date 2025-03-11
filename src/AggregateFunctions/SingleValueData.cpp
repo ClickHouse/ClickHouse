@@ -159,7 +159,7 @@ void SingleValueDataBase::setGreatestNotNullIf(
 }
 
 template <typename T>
-void SingleValueDataFixed<T>::insertResultInto(IColumn & to) const
+void SingleValueDataFixed<T>::insertResultInto(IColumn & to, const DataTypePtr &) const
 {
     /// value is set to 0 in the constructor (also with JIT), so no need to check has_data()
     chassert(has() || value == T{});
@@ -286,7 +286,7 @@ void SingleValueDataFixed<T>::setSmallest(const IColumn & column, size_t row_beg
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt = findExtremeMin(vec.getData().data(), row_begin, row_end);
         if (opt.has_value())
@@ -306,7 +306,7 @@ void SingleValueDataFixed<T>::setGreatest(const IColumn & column, size_t row_beg
         return;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt = findExtremeMax(vec.getData().data(), row_begin, row_end);
         if (opt.has_value())
@@ -331,7 +331,7 @@ void SingleValueDataFixed<T>::setSmallestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -375,7 +375,7 @@ void SingleValueDataFixed<T>::setGreatestNotNullIf(
     chassert(if_map || null_map);
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -414,7 +414,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         return findExtremeMinIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -435,7 +435,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndex(const IColumn & 
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         return findExtremeMaxIndex(vec.getData().data(), row_begin, row_end);
     }
@@ -457,8 +457,9 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
+    const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -468,7 +469,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (!null_map[i] && vec[i] == *opt)
+                if (!null_map[i] && vec_data[i] == *opt)
                     return {i};
             }
         }
@@ -479,7 +480,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (if_map[i] && vec[i] == *opt)
+                if (if_map[i] && vec_data[i] == *opt)
                     return {i};
             }
         }
@@ -491,7 +492,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
                 return std::nullopt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (final_flags[i] && vec[i] == *opt)
+                if (final_flags[i] && vec_data[i] == *opt)
                     return {i};
             }
         }
@@ -506,7 +507,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getSmallestIndexNotNullIf(
             return std::nullopt;
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec[i] < vec[index]))
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec_data[i] < vec_data[index]))
                 index = i;
         return {index};
     }
@@ -520,8 +521,9 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
         return std::nullopt;
 
     const auto & vec = assert_cast<const ColVecType &>(column);
+    const auto & vec_data = vec.getData();
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_implementation<T> || underlying_has_find_extreme_implementation<T>)
     {
         std::optional<T> opt;
         if (!if_map)
@@ -531,7 +533,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (!null_map[i] && vec[i] == *opt)
+                if (!null_map[i] && vec_data[i] == *opt)
                     return {i};
             }
             return opt;
@@ -543,7 +545,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
                 return opt;
             for (size_t i = row_begin; i < row_end; i++)
             {
-                if (if_map[i] && vec[i] == *opt)
+                if (if_map[i] && vec_data[i] == *opt)
                     return {i};
             }
             return opt;
@@ -555,7 +557,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             return std::nullopt;
         for (size_t i = row_begin; i < row_end; i++)
         {
-            if (final_flags[i] && vec[i] == *opt)
+            if (final_flags[i] && vec_data[i] == *opt)
                 return {i};
         }
 
@@ -570,7 +572,7 @@ std::optional<size_t> SingleValueDataFixed<T>::getGreatestIndexNotNullIf(
             return std::nullopt;
 
         for (size_t i = index + 1; i < row_end; i++)
-            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec[i] > vec[index]))
+            if ((!if_map || if_map[i] != 0) && (!null_map || null_map[i] == 0) && (vec_data[i] > vec_data[index]))
                 index = i;
         return {index};
     }
@@ -869,9 +871,9 @@ bool SingleValueDataNumeric<T>::has() const
 }
 
 template <typename T>
-void SingleValueDataNumeric<T>::insertResultInto(IColumn & to) const
+void SingleValueDataNumeric<T>::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
-    return memory.get().insertResultInto(to);
+    return memory.get().insertResultInto(to, type);
 }
 
 template <typename T>
@@ -1102,7 +1104,7 @@ void SingleValueDataString::changeImpl(StringRef value, Arena * arena)
     }
 }
 
-void SingleValueDataString::insertResultInto(DB::IColumn & to) const
+void SingleValueDataString::insertResultInto(DB::IColumn & to, const DataTypePtr &) const
 {
     if (has())
         StringValueCompatibility::insertDataWithTerminatingZero(assert_cast<ColumnString &>(to), getData(), size);
@@ -1246,12 +1248,12 @@ bool SingleValueDataString::setIfGreater(const SingleValueDataBase & other, Aren
     return false;
 }
 
-void SingleValueDataGeneric::insertResultInto(IColumn & to) const
+void SingleValueDataGeneric::insertResultInto(IColumn & to, const DataTypePtr & type) const
 {
     if (has())
         to.insert(value);
     else
-        to.insertDefault();
+        type->insertDefaultInto(to);
 }
 
 void SingleValueDataGeneric::write(WriteBuffer & buf, const ISerialization & serialization) const

@@ -1,9 +1,16 @@
 #pragma once
 
+#include <Common/FieldVisitorToString.h>
+#include <DataTypes/FieldToDataType.h>
+#include <base/sort.h>
+#include <base/TypeName.h>
+#include <Core/Field.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/TypeId.h>
+#include <Common/typeid_cast.h>
 #include <Columns/ColumnFixedSizeHelper.h>
 #include <Columns/IColumn.h>
 #include <Columns/IColumnImpl.h>
-#include <Core/Field.h>
 
 
 namespace DB
@@ -116,6 +123,10 @@ public:
 
     Field operator[](size_t n) const override { return DecimalField(data[n], scale); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override
+    {
+        return {FieldVisitorToString()(data[n], scale), FieldToDataType()(data[n], scale)};
+    }
     bool getBool(size_t n) const override { return bool(data[n].value); }
     Int64 getInt(size_t n) const override { return Int64(data[n].value); }
     UInt64 get64(size_t n) const override;
@@ -140,7 +151,7 @@ public:
         return false;
     }
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }

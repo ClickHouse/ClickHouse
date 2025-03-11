@@ -13,6 +13,8 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/KafkaSettings.h>
 #include <Storages/Kafka/StorageKafka.h>
@@ -32,7 +34,9 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
-#include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
+
 #include <cppkafka/cppkafka.h>
 #include <librdkafka/rdkafka.h>
 
@@ -111,7 +115,7 @@ void registerStorageKafka(StorageFactory & factory)
         }
 
 // Check arguments and settings
-#define CHECK_KAFKA_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME, EVAL) \
+#define CHECK_KAFKA_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME, EVAL, TYPE) \
     /* One of the four required arguments is not specified */ \
     if (args_count < (ARG_NUM) && (ARG_NUM) <= 4 && !(*kafka_settings)[KafkaSetting::PAR_NAME].changed) \
     { \
@@ -142,7 +146,7 @@ void registerStorageKafka(StorageFactory & factory)
             engine_args[(ARG_NUM)-1] \
                 = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[(ARG_NUM)-1], args.getLocalContext()); \
         } \
-        (*kafka_settings)[KafkaSetting::PAR_NAME] = engine_args[(ARG_NUM)-1]->as<ASTLiteral &>().value; \
+        (*kafka_settings)[KafkaSetting::PAR_NAME] = checkAndGetLiteralArgument<TYPE>(engine_args[(ARG_NUM)-1], #PAR_NAME); \
     }
 
         /** Arguments of engine is following:
@@ -162,22 +166,22 @@ void registerStorageKafka(StorageFactory & factory)
         /// In case of named collection we already validated the arguments.
         if (collection_name.empty())
         {
-            CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1)
-            CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(11, kafka_client_id, 2)
-            CHECK_KAFKA_STORAGE_ARGUMENT(12, kafka_poll_timeout_ms, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(13, kafka_flush_interval_ms, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(14, kafka_thread_per_consumer, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(15, kafka_handle_error_mode, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(16, kafka_commit_on_select, 0)
-            CHECK_KAFKA_STORAGE_ARGUMENT(17, kafka_max_rows_per_message, 0)
+            CHECK_KAFKA_STORAGE_ARGUMENT(1, kafka_broker_list, 0, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(2, kafka_topic_list, 1, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(3, kafka_group_name, 2, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(4, kafka_format, 2, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(6, kafka_schema, 2, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(7, kafka_num_consumers, 0, UInt64)
+            CHECK_KAFKA_STORAGE_ARGUMENT(8, kafka_max_block_size, 0, UInt64)
+            CHECK_KAFKA_STORAGE_ARGUMENT(9, kafka_skip_broken_messages, 0, UInt64)
+            CHECK_KAFKA_STORAGE_ARGUMENT(10, kafka_commit_every_batch, 0, bool)
+            CHECK_KAFKA_STORAGE_ARGUMENT(11, kafka_client_id, 2, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(12, kafka_poll_timeout_ms, 0, UInt64)
+            CHECK_KAFKA_STORAGE_ARGUMENT(13, kafka_flush_interval_ms, 0, UInt64)
+            CHECK_KAFKA_STORAGE_ARGUMENT(14, kafka_thread_per_consumer, 0, bool)
+            CHECK_KAFKA_STORAGE_ARGUMENT(15, kafka_handle_error_mode, 0, String)
+            CHECK_KAFKA_STORAGE_ARGUMENT(16, kafka_commit_on_select, 0, bool)
+            CHECK_KAFKA_STORAGE_ARGUMENT(17, kafka_max_rows_per_message, 0, UInt64)
         }
 
 #undef CHECK_KAFKA_STORAGE_ARGUMENT
@@ -228,7 +232,7 @@ void registerStorageKafka(StorageFactory & factory)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "KafkaEngine doesn't support DEFAULT/MATERIALIZED/EPHEMERAL expressions for columns. "
-                "See https://clickhouse.com/docs/en/engines/table-engines/integrations/kafka/#configuration");
+                "See https://clickhouse.com/docs/engines/table-engines/integrations/kafka/#configuration");
         }
 
         const auto has_keeper_path = (*kafka_settings)[KafkaSetting::kafka_keeper_path].changed && !(*kafka_settings)[KafkaSetting::kafka_keeper_path].value.empty();
@@ -309,6 +313,7 @@ void registerStorageKafka(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessType::KAFKA,
+            .has_builtin_setting_fn = KafkaSettings::hasBuiltin,
         });
 }
 
@@ -411,6 +416,14 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
 
     auto kafka_format_settings = kafka_settings.getFormatSettings();
     result.insert(result.end(), kafka_format_settings.begin(), kafka_format_settings.end());
+
+    /// It does not make sense to use auto detection here, since the format
+    /// will be reset for each message, plus, auto detection takes CPU
+    /// time.
+    result.setSetting("input_format_csv_detect_header", false);
+    result.setSetting("input_format_tsv_detect_header", false);
+    result.setSetting("input_format_custom_detect_header", false);
+
     return result;
 }
 

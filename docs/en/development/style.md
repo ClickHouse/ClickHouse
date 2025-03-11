@@ -1,27 +1,23 @@
 ---
-slug: /en/development/style
-sidebar_position: 71
-sidebar_label: C++ Guide
-description: A list of recommendations regarding coding style, naming convention, formatting and more
+slug: /development/style
+sidebar_position: 70
+sidebar_label: C++ Style Guide
 ---
 
-# How to Write C++ Code
+# C++ Style Guide
 
 ## General Recommendations {#general-recommendations}
 
-**1.** The following are recommendations, not requirements.
-
-**2.** If you are editing code, it makes sense to follow the formatting of the existing code.
-
-**3.** Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
-
-**4.** Many of the rules do not have logical reasons; they are dictated by established practices.
+The following are recommendations, not requirements.
+If you are editing code, it makes sense to follow the formatting of the existing code.
+Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
+Many of the rules do not have logical reasons; they are dictated by established practices.
 
 ## Formatting {#formatting}
 
-**1.** Most of the formatting will be done automatically by `clang-format`.
+**1.** Most of the formatting is done automatically by `clang-format`.
 
-**2.** Indents are 4 spaces. Configure your development environment so that a tab adds four spaces.
+**2.** Indents is 4 spaces. Configure your development environment so that a tab adds four spaces.
 
 **3.** Opening and closing curly brackets must be on a separate line.
 
@@ -41,7 +37,7 @@ inline size_t mask() const                { return buf_size() - 1; }
 inline size_t place(HashValue x) const    { return x & mask(); }
 ```
 
-**5.** For functions. Don’t put spaces around brackets.
+**5.** For functions. Don't put spaces around brackets.
 
 ``` cpp
 void reinsert(const Value & x)
@@ -82,7 +78,7 @@ dst.ClickEventID       = click.EventID;
 dst.ClickGoodEvent     = click.GoodEvent;
 ```
 
-**10.** Don’t use spaces around the operators `.`, `->`.
+**10.** Don't use spaces around the operators `.`, `->`.
 
 If necessary, the operator can be wrapped to the next line. In this case, the offset in front of it is increased.
 
@@ -113,7 +109,7 @@ public:
 }
 ```
 
-**16.** If the same `namespace` is used for the entire file, and there isn’t anything else significant, an offset is not necessary inside `namespace`.
+**16.** If the same `namespace` is used for the entire file, and there isn't anything else significant, an offset is not necessary inside `namespace`.
 
 **17.** If the block for an `if`, `for`, `while`, or other expression consists of a single `statement`, the curly brackets are optional. Place the `statement` on a separate line, instead. This rule is also valid for nested `if`, `for`, `while`, ...
 
@@ -125,7 +121,7 @@ for (auto & stream : streams)
     stream.second->finalize();
 ```
 
-**18.** There shouldn’t be any spaces at the ends of lines.
+**18.** There shouldn't be any spaces at the ends of lines.
 
 **19.** Source files are UTF-8 encoded.
 
@@ -163,7 +159,7 @@ const char *pos
 
 **26.** When using template types, alias them with the `using` keyword (except in the simplest cases).
 
-In other words, the template parameters are specified only in `using` and aren’t repeated in the code.
+In other words, the template parameters are specified only in `using` and aren't repeated in the code.
 
 `using` can be declared locally, such as inside a function.
 
@@ -211,7 +207,7 @@ for (Names::const_iterator it = column_names.begin(); it != column_names.end(); 
 
 **1.** Be sure to add comments for all non-trivial parts of code.
 
-This is very important. Writing the comment might help you realize that the code isn’t necessary, or that it is designed wrong.
+This is very important. Writing the comment might help you realize that the code isn't necessary, or that it is designed wrong.
 
 ``` cpp
 /** Part of piece of memory, that can be used.
@@ -268,13 +264,13 @@ The example is borrowed from the resource http://home.tamk.fi/~jaalto/course/cod
 
 **7.** Do not write garbage comments (author, creation date ..) at the beginning of each file.
 
-**8.** Single-line comments begin with three slashes: `///` and multi-line comments begin with `/**`. These comments are considered “documentation”.
+**8.** Single-line comments begin with three slashes: `///` and multi-line comments begin with `/**`. These comments are considered "documentation".
 
 Note: You can use Doxygen to generate documentation from these comments. But Doxygen is not generally used because it is more convenient to navigate the code in the IDE.
 
 **9.** Multi-line comments must not have empty lines at the beginning and end (except the line that closes a multi-line comment).
 
-**10.** For commenting out code, use basic comments, not “documenting” comments.
+**10.** For commenting out code, use basic comments, not "documenting" comments.
 
 **11.** Delete the commented out parts of the code before committing.
 
@@ -298,7 +294,7 @@ Note: You can use Doxygen to generate documentation from these comments. But Dox
 /// Why did you do this stuff?
 ```
 
-**16.** There’s no need to write a comment at the end of a block describing what it was about.
+**16.** There's no need to write a comment at the end of a block describing what it was about.
 
 ``` cpp
 /// for
@@ -446,9 +442,9 @@ Use `RAII` and see above.
 
 Use exceptions. In most cases, you only need to throw an exception, and do not need to catch it (because of `RAII`).
 
-In offline data processing applications, it’s often acceptable to not catch exceptions.
+In offline data processing applications, it's often acceptable to not catch exceptions.
 
-In servers that handle user requests, it’s usually enough to catch exceptions at the top level of the connection handler.
+In servers that handle user requests, it's usually enough to catch exceptions at the top level of the connection handler.
 
 In thread functions, you should catch and keep all exceptions to rethrow them in the main thread after `join`.
 
@@ -506,7 +502,7 @@ Use the following options:
 
 - Create a function (`done()` or `finalize()`) that will do all the work in advance that might lead to an exception. If that function was called, there should be no exceptions in the destructor later.
 - Tasks that are too complex (such as sending messages over the network) can be put in separate method that the class user will have to call before destruction.
-- If there is an exception in the destructor, it’s better to log it than to hide it (if the logger is available).
+- If there is an exception in the destructor, it's better to log it than to hide it (if the logger is available).
 - In simple applications, it is acceptable to rely on `std::terminate` (for cases of `noexcept` by default in C++11) to handle exceptions.
 
 **6.** Anonymous code blocks.
@@ -533,7 +529,7 @@ In offline data processing programs:
 
 In server applications:
 
-- Use the thread pool to process requests. At this point, we haven’t had any tasks that required userspace context switching.
+- Use the thread pool to process requests. At this point, we haven't had any tasks that required userspace context switching.
 
 Fork is not used for parallelization.
 
@@ -569,7 +565,7 @@ Use `unsigned` if necessary.
 
 Use the types `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, and `Int64`, as well as `size_t`, `ssize_t`, and `ptrdiff_t`.
 
-Don’t use these types for numbers: `signed/unsigned long`, `long long`, `short`, `signed/unsigned char`, `char`.
+Don't use these types for numbers: `signed/unsigned long`, `long long`, `short`, `signed/unsigned char`, `char`.
 
 **13.** Passing arguments.
 
@@ -605,17 +601,17 @@ Small libraries do not need this, either.
 
 For medium to large libraries, put everything in a `namespace`.
 
-In the library’s `.h` file, you can use `namespace detail` to hide implementation details not needed for the application code.
+In the library's `.h` file, you can use `namespace detail` to hide implementation details not needed for the application code.
 
 In a `.cpp` file, you can use a `static` or anonymous `namespace` to hide symbols.
 
-Also, a `namespace` can be used for an `enum` to prevent the corresponding names from falling into an external `namespace` (but it’s better to use an `enum class`).
+Also, a `namespace` can be used for an `enum` to prevent the corresponding names from falling into an external `namespace` (but it's better to use an `enum class`).
 
 **16.** Deferred initialization.
 
-If arguments are required for initialization, then you normally shouldn’t write a default constructor.
+If arguments are required for initialization, then you normally shouldn't write a default constructor.
 
-If later you’ll need to delay initialization, you can add a default constructor that will create an invalid object. Or, for a small number of objects, you can use `shared_ptr/unique_ptr`.
+If later you'll need to delay initialization, you can add a default constructor that will create an invalid object. Or, for a small number of objects, you can use `shared_ptr/unique_ptr`.
 
 ``` cpp
 Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
@@ -654,7 +650,7 @@ Use UTF-8 encoding in the log. In rare cases you can use non-ASCII characters in
 
 **20.** Input-output.
 
-Don’t use `iostreams` in internal cycles that are critical for application performance (and never use `stringstream`).
+Don't use `iostreams` in internal cycles that are critical for application performance (and never use `stringstream`).
 
 Use the `DB/IO` library instead.
 
@@ -695,7 +691,7 @@ auto s = std::string{"Hello"};
 
 **2.** Constructs which have convenient syntactic sugar in modern C++, e.g.
 
-```
+```cpp
 // Traditional way without syntactic sugar
 template <typename G, typename = std::enable_if_t<std::is_same<G, F>::value, void>> // SFINAE via std::enable_if, usage of ::value
 std::pair<int, int> func(const E<G> & e) // explicitly specified return type
@@ -744,7 +740,7 @@ But other things being equal, cross-platform or portable code is preferred.
 
 **2.** Language: C++20 (see the list of available [C++20 features](https://en.cppreference.com/w/cpp/compiler_support#C.2B.2B20_features)).
 
-**3.** Compiler: `clang`. At the time of writing (July 2022), the code is compiled using clang version >= 12. (It can also be compiled using `gcc`, but it's untested and not suitable for production usage).
+**3.** Compiler: `clang`. At the time of writing (March 2025), the code is compiled using clang version >= 19.
 
 The standard library is used (`libc++`).
 
@@ -782,7 +778,7 @@ Though only selected revisions are considered workable.
 
 Use branches for this purpose.
 
-If your code in the `master` branch is not buildable yet, exclude it from the build before the `push`. You’ll need to finish it or remove it within a few days.
+If your code in the `master` branch is not buildable yet, exclude it from the build before the `push`. You'll need to finish it or remove it within a few days.
 
 **9.** For non-trivial changes, use branches and publish them on the server.
 
@@ -792,7 +788,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
-**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](contrib.md#adding-third-party-libraries) for details.
+**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](/development/contrib#adding-and-maintaining-third-party-libraries) for details.
 
 **3.** Preference is always given to libraries that are already in use.
 
@@ -802,7 +798,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **2.** Try the simplest solution.
 
-**3.** Don’t write code until you know how it’s going to work and how the inner loop will function.
+**3.** Don't write code until you know how it's going to work and how the inner loop will function.
 
 **4.** In the simplest cases, use `using` instead of classes or structs.
 
@@ -814,7 +810,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **1.** Explicitly specifying `std::` for types from `stddef.h`
 
-is not recommended. In other words, we recommend writing `size_t` instead `std::size_t`, because it’s shorter.
+is not recommended. In other words, we recommend writing `size_t` instead `std::size_t`, because it's shorter.
 
 It is acceptable to add `std::`.
 

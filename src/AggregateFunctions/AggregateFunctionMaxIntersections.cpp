@@ -14,7 +14,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#define AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE 0xFFFFFF
+constexpr size_t AGGREGATE_FUNCTION_MAX_INTERSECTIONS_MAX_ARRAY_SIZE = 0xFFFFFF;
 
 
 namespace DB

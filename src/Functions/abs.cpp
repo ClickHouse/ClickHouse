@@ -6,11 +6,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 template <typename A>
 struct AbsImpl
 {
@@ -32,65 +27,25 @@ struct AbsImpl
     }
 
 #if USE_EMBEDDED_COMPILER
-    static constexpr bool compilable = true;
-
-    static llvm::Value * compile(llvm::IRBuilder<> & b, llvm::Value * arg, bool sign)
-    {
-        const auto & type = arg->getType();
-        if (type->isIntegerTy())
-        {
-            if (sign)
-            {
-                auto & context = b.getContext();
-                auto * signed_type = arg->getType();
-                auto * unsigned_type = llvm::IntegerType::get(context, signed_type->getIntegerBitWidth());
-
-                auto * is_negative = b.CreateICmpSLT(arg, llvm::ConstantInt::get(signed_type, 0));
-                auto * neg_value = b.CreateNeg(arg);
-                auto * abs_value = b.CreateSelect(is_negative, neg_value, arg);
-                return b.CreateZExt(abs_value, unsigned_type);
-            }
-            else
-            {
-                return arg;
-            }
-        }
-        else if (type->isDoubleTy() || type->isFloatTy())
-        {
-            auto * func_fabs = llvm::Intrinsic::getDeclaration(b.GetInsertBlock()->getModule(), llvm::Intrinsic::fabs, {type});
-            return b.CreateCall(func_fabs, {arg});
-        }
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AbsImpl compilation expected native integer or floating point type");
-    }
+    static constexpr bool compilable = false; /// special type handling, some other time
 #endif
 };
 
-struct NameAbs
-{
-    static constexpr auto name = "abs";
-};
+struct NameAbs { static constexpr auto name = "abs"; };
 using FunctionAbs = FunctionUnaryArithmetic<AbsImpl, NameAbs, false>;
 
-template <>
-struct FunctionUnaryArithmeticMonotonicity<NameAbs>
+template <> struct FunctionUnaryArithmeticMonotonicity<NameAbs>
 {
     static bool has() { return true; }
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
     {
-        Float64 left_float
-            = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
-        Float64 right_float
-            = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
+        Float64 left_float = left.isNull() ? -std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), left);
+        Float64 right_float = right.isNull() ? std::numeric_limits<Float64>::infinity() : applyVisitor(FieldVisitorConvertToNumber<Float64>(), right);
 
         if ((left_float < 0 && right_float > 0) || (left_float > 0 && right_float < 0))
             return {};
 
-        return {
-            .is_monotonic = true,
-            .is_positive = std::min(left_float, right_float) >= 0,
-            .is_strict = true,
-        };
+        return { .is_monotonic = true, .is_positive = std::min(left_float, right_float) >= 0, .is_strict = true, };
     }
 };
 

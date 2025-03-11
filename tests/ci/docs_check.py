@@ -77,8 +77,8 @@ def main():
     test_output.mkdir(parents=True, exist_ok=True)
 
     cmd = (
-        f"docker run --cap-add=SYS_PTRACE --user={os.geteuid()}:{os.getegid()} "
-        f"-e GIT_DOCS_BRANCH={args.docs_branch} "
+        f"docker run --cap-add=SYS_PTRACE --memory=12g --user={os.geteuid()}:{os.getegid()} "
+        f"-e GIT_DOCS_BRANCH={args.docs_branch} -e NODE_OPTIONS='--max-old-space-size=6144' "
         f"--volume={repo_path}:/ClickHouse --volume={test_output}:/output_path "
         f"{docker_image}"
     )
@@ -107,7 +107,7 @@ def main():
             for line in lfd:
                 if "ERROR" in line:
                     build_status = FAIL
-                    job_status = FAIL
+                    job_status = FAILURE
                     break
 
     test_results.append(
@@ -116,26 +116,28 @@ def main():
 
     htmltest_log = test_output / "htmltest.log"
 
-    # FIXME: after all issues in htmltest will be fixed, consider the failure as a
-    # failed job
     test_sw.reset()
-    with TeePopen(
-        f"{cmd} htmltest -c /ClickHouse/docs/.htmltest.yml /output_path/build",
-        htmltest_log,
-    ) as process:
-        retcode = process.wait()
-        if retcode == 0:
-            logging.info("Run successfully")
-            test_results.append(
-                TestResult("htmltest", OK, test_sw.duration_seconds, [htmltest_log])
-            )
-        else:
-            logging.info("Run failed")
-            test_results.append(
-                TestResult(
-                    "htmltest", "FLAKY", test_sw.duration_seconds, [htmltest_log]
+
+    if build_status == OK:
+        with TeePopen(
+            f"{cmd} htmltest -c /ClickHouse/docs/.htmltest.yml /output_path/build",
+            htmltest_log,
+        ) as process:
+            retcode = process.wait()
+            if retcode == 0:
+                logging.info("Run successfully")
+                test_results.append(
+                    TestResult("htmltest", OK, test_sw.duration_seconds, [htmltest_log])
                 )
-            )
+            else:
+                description = "Docs check failed (htmltest failed)"
+                job_status = FAILURE
+                logging.info("Run failed")
+                test_results.append(
+                    TestResult(
+                        "htmltest", "FAIL", test_sw.duration_seconds, [htmltest_log]
+                    )
+                )
 
     JobReport(
         description=description,

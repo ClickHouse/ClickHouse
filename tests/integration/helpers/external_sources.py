@@ -3,6 +3,7 @@ import datetime
 import logging
 import os
 import uuid
+import bson
 import warnings
 
 import cassandra.cluster
@@ -170,6 +171,7 @@ class SourceMongo(ExternalSource):
         user,
         password,
         secure=False,
+        legacy=False,
     ):
         ExternalSource.__init__(
             self,
@@ -182,10 +184,13 @@ class SourceMongo(ExternalSource):
             password,
         )
         self.secure = secure
+        self.legacy = legacy
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure:
+        if self.secure and self.legacy:
+            options = "<options>ssl=true</options>"
+        if self.secure and not self.legacy:
             options = "<options>tls=true&amp;tlsAllowInvalidCertificates=true</options>"
 
         return """
@@ -220,15 +225,11 @@ class SourceMongo(ExternalSource):
         self.converters = {}
         for field in structure.get_all_fields():
             if field.field_type == "Date":
-                self.converters[field.name] = lambda x: datetime.datetime.strptime(
-                    x, "%Y-%m-%d"
-                )
+                self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d")
             elif field.field_type == "DateTime":
-
-                def converter(x):
-                    return datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S")
-
-                self.converters[field.name] = converter
+                self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S")
+            elif field.field_type == "UUID":
+                self.converters[field.name] = lambda x: bson.Binary(uuid.UUID(x).bytes, subtype=4)
             else:
                 self.converters[field.name] = lambda x: x
 
@@ -263,7 +264,9 @@ class SourceMongoURI(SourceMongo):
 
     def get_source_str(self, table_name):
         options = ""
-        if self.secure:
+        if self.secure and self.legacy:
+            options = "ssl=true"
+        if self.secure and not self.legacy:
             options = "tls=true&amp;tlsAllowInvalidCertificates=true"
 
         return """

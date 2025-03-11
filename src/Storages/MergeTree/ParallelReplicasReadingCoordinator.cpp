@@ -6,6 +6,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <consistent_hashing.h>
 
@@ -23,6 +24,7 @@
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 
+#include <fmt/ranges.h>
 
 using namespace DB;
 
@@ -665,7 +667,11 @@ void DefaultCoordinator::processPartsFurther(
                 {
                     const auto taken = takeFromRange(cur_segment, min_number_of_marks, current_marks_amount, result);
                     if (taken == range.getNumberOfMarks())
+                    {
                         part.description.ranges.pop_front();
+                        /// Range is taken fully. Proceed further to the next one.
+                        break;
+                    }
                     else
                     {
                         range.begin += taken;
@@ -678,7 +684,11 @@ void DefaultCoordinator::processPartsFurther(
                     enqueueSegment(part.description.info, cur_segment, owner);
                     range.begin += cur_segment.getNumberOfMarks();
                     if (range.getNumberOfMarks() == 0)
+                    {
                         part.description.ranges.pop_front();
+                        /// Range is taken fully. Proceed further to the next one.
+                        break;
+                    }
                 }
             }
         }

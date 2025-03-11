@@ -6,12 +6,14 @@
 #include <Processors/Merges/Algorithms/Graphite.h>
 #include <base/find_symbols.h>
 #include <base/sort.h>
+#include <Common/SipHash.h>
 
 #include <string_view>
 #include <vector>
 #include <unordered_map>
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -498,6 +500,22 @@ void setGraphitePatternsFromConfig(ContextPtr context, const String & config_ele
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unhandled rule_type in config: {}", ruleTypeStr(pattern.rule_type));
         }
     }
+}
+
+void Params::updateHash(SipHash & hash) const
+{
+    hash.update(path_column_name);
+    hash.update(time_column_name);
+    hash.update(value_column_name);
+    hash.update(value_column_name);
+    hash.update(version_column_name);
+    hash.update(patterns_typed);
+    for (const auto & p : patterns)
+        p.updateHash(hash);
+    for (const auto & p : patterns_plain)
+        p.updateHash(hash);
+    for (const auto & p : patterns_tagged)
+        p.updateHash(hash);
 }
 
 }

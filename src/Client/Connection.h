@@ -4,9 +4,11 @@
 
 #include <Common/callOnce.h>
 #include <Common/SSHWrapper.h>
+#include <Common/SettingsChanges.h>
 #include <Client/IServerConnection.h>
 #include <Core/Defines.h>
 
+#include <Formats/FormatSettings.h>
 
 #include <IO/ReadBufferFromPocoSocketChunked.h>
 #include <IO/WriteBufferFromPocoSocketChunked.h>
@@ -26,6 +28,7 @@ namespace DB
 {
 
 struct Settings;
+struct TimeoutSetter;
 
 class Connection;
 struct ConnectionParameters;
@@ -89,6 +92,8 @@ public:
     const String & getServerTimezone(const ConnectionTimeouts & timeouts) override;
     const String & getServerDisplayName(const ConnectionTimeouts & timeouts) override;
 
+    const SettingsChanges & settingsFromServer() const;
+
     /// For log and exception messages.
     const String & getDescription(bool with_extra = false) const override; /// NOLINT
     const String & getHost() const;
@@ -126,6 +131,7 @@ public:
     std::optional<UInt64> checkPacket(size_t timeout_microseconds/* = 0*/) override;
 
     Packet receivePacket() override;
+    UInt64 receivePacketType() override;
 
     void forceConnected(const ConnectionTimeouts & timeouts) override;
 
@@ -164,6 +170,11 @@ public:
     }
 
     bool haveMoreAddressesToConnect() const { return have_more_addresses_to_connect; }
+
+    void setFormatSettings(const FormatSettings & settings) override
+    {
+        format_settings = settings;
+    }
 
 private:
     String host;
@@ -213,6 +224,7 @@ private:
     UInt64 server_parallel_replicas_protocol_version = 0;
     String server_timezone;
     String server_display_name;
+    SettingsChanges settings_from_server;
 
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::shared_ptr<ReadBufferFromPocoSocketChunked> in;
@@ -273,14 +285,16 @@ private:
 
     AsyncCallback async_callback = {};
 
+    std::optional<FormatSettings> format_settings;
+
     void connect(const ConnectionTimeouts & timeouts);
-    void sendHello();
+    void sendHello(const Poco::Timespan & handshake_timeout);
 
     void cancel() noexcept;
     void reset() noexcept;
 
 #if USE_SSH
-    void performHandshakeForSSHAuth();
+    void performHandshakeForSSHAuth(const Poco::Timespan & handshake_timeout);
 #endif
 
     void sendAddendum();
@@ -308,7 +322,7 @@ private:
     void initBlockLogsInput();
     void initBlockProfileEventsInput();
 
-    [[noreturn]] void throwUnexpectedPacket(UInt64 packet_type, const char * expected) const;
+    [[noreturn]] void throwUnexpectedPacket(TimeoutSetter & timeout_setter, UInt64 packet_type, const char * expected);
 };
 
 template <typename Conn>

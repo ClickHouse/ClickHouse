@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <Access/Common/AccessRightsElement.h>
 #include <Access/ContextAccess.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -189,7 +190,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     entry.setSettingsIfRequired(context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
     entry.initial_query_id = context->getClientInfo().initial_query_id;
-    String node_path = ddl_worker.enqueueQuery(entry, params.retries_info, context->getProcessListElement());
+    String node_path = ddl_worker.enqueueQuery(entry, params.retries_info);
 
     return getDDLOnClusterStatus(node_path, ddl_worker.getReplicasDir(), entry, context);
 }
