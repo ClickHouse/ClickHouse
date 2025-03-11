@@ -1,7 +1,7 @@
 ---
-slug: /sql-reference/statements/alter/comment
+slug: /sql-reference/statements/alter/database-comment
 sidebar_position: 51
-sidebar_label: COMMENT
+sidebar_label: DATABASE COMMENT
 ---
 
 # ALTER DATABASE ... MODIFY COMMENT
