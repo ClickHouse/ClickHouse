@@ -2,7 +2,6 @@
 slug: /interfaces/formats
 sidebar_position: 21
 sidebar_label: View all formats...
-title: Formats for Input and Output Data
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

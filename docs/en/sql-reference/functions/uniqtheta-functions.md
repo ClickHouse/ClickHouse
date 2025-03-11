@@ -93,4 +93,4 @@ from
 
 **See Also**
 
-- [uniqThetaSketch](../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)
+- [uniqThetaSketch](/sql-reference/aggregate-functions/reference/uniqthetasketch)

@@ -740,6 +740,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNChasTokenOrNull, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNChasTokenCaseInsensitive, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNChasTokenCaseInsensitiveOrNull, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCcompareSubstrings, 0, 0, 5, 5),
     /// Split strings
     CHFunction(SQLFunc::FUNCsplitByChar, 0, 0, 2, ulimited_params),
     CHFunction(SQLFunc::FUNCsplitByString, 0, 0, 2, ulimited_params),
@@ -1258,7 +1259,8 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCconnectionId, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCtransactionID, 0, 0, 0, 0),
     CHFunction(SQLFunc::FUNCtransactionLatestSnapshot, 0, 0, 0, 0),
-    CHFunction(SQLFunc::FUNCtransactionOldestSnapshot, 0, 0, 0, 0)};
+    CHFunction(SQLFunc::FUNCtransactionOldestSnapshot, 0, 0, 0, 0),
+    CHFunction(SQLFunc::FUNCinitialQueryStartTime, 0, 0, 0, 0)};
 
 const std::vector<CHFunction> CHTableFuncs = {
     /// Table Functions
