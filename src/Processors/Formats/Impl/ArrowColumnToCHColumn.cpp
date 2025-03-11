@@ -1058,9 +1058,10 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                         if (pos)
                         {
                             nested_type_hint = tuple_type_hint->getElement(*pos);
-                            /// Consider the case in which arrow_struct_type is "struct<a Int32>", and tuple_type_hint is "Tuple(A Int32)"
-                            /// If case insensitive matching is allowed, we should use the name from the tuple_type_hint as field_name
-                            /// to make sure the returned [[ColumnWithTypeAndName]] has the correct name.
+
+                            /// If arrow_struct_type is "struct<a Int32>" and tuple_type_hint is "Tuple(A Int32)" and if we match
+                            /// case-insensitively, we should use the tuple_type_hint as field name to make sure the returned
+                            /// ColumnWithTypeAndName has the correct name.
                             field_name = tuple_type_hint->getNameByPosition(*pos + 1);
                         }
                     }

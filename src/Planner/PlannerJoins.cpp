@@ -26,15 +26,16 @@
 #include <Analyzer/Utils.h>
 
 #include <Dictionaries/IDictionary.h>
-#include <Interpreters/IKeyValueEntity.h>
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/MergeJoin.h>
-#include <Interpreters/FullSortingMergeJoin.h>
-#include <Interpreters/ConcurrentHashJoin.h>
-#include <Interpreters/DirectJoin.h>
-#include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/DirectJoin.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/GraceHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IKeyValueEntity.h>
+#include <Interpreters/JoinSwitcher.h>
+#include <Interpreters/MergeJoin.h>
 #include <Interpreters/PasteJoin.h>
 
 #include <Planner/PlannerActionsVisitor.h>
@@ -1096,7 +1097,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     const JoinAlgorithmSettings & settings,
-    IQueryTreeNode::HashState hash_table_key_hash)
+    UInt64 hash_table_key_hash)
 {
     if (table_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(table_join, right_table_expression_header);
@@ -1124,7 +1125,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         if (table_join->allowParallelHashJoin())
         {
             StatsCollectingParams params{
-                calculateCacheKey(table_join, hash_table_key_hash),
+                hash_table_key_hash,
                 settings.collect_hash_table_stats_during_joins,
                 settings.max_entries_for_hash_table_stats,
                 settings.max_size_to_preallocate_for_joins};
@@ -1213,7 +1214,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     const JoinAlgorithmSettings & settings,
-    IQueryTreeNode::HashState hash_table_key_hash)
+    UInt64 hash_table_key_hash)
 {
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
