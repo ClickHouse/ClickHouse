@@ -39,6 +39,12 @@ public:
 
     UInt64 getCurrentInitializationDurationMs() const;
 
+    void resetQueueOnFaultInjected()
+    {
+        need_reset_fault_injected = true;
+        queue_updated_event->set();
+    }
+
 private:
     bool initializeMainThread() override;
     void initializeReplication() override;

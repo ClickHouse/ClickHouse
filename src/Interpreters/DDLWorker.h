@@ -199,6 +199,7 @@ protected:
     std::shared_ptr<Poco::Event> cleanup_event = std::make_shared<Poco::Event>();
     std::atomic<bool> initialized = false;
     std::atomic<bool> stop_flag = true;
+    std::atomic<bool> need_reset_fault_injected = false;
 
     std::unique_ptr<ThreadFromGlobalPool> main_thread;
     std::unique_ptr<ThreadFromGlobalPool> cleanup_thread;

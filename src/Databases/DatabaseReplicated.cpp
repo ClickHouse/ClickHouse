@@ -1147,6 +1147,11 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     else
         LOG_WARNING(log, "Will recover replica with staled log pointer {} from log pointer {}", our_log_ptr, max_log_ptr);
 
+    {
+        /// Wait for running [CREATE OR] REPLACE TABLE queries to finish before comparing the list of tables
+        auto db_guard = DatabaseCatalog::instance().getExclusiveDDLGuardForDatabase(getDatabaseName());
+    }
+
     auto table_name_to_metadata = tryGetConsistentMetadataSnapshot(current_zookeeper, max_log_ptr);
 
     /// For ReplicatedMergeTree tables we can compare only UUIDs to ensure that it's the same table.
@@ -1722,7 +1727,18 @@ void DatabaseReplicated::renameTable(ContextPtr local_context, const String & ta
     if (txn && !is_recovering)
         txn->addOp(zkutil::makeSetRequest(replica_path + "/digest", toString(new_digest), -1));
 
-    DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
+    try
+    {
+        DatabaseAtomic::renameTable(local_context, table_name, to_database, to_table_name, exchange, dictionary);
+    }
+    catch (const Coordination::Exception & e)
+    {
+        /// We are trying to emulate connection loss, but we just throw an exception without marking the ZooKeeper object as expired
+        /// So we also need to notify the queue, so it will restart just like in case of real connection loss
+        if (e.code == Coordination::Error::ZCONNECTIONLOSS && e.message().starts_with("Fault injected"))
+            ddl_worker->resetQueueOnFaultInjected();
+        throw;
+    }
     tables_metadata_digest = new_digest;
     assert(checkDigestValid(local_context));
 }

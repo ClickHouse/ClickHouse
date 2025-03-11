@@ -16,6 +16,7 @@
 #include <Common/PoolId.h>
 #include <Common/atomicRename.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/FailPoint.h>
 #include <Core/Settings.h>
 
 
@@ -41,6 +42,12 @@ namespace ErrorCodes
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char database_replicated_rename_table_session_expired_before_commit[];
+    extern const char database_replicated_rename_table_session_expired_after_commit[];
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -318,7 +325,19 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     /// Table renaming actually begins here
     auto txn = local_context->getZooKeeperMetadataTransaction();
     if (txn && !local_context->isInternalSubquery())
+    {
+        fiu_do_on(FailPoints::database_replicated_rename_table_session_expired_before_commit,
+        {
+            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected before commiting renameTable");
+        });
+
         txn->commit();     /// Commit point (a sort of) for Replicated database
+
+        fiu_do_on(FailPoints::database_replicated_rename_table_session_expired_after_commit,
+        {
+            throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected after commiting renameTable");
+        });
+    }
 
     /// NOTE: replica will be lost if server crashes before the following rename
     /// TODO better detection and recovery
