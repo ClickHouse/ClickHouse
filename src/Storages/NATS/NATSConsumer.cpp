@@ -59,7 +59,7 @@ void NATSConsumer::subscribe()
             throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Failed to subscribe consumer {} to subject {}", static_cast<void*>(this), subject);
         }
     }
-    LOG_DEBUG(log, "Consumer {} subscribed to {} subjects", static_cast<void*>(this), subscriptions.size());
+    LOG_DEBUG(log, "Consumer {} subscribed to {} subjects", static_cast<void*>(this), created_subscriptions.size());
 
     subscriptions = std::move(created_subscriptions);
 }
