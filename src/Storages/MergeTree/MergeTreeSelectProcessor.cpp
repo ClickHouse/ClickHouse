@@ -98,14 +98,15 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , algorithm(std::move(algorithm_))
     , prewhere_info(prewhere_info_)
     , actions_settings(actions_settings_)
-    , prewhere_actions(getPrewhereActions(prewhere_info, actions_settings, reader_settings_.enable_multiple_prewhere_read_steps, reader_settings_.force_short_circuit_execution))
+    , prewhere_actions(getPrewhereActions(
+          prewhere_info,
+          actions_settings,
+          reader_settings_.enable_multiple_prewhere_read_steps,
+          reader_settings_.force_short_circuit_execution))
     , lazily_read_info(lazily_read_info_)
     , reader_settings(reader_settings_)
-    , result_header(transformHeader(pool->getHeader(), {}, prewhere_info))
+    , result_header(transformHeader(pool->getHeader(), lazily_read_info, prewhere_info))
 {
-    if (lazily_read_info)
-        injectLazilyReadColumns(0, result_header, nullptr, lazily_read_info);
-
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
         LOG_TRACE(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());
@@ -278,46 +279,31 @@ void MergeTreeSelectProcessor::injectLazilyReadColumns(
     if (!lazily_read_info)
         return;
 
-    const auto & lazily_read_columns = lazily_read_info->lazily_read_columns;
+    ColumnPtr row_num_column;
+    ColumnPtr part_num_column;
     if (rows)
     {
-        ColumnPtr row_num_column =  block.getByName("_part_offset").column;
-        ColumnPtr part_num_column = DataTypeUInt64().createColumnConst(rows, task->getInfo().part_index_in_query)->convertToFullColumnIfConst();
-        Columns columns(2);
-        columns[0] = row_num_column;
-        columns[1] = part_num_column;
-        bool create_empty_column_lazy = false;
-        for (auto column_with_type_and_name : lazily_read_columns)
-        {
-            if (create_empty_column_lazy)
-                column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
-            else
-            {
-                column_with_type_and_name.column = ColumnLazy::create(columns);
-                create_empty_column_lazy = true;
-            }
-            block.insert(column_with_type_and_name);
-        }
+        row_num_column = block.getByName("_part_offset").column;
+        part_num_column = DataTypeUInt64().createColumnConst(rows, task->getInfo().part_index_in_query)->convertToFullColumnIfConst();
     }
     else
     {
-        bool create_empty_column_lazy = false;
-        ColumnPtr row_num_column =  DataTypeUInt64().createColumn();
-        ColumnPtr part_num_column = DataTypeUInt64().createColumn();
-        Columns columns(2);
-        columns[0] = row_num_column;
-        columns[1] = part_num_column;
-        for (auto column_with_type_and_name : lazily_read_columns)
+        row_num_column =  DataTypeUInt64().createColumn();
+        part_num_column = DataTypeUInt64().createColumn();
+    }
+
+    Columns columns{row_num_column, part_num_column};
+    bool create_empty_column_lazy = false;
+    for (auto column_with_type_and_name : lazily_read_info->lazily_read_columns)
+    {
+        if (create_empty_column_lazy)
+            column_with_type_and_name.column = ColumnLazy::create(columns[0]->size());
+        else
         {
-            if (create_empty_column_lazy)
-                column_with_type_and_name.column = ColumnLazy::create();
-            else
-            {
-                column_with_type_and_name.column = ColumnLazy::create(columns);
-                create_empty_column_lazy = true;
-            }
-            block.insert(column_with_type_and_name);
+            column_with_type_and_name.column = ColumnLazy::create(columns);
+            create_empty_column_lazy = true;
         }
+        block.insert(column_with_type_and_name);
     }
 
     if (lazily_read_info->remove_part_offset_column)

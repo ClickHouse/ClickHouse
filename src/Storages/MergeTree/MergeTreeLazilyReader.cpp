@@ -47,11 +47,10 @@ void matchDataPartToRowOffsets(
     {
         auto & row_offsets_with_idx = part_and_row_offsets.second;
 
-        std::sort(row_offsets_with_idx.begin(), row_offsets_with_idx.end(), [](const RowOffsetWithIdx & left,
-                                                                                                 const RowOffsetWithIdx & right)
-        {
-            return left.row_offset < right.row_offset;
-        });
+        std::sort(
+            row_offsets_with_idx.begin(),
+            row_offsets_with_idx.end(),
+            [](const RowOffsetWithIdx & left, const RowOffsetWithIdx & right) { return left.row_offset < right.row_offset; });
 
         for (const auto & row_offset_with_idx : row_offsets_with_idx)
         {
