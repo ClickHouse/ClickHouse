@@ -31,10 +31,10 @@ icebergLocal(named_collection[, option=value [,..]])
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
 
-**Returned value**
+### Returned value
 A table with the specified structure for reading data in the specified Iceberg table.
 
-**Example**
+### Example
 
 ```sql
 SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
@@ -67,7 +67,7 @@ SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
 DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
 ```
 
-**Schema Evolution**
+## Schema Evolution
 At the moment, with the help of CH, you can read iceberg tables, the schema of which has changed over time. We currently support reading tables where columns have been added and removed, and their order has changed. You can also change a column where a value is required to one where NULL is allowed. Additionally, we support permitted type casting for simple types, namely:  
 * int -> long
 * float -> double
@@ -75,23 +75,46 @@ At the moment, with the help of CH, you can read iceberg tables, the schema of w
 
 Currently, it is not possible to change nested structures or the types of elements within arrays and maps.
 
-**Partition Pruning**
+## Partition Pruning
 
 ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. Now it works with only identity transforms and time-based transforms (hour, day, month, year). To enable partition pruning, set `use_iceberg_partition_pruning = 1`.
 
 
-**Time Travel**
+## Time Travel
 
- ClickHouse supports time travel for Iceberg tables, which allows you to query historical data by specifying of a timestamp. To enable time travel for a select query, set `iceberg_timestamp_ms` parameter to necessary UTC timestamp in milliseconds.
+ClickHouse supports time travel for Iceberg tables, allowing you to query historical data with a specific timestamp or snapshot ID.
 
+### Basic usage
  ```sql
  SELECT * FROM example_table ORDER BY 1 
  SETTINGS iceberg_timestamp_ms = 1714636800000
  ```
 
- You need to take into account that the timestamp is applied to the snapshot, which is usualy created when new data is written to the table or compacation happens. Writers are not obliged to create new snapshot after any kind of schema changes. That means that you can get a bit unexpected results if you use timestamp from the past and used schema evolution. For example, pay attention to this spark code:
+ ```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_snapshot_id = 3547395809148285433
+ ```
+
+Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` parameters in the same query.
+
+### Important considerations
+
+- **Snapshots** are typically created when:
+    - New data is written to the table
+    - Some kind of data compaction is performed
+
+- **Schema changes typically don't create snapshots** - This leads to important behaviors when using time travel with tables that have undergone schema evolution.
+
+### Example scenarios
+
+All scenarios are written in Spark because CH doesn't support writing to Iceberg tables yet.
+
+#### Scenario 1: Schema Changes Without New Snapshots
+
+Consider this sequence of operations:
 
  ```
+ -- Create a table with two columns
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
   order_number bigint, 
   product_code string
@@ -99,19 +122,23 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
   USING iceberg 
   OPTIONS ('format-version'='2')
 
+-- Insert data into the table
   INSERT INTO spark_catalog.db.time_travel_example VALUES 
     (1, 'Mars')
 
-    ts1 = now()
+  ts1 = now() // A piece of pseudo code
 
-    ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+-- Alter table to add a new column
+  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+ 
+  ts2 = now()
 
-    ts2 = now()
+-- Insert data into the table
+  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-    INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+   ts3 = now()
 
-    ts3 = now()
-
+-- Query the table at each timestamp
   SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
 
 +------------+------------+
@@ -139,25 +166,19 @@ ClickHouse supports partition pruning during SELECT queries for Iceberg tables, 
 +------------+------------+-----+
 ```
 
-Pay attention that as a result of the query
-```
-  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
-```
+Query results at different timestamps:
 
-you get the table with the following schema though alter column adding `price` was already applied:
-```
-+------------+------------+
-|order_number|product_code|
-+------------+------------+
-```
+- At ts1 & ts2: Only the original two columns appear
+- At ts3: All three columns appear, with NULL for the price of the first row
 
-That's because `ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)` doesn't create a new snapshot.
+***Scenario 2:  Historical vs. Current Schema Differences***
 
-Also this fact has two funny implications:
 
-The first one is that schema of queries with time travel applied in the current moment is not always equal to schema of table at the moment of query:
+A time travel query at a current moment might show a different schema than the current table:
+
 
 ```
+-- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
   order_number bigint, 
   product_code string
@@ -165,13 +186,15 @@ The first one is that schema of queries with time travel applied in the current 
   USING iceberg 
   OPTIONS ('format-version'='2')
 
-
+-- Insert initial data into the table
   INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
 
-
+-- Alter table to add a new column
   ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
 
   ts = now();
+
+-- Query the table at a current moment but using timestamp syntax
 
   SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
 
@@ -181,6 +204,7 @@ The first one is that schema of queries with time travel applied in the current 
     |           2|       Venus|
     +------------+------------+
 
+-- Query the table at a current moment
   SELECT * FROM spark_catalog.db.time_travel_example_2;
 
 
@@ -191,9 +215,14 @@ The first one is that schema of queries with time travel applied in the current 
     +------------+------------+-----+
 ```
 
+This happens because `ALTER TABLE` doesn't create a new snapshot but for the current table Spark takes value of `schema_id` from the latest metadata file, not a snapshot.
+
+***Scenario 3:  Historical vs. Current Schema Differences***
+
 The second one is that while doing time travel you can't get state of table before any data was written to it:
 
 ```
+-- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
   order_number bigint, 
   product_code string
@@ -203,16 +232,17 @@ The second one is that while doing time travel you can't get state of table befo
 
   ts = now();
 
+-- Query the table at a specific timestamp
   SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
 ```
 
-In Clickhouse the behavior is the same as in Spark.
+In Clickhouse the behavior is consistent with Spark. You can mentally replace Spark Select queries with Clickhouse Select queries and it will work the same way.
 
-**Aliases**
+## Aliases
 
 Table function `iceberg` is an alias to `icebergS3` now.
 
-**See Also**
+## See Also
 
 - [Iceberg engine](/engines/table-engines/integrations/iceberg.md)
 - [Iceberg cluster table function](/sql-reference/table-functions/icebergCluster.md)
