@@ -711,15 +711,16 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             for (const auto & entry : this->entries)
             {
                 SQLType * tp = entry.getBottomType();
+                const String & bottomName = entry.getBottomName();
 
                 buf += fmt::format(
                     "{}{} {}{}{}",
                     first ? "" : ", ",
-                    entry.getBottomName(),
+                    bottomName,
                     entry.path.size() > 1 ? "Array(" : "",
                     tp->typeName(true),
                     entry.path.size() > 1 ? ")" : "");
-                columnPathRef(entry, ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
+                ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(bottomName);
                 first = false;
             }
             grf->set_structure(std::move(buf));
