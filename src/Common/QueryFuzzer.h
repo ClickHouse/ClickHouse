@@ -79,6 +79,11 @@ private:
     // with some small-but-not-tiny probability), so the expected number of calls becomes infinite.
     // Despite infinite expected tree size, the p99 size may still be moderate
     // (see e.g. "St. Petersburg lottery"), so the failures can be rare in practice.
+    //
+    // (What does "infinite expected value" mean in practice? Suppose you keep generating more and
+    //  more values and averaging them. If the expected value is finite, the average will be
+    //  converging to it. If the expected value is inifinite, the average will keep growing without
+    //  bound.)
     size_t iteration_count = 0;
     const size_t iteration_limit = 500000;
 
