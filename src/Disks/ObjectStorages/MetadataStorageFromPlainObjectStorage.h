@@ -125,7 +125,7 @@ public:
         /// Noop
     }
 
-    void setReadOnly(const std::string & path) override
+    void setReadOnly(const std::string & /*path*/) override
     {
         /// Noop
     }
