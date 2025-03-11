@@ -252,7 +252,7 @@ public:
     /// levels offset in current page
     virtual size_t levelsOffset() const { return state.offsets.levels_offset; }
     virtual size_t availableRows() const { return std::max(state.offsets.remain_rows - state.lazy_skip_rows, 0UL); }
-    /// for nested type, 因为不同的列的page大小不同，需要获得当前reader最小可用的level数
+    /// for nested Since the page sizes of different columns vary, we need to get the minimum available level of the current reader.
     virtual size_t minimumAvailableLevels() { return getRepetitionLevels().size() - state.offsets.levels_offset; }
 
     /// skip n rows null value
