@@ -16,6 +16,8 @@ from helpers.s3_queue_common import run_query, random_str, generate_random_files
 from helpers.s3_tools import prepare_s3_bucket
 
 AVAILABLE_MODES = ["unordered", "ordered"]
+DEFAULT_AUTH = ["'minio'", "'minio123'"]
+NO_AUTH = ["NOSIGN"]
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
