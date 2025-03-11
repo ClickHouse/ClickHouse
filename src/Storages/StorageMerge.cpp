@@ -143,6 +143,7 @@ StorageMerge::StorageMerge(
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
     const DBToTableSetMap & source_databases_and_tables_,
+    const std::optional<String> & table_to_write_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -159,6 +160,7 @@ StorageMerge::StorageMerge(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
+    setTableToWrite(table_to_write_, source_database_name_or_regexp_, database_is_regexp_);
 }
 
 StorageMerge::StorageMerge(
@@ -168,6 +170,7 @@ StorageMerge::StorageMerge(
     const String & source_database_name_or_regexp_,
     bool database_is_regexp_,
     const String & source_table_regexp_,
+    const std::optional<String> & table_to_write_,
     ContextPtr context_)
     : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
@@ -184,6 +187,7 @@ StorageMerge::StorageMerge(
     storage_metadata.setComment(comment);
     setInMemoryMetadata(storage_metadata);
     setVirtuals(createVirtuals());
+    setTableToWrite(table_to_write_, source_database_name_or_regexp_, database_is_regexp_);
 }
 
 StorageMerge::DatabaseTablesIterators StorageMerge::getDatabaseIterators(ContextPtr context_) const
@@ -1684,6 +1688,44 @@ std::optional<UInt64> StorageMerge::totalRowsOrBytes(F && func) const
     return first_table ? std::nullopt : std::make_optional(total_rows_or_bytes);
 }
 
+void StorageMerge::setTableToWrite(
+    const std::optional<String> & table_to_write_,
+    const String & source_database_name_or_regexp_,
+    bool database_is_regexp_)
+{
+    if (!table_to_write_.has_value())
+    {
+        table_to_write = std::nullopt;
+        return;
+    }
+
+    auto qualified_name = QualifiedTableName::parseFromString(*table_to_write_);
+
+    if (qualified_name.database.empty())
+    {
+        if (database_is_regexp_)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'table_to_write' must contain database if 'db_name' is regular expression.");
+
+        qualified_name.database = source_database_name_or_regexp_;
+    }
+
+    table_to_write = qualified_name;
+}
+
+SinkToStoragePtr StorageMerge::write(
+    const ASTPtr & query,
+    const StorageMetadataPtr & metadata_snapshot,
+    ContextPtr context_,
+    bool async_insert)
+{
+    if (!table_to_write.has_value())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method write is not allowed in storage {} without described table to write.", getName());
+
+    auto database = DatabaseCatalog::instance().getDatabase(table_to_write->database);
+    auto table = database->getTable(table_to_write->table, context_);
+    return table->write(query, metadata_snapshot, context_, async_insert);
+}
+
 void registerStorageMerge(StorageFactory & factory)
 {
     factory.registerStorage("Merge", [](const StorageFactory::Arguments & args)
@@ -1694,10 +1736,12 @@ void registerStorageMerge(StorageFactory & factory)
 
         ASTs & engine_args = args.engine_args;
 
-        if (engine_args.size() != 2)
+        size_t size = engine_args.size();
+
+        if (size < 2 || size > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Storage Merge requires exactly 2 parameters - name "
-                            "of source database and regexp for table names.");
+                            "Storage Merge requires 2 or 3 parameters - name "
+                            "of source database, regexp for table names, and optional table name for writing.");
 
         auto [is_regexp, database_ast] = StorageMerge::evaluateDatabaseName(engine_args[0], args.getLocalContext());
 
@@ -1709,8 +1753,15 @@ void registerStorageMerge(StorageFactory & factory)
         engine_args[1] = evaluateConstantExpressionAsLiteral(engine_args[1], args.getLocalContext());
         String table_name_regexp = checkAndGetLiteralArgument<String>(engine_args[1], "table_name_regexp");
 
+        std::optional<String> table_to_write = std::nullopt;
+        if (size == 3)
+        {
+            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.getLocalContext());
+            table_to_write = checkAndGetLiteralArgument<String>(engine_args[2], "table_to_write");
+        }
+
         return std::make_shared<StorageMerge>(
-            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, args.getContext());
+            args.table_id, args.columns, args.comment, source_database_name_or_regexp, is_regexp, table_name_regexp, table_to_write, args.getContext());
     },
     {
         .supports_schema_inference = true
