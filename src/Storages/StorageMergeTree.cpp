@@ -1073,11 +1073,12 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
         auto select_result = merger_mutator.selectPartsToMerge(
             parts_collector,
             merge_predicate,
-            MergeSelectorApplier{
-                .max_merge_sizes = {max_source_parts_size},
-                .merge_with_ttl_allowed = merge_with_ttl_allowed,
-                .aggressive = aggressive,
-            },
+            MergeSelectorApplier(
+                /*max_merge_sizes=*/{max_source_parts_size},
+                /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                /*aggressive=*/aggressive,
+                /*range_filter_=*/nullptr
+            ),
             /*partitions_hint=*/std::nullopt);
 
         return select_result.and_then(construct_future_part);

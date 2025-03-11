@@ -4085,10 +4085,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             partitions_to_merge_in = merger_mutator.getPartitionsThatMayBeMerged(
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, local_merge_pred),
                 local_merge_pred,
-                MergeSelectorApplier{
-                    .max_merge_sizes = {max_source_parts_size_for_merge},
-                    .merge_with_ttl_allowed = merge_with_ttl_allowed,
-                });
+                MergeSelectorApplier(
+                    /*max_merge_sizes=*/{max_source_parts_size_for_merge},
+                    /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                    /*aggressive_=*/false,
+                    /*range_filter_=*/nullptr
+                ));
 
             if (partitions_to_merge_in.empty())
                 can_assign_merge = false;
@@ -4102,10 +4104,12 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             auto select_merge_result = merger_mutator.selectPartsToMerge(
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, merge_predicate),
                 merge_predicate,
-                MergeSelectorApplier{
-                    .max_merge_sizes = {max_source_parts_size_for_merge},
-                    .merge_with_ttl_allowed = merge_with_ttl_allowed,
-                },
+                MergeSelectorApplier(
+                    /*max_merge_sizes=*/{max_source_parts_size_for_merge},
+                    /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
+                    /*aggressive_=*/false,
+                    /*range_filter_=*/nullptr
+                ),
                 partitions_to_merge_in);
 
             if (select_merge_result.has_value())
@@ -6185,11 +6189,12 @@ bool StorageReplicatedMergeTree::optimize(
                     return merger_mutator.selectPartsToMerge(
                         parts_collector,
                         merge_predicate,
-                        MergeSelectorApplier{
-                            .max_merge_sizes = {(*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]},
-                            .merge_with_ttl_allowed = false,
-                            .aggressive = true,
-                        },
+                        MergeSelectorApplier(
+                            /*max_merge_sizes=*/{(*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool]},
+                            /*merge_with_ttl_allowed=*/false,
+                            /*aggressive=*/true,
+                            /*range_filter_=*/nullptr
+                        ),
                         /*partitions_hint=*/std::nullopt);
                 }
                 else

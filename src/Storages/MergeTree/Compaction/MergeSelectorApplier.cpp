@@ -121,6 +121,20 @@ MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
 
 }
 
+MergeSelectorApplier::MergeSelectorApplier(
+    std::vector<size_t> && max_merge_sizes_,
+    bool merge_with_ttl_allowed_,
+    bool aggressive_,
+    IMergeSelector::RangeFilter range_filter_)
+    : max_merge_sizes(std::move(max_merge_sizes_))
+    , merge_with_ttl_allowed(merge_with_ttl_allowed_)
+    , aggressive(aggressive_)
+    , range_filter(std::move(range_filter_))
+{
+    chassert(!max_merge_sizes_.empty(), "At least one merge size constraint should be passed");
+    chassert(std::is_sorted(max_merge_sizes_.rbegin(), max_merge_sizes_.rend()), "Merge size constraints must be sorted in desc order");
+}
+
 MergeSelectorChoices MergeSelectorApplier::chooseMergesFrom(
     const PartsRanges & ranges,
     const StorageMetadataPtr & metadata_snapshot,

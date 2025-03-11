@@ -27,6 +27,12 @@ public:
     const bool aggressive = false;
     const IMergeSelector::RangeFilter range_filter = nullptr;
 
+    MergeSelectorApplier(
+        std::vector<size_t> && max_merge_sizes_,
+        bool merge_with_ttl_allowed_,
+        bool aggressive_,
+        IMergeSelector::RangeFilter range_filter_);
+
     MergeSelectorChoices chooseMergesFrom(
         const PartsRanges & ranges,
         const StorageMetadataPtr & metadata_snapshot,

@@ -260,7 +260,7 @@ void selectWithinPartsRange(
             max_size = std::max(max_size, cur_size);
             min_age = std::min(min_age, cur_age);
 
-            if (max_total_size_to_merge && sum_size > max_total_size_to_merge)
+            if (sum_size > max_total_size_to_merge)
                 break;
 
             auto range_begin = parts.begin() + begin;
@@ -287,15 +287,13 @@ PartsRanges SimpleMergeSelector::select(
 {
     Estimator estimator;
 
-    chassert(!max_merge_sizes.empty());
-    const size_t max_total_size_to_merge = *std::max_element(max_merge_sizes.begin(), max_merge_sizes.end());
-
     /// Precompute logarithm of settings boundaries, because log function is quite expensive in terms of performance
     const double min_size_to_lower_base_log = log(1 + settings.min_size_to_lower_base);
     const double max_size_to_lower_base_log = log(1 + settings.max_size_to_lower_base);
 
+    /// Using max size constraint to create more merge candidates
     for (auto range_it = parts_ranges.begin(); range_it != parts_ranges.end(); ++range_it)
-        selectWithinPartsRange(range_it, max_total_size_to_merge, range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
+        selectWithinPartsRange(range_it, max_merge_sizes[0], range_filter, estimator, settings, min_size_to_lower_base_log, max_size_to_lower_base_log);
 
     estimator.prepare(max_merge_sizes.size());
 

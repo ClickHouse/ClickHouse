@@ -42,7 +42,7 @@ PartsRanges AllMergeSelector::select(
         }
     }
 
-    if (min_partition_size && min_partition_size <= max_total_size_to_merge)
+    if (min_partition_size <= max_total_size_to_merge)
         return {*best_partition};
 
     return {};
