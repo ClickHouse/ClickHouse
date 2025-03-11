@@ -72,7 +72,8 @@ ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
         else
             array_join_expression_ast = array_join_expression->toAST(options);
 
-        array_join_expression_ast->setAlias(array_join_expression->getAlias());
+        if (array_join_expression->hasAlias())
+            array_join_expression_ast->setAlias(array_join_expression->getAlias());
         array_join_expressions_ast->children.push_back(std::move(array_join_expression_ast));
     }
 
