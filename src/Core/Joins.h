@@ -11,13 +11,14 @@ class WriteBuffer;
 /// Join method.
 enum class JoinKind : uint8_t
 {
-    Inner, /// Leave only rows that was JOINed.
+    Inner = 0, /// Leave only rows that was JOINed.
     Left, /// If in "right" table there is no corresponding rows, use default values instead.
     Right,
     Full,
     Cross, /// Direct product. Strictness and condition doesn't matter.
     Comma, /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
     Paste, /// Used to join parts without `ON` clause.
+    MAX, /// Fake value used for check during deserialization.
 };
 
 void serializeJoinKind(JoinKind kind, WriteBuffer & out);
@@ -41,13 +42,14 @@ JoinKind reverseJoinKind(JoinKind kind);
 /// Allows more optimal JOIN for typical cases.
 enum class JoinStrictness : uint8_t
 {
-    Unspecified,
+    Unspecified = 0,
     RightAny, /// Old ANY JOIN. If there are many suitable rows in right table, use any from them to join.
     Any, /// Semi Join with any value from filtering table. For LEFT JOIN with Any and RightAny are the same.
     All, /// If there are many suitable rows to join, use all of them and replicate rows of "left" table (usual semantic of JOIN).
     Asof, /// For the last JOIN column, pick the latest value
     Semi, /// LEFT or RIGHT. SEMI LEFT JOIN filters left table by values exists in right table. SEMI RIGHT - otherwise.
     Anti, /// LEFT or RIGHT. Same as SEMI JOIN but filter values that are NOT exists in other table.
+    MAX, /// Fake value used for check during deserialization.
 };
 
 void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out);
@@ -58,9 +60,10 @@ const char * toString(JoinStrictness strictness);
 /// Algorithm for distributed query processing.
 enum class JoinLocality : uint8_t
 {
-    Unspecified,
+    Unspecified = 0,
     Local, /// Perform JOIN, using only data available on same servers (co-located data).
     Global /// Collect and merge data from remote servers, and broadcast it to each server.
+    MAX, /// Fake value used for check during deserialization.
 };
 
 void serializeJoinLocality(JoinLocality locality, WriteBuffer & out);
