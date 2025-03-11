@@ -33,33 +33,33 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     return std::nullopt;
 }
 
-void QueryConditionCache::write(const UUID & table_id, const String & part_name, size_t condition_hash, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
+void QueryConditionCache::write(size_t condition_hash, const MarkRangesInfoPtr & mark_info)
 {
-    Key key = {table_id, part_name, condition_hash};
+    Key key = {mark_info->table_uuid, mark_info->part_name, condition_hash};
 
-    auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
+    auto load_func = [&](){ return std::make_shared<Entry>(mark_info->marks_count); };
     auto [entry, _] = cache.getOrSet(key, load_func);
 
-    chassert(marks_count == entry->matching_marks.size());
+    chassert(mark_info->marks_count == entry->matching_marks.size());
 
     /// Set MarkRanges to false, so there is no need to read these marks again later.
     {
         std::lock_guard lock(entry->mutex);
-        for (const auto & mark_range : mark_ranges)
+        for (const auto & mark_range : mark_info->mark_ranges)
             std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
 
-        if (has_final_mark)
-            entry->matching_marks[marks_count - 1] = false;
+        if (mark_info->has_final_mark)
+            entry->matching_marks[mark_info->marks_count - 1] = false;
 
         LOG_DEBUG(
             logger,
             "table_id: {}, part_name: {}, condition_hash: {}, marks_count: {}, has_final_mark: {}, (ranges: {})",
-            table_id,
-            part_name,
+            mark_info->table_uuid,
+            mark_info->part_name,
             condition_hash,
-            marks_count,
-            has_final_mark,
-            toString(mark_ranges));
+            mark_info->marks_count,
+            mark_info->has_final_mark,
+            toString(mark_info->mark_ranges));
     }
 }
 

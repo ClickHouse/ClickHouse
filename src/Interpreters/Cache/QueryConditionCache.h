@@ -2,6 +2,7 @@
 
 #include <Common/CacheBase.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <Processors/Chunk.h>
 
 namespace DB
 {
@@ -21,7 +22,7 @@ public:
     std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, size_t condition_hash);
 
     /// Take out the mark filter corresponding to the query condition and set it to false on the corresponding mark.
-    void write(const UUID & table_id, const String & part_name, size_t condition_hash, const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
+    void write(size_t condition_hash, const MarkRangesInfoPtr & mark_info);
 
     void clear();
 

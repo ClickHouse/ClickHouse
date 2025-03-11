@@ -116,7 +116,7 @@ IProcessor::Status FilterTransform::prepare()
         are_prepared_sets_initialized = true;
 
     if (status == IProcessor::Status::Finished)
-        writeIntoQueryConditionCache(nullptr);
+        writeIntoQueryConditionCache({});
 
     return status;
 }
@@ -265,39 +265,28 @@ void FilterTransform::writeIntoQueryConditionCache(MarkRangesInfoPtr mark_info)
 
     if (!mark_info)
     {
-        if (!matching_mark_info)
+        if (!merged_mark_info)
             return;
 
-        query_condition_cache->write(
-            matching_mark_info->table_uuid,
-            matching_mark_info->part_name,
-            *condition_hash,
-            matching_mark_info->mark_ranges,
-            matching_mark_info->marks_count,
-            matching_mark_info->has_final_mark);
+        query_condition_cache->write(*condition_hash, merged_mark_info);
 
-        matching_mark_info = nullptr;
+        merged_mark_info = nullptr;
         return;
     }
 
-    if (!matching_mark_info)
-        matching_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
+    if (!merged_mark_info)
+        merged_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
     else
     {
-        if (matching_mark_info->table_uuid != mark_info->table_uuid || matching_mark_info->part_name != mark_info->part_name)
+        /// If it is the same part, merge the mark ranges, otherwise update to the query condition cache.
+        if (merged_mark_info->table_uuid != mark_info->table_uuid || merged_mark_info->part_name != mark_info->part_name)
         {
-            query_condition_cache->write(
-                matching_mark_info->table_uuid,
-                matching_mark_info->part_name,
-                *condition_hash,
-                matching_mark_info->mark_ranges,
-                matching_mark_info->marks_count,
-                matching_mark_info->has_final_mark);
+            query_condition_cache->write(*condition_hash, merged_mark_info);
 
-            matching_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
+            merged_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
         }
         else
-            matching_mark_info->addMarkRanges(mark_info->mark_ranges);
+            merged_mark_info->addMarkRanges(mark_info->mark_ranges);
     }
 }
 

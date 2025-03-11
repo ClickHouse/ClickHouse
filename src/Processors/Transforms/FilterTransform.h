@@ -50,7 +50,8 @@ private:
     /// If `condition_hash` is not null, the query condition cache needs to be updated at runtime.
     std::optional<size_t> condition_hash;
     std::shared_ptr<QueryConditionCache> query_condition_cache;
-    MarkRangesInfoPtr matching_mark_info;
+    /// Merge mark info from the same part and write them to the query condition cache once.
+    MarkRangesInfoPtr merged_mark_info;
 
     /// Header after expression, but before removing filter column.
     Block transformed_header;
