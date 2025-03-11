@@ -268,15 +268,13 @@ void FilterTransform::writeIntoQueryConditionCache(MarkRangesInfoPtr mark_info)
         if (!matching_mark_info)
             return;
 
-        const auto & data_part = matching_mark_info->getDataPart();
-        auto storage_id = data_part->storage.getStorageID();
         query_condition_cache->write(
-            storage_id.uuid,
-            data_part->name,
+            matching_mark_info->table_uuid,
+            matching_mark_info->part_name,
             *condition_hash,
-            matching_mark_info->getMarkRanges(),
-            data_part->index_granularity->getMarksCount(),
-            data_part->index_granularity->hasFinalMark());
+            matching_mark_info->mark_ranges,
+            matching_mark_info->marks_count,
+            matching_mark_info->has_final_mark);
 
         matching_mark_info = nullptr;
         return;
@@ -286,24 +284,20 @@ void FilterTransform::writeIntoQueryConditionCache(MarkRangesInfoPtr mark_info)
         matching_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
     else
     {
-        const auto & pre_data_part = matching_mark_info->getDataPart();
-        const auto & data_part = mark_info->getDataPart();
-
-        if (pre_data_part->name != data_part->name)
+        if (matching_mark_info->table_uuid != mark_info->table_uuid || matching_mark_info->part_name != mark_info->part_name)
         {
-            auto storage_id = data_part->storage.getStorageID();
             query_condition_cache->write(
-                storage_id.uuid,
-                pre_data_part->name,
+                matching_mark_info->table_uuid,
+                matching_mark_info->part_name,
                 *condition_hash,
-                matching_mark_info->getMarkRanges(),
-                data_part->index_granularity->getMarksCount(),
-                data_part->index_granularity->hasFinalMark());
+                matching_mark_info->mark_ranges,
+                matching_mark_info->marks_count,
+                matching_mark_info->has_final_mark);
 
             matching_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
         }
         else
-            matching_mark_info->addMarkRanges(mark_info->getMarkRanges());
+            matching_mark_info->addMarkRanges(mark_info->mark_ranges);
     }
 }
 
