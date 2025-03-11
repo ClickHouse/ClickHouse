@@ -30,11 +30,11 @@ PARALLEL WITH
 INSERT INTO table2 SELECT number FROM numbers(20, 1);
 
 -- insert will not complete because SELECT fails
-INSERT INTO table3 SELECT number FROM numbers(30, 3)
+INSERT INTO table3(y) SELECT number FROM numbers(30, 3)
 PARALLEL WITH
 SELECT * FROM table1 ORDER BY x; -- { serverError INCORRECT_QUERY }
 
-INSERT INTO table3 SELECT number FROM numbers(30, 3)
+INSERT INTO table3(y) SELECT number FROM numbers(30, 3)
 PARALLEL WITH
 CREATE MATERIALIZED VIEW mv_table3
 ENGINE = MergeTree
