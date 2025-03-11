@@ -85,7 +85,7 @@ private:
     //  converging to it. If the expected value is inifinite, the average will keep growing without
     //  bound.)
     size_t iteration_count = 0;
-    const size_t iteration_limit = 500000;
+    static constexpr size_t iteration_limit = 500000;
 
     // These arrays hold parts of queries that we can substitute into the query
     // we are currently fuzzing. We add some part from each new query we are asked
