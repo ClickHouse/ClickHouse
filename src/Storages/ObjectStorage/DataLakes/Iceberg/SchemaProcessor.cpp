@@ -313,7 +313,9 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         if (old_node_it != old_schema_entries.end())
         {
             auto [old_json, old_node] = old_node_it->second;
-            if (field->isObject("type") && field->getObject("type")->getValue<std::string>("type") == "struct")
+            if (field->isObject("type") &&
+                (field->getObject("type")->getValue<std::string>("type") == "struct"
+                || field->getObject("type")->getValue<std::string>("type") == "list"))
             {
                 auto old_type = getFieldType(old_json, "type", required);
                 auto transform = std::make_shared<EvolutionFunctionStruct>(std::vector{type}, std::vector{old_type}, old_json, field);
