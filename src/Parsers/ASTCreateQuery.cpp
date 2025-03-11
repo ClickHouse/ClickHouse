@@ -497,7 +497,7 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     {
         ostr << (settings.one_line ? " (" : "\n(");
         if (settings.one_line)
-            dictionary_attributes_list->formatImpl(ostr, settings, state, frame_nested);
+            dictionary_attributes_list->formatImpl(ostr, settings, state, frame);
         else
             dictionary_attributes_list->formatImplMultiline(ostr, settings, state, frame);
         ostr << (settings.one_line ? ")" : "\n)");
