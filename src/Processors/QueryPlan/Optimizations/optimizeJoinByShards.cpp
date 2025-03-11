@@ -302,7 +302,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 /// The algorithm finds as many JOIN steps as it can and apply optimization for the minimum possible prefix.
 void optimizeJoinByShards(QueryPlan::Node & root)
 {
-    /// The algorithm is basically DFS which build the Result structur for the every child step,
+    /// The algorithm is basically DFS which build the Result structure for the every child step,
     /// And then update the Result for the current step or apply the optimization.
     struct Result
     {
