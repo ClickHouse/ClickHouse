@@ -21,7 +21,7 @@ estimateCompressionRatio(codec, block_size_bytes)(column)
 
 **Parameters**
 
-- `codec` - [String](../../../sql-reference/data-types/string.md) containing a [compression codec](../../../sql-reference/statements/create/table.md#column-compression-codecs).
+- `codec` - [String](../../../sql-reference/data-types/string.md) containing a [compression codec](/sql-reference/statements/create/table#column-compression-codecs).
 - `block_size_bytes` - Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes).
 
 Both parameters are optional.
@@ -30,7 +30,7 @@ Both parameters are optional.
 
 - Returns an estimate compression ratio for the given column.
 
-Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Examples**
 
