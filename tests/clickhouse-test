@@ -1087,6 +1087,7 @@ class SettingsRandomizer:
         "enable_vertical_final": lambda: random.randint(0, 1),
         "optimize_extract_common_expressions": lambda: random.randint(0, 1),
         "use_query_condition_cache": lambda: random.randint(0, 1),
+        "input_format_parquet_use_native_reader_v2": lambda: random.randint(0, 1),
         **randomize_external_sort_group_by(),
     }
 
