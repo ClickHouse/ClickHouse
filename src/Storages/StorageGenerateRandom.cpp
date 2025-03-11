@@ -36,6 +36,8 @@
 
 #include <Functions/FunctionFactory.h>
 
+#include <pcg_random.hpp>
+
 
 namespace DB
 {
@@ -154,7 +156,7 @@ size_t estimateValueSize(
 }
 
 ColumnPtr fillColumnWithRandomData(
-    DataTypePtr type,
+    const DataTypePtr type,
     UInt64 limit,
     UInt64 max_array_length,
     UInt64 max_string_length,
