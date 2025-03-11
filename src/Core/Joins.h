@@ -62,7 +62,7 @@ enum class JoinLocality : uint8_t
 {
     Unspecified = 0,
     Local, /// Perform JOIN, using only data available on same servers (co-located data).
-    Global /// Collect and merge data from remote servers, and broadcast it to each server.
+    Global, /// Collect and merge data from remote servers, and broadcast it to each server.
     MAX, /// Fake value used for check during deserialization.
 };
 
