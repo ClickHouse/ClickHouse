@@ -95,7 +95,6 @@ public:
         bool isDeterministic() const;
         void toTree(JSONBuilder::JSONMap & map) const;
         size_t getHash() const;
-    private:
         void updateHash(SipHash & hash_state) const;
     };
 
@@ -447,6 +446,9 @@ public:
     static NodeRawConstPtrs filterNodesByAllowedInputs(
         NodeRawConstPtrs nodes,
         const std::unordered_set<const Node *> & allowed_inputs);
+
+    UInt64 getHash() const;
+    void updateHash(SipHash & hash_state) const;
 
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
