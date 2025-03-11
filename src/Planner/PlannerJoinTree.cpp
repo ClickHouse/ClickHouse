@@ -1206,12 +1206,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             else
             {
                 /// Create step which reads from empty source if storage has no data.
-                const auto & column_names = table_expression_data.getSelectedColumnsNames();
+                const auto & column_names = table_expression_data.getColumnNames();
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
                 Pipe pipe(std::make_shared<NullSource>(source_header));
                 auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
                 read_from_pipe->setStepDescription("Read from NullSource");
                 query_plan.addStep(std::move(read_from_pipe));
+
+                auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
+                if (!alias_column_expressions.empty())
+                {
+                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
+                    query_plan.addStep(std::move(alias_column_step));
+                }
             }
         }
     }
