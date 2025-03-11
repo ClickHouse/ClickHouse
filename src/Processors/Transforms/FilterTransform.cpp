@@ -1,3 +1,4 @@
+#include <memory>
 #include <Processors/Transforms/FilterTransform.h>
 
 #include <Interpreters/Context.h>
@@ -10,6 +11,7 @@
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Processors/IProcessor.h>
+#include "Processors/Chunk.h"
 
 namespace ProfileEvents
 {
@@ -280,7 +282,7 @@ void FilterTransform::writeIntoQueryConditionCache(MarkRangesInfoPtr mark_info)
     }
 
     if (!matching_mark_info)
-        matching_mark_info = mark_info;
+        matching_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
     else
     {
         const auto & pre_data_part = matching_mark_info->getDataPart();
@@ -296,8 +298,8 @@ void FilterTransform::writeIntoQueryConditionCache(MarkRangesInfoPtr mark_info)
                 matching_mark_info->getMarkRanges(),
                 data_part->index_granularity->getMarksCount(),
                 data_part->index_granularity->hasFinalMark());
-            
-            matching_mark_info = mark_info;
+
+            matching_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
         }
         else
             matching_mark_info->addMarkRanges(mark_info->getMarkRanges());
