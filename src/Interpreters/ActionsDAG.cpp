@@ -3487,7 +3487,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
             writeVarUInt(node_to_id.at(child), out);
 
         /// Serialize column if it is present
-        const bool has_column = node.column != nullptr;
+        const bool has_column = (node.type != ActionType::INPUT && node.column != nullptr);
         UInt8 column_flags = 0;
         if (has_column)
         {
