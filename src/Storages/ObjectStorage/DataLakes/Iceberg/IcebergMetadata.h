@@ -50,7 +50,6 @@ public:
     /// Get table schema parsed from metadata.
     NamesAndTypesList getTableSchema() const override
     {
-        LOG_DEBUG(&Poco::Logger::get("IcebergMetadata table query"), "getTableSchema: {}", relevant_snapshot_schema_id);
         return *schema_processor.getClickhouseTableSchemaById(relevant_snapshot_schema_id);
     }
 

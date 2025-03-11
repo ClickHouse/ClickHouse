@@ -359,11 +359,6 @@ void IcebergMetadata::updateSnapshot()
         {
             relevant_snapshot = IcebergSnapshot{getManifestList(snapshot->getValue<String>("manifest-list")), relevant_snapshot_id};
             relevant_snapshot_schema_id = snapshot->getValue<Int32>("schema-id");
-            LOG_DEBUG(
-                &Poco::Logger::get("updateState"),
-                "current_snapshot: {}, current_snapshot_schema_id: {}",
-                relevant_snapshot_id,
-                relevant_snapshot_schema_id);
             addTableSchemaById(relevant_snapshot_schema_id);
             return;
         }
@@ -393,7 +388,6 @@ void IcebergMetadata::updateState(const ContextPtr & local_context)
     {
         Int64 closest_timestamp = 0;
         Int64 query_timestamp = local_context->getSettingsRef()[Setting::iceberg_timestamp_ms];
-        LOG_DEBUG(log, "query_timestamp: {}", query_timestamp);
         if (!last_metadata_object->has("snapshot-log"))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No snapshot log found in metadata for iceberg table {} so it is impossible to get relevant snapshot id using timestamp", configuration_ptr->getPath());
         auto snapshots = last_metadata_object->get("snapshot-log").extract<Poco::JSON::Array::Ptr>();
@@ -408,8 +402,6 @@ void IcebergMetadata::updateState(const ContextPtr & local_context)
                 relevant_snapshot_id = snapshot->getValue<Int64>("snapshot-id");
             }
         }
-        LOG_DEBUG(log, "closest_timestamp: {}", closest_timestamp);
-        LOG_DEBUG(log, "relevant_snapshot_id: {}", relevant_snapshot_id);
         if (relevant_snapshot_id < 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "No snapshot found in snapshot log before requested timestamp for iceberg table {}", configuration_ptr->getPath());
         updateSnapshot();
@@ -418,11 +410,14 @@ void IcebergMetadata::updateState(const ContextPtr & local_context)
     {
         relevant_snapshot_id = local_context->getSettingsRef()[Setting::iceberg_snapshot_id];
         updateSnapshot();
-    } else {
+    }
+    else
+    {
         if (!last_metadata_object->has("current-snapshot-id"))
             relevant_snapshot_id = -1;
         relevant_snapshot_id = last_metadata_object->getValue<Int64>("current-snapshot-id");
-        if (relevant_snapshot_id != -1) {
+        if (relevant_snapshot_id != -1)
+        {
             updateSnapshot();
         }
         relevant_snapshot_schema_id = parseTableSchema(last_metadata_object, schema_processor, log);

@@ -171,7 +171,7 @@ Query results at different timestamps:
 - At ts1 & ts2: Only the original two columns appear
 - At ts3: All three columns appear, with NULL for the price of the first row
 
-***Scenario 2:  Historical vs. Current Schema Differences***
+#### Scenario 2:  Historical vs. Current Schema Differences
 
 
 A time travel query at a current moment might show a different schema than the current table:
@@ -217,7 +217,7 @@ A time travel query at a current moment might show a different schema than the c
 
 This happens because `ALTER TABLE` doesn't create a new snapshot but for the current table Spark takes value of `schema_id` from the latest metadata file, not a snapshot.
 
-***Scenario 3:  Historical vs. Current Schema Differences***
+#### Scenario 3:  Historical vs. Current Schema Differences
 
 The second one is that while doing time travel you can't get state of table before any data was written to it:
 
