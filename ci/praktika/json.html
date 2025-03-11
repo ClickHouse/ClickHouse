@@ -15,8 +15,20 @@
             --footer-background: #f1f1f1;
             --footer-text-color: #000;
             --status-width: 300px;
-            --pending-bar-color: #fae8c6;
+            --pending-bar-color: #f5e6a3;
             --skipped-bar-color: #ccc;
+        }
+
+        .hidden {
+            transform: translateX(-100%); /* Moves status-container out of view */
+        }
+
+        .expanded {
+            left: 10px !important; /* Move result-container to the left */
+        }
+
+        .button-moved {
+            left: 0 !important; /* Move button to the left when sidebar is hidden */
         }
 
         body {
@@ -68,10 +80,30 @@
             padding-left: 15px;
             padding-right: 15px;
             box-sizing: border-box;
-            font-size: 18px;
+            /*font-size: 18px;*/
             margin: 0;
             overflow-y: auto;
         }
+
+        #toggle-status-bar {
+            position: fixed;
+            top: 40%;
+            left: calc(var(--status-width));
+            background-color: var(--pending-bar-color);
+            color: var(--tile-background);
+            border: none;
+            padding: 20px 4px 20px 4px;
+            cursor: pointer;
+            border-top-right-radius: 8px;
+            border-bottom-right-radius: 8px;
+        }
+
+        @media (min-width: 1200px) {
+            #toggle-status-bar {
+                display: none;
+            }
+        }
+
         .file-link {
             color: var(--file-link-color);
             font-weight: bold;
@@ -106,7 +138,6 @@
         }
         .external-link {
             color: var(--file-link-color);
-            font-size: 18px;
             font-family: 'Source Code Pro', monospace, sans-serif;
             cursor: pointer;
             display: inline-block;
@@ -144,7 +175,6 @@
 
             padding: 0;
             box-sizing: border-box;
-            font-size: 18px;
             font-weight: normal;
 
             overflow: auto;
@@ -163,7 +193,7 @@
         }
 
         #footer {
-            padding: 5px;
+            padding: 10px;
             position: fixed;
             bottom: 0;
             left: 0;
@@ -211,7 +241,6 @@
 
         #theme-toggle {
             cursor: pointer;
-            font-size: 20px;
             color: white;
         }
 
@@ -298,6 +327,7 @@
 <body>
 <div id="status-container"></div>
 <div id="result-container"></div>
+<button id="toggle-status-bar" onclick="toggleStatusBar()">‖</button>
 
 <footer id="footer">
     <div class="left"></div>
@@ -314,6 +344,22 @@
             localStorage.setItem('theme', 'night');
         } else {
             localStorage.setItem('theme', 'day');
+        }
+    }
+
+    function toggleStatusBar() {
+        var statusContainer = document.getElementById("status-container");
+        var resultContainer = document.getElementById("result-container");
+        var toggleButton = document.getElementById("toggle-status-bar");
+
+        if (statusContainer.classList.contains("hidden")) {
+            statusContainer.classList.remove("hidden");
+            resultContainer.classList.remove("expanded");
+            toggleButton.classList.remove("button-moved");
+        } else {
+            statusContainer.classList.add("hidden");
+            resultContainer.classList.add("expanded");
+            toggleButton.classList.add("button-moved");
         }
     }
 
