@@ -140,6 +140,18 @@ DOCKERS = [
         depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
+        name="clickhouse/stateful-test",
+        path="./docker/test/stateful",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/stateless-test"],
+    ),
+    Docker.Config(
+        name="clickhouse/stress-test",
+        path="./docker/test/stress",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/stateful-test"],
+    ),
+    Docker.Config(
         name="clickhouse/fuzzer",
         path="./docker/test/fuzzer",
         platforms=Docker.Platforms.arm_amd,

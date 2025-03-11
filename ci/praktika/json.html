@@ -61,15 +61,6 @@
             --file-link-hover-color: #004d9a;
         }
 
-        .name-column a {
-            color: var(--link-color);
-            text-decoration: none;
-        }
-
-        .name-column a:hover {
-            color: var(--link-hover-color);
-        }
-
         #status-container {
             position: fixed;
             top: 0;
@@ -254,18 +245,37 @@
 
         table {
             table-layout: auto;
-            width: auto;
             border-collapse: collapse;
         }
 
         th.name-column, td.name-column {
-            width: auto;
+            white-space: nowrap;
+        }
+
+        .name-column a {
+            color: var(--link-color);
+            text-decoration: underline;
+            display: inline-block;
+        }
+
+        .name-column a:hover {
+            color: var(--link-hover-color);
+        }
+
+        /* Non-clickable text should look similar but without underline */
+        .name-column .disabled {
+            color: var(--link-color); /* Same color as links */
+            cursor: default; /* No pointer cursor */
+            text-decoration: none; /* No underline */
         }
 
         th.status-column, td.status-column {
-            width: 80px;
             white-space: nowrap; /* Prevent text from wrapping */
             overflow: hidden; /* Hide the overflowed text */
+        }
+
+        .status-column span[style*="pointer"] {
+            text-decoration: underline;
         }
 
         th.time-column, td.time-column {
@@ -801,6 +811,7 @@
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
+                    row.dataset.status = value.toLowerCase();
                     if (result.info && result.info.trim() !== "") {
                         span.style.cursor = "pointer";
                         span.addEventListener('click', () => toggleInfoRow(row, result.info));
@@ -810,14 +821,24 @@
                     // // Click event to toggle the info row
                     // span.addEventListener('click', () => toggleInfoRow(row, result.info));
                 } else if (column === 'name') {
-                    // Create a link for the name field, using name_X
-                    const link = document.createElement('a');
-                    const newUrl = new URL(currentUrl);
-                    newUrl.searchParams.set(`name_${nest_level}`, value);
-                    link.href = newUrl.toString();
-                    link.textContent = value;
-                    td.classList.add('name-column');
-                    td.appendChild(link);
+                    const statusValue = row.dataset.status;
+                    if (["pending", "skipped", "running"].includes(statusValue)) {
+                        // If status is pending, just show plain text
+                        const span = document.createElement('span');
+                        span.textContent = value;
+                        span.classList.add('disabled');
+                        td.classList.add('name-column');
+                        td.appendChild(span);
+                    } else {
+                        // Create a link for the name field
+                        const link = document.createElement('a');
+                        const newUrl = new URL(currentUrl);
+                        newUrl.searchParams.set(`name_${nest_level}`, value);
+                        link.href = newUrl.toString();
+                        link.textContent = value;
+                        td.classList.add('name-column');
+                        td.appendChild(link);
+                    }
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
@@ -1054,10 +1075,12 @@
         }
 
         const resultsDiv = document.getElementById('result-container');
-        const textDiv = document.createElement('div');
-        textDiv.id = 'info-content';
-        textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
-        resultsDiv.appendChild(textDiv);
+        if (result.info) {
+            const textDiv = document.createElement('div');
+            textDiv.id = 'info-content';
+            textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+            resultsDiv.appendChild(textDiv);
+        }
 
         const resultsData = result.results;
         if (Array.isArray(resultsData) && resultsData.length > 0) {

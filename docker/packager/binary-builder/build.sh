@@ -4,6 +4,8 @@ set -x -e
 exec &> >(ts)
 
 ccache_status () {
+    ccache --show-config ||:
+    ccache --show-stats ||:
     SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
 }
 
@@ -20,6 +22,13 @@ if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
   fi
 fi
 
+
+# Uncomment to debug ccache. Don't put ccache log in /output right away, or it
+# will be confusingly packed into the "performance" package.
+# export CCACHE_LOGFILE=/build/ccache.log
+# export CCACHE_DEBUG=1
+
+
 mkdir -p /build/build_docker
 cd /build/build_docker
 rm -f CMakeCache.txt
@@ -29,7 +38,10 @@ if [ -n "$MAKE_DEB" ]; then
   rm -rf /build/packages/root
 fi
 
+
 ccache_status
+# clear cache stats
+ccache --zero-stats ||:
 
 function check_prebuild_exists() {
   local path="$1"
@@ -171,8 +183,6 @@ then
     )
 fi
 
-ccache_status
-
 # May be set for performance test.
 if [ "" != "$COMBINED_OUTPUT" ]
 then
@@ -180,6 +190,22 @@ then
     tar -cv --zstd -f "$COMBINED_OUTPUT.tar.zst" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tar.zst" /output
+fi
+
+ccache_status
+ccache --evict-older-than 1d
+
+if [ "${CCACHE_DEBUG:-}" == "1" ]
+then
+    find . -name '*.ccache-*' -print0 \
+        | tar -c -I pixz -f /output/ccache-debug.txz --null -T -
+fi
+
+if [ -n "$CCACHE_LOGFILE" ]
+then
+    # Compress the log as well, or else the CI will try to compress all log
+    # files in place, and will fail because this directory is not writable.
+    tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
 fi
 
 ls -l /output
