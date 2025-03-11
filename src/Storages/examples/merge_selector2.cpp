@@ -59,12 +59,13 @@ int main(int, char **)
     size_t sum_size_written = sum_parts_size;
     size_t num_merges = 1;
     size_t age_passed = 0;
+    const std::vector<size_t> max_merge_sizes = {100ULL * 1024 * 1024 * 1024};
 
     while (parts.size() > 1)
     {
-        PartsRange selected_parts = selector.select(ranges, 100ULL * 1024 * 1024 * 1024, nullptr);
+        PartsRanges selected_ranges = selector.select(ranges, max_merge_sizes, nullptr);
 
-        if (selected_parts.empty())
+        if (selected_ranges.empty())
         {
             ++age_passed;
 
@@ -94,6 +95,7 @@ int main(int, char **)
         }
         std::cout << "Time passed: " << age_passed << "\n";
 
+        PartsRange selected_parts = std::move(selected_ranges[0]);
         size_t sum_merged_size = 0;
         int64_t min_block = 0;
         int64_t max_block = 0;
