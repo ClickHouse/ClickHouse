@@ -233,6 +233,9 @@ ActionsDAG::ActionsDAG(const ColumnsWithTypeAndName & inputs_)
 
 ActionsDAG::Node & ActionsDAG::addNode(Node node)
 {
+    if (node.column && !WhichDataType(node.result_type).isSet() && typeid_cast<const ColumnConst *>(node.column.get()) == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add node {} because it has non-constant column {}", node.result_name, node.column->dumpStructure());
+
     auto & res = nodes.emplace_back(std::move(node));
 
     if (res.type == ActionType::INPUT)
@@ -257,7 +260,7 @@ const ActionsDAG::Node & ActionsDAG::addInput(ColumnWithTypeAndName column)
     node.type = ActionType::INPUT;
     node.result_type = std::move(column.type);
     node.result_name = std::move(column.name);
-    node.column = std::move(column.column);
+    //node.column = std::move(column.column);
 
     return addNode(std::move(node));
 }
