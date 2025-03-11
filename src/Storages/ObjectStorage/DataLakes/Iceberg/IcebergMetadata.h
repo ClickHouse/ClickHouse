@@ -1,5 +1,4 @@
 #pragma once
-#include "Common/logger_useful.h"
 #include "config.h"
 
 #if USE_AVRO
@@ -128,12 +127,6 @@ private:
     Iceberg::ManifestListIterator getManifestList(const String & filename) const;
 
     Int64 getRelevantSnapshotId(const Poco::JSON::Object::Ptr & metadata, const ContextPtr & local_context) const;
-
-    bool needUpdateSnapshot(Int64 snapshot_id) const;
-
-    void addTableSchemaById(Int32 schema_id);
-
-    Iceberg::IcebergSnapshot getSnapshot(Int64 snapshot_id) const;
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 

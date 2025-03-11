@@ -364,7 +364,7 @@ void IcebergMetadata::updateSnapshot()
         }
     }
     throw Exception(
-        ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+        ErrorCodes::BAD_ARGUMENTS,
         "No manifest list is found for snapshot id `{}` in metadata for iceberg table `{}`",
         relevant_snapshot_id,
         configuration_ptr->getPath());
@@ -660,7 +660,10 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 
 
     if (!filter_dag)
-        return (cached_unprunned_files_for_last_processed_snapshot = data_files).value();
+    {
+        cached_unprunned_files_for_last_processed_snapshot = data_files;
+        return cached_unprunned_files_for_last_processed_snapshot.value();
+    }
 
     return data_files;
 }
