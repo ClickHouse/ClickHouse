@@ -49,7 +49,7 @@ struct ChooseContext
     const bool aggressive;
 };
 
-MergeSelectorChoices tryChooseTTLMerge(const ChooseContext ctx)
+MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
 {
     /// Delete parts - 1 priority
     if (!ctx.max_merge_sizes.empty())
@@ -83,7 +83,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext ctx)
     return {};
 }
 
-MergeSelectorChoices tryChooseRegularMerge(const ChooseContext ctx)
+MergeSelectorChoices tryChooseRegularMerge(const ChooseContext & ctx)
 {
     const auto algorithm = ctx.merge_tree_settings[MergeTreeSetting::merge_selector_algorithm];
 
