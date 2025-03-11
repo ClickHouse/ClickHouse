@@ -6,7 +6,7 @@ sidebar_label: Tuple(T1, T2, ...)
 
 # Tuple(T1, T2, ...)
 
-A tuple of elements, each having an individual [type](../../sql-reference/data-types/index.md#data_types). Tuple must contain at least one element.
+A tuple of elements, each having an individual [type](/sql-reference/data-types). Tuple must contain at least one element.
 
 Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../../sql-reference/operators/in.md) and [Higher order functions](/sql-reference/functions/overview#higher-order-functions).
 
@@ -62,7 +62,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 
 ## Data Type Detection {#data-type-detection}
 
-When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](../../sql-reference/syntax.md#null-literal), the interfered type is [Nullable](../../sql-reference/data-types/nullable.md).
+When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/operations/settings/formats#input_format_null_as_default), the interfered type is [Nullable](../../sql-reference/data-types/nullable.md).
 
 Example of automatic data type detection:
 

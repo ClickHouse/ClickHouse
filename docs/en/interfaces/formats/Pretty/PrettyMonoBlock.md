@@ -16,7 +16,7 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 ## Description {#description}
 
 Differs from the [`Pretty`](/interfaces/formats/Pretty) format in that up to `10,000` rows are buffered,
-and then output as a single table, and not by [blocks](../../../development/architecture.md/#block-block).
+and then output as a single table, and not by [blocks](/development/architecture#block).
 
 ## Example Usage {#example-usage}
 

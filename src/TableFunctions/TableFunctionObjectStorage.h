@@ -4,6 +4,7 @@
 #include <Formats/FormatFactory.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <TableFunctions/ITableFunction.h>
 #include "config.h"
@@ -130,7 +131,7 @@ public:
 
     virtual void parseArgumentsImpl(ASTs & args, const ContextPtr & context)
     {
-        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true, &settings);
+        StorageObjectStorage::Configuration::initialize(*getConfiguration(), args, context, true, settings);
     }
 
     static void updateStructureAndFormatArgumentsIfNeeded(
@@ -163,7 +164,7 @@ protected:
     mutable ConfigurationPtr configuration;
     mutable ObjectStoragePtr object_storage;
     ColumnsDescription structure_hint;
-    StorageObjectStorageSettings settings;
+    std::shared_ptr<StorageObjectStorageSettings> settings;
 
     std::vector<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr context) const override;
 };

@@ -101,6 +101,12 @@ public:
         return res;
     }
 
+    bool contains(const Key & key) const
+    {
+        std::lock_guard lock(mutex);
+        return cache_policy->contains(key);
+    }
+
     void set(const Key & key, const MappedPtr & mapped)
     {
         std::lock_guard lock(mutex);

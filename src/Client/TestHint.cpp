@@ -7,6 +7,8 @@
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 
+#include <fmt/ranges.h>
+
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;

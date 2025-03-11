@@ -95,7 +95,7 @@ Result:
 
 ## -State {#-state}
 
-If you apply this combinator, the aggregate function does not return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
+If you apply this combinator, the aggregate function does not return the resulting value (such as the number of unique values for the [uniq](/sql-reference/aggregate-functions/reference/uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
 
 :::note
 Please notice, that -MapState is not an invariant for the same data due to the fact that order of data in intermediate state can change, though it doesn't impact ingestion of this data.
@@ -104,7 +104,7 @@ Please notice, that -MapState is not an invariant for the same data due to the f
 To work with these states, use:
 
 - [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
-- [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
+- [finalizeAggregation](/sql-reference/functions/other-functions#finalizeaggregation) function.
 - [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
 - [-Merge](#-merge) combinator.
 - [-MergeState](#-mergestate) combinator.
@@ -190,7 +190,7 @@ Result:
 
 Changes behavior of an aggregate function.
 
-This combinator converts a result of an aggregate function to the [Nullable](../../sql-reference/data-types/nullable.md) data type. If the aggregate function does not have values to calculate it returns [NULL](../../sql-reference/syntax.md#null-literal).
+This combinator converts a result of an aggregate function to the [Nullable](../../sql-reference/data-types/nullable.md) data type. If the aggregate function does not have values to calculate it returns [NULL](/operations/settings/formats#input_format_null_as_default).
 
 `-OrNull` can be used with other combinators.
 
@@ -286,7 +286,7 @@ Consider the `people` table with the following data:
 
 Let's get the names of the people whose age lies in the intervals of `[30,60)` and `[60,75)`. Since we use integer representation for age, we get ages in the `[30, 59]` and `[60,74]` intervals.
 
-To aggregate names in an array, we use the [groupArray](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray) aggregate function. It takes one argument. In our case, it's the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
+To aggregate names in an array, we use the [groupArray](/sql-reference/aggregate-functions/reference/grouparray) aggregate function. It takes one argument. In our case, it's the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
 
 ``` sql
 SELECT groupArrayResample(30, 75, 30)(name, age) FROM people

@@ -270,9 +270,13 @@ def get_creation_expression(
         raise Exception(f"Unknown iceberg storage type: {storage_type}")
 
 
-def check_schema_and_data(instance, table_expression, expected_schema, expected_data):
-    schema = instance.query(f"DESC {table_expression}")
-    data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL")
+def check_schema_and_data(instance, table_expression, expected_schema, expected_data, timestamp_ms=None):
+    if timestamp_ms:
+        schema = instance.query(f"DESC {table_expression} SETTINGS iceberg_timestamp_ms = {timestamp_ms}")
+        data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL SETTINGS iceberg_timestamp_ms = {timestamp_ms}")
+    else:
+        schema = instance.query(f"DESC {table_expression}")
+        data = instance.query(f"SELECT * FROM {table_expression} ORDER BY ALL")
     schema = list(
         map(
             lambda x: x.split("\t")[:2],
@@ -287,7 +291,6 @@ def check_schema_and_data(instance, table_expression, expected_schema, expected_
     )
     assert expected_schema == schema
     assert expected_data == data
-
 
 def get_uuid_str():
     return str(uuid.uuid4()).replace("-", "_")
@@ -2141,15 +2144,9 @@ def test_schema_evolution_with_time_travel(
         [["4"]],
     )
 
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["a", "Int32"]
-        ],
-        [],
-        timestamp_ms=first_timestamp_ms,
-    )
+    error_message = instance.query_and_get_error(f"SELECT * FROM {table_select_expression} ORDER BY ALL SETTINGS iceberg_timestamp_ms = {first_timestamp_ms}")
+    assert "No snapshot found in snapshot log before requested timestamp" in error_message
+
 
     second_timestamp_ms = int(datetime.now().timestamp() * 1000)
 
@@ -2171,16 +2168,6 @@ def test_schema_evolution_with_time_travel(
             ["b", "Nullable(Float64)"]
         ],
         [["4", "\\N"]],
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
-            ["a", "Int32"]
-        ],
-        [],
-        timestamp_ms=first_timestamp_ms,
     )
 
     check_schema_and_data(
@@ -2218,16 +2205,6 @@ def test_schema_evolution_with_time_travel(
         instance,
         table_select_expression,
         [
-            ["a", "Int32"]
-        ],
-        [],
-        timestamp_ms=first_timestamp_ms,
-    )
-
-    check_schema_and_data(
-        instance,
-        table_select_expression,
-        [
             ["a", "Int32"],
         ],
         [["4"]],
@@ -2238,12 +2215,63 @@ def test_schema_evolution_with_time_travel(
         instance,
         table_select_expression,
         [
+            ["a", "Int32"],        ],
+        [["4"]],
+        timestamp_ms=third_timestamp_ms,
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMNS (
+                c double
+            );
+        """
+    )
+
+    time.sleep(0.5)
+    fourth_timestamp_ms = int(datetime.now().timestamp() * 1000)
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
             ["a", "Int32"],
             ["b", "Nullable(Float64)"]
         ],
-        [["4", "\\N"]],
-        timestamp_ms=third_timestamp_ms,
+        [["4", "\\N"], ["7", "5"]],
+        timestamp_ms=fourth_timestamp_ms,
     )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ["a", "Int32"],
+            ["b", "Nullable(Float64)"],
+            ["c", "Nullable(Float64)"]
+        ],
+        [["4", "\\N", "\\N"], ["7", "5", "\\N"]],
+    )
+
+def get_last_snapshot(path_to_table):
+    import json
+    import os
+
+    metadata_dir = f"{path_to_table}/metadata/"
+    last_timestamp = 0
+    last_snapshot_id = -1
+    for filename in os.listdir(metadata_dir):
+        if filename.endswith('.json'):
+            filepath = os.path.join(metadata_dir, filename)
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+                print(data)
+                timestamp = data.get('last-updated-ms')
+                if (timestamp > last_timestamp):
+                    last_timestamp = timestamp
+                    last_snapshot_id = data.get('current-snapshot-id')
+    return last_snapshot_id
+    
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
@@ -2276,6 +2304,7 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster)
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
     snapshot1_timestamp = datetime.now(timezone.utc)
+    snapshot1_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
     time.sleep(0.1)
 
     write_iceberg_from_df(
@@ -2292,6 +2321,7 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         "",
     )
     snapshot2_timestamp = datetime.now(timezone.utc)
+    snapshot2_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
     time.sleep(0.1)
 
     write_iceberg_from_df(
@@ -2308,7 +2338,7 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         "",
     )
     snapshot3_timestamp = datetime.now(timezone.utc)
-
+    snapshot3_id = get_last_snapshot(f"/iceberg_data/default/{TABLE_NAME}/")
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY 1") == instance.query(
         "SELECT number, toString(number + 1) FROM numbers(300)"
@@ -2328,10 +2358,30 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         instance.query(
             f"""
                           SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_snapshot_id = {snapshot1_id}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(100)")
+    )
+
+
+    assert (
+        instance.query(
+            f"""
+                          SELECT * FROM {TABLE_NAME} ORDER BY 1
                           SETTINGS iceberg_timestamp_ms = {int(snapshot2_timestamp.timestamp() * 1000)}"""
         )
         == instance.query("SELECT number, toString(number + 1) FROM numbers(200)")
     )
+
+    assert (
+        instance.query(
+            f"""
+                          SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_snapshot_id = {snapshot2_id}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(200)")
+    )
+
 
     assert (
         instance.query(
@@ -2340,3 +2390,13 @@ def test_iceberg_snapshot_reads(started_cluster, format_version, storage_type):
         )
         == instance.query("SELECT number, toString(number + 1) FROM numbers(300)")
     )
+
+    assert (
+        instance.query(
+            f"""
+                          SELECT * FROM {TABLE_NAME} ORDER BY 1
+                          SETTINGS iceberg_snapshot_id = {snapshot3_id}"""
+        )
+        == instance.query("SELECT number, toString(number + 1) FROM numbers(300)")
+    )
+

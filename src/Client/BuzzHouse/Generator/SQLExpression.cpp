@@ -82,18 +82,22 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
             {
                 uint32_t col_counter = 0;
 
+                const uint32_t type_mask_backup = this->next_type_mask;
                 this->next_type_mask = fc.type_mask & ~(allow_nested);
                 SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type());
                 delete tp;
+                this->next_type_mask = type_mask_backup;
             }
         }
         if (rg.nextMediumNumber() < nested_prob)
         {
             uint32_t col_counter = 0;
 
+            const uint32_t type_mask_backup = this->next_type_mask;
             this->next_type_mask = fc.type_mask & ~(allow_nested);
             SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type());
             delete tp;
+            this->next_type_mask = type_mask_backup;
         }
         if (nsuboption < 6)
         {
@@ -552,10 +556,11 @@ void StatementGenerator::generateLambdaCall(RandomGenerator & rg, const uint32_t
 
 void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow_funcs, const bool allow_aggr, SQLFuncCall * func_call)
 {
-    const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : (CHFuncs.size() - 64);
+    const size_t funcs_size = this->allow_not_deterministic ? CHFuncs.size() : this->deterministic_funcs_limit;
     const bool nallow_funcs = allow_funcs && (!allow_aggr || rg.nextSmallNumber() < 8);
     const uint32_t nfuncs = static_cast<uint32_t>(
-        (nallow_funcs ? funcs_size : 0) + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : (CHAggrs.size() - 1)) : 0));
+        (nallow_funcs ? funcs_size : 0)
+        + (allow_aggr ? (this->allow_not_deterministic ? CHAggrs.size() : (CHAggrs.size() - this->deterministic_aggrs_limit)) : 0));
     std::uniform_int_distribution<uint32_t> next_dist(0, nfuncs - 1);
     uint32_t generated_params = 0;
 
@@ -669,13 +674,13 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         SQLFuncName * sfn = func_call->mutable_func();
 
         if (!this->functions.empty() && this->peer_query != PeerQuery::ClickHouseOnly
-            && (this->allow_not_deterministic || collectionHas<SQLFunction>([](const SQLFunction & f) { return f.is_deterministic; }))
+            && (this->allow_not_deterministic || collectionHas<SQLFunction>(StatementGenerator::funcDeterministicLambda))
             && rg.nextSmallNumber() < 3)
         {
             /// Use a function from the user
             const std::reference_wrapper<const SQLFunction> & func = this->allow_not_deterministic
                 ? std::ref<const SQLFunction>(rg.pickValueRandomlyFromMap(this->functions))
-                : rg.pickRandomlyFromVector(filterCollection<SQLFunction>([](const SQLFunction & f) { return f.is_deterministic; }));
+                : rg.pickRandomlyFromVector(filterCollection<SQLFunction>(StatementGenerator::funcDeterministicLambda));
 
             min_args = max_args = func.get().nargs;
             sfn->mutable_function()->set_function("f" + std::to_string(func.get().fname));
@@ -815,12 +820,14 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (noption < 501)
     {
         uint32_t col_counter = 0;
+        const uint32_t type_mask_backup = this->next_type_mask;
         CastExpr * casexpr = expr->mutable_comp_expr()->mutable_cast_expr();
 
         this->depth++;
         this->next_type_mask = fc.type_mask & ~(allow_nested);
         SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type());
         delete tp;
+        this->next_type_mask = type_mask_backup;
         this->generateExpression(rg, casexpr->mutable_expr());
         this->depth--;
     }
@@ -1053,7 +1060,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             }
             this->width -= nclauses;
         }
-        if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
+        if (!this->allow_not_deterministic || (this->width < this->fc.max_width && rg.nextSmallNumber() < 4))
         {
             generateOrderBy(rg, 0, true, wdf->mutable_order_by());
         }

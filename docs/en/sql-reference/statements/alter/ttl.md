@@ -87,4 +87,4 @@ The `TTL` is no longer there, so the second row is not deleted:
 **See Also**
 
 - More about the [TTL-expression](../../../sql-reference/statements/create/table.md#ttl-expression).
-- Modify column [with TTL](../../../sql-reference/statements/alter/column.md#alter_modify-column).
+- Modify column [with TTL](/sql-reference/statements/alter/ttl).

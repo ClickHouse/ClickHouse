@@ -63,8 +63,7 @@ public:
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
         const ConfigurationObserverPtr & configuration,
-        const ContextPtr & local_context,
-        bool allow_experimental_delta_kernel_rs);
+        const ContextPtr & local_context);
 
 
     std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(const String & data_path) const override
@@ -112,9 +111,11 @@ private:
     Poco::JSON::Object::Ptr last_metadata_object;
     Int32 format_version;
 
+
     Int32 relevant_snapshot_schema_id;
     std::optional<Iceberg::IcebergSnapshot> relevant_snapshot;
-    Int64 relevant_snapshot_id;
+    Int64 relevant_snapshot_id{-1};
+    String table_location;
 
     mutable std::optional<Strings> cached_unprunned_files_for_last_processed_snapshot;
 

@@ -2,7 +2,6 @@
 slug: /interfaces/formats
 sidebar_position: 21
 sidebar_label: View all formats...
-title: Formats for Input and Output Data
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -287,7 +286,7 @@ See [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow)
 
 ### JSON Formats Settings {#json-formats-settings}
 
-See [JSON Format Settings](/interfaces/formats/format-settings)
+See [JSON Format Settings](/operations/settings/formats)
 
 ### BSONEachRow {#bsoneachrow}
 
@@ -387,7 +386,7 @@ See [Prometheus](/interfaces/formats/Prometheus)
 
 ### Protobuf {#protobuf}
 
-See [Protobuf](/interfaces/formats/Protobuf/Protobuf)
+See [Protobuf](/interfaces/formats/Protobuf)
 
 ### ProtobufSingle {#protobufsingle}
 

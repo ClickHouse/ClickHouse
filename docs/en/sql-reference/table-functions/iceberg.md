@@ -79,6 +79,135 @@ Currently, it is not possible to change nested structures or the types of elemen
 
 ClickHouse supports partition pruning during SELECT queries for Iceberg tables, which helps optimize query performance by skipping irrelevant data files. Now it works with only identity transforms and time-based transforms (hour, day, month, year). To enable partition pruning, set `use_iceberg_partition_pruning = 1`.
 
+
+**Time Travel**
+
+ ClickHouse supports time travel for Iceberg tables, which allows you to query historical data by specifying of a timestamp. To enable time travel for a select query, set `iceberg_timestamp_ms` parameter to necessary UTC timestamp in milliseconds.
+
+ ```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_timestamp_ms = 1714636800000
+ ```
+
+ You need to take into account that the timestamp is applied to the snapshot, which is usualy created when new data is written to the table or compacation happens. Writers are not obliged to create new snapshot after any kind of schema changes. That means that you can get a bit unexpected results if you use timestamp from the past and used schema evolution. For example, pay attention to this spark code:
+
+ ```
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+  INSERT INTO spark_catalog.db.time_travel_example VALUES 
+    (1, 'Mars')
+
+    ts1 = now()
+
+    ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+
+    ts2 = now()
+
+    INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+
+    ts3 = now()
+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+
++------------+------------+-----+
+|order_number|product_code|price|
++------------+------------+-----+
+|           1|        Mars| NULL|
+|           2|       Venus|100.0|
++------------+------------+-----+
+```
+
+Pay attention that as a result of the query
+```
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+```
+
+you get the table with the following schema though alter column adding `price` was already applied:
+```
++------------+------------+
+|order_number|product_code|
++------------+------------+
+```
+
+That's because `ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)` doesn't create a new snapshot.
+
+Also this fact has two funny implications:
+
+The first one is that schema of queries with time travel applied in the current moment is not always equal to schema of table at the moment of query:
+
+```
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+
+  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+
+
+  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+
+  ts = now();
+
+  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+
+    +------------+------------+
+    |order_number|product_code|
+    +------------+------------+
+    |           2|       Venus|
+    +------------+------------+
+
+  SELECT * FROM spark_catalog.db.time_travel_example_2;
+
+
+    +------------+------------+-----+
+    |order_number|product_code|price|
+    +------------+------------+-----+
+    |           2|       Venus| NULL|
+    +------------+------------+-----+
+```
+
+The second one is that while doing time travel you can't get state of table before any data was written to it:
+
+```
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2');
+
+  ts = now();
+
+  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
+```
+
+In Clickhouse the behavior is the same as in Spark.
+
 **Aliases**
 
 Table function `iceberg` is an alias to `icebergS3` now.
