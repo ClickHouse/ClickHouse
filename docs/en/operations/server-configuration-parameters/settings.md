@@ -374,7 +374,6 @@ Type: `Double`
 Default: `0.5`
 
 ## io_thread_pool_queue_size {#io_thread_pool_queue_size}
->>>>>>> parent of 3de56117136 (Merge pull request #70102 from rschu1ze/skipping-index-cache2)
 
 The maximum number of jobs that can be scheduled on the IO Thread pool.
 
