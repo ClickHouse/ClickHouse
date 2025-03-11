@@ -160,10 +160,10 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
             if (t.isS3Engine())
             {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
             }
         }
