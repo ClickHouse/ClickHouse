@@ -2,6 +2,7 @@
 import datetime
 import logging
 import os
+import urllib.parse
 import uuid
 import bson
 import warnings
@@ -279,7 +280,7 @@ class SourceMongoURI(SourceMongo):
             host=self.docker_hostname,
             port=self.docker_port,
             user=self.user,
-            password=self.password,
+            password=urllib.parse.quote_plus(self.password),
             tbl=table_name,
             options=options,
         )
