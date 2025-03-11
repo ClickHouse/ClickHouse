@@ -132,14 +132,19 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
+        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true);
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {
         auto object_info = iterator->next(0);
-        if (object_info)
-            return object_info->getPath();
-        return "";
+        if (!object_info)
+            return "";
+
+        auto archive_object_info = std::dynamic_pointer_cast<StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive>(object_info);
+        if (archive_object_info)
+            return archive_object_info->getPathToArchive();
+
+        return object_info->getPath();
     });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }
