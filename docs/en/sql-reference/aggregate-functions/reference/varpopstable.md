@@ -1,10 +1,11 @@
 ---
 title: "varPopStable"
-slug: "/en/sql-reference/aggregate-functions/reference/varpopstable"
+slug: /sql-reference/aggregate-functions/reference/varpopstable
 sidebar_position: 211
+description: "Returns the population variance. Unlike varPop , this function uses a numerically stable algorithm. It works slower but provides a lower computational error."
 ---
 
-## varPopStable
+## varPopStable {#varpopstable}
 
 Returns the population variance. Unlike [`varPop`](../reference/varpop.md), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) algorithm. It works slower but provides a lower computational error.
 

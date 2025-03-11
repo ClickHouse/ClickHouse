@@ -50,7 +50,7 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from kazoo.client import KazooClient
+from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
@@ -238,30 +238,6 @@ def subprocess_check_call(
     return run_and_check(args, detach=detach, nothrow=nothrow, **kwargs)
 
 
-def get_odbc_bridge_path():
-    path = os.environ.get("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH")
-    if path is None:
-        server_path = os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH")
-        if server_path is not None:
-            return os.path.join(os.path.dirname(server_path), "clickhouse-odbc-bridge")
-        else:
-            return "/usr/bin/clickhouse-odbc-bridge"
-    return path
-
-
-def get_library_bridge_path():
-    path = os.environ.get("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH")
-    if path is None:
-        server_path = os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH")
-        if server_path is not None:
-            return os.path.join(
-                os.path.dirname(server_path), "clickhouse-library-bridge"
-            )
-        else:
-            return "/usr/bin/clickhouse-library-bridge"
-    return path
-
-
 def get_docker_compose_path():
     return LOCAL_DOCKER_COMPOSE_DIR
 
@@ -431,8 +407,6 @@ class ClickHouseCluster:
         base_config_dir=None,
         server_bin_path=None,
         client_bin_path=None,
-        odbc_bridge_bin_path=None,
-        library_bridge_bin_path=None,
         zookeeper_config_path=None,
         keeper_config_dir=None,
         custom_dockerd_host=None,
@@ -450,12 +424,6 @@ class ClickHouseCluster:
         self.server_bin_path = p.realpath(
             server_bin_path
             or os.environ.get("CLICKHOUSE_TESTS_SERVER_BIN_PATH", "/usr/bin/clickhouse")
-        )
-        self.odbc_bridge_bin_path = p.realpath(
-            odbc_bridge_bin_path or get_odbc_bridge_path()
-        )
-        self.library_bridge_bin_path = p.realpath(
-            library_bridge_bin_path or get_library_bridge_path()
         )
         self.client_bin_path = p.realpath(
             client_bin_path
@@ -1702,8 +1670,6 @@ class ClickHouseCluster:
             with_iceberg_catalog=with_iceberg_catalog,
             use_old_analyzer=use_old_analyzer,
             server_bin_path=self.server_bin_path,
-            odbc_bridge_bin_path=self.odbc_bridge_bin_path,
-            library_bridge_bin_path=self.library_bridge_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
             with_odbc_drivers=with_odbc_drivers,
             with_postgres=with_postgres,
@@ -2510,7 +2476,7 @@ class ClickHouseCluster:
                         )
                         errors = minio_client.remove_objects(bucket, delete_object_list)
                         for error in errors:
-                            logging.error(f"Error occured when deleting object {error}")
+                            logging.error(f"Error occurred when deleting object {error}")
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
@@ -3200,22 +3166,38 @@ class ClickHouseCluster:
         if fatal_log is not None:
             raise Exception("Fatal messages found: {}".format(fatal_log))
 
-    def pause_container(self, instance_name):
+    def _pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
 
-    def unpause_container(self, instance_name):
+    def _unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+
+    @contextmanager
+    def pause_container(self, instance_name):
+        '''Use it as following:
+        with cluster.pause_container(name):
+            useful_stuff()
+        '''
+        self._pause_container(instance_name)
+        try:
+            yield
+        finally:
+            self._unpause_container(instance_name)
 
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
 
-    def get_kazoo_client(self, zoo_instance_name, timeout: float = 30.0, retries=10):
+    def get_kazoo_client(
+        self, zoo_instance_name, timeout: float = 30.0, retries=10, external_port=None
+    ):
         use_ssl = False
         if self.with_zookeeper_secure:
             port = self.zookeeper_secure_port
             use_ssl = True
         elif self.with_zookeeper:
             port = self.zookeeper_port
+        elif external_port is not None:
+            port = external_port
         else:
             raise Exception("Cluster has no ZooKeeper")
 
@@ -3226,7 +3208,7 @@ class ClickHouseCluster:
         kazoo_retry = {
             "max_tries": retries,
         }
-        zk = KazooClient(
+        zk = KazooClientWithImplicitRetries(
             hosts=f"{ip}:{port}",
             timeout=timeout,
             connection_retry=kazoo_retry,
@@ -3291,8 +3273,6 @@ services:
             - {logs_dir}:/var/log/clickhouse-server/
             - /etc/passwd:/etc/passwd:ro
             {binary_volume}
-            {odbc_bridge_volume}
-            {library_bridge_volume}
             {external_dirs_volumes}
             {odbc_ini_path}
             {keytab_path}
@@ -3313,6 +3293,7 @@ services:
             - {env_file}
         security_opt:
             - label:disable
+            - seccomp:unconfined
         dns_opt:
             - attempts:2
             - timeout:1
@@ -3364,8 +3345,6 @@ class ClickHouseInstance:
         with_iceberg_catalog,
         use_old_analyzer,
         server_bin_path,
-        odbc_bridge_bin_path,
-        library_bridge_bin_path,
         clickhouse_path_dir,
         with_odbc_drivers,
         with_postgres,
@@ -3431,8 +3410,6 @@ class ClickHouseInstance:
         self.zookeeper_config_path = zookeeper_config_path
 
         self.server_bin_path = server_bin_path
-        self.odbc_bridge_bin_path = odbc_bridge_bin_path
-        self.library_bridge_bin_path = library_bridge_bin_path
 
         self.with_mysql_client = with_mysql_client
         self.with_mysql57 = with_mysql57
@@ -4768,26 +4745,8 @@ class ClickHouseInstance:
 
         if not self.with_installed_binary:
             binary_volume = "- " + self.server_bin_path + ":/usr/bin/clickhouse"
-            odbc_bridge_volume = (
-                "- " + self.odbc_bridge_bin_path + ":/usr/bin/clickhouse-odbc-bridge"
-            )
-            library_bridge_volume = (
-                "- "
-                + self.library_bridge_bin_path
-                + ":/usr/bin/clickhouse-library-bridge"
-            )
         else:
             binary_volume = "- " + self.server_bin_path + ":/usr/share/clickhouse_fresh"
-            odbc_bridge_volume = (
-                "- "
-                + self.odbc_bridge_bin_path
-                + ":/usr/share/clickhouse-odbc-bridge_fresh"
-            )
-            library_bridge_volume = (
-                "- "
-                + self.library_bridge_bin_path
-                + ":/usr/share/clickhouse-library-bridge_fresh"
-            )
 
         external_dirs_volumes = ""
         if self.external_dirs:
@@ -4817,8 +4776,6 @@ class ClickHouseInstance:
                     name=self.name,
                     hostname=self.hostname,
                     binary_volume=binary_volume,
-                    odbc_bridge_volume=odbc_bridge_volume,
-                    library_bridge_volume=library_bridge_volume,
                     instance_config_dir=instance_config_dir,
                     config_d_dir=self.config_d_dir,
                     db_dir=db_dir,

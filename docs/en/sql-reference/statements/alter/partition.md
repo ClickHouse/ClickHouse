@@ -1,11 +1,11 @@
 ---
-slug: /en/sql-reference/statements/alter/partition
+slug: /sql-reference/statements/alter/partition
 sidebar_position: 38
 sidebar_label: PARTITION
 title: "Manipulating Partitions and Parts"
 ---
 
-The following operations with [partitions](/docs/en/engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
+The following operations with [partitions](/engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:
 
 - [DETACH PARTITION\|PART](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
 - [DROP PARTITION\|PART](#drop-partitionpart) — Deletes a partition or part.
@@ -26,7 +26,7 @@ The following operations with [partitions](/docs/en/engines/table-engines/merget
 
 <!-- -->
 
-## DETACH PARTITION\|PART
+## DETACH PARTITION\|PART {#detach-partitionpart}
 
 ``` sql
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
@@ -45,9 +45,9 @@ Read about setting the partition expression in a section [How to set the partiti
 
 After the query is executed, you can do whatever you want with the data in the `detached` directory — delete it from the file system, or just leave it.
 
-This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](/docs/en/operations/system-tables/replicas.md/#system_tables-replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
+This query is replicated – it moves the data to the `detached` directory on all replicas. Note that you can execute this query only on a leader replica. To find out if a replica is a leader, perform the `SELECT` query to the [system.replicas](/operations/system-tables/replicas) table. Alternatively, it is easier to make a `DETACH` query on all replicas - all the replicas throw an exception, except the leader replicas (as multiple leaders are allowed).
 
-## DROP PARTITION\|PART
+## DROP PARTITION\|PART {#drop-partitionpart}
 
 ``` sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
@@ -66,7 +66,7 @@ ALTER TABLE mt DROP PARTITION '2020-11-21';
 ALTER TABLE mt DROP PART 'all_4_4_0';
 ```
 
-## DROP DETACHED PARTITION\|PART
+## DROP DETACHED PARTITION\|PART {#drop-detached-partitionpart}
 
 ``` sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
@@ -75,7 +75,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|par
 Removes the specified part or all parts of the specified partition from `detached`.
 Read more about setting the partition expression in a section [How to set the partition expression](#how-to-set-partition-expression).
 
-## FORGET PARTITION
+## FORGET PARTITION {#forget-partition}
 
 ``` sql
 ALTER TABLE table_name FORGET PARTITION partition_expr
@@ -91,7 +91,7 @@ Example:
 ALTER TABLE mt FORGET PARTITION '20201121';
 ```
 
-## ATTACH PARTITION\|PART
+## ATTACH PARTITION\|PART {#attach-partitionpart}
 
 ``` sql
 ALTER TABLE table_name [ON CLUSTER cluster] ATTACH PARTITION|PART partition_expr
@@ -114,7 +114,7 @@ If there is no part with the correct checksums, the data is downloaded from any 
 
 You can put data to the `detached` directory on one replica and use the `ALTER ... ATTACH` query to add it to the table on all replicas.
 
-## ATTACH PARTITION FROM
+## ATTACH PARTITION FROM {#attach-partition-from}
 
 ``` sql
 ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
@@ -134,7 +134,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same storage policy.
 - The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table's indices and projections.
 
-## REPLACE PARTITION
+## REPLACE PARTITION {#replace-partition}
 
 ``` sql
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
@@ -154,7 +154,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must have the same storage policy.
 - The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table's indices and projections.
 
-## MOVE PARTITION TO TABLE
+## MOVE PARTITION TO TABLE {#move-partition-to-table}
 
 ``` sql
 ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
@@ -170,7 +170,7 @@ For the query to run successfully, the following conditions must be met:
 - Both tables must be the same engine family (replicated or non-replicated).
 - The destination table must include all indices and projections from the source table. If the `enforce_index_structure_match_on_partition_manipulation` setting is enabled in destination table, the indices and projections must be identical. Otherwise, the destination table can have a superset of the source table's indices and projections.
 
-## CLEAR COLUMN IN PARTITION
+## CLEAR COLUMN IN PARTITION {#clear-column-in-partition}
 
 ``` sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
@@ -184,7 +184,7 @@ Example:
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
-## FREEZE PARTITION
+## FREEZE PARTITION {#freeze-partition}
 
 ``` sql
 ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
@@ -205,7 +205,7 @@ At the time of execution, for a data snapshot, the query creates hardlinks to a 
 - if the `WITH NAME` parameter is specified, then the value of the `'backup_name'` parameter is used instead of the incremental number.
 
 :::note
-If you use [a set of disks for data storage in a table](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.
+If you use [a set of disks for data storage in a table](/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-multiple-volumes), the `shadow/N` directory appears on every disk, storing data parts that matched by the `PARTITION` expression.
 :::
 
 The same structure of directories is created inside the backup as inside `/var/lib/clickhouse/`. The query performs `chmod` for all files, forbidding writing into them.
@@ -224,9 +224,9 @@ To restore data from a backup, do the following:
 
 Restoring from a backup does not require stopping the server.
 
-For more information about backups and restoring data, see the [Data Backup](/docs/en/operations/backup.md) section.
+For more information about backups and restoring data, see the [Data Backup](/operations/backup.md) section.
 
-## UNFREEZE PARTITION
+## UNFREEZE PARTITION {#unfreeze-partition}
 
 ``` sql
 ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
@@ -234,7 +234,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WIT
 
 Removes `freezed` partitions with the specified name from the disk. If the `PARTITION` clause is omitted, the query removes the backup of all partitions at once.
 
-## CLEAR INDEX IN PARTITION
+## CLEAR INDEX IN PARTITION {#clear-index-in-partition}
 
 ``` sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
@@ -242,7 +242,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION 
 
 The query works similar to `CLEAR COLUMN`, but it resets an index instead of a column data.
 
-## FETCH PARTITION|PART
+## FETCH PARTITION|PART {#fetch-partitionpart}
 
 ``` sql
 ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
@@ -277,9 +277,9 @@ Before downloading, the system checks if the partition exists and the table stru
 
 Although the query is called `ALTER TABLE`, it does not change the table structure and does not immediately change the data available in the table.
 
-## MOVE PARTITION\|PART
+## MOVE PARTITION\|PART {#move-partitionpart}
 
-Moves partitions or data parts to another volume or disk for `MergeTree`-engine tables. See [Using Multiple Block Devices for Data Storage](/docs/en/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-multiple-volumes).
+Moves partitions or data parts to another volume or disk for `MergeTree`-engine tables. See [Using Multiple Block Devices for Data Storage](/engines/table-engines/mergetree-family/mergetree.md/#table_engine-mergetree-multiple-volumes).
 
 ``` sql
 ALTER TABLE table_name [ON CLUSTER cluster] MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
@@ -298,9 +298,9 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
-## UPDATE IN PARTITION
+## UPDATE IN PARTITION {#update-in-partition}
 
-Manipulates data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
+Manipulates data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
 Syntax:
 
@@ -308,7 +308,7 @@ Syntax:
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
-### Example
+### Example {#example}
 
 ``` sql
 -- using partition name
@@ -318,13 +318,13 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ```
 
-### See Also
+### See Also {#see-also}
 
-- [UPDATE](/docs/en/sql-reference/statements/alter/update.md/#alter-table-update-statements)
+- [UPDATE](/sql-reference/statements/alter/partition#update-in-partition)
 
-## DELETE IN PARTITION
+## DELETE IN PARTITION {#delete-in-partition}
 
-Deletes data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/docs/en/sql-reference/statements/alter/index.md#mutations).
+Deletes data in the specifies partition matching the specified filtering expression. Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
 
 Syntax:
 
@@ -332,7 +332,7 @@ Syntax:
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
-### Example
+### Example {#example-1}
 
 ``` sql
 -- using partition name
@@ -342,11 +342,11 @@ ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 ```
 
-### See Also
+### See Also {#see-also-1}
 
-- [DELETE](/docs/en/sql-reference/statements/alter/delete.md/#alter-mutations)
+- [DELETE](/sql-reference/statements/alter/delete)
 
-## How to Set Partition Expression
+## How to Set Partition Expression {#how-to-set-partition-expression}
 
 You can specify the partition expression in `ALTER ... PARTITION` queries in different ways:
 
@@ -354,16 +354,16 @@ You can specify the partition expression in `ALTER ... PARTITION` queries in dif
 - Using the keyword `ALL`. It can be used only with DROP/DETACH/ATTACH/ATTACH FROM. For example, `ALTER TABLE visits ATTACH PARTITION ALL`.
 - As a tuple of expressions or constants that matches (in types) the table partitioning keys tuple. In the case of a single element partitioning key, the expression should be wrapped in the `tuple (...)` function. For example, `ALTER TABLE visits DETACH PARTITION tuple(toYYYYMM(toDate('2019-01-25')))`.
 - Using the partition ID. Partition ID is a string identifier of the partition (human-readable, if possible) that is used as the names of partitions in the file system and in ZooKeeper. The partition ID must be specified in the `PARTITION ID` clause, in a single quotes. For example, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
-- In the [ALTER ATTACH PART](#attach-partitionpart) and [DROP DETACHED PART](#drop-detached-partitionpart) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached_parts](/docs/en/operations/system-tables/detached_parts.md/#system_tables-detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+- In the [ALTER ATTACH PART](#attach-partitionpart) and [DROP DETACHED PART](#drop-detached-partitionpart) query, to specify the name of a part, use string literal with a value from the `name` column of the [system.detached_parts](/operations/system-tables/detached_parts) table. For example, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
 Usage of quotes when specifying the partition depends on the type of partition expression. For example, for the `String` type, you have to specify its name in quotes (`'`). For the `Date` and `Int*` types no quotes are needed.
 
-All the rules above are also true for the [OPTIMIZE](/docs/en/sql-reference/statements/optimize.md) query. If you need to specify the only partition when optimizing a non-partitioned table, set the expression `PARTITION tuple()`. For example:
+All the rules above are also true for the [OPTIMIZE](/sql-reference/statements/optimize.md) query. If you need to specify the only partition when optimizing a non-partitioned table, set the expression `PARTITION tuple()`. For example:
 
 ``` sql
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
-`IN PARTITION` specifies the partition to which the [UPDATE](/docs/en/sql-reference/statements/alter/update.md/#alter-table-update-statements) or [DELETE](/docs/en/sql-reference/statements/alter/delete.md/#alter-mutations) expressions are applied as a result of the `ALTER TABLE` query. New parts are created only from the specified partition. In this way, `IN PARTITION` helps to reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
+`IN PARTITION` specifies the partition to which the [UPDATE](/sql-reference/statements/alter/update) or [DELETE](/sql-reference/statements/alter/delete) expressions are applied as a result of the `ALTER TABLE` query. New parts are created only from the specified partition. In this way, `IN PARTITION` helps to reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
 
 The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).

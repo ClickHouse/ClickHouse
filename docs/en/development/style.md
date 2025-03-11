@@ -1,5 +1,5 @@
 ---
-slug: /en/development/style
+slug: /development/style
 sidebar_position: 70
 sidebar_label: C++ Style Guide
 ---
@@ -740,7 +740,7 @@ But other things being equal, cross-platform or portable code is preferred.
 
 **2.** Language: C++20 (see the list of available [C++20 features](https://en.cppreference.com/w/cpp/compiler_support#C.2B.2B20_features)).
 
-**3.** Compiler: `clang`. At the time of writing (July 2022), the code is compiled using clang version >= 12. (It can also be compiled using `gcc`, but it's untested and not suitable for production usage).
+**3.** Compiler: `clang`. At the time of writing (March 2025), the code is compiled using clang version >= 19.
 
 The standard library is used (`libc++`).
 
@@ -788,7 +788,7 @@ If your code in the `master` branch is not buildable yet, exclude it from the bu
 
 **1.** The C++20 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
 
-**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](contrib.md#adding-third-party-libraries) for details.
+**2.** It is not allowed to use libraries from OS packages. It is also not allowed to use pre-installed libraries. All libraries should be placed in form of source code in `contrib` directory and built with ClickHouse. See [Guidelines for adding new third-party libraries](/development/contrib#adding-and-maintaining-third-party-libraries) for details.
 
 **3.** Preference is always given to libraries that are already in use.
 

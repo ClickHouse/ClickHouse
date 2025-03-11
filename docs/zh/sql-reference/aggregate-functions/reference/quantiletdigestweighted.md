@@ -7,7 +7,7 @@ sidebar_position: 208
 
 使用[t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) 算法计算数字序列近似[分位数](https://en.wikipedia.org/wiki/Quantile)。该函数考虑了每个序列成员的权重。最大误差为1%。 内存消耗为 `log(n)`，这里 `n` 是值的个数。
 
-该函数的性能低于 [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile) 或 [quantileTiming](../../../sql-reference/aggregate-functions/reference/quantiletiming.md#quantiletiming) 的性能。 从状态大小和精度的比值来看，这个函数比 `quantile` 更优秀。
+该函数的性能低于 [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile) 或 [quantileTiming](/sql-reference/aggregate-functions/reference/quantiletiming) 的性能。 从状态大小和精度的比值来看，这个函数比 `quantile` 更优秀。
 
 结果取决于运行查询的顺序，并且是不确定的。
 
