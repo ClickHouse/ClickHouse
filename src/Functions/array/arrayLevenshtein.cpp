@@ -1,5 +1,8 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/PODArray.h>
 #include <Common/iota.h>
@@ -42,43 +45,26 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors args_descriptors;
-        switch (T::impl)
+        args_descriptors = FunctionArgumentDescriptors{
+            {"from", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"to", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"from_weights", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+            {"to_weights", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+        };
+        validateFunctionArguments(*this, arguments, args_descriptors);
+        for (size_t index = 2; index < 4; ++index)
         {
-            case 0:
-                args_descriptors = FunctionArgumentDescriptors{
-                    {"from", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-                    {"to", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-                };
-                validateFunctionArguments(*this, arguments, args_descriptors);
-                return std::make_shared<DataTypeUInt32>();
-            case 1:
-            case 2:
-                args_descriptors = FunctionArgumentDescriptors{
-                    {"from", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-                    {"to", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-                    {"from_weights", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-                    {"to_weights", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
-                };
-                validateFunctionArguments(*this, arguments, args_descriptors);
-                for (size_t index = 2; index < 4; ++index)
-                {
-                    const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
-                    auto nested_type = array_type->getNestedType();
-                    if (!WhichDataType(nested_type).isFloat64())
-                        throw Exception(
-                            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                            "Argument {} of function {} must be array of Float64. Found {} instead.",
-                            toString(index + 1),
-                            getName(),
-                            nested_type->getName());
-                }
-                return std::make_shared<DataTypeFloat64>();
+            const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
+            auto nested_type = array_type->getNestedType();
+            if (!WhichDataType(nested_type).isFloat64())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Argument {} of function {} must be array of Float64. Found {} instead.",
+                    toString(index + 1),
+                    getName(),
+                    nested_type->getName());
         }
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Unknown function {}. "
-            "Supported names: 'arrayLevenshtein', 'arrayLevenshteinWeighted', 'arraySimilarity'",
-            T::name);
+        return std::make_shared<DataTypeFloat64>();
     }
 
     ColumnPtr executeImpl(
@@ -104,31 +90,88 @@ public:
                     holders[i]->getName());
             columns[i] = assert_cast<const ColumnArray*>(holders[i].get());
         }
-        switch (T::impl)
-        {
-            case 0:
-                return simpleLevenshteinImpl(columns);
-            case 1:
-                return weightedLevenshteinImpl(columns, false);
-            case 2:
-                return weightedLevenshteinImpl(columns, true);
-        }
+        return execute(columns);
     }
 private:
-    ColumnPtr simpleLevenshteinImpl(std::vector<const ColumnArray *> columns) const
+    ColumnPtr execute(std::vector<const ColumnArray *>) const
     {
-        const ColumnArray * column_lhs = columns[0];
-        const ColumnArray * column_rhs = columns[1];
-        auto res = ColumnUInt32::create();
-        ColumnUInt32::Container & res_values = res->getData();
-        res_values.resize(column_lhs->size());
-        for (size_t row = 0; row < column_lhs->size(); row++)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unknown function {}. "
+            "Supported names: 'arrayLevenshtein', 'arrayLevenshteinWeighted', 'arraySimilarity'",
+            T::name);
+    }
+
+    template <typename N>
+    bool simpleLevenshteinString(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
+    {
+        const N * from_data = checkAndGetColumn<N>(&columns[0]->getData());
+        const N * to_data = checkAndGetColumn<N>(&columns[1]->getData());
+        if (!from_data || !to_data)
+            return false;
+        const ColumnArray::Offsets & from_offsets = columns[0]->getOffsets();
+        ColumnArray::Offset prev_from_offset = 0;
+
+        const ColumnArray::Offsets & to_offsets = columns[1]->getOffsets();
+        ColumnArray::Offset prev_to_offset = 0;
+
+        for (size_t row = 0; row < columns[0]->size(); row++)
         {
-            // Effective Levenshtein realization from Common/levenshteinDistance
-            Array lhs = (*column_lhs)[row].safeGet<Array>();
-            Array rhs = (*column_rhs)[row].safeGet<Array>();
-            const size_t m = lhs.size();
-            const size_t n = rhs.size();
+            const size_t m = from_offsets[row] - prev_from_offset;
+            const size_t n = to_offsets[row] - prev_to_offset;
+            if (m==0 || n==0)
+            {
+                prev_from_offset = from_offsets[row];
+                prev_to_offset = to_offsets[row];
+                res_values[row] = static_cast<UInt32>(std::max(m, n));
+                continue;
+            }
+            PODArrayWithStackMemory<size_t, 32> v0(n + 1);
+
+            iota(v0.data() + 1, n, size_t(1));
+
+            for (size_t j = 1; j <= m; ++j)
+            {
+                v0[0] = j;
+                size_t prev = j - 1;
+                for (size_t i = 1; i <= n; ++i)
+                {
+                    size_t old = v0[i];
+                    v0[i] = std::min(prev + (from_data->getDataAt(prev_from_offset + j - 1) != to_data->getDataAt(prev_to_offset + i - 1)),
+                            std::min(v0[i - 1], v0[i]) + 1);
+                    prev = old;
+                }
+            }
+            prev_from_offset = from_offsets[row];
+            prev_to_offset = to_offsets[row];
+            res_values[row] = static_cast<UInt32>(v0[n]);
+        }
+        return true;
+    }
+
+    template <typename N>
+    bool simpleLevenshteinNumber(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
+    {
+        const ColumnVectorOrDecimal<N> * column_from = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[0]->getData());
+        const ColumnVectorOrDecimal<N> * column_to = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[1]->getData());
+        if (!column_from || !column_to)
+            return false;
+        const PaddedPODArray<N> & vec_from = column_from->getData();
+        const ColumnArray::Offsets & from_offsets = columns[0]->getOffsets();
+        ColumnArray::Offset prev_from_offset = 0;
+
+        const PaddedPODArray<N> & vec_to = column_to->getData();
+        const ColumnArray::Offsets & to_offsets = columns[1]->getOffsets();
+        ColumnArray::Offset prev_to_offset = 0;
+
+        for (size_t row = 0; row < columns[0]->size(); row++)
+        {
+            const PaddedPODArray<N> from(vec_from.begin() + prev_from_offset, vec_from.begin() + from_offsets[row]);
+            prev_from_offset = from_offsets[row];
+            const PaddedPODArray<N> to(vec_to.begin() + prev_to_offset, vec_to.begin() + to_offsets[row]);
+            prev_to_offset = to_offsets[row];
+            const size_t m = from.size();
+            const size_t n = to.size();
             if (m==0 || n==0)
             {
                 res_values[row] = static_cast<UInt32>(std::max(m, n));
@@ -145,14 +188,14 @@ private:
                 for (size_t i = 1; i <= n; ++i)
                 {
                     size_t old = v0[i];
-                    v0[i] = std::min(prev + (lhs[j - 1] != rhs[i - 1]),
-                                     std::min(v0[i - 1], v0[i]) + 1);
+                    v0[i] = std::min(prev + (from[j - 1] != to[i - 1]),
+                            std::min(v0[i - 1], v0[i]) + 1);
                     prev = old;
                 }
             }
             res_values[row] = static_cast<UInt32>(v0[n]);
         }
-        return res;
+        return true;
     }
 
     ColumnPtr weightedLevenshteinImpl(std::vector<const ColumnArray *> columns, bool similarity) const
@@ -250,23 +293,98 @@ private:
 struct SimpleLevenshtein
 {
     static constexpr auto name{"arrayLevenshtein"};
-    static constexpr size_t impl = 0;
     static constexpr size_t arguments = 2;
 };
+
+template <>
+DataTypePtr FunctionArrayLevenshtein<SimpleLevenshtein>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    FunctionArgumentDescriptors args_descriptors;
+    args_descriptors = FunctionArgumentDescriptors{
+        {"from", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+        {"to", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
+    };
+    validateFunctionArguments(*this, arguments, args_descriptors);
+    return std::make_shared<DataTypeUInt32>();
+}
+
+
+template <>
+ColumnPtr FunctionArrayLevenshtein<SimpleLevenshtein>::execute(std::vector<const ColumnArray *> columns) const
+{
+    const ColumnArray * column_lhs = columns[0];
+    const ColumnArray * column_rhs = columns[1];
+    auto res = ColumnUInt32::create();
+    ColumnUInt32::Container & res_values = res->getData();
+    res_values.resize(column_lhs->size());
+    if (simpleLevenshteinNumber<UInt8>(columns, res_values) || simpleLevenshteinNumber<UInt16>(columns, res_values)
+        || simpleLevenshteinNumber<UInt32>(columns, res_values) || simpleLevenshteinNumber<UInt64>(columns, res_values)
+        || simpleLevenshteinNumber<UInt128>(columns, res_values) || simpleLevenshteinNumber<UInt256>(columns, res_values)
+        || simpleLevenshteinNumber<Int8>(columns, res_values) || simpleLevenshteinNumber<Int16>(columns, res_values)
+        || simpleLevenshteinNumber<Int32>(columns, res_values) || simpleLevenshteinNumber<Int64>(columns, res_values)
+        || simpleLevenshteinNumber<Int128>(columns, res_values) || simpleLevenshteinNumber<Int256>(columns, res_values)
+        || simpleLevenshteinNumber<Float32>(columns, res_values) || simpleLevenshteinNumber<Float64>(columns, res_values)
+        || simpleLevenshteinNumber<Decimal32>(columns, res_values) || simpleLevenshteinNumber<Decimal64>(columns, res_values)
+        || simpleLevenshteinNumber<Decimal128>(columns, res_values) || simpleLevenshteinNumber<Decimal256>(columns, res_values)
+        || simpleLevenshteinNumber<DateTime64>(columns, res_values)
+        || simpleLevenshteinString<ColumnString>(columns, res_values) || simpleLevenshteinString<ColumnFixedString>(columns, res_values) )
+        return res;
+    for (size_t row = 0; row < column_lhs->size(); row++)
+    {
+        // Effective Levenshtein realization from Common/levenshteinDistance
+        Array lhs = (*column_lhs)[row].safeGet<Array>();
+        Array rhs = (*column_rhs)[row].safeGet<Array>();
+        const size_t m = lhs.size();
+        const size_t n = rhs.size();
+        if (m==0 || n==0)
+        {
+            res_values[row] = static_cast<UInt32>(std::max(m, n));
+            continue;
+        }
+        PODArrayWithStackMemory<size_t, 32> v0(n + 1);
+
+        iota(v0.data() + 1, n, size_t(1));
+
+        for (size_t j = 1; j <= m; ++j)
+        {
+            v0[0] = j;
+            size_t prev = j - 1;
+            for (size_t i = 1; i <= n; ++i)
+            {
+                size_t old = v0[i];
+                v0[i] = std::min(prev + (lhs[j - 1] != rhs[i - 1]),
+                                 std::min(v0[i - 1], v0[i]) + 1);
+                prev = old;
+            }
+        }
+        res_values[row] = static_cast<UInt32>(v0[n]);
+    }
+    return res;
+}
 
 struct Weighted
 {
     static constexpr auto name{"arrayLevenshteinWeighted"};
-    static constexpr size_t impl = 1;
     static constexpr size_t arguments = 4;
 };
+
+template <>
+ColumnPtr FunctionArrayLevenshtein<Weighted>::execute(std::vector<const ColumnArray *> columns) const
+{
+    return weightedLevenshteinImpl(columns, false);
+}
 
 struct Similarity
 {
     static constexpr auto name{"arraySimilarity"};
-    static constexpr size_t impl = 2;
     static constexpr size_t arguments = 4;
 };
+
+template <>
+ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(std::vector<const ColumnArray *> columns) const
+{
+    return weightedLevenshteinImpl(columns, true);
+}
 
 REGISTER_FUNCTION(ArrayLevenshtein)
 {
