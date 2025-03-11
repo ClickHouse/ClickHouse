@@ -77,7 +77,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
-            {"query_plan_join_shard_by_pk_ranges", false, true, "New setting"},
+            {"query_plan_join_shard_by_pk_ranges", false, false, "New setting"},
             {"apply_settings_from_server", false, true, "Client-side code (e.g. INSERT input parsing and query output formatting) will use the same settings as the server, including settings from server config."},
             {"merge_tree_use_deserialization_prefixes_cache", true, true, "A new setting to control the usage of deserialization prefixes cache in MergeTree"},
             {"merge_tree_use_prefixes_deserialization_thread_pool", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"},
