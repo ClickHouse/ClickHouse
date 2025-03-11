@@ -2,7 +2,8 @@ import time
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster, ClickHouseKiller
+from pathlib import Path
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 
@@ -181,3 +182,40 @@ def test_restore_replica_alive_replicas(start_cluster):
     node_3.query("SYSTEM SYNC REPLICA test")
 
     check_after_restoration()
+
+
+def test_restore_replica_keep_going_on_broken_parts(start_cluster):
+    zk = cluster.get_kazoo_client("zoo1")
+    fill_table()
+
+    # Merging partition so part name will remain the same
+    partition = "0"
+    node_1.query(f"OPTIMIZE TABLE test PARTITION '{partition}' FINAL")
+    part_to_break = (
+        node_1.query(
+            f"SELECT name, path FROM system.parts WHERE table='test' and partition_id = '{partition}' and active=1 LIMIT 1"
+        )
+        .strip()
+        .split("\t")
+    )
+    part_name = part_to_break[0]
+    part_path = Path(part_to_break[1])
+    checksum_file_path = part_path / "columns.txt"
+
+    zk_rmr_with_retries(zk, "/clickhouse/tables/test")
+    assert zk.exists("/clickhouse/tables/test") is None
+    node_1.query("SYSTEM RESTART REPLICA test")
+    node_1.exec_in_container(["bash", "-c", f"rm {checksum_file_path}"])
+
+    node_1.query("SYSTEM RESTORE REPLICA test")
+
+    # One partition should be broken and will be detached after restore
+    assert (
+        "0"
+        == node_1.query(
+            f"SELECT count() FROM system.parts WHERE table = 'test' and partition_id = '{partition}'"
+        ).strip()
+    )
+    assert part_name in node_1.query(
+        "SELECT name FROM system.detached_parts WHERE table = 'test'"
+    )

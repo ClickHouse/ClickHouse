@@ -273,6 +273,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int FAULT_INJECTED;
     extern const int CANNOT_FORGET_PARTITION;
+    extern const int KEEPER_EXCEPTION;
 }
 
 namespace ActionLocks
@@ -929,7 +930,7 @@ bool StorageReplicatedMergeTree::createTableIfNotExists(const StorageMetadataPtr
     return table_created;
 }
 
-bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMetadataPtr & metadata_snapshot, QueryStatusPtr process_list_element) const
+bool StorageReplicatedMergeTree::createTableIfNotExistsAttempt(const StorageMetadataPtr &  metadata_snapshot, QueryStatusPtr process_list_element) const
 {
     auto zookeeper = getZooKeeper();
     zookeeper->createAncestors(zookeeper_path);
@@ -6831,8 +6832,19 @@ void StorageReplicatedMergeTree::restoreMetadataInZooKeeper(const ZooKeeperRetri
 
     if (is_first_replica)
         for (const String& part_name : active_parts_names)
-            attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
+        {
+            try
+            {
+                attachPartition(std::make_shared<ASTLiteral>(part_name), metadata_snapshot, true, getContext());
+            }
+            catch (const DB::Exception & e)
+            {
+                if (e.code() == ErrorCodes::NO_ZOOKEEPER || e.code() == ErrorCodes::KEEPER_EXCEPTION)
+                    throw;
 
+                LOG_WARNING(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
+            }
+        }
     LOG_INFO(log, "Attached all partitions, starting table");
 
     startupImpl(/* from_attach_thread */ false, zookeeper_retries_info);
