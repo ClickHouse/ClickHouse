@@ -124,6 +124,8 @@ private:
     Iceberg::ManifestList initializeManifestList(const String & filename) const;
     mutable std::vector<Iceberg::ManifestFileEntry> positional_delete_files_for_current_query;
 
+    void addTableSchemaById(Int32 schema_id);
+
     Iceberg::ManifestListIterator getManifestList(const String & filename) const;
 
     Int64 getRelevantSnapshotId(const Poco::JSON::Object::Ptr & metadata, const ContextPtr & local_context) const;
