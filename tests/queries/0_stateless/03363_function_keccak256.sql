@@ -1,3 +1,5 @@
+-- Tags: no-fasttest
+
 SELECT hex(keccak256(''));
 SELECT hex(keccak256(unhex('')));
 SELECT hex(keccak256('hello'));
