@@ -777,12 +777,20 @@ static void formatExplain(IQueryPlanStep::FormatSettings & settings, Pipes pipes
 void ReadFromRemote::describeDistributedPlan(FormatSettings & settings, const ExplainPlanOptions & options)
 {
     Block header{ColumnWithTypeAndName{ColumnString::create(), std::make_shared<DataTypeString>(), "explain"}};
-    ClusterProxy::SelectStreamFactory::Shards used_shards = shards;
+    ClusterProxy::SelectStreamFactory::Shards used_shards;
 
-    for (auto & shard : used_shards)
+    for (const auto & shard : shards)
     {
-        shard.header = header;
-        shard.query = makeExplain(options, shard.query);
+        if (shard.query_plan)
+        {
+            shard.query_plan->explainPlan(settings.out, options, settings.offset / std::max<size_t>(settings.indent, 1) + 1);
+        }
+        else
+        {
+            auto & shard_copy = used_shards.emplace_back(shard);
+            shard_copy.header = header;
+            shard_copy.query = makeExplain(options, shard.query);
+        }
     }
 
     formatExplain(settings, addPipes(used_shards, header));

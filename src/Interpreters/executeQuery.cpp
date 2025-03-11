@@ -87,6 +87,7 @@
 
 namespace ProfileEvents
 {
+    extern const Event Query;
     extern const Event FailedQuery;
     extern const Event FailedInsertQuery;
     extern const Event FailedSelectQuery;
@@ -1724,6 +1725,8 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 
     try
     {
+        ProfileEvents::increment(ProfileEvents::Query);
+
         if (auto txn = context->getCurrentTransaction())
         {
             chassert(txn->getState() != MergeTreeTransaction::COMMITTING);
