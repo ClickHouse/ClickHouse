@@ -119,7 +119,7 @@ private:
 
     void createConsumersConnection();
     void createConsumers();
-    
+
     bool subscribeConsumers();
     void unsubscribeConsumers();
 

@@ -67,7 +67,7 @@ void NATSConsumer::subscribe()
 void NATSConsumer::unsubscribe()
 {
     subscriptions.clear();
-    
+
     LOG_DEBUG(log, "Consumer {} unsubscribed", static_cast<void*>(this));
 }
 

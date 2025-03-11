@@ -133,7 +133,7 @@ StorageNATS::StorageNATS(
 
     try
     {
-        createConsumersConnection();        
+        createConsumersConnection();
     }
     catch (...)
     {
@@ -363,11 +363,11 @@ void StorageNATS::read(
 {
     if (!consumers_connection || num_created_consumers == 0)
         throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "NATS consumers setup not finished. Connection might be not established");
-    
+
     if (!local_context->getSettingsRef()[Setting::stream_like_engine_allow_direct_select])
         throw Exception(
             ErrorCodes::QUERY_NOT_ALLOWED, "Direct select is not allowed. To enable use setting `stream_like_engine_allow_direct_select`");
-    
+
     if (mv_attached)
         throw Exception(ErrorCodes::QUERY_NOT_ALLOWED, "Cannot read from StorageNATS with attached materialized views");
 
