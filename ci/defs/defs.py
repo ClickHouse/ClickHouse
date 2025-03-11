@@ -88,6 +88,15 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-util"],
     ),
+    # TODO: fix build failure:
+    # 7 58.76 In file included from ./../code-sign-blobs/superblob.h:7:
+    # 7 58.76 ./../code-sign-blobs/blob.h:185:60: error: no member named 'clone' in 'Security::BlobCore'
+    # Docker.Config(
+    #     name="clickhouse/cctools",
+    #     path="./docker/packager/cctools",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=["clickhouse/fasttest"],
+    # ),
     Docker.Config(
         name="clickhouse/binary-builder",
         path="./docker/packager/binary-builder",
@@ -103,12 +112,6 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/test-old-ubuntu",
         path="./ci/docker/compatibility/ubuntu",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/cctools",
-        path="./docker/packager/cctools",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
