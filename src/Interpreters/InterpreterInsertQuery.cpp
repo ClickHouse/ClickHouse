@@ -510,7 +510,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     std::vector<Chain> presink_chains;
     for (size_t i = 0; i < presink_streams_size; ++i)
     {
-        auto out = views_manager->createPreSink(table->getStorageID());
+        auto out = views_manager->createPreSink();
         out.addViewsManager(views_manager);
         presink_chains.emplace_back(std::move(out));
     }
@@ -522,10 +522,10 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         out.addViewsManager(views_manager);
 
         if (!no_destination)
-            out.appendChainNotStrict(views_manager->createSink(table->getStorageID()));
+            out.appendChainNotStrict(views_manager->createSink());
 
         if (!table->noPushingToViews())
-            out.appendChainNotStrict(views_manager->createPostSink(table->getStorageID()));
+            out.appendChainNotStrict(views_manager->createPostSink());
 
         sink_chains.emplace_back(std::move(out));
     }
@@ -579,9 +579,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block, getContext());
 
-    Chain chain = views_manager->createPreSink(table->getStorageID());
-    chain.appendChainNotStrict(views_manager->createSink(table->getStorageID()));
-    chain.appendChainNotStrict(views_manager->createPostSink(table->getStorageID()));
+    Chain chain = views_manager->createPreSink();
+    chain.appendChainNotStrict(views_manager->createSink());
+    chain.appendChainNotStrict(views_manager->createPostSink());
     chain.addViewsManager(views_manager);
 
     if (!settings[Setting::insert_deduplication_token].value.empty())
