@@ -13,7 +13,6 @@ from kazoo.exceptions import NoNodeError
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
 from helpers.s3_queue_common import run_query, random_str, generate_random_files, put_s3_file_content, put_azure_file_content, create_table, create_mv, generate_random_string, add_instances
-from helpers.s3_tools import prepare_s3_bucket
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 DEFAULT_AUTH = ["'minio'", "'minio123'"]
@@ -58,6 +57,53 @@ def started_cluster():
         yield cluster
     finally:
         cluster.shutdown()
+
+
+def prepare_public_s3_bucket(started_cluster):
+    def create_bucket(client, bucket_name, policy):
+        if client.bucket_exists(bucket_name):
+            client.remove_bucket(bucket_name)
+
+        client.make_bucket(bucket_name)
+
+        client.set_bucket_policy(bucket_name, json.dumps(policy))
+
+    def get_policy_with_public_access(bucket_name):
+        return {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Sid": "",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": [
+                        "s3:GetBucketLocation",
+                        "s3:ListBucket",
+                    ],
+                    "Resource": f"arn:aws:s3:::{bucket_name}",
+                },
+                {
+                    "Sid": "",
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": [
+                        "s3:GetObject",
+                        "s3:PutObject",
+                        "s3:DeleteObject",
+                    ],
+                    "Resource": f"arn:aws:s3:::{bucket_name}/*",
+                },
+            ],
+        }
+
+    minio_client = started_cluster.minio_client
+
+    started_cluster.minio_public_bucket = f"{started_cluster.minio_bucket}-public"
+    create_bucket(
+        minio_client,
+        started_cluster.minio_public_bucket,
+        get_policy_with_public_access(started_cluster.minio_public_bucket),
+    )
 
 
 # TODO: Update the modes for this test to include "ordered" once PR #55795 is finished.
@@ -455,7 +501,7 @@ def test_s3_client_reused(started_cluster):
             int(node.query(f"SELECT count() FROM {dst_table_name}")) == expected_count
         )
 
-    prepare_s3_bucket(started_cluster)
+    prepare_public_s3_bucket(started_cluster)
 
     s3_clients_before = get_created_s3_clients_count()
 
