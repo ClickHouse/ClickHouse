@@ -73,8 +73,8 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
             min_value = Settings::castValueUtil(setting_name, *min_value);
         if (max_value)
             max_value = Settings::castValueUtil(setting_name, *max_value);
-        for (auto & value : disallowed_values)
-            value = Settings::castValueUtil(setting_name, value);
+        for (auto & allowed_value : disallowed_values)
+            value = Settings::castValueUtil(setting_name, allowed_value);
     }
 }
 
