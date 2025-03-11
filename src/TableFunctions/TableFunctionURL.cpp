@@ -15,6 +15,9 @@
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromVector.h>
+
+#include <Storages/StorageFile.h>
+
 namespace DB
 {
 
@@ -80,7 +83,29 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
 StoragePtr TableFunctionURL::getStorage(
     const String & source, const String & format_, const ColumnsDescription & columns, ContextPtr global_context,
     const std::string & table_name, const String & compression_method_) const
-{
+{   
+    Poco::URI uri(source);
+    String scheme = uri.getScheme();
+    
+    if (scheme == "file")
+    {
+        WithContextImpl<> context_wrapper(global_context);
+        StorageFile::CommonArguments args
+        {
+        context_wrapper,
+        StorageID(getDatabaseName(), table_name),
+        format_,
+        std::nullopt, // format_settings
+        compression_method_,
+        columns,
+        ConstraintsDescription{},
+        "", // comment
+        "", // rename_after_processing
+        ""  // path_to_archive
+        };
+
+        return std::make_shared<StorageFile>(uri.getPath(), "", args);
+    }
     return std::make_shared<StorageURL>(
         source,
         StorageID(getDatabaseName(), table_name),
