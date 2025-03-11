@@ -895,11 +895,11 @@ def test_fixed_string_type_conversions(started_cluster):
     # Inserting into PostgreSQL fixed-sized strings
     node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') VALUES (['456'])")
     result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV")
-    assert result.strip() == "['123       ', '456       ']"
+    assert result.strip() == "['123       ']\n['456       ']"
 
-    node1.query("INSERT INTO test_fixed_string_type_conversions_array VALUES (ARRAY['789'])")
+    node1.query("INSERT INTO test_fixed_string_type_conversions_array VALUES (['789'])")
     result = node1.query("SELECT * FROM test_fixed_string_type_conversions_array FORMAT TSV")
-    assert result.strip() == "['123       ', '456       ', '789       ']"
+    assert result.strip() == "['123       ']\n['456       ']\n['789       ']"
 
     node1.query("DROP TABLE test_fixed_string_type_conversions_array")
 
