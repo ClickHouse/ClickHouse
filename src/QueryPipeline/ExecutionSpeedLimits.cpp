@@ -118,6 +118,15 @@ static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<A
     }
 }
 
+template bool ExecutionSpeedLimits::handleOverflowMode<double, unsigned long const&>(
+    OverflowMode, int, FormatStringHelper<double, unsigned long const&>, double&&, unsigned long const&);
+
+template bool ExecutionSpeedLimits::handleOverflowMode<double, double>(
+    OverflowMode, int, FormatStringHelper<double, double>, double&&, double&&);
+
+template bool ExecutionSpeedLimits::handleOverflowMode<double, long>(
+    OverflowMode, int, FormatStringHelper<double, long>, double&&, long&&);
+
 bool ExecutionSpeedLimits::checkTimeLimit(const UInt64 & elapsed_ns, OverflowMode overflow_mode) const
 {
     if (max_execution_time != 0)
