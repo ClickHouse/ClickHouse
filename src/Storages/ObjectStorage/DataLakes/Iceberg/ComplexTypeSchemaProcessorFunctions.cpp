@@ -154,9 +154,9 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
             if (path[j].parent_type == TransformType::STRUCT)
             {
                 if (std::holds_alternative<Tuple>(fixed_node))
-                    std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(fixed_node);
+                    std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(fixed_node);
                 else
-                    std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Array>(fixed_node);
+                    std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Array>(fixed_node);
                 fixed_node = nodes_in_path[j];
             }
             else
