@@ -530,14 +530,14 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                             "Cannot change old metadata structure, "
-                            "because someone is modifying it concurrently by another replica");
+                            "because someone is modifying it concurrently");
         }
 
         if (responses[0]->error == Coordination::Error::ZNONODE)
         {
             LOG_TRACE(log,
                       "Old processed node no longer exists, "
-                      "metadata must have been migrated concurrently, will recheck");
+                      "metadata must have been migrated concurrently by another replica, will recheck");
             continue;
         }
 
