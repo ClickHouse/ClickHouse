@@ -1,13 +1,13 @@
 #pragma once
 
-#include <string>
-#include <Core/Block.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Formats/FormatSettings.h>
 
+#include <string>
 
 namespace DB
 {
+class Block;
 class WriteBuffer;
 
 

@@ -16,7 +16,7 @@ DataTypePtr getSettingsTypeEnum()
     return std::make_shared<DataTypeEnum8>(
     DataTypeEnum8::Values
         {
-            {"Core", 0},
+            {"Session", 0},
             {"MergeTree", 1},
         });
 }
@@ -28,7 +28,7 @@ ColumnsDescription StorageSystemSettingsChanges::getColumnsDescription()
     /// TODO: Fill in all the comments
     return ColumnsDescription
     {
-        {"type", getSettingsTypeEnum(), "The group of settings (Core, MergeTree...)"},
+        {"type", getSettingsTypeEnum(), "The group of settings (Session, MergeTree...)"},
         {"version", std::make_shared<DataTypeString>(), "The ClickHouse server version."},
         {"changes",
          std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(

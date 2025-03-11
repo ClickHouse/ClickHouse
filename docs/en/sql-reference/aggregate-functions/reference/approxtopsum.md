@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/approxtopsum
+slug: /sql-reference/aggregate-functions/reference/approxtopsum
 sidebar_position: 108
+title: "approx_top_sum"
+description: "Returns an array of the approximately most frequent values and their counts in the specified column."
 ---
 
 # approx_top_sum

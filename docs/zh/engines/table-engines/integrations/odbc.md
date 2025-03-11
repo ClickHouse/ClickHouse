@@ -29,7 +29,7 @@ ENGINE = ODBC(connection_settings, external_database, external_table)
 表结构可以与源表结构不同:
 
 -   列名应与源表中的列名相同，但您可以按任何顺序使用其中的一些列。
--   列类型可能与源表中的列类型不同。 ClickHouse尝试将数值[映射](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 到ClickHouse的数据类型。
+-   列类型可能与源表中的列类型不同。 ClickHouse尝试将数值[映射](/sql-reference/functions/type-conversion-functions#cast) 到ClickHouse的数据类型。
 -   设置 `external_table_functions_use_nulls` 来定义如何处理 Nullable 列. 默认值是 true, 当设置为 false 时 - 表函数将不会使用 nullable 列，而是插入默认值来代替 null. 这同样适用于数组数据类型中的 null 值.
 
 **引擎参数**

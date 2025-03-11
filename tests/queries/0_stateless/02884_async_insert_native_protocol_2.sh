@@ -21,7 +21,7 @@ wait
 $CLICKHOUSE_CLIENT -q "
     SELECT * FROM t_async_insert_native_2 ORDER BY id;
 
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS asynchronous_insert_log;
 
     SELECT format, status, rows, data_kind, format
     FROM system.asynchronous_insert_log

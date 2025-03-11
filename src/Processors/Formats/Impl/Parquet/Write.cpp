@@ -618,6 +618,14 @@ void writeColumnImpl(
 
     bool use_dictionary = options.use_dictionary_encoding && !s.is_bool;
 
+    /// For some readers filter pushdown implementations it's inconvenient if a row straddles pages,
+    /// so let's be nice to them and avoid that. This matches arrow's logic.
+    /// If we ever use DataPageV2, enable this flag in that case too:
+    /// bool pages_change_on_record_boundaries = options.write_page_index || options.data_page_v2;
+    bool pages_change_on_record_boundaries = options.write_page_index;
+    /// If there are no arrays, record boundaries are everywhere.
+    pages_change_on_record_boundaries &= s.max_rep > 0;
+
     std::optional<parquet::ColumnDescriptor> fixed_string_descr;
     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
     {
@@ -788,11 +796,21 @@ void writeColumnImpl(
             /// Bite off a batch of defs and corresponding data values.
             size_t def_count = std::min(options.write_batch_size, num_values - next_def_offset);
             size_t data_count = 0;
-            if (s.max_def == 0)
+            if (s.max_def == 0) // no arrays or nullables
                 data_count = def_count;
             else
                 for (size_t i = 0; i < def_count; ++i)
                     data_count += s.def[next_def_offset + i] == s.max_def;
+
+            if (pages_change_on_record_boundaries)
+            {
+                /// Each record (table row) starts with a value with rep = 0.
+                while (next_def_offset + def_count < num_values && s.rep[next_def_offset + def_count] != 0)
+                {
+                    data_count += s.def[next_def_offset + def_count] == s.max_def;
+                    ++def_count;
+                }
+            }
 
             /// Encode the data (but not the levels yet), so that we can estimate its encoded size.
             const typename ParquetDType::c_type * converted = converter.getBatch(next_data_offset, data_count);

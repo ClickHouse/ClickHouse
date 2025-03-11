@@ -5,7 +5,7 @@ slug: /zh/sql-reference/functions/functions-for-nulls
 
 ## isNull {#isnull}
 
-检查参数是否为[NULL](../../sql-reference/syntax.md#null-literal)。
+检查参数是否为[NULL](/operations/settings/formats#input_format_null_as_default)。
 
     isNull(x)
 
@@ -43,7 +43,7 @@ SELECT x FROM t_null WHERE isNull(y)
 
 ## isNotNull {#isnotnull}
 
-检查参数是否不为 [NULL](../../sql-reference/syntax.md#null-literal).
+检查参数是否不为 [NULL](/operations/settings/formats#input_format_null_as_default).
 
     isNotNull(x)
 

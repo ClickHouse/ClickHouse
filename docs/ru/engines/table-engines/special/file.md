@@ -20,7 +20,7 @@ sidebar_label: File
 File(Format)
 ```
 
-`Format` должен быть таким, который ClickHouse может использовать и в запросах `INSERT` и в запросах `SELECT`. Полный список поддерживаемых форматов смотрите в разделе [Форматы](../../../interfaces/formats.md#formats).
+`Format` должен быть таким, который ClickHouse может использовать и в запросах `INSERT` и в запросах `SELECT`. Полный список поддерживаемых форматов смотрите в разделе [Форматы](/interfaces/formats#formats-overview).
 
 Сервер ClickHouse не позволяет указать путь к файлу, с которым будет работать `File`. Используется путь к хранилищу, определенный параметром [path](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-path) в конфигурации сервера.
 

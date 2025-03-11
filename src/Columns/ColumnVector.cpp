@@ -1,16 +1,15 @@
 #include "ColumnVector.h"
 
+#include <base/bit_cast.h>
+#include <base/scope_guard.h>
+#include <base/sort.h>
+#include <base/unaligned.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
@@ -25,7 +24,6 @@
 #include <Common/iota.h>
 
 #include <bit>
-#include <cmath>
 #include <cstring>
 
 #if defined(__SSE2__)
@@ -283,7 +281,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
 
-                /// Radix sort treats all NaNs to be greater than all numbers.
+                /// Radix sort treats all positive NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
                 if (is_floating_point<T> && nan_direction_hint < 0)
                 {

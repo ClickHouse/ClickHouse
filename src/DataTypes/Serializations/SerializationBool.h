@@ -1,16 +1,18 @@
 #pragma once
 
 #include <DataTypes/Serializations/SerializationWrapper.h>
-#include <Columns/ColumnsNumber.h>
-#include <unordered_set>
 
 namespace DB
 {
+
+class IColumn;
 
 class SerializationBool final : public SerializationWrapper
 {
 public:
     explicit SerializationBool(const SerializationPtr & nested_);
+
+    void deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
@@ -19,6 +21,7 @@ public:
     bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
     void serializeTextJSON(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
+    void serializeTextJSONPretty(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, size_t) const override;
     void deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
 

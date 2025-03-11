@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/BlockNameMap.h>
 #include <Processors/Formats/RowInputFormatWithDiagnosticInfo.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/FormatSettings.h>
@@ -70,7 +71,7 @@ protected:
     bool with_types;
 
     std::unique_ptr<FormatReaderImpl> format_reader;
-    Block::NameMap column_indexes_by_names;
+    BlockNameMap column_indexes_by_names;
 
 private:
     bool is_binary;

@@ -45,7 +45,7 @@ function run_query()
     )
     $CLICKHOUSE_CLIENT "${opts[@]}" "$@" -q "$query"
 
-    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+    $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS processors_profile_log"
 
     echo "Used processors:"
     $CLICKHOUSE_CLIENT --param_query_id "$query_id" -q "SELECT DISTINCT name FROM system.processors_profile_log WHERE query_id = {query_id:String} AND name LIKE 'Aggregating%'"

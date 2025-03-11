@@ -128,6 +128,8 @@ void KeeperStateMachine<Storage>::init()
     {
         try
         {
+            std::lock_guard lock(snapshots_lock);
+
             latest_snapshot_buf = snapshot_manager.deserializeSnapshotBufferFromDisk(latest_log_index);
             auto snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_buf);
             latest_snapshot_info = snapshot_manager.getLatestSnapshotInfo();
@@ -653,6 +655,8 @@ bool KeeperStateMachine<Storage>::apply_snapshot(nuraft::snapshot & s)
     }
 
     { /// deserialize and apply snapshot to storage
+        std::lock_guard lock(snapshots_lock);
+
         SnapshotDeserializationResult<Storage> snapshot_deserialization_result;
         if (latest_snapshot_ptr)
             snapshot_deserialization_result = snapshot_manager.deserializeSnapshotFromBuffer(latest_snapshot_ptr);
@@ -800,6 +804,7 @@ void KeeperStateMachine<Storage>::create_snapshot(nuraft::snapshot & s, nuraft::
 
         when_done(ret, exception);
 
+        std::lock_guard lock(snapshots_lock);
         return ret ? latest_snapshot_info : nullptr;
     };
 

@@ -39,7 +39,7 @@ struct MultiEnum
         bitset |= toBitFlag(value);
     }
 
-    void unSet(EnumType value)
+    void unset(EnumType value)
     {
         bitset &= ~(toBitFlag(value));
     }

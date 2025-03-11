@@ -3,6 +3,8 @@
 #include <Storages/StorageValues.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/Pipe.h>
 
 

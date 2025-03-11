@@ -1,5 +1,7 @@
 #include <Processors/PingPongProcessor.h>
 
+#include <Core/Block.h>
+#include <Processors/Port.h>
 
 namespace DB
 {

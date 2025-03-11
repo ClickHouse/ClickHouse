@@ -117,11 +117,19 @@ void MongoDBSource::insertValue(IColumn & column, const size_t & idx, const Data
         }
         case TypeIndex::UUID:
         {
-            if (value.type() != bsoncxx::type::k_string)
-                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected string (UUID), got {} for column {}",
+            if (value.type() != bsoncxx::type::k_binary)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Type mismatch, expected uuid(binary subtype 4), got {} for column {}",
                                 bsoncxx::to_string(value.type()), name);
+            if (value.get_binary().sub_type != bsoncxx::binary_sub_type::k_uuid || value.get_binary().size != 16)
+                throw Exception(ErrorCodes::TYPE_MISMATCH, "Binary of type {} cannot be parsed to UUID for column {}",
+                    bsoncxx::to_string(value.get_binary().sub_type), name);
 
-            assert_cast<ColumnUUID &>(column).insertValue(parse<UUID>(value.get_string().value.data()));
+            UInt128 uuid_number;
+            auto valBuf = ReadBufferFromMemory(value.get_binary().bytes, value.get_binary().size);
+            readBinaryBigEndian(uuid_number.items[0], valBuf);
+            readBinaryBigEndian(uuid_number.items[1], valBuf);
+
+            assert_cast<ColumnUUID &>(column).insertValue(UUID(std::move(uuid_number)));
             break;
         }
         case TypeIndex::String:

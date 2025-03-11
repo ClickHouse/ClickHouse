@@ -35,7 +35,6 @@ using ASTPtr = std::shared_ptr<IAST>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 
-
 class ContextAccess : public std::enable_shared_from_this<ContextAccess>
 {
 public:

@@ -6,8 +6,8 @@ import time
 from multiprocessing.dummy import Pool
 
 import pytest
-from kazoo.client import KazooClient, KazooRetry
 from kazoo.handlers.threading import KazooTimeoutError
+from helpers.test_tools import get_retry_number
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
@@ -143,12 +143,9 @@ def get_genuine_zk(node, timeout=30.0):
     CONNECTION_RETRIES = 100
     for i in range(CONNECTION_RETRIES):
         try:
-            _genuine_zk_instance = KazooClient(
-                hosts=cluster.get_instance_ip(node.name) + ":2181",
-                timeout=timeout,
-                connection_retry=KazooRetry(max_tries=20),
+            _genuine_zk_instance = cluster.get_kazoo_client(
+                node.name, timeout=timeout, external_port=2181
             )
-            _genuine_zk_instance.start()
             return _genuine_zk_instance
         except KazooTimeoutError:
             if i == CONNECTION_RETRIES - 1:
@@ -161,9 +158,11 @@ def get_genuine_zk(node, timeout=30.0):
             restart_zookeeper(node)
 
 
-def test_snapshot_and_load(started_cluster):
+def test_snapshot_and_load(started_cluster, request):
     genuine_connection = None
     fake_zks = []
+
+    retry = get_retry_number(request)
 
     try:
         restart_and_clear_zookeeper(node1)
@@ -175,7 +174,7 @@ def test_snapshot_and_load(started_cluster):
             clear_clickhouse_data(node)
 
         for i in range(1000):
-            genuine_connection.create("/test" + str(i), b"data")
+            genuine_connection.create(f"/test_{retry}_{i}", b"data")
 
         print("Data loaded to zookeeper")
 
@@ -201,12 +200,12 @@ def test_snapshot_and_load(started_cluster):
         for i in range(1000):
             fake_zk = random.choice(fake_zks)
             try:
-                fake_zk.create("/test" + str(i + 1000), b"data")
+                fake_zk.create(f"/test_{retry}_{i+1000}", b"data")
             except Exception as ex:
                 print("Got exception:" + str(ex))
 
         print("Final")
-        fake_zks[0].create("/test10000", b"data")
+        fake_zks[0].create(f"/test_{retry}_10000", b"data")
     finally:
         for zk in fake_zks:
             if zk:

@@ -20,7 +20,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/JoinUtils.h>
-#include <Interpreters/NullableUtils.h>
+#include <DataTypes/NullableUtils.h>
 #include <Interpreters/RowRefs.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
@@ -418,7 +418,7 @@ size_t HashJoin::getTotalRowCount() const
 
 void HashJoin::doDebugAsserts() const
 {
-#ifndef NDEBUG
+#ifdef DEBUG_OR_SANITIZER_BUILD
     size_t debug_blocks_allocated_size = 0;
     for (const auto & block : data->blocks)
         debug_blocks_allocated_size += block.allocatedBytes();

@@ -12,7 +12,7 @@ sidebar_position: 191
 ``` sql
 uniqExact(x[, ...])
 ```
-如果你绝对需要一个确切的结果，使用 `uniqExact` 函数。 否则使用 [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) 函数。
+如果你绝对需要一个确切的结果，使用 `uniqExact` 函数。 否则使用 [uniq](/sql-reference/aggregate-functions/reference/uniq) 函数。
 
 `uniqExact` 函数比 `uniq` 使用更多的内存，因为状态的大小随着不同值的数量的增加而无界增长。
 
@@ -22,6 +22,6 @@ uniqExact(x[, ...])
 
 **参见**
 
--   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniq](/sql-reference/aggregate-functions/reference/uniq)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
 -   [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)

@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/system-tables/databases
+description: "System table containing information about the databases that are available to the current user."
+slug: /operations/system-tables/databases
+title: "system.databases"
+keywords: ["system table", "databases"]
 ---
-# databases
 
 Contains information about the databases that are available to the current user.
 

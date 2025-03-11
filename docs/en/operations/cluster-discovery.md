@@ -1,10 +1,10 @@
 ---
-slug: /en/operations/cluster-discovery
+slug: /operations/cluster-discovery
 sidebar_label: Cluster Discovery
 ---
 # Cluster Discovery
 
-## Overview
+## Overview {#overview}
 
 ClickHouse's Cluster Discovery feature simplifies cluster configuration by allowing nodes to automatically discover and register themselves without the need for explicit definition in the configuration files. This is especially beneficial in cases where the manual definition of each node becomes cumbersome.
 
@@ -22,9 +22,9 @@ To enable it include the `allow_experimental_cluster_discovery` setting in your 
 ```
 :::
 
-## Remote Servers Configuration
+## Remote Servers Configuration {#remote-servers-configuration}
 
-### Traditional Manual Configuration
+### Traditional Manual Configuration {#traditional-manual-configuration}
 
 Traditionally, in ClickHouse, each shard and replica in the cluster needed to be manually specified in the configuration:
 
@@ -56,7 +56,7 @@ Traditionally, in ClickHouse, each shard and replica in the cluster needed to be
 
 ```
 
-### Using Cluster Discovery
+### Using Cluster Discovery {#using-cluster-discovery}
 
 With Cluster Discovery, rather than defining each node explicitly, you simply specify a path in ZooKeeper. All nodes that register under this path in ZooKeeper will be automatically discovered and added to the cluster.
 
@@ -104,7 +104,7 @@ for `node3` and `node4`:
 </discovery>
 ```
 
-### Observer mode
+### Observer mode {#observer-mode}
 
 
 Nodes configured in observer mode will not register themselves as replicas.
@@ -119,7 +119,7 @@ To enable observer mode, include the `<observer/>` tag within the `<discovery>` 
 ```
 
 
-## Use-Cases and Limitations
+## Use-Cases and Limitations {#use-cases-and-limitations}
 
 As nodes are added or removed from the specified ZooKeeper path, they are automatically discovered or removed from the cluster without the need for configuration changes or server restarts.
 
@@ -138,7 +138,7 @@ Consider the following example with a cluster of 3 nodes:
 </remote_servers>
 ```
 
-```
+```sql
 SELECT * EXCEPT (default_database, errors_count, slowdowns_count, estimated_recovery_time, database_shard_name, database_replica_name)
 FROM system.clusters WHERE cluster = 'default';
 
@@ -159,7 +159,7 @@ INSERT INTO event_table ...
 
 Then, we add a new node to the cluster, starting a new node with the same entry in the `remote_servers` section in a configuration file:
 
-```
+```response
 ┌─cluster─┬─shard_num─┬─shard_weight─┬─replica_num─┬─host_name────┬─host_address─┬─port─┬─is_local─┬─user─┬─is_active─┐
 │ default │         1 │            1 │           1 │ 92d3c04025e8 │ 172.26.0.5   │ 9000 │        0 │      │      ᴺᵁᴸᴸ │
 │ default │         1 │            1 │           2 │ a6a68731c21b │ 172.26.0.4   │ 9000 │        1 │      │      ᴺᵁᴸᴸ │

@@ -5,6 +5,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/assert_cast.h>
 
 #include <Core/Settings.h>
 

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 
 #include <Parsers/queryToString.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 namespace DB
 {

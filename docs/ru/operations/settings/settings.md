@@ -122,8 +122,8 @@ ClickHouse применяет настройку в тех случаях, ко�
 
 **См. также**
 
--   [max_block_size](#setting-max_block_size)
--   [min_insert_block_size_rows](#min-insert-block-size-rows)
+-   [max_block_size](/operations/settings/settings#max_block_size)
+-   [min_insert_block_size_rows](/operations/settings/settings#min_insert_block_size_rows)
 
 ## enable_http_compression {#settings-enable_http_compression}
 
@@ -430,7 +430,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 ## input_format_null_as_default {#settings-input-format-null-as-default}
 
-Включает или отключает инициализацию [значениями по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) ячеек с [NULL](../../sql-reference/syntax.md#null-literal), если тип данных столбца не позволяет [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Включает или отключает инициализацию [значениями по умолчанию](/sql-reference/statements/create/table) ячеек с [NULL](/operations/settings/formats#input_format_null_as_default), если тип данных столбца не позволяет [хранить NULL](/sql-reference/data-types/nullable).
 Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
 Эта настройка используется для запросов [INSERT ... VALUES](../../sql-reference/statements/insert-into.md) для текстовых входных форматов.
@@ -444,7 +444,7 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 ## insert_null_as_default {#insert_null_as_default}
 
-Включает или отключает вставку [значений по умолчанию](../../sql-reference/statements/create/table.md#create-default-values) вместо [NULL](../../sql-reference/syntax.md#null-literal) в столбцы, которые не позволяют [хранить NULL](../../sql-reference/data-types/nullable.md#data_type-nullable).
+Включает или отключает вставку [значений по умолчанию](/sql-reference/statements/create/table) вместо [NULL](/operations/settings/formats#input_format_null_as_default) в столбцы, которые не позволяют [хранить NULL](/sql-reference/data-types/nullable).
 Если столбец не позволяет хранить `NULL` и эта настройка отключена, то вставка `NULL` приведет к возникновению исключения. Если столбец позволяет хранить `NULL`, то значения `NULL` вставляются независимо от этой настройки.
 
 Эта настройка используется для запросов [INSERT ... SELECT](../../sql-reference/statements/insert-into.md#inserting-the-results-of-select). При этом подзапросы `SELECT` могут объединяться с помощью `UNION ALL`.
@@ -529,12 +529,12 @@ SELECT * FROM table_with_enum_column_for_tsv_insert;
 
 Поддерживаемые форматы:
 
-- [CSVWithNamesAndTypes](../../interfaces/formats.md#csvwithnamesandtypes)
-- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md#tabseparatedwithnamesandtypes)
-- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompacteachrowwithnamesandtypes)
-- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md#jsoncompactstringseachrowwithnamesandtypes)
-- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
-- [CustomSeparatedWithNamesAndTypes](../../interfaces/formats.md#customseparatedwithnamesandtypes)
+- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
+- [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
+- [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
+- [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
+- [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
+- [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
 
 Возможные значения:
 
@@ -566,7 +566,7 @@ ClickHouse может парсить только базовый формат `Y
 -   [Тип данных DateTime.](../../sql-reference/data-types/datetime.md)
 -   [Функции для работы с датой и временем.](../../sql-reference/functions/date-time-functions.md)
 
-## date_time_output_format {#settings-date_time_output_format}
+## date_time_output_format {#date_time_output_format}
 
 Позволяет выбрать разные выходные форматы текстового представления даты и времени.
 
@@ -593,7 +593,7 @@ ClickHouse может парсить только базовый формат `Y
 
 ## join_default_strictness {#settings-join_default_strictness}
 
-Устанавливает строгость по умолчанию для [JOIN](../../sql-reference/statements/select/join.md#select-join).
+Устанавливает строгость по умолчанию для [JOIN](/sql-reference/statements/select/join).
 
 Возможные значения:
 
@@ -618,7 +618,7 @@ ClickHouse может парсить только базовый формат `Y
 
 При использовании алгоритма `hash` правая часть `JOIN` загружается в оперативную память.
 
-При использовании алгоритма `partial_merge` сервер сортирует данные и сбрасывает их на диск. Работа алгоритма `merge` в ClickHouse немного отличается от классической реализации. Сначала ClickHouse сортирует правую таблицу по блокам на основе [ключей соединения](../../sql-reference/statements/select/join.md#select-join) и для отсортированных блоков строит индексы min-max. Затем он сортирует куски левой таблицы на основе ключей соединения и объединяет их с правой таблицей операцией `JOIN`. Созданные min-max индексы используются для пропуска тех блоков из правой таблицы, которые не участвуют в данной операции `JOIN`.
+При использовании алгоритма `partial_merge` сервер сортирует данные и сбрасывает их на диск. Работа алгоритма `merge` в ClickHouse немного отличается от классической реализации. Сначала ClickHouse сортирует правую таблицу по блокам на основе [ключей соединения](/sql-reference/statements/select/join) и для отсортированных блоков строит индексы min-max. Затем он сортирует куски левой таблицы на основе ключей соединения и объединяет их с правой таблицей операцией `JOIN`. Созданные min-max индексы используются для пропуска тех блоков из правой таблицы, которые не участвуют в данной операции `JOIN`.
 
 ## join_any_take_last_row {#settings-join_any_take_last_row}
 
@@ -637,7 +637,7 @@ ClickHouse может парсить только базовый формат `Y
 
 См. также:
 
--   [Секция JOIN](../../sql-reference/statements/select/join.md#select-join)
+-   [Секция JOIN](/sql-reference/statements/select/join)
 -   [Движок таблиц Join](../../engines/table-engines/special/join.md)
 -   [join_default_strictness](#settings-join_default_strictness)
 
@@ -648,20 +648,7 @@ ClickHouse может парсить только базовый формат `Y
 Возможные значения:
 
 -   0 — пустые ячейки заполняются значением по умолчанию соответствующего типа поля.
--   1 — `JOIN` ведёт себя как в стандартном SQL. Тип соответствующего поля преобразуется в [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable), а пустые ячейки заполняются значениями [NULL](../../sql-reference/syntax.md).
-
-## partial_merge_join_optimizations {#partial_merge_join_optimizations}
-
-Отключает все оптимизации для запросов [JOIN](../../sql-reference/statements/select/join.md) с частичным MergeJoin алгоритмом.
-
-По умолчанию оптимизации включены, что может привести к неправильным результатам. Если вы видите подозрительные результаты в своих запросах, отключите оптимизацию с помощью этого параметра. В различных версиях сервера ClickHouse, оптимизация может отличаться.
-
-Возможные значения:
-
--   0 — Оптимизация отключена.
--   1 — Оптимизация включена.
-
-Значение по умолчанию: 1.
+-   1 — `JOIN` ведёт себя как в стандартном SQL. Тип соответствующего поля преобразуется в [Nullable](/sql-reference/data-types/nullable), а пустые ячейки заполняются значениями [NULL](../../sql-reference/syntax.md).
 
 ## partial_merge_join_rows_in_right_blocks {#partial_merge_join_rows_in_right_blocks}
 
@@ -730,7 +717,7 @@ ClickHouse может парсить только базовый формат `Y
 
 -   [JOIN strictness](../../sql-reference/statements/select/join.md#join-settings)
 
-## max_block_size {#setting-max_block_size}
+## max_block_size {#max_block_size}
 
 Данные в ClickHouse обрабатываются по блокам (наборам кусочков столбцов). Внутренние циклы обработки для одного блока достаточно эффективны, но есть заметные издержки на каждый блок. Настройка `max_block_size` — это рекомендация, какой размер блока (в количестве строк) загружать из таблиц. Размер блока не должен быть слишком маленьким, чтобы затраты на каждый блок были заметны, но не слишком велики, чтобы запрос с LIMIT, который завершается после первого блока, обрабатывался быстро. Цель состоит в том, чтобы не использовалось слишком много оперативки при вынимании большого количества столбцов в несколько потоков; чтобы оставалась хоть какая-нибудь кэш-локальность.
 
@@ -738,7 +725,7 @@ ClickHouse может парсить только базовый формат `Y
 
 Из таблицы не всегда загружаются блоки размера `max_block_size`. Если ясно, что нужно прочитать меньше данных, то будет считан блок меньшего размера.
 
-## preferred_block_size_bytes {#preferred-block-size-bytes}
+## preferred_block_size_bytes {#preferred_block_size_bytes}
 
 Служит для тех же целей что и `max_block_size`, но задает рекомендуемый размер блоков в байтах, выбирая адаптивное количество строк в блоке.
 При этом размер блока не может быть более `max_block_size` строк.
@@ -830,7 +817,7 @@ ClickHouse может парсить только базовый формат `Y
 
 Если требуется прочитать более, чем `merge_tree_max_rows_to_use_cache` строк в одном запросе, ClickHouse не используют кэш несжатых блоков.
 
-Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует этот кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от замусоривания запросами, для выполнения которых необходимо извлечь большое количество данных. Настройка сервера [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) определяет размер кэша несжатых блоков.
+Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует этот кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от замусоривания запросами, для выполнения которых необходимо извлечь большое количество данных. Настройка сервера [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) определяет размер кэша несжатых блоков.
 
 Возможные значения:
 
@@ -842,7 +829,7 @@ ClickHouse может парсить только базовый формат `Y
 
 Если требуется прочитать более, чем `merge_tree_max_bytes_to_use_cache` байтов в одном запросе, ClickHouse не используют кэш несжатых блоков.
 
-Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от переполнения. Настройка сервера [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) определяет размер кэша несжатых блоков.
+Кэш несжатых блоков хранит данные, извлечённые при выполнении запросов. ClickHouse использует кэш для ускорения ответов на повторяющиеся небольшие запросы. Настройка защищает кэш от переполнения. Настройка сервера [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) определяет размер кэша несжатых блоков.
 
 Возможные значения:
 
@@ -892,7 +879,7 @@ ClickHouse использует этот параметр при чтении д
 
 Установка логирования запроса.
 
-Запросы, переданные в ClickHouse с этой настройкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query-log).
+Запросы, переданные в ClickHouse с этой настройкой, логируются согласно правилам конфигурационного параметра сервера [query_log](../../operations/server-configuration-parameters/settings.md/operations/server-configuration-parameters/settings#query-log).
 
 Пример:
 
@@ -1007,7 +994,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Это значение намного больше, чем `max_block_size`. Это сделано, потому что некоторые движки таблиц (`*MergeTree`) будут на каждый вставляемый блок формировать кусок данных на диске, что является довольно большой сущностью. Также, в таблицах типа `*MergeTree`, данные сортируются при вставке, и достаточно большой размер блока позволяет отсортировать больше данных в оперативке.
 
-## min_insert_block_size_rows {#min-insert-block-size-rows}
+## min_insert_block_size_rows {#min_insert_block_size_rows}
 
 Устанавливает минимальное количество строк в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера.
 
@@ -1018,7 +1005,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: 1048576.
 
-## min_insert_block_size_bytes {#min-insert-block-size-bytes}
+## min_insert_block_size_bytes {#min_insert_block_size_bytes}
 
 Устанавливает минимальное количество байтов в блоке, который может быть вставлен в таблицу запросом `INSERT`. Блоки меньшего размера склеиваются в блоки большего размера.
 
@@ -1063,7 +1050,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Значение по умолчанию: 0.
 
-Параллельный `INSERT SELECT` действует только в том случае, если часть SELECT выполняется параллельно, см. настройку [max_threads](#settings-max_threads).
+Параллельный `INSERT SELECT` действует только в том случае, если часть SELECT выполняется параллельно, см. настройку [max_threads](/operations/settings/settings#max_threads).
 Чем больше значение `max_insert_threads`, тем больше потребление оперативной памяти.
 
 ## max_compress_block_size {#max-compress-block-size}
@@ -1231,7 +1218,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 Считать ли экстремальные значения (минимумы и максимумы по столбцам результата запроса). Принимает 0 или 1. По умолчанию - 0 (выключено).
 Подробнее смотрите раздел «Экстремальные значения».
 
-## kafka_max_wait_ms {#kafka-max-wait-ms}
+## kafka_max_wait_ms {#kafka_max_wait_ms}
 
 Время ожидания в миллисекундах для чтения сообщений из [Kafka](../../engines/table-engines/integrations/kafka.md#kafka) перед повторной попыткой.
 
@@ -1250,7 +1237,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Использовать ли кэш разжатых блоков. Принимает 0 или 1. По умолчанию - 0 (выключено).
 
-Использование кэша несжатых блоков (только для таблиц семейства MergeTree) может существенно сократить задержку и увеличить пропускную способность при работе с большим количеством коротких запросов. Включите эту настройку для пользователей, от которых идут частые короткие запросы. Также обратите внимание на конфигурационный параметр [uncompressed_cache_size](../server-configuration-parameters/settings.md#server-settings-uncompressed_cache_size) (настраивается только в конфигурационном файле) – размер кэша разжатых блоков. По умолчанию - 8 GiB. Кэш разжатых блоков заполняется по мере надобности, а наиболее невостребованные данные автоматически удаляются.
+Использование кэша несжатых блоков (только для таблиц семейства MergeTree) может существенно сократить задержку и увеличить пропускную способность при работе с большим количеством коротких запросов. Включите эту настройку для пользователей, от которых идут частые короткие запросы. Также обратите внимание на конфигурационный параметр [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) (настраивается только в конфигурационном файле) – размер кэша разжатых блоков. По умолчанию - 8 GiB. Кэш разжатых блоков заполняется по мере надобности, а наиболее невостребованные данные автоматически удаляются.
 
 Для запросов, читающих хоть немного приличный объём данных (миллион строк и больше), кэш разжатых блоков автоматически выключается, чтобы оставить место для действительно мелких запросов. Поэтому, можно держать настройку `use_uncompressed_cache` всегда выставленной в 1.
 
@@ -1707,7 +1694,7 @@ echo '  string  ' | ./clickhouse local -q  "select * from table FORMAT CSV" --in
 
 Использовать в качестве разделителя строк для TSV формата CRLF (DOC/Windows стиль) вместо LF (Unix стиль).
 
-## insert_quorum {#settings-insert_quorum}
+## insert_quorum {#insert_quorum
 
 Включает кворумную запись.
 
@@ -1743,7 +1730,7 @@ ClickHouse генерирует исключение:
 
 См. также:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
@@ -1760,7 +1747,7 @@ ClickHouse генерирует исключение:
 
 См. также:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [select_sequential_consistency](#settings-select_sequential_consistency)
 
@@ -1783,7 +1770,7 @@ ClickHouse генерирует исключение:
 
 См. также:
 
--   [insert_quorum](#settings-insert_quorum)
+-   [insert_quorum](#insert_quorum)
 -   [insert_quorum_timeout](#settings-insert_quorum_timeout)
 -   [insert_quorum_parallel](#settings-insert_quorum_parallel)
 
@@ -1863,7 +1850,7 @@ SELECT * FROM test_table
 
 Возможные значения:
 
--   [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniq](/sql-reference/aggregate-functions/reference/uniq)
 -   [uniqCombined](../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
 -   [uniqCombined64](../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
 -   [uniqHLL12](../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
@@ -2063,7 +2050,7 @@ SELECT * FROM test_table
 
 Могут быть преобразованы следующие функции:
 
--   [length](../../sql-reference/functions/array-functions.md#array_functions-length) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
+-   [length](/sql-reference/functions/array-functions#length) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
 -   [empty](../../sql-reference/functions/array-functions.md#function-empty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size) subcolumn.
 -   [notEmpty](../../sql-reference/functions/array-functions.md#function-notempty) к чтению подстолбца [size0](../../sql-reference/data-types/array.md#array-size).
 -   [isNull](../../sql-reference/operators/index.md#operator-is-null) к чтению подстолбца [null](../../sql-reference/data-types/nullable.md#finding-null).
@@ -2206,7 +2193,7 @@ SELECT * FROM test_table
 
 См. также:
 
--   Системная таблица [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   Системная таблица [trace_log](/operations/system-tables/trace_log)
 
 ## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
@@ -2229,7 +2216,7 @@ SELECT * FROM test_table
 
 См. также:
 
--   Системная таблица [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   Системная таблица [trace_log](/operations/system-tables/trace_log)
 
 ## allow_introspection_functions {#settings-allow_introspection_functions}
 
@@ -2245,7 +2232,7 @@ SELECT * FROM test_table
 **См. также**
 
 -   [Sampling Query Profiler](../optimizing-performance/sampling-query-profiler.md)
--   Системная таблица [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log)
+-   Системная таблица [trace_log](/operations/system-tables/trace_log)
 
 ## input_format_parallel_parsing {#input-format-parallel-parsing}
 
@@ -2325,7 +2312,7 @@ SELECT * FROM test_table
 
 ## distributed_foreground_insert {#distributed_foreground_insert}
 
-Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](../../engines/table-engines/special/distributed.md#distributed)).
+Включает или отключает режим синхронного добавления данных в распределенные таблицы (таблицы с движком [Distributed](/engines/table-engines/special/distributed)).
 
 По умолчанию ClickHouse вставляет данные в распределённую таблицу в асинхронном режиме. Если `distributed_foreground_insert=1`, то данные вставляются сихронно, а запрос `INSERT` считается выполненным успешно, когда данные записаны на все шарды (по крайней мере на одну реплику для каждого шарда, если `internal_replication = true`).
 
@@ -2338,12 +2325,12 @@ SELECT * FROM test_table
 
 **См. также**
 
--   [Движок Distributed](../../engines/table-engines/special/distributed.md#distributed)
+-   [Движок Distributed](/engines/table-engines/special/distributed)
 -   [Управление распределёнными таблицами](../../sql-reference/statements/system.md#query-language-system-distributed)
 
 ## insert_distributed_one_random_shard {#insert_distributed_one_random_shard}
 
-Включает или отключает режим вставки данных в [Distributed](../../engines/table-engines/special/distributed.md#distributed)) таблицу в случайный шард при отсутствии ключ шардирования.
+Включает или отключает режим вставки данных в [Distributed](/engines/table-engines/special/distributed)) таблицу в случайный шард при отсутствии ключ шардирования.
 
 По умолчанию при вставке данных в `Distributed` таблицу с несколькими шардами и при отсутствии ключа шардирования сервер ClickHouse будет отклонять любой запрос на вставку данных. Когда `insert_distributed_one_random_shard = 1`, вставки принимаются, а данные записываются в случайный шард.
 
@@ -2356,7 +2343,7 @@ SELECT * FROM test_table
 
 ## insert_shard_id {#insert_shard_id}
 
-Если не `0`, указывает, в какой шард [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы данные будут вставлены синхронно.
+Если не `0`, указывает, в какой шард [Distributed](/engines/table-engines/special/distributed) таблицы данные будут вставлены синхронно.
 
 Если значение настройки `insert_shard_id` указано неверно, сервер выдаст ошибку.
 
@@ -2369,7 +2356,7 @@ SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
 Возможные значения:
 
 -   0 — выключено.
--   Любое число от `1` до `shards_num` соответствующей [Distributed](../../engines/table-engines/special/distributed.md#distributed) таблицы.
+-   Любое число от `1` до `shards_num` соответствующей [Distributed](/engines/table-engines/special/distributed) таблицы.
 
 Значение по умолчанию: `0`.
 
@@ -2431,7 +2418,7 @@ SELECT * FROM x_dist ORDER BY number ASC;
 
 ## transform_null_in {#transform_null_in}
 
-Разрешает сравнивать значения [NULL](../../sql-reference/syntax.md#null-literal) в операторе [IN](../../sql-reference/operators/in.md).
+Разрешает сравнивать значения [NULL](/operations/settings/formats#input_format_null_as_default) в операторе [IN](../../sql-reference/operators/in.md).
 
 По умолчанию, значения `NULL` нельзя сравнивать, поскольку `NULL` обозначает неопределённое значение. Следовательно, сравнение `expr = NULL` должно всегда возвращать `false`. С этой настройкой `NULL = NULL` возвращает `true` в операторе `IN`.
 
@@ -2576,7 +2563,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 ## background_message_broker_schedule_pool_size {#background_message_broker_schedule_pool_size}
 
-Параметр перенесен в [серверную конфигурацию](../../operations/server-configuration-parameters/settings.md/#background_message_broker_schedule_pool_size).
+Параметр перенесен в [серверную конфигурацию](/operations/server-configuration-parameters/settings#background_message_broker_schedule_pool_size).
 
 ## format_avro_schema_registry_url {#format_avro_schema_registry_url}
 
@@ -2607,7 +2594,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 **См. также:**
 
--   [min_insert_block_size_rows](#min-insert-block-size-rows)
+-   [min_insert_block_size_rows](/operations/settings/settings#min_insert_block_size_rows)
 
 ## min_insert_block_size_bytes_for_materialized_views {#min-insert-block-size-bytes-for-materialized-views}
 
@@ -2622,7 +2609,7 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 
 **См. также:**
 
--   [min_insert_block_size_bytes](#min-insert-block-size-bytes)
+-   [min_insert_block_size_bytes](/operations/settings/settings#min_insert_block_size_bytes)
 
 ## output_format_pretty_grid_charset {#output-format-pretty-grid-charset}
 
@@ -2661,7 +2648,7 @@ SELECT * FROM a;
 
 ## optimize_aggregation_in_order {#optimize_aggregation_in_order}
 
-Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [GROUP BY](../../sql-reference/statements/select/group-by.md) при наличии подходящих ключей сортировки. Используется при работе с таблицами [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
+Включает или отключает оптимизацию в запросах [SELECT](../../sql-reference/statements/select/index.md) с секцией [GROUP BY](/sql-reference/statements/select/group-by) при наличии подходящих ключей сортировки. Используется при работе с таблицами [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md).
 
 Возможные значения:
 
@@ -2865,7 +2852,7 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 
 ## cast_keep_nullable {#cast_keep_nullable}
 
-Включает или отключает сохранение типа `Nullable` для аргумента функции [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast).
+Включает или отключает сохранение типа `Nullable` для аргумента функции [CAST](/sql-reference/functions/type-conversion-functions#cast).
 
 Если настройка включена, то когда в функцию `CAST` передается аргумент с типом `Nullable`, функция возвращает результат, также преобразованный к типу `Nullable`.
 Если настройка отключена, то функция `CAST` всегда возвращает результат строго указанного типа.
@@ -2911,7 +2898,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 
 **См. также**
 
--   Функция [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast)
+-   Функция [CAST](/sql-reference/functions/type-conversion-functions#cast)
 
 ## persistent {#persistent}
 
@@ -3049,7 +3036,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 ## allow_nullable_key {#allow-nullable-key}
 
-Включает или отключает поддержку типа [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) для ключей таблиц [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree).
+Включает или отключает поддержку типа [Nullable](/sql-reference/data-types/nullable) для ключей таблиц [MergeTree](/engines/table-engines/mergetree-family/mergetree).
 
 Возможные значения:
 
@@ -3061,7 +3048,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 ## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
-Включает или отключает перезапись всех агрегатных функций в запросе, с добавлением к ним суффикса [-OrNull](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-ornull). Включите для совместимости со стандартом SQL.
+Включает или отключает перезапись всех агрегатных функций в запросе, с добавлением к ним суффикса [-OrNull](/sql-reference/aggregate-functions/combinators#-ornull). Включите для совместимости со стандартом SQL.
 Реализуется с помощью перезаписи запросов (аналогично настройке [count_distinct_implementation](#settings-count_distinct_implementation)), чтобы получить согласованные результаты для распределенных запросов.
 
 Возможные значения:
@@ -3109,7 +3096,7 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 ## data_type_default_nullable {#data_type_default_nullable}
 
-Позволяет использовать по умолчанию тип данных [Nullable](../../sql-reference/data-types/nullable.md#data_type-nullable) в определении столбца без явных модификаторов [NULL или NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers).
+Позволяет использовать по умолчанию тип данных [Nullable](/sql-reference/data-types/nullable) в определении столбца без явных модификаторов [NULL или NOT NULL](../../sql-reference/statements/create/table.md#null-modifiers).
 
 Возможные значения:
 
@@ -3212,7 +3199,7 @@ SELECT * FROM test2;
 └─────────────┘
 ```
 
-Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](../../sql-reference/statements/create/view.md#materialized).
+Обратите внимание на то, что эта настройка влияет на поведение [материализованных представлений](/sql-reference/statements/create/view#materialized-view).
 
 ## engine_file_empty_if_not_exists {#engine-file-empty_if-not-exists}
 
@@ -3417,7 +3404,7 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 ## optimize_syntax_fuse_functions {#optimize_syntax_fuse_functions}
 
-Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
+Позволяет объединить агрегатные функции с одинаковым аргументом. Запрос, содержащий по крайней мере две агрегатные функции: [sum](/sql-reference/aggregate-functions/reference/sum), [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count) или [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg) с одинаковым аргументом, перезаписывается как [sumCount](../../sql-reference/aggregate-functions/reference/sumcount.md#agg_function-sumCount).
 
 Возможные значения:
 
@@ -3690,7 +3677,7 @@ SETTINGS index_granularity = 8192 │
 
 ## short_circuit_function_evaluation {#short-circuit-function-evaluation}
 
-Позволяет вычислять функции [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](../../sql-reference/functions/logical-functions.md#logical-and-function) и [or](../../sql-reference/functions/logical-functions.md#logical-or-function) по [короткой схеме](https://ru-wikipedia-org.turbopages.org/ru.wikipedia.org/s/wiki/Вычисления_по_короткой_схеме). Это помогает оптимизировать выполнение сложных выражений в этих функциях и предотвратить возможные исключения (например, деление на ноль, когда оно не ожидается).
+Позволяет вычислять функции [if](../../sql-reference/functions/conditional-functions.md#if), [multiIf](../../sql-reference/functions/conditional-functions.md#multiif), [and](/sql-reference/functions/logical-functions#and) и [or](/sql-reference/functions/logical-functions#or) по [короткой схеме](https://ru-wikipedia-org.turbopages.org/ru.wikipedia.org/s/wiki/Вычисления_по_короткой_схеме). Это помогает оптимизировать выполнение сложных выражений в этих функциях и предотвратить возможные исключения (например, деление на ноль, когда оно не ожидается).
 
 Возможные значения:
 
@@ -3788,7 +3775,7 @@ Exception: Total regexp lengths too large.
 
 ## enable_positional_arguments {#enable-positional-arguments}
 
-Включает и отключает поддержку позиционных аргументов для [GROUP BY](../../sql-reference/statements/select/group-by.md), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md).
+Включает и отключает поддержку позиционных аргументов для [GROUP BY](/sql-reference/statements/select/group-by), [LIMIT BY](../../sql-reference/statements/select/limit-by.md), [ORDER BY](../../sql-reference/statements/select/order-by.md).
 
 Возможные значения:
 
@@ -3974,7 +3961,7 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 ## alter_partition_verbose_result {#alter-partition-verbose-result}
 
-Включает или отключает вывод информации о кусках, к которым были успешно применены операции манипуляции с партициями и кусками. Применимо к [ATTACH PARTITION|PART](../../sql-reference/statements/alter/partition.md#alter_attach-partition) и к [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)
+Включает или отключает вывод информации о кусках, к которым были успешно применены операции манипуляции с партициями и кусками. Применимо к [ATTACH PARTITION|PART](/sql-reference/statements/alter/partition#attach-partitionpart) и к [FREEZE PARTITION](../../sql-reference/statements/alter/partition.md#alter_freeze-partition)
 
 Возможные значения:
 

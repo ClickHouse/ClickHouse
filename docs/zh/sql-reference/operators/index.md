@@ -83,7 +83,7 @@ slug: /zh/sql-reference/operators/
 
 注意:
 
-条件运算符会先计算表达式b和表达式c的值，再根据表达式a的真假，返回相应的值。如果表达式b和表达式c是 [arrayJoin()](../../sql-reference/functions/array-join.md#functions_arrayjoin) 函数，则不管表达式a是真是假，每行都会被复制展开。
+条件运算符会先计算表达式b和表达式c的值，再根据表达式a的真假，返回相应的值。如果表达式b和表达式c是 [arrayJoin()](/sql-reference/functions/array-join) 函数，则不管表达式a是真是假，每行都会被复制展开。
 
 ## 使用日期和时间的操作员 {#operators-datetime}
 
@@ -170,7 +170,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 **另请参阅**
 
 -   [间隔](../../sql-reference/operators/index.md) 数据类型
--   [toInterval](../../sql-reference/operators/index.md#function-tointerval) 类型转换函数
+-   [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) 类型转换函数
 
 ## CASE条件表达式 {#operator_case}
 

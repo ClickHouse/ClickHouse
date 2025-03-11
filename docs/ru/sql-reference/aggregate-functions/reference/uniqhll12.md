@@ -31,9 +31,9 @@ uniqHLL12(x[, ...])
 
 -   Результат детерминирован (не зависит от порядка выполнения запроса).
 
-Мы не рекомендуем использовать эту функцию. В большинстве случаев используйте функцию [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) или [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined).
+Мы не рекомендуем использовать эту функцию. В большинстве случаев используйте функцию [uniq](/sql-reference/aggregate-functions/reference/uniq) или [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined).
 
 
--   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniq](/sql-reference/aggregate-functions/reference/uniq)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
--   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+-   [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)

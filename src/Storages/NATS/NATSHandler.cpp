@@ -1,84 +1,211 @@
-#include <Core/Defines.h>
 #include <Storages/NATS/NATSHandler.h>
-#include <adapters/libuv.h>
+
+#include <Core/Defines.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <adapters/libuv.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
 
-/* The object of this class is shared between concurrent consumers (who share the same connection == share the same
- * event loop and handler).
- */
-
-static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
-
-NATSHandler::NATSHandler(uv_loop_t * loop_, LoggerPtr log_) :
-    loop(loop_),
-    log(log_),
-    loop_running(false),
-    loop_state(Loop::STOP)
+namespace Loop
 {
-    natsLibuv_Init();
-    natsLibuv_SetThreadLocalLoop(loop);
-    natsOptions_Create(&opts);
-    natsOptions_SetEventLoop(opts, static_cast<void *>(loop),
-                                 natsLibuv_Attach,
-                                 natsLibuv_Read,
-                                 natsLibuv_Write,
-                                 natsLibuv_Detach);
-    natsOptions_SetIOBufSize(opts, DBMS_DEFAULT_BUFFER_SIZE);
-    natsOptions_SetSendAsap(opts, true);
+    static const UInt8 CREATED = 0;
+    static const UInt8 RUN = 1;
+    static const UInt8 STOP = 2;
+    static const UInt8 CLOSED = 3;
 }
 
-void NATSHandler::startLoop()
+namespace ErrorCodes
 {
-    std::lock_guard lock(startup_mutex);
-    natsLibuv_SetThreadLocalLoop(loop);
+    extern const int CANNOT_CONNECT_NATS;
+    extern const int INVALID_STATE;
+}
+
+NATSHandler::NATSHandler(LoggerPtr log_)
+    : log(log_)
+    , loop_state(Loop::CREATED)
+{
+    auto error = uv_async_init(loop.getLoop(), &execute_tasks_scheduler, processTasks);
+    if (error)
+    {
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot create scheduler, received error {}", error);
+    }
+
+    execute_tasks_scheduler.data = this;
+}
+
+void NATSHandler::runLoop()
+{
+    {
+        std::lock_guard lock(loop_state_mutex);
+        if (loop_state != Loop::CREATED)
+        {
+            return;
+        }
+
+        natsLibuv_Init();
+        natsLibuv_SetThreadLocalLoop(loop.getLoop());
+
+        loop_state = Loop::RUN;
+    }
+
+    SCOPE_EXIT({
+        nats_ReleaseThreadMemory();
+        resetThreadLocalLoop();
+    });
 
     LOG_DEBUG(log, "Background loop started");
-    loop_running.store(true);
-    auto start_time = std::chrono::steady_clock::now();
-    auto end_time = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-    while (loop_state.load() == Loop::RUN && duration.count() < MAX_THREAD_WORK_DURATION_MS)
+    uv_run(loop.getLoop(), UV_RUN_DEFAULT);
+
     {
-        uv_run(loop, UV_RUN_NOWAIT);
-        end_time = std::chrono::steady_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        std::lock_guard lock(loop_state_mutex);
+        loop_state = Loop::CLOSED;
     }
 
     LOG_DEBUG(log, "Background loop ended");
-    loop_running.store(false);
 }
 
-void NATSHandler::iterateLoop()
+void NATSHandler::processTasks(uv_async_t* scheduler)
 {
-    std::unique_lock lock(startup_mutex, std::defer_lock);
-    if (lock.try_lock())
+    auto * self_ptr = static_cast<NATSHandler *>(scheduler->data);
+    if (!self_ptr)
     {
-        natsLibuv_SetThreadLocalLoop(loop);
-        uv_run(loop, UV_RUN_NOWAIT);
+        return;
     }
-}
+    self_ptr->executeTasks();
 
-LockPtr NATSHandler::setThreadLocalLoop()
-{
-    auto lock = std::make_unique<std::lock_guard<std::mutex>>(startup_mutex);
-    natsLibuv_SetThreadLocalLoop(loop);
-    return lock;
+    std::lock_guard lock(self_ptr->loop_state_mutex);
+    if (self_ptr->loop_state == Loop::STOP)
+    {
+        uv_stop(self_ptr->loop.getLoop());
+    }
 }
 
 void NATSHandler::stopLoop()
 {
-    LOG_DEBUG(log, "Implicit loop stop.");
-    uv_stop(loop);
+    std::lock_guard lock(loop_state_mutex);
+
+    if (loop_state != Loop::RUN)
+    {
+        return;
+    }
+
+    LOG_DEBUG(log, "Implicit loop stop");
+    loop_state = Loop::STOP;
+
+    uv_async_send(&execute_tasks_scheduler);
 }
 
-NATSHandler::~NATSHandler()
+void NATSHandler::post(Task task)
 {
-    natsOptions_Destroy(opts);
+    std::scoped_lock lock(loop_state_mutex, tasks_mutex);
+
+    if (loop_state != Loop::CREATED && loop_state != Loop::RUN)
+        throw Exception(ErrorCodes::INVALID_STATE, "Can not post task to event loop: event loop stopped");
+
+    tasks.push(std::move(task));
+
+    uv_async_send(&execute_tasks_scheduler);
+}
+void NATSHandler::executeTasks()
+{
+    std::queue<Task> executed_tasks;
+    {
+        std::lock_guard<std::mutex> lock(tasks_mutex);
+        std::swap(executed_tasks, tasks);
+    }
+
+    while (!executed_tasks.empty())
+    {
+        auto task = std::move(executed_tasks.front());
+        executed_tasks.pop();
+        task();
+    }
+}
+
+std::future<NATSConnectionPtr> NATSHandler::createConnection(const NATSConfiguration & configuration)
+{
+    auto promise = std::make_shared<std::promise<NATSConnectionPtr>>();
+
+    auto connect_future = promise->get_future();
+    post(
+        [this, &configuration, connect_promise = std::move(promise)]()
+        {
+            try
+            {
+                for (UInt64 i = 0; i < configuration.max_connect_tries; ++i)
+                {
+                    auto connection = std::make_shared<NATSConnection>(configuration, log, createOptions());
+                    if (!connection->connect())
+                    {
+                        LOG_DEBUG(
+                            log,
+                            "Connect to {} attempt #{} failed, error: {}. Reconnecting...",
+                            connection->connectionInfoForLog(), i + 1, nats_GetLastError(nullptr));
+                        continue;
+                    }
+                    connect_promise->set_value(connection);
+
+                    return;
+                }
+
+                throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Cannot connect to Nats last error: {}", nats_GetLastError(nullptr));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log);
+                try
+                {
+                    connect_promise->set_exception(std::current_exception());
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log);
+                }
+            }
+        });
+
+    return connect_future;
+}
+
+NATSOptionsPtr NATSHandler::createOptions()
+{
+    natsOptions * options = nullptr;
+    auto er = natsOptions_Create(&options);
+    if (er)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_NATS,
+            "Can not initialize NATS options. Nats error: {}",
+            natsStatus_GetText(er));
+    }
+
+    NATSOptionsPtr result(options, &natsOptions_Destroy);
+    er = natsOptions_SetEventLoop(result.get(), static_cast<void *>(loop.getLoop()),
+                                  natsLibuv_Attach,
+                                  natsLibuv_Read,
+                                  natsLibuv_Write,
+                                  natsLibuv_Detach);
+    if (er)
+    {
+        throw Exception(
+            ErrorCodes::CANNOT_CONNECT_NATS,
+            "Can not set event loop. Nats error: {}",
+            natsStatus_GetText(er));
+    }
+
+    natsOptions_SetIOBufSize(result.get(), DBMS_DEFAULT_BUFFER_SIZE);
+    natsOptions_SetSendAsap(result.get(), true);
+
+    return result;
+}
+
+void NATSHandler::resetThreadLocalLoop()
+{
+    uv_key_set(&uvLoopThreadKey, nullptr);
 }
 
 }

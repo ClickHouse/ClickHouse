@@ -16,7 +16,7 @@ INSERT INTO test_s3 SELECT number, number FROM numbers(1000000);
 "
 query="SELECT sum(b) FROM test_s3 WHERE a >= 100000 AND a <= 102000"
 query_id=$(${CLICKHOUSE_CLIENT} --query "select queryID() from ($query) limit 1" 2>&1)
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -m --query "
 SELECT
     ProfileEvents['S3ReadRequestsCount'],

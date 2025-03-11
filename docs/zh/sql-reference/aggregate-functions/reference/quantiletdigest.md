@@ -9,7 +9,7 @@ sidebar_position: 207
 
 最大误差为1%。 内存消耗为 `log(n)`，这里 `n` 是值的个数。 结果取决于运行查询的顺序，并且是不确定的。
 
-该函数的性能低于 [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile) 或 [quantileTiming](../../../sql-reference/aggregate-functions/reference/quantiletiming.md#quantiletiming) 的性能。 从状态大小和精度的比值来看，这个函数比 `quantile` 更优秀。
+该函数的性能低于 [quantile](../../../sql-reference/aggregate-functions/reference/quantile.md#quantile) 或 [quantileTiming](/sql-reference/aggregate-functions/reference/quantiletiming) 的性能。 从状态大小和精度的比值来看，这个函数比 `quantile` 更优秀。
 
 当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用 [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) 函数。
 

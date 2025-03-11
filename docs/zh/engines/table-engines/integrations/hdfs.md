@@ -18,7 +18,7 @@ ENGINE = HDFS(URI, format)
 `URI` 参数是 HDFS 中整个文件的 URI。
 `format` 参数指定一种可用的文件格式。 执行
 `SELECT` 查询时，格式必须支持输入，以及执行
-`INSERT` 查询时，格式必须支持输出. 你可以在 [格式](../../../interfaces/formats.md#formats) 章节查看可用的格式。
+`INSERT` 查询时，格式必须支持输出. 你可以在 [格式](/interfaces/formats#formats-overview) 章节查看可用的格式。
 路径部分 `URI` 可能包含 glob 通配符。 在这种情况下，表将是只读的。
 
 **示例:**

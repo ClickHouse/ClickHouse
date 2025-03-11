@@ -32,7 +32,7 @@ public:
     CustomResourceManager();
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
     bool hasResource(const String & resource_name) const override;
-    ClassifierPtr acquire(const String & classifier_name) override;
+    ClassifierPtr acquire(const String & classifier_name, const ClassifierSettings & settings) override;
     void forEachNode(VisitorFunc visitor) override;
 
 private:
@@ -81,10 +81,11 @@ private:
     class Classifier : public IClassifier
     {
     public:
-        Classifier(const StatePtr & state_, const String & classifier_name);
+        Classifier(const ClassifierSettings & settings_, const StatePtr & state_, const String & classifier_name);
         bool has(const String & resource_name) override;
         ResourceLink get(const String & resource_name) override;
     private:
+        const ClassifierSettings settings;
         std::unordered_map<String, ResourceLink> resources; // accessible resources by names
         StatePtr state; // hold state to avoid ResourceLink invalidation due to resource deregistration from SchedulerRoot
     };

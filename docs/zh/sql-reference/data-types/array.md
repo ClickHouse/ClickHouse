@@ -41,7 +41,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 
 ## 使用数据类型 {#shi-yong-shu-ju-lei-xing}
 
-ClickHouse会自动检测数组元素,并根据元素计算出存储这些元素最小的数据类型。如果在元素中存在 [NULL](../../sql-reference/data-types/array.md#null-literal) 或存在 [可为空](nullable.md#data_type-nullable) 类型元素，那么数组的元素类型将会变成 [可为空](nullable.md)。
+ClickHouse会自动检测数组元素,并根据元素计算出存储这些元素最小的数据类型。如果在元素中存在 [NULL](../../sql-reference/data-types/array.md#null-literal) 或存在 [可为空](/sql-reference/data-types/nullable) 类型元素，那么数组的元素类型将会变成 [可为空](nullable.md)。
 
 如果 ClickHouse 无法确定数据类型，它将产生异常。当尝试同时创建一个包含字符串和数字的数组时会发生这种情况 (`SELECT array(1, 'a')`)。
 

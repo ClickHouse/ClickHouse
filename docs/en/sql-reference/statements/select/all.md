@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/select/all
+slug: /sql-reference/statements/select/all
 sidebar_label: ALL
 ---
 

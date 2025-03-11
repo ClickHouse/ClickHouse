@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/covarpopstable
+slug: /sql-reference/aggregate-functions/reference/covarpopstable
 sidebar_position: 123
+title: "covarPopStable"
+description: "Calculates the value of the population covariance"
 ---
 
 # covarPopStable

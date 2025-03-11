@@ -123,7 +123,7 @@ Exchange 类型的选项:
 -   以便在不是所有消息都被成功消费时，能够恢复从某些持久队列的阅读。要从一个特定的队列恢复消耗 - 在`rabbitmq_queue_base`设置中设置其名称，不要指定`rabbitmq_num_consumers`和`rabbitmq_num_queues`（默认为1）。要恢复所有队列的消费，这些队列是为一个特定的表所声明的 - 只要指定相同的设置。`rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`。默认情况下，队列名称对表来说是唯一的。
 -   以重复使用队列，因为它们被声明为持久的，并且不会自动删除。可以通过任何 RabbitMQ CLI 工具删除）
 
-为了提高性能，收到的消息被分组为大小为 [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size) 的块。如果在[stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md)毫秒内没有形成数据块，无论数据块是否完整，数据都会被刷到表中。
+为了提高性能，收到的消息被分组为大小为 [max_insert_block_size](/operations/settings/settings#max_insert_block_size) 的块。如果在[stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md)毫秒内没有形成数据块，无论数据块是否完整，数据都会被刷到表中。
 
 如果`rabbitmq_num_consumers`和/或`rabbitmq_num_queues`设置与`rabbitmq_exchange_type`一起被指定，那么:
 

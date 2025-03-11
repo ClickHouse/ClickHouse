@@ -3,6 +3,7 @@
 #include <unordered_set>
 #include <base/find_symbols.h>
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 namespace DB
 {

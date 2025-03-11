@@ -19,7 +19,7 @@ url(URL [,format] [,structure])
 **Параметры**
 
 - `URL` — HTTP или HTTPS-адрес сервера, который может принимать запросы `GET` или `POST` (для запросов `SELECT` или `INSERT` соответственно). Тип: [String](../../sql-reference/data-types/string.md).
-- `format` — [формат](../../interfaces/formats.md#formats) данных. Тип: [String](../../sql-reference/data-types/string.md).
+- `format` — [формат](/sql-reference/formats) данных. Тип: [String](../../sql-reference/data-types/string.md).
 - `structure` — структура таблицы в формате `'UserID UInt64, Name String'`. Определяет имена и типы столбцов. Тип: [String](../../sql-reference/data-types/string.md).
 - `headers` -  HTTP-заголовки в формате `'headers('key1'='value1', 'key2'='value2')'`. Определяет заголовки для HTTP вызова.
 

@@ -66,5 +66,5 @@ SELECT * FROM t1 EXCEPT SELECT * FROM t2;
 
 **См. также**
 
--   [UNION](union.md#union-clause)
--   [INTERSECT](intersect.md#intersect-clause)
+-   [UNION](/sql-reference/statements/select/union)
+-   [INTERSECT](/sql-reference/statements/select/intersect)

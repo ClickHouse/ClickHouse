@@ -8,6 +8,9 @@ namespace DB
 
 class InterpreterSelectQuery;
 class QueryPlan;
+class Block;
+
+using Blocks = std::vector<Block>;
 
 /** Interprets one or multiple SELECT queries inside UNION/UNION ALL/UNION DISTINCT chain.
   */

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Columns/IColumn.h>
+#include <Common/PODArray_fwd.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/Transforms/finalizeChunk.h>
 

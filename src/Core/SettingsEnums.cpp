@@ -1,4 +1,5 @@
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/Exception.h>
 #include <Core/SettingsEnums.h>
 #include <base/EnumReflection.h>
 
@@ -90,15 +91,15 @@ IMPLEMENT_SETTING_ENUM(DistributedProductMode, ErrorCodes::UNKNOWN_DISTRIBUTED_P
      {"allow",  DistributedProductMode::ALLOW}})
 
 
-IMPLEMENT_SETTING_ENUM(QueryCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheNondeterministicFunctionHandling::Throw},
-     {"save",   QueryCacheNondeterministicFunctionHandling::Save},
-     {"ignore", QueryCacheNondeterministicFunctionHandling::Ignore}})
+IMPLEMENT_SETTING_ENUM(QueryResultCacheNondeterministicFunctionHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryResultCacheNondeterministicFunctionHandling::Throw},
+     {"save",   QueryResultCacheNondeterministicFunctionHandling::Save},
+     {"ignore", QueryResultCacheNondeterministicFunctionHandling::Ignore}})
 
-IMPLEMENT_SETTING_ENUM(QueryCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw",  QueryCacheSystemTableHandling::Throw},
-     {"save",   QueryCacheSystemTableHandling::Save},
-     {"ignore", QueryCacheSystemTableHandling::Ignore}})
+IMPLEMENT_SETTING_ENUM(QueryResultCacheSystemTableHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw",  QueryResultCacheSystemTableHandling::Throw},
+     {"save",   QueryResultCacheSystemTableHandling::Save},
+     {"ignore", QueryResultCacheSystemTableHandling::Ignore}})
 
 IMPLEMENT_SETTING_ENUM(DateTimeInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"basic",       FormatSettings::DateTimeInputFormat::Basic},

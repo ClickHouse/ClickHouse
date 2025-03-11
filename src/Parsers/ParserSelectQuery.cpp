@@ -334,7 +334,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// This is needed for TOP expression, because it can also use WITH TIES.
-    bool limit_with_ties_occured = false;
+    bool limit_with_ties_occurred = false;
 
     bool has_offset_clause = false;
     bool offset_clause_has_sql_standard_row_or_rows = false; /// OFFSET offset_row_count {ROW | ROWS}
@@ -355,7 +355,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             if (s_with_ties.ignore(pos, expected))
             {
-                limit_with_ties_occured = true;
+                limit_with_ties_occurred = true;
                 select_query->limit_with_ties = true;
             }
         }
@@ -368,11 +368,11 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
         else if (s_with_ties.ignore(pos, expected))
         {
-            limit_with_ties_occured = true;
+            limit_with_ties_occurred = true;
             select_query->limit_with_ties = true;
         }
 
-        if (limit_with_ties_occured && distinct_on_expression_list)
+        if (limit_with_ties_occurred && distinct_on_expression_list)
             throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
         if (s_by.ignore(pos, expected))
@@ -380,7 +380,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             /// WITH TIES was used alongside LIMIT BY
             /// But there are other kind of queries like LIMIT n BY smth LIMIT m WITH TIES which are allowed.
             /// So we have to ignore WITH TIES exactly in LIMIT BY state.
-            if (limit_with_ties_occured)
+            if (limit_with_ties_occurred)
                 throw Exception(ErrorCodes::LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED, "Can not use WITH TIES alongside LIMIT BY/DISTINCT ON");
 
             if (distinct_on_expression_list)

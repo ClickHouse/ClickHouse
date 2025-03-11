@@ -19,13 +19,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = PostgreSQL('host:port', 'database', 'table', 'user', 'password'[, `schema`]);
 ```
 
-Смотрите подробное описание запроса [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query).
+Смотрите подробное описание запроса [CREATE TABLE](/sql-reference/statements/create/table).
 
 Структура таблицы может отличаться от структуры исходной таблицы PostgreSQL:
 
 -   Имена столбцов должны быть такими же, как в исходной таблице PostgreSQL, но можно использовать только некоторые из этих столбцов и в любом порядке.
 -   Типы столбцов могут отличаться от типов в исходной таблице PostgreSQL. ClickHouse пытается [привести](../../../engines/database-engines/postgresql.md#data_types-support) значения к типам данных ClickHouse.
--   Настройка [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) определяет как обрабатывать Nullable столбцы. Значение по умолчанию: 1. Если значение 0, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
+-   Настройка [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) определяет как обрабатывать Nullable столбцы. Значение по умолчанию: 1. Если значение 0, то табличная функция не делает Nullable столбцы, а вместо NULL выставляет значения по умолчанию для скалярного типа. Это также применимо для значений NULL внутри массивов.
 
 **Параметры движка**
 

@@ -89,4 +89,4 @@ last_postpone_time:     1970-01-01 03:00:00
 
 **Смотрите также**
 
--   [Управление таблицами ReplicatedMergeTree](../../sql-reference/statements/system.md#query-language-system-replicated)
+-   [Управление таблицами ReplicatedMergeTree](/sql-reference/statements/system#managing-replicatedmergetree-tables)

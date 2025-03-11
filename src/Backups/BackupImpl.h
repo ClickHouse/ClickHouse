@@ -37,7 +37,8 @@ public:
     BackupImpl(
         BackupFactory::CreateParams params_,
         const ArchiveParams & archive_params_,
-        std::shared_ptr<IBackupReader> reader_);
+        std::shared_ptr<IBackupReader> reader_,
+        std::shared_ptr<IBackupReader> lightweight_snapshot_reader_ = nullptr);
 
     /// BACKUP
     BackupImpl(
@@ -60,6 +61,7 @@ public:
     UInt64 getCompressedSize() const override;
     size_t getNumReadFiles() const override;
     UInt64 getNumReadBytes() const override;
+    bool directoryExists(const String & directory) const override;
     Strings listFiles(const String & directory, bool recursive) const override;
     bool hasFiles(const String & directory) const override;
     bool fileExists(const String & file_name) const override;
@@ -67,8 +69,8 @@ public:
     UInt64 getFileSize(const String & file_name) const override;
     UInt128 getFileChecksum(const String & file_name) const override;
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const override;
-    std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(const SizeAndChecksum & size_and_checksum) const override;
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
@@ -103,7 +105,7 @@ private:
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
 
-    std::unique_ptr<SeekableReadBuffer> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
+    std::unique_ptr<ReadBufferFromFileBase> readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const;
 
     const BackupFactory::CreateParams params;
     BackupInfo backup_info;
@@ -113,6 +115,9 @@ private:
     const OpenMode open_mode;
     std::shared_ptr<IBackupWriter> writer;
     std::shared_ptr<IBackupReader> reader;
+    /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
+    std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
+    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
@@ -120,6 +125,9 @@ private:
     using SizeAndChecksum = std::pair<UInt64, UInt128>;
     std::map<String /* file_name */, SizeAndChecksum> file_names TSA_GUARDED_BY(mutex); /// Should be ordered alphabetically, see listFiles(). For empty files we assume checksum = 0.
     std::map<SizeAndChecksum, BackupFileInfo> file_infos TSA_GUARDED_BY(mutex); /// Information about files. Without empty files.
+    /// object_key -> file name, only used by lightweight snapshot
+    std::unordered_map<String, String> file_object_keys TSA_GUARDED_BY(mutex);
+    std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
     time_t timestamp = 0;

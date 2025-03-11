@@ -104,7 +104,7 @@ curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --thread
 
 ### Создание таблиц {#create-tables}
 
-ClickHouse, как и большинство СУБД, логически объединяет таблицы в «базы данных». Существует база данных по умолчанию — `default`, но мы созданим новую, дав ей наименование `tutorial`:
+ClickHouse, как и большинство СУБД, логически объединяет таблицы в «базы данных». Существует база данных по умолчанию — `default`, но мы создадим новую, дав ей наименование `tutorial`:
 
 ``` bash
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"

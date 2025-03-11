@@ -3,8 +3,6 @@
 #include "ReplicatedMergeTreeMutationEntry.h"
 
 #include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/Exception.h>
-#include <IO/ReadHelpers.h>
 
 #include <optional>
 
@@ -13,11 +11,6 @@ namespace DB
 {
 class ZooKeeperWithFaultInjection;
 using ZooKeeperWithFaultInjectionPtr = std::shared_ptr<ZooKeeperWithFaultInjection>;
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /// A class that is used for locking a block number in a partition.
 /// Before 22.11 it used to create a secondary ephemeral node in `temp_path` with "abandonable_lock-" prefix
@@ -75,11 +68,7 @@ public:
     }
 
     /// Parse the number at the end of the path.
-    UInt64 getNumber() const
-    {
-        checkCreated();
-        return parse<UInt64>(path.c_str() + path_prefix.size(), path.size() - path_prefix.size());
-    }
+    UInt64 getNumber() const;
 
     void unlock();
 
@@ -94,11 +83,7 @@ public:
         zookeeper = nullptr;
     }
 
-    void checkCreated() const
-    {
-        if (!isLocked())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "EphemeralLock is not created");
-    }
+    void checkCreated() const;
 
     ~EphemeralLockInZooKeeper();
 

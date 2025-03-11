@@ -1,7 +1,4 @@
-import time
-
 import pytest
-from kazoo.client import KazooClient
 
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
@@ -232,14 +229,6 @@ def test_attach_without_zk_incr_readonly_metric(start_cluster):
         node1.query("DROP TABLE IF EXISTS test.test_no_zk SYNC")
 
 
-def get_zk(timeout=30.0):
-    _zk_instance = KazooClient(
-        hosts=cluster.get_instance_ip("zoo1") + ":2181", timeout=timeout
-    )
-    _zk_instance.start()
-    return _zk_instance
-
-
 def test_broken_tables_readonly_metric(start_cluster):
     try:
         tbl_uuid = node1.query("SELECT generateUUIDv4()").strip()
@@ -260,7 +249,7 @@ def test_broken_tables_readonly_metric(start_cluster):
 
         node1.stop_clickhouse()
 
-        zk_client = get_zk()
+        zk_client = cluster.get_kazoo_client("zoo1")
 
         columns_path = zk_path + "/columns"
         metadata = zk_client.get(columns_path)[0]

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
 #include <IO/PeekableReadBuffer.h>

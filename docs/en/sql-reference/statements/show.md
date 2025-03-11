@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/show
+slug: /sql-reference/statements/show
 sidebar_position: 37
 sidebar_label: SHOW
 title: SHOW Statements
@@ -9,36 +9,34 @@ title: SHOW Statements
 
 `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless the following settings are turned on:
 
-- [`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings#display_secrets_in_show_and_select) (server setting)
-- [`format_display_secrets_in_show_and_select` ](../../operations/settings/formats#format_display_secrets_in_show_and_select) (format setting)  
+- [`display_secrets_in_show_and_select`](../../operations/server-configuration-parameters/settings/#display_secrets_in_show_and_select) (server setting)
+- [`format_display_secrets_in_show_and_select` ](../../operations/settings/formats/#format_display_secrets_in_show_and_select) (format setting)  
 
-Additionally, the user should have the [`displaySecretsInShowAndSelect`](grant.md#display-secrets) privilege.
+Additionally, the user should have the [`displaySecretsInShowAndSelect`](grant.md/#displaysecretsinshowandselect) privilege.
 :::
 
-## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE
+## SHOW CREATE TABLE | DICTIONARY | VIEW | DATABASE {#show-create-table--dictionary--view--database}
 
 These statements return a single column of type String, 
 containing the `CREATE` query used for creating the specified object.
 
-### Syntax
+### Syntax {#syntax}
 
 ```sql title="Syntax"
-SHOW [CREATE] [TEMPORARY] TABLE|DICTIONARY|VIEW|DATABASE [db.]table|view [INTO OUTFILE filename] [FORMAT format]
+SHOW [CREATE] TABLE | TEMPORARY TABLE | DICTIONARY | VIEW | DATABASE [db.]table|view [INTO OUTFILE filename] [FORMAT format]
 ```
 
-`SHOW TABLE t` and `SHOW DATABASE db` have the same meaning as `SHOW CREATE TABLE|DATABASE t|db`, but `SHOW t` and `SHOW db` are not supported.
-
 :::note
-if you use this statement to get the `CREATE` query of system tables,
+If you use this statement to get the `CREATE` query of system tables,
 you will get a *fake* query, which only declares the table structure,
 but cannot be used to create a table.
 :::
 
-## SHOW DATABASES
+## SHOW DATABASES {#show-databases}
 
 This statement prints a list of all databases.
 
-### Syntax
+### Syntax {#syntax-1}
 
 ```sql title="Syntax"
 SHOW DATABASES [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
@@ -50,7 +48,7 @@ It is identical to the query:
 SELECT name FROM system.databases [WHERE name [NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE filename] [FORMAT format]
 ```
 
-### Examples
+### Examples {#examples}
 
 In this example we use `SHOW` to obtain database names containing the symbol sequence 'de' in their names:
 
@@ -104,15 +102,15 @@ SHOW DATABASES LIMIT 2
 └────────────────────────────────┘
 ```
 
-### See also
+### See also {#see-also}
 
-- [`CREATE DATABASE`](create/database.md/#query-language-create-database)
+- [`CREATE DATABASE`](/sql-reference/statements/create/database)
 
-## SHOW TABLES
+## SHOW TABLES {#show-tables}
 
 The `SHOW TABLES` statement displays a list of tables.
 
-### Syntax
+### Syntax {#syntax-2}
 
 ```sql title="Syntax"
 SHOW [FULL] [TEMPORARY] TABLES [{FROM | IN} <db>] [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
@@ -126,7 +124,7 @@ This statement is identical to the query:
 SELECT name FROM system.tables [WHERE name [NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-### Examples
+### Examples {#examples-1}
 
 In this example we use the `SHOW TABLES` statement to find all tables containing 'user' in their names:
 
@@ -181,16 +179,16 @@ SHOW TABLES FROM system LIMIT 2
 └────────────────────────────────┘
 ```
 
-### See also
+### See also {#see-also-1}
 
-- [`Create Tables`](../../tutorial.md/#create-tables)
+- [`Create Tables`](/sql-reference/statements/create/table)
 - [`SHOW CREATE TABLE`](#show-create-table--dictionary--view--database)
 
 ## SHOW COLUMNS {#show_columns}
 
 The `SHOW COLUMNS` statement displays a list of columns.
 
-### Syntax
+### Syntax {#syntax-3}
 
 ```sql title="Syntax"
 SHOW [EXTENDED] [FULL] COLUMNS {FROM | IN} <table> [{FROM | IN} <db>] [{[NOT] {LIKE | ILIKE} '<pattern>' | WHERE <expr>}] [LIMIT <N>] [INTO
@@ -218,7 +216,7 @@ The `SHOW COLUMNS` statement produces a result table with the following structur
 | `comment`   | (only if `FULL` keyword was specified) Comment on the column                                                                  | `String`           |
 | `privilege` | (only if `FULL` keyword was specified) The privilege you have on this column, currently not available                         | `String`           |
 
-### Examples
+### Examples {#examples-2}
 
 In this example we'll use the `SHOW COLUMNS` statement to get information about all columns in table 'orders',
 starting from 'delivery_':
@@ -234,15 +232,15 @@ SHOW COLUMNS FROM 'orders' LIKE 'delivery_%'
 └─────────────────┴──────────┴──────┴─────────┴─────────┴───────┘
 ```
 
-### See also
+### See also {#see-also-2}
 
 - [`system.columns`](../../operations/system-tables/columns.md)
 
-## SHOW DICTIONARIES
+## SHOW DICTIONARIES {#show-dictionaries}
 
 The `SHOW DICTIONARIES` statement displays a list of [Dictionaries](../../sql-reference/dictionaries/index.md).
 
-### Syntax
+### Syntax {#syntax-4}
 
 ```sql title="Syntax"
 SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
@@ -256,7 +254,7 @@ You can get the same results as the `SHOW DICTIONARIES` query in the following w
 SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-### Examples
+### Examples {#examples-3}
 
 The following query selects the first two rows from the list of tables in the `system` database, whose names contain `reg`.
 
@@ -271,7 +269,7 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 └──────────────┘
 ```
 
-## SHOW INDEX
+## SHOW INDEX {#show-index}
 
 Displays a list of primary and data skipping indexes of a table.
 
@@ -279,7 +277,7 @@ This statement mostly exists for compatibility with MySQL. System tables [`syste
 primary keys) and [`system.data_skipping_indices`](../../operations/system-tables/data_skipping_indices.md) (for data skipping indices)
 provide equivalent information but in a fashion more native to ClickHouse.
 
-### Syntax
+### Syntax {#syntax-5}
 
 ```sql title="Syntax"
 SHOW [EXTENDED] {INDEX | INDEXES | INDICES | KEYS } {FROM | IN} <table> [{FROM | IN} <db>] [WHERE <expr>] [INTO OUTFILE <filename>] [FORMAT <format>]
@@ -310,7 +308,7 @@ The statement produces a result table with the following structure:
 | `visible`       | If the index is visible to the optimizer, always `YES`.                                                                  | `String`           |
 | `expression`    | For a data skipping index, the index expression. For a primary key index: `''` (empty string).                           | `String`           |
 
-### Examples
+### Examples {#examples-4}
 
 In this example we use the `SHOW INDEX` statement to get information about all indexes in table 'tbl'
 
@@ -329,16 +327,16 @@ SHOW INDEX FROM 'tbl'
 └───────┴────────────┴──────────┴──────────────┴─────────────┴───────────┴─────────────┴──────────┴────────┴──────┴──────────────┴─────────┴───────────────┴─────────┴────────────┘
 ```
 
-### See also
+### See also {#see-also-3}
 
 - [`system.tables`](../../operations/system-tables/tables.md)
 - [`system.data_skipping_indices`](../../operations/system-tables/data_skipping_indices.md)
 
-## SHOW PROCESSLIST
+## SHOW PROCESSLIST {#show-processlist}
 
-Outputs the content of the [`system.processes`](../../operations/system-tables/processes.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
+Outputs the content of the [`system.processes`](/operations/system-tables/processes) table, that contains a list of queries that are being processed at the moment, excluding `SHOW PROCESSLIST` queries.
 
-### Syntax 
+### Syntax {#syntax-6}
 
 ```sql title="Syntax"
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
@@ -354,11 +352,11 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ```
 :::
 
-## SHOW GRANTS
+## SHOW GRANTS {#show-grants}
 
 The `SHOW GRANTS` statement shows privileges for a user.
 
-### Syntax
+### Syntax {#syntax-7}
 
 ```sql title="Syntax"
 SHOW GRANTS [FOR user1 [, user2 ...]] [WITH IMPLICIT] [FINAL]
@@ -370,132 +368,132 @@ The `WITH IMPLICIT` modifier allows showing the implicit grants (e.g., `GRANT SE
 
 The `FINAL` modifier merges all grants from the user and its granted roles (with inheritance)
 
-## SHOW CREATE USER
+## SHOW CREATE USER {#show-create-user}
 
 The `SHOW CREATE USER` statement shows parameters which were used at [user creation](../../sql-reference/statements/create/user.md).
 
-### Syntax
+### Syntax {#syntax-8}
 
 ```sql title="Syntax"
 SHOW CREATE USER [name1 [, name2 ...] | CURRENT_USER]
 ```
 
-## SHOW CREATE ROLE
+## SHOW CREATE ROLE {#show-create-role}
 
 The `SHOW CREATE ROLE` statement shows parameters which were used at [role creation](../../sql-reference/statements/create/role.md).
 
-### Syntax
+### Syntax {#syntax-9}
 
 ```sql title="Syntax"
 SHOW CREATE ROLE name1 [, name2 ...]
 ```
 
-## SHOW CREATE ROW POLICY
+## SHOW CREATE ROW POLICY {#show-create-row-policy}
 
 The `SHOW CREATE ROW POLICY` statement shows parameters which were used at [row policy creation](../../sql-reference/statements/create/row-policy.md).
 
-### Syntax
+### Syntax {#syntax-10}
 
 ```sql title="Syntax"
 SHOW CREATE [ROW] POLICY name ON [database1.]table1 [, [database2.]table2 ...]
 ```
 
-## SHOW CREATE QUOTA
+## SHOW CREATE QUOTA {#show-create-quota}
 
 The `SHOW CREATE QUOTA` statement shows parameters which were used at [quota creation](../../sql-reference/statements/create/quota.md).
 
-### Syntax
+### Syntax {#syntax-11}
 
 ```sql title="Syntax"
 SHOW CREATE QUOTA [name1 [, name2 ...] | CURRENT]
 ```
 
-## SHOW CREATE SETTINGS PROFILE
+## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile}
 
 The `SHOW CREATE SETTINGS PROFILE` statement shows parameters which were used at [settings profile creation](../../sql-reference/statements/create/settings-profile.md).
 
-### Syntax
+### Syntax {#syntax-12}
 
 ```sql title="Syntax"
 SHOW CREATE [SETTINGS] PROFILE name1 [, name2 ...]
 ```
 
-## SHOW USERS
+## SHOW USERS {#show-users}
 
 The `SHOW USERS` statement returns a list of [user account](../../guides/sre/user-management/index.md#user-account-management) names. 
-To view user accounts parameters, see the system table [`system.users`](../../operations/system-tables/users.md#system_tables-users).
+To view user accounts parameters, see the system table [`system.users`](/operations/system-tables/users).
 
-### Syntax
+### Syntax {#syntax-13}
 
 ```sql title="Syntax"
 SHOW USERS
 ```
 
-## SHOW ROLES
+## SHOW ROLES {#show-roles}
 
 The `SHOW ROLES` statement returns a list of [roles](../../guides/sre/user-management/index.md#role-management). 
 To view other parameters, 
-see system tables [`system.roles`](../../operations/system-tables/roles.md#system_tables-roles) and [`system.role_grants`](../../operations/system-tables/role-grants.md#system_tables-role_grants).
+see system tables [`system.roles`](/operations/system-tables/roles) and [`system.role_grants`](/operations/system-tables/role-grants).
 
-### Syntax
+### Syntax {#syntax-14}
 
 ```sql title="Syntax"
 SHOW [CURRENT|ENABLED] ROLES
 ```
-## SHOW PROFILES
+## SHOW PROFILES {#show-profiles}
 
 The `SHOW PROFILES` statement returns a list of [setting profiles](../../guides/sre/user-management/index.md#settings-profiles-management). 
-To view user accounts parameters, see system table [`settings_profiles`](../../operations/system-tables/settings_profiles.md#system_tables-settings_profiles).
+To view user accounts parameters, see system table [`settings_profiles`](/operations/system-tables/settings_profiles).
 
-### Syntax
+### Syntax {#syntax-15}
 
 ```sql title="Syntax"
 SHOW [SETTINGS] PROFILES
 ```
 
-## SHOW POLICIES
+## SHOW POLICIES {#show-policies}
 
 The `SHOW POLICIES` statement returns a list of [row policies](../../guides/sre/user-management/index.md#row-policy-management) for the specified table. 
-To view user accounts parameters, see system table [`system.row_policies`](../../operations/system-tables/row_policies.md#system_tables-row_policies).
+To view user accounts parameters, see system table [`system.row_policies`](/operations/system-tables/row_policies).
 
-### Syntax
+### Syntax {#syntax-16}
 
 ```sql title="Syntax"
 SHOW [ROW] POLICIES [ON [db.]table]
 ```
 
-## SHOW QUOTAS
+## SHOW QUOTAS {#show-quotas}
 
 The `SHOW QUOTAS` statement returns a list of [quotas](../../guides/sre/user-management/index.md#quotas-management). 
-To view quotas parameters, see the system table [`system.quotas`](../../operations/system-tables/quotas.md#system_tables-quotas).
+To view quotas parameters, see the system table [`system.quotas`](/operations/system-tables/quotas).
 
-### Syntax
+### Syntax {#syntax-17}
 
 ```sql title="Syntax"
 SHOW QUOTAS
 ```
 
-## SHOW QUOTA
+## SHOW QUOTA {#show-quota}
 
 The `SHOW QUOTA` statement returns a [quota](../../operations/quotas.md) consumption for all users or for current user. 
-To view other parameters, see system tables [`system.quotas_usage`](../../operations/system-tables/quotas_usage.md#system_tables-quotas_usage) and [`system.quota_usage`](../../operations/system-tables/quota_usage.md#system_tables-quota_usage).
+To view other parameters, see system tables [`system.quotas_usage`](/operations/system-tables/quotas_usage) and [`system.quota_usage`](/operations/system-tables/quota_usage).
 
-### Syntax
+### Syntax {#syntax-18}
 
 ```sql title="Syntax"
 SHOW [CURRENT] QUOTA
 ```
-## SHOW ACCESS
+## SHOW ACCESS {#show-access}
 
 The `SHOW ACCESS` statement shows all [users](../../guides/sre/user-management/index.md#user-account-management), [roles](../../guides/sre/user-management/index.md#role-management), [profiles](../../guides/sre/user-management/index.md#settings-profiles-management), etc. and all their [grants](../../sql-reference/statements/grant.md#privileges).
 
-### Syntax
+### Syntax {#syntax-19}
 
 ```sql title="Syntax"
 SHOW ACCESS
 ```
 
-## SHOW CLUSTER(S)
+## SHOW CLUSTER(S) {#show-clusters}
 
 The `SHOW CLUSTER(S)` statement returns a list of clusters. 
 All available clusters are listed in the [`system.clusters`](../../operations/system-tables/clusters.md) table.
@@ -504,14 +502,14 @@ All available clusters are listed in the [`system.clusters`](../../operations/sy
 The `SHOW CLUSTER name` query displays the contents of `system.clusters` table for the specified cluster name.
 :::
 
-### Syntax
+### Syntax {#syntax-20}
 
 ```sql title="Syntax"
 SHOW CLUSTER '<name>'
 SHOW CLUSTERS [[NOT] LIKE|ILIKE '<pattern>'] [LIMIT <N>]
 ```
 
-### Examples
+### Examples {#examples-5}
 
 ```sql title="Query"
 SHOW CLUSTERS;
@@ -559,24 +557,24 @@ errors_count:            0
 estimated_recovery_time: 0
 ```
 
-## SHOW SETTINGS
+## SHOW SETTINGS {#show-settings}
 
 The `SHOW SETTINGS` statement returns a list of system settings and their values. 
 It selects data from the [`system.settings`](../../operations/system-tables/settings.md) table.
 
-### Syntax
+### Syntax {#syntax-21}
 
 ```sql title="Syntax"
 SHOW [CHANGED] SETTINGS LIKE|ILIKE <name>
 ```
 
-### Clauses
+### Clauses {#clauses}
 
 `LIKE|ILIKE` allow to specify a matching pattern for the setting name. It can contain globs such as `%` or `_`. `LIKE` clause is case-sensitive, `ILIKE` — case insensitive.
 
 When the `CHANGED` clause is used, the query returns only settings changed from their default values.
 
-### Examples
+### Examples {#examples-6}
 
 Query with the `LIKE` clause:
 
@@ -616,23 +614,23 @@ SHOW CHANGED SETTINGS ILIKE '%MEMORY%'
 └──────────────────┴────────┴─────────────┘
 ```
 
-## SHOW SETTING
+## SHOW SETTING {#show-setting}
 
 The `SHOW SETTING` statement outputs setting value for specified setting name.
 
-### Syntax
+### Syntax {#syntax-22}
 
 ```sql title="Syntax"
 SHOW SETTING <name>
 ```
 
-### See also
+### See also {#see-also-4}
 
 - [`system.settings`](../../operations/system-tables/settings.md) table
 
-## SHOW FILESYSTEM CACHES
+## SHOW FILESYSTEM CACHES {#show-filesystem-caches}
 
-### Examples
+### Examples {#examples-7}
 
 ```sql title="Query"
 SHOW FILESYSTEM CACHES
@@ -644,30 +642,30 @@ SHOW FILESYSTEM CACHES
 └───────────┘
 ```
 
-### See also
+### See also {#see-also-5}
 
 - [`system.settings`](../../operations/system-tables/settings.md) table
 
-## SHOW ENGINES
+## SHOW ENGINES {#show-engines}
 
 The `SHOW ENGINES` statement outputs the content of the [`system.table_engines`](../../operations/system-tables/table_engines.md) table, 
 that contains description of table engines supported by server and their feature support information.
 
-### Syntax
+### Syntax {#syntax-23}
 
 ```sql title="Syntax"
 SHOW ENGINES [INTO OUTFILE filename] [FORMAT format]
 ```
 
-### See also
+### See also {#see-also-6}
 
 - [system.table_engines](../../operations/system-tables/table_engines.md) table
 
-## SHOW FUNCTIONS
+## SHOW FUNCTIONS {#show-functions}
 
 The `SHOW FUNCTIONS` statement outputs the content of the [`system.functions`](../../operations/system-tables/functions.md) table.
 
-### Syntax
+### Syntax {#syntax-24}
 
 ```sql title="Syntax"
 SHOW FUNCTIONS [LIKE | ILIKE '<pattern>']
@@ -675,11 +673,11 @@ SHOW FUNCTIONS [LIKE | ILIKE '<pattern>']
 
 If either `LIKE` or `ILIKE` clause is specified, the query returns a list of system functions whose names match the provided `<pattern>`.
 
-### See Also
+### See Also {#see-also-7}
 
 - [`system.functions`](../../operations/system-tables/functions.md) table
 
-## SHOW MERGES
+## SHOW MERGES {#show-merges}
 
 The `SHOW MERGES` statement returns a list of merges. 
 All merges are listed in the [`system.merges`](../../operations/system-tables/merges.md) table:
@@ -696,13 +694,13 @@ All merges are listed in the [`system.merges`](../../operations/system-tables/me
 | `memory_usage`      | Memory consumption of the merge process.                   |
 
 
-### Syntax
+### Syntax {#syntax-25}
 
 ```sql title="Syntax"
 SHOW MERGES [[NOT] LIKE|ILIKE '<table_name_pattern>'] [LIMIT <N>]
 ```
 
-### Examples
+### Examples {#examples-8}
 
 ```sql title="Query"
 SHOW MERGES;

@@ -13,4 +13,4 @@ slug: /zh/operations/system-tables/roles
 
 ## 另请参阅 {#see-also}
 
--   [查看角色信息](../../sql-reference/statements/show.md#show-roles-statement)
+-   [查看角色信息](/sql-reference/statements/show#show-roles)

@@ -22,7 +22,7 @@ fileCluster(cluster_name, path[, format, structure, compression_method])
 
 - `cluster_name` — имя кластера, используемое для создания набора адресов и параметров подключения к удаленным и локальным серверам.
 - `path` — относительный путь до файла от [user_files_path](../../sql-reference/table-functions/file.md#server_configuration_parameters-user_files_path). Путь к файлу поддерживает [шаблоны поискаglobs](#globs_in_path). 
-- `format` — [формат](../../interfaces/formats.md#formats) файла.
+- `format` — [формат](/sql-reference/formats) файла.
 - `structure` — структура таблицы. Формат: `'colunmn1_name column1_ype, column2_name column2_type, ...'`.
 - `compression_method` — Используемый тип сжатия. Поддерживаемые типы: `gz`, `br`, `xz`, `zst`, `lz4` и `bz2`.
 

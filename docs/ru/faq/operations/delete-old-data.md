@@ -28,16 +28,16 @@ ClickHouse не удаляет данные в реальном времени, 
 
 Это - самый распространенный подход к тому, чтобы обеспечить соблюдение принципов [GDPR](https://gdpr-info.eu) в вашей системе на ClickHouse.
 
-Подробнее смотрите в разделе [Мутации](../../sql-reference/statements/alter/index.md#alter-mutations).
+Подробнее смотрите в разделе [Мутации](/sql-reference/statements/alter#mutations).
 
 ## DROP PARTITION {#drop-partition}
 
 Запрос `ALTER TABLE ... DROP PARTITION` позволяет эффективно удалять целые партиции. Этот способ не такой гибкий, важно правильно сконфигурировать партиции при создании таблицы, но он подходит для достаточно широкого спектра типовых задач. Как и для мутаций, для регулярного запуска таких запросов нужна внешняя система.
 
-Подробнее смотрите в разделе [Манипулирование с партициями и кусками](../../sql-reference/statements/alter/partition.md#alter_drop-partition).
+Подробнее смотрите в разделе [Манипулирование с партициями и кусками](/sql-reference/statements/alter/partition#drop-partitionpart).
 
 ## TRUNCATE {#truncate}
 
 Это достаточно радикальный способ, он удаляет все данные в таблице, но хорошо подходит для отдельных случаевх.
 
-Подробнее смотрите в разделе об [удалении партиций](../../sql-reference/statements/alter/partition.md#alter_drop-partition).
+Подробнее смотрите в разделе об [удалении партиций](/sql-reference/statements/alter/partition#drop-partitionpart).

@@ -1,10 +1,8 @@
 #pragma once
 
 #include <atomic>
-#include <variant>
 #include <Core/Block.h>
 #include <boost/geometry.hpp>
-#include <boost/geometry/geometries/multi_polygon.hpp>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>

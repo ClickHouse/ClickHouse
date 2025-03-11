@@ -103,6 +103,6 @@ FROM dt;
 -   [Настройка `date_time_output_format`](../../operations/settings/settings.md)
 -   [Конфигурационный параметр сервера `timezone`](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-timezone)
 -   [Параметр `session_timezone`](../../operations/settings/settings.md#session_timezone)
--   [Операторы для работы с датой и временем](../../sql-reference/operators/index.md#operators-datetime)
+-   [Операторы для работы с датой и временем](../../sql-reference/operators#operators-for-working-with-dates-and-times)
 -   [Тип данных `Date`](date.md)
 -   [Тип данных `DateTime`](datetime.md)

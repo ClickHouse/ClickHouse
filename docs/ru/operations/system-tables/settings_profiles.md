@@ -14,7 +14,7 @@ slug: /ru/operations/system-tables/settings_profiles
 
 -    `num_elements` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Число элементов для этого профиля в таблице `system.settings_profile_elements`.
 
--    `apply_to_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Признак, который показывает, что параметры профиля заданы для всех ролей и/или пользователей.
+-    `apply_to_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Признак, который показывает, что параметры профиля заданы для всех ролей и/или пользователей.
 
 -    `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Список ролей и/или пользователей, к которым применяется профиль настроек.
 
@@ -22,4 +22,4 @@ slug: /ru/operations/system-tables/settings_profiles
 
 ## Смотрите также {#see-also}
 
--   [SHOW PROFILES](../../sql-reference/statements/show.md#show-profiles-statement)
+-   [SHOW PROFILES](/sql-reference/statements/show#show-profiles)

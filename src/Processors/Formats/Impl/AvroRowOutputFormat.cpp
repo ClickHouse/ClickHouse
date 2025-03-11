@@ -30,6 +30,8 @@
 
 #include <Common/re2.h>
 
+#include <Processors/Port.h>
+
 #include <DataFile.hh>
 #include <Encoder.hh>
 #include <Node.hh>

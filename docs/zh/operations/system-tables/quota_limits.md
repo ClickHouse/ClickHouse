@@ -8,7 +8,7 @@ slug: /zh/operations/system-tables/quota_limits
 列信息:
 - `quota_name` ([String](../../sql-reference/data-types/string.md)) — 配额名称.
 - `duration` ([UInt32](../../sql-reference/data-types/int-uint.md)) — 计算资源消耗的时间间隔长度，单位为秒.
-- `is_randomized_interval` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 逻辑值. 它显示了间隔是否是随机的. 如果间隔不是随机的, 它总是在同一时间开始. 例如, 1 分钟的间隔总是从整数分钟开始(即它可以从 11:20:00 开始, 但它永远不会从 11:20:01 开始), 一天的间隔总是从 UTC 午夜开始. 如果间隔是随机的, 则第一个间隔在随机时间开始, 随后的间隔一个接一个开始. 值:
+- `is_randomized_interval` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 逻辑值. 它显示了间隔是否是随机的. 如果间隔不是随机的, 它总是在同一时间开始. 例如, 1 分钟的间隔总是从整数分钟开始(即它可以从 11:20:00 开始, 但它永远不会从 11:20:01 开始), 一天的间隔总是从 UTC 午夜开始. 如果间隔是随机的, 则第一个间隔在随机时间开始, 随后的间隔一个接一个开始. 值:
 - `0` — 区间不是随机的.
 - `1` — 区间是随机的.
 - `max_queries` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — 最大查询数.

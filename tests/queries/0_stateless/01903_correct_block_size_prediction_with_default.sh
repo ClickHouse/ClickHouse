@@ -25,7 +25,7 @@ function test()
     uuid_2=$(cat /proc/sys/kernel/random/uuid)
     $CLICKHOUSE_CLIENT --query="SELECT uniq($sql) FROM test_extract $where SETTINGS max_threads=1" --query_id=$uuid_2
     $CLICKHOUSE_CLIENT --query="
-        SYSTEM FLUSH LOGS;
+        SYSTEM FLUSH LOGS query_log;
         WITH memory_1 AS (SELECT memory_usage FROM system.query_log WHERE current_database = currentDatabase() AND query_id='$uuid_1' AND type = 'QueryFinish' as memory_1),
              memory_2 AS (SELECT memory_usage FROM system.query_log WHERE current_database = currentDatabase() AND query_id='$uuid_2' AND type = 'QueryFinish' as memory_2)
                 SELECT memory_1.memory_usage <= 1.2 * memory_2.memory_usage OR

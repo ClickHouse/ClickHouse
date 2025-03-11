@@ -125,7 +125,7 @@ bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expecte
     if (pos->type != TokenType::BareWord)
         return false;
 
-    const char * current_word = s.begin();
+    const char * current_word = s.data();
 
     while (true)
     {
@@ -134,7 +134,7 @@ bool ParserKeyword::parseImpl(Pos & pos, [[maybe_unused]] ASTPtr & node, Expecte
         if (pos->type != TokenType::BareWord)
             return false;
 
-        const char * const next_whitespace = find_first_symbols<' ', '\0'>(current_word, s.end());
+        const char * const next_whitespace = find_first_symbols<' ', '\0'>(current_word, s.data() + s.size());
         const size_t word_length = next_whitespace - current_word;
 
         if (word_length != pos->size())

@@ -4,6 +4,8 @@
 #include <IO/ReadHelpers.h>
 #include <boost/algorithm/string.hpp>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -64,10 +66,30 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.3",
+        {
+            {"use_page_cache_with_distributed_cache", false, false, "New setting"},
+            {"use_query_condition_cache", false, false, "New setting."},
+        });
         addSettingsChanges(settings_changes_history, "25.2",
         {
+            /// Release closed. Please use 25.3
+            {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
             {"postgresql_fault_injection_probability", 0., 0., "New setting"},
+            {"apply_settings_from_server", false, true, "Client-side code (e.g. INSERT input parsing and query output formatting) will use the same settings as the server, including settings from server config."},
+            {"merge_tree_use_deserialization_prefixes_cache", true, true, "A new setting to control the usage of deserialization prefixes cache in MergeTree"},
+            {"merge_tree_use_prefixes_deserialization_thread_pool", true, true, "A new setting controlling the usage of the thread pool for parallel prefixes deserialization in MergeTree"},
+            {"optimize_and_compare_chain", false, true, "A new setting"},
+            {"enable_adaptive_memory_spill_scheduler", false, false, "New setting. Enable spill memory data into external storage adaptively."},
+            {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
+            {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
+            {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
+            {"output_format_pretty_max_rows", 10000, 1000, "It is better for usability - less amount to scroll."},
+            {"restore_replicated_merge_tree_to_shared_merge_tree", false, false, "New setting."},
+            {"parallel_replicas_only_with_analyzer", true, true, "Parallel replicas is supported only with analyzer enabled"},
+            {"s3_allow_multipart_copy", true, true, "New setting."},
+            /// Release closed. Please use 25.3
         });
         addSettingsChanges(settings_changes_history, "25.1",
         {
@@ -79,16 +101,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"query_plan_use_new_logical_join_step", false, false, "New join step, internal change"},
-            {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
+            {"distributed_cache_min_bytes_for_seek", 0, 0, "New private setting."},
             {"use_iceberg_partition_pruning", false, false, "New setting"},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"max_bytes_ratio_before_external_sort", 0.0, 0.5, "Enable automatic spilling to disk by default."},
             {"min_external_sort_block_bytes", 0., 100_MiB, "New setting."},
             {"s3queue_migrate_old_metadata_to_buckets", false, false, "New setting."},
             {"distributed_cache_pool_behaviour_on_limit", "allocate_bypassing_pool", "wait", "Cloud only"},
-            {"output_format_parquet_write_bloom_filter", false, true, "Added support for writing Parquet bloom filters."},
-            {"output_format_parquet_bloom_filter_bits_per_value", 10.5, 10.5, "New setting."},
-            {"output_format_parquet_bloom_filter_flush_threshold_bytes", 128 * 1024 * 1024, 128 * 1024 * 1024, "New setting."},
             {"use_hive_partitioning", false, true, "Enabled the setting by default."},
             {"query_plan_try_use_vector_search", false, true, "New setting."},
             {"short_circuit_function_evaluation_for_nulls", false, true, "Allow to execute functions with Nullable arguments only on rows with non-NULL values in all arguments"},
@@ -111,7 +130,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"validate_enum_literals_in_operators", false, false, "A new setting"},
             {"allow_experimental_kusto_dialect", true, false, "A new setting"},
             {"allow_experimental_prql_dialect", true, false, "A new setting"},
-            {"optimize_and_compare_chain", true, false, "A new setting"},
             {"h3togeo_lon_lat_result_order", true, false, "A new setting"},
             {"max_parallel_replicas", 1, 1000, "Use up to 1000 parallel replicas by default."},
             {"allow_general_join_planning", false, true, "Allow more general join planning algorithm when hash join algorithm is enabled."},
@@ -135,6 +153,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"skip_redundant_aliases_in_udf", false, false, "When enabled, this allows you to use the same user defined function several times for several materialized columns in the same table."},
             {"parallel_replicas_index_analysis_only_on_coordinator", true, true, "Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan"}, // enabling it was moved to 24.10
             {"least_greatest_legacy_null_behavior", true, false, "New setting"},
+            {"use_concurrency_control", false, true, "Enable concurrency control by default"},
+            {"join_algorithm", "default", "direct,parallel_hash,hash", "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"},
             /// Release closed. Please use 25.1
         });
         addSettingsChanges(settings_changes_history, "24.11",
@@ -649,8 +669,24 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.3",
+        {
+            {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
+            {"zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock", 0, 0, "New setting"},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
+            /// Release closed. Please use 25.3
+            {"shared_merge_tree_initial_parts_update_backoff_ms", 50, 50, "New setting"},
+            {"shared_merge_tree_max_parts_update_backoff_ms", 5000, 5000, "New setting"},
+            {"shared_merge_tree_interserver_http_connection_timeout_ms", 100, 100, "New setting"},
+            {"columns_and_secondary_indices_sizes_lazy_calculation", true, true, "New setting to calculate columns and indices sizes lazily"},
+            {"table_disk", false, false, "New setting"},
+            {"allow_reduce_blocking_parts_task", false, true, "Now SMT will remove stale blocking parts from ZooKeeper by default"},
+            {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", false, false, "New setting to allow automatic cleanup merges for ReplacingMergeTree"},
+            {"shared_merge_tree_max_suspicious_broken_parts", 0, 0, "Max broken parts for SMT, if more - deny automatic detach"},
+            {"shared_merge_tree_max_suspicious_broken_parts_bytes", 0, 0, "Max size of all broken parts for SMT, if more - deny automatic detach"},
+            /// Release closed. Please use 25.3
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.1",
         {

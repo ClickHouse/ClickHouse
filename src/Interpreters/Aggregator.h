@@ -6,34 +6,18 @@
 #include <variant>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
-#include <base/StringRef.h>
-#include <Common/HashTable/FixedHashMap.h>
-#include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/TwoLevelHashMap.h>
-#include <Common/HashTable/StringHashMap.h>
-#include <Common/HashTable/TwoLevelStringHashMap.h>
 
+#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/ColumnNumbers.h>
-#include <Common/ColumnsHashingImpl.h>
 #include <Common/ThreadPool.h>
-#include <Common/assert_cast.h>
 #include <Common/filesystemHelpers.h>
 
 #include <QueryPipeline/SizeLimits.h>
 
-#include <Disks/SingleDiskVolume.h>
-#include <Disks/TemporaryFileOnDisk.h>
-
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/AggregationCommon.h>
 #include <Interpreters/JIT/compileFunction.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnVector.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnLowCardinality.h>
 
 #include <Parsers/IAST_fwd.h>
 
@@ -651,6 +635,7 @@ private:
         Arena * arena);
 };
 
+/// NOTE: For non-Analyzer it does not include the database name
 UInt64 calculateCacheKey(const DB::ASTPtr & select_query);
 
 /** Get the aggregation variant by its type. */

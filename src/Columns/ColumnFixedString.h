@@ -4,7 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/PODArray.h>
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Columns/IColumn.h>

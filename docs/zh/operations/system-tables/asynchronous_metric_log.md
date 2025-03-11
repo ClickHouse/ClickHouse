@@ -31,5 +31,5 @@ SELECT * FROM system.asynchronous_metric_log LIMIT 10
 ```
 
 **另请参阅**
--   [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — 包含在后台定期计算的指标.
--   [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — 包含定期刷新到磁盘表 `system.metrics` 以及 `system.events` 中的指标值历史记录.
+-   [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — 包含在后台定期计算的指标.
+-   [system.metric_log](/operations/system-tables/metric_log) — 包含定期刷新到磁盘表 `system.metrics` 以及 `system.events` 中的指标值历史记录.

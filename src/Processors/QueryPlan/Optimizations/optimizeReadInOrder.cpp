@@ -5,6 +5,7 @@
 #include <Interpreters/ArrayJoinAction.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
@@ -22,6 +23,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
+#include <Storages/ReadInOrderOptimizer.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageMerge.h>
 #include <Common/typeid_cast.h>

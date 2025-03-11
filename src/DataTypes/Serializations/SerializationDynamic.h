@@ -132,6 +132,11 @@ private:
             : structure_version(structure_version_)
         {
         }
+
+        ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+        {
+            return std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(*this);
+        }
     };
 
     size_t max_dynamic_types;

@@ -26,7 +26,7 @@ $CLICKHOUSE_CLIENT -m -q "
     attach table ttl_02262;
 
     -- create system.text_log
-    system flush logs;
+    system flush logs text_log;
 "
 
 ttl_02262_uuid=$($CLICKHOUSE_CLIENT -q "select uuid from system.tables where database = '$CLICKHOUSE_DATABASE' and name = 'ttl_02262'")
@@ -38,7 +38,7 @@ $CLICKHOUSE_CLIENT -m -q "
     select * from system.text_log where query_id like '%${ttl_02262_uuid}%' SETTINGS max_rows_to_read = 0;
 
     optimize table ttl_02262 final;
-    system flush logs;
+    system flush logs text_log;
     -- If TTL will be applied again (during OPTIMIZE TABLE FINAL) it will produce the following message:
     --
     --     Some TTL values were not calculated for part 201701_487_641_3. Will calculate them forcefully during merge.

@@ -22,18 +22,24 @@ struct MongoDBConfiguration
 {
     std::unique_ptr<mongocxx::uri> uri;
     String collection;
+    std::unordered_set<String> oid_fields = {"_id"};
 
     void checkHosts(const ContextPtr & context) const
     {
-        // Because domain records will be resolved inside the driver, we can't check IPs for our restrictions.
+        // Because domain records will be resolved inside the driver, we can't check resolved IPs for our restrictions.
         for (const auto & host : uri->hosts())
             context->getRemoteHostFilter().checkHostAndPort(host.name, toString(host.port));
+    }
+
+    bool isOidColumn(const std::string & name) const
+    {
+        return oid_fields.contains(name);
     }
 };
 
 /** Implements storage in the MongoDB database.
- *  Use ENGINE = MongoDB(host:port, database, collection, user, password [, options]);
- *               MongoDB(uri, collection);
+ *  Use ENGINE = MongoDB(host:port, database, collection, user, password[, options[, oid_columns]]);
+ *               MongoDB(uri, collection[, oid columns]);
  *  Read only.
  *  One stream only.
  */

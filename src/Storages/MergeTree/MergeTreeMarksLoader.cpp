@@ -1,5 +1,6 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
@@ -7,7 +8,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/ThreadPool.h>
-#include <Common/setThreadName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 
 #include <utility>
@@ -197,15 +197,16 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
                 full_mark_path, marks_count, expected_uncompressed_size);
     }
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    std::ranges::for_each(
-        plain_marks,
-        [](auto & plain_mark)
-        {
-            plain_mark.offset_in_compressed_file = std::byteswap(plain_mark.offset_in_compressed_file);
-            plain_mark.offset_in_decompressed_block = std::byteswap(plain_mark.offset_in_decompressed_block);
-        });
-#endif
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        std::ranges::for_each(
+            plain_marks,
+            [](auto & plain_mark)
+            {
+                plain_mark.offset_in_compressed_file = std::byteswap(plain_mark.offset_in_compressed_file);
+                plain_mark.offset_in_decompressed_block = std::byteswap(plain_mark.offset_in_decompressed_block);
+            });
+    }
 
     auto res = std::make_shared<MarksInCompressedFile>(plain_marks);
 

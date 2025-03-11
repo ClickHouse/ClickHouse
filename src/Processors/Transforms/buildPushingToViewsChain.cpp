@@ -4,6 +4,7 @@
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Processors/Chunk.h>
 #include <Processors/Transforms/CountingTransform.h>
@@ -1013,7 +1014,7 @@ void FinalizingViewsTransform::work()
                 "Pushing from {} to {} took {} ms.",
                 views_data->source_storage_id.getNameForLogs(),
                 view.table_id.getNameForLogs(),
-                view.runtime_stats->elapsed_ms);
+                view.runtime_stats->elapsed_ms.load());
         }
     }
 

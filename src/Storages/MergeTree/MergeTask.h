@@ -3,7 +3,6 @@
 #include <list>
 #include <memory>
 
-#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
 #include <Formats/MarkInCompressedFile.h>

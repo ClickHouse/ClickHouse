@@ -4,7 +4,7 @@
 #include <optional>
 #include <mutex>
 
-#include <Core/NamesAndTypes.h>
+#include <Core/Block_fwd.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/IStorage.h>
 

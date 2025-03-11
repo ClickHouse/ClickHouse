@@ -32,7 +32,7 @@ SELECT * FROM system.events LIMIT 5
 
 **另请参阅**
 
--   [系统。asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [系统。指标](../../operations/system-tables/metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
--   [系统。metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [系统。asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
+-   [系统。指标](/operations/system-tables/metrics) — Contains instantly calculated metrics.
+-   [系统。metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 -   [监测](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

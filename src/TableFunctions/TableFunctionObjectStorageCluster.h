@@ -122,7 +122,7 @@ using TableFunctionIcebergAzureCluster = TableFunctionObjectStorageCluster<Icebe
 using TableFunctionIcebergHDFSCluster = TableFunctionObjectStorageCluster<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
 #endif
 
-#if USE_AWS_S3 && USE_PARQUET
+#if USE_AWS_S3 && USE_PARQUET && USE_DELTA_KERNEL_RS
 using TableFunctionDeltaLakeCluster = TableFunctionObjectStorageCluster<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
 #endif
 

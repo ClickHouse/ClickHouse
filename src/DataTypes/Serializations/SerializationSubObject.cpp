@@ -29,6 +29,20 @@ struct DeserializeBinaryBulkStateSubObject : public ISerialization::DeserializeB
     std::vector<String> dynamic_sub_paths;
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
     ColumnPtr shared_data;
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateSubObject>(*this);
+
+        for (const auto & [path, state] : typed_path_states)
+            new_state->typed_path_states[path] = state ? state->clone() : nullptr;
+
+        for (const auto & [path, state] : dynamic_path_states)
+            new_state->dynamic_path_states[path] = state ? state->clone() : nullptr;
+
+        new_state->shared_data_state = shared_data_state ? shared_data_state->clone() : nullptr;
+        return new_state;
+    }
 };
 
 void SerializationSubObject::enumerateStreams(

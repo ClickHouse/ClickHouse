@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/Aliases.h>
 #include <Interpreters/Context_fwd.h>
@@ -16,7 +15,6 @@ struct ASTTablesInSelectQueryElement;
 class TableJoin;
 struct Settings;
 struct SelectQueryOptions;
-using Scalars = std::map<String, Block>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 struct StorageSnapshot;

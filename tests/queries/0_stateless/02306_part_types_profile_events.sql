@@ -21,7 +21,7 @@ SYSTEM START MERGES t_parts_profile_events;
 OPTIMIZE TABLE t_parts_profile_events FINAL;
 SYSTEM STOP MERGES t_parts_profile_events;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, part_log;
 
 SELECT count(), sum(ProfileEvents['InsertedWideParts']), sum(ProfileEvents['InsertedCompactParts'])
     FROM system.query_log WHERE current_database = currentDatabase()

@@ -78,7 +78,7 @@ public:
     SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConfiguration & config);
     SystemLogs(const SystemLogs & other) = default;
 
-    void flush(bool should_prepare_tables_anyway);
+    void flush(bool should_prepare_tables_anyway, const Strings & names);
     void flushAndShutdown();
     void shutdown();
     void handleCrash();
@@ -131,6 +131,8 @@ public:
       * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
       */
     void prepareTable() override;
+
+    const StorageID & getTableID() { return table_id; }
 
 protected:
     LoggerPtr log;

@@ -69,6 +69,6 @@ SELECT * FROM t_uuid
 
 ## 限制 {#restrictions}
 
-UUID数据类型只支持 [字符串](../../sql-reference/data-types/string.md) 数据类型也支持的函数(比如, [min](../../sql-reference/aggregate-functions/reference/min.md#agg_function-min), [max](../../sql-reference/aggregate-functions/reference/max.md#agg_function-max), 和 [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count))。
+UUID数据类型只支持 [字符串](../../sql-reference/data-types/string.md) 数据类型也支持的函数(比如, [min](/sql-reference/aggregate-functions/reference/min), [max](../../sql-reference/aggregate-functions/reference/max.md#agg_function-max), 和 [count](../../sql-reference/aggregate-functions/reference/count.md#agg_function-count))。
 
 算术运算不支持UUID数据类型（例如, [abs](../../sql-reference/functions/arithmetic-functions.md#arithm_func-abs)）或聚合函数，例如 [sum](../../sql-reference/aggregate-functions/reference/sum.md#agg_function-sum) 和 [avg](../../sql-reference/aggregate-functions/reference/avg.md#agg_function-avg).

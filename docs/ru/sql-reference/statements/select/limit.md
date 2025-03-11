@@ -20,7 +20,7 @@ sidebar_label: LIMIT
 
 Когда вы установите модификатор WITH TIES для `LIMIT n[,m]` и указываете `ORDER BY expr_list`, вы получите первые `n` или `n,m` строк и дополнительно все строки с теми же самым значениями полей указанных в `ORDER BY` равными строке на позиции `n` для `LIMIT n` или `m` для `LIMIT n,m`.
 
-Этот модификатор также может быть скомбинирован с [ORDER BY ... WITH FILL модификатором](../../../sql-reference/statements/select/order-by.md#orderby-with-fill)
+Этот модификатор также может быть скомбинирован с [ORDER BY ... WITH FILL модификатором](/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier)
 
 Для примера следующий запрос:
 ```sql

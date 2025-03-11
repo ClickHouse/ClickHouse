@@ -192,7 +192,7 @@ Returns the concatenation strings separated by string separator. Syntax: concatW
         .description = R"(
 Same as concatWithSeparator, the difference is that you need to ensure that concatWithSeparator(sep, expr1, expr2, expr3...) → result is injective, it will be used for optimization of GROUP BY.
 
-The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+The function is named "injective" if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
         )",
         .examples{{"concatWithSeparatorAssumeInjective", "SELECT concatWithSeparatorAssumeInjective('a', '1', '2', '3')", ""}},
         .category{"String"}});

@@ -10,14 +10,7 @@ namespace DB
 
 void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread_group)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
-    if (thread_group)
-        CurrentThread::attachToGroup(thread_group);
-
-    setThreadName("Segmentator");
+    ThreadGroupSwitcher switcher(thread_group, "Segmentator");
 
     try
     {
@@ -67,20 +60,13 @@ void ParallelParsingInputFormat::segmentatorThreadFunction(ThreadGroupPtr thread
 
 void ParallelParsingInputFormat::parserThreadFunction(ThreadGroupPtr thread_group, size_t current_ticket_number)
 {
-    SCOPE_EXIT_SAFE(
-        if (thread_group)
-            CurrentThread::detachFromGroupIfNotDetached();
-    );
-    if (thread_group)
-        CurrentThread::attachToGroupIfDetached(thread_group);
+    ThreadGroupSwitcher switcher(thread_group, "ChunkParser");
 
     const auto parser_unit_number = current_ticket_number % processing_units.size();
     auto & unit = processing_units[parser_unit_number];
 
     try
     {
-        setThreadName("ChunkParser");
-
         /*
          * This is kind of suspicious -- the input_process_creator contract with
          * respect to multithreaded use is not clear, but we hope that it is

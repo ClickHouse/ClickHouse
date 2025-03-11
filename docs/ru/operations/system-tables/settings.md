@@ -9,11 +9,11 @@ slug: /ru/operations/system-tables/settings
 
 -   `name` ([String](../../sql-reference/data-types/string.md)) — имя настройки.
 -   `value` ([String](../../sql-reference/data-types/string.md)) — значение настройки.
--   `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — показывает, изменена ли настройка по отношению к значению по умолчанию.
+-   `changed` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — показывает, изменена ли настройка по отношению к значению по умолчанию.
 -   `description` ([String](../../sql-reference/data-types/string.md)) — краткое описание настройки.
--   `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — минимальное значение настройки, если задано [ограничение](../settings/constraints-on-settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../../sql-reference/syntax.md#null-literal).
--   `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — максимальное значение настройки, если задано [ограничение](../settings/constraints-on-settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../../sql-reference/syntax.md#null-literal).
--   `readonly` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Показывает, может ли пользователь изменять настройку:
+-   `min` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — минимальное значение настройки, если задано [ограничение](../settings/constraints-on-settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](/operations/settings/formats#input_format_null_as_default).
+-   `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — максимальное значение настройки, если задано [ограничение](../settings/constraints-on-settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](/operations/settings/formats#input_format_null_as_default).
+-   `readonly` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Показывает, может ли пользователь изменять настройку:
     -   `0` — Текущий пользователь может изменять настройку.
     -   `1` — Текущий пользователь не может изменять настройку.
 -   `default` ([String](../../sql-reference/data-types/string.md)) — значению настройки по умолчанию.

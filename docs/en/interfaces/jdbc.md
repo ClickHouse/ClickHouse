@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/jdbc
+slug: /interfaces/jdbc
 sidebar_position: 22
 sidebar_label: JDBC Driver
 ---

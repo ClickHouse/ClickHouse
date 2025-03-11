@@ -175,7 +175,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
     const UUID & user_id,
     const String & user_name,
     const boost::container::flat_set<UUID> & enabled_roles,
-    const Poco::Net::IPAddress & client_address,
+    const std::shared_ptr<Poco::Net::IPAddress> & client_address,
     const String & forwarded_address,
     const String & client_key,
     bool throw_if_client_key_empty)
@@ -187,7 +187,7 @@ std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
     params.user_id = user_id;
     params.user_name = user_name;
     params.enabled_roles = enabled_roles;
-    params.client_address = client_address;
+    params.client_address = *client_address;
     params.forwarded_address = forwarded_address;
     params.client_key = client_key;
     auto it = enabled_quotas.find(params);

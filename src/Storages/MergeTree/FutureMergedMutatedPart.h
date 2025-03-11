@@ -24,6 +24,7 @@ struct FutureMergedMutatedPart
     MergeTreeData::DataPartsVector parts;
     std::vector<MergeTreePartInfo> blocking_parts_to_remove;
     MergeType merge_type = MergeType::Regular;
+    bool final = false;
 
     const MergeTreePartition & getPartition() const { return parts.front()->partition; }
 

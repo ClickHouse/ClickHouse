@@ -26,7 +26,7 @@ $CLICKHOUSE_CLIENT -m --query """
 SYSTEM DROP FILESYSTEM CACHE '$disk_name' KEY kek;
 """ 2>&1 | grep -q "Invalid cache key hex: kek" && echo "OK" || echo "FAIL"
 
-${CLICKHOUSE_CLIENT} -q " system flush logs"
+${CLICKHOUSE_CLIENT} -q " system flush logs filesystem_cache_log"
 
 key=$($CLICKHOUSE_CLIENT -m --query """
 SELECT key FROM system.filesystem_cache_log WHERE query_id = '$query_id' ORDER BY size DESC LIMIT 1;
@@ -52,7 +52,7 @@ query_id=$RANDOM$RANDOM
 
 $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1"
 
-${CLICKHOUSE_CLIENT} -q " system flush logs"
+${CLICKHOUSE_CLIENT} -q " system flush logs filesystem_cache_log"
 
 key=$($CLICKHOUSE_CLIENT -m --query """
 SELECT key FROM system.filesystem_cache_log WHERE query_id = '$query_id' ORDER BY size DESC LIMIT 1;

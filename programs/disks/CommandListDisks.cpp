@@ -4,6 +4,8 @@
 #include "DisksClient.h"
 #include "ICommand.h"
 
+#include <fmt/ranges.h>
+
 namespace DB
 {
 

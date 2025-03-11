@@ -1,7 +1,7 @@
 ---
-title : CustomSeparatedWithNames
-slug : /en/interfaces/formats/CustomSeparatedWithNames
-keywords : [CustomSeparatedWithNames]
+title: CustomSeparatedWithNames
+slug: /interfaces/formats/CustomSeparatedWithNames
+keywords: [CustomSeparatedWithNames]
 input_format: true
 output_format: true
 alias: []
@@ -11,13 +11,13 @@ alias: []
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description
+## Description {#description}
 
 Also prints the header row with column names, similar to [TabSeparatedWithNames](../TabSeparated/TabSeparatedWithNames.md).
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 
 :::note
 If setting [`input_format_with_names_use_header`](../../../operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,

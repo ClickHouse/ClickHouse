@@ -19,7 +19,11 @@ public:
 
     HugeInt() = default;
     explicit HugeInt(int64_t value);
-    constexpr HugeInt(int64_t up, uint64_t lo) : lower(lo), upper(up) { }
+    constexpr HugeInt(int64_t up, uint64_t lo)
+        : lower(lo)
+        , upper(up)
+    {
+    }
     constexpr HugeInt(const HugeInt & rhs) = default;
     constexpr HugeInt(HugeInt && rhs) = default;
     HugeInt & operator=(const HugeInt & rhs) = default;

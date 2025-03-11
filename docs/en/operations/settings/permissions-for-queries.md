@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/settings/permissions-for-queries
+slug: /operations/settings/permissions-for-queries
 sidebar_position: 58
 sidebar_label: Permissions for Queries
+title: "Permissions for Queries"
+description: "Settings for query permissions."
 ---
 
 # Permissions for Queries
@@ -16,7 +18,7 @@ Queries in ClickHouse can be divided into several types:
 
 The following settings regulate user permissions by the type of query:
 
-## readonly
+## readonly {#readonly}
 Restricts permissions for read data, write data, and change settings queries.
 
 When set to 1, allows:

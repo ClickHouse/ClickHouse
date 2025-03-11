@@ -22,7 +22,10 @@ public:
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
 
     void setLocation(const std::string & location_);
-    std::string getLocation(bool path_only) const;
+    std::string getLocation() const;
+    std::string getLocationWithEndpoint(const std::string & endpoint_) const;
+
+    void setEndpoint(const std::string & endpoint_);
 
     void setSchema(const DB::NamesAndTypesList & schema_);
     const DB::NamesAndTypesList & getSchema() const;
@@ -44,12 +47,19 @@ private:
     std::string path;
     DB::NamesAndTypesList schema;
 
+    std::string bucket;
+    /// Endpoint is set and used in case we have non-AWS storage implementation, for example, Minio.
+    /// Also not all catalogs support non-AWS storages.
+    std::string endpoint;
+
     /// Storage credentials, which are called "vended credentials".
     std::shared_ptr<IStorageCredentials> storage_credentials;
 
     bool with_location = false;
     bool with_schema = false;
     bool with_storage_credentials = false;
+
+    std::string constructLocation(const std::string & endpoint_) const;
 };
 
 

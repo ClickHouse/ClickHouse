@@ -1,5 +1,7 @@
 #include <Processors/IAccumulatingTransform.h>
 
+#include <Processors/Port.h>
+
 namespace DB
 {
 namespace ErrorCodes

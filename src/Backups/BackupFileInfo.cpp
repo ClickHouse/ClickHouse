@@ -91,6 +91,7 @@ String BackupFileInfo::describe() const
     String result;
     result += fmt::format("file_name: {};\n", file_name);
     result += fmt::format("size: {};\n", size);
+    result += fmt::format("object_key: {};\n", object_key);
     result += fmt::format("checksum: {};\n", getHexUIntLowercase(checksum));
     result += fmt::format("base_size: {};\n", base_size);
     result += fmt::format("base_checksum: {};\n", getHexUIntLowercase(checksum));
@@ -153,7 +154,8 @@ BackupFileInfo buildFileInfoForBackupEntry(
             info.checksum = checksums.full_checksum;
 
             /// We have prefix of this file in backup with the same checksum.
-            /// In ClickHouse this can happen for StorageLog for example.
+            /// In ClickHouse this can happen for StorageLog for example,
+            /// or for .sql files that store DDL if only last part of the query was changed.
             if (checksums.prefix_checksum == base_backup_file_info->second)
             {
                 LOG_TRACE(log, "Found prefix of file {} in the base backup, will write rest of the file to current backup", adjusted_path);

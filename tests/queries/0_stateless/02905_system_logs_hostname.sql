@@ -7,7 +7,7 @@ select '02095_system_logs_hostname' from system.one format Null;
 set log_queries=0;
 set log_query_threads=0;
 
-system flush logs;
+system flush logs query_log, query_thread_log;
 
 select hostname
 from system.query_log

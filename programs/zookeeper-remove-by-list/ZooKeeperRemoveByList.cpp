@@ -1,4 +1,5 @@
 #include <list>
+#include <iostream>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>

@@ -14,14 +14,14 @@ sidebar_position: 34
 
         Это способ создания временной таблицы, которая доступна только в текущем запросе.
 
--   Запросе [CREATE TABLE AS \<table_function()\>](../statements/create/index.md#create-table-query).
+-   Запросе [CREATE TABLE AS \<table_function()\>](/sql-reference/statements/create/table).
 
         Это один из методов создания таблицы.
 
--   Запросе [INSERT INTO TABLE FUNCTION](../../sql-reference/statements/insert-into.md#inserting-into-table-function).
+-   Запросе [INSERT INTO TABLE FUNCTION](/sql-reference/statements/insert-into#inserting-using-a-table-function).
 
 :::danger Предупреждение
-Если настройка [allow_ddl](../../operations/settings/permissions-for-queries.md#settings_allow_ddl) выключена, то использовать табличные функции невозможно.
+Если настройка [allow_ddl](/operations/settings/settings#allow_ddl) выключена, то использовать табличные функции невозможно.
 :::
 
 | Функция               | Описание                                                                                                                              |

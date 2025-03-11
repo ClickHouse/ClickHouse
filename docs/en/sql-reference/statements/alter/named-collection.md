@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/alter/named-collection
+slug: /sql-reference/statements/alter/named-collection
 sidebar_label: NAMED COLLECTION
 ---
 

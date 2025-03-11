@@ -178,7 +178,7 @@ table_type:    BASE TABLE
 -   `view_definition` ([String](../../sql-reference/data-types/string.md)) — `SELECT` запрос для представления.
 -   `check_option` ([String](../../sql-reference/data-types/string.md)) — `NONE`, нет проверки.
 -   `is_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, представление не обновляется.
--   `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — показывает является ли представление [материализованным](../../sql-reference/statements/create/view.md#materialized). Возможные значения:
+-   `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — показывает является ли представление [материализованным](/sql-reference/statements/create/view#materialized-view). Возможные значения:
     -   `NO` — создано обычное представление.
     -   `YES` — создано материализованное представление.
 -   `is_trigger_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, триггер не обновляется.

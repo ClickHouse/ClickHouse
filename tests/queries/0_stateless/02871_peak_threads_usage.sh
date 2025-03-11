@@ -72,7 +72,7 @@ ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_13" -m --query="SELECT * FRO
 
 ${CLICKHOUSE_CLIENT} --query_id="${UNIQUE_QUERY_ID}_14" -m --query="SELECT * FROM numbers(100000) SETTINGS max_threads = 4" "${QUERY_OPTIONS[@]}"
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_thread_log, query_log"
 
 # We cannot guarantee that the exact amount of different threads will be involved in execution of a query.
 # Because of that we use inequalities and the `uniqExact` function in the following checks.

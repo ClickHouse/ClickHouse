@@ -51,7 +51,6 @@ FROM <left_table>
 - [join_algorithm](../../../operations/settings/settings.md#settings-join_algorithm)
 - [join_any_take_last_row](../../../operations/settings/settings.md#settings-join_any_take_last_row)
 - [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
-- [partial_merge_join_optimizations](../../../operations/settings/settings.md#partial_merge_join_optimizations)
 - [partial_merge_join_rows_in_right_blocks](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
 - [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
 - [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)
@@ -211,7 +210,7 @@ USING (equi_column1, ... equi_columnN, asof_column)
 -   При использовании обычного `JOIN` , запрос отправляется на удалённые серверы. На каждом из них выполняются подзапросы для формирования «правой» таблицы, и с этой таблицей выполняется соединение. То есть, «правая» таблица формируется на каждом сервере отдельно.
 -   При использовании `GLOBAL ... JOIN`, сначала сервер-инициатор запроса запускает подзапрос для вычисления правой таблицы. Эта временная таблица передаётся на каждый удалённый сервер, и на них выполняются запросы с использованием переданных временных данных.
 
-Будьте аккуратны при использовании `GLOBAL`. За дополнительной информацией обращайтесь в раздел [Распределенные подзапросы](../../../sql-reference/operators/in.md#select-distributed-subqueries).
+Будьте аккуратны при использовании `GLOBAL`. За дополнительной информацией обращайтесь в раздел [Распределенные подзапросы](/sql-reference/operators/in#distributed-subqueries).
 
 ## Неявные преобразования типов {#implicit-type-conversion}
 

@@ -1,3 +1,4 @@
+#include <Columns/ColumnString.h>
 #include <Storages/System/StorageSystemMutations.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>

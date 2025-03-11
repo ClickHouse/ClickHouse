@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/statements/alter/constraint
+slug: /sql-reference/statements/alter/constraint
 sidebar_position: 43
 sidebar_label: CONSTRAINT
 ---

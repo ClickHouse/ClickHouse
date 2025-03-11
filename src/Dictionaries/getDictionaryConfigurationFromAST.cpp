@@ -5,6 +5,7 @@
 #include <Poco/DOM/Element.h>
 #include <Poco/DOM/Text.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/queryToString.h>

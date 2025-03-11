@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 #include <Formats/FormatSettings.h>
-#include <IO/WriteBuffer.h>
+#include <Processors/Formats/OutputFormatWithUTF8ValidationAdaptor.h>
 
 
 namespace DB
 {
 
+class Block;
 class WriteBuffer;
 
 /// Base class for Columnar JSON output formats.

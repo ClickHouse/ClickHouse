@@ -6,7 +6,6 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <IO/Operators.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Common/JSONBuilder.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Context.h>

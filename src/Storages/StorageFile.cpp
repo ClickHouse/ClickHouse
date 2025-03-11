@@ -10,7 +10,9 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
 
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -66,6 +68,8 @@
 #include <filesystem>
 #include <shared_mutex>
 #include <algorithm>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace ProfileEvents
 {
@@ -124,6 +128,8 @@ namespace ErrorCodes
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNSUPPORTED_METHOD;
 }
+
+using String = std::string;
 
 namespace
 {

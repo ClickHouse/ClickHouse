@@ -12,6 +12,8 @@
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <optional>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {

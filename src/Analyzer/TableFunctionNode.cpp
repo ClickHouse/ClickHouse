@@ -1,5 +1,6 @@
 #include <Analyzer/TableFunctionNode.h>
 
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 
 #include <IO/WriteBuffer.h>

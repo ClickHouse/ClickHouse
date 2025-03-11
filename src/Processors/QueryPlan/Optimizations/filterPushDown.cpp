@@ -209,12 +209,15 @@ static void buildEquialentSetsForJoinStepLogical(
 
     for (const auto & predicate : join_info.expression.condition.predicates)
     {
+        auto left_column = predicate.left_node.getColumn();
+        auto right_column = predicate.right_node.getColumn();
+
         if (predicate.op != PredicateOperator::Equals && predicate.op != PredicateOperator::NullSafeEquals)
             continue;
-        if (!predicate.left_node.node->result_type->equals(*predicate.right_node.node->result_type))
+        if (!left_column.type->equals(*right_column.type))
             continue;
-        equivalent_left_column[predicate.left_node.column_name] = predicate.right_node.getColumn();
-        equivalent_right_column[predicate.right_node.column_name] = predicate.left_node.getColumn();
+        equivalent_left_column[left_column.name] = right_column;
+        equivalent_right_column[right_column.name] = left_column;
     }
 }
 
@@ -443,6 +446,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     auto & parent = parent_node->step;
     auto & child = child_node->step;
+
     auto * filter = typeid_cast<FilterStep *>(parent.get());
 
     if (!filter)
@@ -489,8 +493,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         const bool filter_column_is_not_among_aggregation_keys
             = std::find(keys.begin(), keys.end(), filter->getFilterColumnName()) == keys.end();
-        const bool can_remove_filter = filter_column_is_not_among_aggregation_keys
-            && filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
+
+        /// When we only merging aggregated data, we do not need aggregation arguments.
+        bool filter_is_not_among_aggregates_arguments = merging_aggregated || filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
+        const bool can_remove_filter = filter_column_is_not_among_aggregation_keys && filter_is_not_among_aggregates_arguments;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys, can_remove_filter))
             return updated_steps;

@@ -10,6 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 opts=(
     --join_algorithm='parallel_hash'
+    --query_plan_join_swap_table='auto'
 )
 
 $CLICKHOUSE_CLIENT -q "
@@ -18,6 +19,9 @@ $CLICKHOUSE_CLIENT -q "
 
   CREATE TABLE t2(a UInt32, b UInt32) ENGINE=MergeTree ORDER BY ();
   INSERT INTO t2 SELECT number, number FROM numbers_mt(1e6);
+
+  CREATE TABLE t3(a UInt32, b UInt32) ENGINE=MergeTree ORDER BY ();
+  INSERT INTO t3 SELECT number, number FROM numbers_mt(2e6);
 "
 
 # list of query_id-s that expected to be executed without preallocation
@@ -56,9 +60,19 @@ run_new_query "SELECT * FROM t2 AS x INNER JOIN t1 AS y ON x.a = y.a"
 run_new_query "SELECT * FROM t1 AS x INNER JOIN t2 AS y ON x.a = y.a WHERE a < 200_000"
 run_new_query "SELECT * FROM t1 AS x INNER JOIN t2 AS y ON x.a = y.a WHERE a >= 200_000"
 
+# we already had a join on t2.a, so cache should be populated.
+# but t2 is on the left side in the original query - let's see if we'll lookup the correct hash after join sides swap.
+# currently this test doesn't work, because column names contain prefixes with table names
+# query_id="hash_table_sizes_stats_joins_$RANDOM$RANDOM"
+# queries_with_preallocation+=("$query_id")
+# echo "$query_id"
+# $CLICKHOUSE_CLIENT "${opts[@]}" --query_id="$query_id" -q "SELECT * FROM t2 AS x INNER JOIN t3 AS y ON x.a = y.a" --format Null
+
+run_new_query "SELECT * FROM t2 AS x INNER JOIN t3 AS y ON x.a = y.a"
+
 ##################################
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 for i in "${!queries_without_preallocation[@]}"; do
   $CLICKHOUSE_CLIENT --param_query_id="${queries_without_preallocation[$i]}" -q "

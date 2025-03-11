@@ -150,7 +150,7 @@ REGISTER_FUNCTION(Sqid)
 Transforms numbers into a [Sqid](https://sqids.org/) which is a Youtube-like ID string.)",
         .syntax="sqidEncode(number1, ...)",
         .arguments={{"number1, ...", "Arbitrarily many UInt8, UInt16, UInt32 or UInt64 arguments"}},
-        .returned_value="A hash id [String](/docs/en/sql-reference/data-types/string.md).",
+        .returned_value="A hash id [String](/sql-reference/data-types/string.md).",
         .examples={
             {"simple",
             "SELECT sqidEncode(1, 2, 3, 4, 5);",
@@ -168,7 +168,7 @@ Transforms numbers into a [Sqid](https://sqids.org/) which is a Youtube-like ID 
 Transforms a [Sqid](https://sqids.org/) back into an array of numbers.)",
         .syntax="sqidDecode(number1, ...)",
         .arguments={{"sqid", "A sqid"}},
-        .returned_value="An array of [UInt64](/docs/en/sql-reference/data-types/int-uint.md).",
+        .returned_value="An array of [UInt64](/sql-reference/data-types/int-uint.md).",
         .examples={
             {"simple",
             "SELECT sqidDecode('gXHfJ1C6dN');",

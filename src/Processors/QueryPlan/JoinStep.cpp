@@ -1,12 +1,14 @@
 #include <IO/Operators.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/typeid_cast.h>
+#include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 
 namespace DB
@@ -49,7 +51,7 @@ std::vector<size_t> getPermutationForBlock(
 {
     std::vector<size_t> permutation;
     permutation.reserve(block.columns());
-    Block::NameMap name_map = block.getNamesToIndexesMap();
+    BlockNameMap name_map = getNamesToIndexesMap(block);
 
     bool is_trivial = true;
     for (const auto & other_block : {lhs_block, rhs_block})
@@ -143,6 +145,14 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     {
         joined_pipeline->addSimpleTransform([&](const Block & header)
                                             { return std::make_shared<SimpleSquashingChunksTransform>(header, 0, min_block_size_bytes); });
+    }
+
+    const auto & pipeline_output_header = joined_pipeline->getHeader();
+    const auto & expected_output_header = getOutputHeader();
+    if (!isCompatibleHeader(pipeline_output_header, expected_output_header))
+    {
+        assertBlocksHaveEqualStructure(pipeline_output_header, expected_output_header,
+            fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header.dumpNames()));
     }
 
     return joined_pipeline;

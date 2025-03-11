@@ -16,7 +16,7 @@ $CLICKHOUSE_CLIENT -m -q "
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "backup table data to S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data/backup2') SETTINGS allow_s3_native_copy=1" --max_backup_bandwidth=1M > /dev/null
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT
         'native_copy',
         query_duration_ms >= 7e3
@@ -27,7 +27,7 @@ $CLICKHOUSE_CLIENT -m -q "
 query_id=$(random_str 10)
 $CLICKHOUSE_CLIENT --query_id "$query_id" -q "backup table data to S3(s3_conn, 'backups/$CLICKHOUSE_DATABASE/data/backup3') SETTINGS allow_s3_native_copy=0" --max_backup_bandwidth=1M > /dev/null
 $CLICKHOUSE_CLIENT -m -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS query_log;
     SELECT
         'no_native_copy',
         query_duration_ms >= 7e3

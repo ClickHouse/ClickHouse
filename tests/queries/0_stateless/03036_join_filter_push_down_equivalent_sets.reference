@@ -38,52 +38,40 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Filter (( + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
-      Actions: INPUT :: 0 -> __table1.id UInt64 : 0
-               INPUT :: 1 -> __table1.value String : 1
-      Positions: 0 1
-        Filter (( + Change column names to column identifiers))
-        Header: __table1.id UInt64
-                __table1.value String
-        Filter column: equals(__table1.id, 5_UInt8) (removed)
-        Actions: INPUT : 0 -> id UInt64 : 0
-                 INPUT : 1 -> value String : 1
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
-                 ALIAS id : 0 -> __table1.id UInt64 : 3
-                 ALIAS value :: 1 -> __table1.value String : 4
-                 FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table1.id, 5_UInt8) UInt8 : 1
-        Positions: 1 3 4
-          ReadFromMergeTree (default.test_table_1)
-          Header: id UInt64
-                  value String
-          ReadType: Default
-          Parts: 1
-          Granules: 1
-      Expression
+      Filter column: equals(__table1.id, 5_UInt8) (removed)
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value String : 1
+               COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
+               ALIAS id : 0 -> __table1.id UInt64 : 3
+               ALIAS value :: 1 -> __table1.value String : 4
+               FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table1.id, 5_UInt8) UInt8 : 1
+      Positions: 1 3 4
+        ReadFromMergeTree (default.test_table_1)
+        Header: id UInt64
+                value String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
+      Filter (( + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
-      Actions: INPUT :: 0 -> __table2.id UInt64 : 0
-               INPUT :: 1 -> __table2.value String : 1
-      Positions: 0 1
-        Filter (( + Change column names to column identifiers))
-        Header: __table2.id UInt64
-                __table2.value String
-        Filter column: equals(__table2.id, 5_UInt8) (removed)
-        Actions: INPUT : 0 -> id UInt64 : 0
-                 INPUT : 1 -> value String : 1
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
-                 ALIAS id : 0 -> __table2.id UInt64 : 3
-                 ALIAS value :: 1 -> __table2.value String : 4
-                 FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 1
-        Positions: 1 3 4
-          ReadFromMergeTree (default.test_table_2)
-          Header: id UInt64
-                  value String
-          ReadType: Default
-          Parts: 1
-          Granules: 1
+      Filter column: equals(__table2.id, 5_UInt8) (removed)
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value String : 1
+               COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
+               ALIAS id : 0 -> __table2.id UInt64 : 3
+               ALIAS value :: 1 -> __table2.value String : 4
+               FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 1
+      Positions: 1 3 4
+        ReadFromMergeTree (default.test_table_2)
+        Header: id UInt64
+                value String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
 SELECT '--';
 --
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
@@ -129,52 +117,40 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Filter (( + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
-      Actions: INPUT :: 0 -> __table1.id UInt64 : 0
-               INPUT :: 1 -> __table1.value String : 1
-      Positions: 0 1
-        Filter (( + Change column names to column identifiers))
-        Header: __table1.id UInt64
-                __table1.value String
-        Filter column: equals(__table1.id, 5_UInt8) (removed)
-        Actions: INPUT : 0 -> id UInt64 : 0
-                 INPUT : 1 -> value String : 1
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
-                 ALIAS id : 0 -> __table1.id UInt64 : 3
-                 ALIAS value :: 1 -> __table1.value String : 4
-                 FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table1.id, 5_UInt8) UInt8 : 1
-        Positions: 1 3 4
-          ReadFromMergeTree (default.test_table_1)
-          Header: id UInt64
-                  value String
-          ReadType: Default
-          Parts: 1
-          Granules: 1
-      Expression
+      Filter column: equals(__table1.id, 5_UInt8) (removed)
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value String : 1
+               COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
+               ALIAS id : 0 -> __table1.id UInt64 : 3
+               ALIAS value :: 1 -> __table1.value String : 4
+               FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table1.id, 5_UInt8) UInt8 : 1
+      Positions: 1 3 4
+        ReadFromMergeTree (default.test_table_1)
+        Header: id UInt64
+                value String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
+      Filter (( + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
-      Actions: INPUT :: 0 -> __table2.id UInt64 : 0
-               INPUT :: 1 -> __table2.value String : 1
-      Positions: 0 1
-        Filter (( + Change column names to column identifiers))
-        Header: __table2.id UInt64
-                __table2.value String
-        Filter column: equals(__table2.id, 5_UInt8) (removed)
-        Actions: INPUT : 0 -> id UInt64 : 0
-                 INPUT : 1 -> value String : 1
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
-                 ALIAS id : 0 -> __table2.id UInt64 : 3
-                 ALIAS value :: 1 -> __table2.value String : 4
-                 FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 1
-        Positions: 1 3 4
-          ReadFromMergeTree (default.test_table_2)
-          Header: id UInt64
-                  value String
-          ReadType: Default
-          Parts: 1
-          Granules: 1
+      Filter column: equals(__table2.id, 5_UInt8) (removed)
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value String : 1
+               COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
+               ALIAS id : 0 -> __table2.id UInt64 : 3
+               ALIAS value :: 1 -> __table2.value String : 4
+               FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 1
+      Positions: 1 3 4
+        ReadFromMergeTree (default.test_table_2)
+        Header: id UInt64
+                value String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
 SELECT '--';
 --
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
@@ -220,66 +196,54 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Filter (( + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
-      Actions: INPUT :: 0 -> __table1.id UInt64 : 0
-               INPUT :: 1 -> __table1.value String : 1
-      Positions: 0 1
-        Filter (( + Change column names to column identifiers))
-        Header: __table1.id UInt64
-                __table1.value String
-        AND column: equals(__table1.id, 5_UInt8)
-        Actions: INPUT : 0 -> id UInt64 : 0
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 1
-                 FUNCTION equals(id : 0, 5_UInt8 :: 1) -> equals(__table1.id, 5_UInt8) UInt8 : 2
-        Positions: 2 0 2
-        Filter column: and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) (removed)
-        Actions: INPUT : 2 -> value String : 0
-                 INPUT : 1 -> id UInt64 : 1
-                 COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 2
-                 INPUT : 0 -> equals(__table1.id, 5_UInt8) UInt8 : 3
-                 ALIAS value :: 0 -> __table1.value String : 4
-                 ALIAS id : 1 -> __table1.id UInt64 : 0
-                 FUNCTION equals(id :: 1, 6_UInt8 :: 2) -> equals(__table1.id, 6_UInt8) UInt8 : 5
-                 FUNCTION and(equals(__table1.id, 5_UInt8) :: 3, equals(__table1.id, 6_UInt8) :: 5) -> and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) UInt8 : 2
-        Positions: 2 0 4
-          ReadFromMergeTree (default.test_table_1)
-          Header: id UInt64
-                  value String
-          ReadType: Default
-          Parts: 1
-          Granules: 1
-      Expression
+      AND column: equals(__table1.id, 5_UInt8)
+      Actions: INPUT : 0 -> id UInt64 : 0
+               COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 1
+               FUNCTION equals(id : 0, 5_UInt8 :: 1) -> equals(__table1.id, 5_UInt8) UInt8 : 2
+      Positions: 2 0 2
+      Filter column: and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) (removed)
+      Actions: INPUT : 2 -> value String : 0
+               INPUT : 1 -> id UInt64 : 1
+               COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 2
+               INPUT : 0 -> equals(__table1.id, 5_UInt8) UInt8 : 3
+               ALIAS value :: 0 -> __table1.value String : 4
+               ALIAS id : 1 -> __table1.id UInt64 : 0
+               FUNCTION equals(id :: 1, 6_UInt8 :: 2) -> equals(__table1.id, 6_UInt8) UInt8 : 5
+               FUNCTION and(equals(__table1.id, 5_UInt8) :: 3, equals(__table1.id, 6_UInt8) :: 5) -> and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) UInt8 : 2
+      Positions: 2 0 4
+        ReadFromMergeTree (default.test_table_1)
+        Header: id UInt64
+                value String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
+      Filter (( + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
-      Actions: INPUT :: 0 -> __table2.id UInt64 : 0
-               INPUT :: 1 -> __table2.value String : 1
-      Positions: 0 1
-        Filter (( + Change column names to column identifiers))
-        Header: __table2.id UInt64
-                __table2.value String
-        AND column: equals(__table2.id, 6_UInt8)
-        Actions: INPUT : 0 -> id UInt64 : 0
-                 COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 1
-                 FUNCTION equals(id : 0, 6_UInt8 :: 1) -> equals(__table2.id, 6_UInt8) UInt8 : 2
-        Positions: 2 0 2
-        Filter column: and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) (removed)
-        Actions: INPUT : 2 -> value String : 0
-                 INPUT : 1 -> id UInt64 : 1
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
-                 INPUT : 0 -> equals(__table2.id, 6_UInt8) UInt8 : 3
-                 ALIAS value :: 0 -> __table2.value String : 4
-                 ALIAS id : 1 -> __table2.id UInt64 : 0
-                 FUNCTION equals(id :: 1, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 5
-                 FUNCTION and(equals(__table2.id, 6_UInt8) :: 3, equals(__table2.id, 5_UInt8) :: 5) -> and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) UInt8 : 2
-        Positions: 2 0 4
-          ReadFromMergeTree (default.test_table_2)
-          Header: id UInt64
-                  value String
-          ReadType: Default
-          Parts: 1
-          Granules: 1
+      AND column: equals(__table2.id, 6_UInt8)
+      Actions: INPUT : 0 -> id UInt64 : 0
+               COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 1
+               FUNCTION equals(id : 0, 6_UInt8 :: 1) -> equals(__table2.id, 6_UInt8) UInt8 : 2
+      Positions: 2 0 2
+      Filter column: and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) (removed)
+      Actions: INPUT : 2 -> value String : 0
+               INPUT : 1 -> id UInt64 : 1
+               COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
+               INPUT : 0 -> equals(__table2.id, 6_UInt8) UInt8 : 3
+               ALIAS value :: 0 -> __table2.value String : 4
+               ALIAS id : 1 -> __table2.id UInt64 : 0
+               FUNCTION equals(id :: 1, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 5
+               FUNCTION and(equals(__table2.id, 6_UInt8) :: 3, equals(__table2.id, 5_UInt8) :: 5) -> and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) UInt8 : 2
+      Positions: 2 0 4
+        ReadFromMergeTree (default.test_table_2)
+        Header: id UInt64
+                value String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs INNER JOIN test_table_2 AS rhs ON lhs.id = rhs.id
 WHERE lhs.id = 5 AND rhs.id = 6;
 SELECT '--';
@@ -322,52 +286,40 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: ConcurrentHashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Filter (( + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
-      Actions: INPUT :: 0 -> __table1.id UInt64 : 0
-               INPUT :: 1 -> __table1.value String : 1
-      Positions: 0 1
-        Filter (( + Change column names to column identifiers))
-        Header: __table1.id UInt64
-                __table1.value String
-        Filter column: equals(__table1.id, 5_UInt8) (removed)
-        Actions: INPUT : 0 -> id UInt64 : 0
-                 INPUT : 1 -> value String : 1
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
-                 ALIAS id : 0 -> __table1.id UInt64 : 3
-                 ALIAS value :: 1 -> __table1.value String : 4
-                 FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table1.id, 5_UInt8) UInt8 : 1
-        Positions: 1 3 4
-          ReadFromMergeTree (default.test_table_1)
-          Header: id UInt64
-                  value String
-          ReadType: Default
-          Parts: 1
-          Granules: 1
-      Expression
+      Filter column: equals(__table1.id, 5_UInt8) (removed)
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value String : 1
+               COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
+               ALIAS id : 0 -> __table1.id UInt64 : 3
+               ALIAS value :: 1 -> __table1.value String : 4
+               FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table1.id, 5_UInt8) UInt8 : 1
+      Positions: 1 3 4
+        ReadFromMergeTree (default.test_table_1)
+        Header: id UInt64
+                value String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
+      Filter (( + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
-      Actions: INPUT :: 0 -> __table2.id UInt64 : 0
-               INPUT :: 1 -> __table2.value String : 1
-      Positions: 0 1
-        Filter (( + Change column names to column identifiers))
-        Header: __table2.id UInt64
-                __table2.value String
-        Filter column: equals(__table2.id, 5_UInt8) (removed)
-        Actions: INPUT : 0 -> id UInt64 : 0
-                 INPUT : 1 -> value String : 1
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
-                 ALIAS id : 0 -> __table2.id UInt64 : 3
-                 ALIAS value :: 1 -> __table2.value String : 4
-                 FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 1
-        Positions: 1 3 4
-          ReadFromMergeTree (default.test_table_2)
-          Header: id UInt64
-                  value String
-          ReadType: Default
-          Parts: 1
-          Granules: 1
+      Filter column: equals(__table2.id, 5_UInt8) (removed)
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value String : 1
+               COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
+               ALIAS id : 0 -> __table2.id UInt64 : 3
+               ALIAS value :: 1 -> __table2.value String : 4
+               FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 1
+      Positions: 1 3 4
+        ReadFromMergeTree (default.test_table_2)
+        Header: id UInt64
+                value String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
 SELECT '--';
 --
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
@@ -426,46 +378,34 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: ConcurrentHashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-        Expression
+        Expression (Change column names to column identifiers)
         Header: __table1.id UInt64
                 __table1.value String
-        Actions: INPUT :: 0 -> __table1.id UInt64 : 0
-                 INPUT :: 1 -> __table1.value String : 1
-        Positions: 0 1
-          Expression (Change column names to column identifiers)
-          Header: __table1.id UInt64
-                  __table1.value String
-          Actions: INPUT : 0 -> id UInt64 : 0
-                   INPUT : 1 -> value String : 1
-                   ALIAS id :: 0 -> __table1.id UInt64 : 2
-                   ALIAS value :: 1 -> __table1.value String : 0
-          Positions: 2 0
-            ReadFromMergeTree (default.test_table_1)
-            Header: id UInt64
-                    value String
-            ReadType: Default
-            Parts: 1
-            Granules: 1
-        Expression
+        Actions: INPUT : 0 -> id UInt64 : 0
+                 INPUT : 1 -> value String : 1
+                 ALIAS id :: 0 -> __table1.id UInt64 : 2
+                 ALIAS value :: 1 -> __table1.value String : 0
+        Positions: 2 0
+          ReadFromMergeTree (default.test_table_1)
+          Header: id UInt64
+                  value String
+          ReadType: Default
+          Parts: 1
+          Granules: 1
+        Expression (Change column names to column identifiers)
         Header: __table2.id UInt64
                 __table2.value String
-        Actions: INPUT :: 0 -> __table2.id UInt64 : 0
-                 INPUT :: 1 -> __table2.value String : 1
-        Positions: 0 1
-          Expression (Change column names to column identifiers)
-          Header: __table2.id UInt64
-                  __table2.value String
-          Actions: INPUT : 0 -> id UInt64 : 0
-                   INPUT : 1 -> value String : 1
-                   ALIAS id :: 0 -> __table2.id UInt64 : 2
-                   ALIAS value :: 1 -> __table2.value String : 0
-          Positions: 2 0
-            ReadFromMergeTree (default.test_table_2)
-            Header: id UInt64
-                    value String
-            ReadType: Default
-            Parts: 1
-            Granules: 1
+        Actions: INPUT : 0 -> id UInt64 : 0
+                 INPUT : 1 -> value String : 1
+                 ALIAS id :: 0 -> __table2.id UInt64 : 2
+                 ALIAS value :: 1 -> __table2.value String : 0
+        Positions: 2 0
+          ReadFromMergeTree (default.test_table_2)
+          Header: id UInt64
+                  value String
+          ReadType: Default
+          Parts: 1
+          Granules: 1
 SELECT '--';
 --
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs LEFT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
@@ -524,46 +464,34 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-        Expression
+        Expression (Change column names to column identifiers)
         Header: __table1.id UInt64
                 __table1.value String
-        Actions: INPUT :: 0 -> __table1.id UInt64 : 0
-                 INPUT :: 1 -> __table1.value String : 1
-        Positions: 0 1
-          Expression (Change column names to column identifiers)
-          Header: __table1.id UInt64
-                  __table1.value String
-          Actions: INPUT : 0 -> id UInt64 : 0
-                   INPUT : 1 -> value String : 1
-                   ALIAS id :: 0 -> __table1.id UInt64 : 2
-                   ALIAS value :: 1 -> __table1.value String : 0
-          Positions: 2 0
-            ReadFromMergeTree (default.test_table_1)
-            Header: id UInt64
-                    value String
-            ReadType: Default
-            Parts: 1
-            Granules: 1
-        Expression
+        Actions: INPUT : 0 -> id UInt64 : 0
+                 INPUT : 1 -> value String : 1
+                 ALIAS id :: 0 -> __table1.id UInt64 : 2
+                 ALIAS value :: 1 -> __table1.value String : 0
+        Positions: 2 0
+          ReadFromMergeTree (default.test_table_1)
+          Header: id UInt64
+                  value String
+          ReadType: Default
+          Parts: 1
+          Granules: 1
+        Expression (Change column names to column identifiers)
         Header: __table2.id UInt64
                 __table2.value String
-        Actions: INPUT :: 0 -> __table2.id UInt64 : 0
-                 INPUT :: 1 -> __table2.value String : 1
-        Positions: 0 1
-          Expression (Change column names to column identifiers)
-          Header: __table2.id UInt64
-                  __table2.value String
-          Actions: INPUT : 0 -> id UInt64 : 0
-                   INPUT : 1 -> value String : 1
-                   ALIAS id :: 0 -> __table2.id UInt64 : 2
-                   ALIAS value :: 1 -> __table2.value String : 0
-          Positions: 2 0
-            ReadFromMergeTree (default.test_table_2)
-            Header: id UInt64
-                    value String
-            ReadType: Default
-            Parts: 1
-            Granules: 1
+        Actions: INPUT : 0 -> id UInt64 : 0
+                 INPUT : 1 -> value String : 1
+                 ALIAS id :: 0 -> __table2.id UInt64 : 2
+                 ALIAS value :: 1 -> __table2.value String : 0
+        Positions: 2 0
+          ReadFromMergeTree (default.test_table_2)
+          Header: id UInt64
+                  value String
+          ReadType: Default
+          Parts: 1
+          Granules: 1
 SELECT '--';
 --
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
@@ -609,52 +537,40 @@ Positions: 4 1 0 2
     Strictness: ALL
     Algorithm: HashJoin
     Clauses: [(__table1.id) = (__table2.id)]
-      Expression
+      Filter (( + Change column names to column identifiers))
       Header: __table1.id UInt64
               __table1.value String
-      Actions: INPUT :: 0 -> __table1.id UInt64 : 0
-               INPUT :: 1 -> __table1.value String : 1
-      Positions: 0 1
-        Filter (( + Change column names to column identifiers))
-        Header: __table1.id UInt64
-                __table1.value String
-        Filter column: equals(__table1.id, 5_UInt8) (removed)
-        Actions: INPUT : 0 -> id UInt64 : 0
-                 INPUT : 1 -> value String : 1
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
-                 ALIAS id : 0 -> __table1.id UInt64 : 3
-                 ALIAS value :: 1 -> __table1.value String : 4
-                 FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table1.id, 5_UInt8) UInt8 : 1
-        Positions: 1 3 4
-          ReadFromMergeTree (default.test_table_1)
-          Header: id UInt64
-                  value String
-          ReadType: Default
-          Parts: 1
-          Granules: 1
-      Expression
+      Filter column: equals(__table1.id, 5_UInt8) (removed)
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value String : 1
+               COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
+               ALIAS id : 0 -> __table1.id UInt64 : 3
+               ALIAS value :: 1 -> __table1.value String : 4
+               FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table1.id, 5_UInt8) UInt8 : 1
+      Positions: 1 3 4
+        ReadFromMergeTree (default.test_table_1)
+        Header: id UInt64
+                value String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
+      Filter (( + Change column names to column identifiers))
       Header: __table2.id UInt64
               __table2.value String
-      Actions: INPUT :: 0 -> __table2.id UInt64 : 0
-               INPUT :: 1 -> __table2.value String : 1
-      Positions: 0 1
-        Filter (( + Change column names to column identifiers))
-        Header: __table2.id UInt64
-                __table2.value String
-        Filter column: equals(__table2.id, 5_UInt8) (removed)
-        Actions: INPUT : 0 -> id UInt64 : 0
-                 INPUT : 1 -> value String : 1
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
-                 ALIAS id : 0 -> __table2.id UInt64 : 3
-                 ALIAS value :: 1 -> __table2.value String : 4
-                 FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 1
-        Positions: 1 3 4
-          ReadFromMergeTree (default.test_table_2)
-          Header: id UInt64
-                  value String
-          ReadType: Default
-          Parts: 1
-          Granules: 1
+      Filter column: equals(__table2.id, 5_UInt8) (removed)
+      Actions: INPUT : 0 -> id UInt64 : 0
+               INPUT : 1 -> value String : 1
+               COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
+               ALIAS id : 0 -> __table2.id UInt64 : 3
+               ALIAS value :: 1 -> __table2.value String : 4
+               FUNCTION equals(id :: 0, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 1
+      Positions: 1 3 4
+        ReadFromMergeTree (default.test_table_2)
+        Header: id UInt64
+                value String
+        ReadType: Default
+        Parts: 1
+        Granules: 1
 SELECT '--';
 --
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs RIGHT JOIN test_table_2 AS rhs ON lhs.id = rhs.id
@@ -713,46 +629,34 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-        Expression
+        Expression (Change column names to column identifiers)
         Header: __table1.id UInt64
                 __table1.value String
-        Actions: INPUT :: 0 -> __table1.id UInt64 : 0
-                 INPUT :: 1 -> __table1.value String : 1
-        Positions: 0 1
-          Expression (Change column names to column identifiers)
-          Header: __table1.id UInt64
-                  __table1.value String
-          Actions: INPUT : 0 -> id UInt64 : 0
-                   INPUT : 1 -> value String : 1
-                   ALIAS id :: 0 -> __table1.id UInt64 : 2
-                   ALIAS value :: 1 -> __table1.value String : 0
-          Positions: 2 0
-            ReadFromMergeTree (default.test_table_1)
-            Header: id UInt64
-                    value String
-            ReadType: Default
-            Parts: 1
-            Granules: 1
-        Expression
+        Actions: INPUT : 0 -> id UInt64 : 0
+                 INPUT : 1 -> value String : 1
+                 ALIAS id :: 0 -> __table1.id UInt64 : 2
+                 ALIAS value :: 1 -> __table1.value String : 0
+        Positions: 2 0
+          ReadFromMergeTree (default.test_table_1)
+          Header: id UInt64
+                  value String
+          ReadType: Default
+          Parts: 1
+          Granules: 1
+        Expression (Change column names to column identifiers)
         Header: __table2.id UInt64
                 __table2.value String
-        Actions: INPUT :: 0 -> __table2.id UInt64 : 0
-                 INPUT :: 1 -> __table2.value String : 1
-        Positions: 0 1
-          Expression (Change column names to column identifiers)
-          Header: __table2.id UInt64
-                  __table2.value String
-          Actions: INPUT : 0 -> id UInt64 : 0
-                   INPUT : 1 -> value String : 1
-                   ALIAS id :: 0 -> __table2.id UInt64 : 2
-                   ALIAS value :: 1 -> __table2.value String : 0
-          Positions: 2 0
-            ReadFromMergeTree (default.test_table_2)
-            Header: id UInt64
-                    value String
-            ReadType: Default
-            Parts: 1
-            Granules: 1
+        Actions: INPUT : 0 -> id UInt64 : 0
+                 INPUT : 1 -> value String : 1
+                 ALIAS id :: 0 -> __table2.id UInt64 : 2
+                 ALIAS value :: 1 -> __table2.value String : 0
+        Positions: 2 0
+          ReadFromMergeTree (default.test_table_2)
+          Header: id UInt64
+                  value String
+          ReadType: Default
+          Parts: 1
+          Granules: 1
 SELECT '--';
 --
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
@@ -811,46 +715,34 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-        Expression
+        Expression (Change column names to column identifiers)
         Header: __table1.id UInt64
                 __table1.value String
-        Actions: INPUT :: 0 -> __table1.id UInt64 : 0
-                 INPUT :: 1 -> __table1.value String : 1
-        Positions: 0 1
-          Expression (Change column names to column identifiers)
-          Header: __table1.id UInt64
-                  __table1.value String
-          Actions: INPUT : 0 -> id UInt64 : 0
-                   INPUT : 1 -> value String : 1
-                   ALIAS id :: 0 -> __table1.id UInt64 : 2
-                   ALIAS value :: 1 -> __table1.value String : 0
-          Positions: 2 0
-            ReadFromMergeTree (default.test_table_1)
-            Header: id UInt64
-                    value String
-            ReadType: Default
-            Parts: 1
-            Granules: 1
-        Expression
+        Actions: INPUT : 0 -> id UInt64 : 0
+                 INPUT : 1 -> value String : 1
+                 ALIAS id :: 0 -> __table1.id UInt64 : 2
+                 ALIAS value :: 1 -> __table1.value String : 0
+        Positions: 2 0
+          ReadFromMergeTree (default.test_table_1)
+          Header: id UInt64
+                  value String
+          ReadType: Default
+          Parts: 1
+          Granules: 1
+        Expression (Change column names to column identifiers)
         Header: __table2.id UInt64
                 __table2.value String
-        Actions: INPUT :: 0 -> __table2.id UInt64 : 0
-                 INPUT :: 1 -> __table2.value String : 1
-        Positions: 0 1
-          Expression (Change column names to column identifiers)
-          Header: __table2.id UInt64
-                  __table2.value String
-          Actions: INPUT : 0 -> id UInt64 : 0
-                   INPUT : 1 -> value String : 1
-                   ALIAS id :: 0 -> __table2.id UInt64 : 2
-                   ALIAS value :: 1 -> __table2.value String : 0
-          Positions: 2 0
-            ReadFromMergeTree (default.test_table_2)
-            Header: id UInt64
-                    value String
-            ReadType: Default
-            Parts: 1
-            Granules: 1
+        Actions: INPUT : 0 -> id UInt64 : 0
+                 INPUT : 1 -> value String : 1
+                 ALIAS id :: 0 -> __table2.id UInt64 : 2
+                 ALIAS value :: 1 -> __table2.value String : 0
+        Positions: 2 0
+          ReadFromMergeTree (default.test_table_2)
+          Header: id UInt64
+                  value String
+          ReadType: Default
+          Parts: 1
+          Granules: 1
 SELECT '--';
 --
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id
@@ -916,46 +808,34 @@ Positions: 4 1 0 2
       Strictness: ALL
       Algorithm: HashJoin
       Clauses: [(__table1.id) = (__table2.id)]
-        Expression
+        Expression (Change column names to column identifiers)
         Header: __table1.id UInt64
                 __table1.value String
-        Actions: INPUT :: 0 -> __table1.id UInt64 : 0
-                 INPUT :: 1 -> __table1.value String : 1
-        Positions: 0 1
-          Expression (Change column names to column identifiers)
-          Header: __table1.id UInt64
-                  __table1.value String
-          Actions: INPUT : 0 -> id UInt64 : 0
-                   INPUT : 1 -> value String : 1
-                   ALIAS id :: 0 -> __table1.id UInt64 : 2
-                   ALIAS value :: 1 -> __table1.value String : 0
-          Positions: 2 0
-            ReadFromMergeTree (default.test_table_1)
-            Header: id UInt64
-                    value String
-            ReadType: Default
-            Parts: 1
-            Granules: 1
-        Expression
+        Actions: INPUT : 0 -> id UInt64 : 0
+                 INPUT : 1 -> value String : 1
+                 ALIAS id :: 0 -> __table1.id UInt64 : 2
+                 ALIAS value :: 1 -> __table1.value String : 0
+        Positions: 2 0
+          ReadFromMergeTree (default.test_table_1)
+          Header: id UInt64
+                  value String
+          ReadType: Default
+          Parts: 1
+          Granules: 1
+        Expression (Change column names to column identifiers)
         Header: __table2.id UInt64
                 __table2.value String
-        Actions: INPUT :: 0 -> __table2.id UInt64 : 0
-                 INPUT :: 1 -> __table2.value String : 1
-        Positions: 0 1
-          Expression (Change column names to column identifiers)
-          Header: __table2.id UInt64
-                  __table2.value String
-          Actions: INPUT : 0 -> id UInt64 : 0
-                   INPUT : 1 -> value String : 1
-                   ALIAS id :: 0 -> __table2.id UInt64 : 2
-                   ALIAS value :: 1 -> __table2.value String : 0
-          Positions: 2 0
-            ReadFromMergeTree (default.test_table_2)
-            Header: id UInt64
-                    value String
-            ReadType: Default
-            Parts: 1
-            Granules: 1
+        Actions: INPUT : 0 -> id UInt64 : 0
+                 INPUT : 1 -> value String : 1
+                 ALIAS id :: 0 -> __table2.id UInt64 : 2
+                 ALIAS value :: 1 -> __table2.value String : 0
+        Positions: 2 0
+          ReadFromMergeTree (default.test_table_2)
+          Header: id UInt64
+                  value String
+          ReadType: Default
+          Parts: 1
+          Granules: 1
 SELECT '--';
 --
 SELECT lhs.id, rhs.id, lhs.value, rhs.value FROM test_table_1 AS lhs FULL JOIN test_table_2 AS rhs ON lhs.id = rhs.id

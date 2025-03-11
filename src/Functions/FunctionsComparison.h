@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Common/memcmpSmall.h>
+#include <base/memcmpSmall.h>
 #include <Common/assert_cast.h>
 #include <Common/TargetSpecific.h>
 
@@ -647,15 +647,17 @@ struct NameGreaterOrEquals { static constexpr auto name = "greaterOrEquals"; };
 
 struct ComparisonParams
 {
-    bool check_decimal_overflow;
-    bool validate_enum_literals_in_operators;
-    bool allow_not_comparable_types;
+    bool check_decimal_overflow = false;
+    bool validate_enum_literals_in_operators = false;
+    bool allow_not_comparable_types = false;
 
     explicit ComparisonParams(const ContextPtr & context)
         : check_decimal_overflow(decimalCheckComparisonOverflow(context))
         , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
         , allow_not_comparable_types(context->getSettingsRef()[Setting::allow_not_comparable_types_in_comparison_functions])
     {}
+
+    ComparisonParams() = default;
 };
 
 template <template <typename, typename> class Op, typename Name>
@@ -664,7 +666,7 @@ class FunctionComparison : public IFunction
 public:
     static constexpr auto name = Name::name;
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(ComparisonParams(context)); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionComparison>(context ? ComparisonParams(context) : ComparisonParams()); }
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
@@ -1214,19 +1216,25 @@ public:
                     " of function {}", arguments[0]->getName(), arguments[1]->getName(), getName());
         }
 
-        if (left_tuple && right_tuple)
+        bool both_tuples = left_tuple && right_tuple;
+        if (both_tuples || (left_tuple && right.isStringOrFixedString()) || (left.isStringOrFixedString() && right_tuple))
         {
             auto func = std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionComparison<Op, Name>>(params));
 
             bool has_nullable = false;
             bool has_null = false;
 
-            size_t size = left_tuple->getElements().size();
+            const DataTypeTuple * any_tuple = left_tuple ? left_tuple : right_tuple;
+            size_t size = any_tuple->getElements().size();
             for (size_t i = 0; i < size; ++i)
             {
-                ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
-                                               {nullptr, right_tuple->getElements()[i], ""}};
-                auto element_type = func->build(args)->getResultType();
+                DataTypePtr element_type = any_tuple->getElement(i);
+                if (both_tuples)
+                {
+                    ColumnsWithTypeAndName args = {{nullptr, left_tuple->getElements()[i], ""},
+                                                   {nullptr, right_tuple->getElements()[i], ""}};
+                    element_type = func->build(args)->getResultType();
+                }
                 has_nullable = has_nullable || element_type->isNullable();
                 has_null = has_null || element_type->onlyNull();
             }

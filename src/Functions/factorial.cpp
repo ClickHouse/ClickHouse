@@ -74,7 +74,7 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameFactorial>
 {
     static bool has() { return true; }
 
-    static IFunction::Monotonicity get(const Field & left, const Field & right)
+    static IFunction::Monotonicity get(const IDataType &, const Field & left, const Field & right)
     {
         bool is_strict = false;
         if (!left.isNull() && !right.isNull())

@@ -33,8 +33,6 @@
 
 #include <boost/range/algorithm_ext/push_back.hpp>
 
-#include <algorithm>
-
 
 namespace DB
 {
@@ -130,7 +128,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
     }
 
     if (!table)
@@ -379,6 +377,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MATERIALIZE_STATISTICS:
         {
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTICS, database, table);
+            break;
+        }
+        case ASTAlterCommand::UNLOCK_SNAPSHOT:
+        {
+            required_access.emplace_back(AccessType::ALTER_UNLOCK_SNAPSHOT, database, table);
             break;
         }
         case ASTAlterCommand::ADD_INDEX:

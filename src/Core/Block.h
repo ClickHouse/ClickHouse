@@ -4,19 +4,20 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
-#include <DataTypes/Serializations/SerializationInfo.h>
-#include <base/StringRef.h>
 
 #include <initializer_list>
-#include <list>
-#include <set>
 #include <vector>
-#include <sparsehash/dense_hash_map>
+
 
 class SipHash;
 
 namespace DB
 {
+
+class ISerialization;
+class SerializationInfoByName;
+using SerializationPtr = std::shared_ptr<const ISerialization>;
+using Serializations = std::vector<SerializationPtr>;
 
 /** Container for set of columns for bunch of rows in memory.
   * This is unit of data processing.
@@ -92,7 +93,7 @@ public:
 
     bool has(const std::string & name, bool case_insensitive = false) const;
 
-    size_t getPositionByName(const std::string & name) const;
+    size_t getPositionByName(const std::string & name, bool case_insensitive = false) const;
 
     const ColumnsWithTypeAndName & getColumnsWithTypeAndName() const;
     NamesAndTypesList getNamesAndTypesList() const;
@@ -102,8 +103,8 @@ public:
     Names getDataTypeNames() const;
 
     /// Hash table match `column name -> position in the block`.
-    using NameMap = ::google::dense_hash_map<StringRef, size_t, StringRefHash>;
-    NameMap getNamesToIndexesMap() const;
+
+    const IndexByName & getIndexByName() const { return index_by_name; }
 
     Serializations getSerializations() const;
     Serializations getSerializations(const SerializationInfoByName & hints) const;
@@ -188,10 +189,6 @@ private:
     friend class ActionsDAG;
 };
 
-using BlockPtr = std::shared_ptr<Block>;
-using Blocks = std::vector<Block>;
-using BlocksList = std::list<Block>;
-using BlocksPtr = std::shared_ptr<Blocks>;
 
 /// Extends block with extra data in derived classes
 struct ExtraBlock
@@ -200,8 +197,6 @@ struct ExtraBlock
 
     bool empty() const { return !block; }
 };
-
-using ExtraBlockPtr = std::shared_ptr<ExtraBlock>;
 
 /// Compare number of columns, data types, column types, column names, and values of constant columns.
 bool blocksHaveEqualStructure(const Block & lhs, const Block & rhs);

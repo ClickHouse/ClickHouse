@@ -23,7 +23,7 @@ sidebar_label: ALTER
 
 这些 `ALTER` 语句操作视图:
 
--   [ALTER TABLE ... MODIFY QUERY](../../../sql-reference/statements/alter/view.md) — 修改一个 [Materialized view](../create/view.md#materialized) 结构.
+-   [ALTER TABLE ... MODIFY QUERY](../../../sql-reference/statements/alter/view.md) — 修改一个 [Materialized view](/sql-reference/statements/create/view#materialized-view) 结构.
 -   [ALTER LIVE VIEW](../../../sql-reference/statements/alter/view.md#alter-live-view) — 刷新一个 [Live view](../create/view.md#live-view).
 
 这些 `ALTER` 语句修改与基于角色的访问控制相关的实体:
@@ -61,9 +61,9 @@ sidebar_label: ALTER
 
 对于非复制表，所有的 `ALTER` 查询都是同步执行的。对于复制表，查询只是向“ZooKeeper”添加相应动作的指令，动作本身会尽快执行。但是，查询可以等待所有副本上的这些操作完成。
 
-对于所有的“ALTER”查询，您可以使用[alter_sync](../../../operations/settings/settings.md#alter-sync)设置等待。
+对于所有的“ALTER”查询，您可以使用[alter_sync](/operations/settings/settings#alter_sync)设置等待。
 
-通过[replication_wait_for_inactive_replica_timeout](../../../operations/settings/settings.md#replication-wait-for-inactive-replica-timeout]设置，可以指定不活动的副本执行所有 `ALTER` 查询的等待时间(以秒为单位)。
+通过[replication_wait_for_inactive_replica_timeout](/operations/settings/settings#replication_wait_for_inactive_replica_timeout]设置，可以指定不活动的副本执行所有 `ALTER` 查询的等待时间(以秒为单位)。
 
 
 

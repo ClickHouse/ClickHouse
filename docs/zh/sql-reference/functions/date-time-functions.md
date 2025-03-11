@@ -520,7 +520,7 @@ date_trunc(unit, value[, timezone])
 
 **参数**
 
--   `unit` — 单位. [String](../syntax.md#syntax-string-literal).
+-   `unit` — 单位. [String](/sql-reference/data-types/string).
     可选值:
 
     - `second`

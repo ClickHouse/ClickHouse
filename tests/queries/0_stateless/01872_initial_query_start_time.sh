@@ -14,7 +14,7 @@ query_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString
 ${CLICKHOUSE_CLIENT} -q "select * from m format Null" "--query_id=$query_id"
 
 ${CLICKHOUSE_CLIENT} -q "
-system flush logs;
+system flush logs query_log;
 select
     anyIf(initial_query_start_time, is_initial_query) = anyIf(initial_query_start_time, not is_initial_query),
     anyIf(initial_query_start_time_microseconds, is_initial_query) = anyIf(initial_query_start_time_microseconds, not is_initial_query)

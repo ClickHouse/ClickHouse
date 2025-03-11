@@ -62,7 +62,7 @@ SELECT a['key3'] FROM table_map;
 
 ## 将Tuple类型转换成Map类型 {#map-and-tuple}
 
-您可以使用 [CAST](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) 方法将 `Tuple()` 转换成 `Map()` ：
+您可以使用 [CAST](/sql-reference/functions/type-conversion-functions#cast) 方法将 `Tuple()` 转换成 `Map()` ：
 
 ``` sql
 SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map;
@@ -102,5 +102,5 @@ SELECT a.values FROM t_map;
 
 **另请参阅**
 
--   [map()](../../sql-reference/functions/tuple-map-functions.mdx#function-map) function
--   [CAST()](../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) function
+-   [map()](/sql-reference/functions/tuple-map-functions#map) function
+-   [CAST()](/sql-reference/functions/type-conversion-functions#cast) function

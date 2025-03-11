@@ -2,7 +2,6 @@
 
 #include <Core/Block.h>
 #include <IO/ConnectionTimeouts.h>
-#include <Common/Throttler.h>
 
 namespace DB
 {

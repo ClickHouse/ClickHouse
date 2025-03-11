@@ -44,7 +44,7 @@ slug: /zh/operations/system-tables/tables
 -   `storage_policy` ([String](../../sql-reference/data-types/string.md)) - 存储策略:
 
     -   [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-multiple-volumes)
-    -   [Distributed](../../engines/table-engines/special/distributed.md#distributed)
+    -   [Distributed](/engines/table-engines/special/distributed)
 
 -   `total_rows` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - 总行数，如果无法快速确定表中的确切行数，则行数返回为 `NULL` (包括底层 `Buffer` 表) 。
 

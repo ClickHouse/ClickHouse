@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/window-functions/dense_rank
+slug: /sql-reference/window-functions/dense_rank
 sidebar_label: dense_rank
 sidebar_position: 7
 ---

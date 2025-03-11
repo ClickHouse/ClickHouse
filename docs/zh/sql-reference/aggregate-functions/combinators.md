@@ -28,7 +28,7 @@ sidebar_label: 聚合函数组合器
 
 ## -State {#agg-functions-combinator-state}
 
-如果应用此combinator，则聚合函数不会返回结果值（例如唯一值的数量 [uniq](./reference/uniq.md#agg_function-uniq) 函数），但是返回聚合的中间状态（对于 `uniq`，返回的是计算唯一值的数量的哈希表）。 这是一个 `AggregateFunction(...)` 可用于进一步处理或存储在表中以完成稍后的聚合。
+如果应用此combinator，则聚合函数不会返回结果值（例如唯一值的数量 [uniq](/sql-reference/aggregate-functions/reference/uniq) 函数），但是返回聚合的中间状态（对于 `uniq`，返回的是计算唯一值的数量的哈希表）。 这是一个 `AggregateFunction(...)` 可用于进一步处理或存储在表中以完成稍后的聚合。
 
 要使用这些状态，请使用:
 
@@ -210,7 +210,7 @@ FROM
 
 让我们得到的人的名字，他们的年龄在于的时间间隔 `[30,60)` 和 `[60,75)`。 由于我们使用整数表示的年龄，我们得到的年龄 `[30, 59]` 和 `[60,74]` 间隔。
 
-要在数组中聚合名称，我们使用 [groupArray](./reference/grouparray.md#agg_function-grouparray) 聚合函数。 这需要一个参数。 在我们的例子中，它是 `name` 列。 `groupArrayResample` 函数应该使用 `age` 按年龄聚合名称， 要定义所需的时间间隔，我们传入 `30, 75, 30` 参数给 `groupArrayResample` 函数。
+要在数组中聚合名称，我们使用 [groupArray](/sql-reference/aggregate-functions/reference/grouparray) 聚合函数。 这需要一个参数。 在我们的例子中，它是 `name` 列。 `groupArrayResample` 函数应该使用 `age` 按年龄聚合名称， 要定义所需的时间间隔，我们传入 `30, 75, 30` 参数给 `groupArrayResample` 函数。
 
 ``` sql
 SELECT groupArrayResample(30, 75, 30)(name, age) FROM people

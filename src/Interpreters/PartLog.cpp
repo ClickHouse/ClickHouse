@@ -5,14 +5,15 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/ProfileEventsExt.h>
-#include <DataTypes/DataTypeMap.h>
 
 #include <Common/CurrentThread.h>
 
@@ -104,7 +105,7 @@ ColumnsDescription PartLogElement::getColumnsDescription()
             "MergePartsStart — Merging of data parts has started, "
             "MergeParts — Merging of data parts has finished, "
             "DownloadPart — Downloading a data part, "
-            "RemovePart — Removing or detaching a data part using [DETACH PARTITION](../../sql-reference/statements/alter/partition.md#alter_detach-partition)."
+            "RemovePart — Removing or detaching a data part using [DETACH PARTITION](/sql-reference/statements/alter/partition#detach-partitionpart)."
             "MutatePartStart — Mutating of a data part has started, "
             "MutatePart — Mutating of a data part has finished, "
             "MovePart — Moving the data part from the one disk to another one."},

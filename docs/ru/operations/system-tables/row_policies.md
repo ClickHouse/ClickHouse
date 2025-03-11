@@ -20,11 +20,11 @@ slug: /ru/operations/system-tables/row_policies
 
 -    `select_filter` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — Условие, которое используется для фильтрации строк.
 
--    `is_restrictive` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Показывает, ограничивает ли политика строк доступ к строкам, подробнее см. [CREATE ROW POLICY](../../sql-reference/statements/create/row-policy.md#create-row-policy-as). Значения:
+-    `is_restrictive` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Показывает, ограничивает ли политика строк доступ к строкам, подробнее см. [CREATE ROW POLICY](/sql-reference/statements/create/row-policy). Значения:
 - `0` — Политика строк определяется с помощью условия 'AS PERMISSIVE'.
 - `1` — Политика строк определяется с помощью условия 'AS RESTRICTIVE'.
 
--    `apply_to_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Показывает, что политики строк заданы для всех ролей и/или пользователей.
+-    `apply_to_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Показывает, что политики строк заданы для всех ролей и/или пользователей.
 
 -    `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Список ролей и/или пользователей, к которым применяется политика строк.
 

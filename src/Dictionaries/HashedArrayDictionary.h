@@ -5,9 +5,9 @@
 #include <variant>
 #include <optional>
 
+#include <Core/Block_fwd.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
-#include <Core/Block.h>
 
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>

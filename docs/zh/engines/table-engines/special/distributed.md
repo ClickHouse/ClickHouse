@@ -209,7 +209,7 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 -   使用需要特定键连接数据（ IN 或 JOIN ）的查询。如果数据是用该键进行分片，则应使用本地 IN 或 JOIN 而不是 GLOBAL IN 或 GLOBAL JOIN，这样效率更高。
 -   使用大量服务器（上百或更多），但有大量小查询（个别客户的查询 - 网站，广告商或合作伙伴）。为了使小查询不影响整个集群，让单个客户的数据处于单个分片上是有意义的。或者 你可以配置两级分片：将整个集群划分为«层»，一个层可以包含多个分片。单个客户的数据位于单个层上，根据需要将分片添加到层中，层中的数据随机分布。然后给每层创建分布式表，再创建一个全局的分布式表用于全局的查询。
 
-数据是异步写入的。对于分布式表的 INSERT，数据块只写本地文件系统。之后会尽快地在后台发送到远程服务器。发送数据的周期性是由[distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms)和[distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)设置。分布式引擎会分别发送每个插入数据的文件，但是你可以使用[distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch)设置启用批量发送文件。该设置通过更好地利用本地服务器和网络资源来提高集群性能。你应该检查表目录`/var/lib/clickhouse/data/database/table/`中的文件列表(等待发送的数据)来检查数据是否发送成功。执行后台任务的线程数可以通过[background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size)设置。
+数据是异步写入的。对于分布式表的 INSERT，数据块只写本地文件系统。之后会尽快地在后台发送到远程服务器。发送数据的周期性是由[distributed_background_insert_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_sleep_time_ms)和[distributed_background_insert_max_sleep_time_ms](../../../operations/settings/settings.md#distributed_background_insert_max_sleep_time_ms)设置。分布式引擎会分别发送每个插入数据的文件，但是你可以使用[distributed_background_insert_batch](../../../operations/settings/settings.md#distributed_background_insert_batch)设置启用批量发送文件。该设置通过更好地利用本地服务器和网络资源来提高集群性能。你应该检查表目录`/var/lib/clickhouse/data/database/table/`中的文件列表(等待发送的数据)来检查数据是否发送成功。执行后台任务的线程数可以通过[background_distributed_schedule_pool_size](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size)设置。
 
 如果在 INSERT 到分布式表时服务器节点丢失或重启（如，设备故障），则插入的数据可能会丢失。如果在表目录中检测到损坏的数据分片，则会将其转移到«broken»子目录，并不再使用。
 
@@ -220,7 +220,7 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 
 当启用`max_parallel_replicas`选项时，查询处理将在单个分片中的所有副本之间并行化。更多信息，请参见[max_parallel_replicas](../../../operations/settings/settings.md#settings-max_parallel_replicas)。
 
-要了解更多关于分布式`in`和`global in`查询是如何处理的，请参考[这里](../../../sql-reference/operators/in.md#select-distributed-subqueries)文档。
+要了解更多关于分布式`in`和`global in`查询是如何处理的，请参考[这里](/sql-reference/operators/in#distributed-subqueries)文档。
 
 ## 虚拟列 {#virtual-columns}
 
@@ -232,5 +232,5 @@ SELECT 查询会被发送到所有分片，并且无论数据在分片中如何�
 
 **详见**
 -   [虚拟列](../../../engines/table-engines/index.md#table_engines-virtual_columns) 描述
--   [background_distributed_schedule_pool_size](../../../operations/settings/settings.md#background_distributed_schedule_pool_size) 设置
+-   [background_distributed_schedule_pool_size](/operations/server-configuration-parameters/settings#background_distributed_schedule_pool_size) 设置
 -   [shardNum()](../../../sql-reference/functions/other-functions.md#shard-num) 和 [shardCount()](../../../sql-reference/functions/other-functions.md#shard-count) 方法

@@ -7,7 +7,7 @@ sidebar_label: ARRAY JOIN
 
 对于包含数组列的表来说是一种常见的操作，用于生成一个新表，该表具有包含该初始列中的每个单独数组元素的列，而其他列的值将被重复显示。 这是 `ARRAY JOIN` 语句最基本的场景。
 
-它可以被视为执行 `JOIN` 并具有数组或嵌套数据结构。 类似于 [arrayJoin](../../../sql-reference/functions/array-join.md#functions_arrayjoin) 功能，但该子句功能更广泛。
+它可以被视为执行 `JOIN` 并具有数组或嵌套数据结构。 类似于 [arrayJoin](/sql-reference/functions/array-join) 功能，但该子句功能更广泛。
 
 语法:
 
@@ -146,7 +146,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-下面的例子使用 [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) 功能:
+下面的例子使用 [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) 功能:
 
 ``` sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -259,7 +259,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-使用功能 [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) 的例子:
+使用功能 [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) 的例子:
 
 ``` sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num

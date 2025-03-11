@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 
 /** Replacement for std::vector<char> to use in buffers.
-  * Differs in that is doesn't do unneeded memset. (And also tries to do as little as possible.)
+  * Differs in that is doesn't do unnecessary memset. (And also tries to do as little as possible.)
   * Also allows to allocate aligned piece of memory (to use with O_DIRECT, for example).
   */
 template <typename Allocator = Allocator<false>>

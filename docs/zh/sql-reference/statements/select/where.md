@@ -15,7 +15,7 @@ sidebar_label: WHERE
 有一个叫做过滤优化 [prewhere](../../../sql-reference/statements/select/prewhere.md) 的东西.
 :::
 
-如果需要测试一个 [NULL](../../../sql-reference/syntax.md#null-literal) 值，请使用 [IS NULL](../../operators/index.md#operator-is-null) and [IS NOT NULL](../../operators/index.md#is-not-null) 运算符或 [isNull](../../../sql-reference/functions/functions-for-nulls.md#isnull) 和 [isNotNull](../../../sql-reference/functions/functions-for-nulls.md#isnotnull) 函数。否则带有 NULL 的表达式永远不会通过。
+如果需要测试一个 [NULL](../../../sql-reference/syntax.md#null-literal) 值，请使用 [IS NULL](/sql-reference/operators#is_null) and [IS NOT NULL](/sql-reference/operators#is_not_null) 运算符或 [isNull](../../../sql-reference/functions/functions-for-nulls.md#isnull) 和 [isNotNull](../../../sql-reference/functions/functions-for-nulls.md#isnotnull) 函数。否则带有 NULL 的表达式永远不会通过。
 
 **示例**
 

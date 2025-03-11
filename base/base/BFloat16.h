@@ -90,12 +90,12 @@ public:
 
     constexpr bool operator==(const BFloat16 & other) const
     {
-        return x == other.x;
+        return Float32(*this) == Float32(other);
     }
 
     constexpr bool operator!=(const BFloat16 & other) const
     {
-        return x != other.x;
+        return Float32(*this) != Float32(other);
     }
 
     constexpr BFloat16 operator+(const BFloat16 & other) const

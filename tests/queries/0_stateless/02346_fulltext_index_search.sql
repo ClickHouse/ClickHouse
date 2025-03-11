@@ -26,7 +26,7 @@ CHECK TABLE tab;
 SELECT * FROM tab WHERE s == 'Alick a01';
 
 -- check the query only read 1 granules (2 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==2 from system.query_log
         WHERE query_kind ='Select'
             AND current_database = currentDatabase()
@@ -39,7 +39,7 @@ SELECT read_rows==2 from system.query_log
 SELECT * FROM tab WHERE s LIKE '%01%' ORDER BY k;
 
 -- check the query only read 2 granules (4 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==4 from system.query_log
         WHERE query_kind ='Select'
             AND current_database = currentDatabase()
@@ -52,7 +52,7 @@ SELECT read_rows==4 from system.query_log
 SELECT * FROM tab WHERE hasToken(s, 'Click') ORDER BY k;
 
 -- check the query only read 4 granules (8 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==8 from system.query_log
         WHERE query_kind ='Select'
             AND current_database = currentDatabase()
@@ -79,7 +79,7 @@ SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab_x' AND d
 SELECT * FROM tab_x WHERE hasToken(s, 'Alick') ORDER BY k;
 
 -- check the query only read 4 granules (8 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==8 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
@@ -92,7 +92,7 @@ SELECT read_rows==8 from system.query_log
 SELECT * FROM tab_x WHERE s IN ('x Alick a01 y', 'x Alick a06 y') ORDER BY k;
 
 -- check the query only read 2 granules (4 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==4 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
@@ -105,7 +105,7 @@ SELECT read_rows==4 from system.query_log
 SELECT * FROM tab_x WHERE multiSearchAny(s, [' a01 ', ' b01 ']) ORDER BY k;
 
 -- check the query only read 2 granules (4 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==4 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
@@ -132,7 +132,7 @@ SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND dat
 SELECT * FROM tab WHERE has(s, 'x Click a03 y') ORDER BY k;
 
 -- check the query must read all 10 granules (20 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==2 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
@@ -159,7 +159,7 @@ SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND dat
 SELECT * FROM tab WHERE mapContains(s, 'Click') ORDER BY k;
 
 -- check the query must read all 4 granules (8 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==8 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
@@ -172,7 +172,7 @@ SELECT read_rows==8 from system.query_log
 SELECT * FROM tab WHERE s['Click'] = 'Click a03';
 
 -- check the query must read all 4 granules (8 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==8 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
@@ -201,7 +201,7 @@ SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND dat
 SELECT * FROM tab WHERE s LIKE '%01%' ORDER BY k;
 
 -- check the query only read 3 granules (6 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==6 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()
@@ -229,7 +229,7 @@ SELECT name, type FROM system.data_skipping_indices WHERE table == 'tab' AND dat
 SELECT * FROM tab WHERE s LIKE '%你好%' ORDER BY k;
 
 -- check the query only read 1 granule (2 rows total; each granule has 2 rows)
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 SELECT read_rows==2 from system.query_log
     WHERE query_kind ='Select'
         AND current_database = currentDatabase()

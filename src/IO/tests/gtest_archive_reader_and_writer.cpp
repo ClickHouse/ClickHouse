@@ -2,7 +2,7 @@
 #include "config.h"
 
 #include <filesystem>
-#include <format>
+
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Archives/IArchiveReader.h>
 #include <IO/Archives/IArchiveWriter.h>
@@ -357,8 +357,8 @@ TEST_P(ArchiveReaderAndWriterTest, ManyFilesInMemory)
         {
             for (int i = 0; i < files; i++)
             {
-                auto filename = std::format("{}.txt", i);
-                auto contents = std::format("The contents of {}.txt", i);
+                auto filename = fmt::format("{}.txt", i);
+                auto contents = fmt::format("The contents of {}.txt", i);
                 auto out = writer->writeFile(filename, times * contents.size());
                 for (int j = 0; j < times; j++)
                     writeString(contents, *out);
@@ -378,8 +378,8 @@ TEST_P(ArchiveReaderAndWriterTest, ManyFilesInMemory)
 
     for (int i = 0; i < files; i++)
     {
-        auto filename = std::format("{}.txt", i);
-        auto contents = std::format("The contents of {}.txt", i);
+        auto filename = fmt::format("{}.txt", i);
+        auto contents = fmt::format("The contents of {}.txt", i);
         ASSERT_TRUE(reader->fileExists(filename));
         EXPECT_EQ(reader->getFileInfo(filename).uncompressed_size, times * contents.size());
 
@@ -460,8 +460,8 @@ TEST_P(ArchiveReaderAndWriterTest, ManyFilesOnDisk)
         {
             for (int i = 0; i < files; i++)
             {
-                auto filename = std::format("{}.txt", i);
-                auto contents = std::format("The contents of {}.txt", i);
+                auto filename = fmt::format("{}.txt", i);
+                auto contents = fmt::format("The contents of {}.txt", i);
                 auto out = writer->writeFile(filename, times * contents.size());
                 for (int j = 0; j < times; j++)
                     writeString(contents, *out);
@@ -479,8 +479,8 @@ TEST_P(ArchiveReaderAndWriterTest, ManyFilesOnDisk)
 
     for (int i = 0; i < files; i++)
     {
-        auto filename = std::format("{}.txt", i);
-        auto contents = std::format("The contents of {}.txt", i);
+        auto filename = fmt::format("{}.txt", i);
+        auto contents = fmt::format("The contents of {}.txt", i);
         ASSERT_TRUE(reader->fileExists(filename));
         EXPECT_EQ(reader->getFileInfo(filename).uncompressed_size, times * contents.size());
 

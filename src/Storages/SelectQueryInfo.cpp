@@ -1,9 +1,14 @@
+#include <Interpreters/Set.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Planner/PlannerContext.h>
 #include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
+
+SelectQueryInfo::SelectQueryInfo()
+    : prepared_sets(std::make_shared<PreparedSets>())
+{}
 
 bool SelectQueryInfo::isFinal() const
 {

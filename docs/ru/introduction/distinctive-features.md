@@ -35,7 +35,7 @@ sidebar_label: "Отличительные возможности ClickHouse"
 
 ClickHouse поддерживает декларативный язык запросов SQL.
 
-Поддерживаются [GROUP BY](../sql-reference/statements/select/group-by.md), [ORDER BY](../sql-reference/statements/select/order-by.md), подзапросы в секциях [FROM](../sql-reference/statements/select/from.md), [IN](../sql-reference/operators/in.md), [JOIN](../sql-reference/statements/select/join.md), [функции window](../sql-reference/window-functions/index.mdx), а также скалярные подзапросы.
+Поддерживаются [GROUP BY](/sql-reference/statements/select/group-by), [ORDER BY](../sql-reference/statements/select/order-by.md), подзапросы в секциях [FROM](../sql-reference/statements/select/from.md), [IN](../sql-reference/operators/in.md), [JOIN](../sql-reference/statements/select/join.md), [функции window](../sql-reference/window-functions/index.mdx), а также скалярные подзапросы.
 
 Зависимые подзапросы не поддерживаются, но могут стать доступными в будущем.
 

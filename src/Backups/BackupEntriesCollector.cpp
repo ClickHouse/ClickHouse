@@ -18,6 +18,7 @@
 #include <base/insertAtEnd.h>
 #include <base/scope_guard.h>
 #include <base/sleep.h>
+#include <base/sort.h>
 #include <Common/escapeForFileName.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/intExp2.h>

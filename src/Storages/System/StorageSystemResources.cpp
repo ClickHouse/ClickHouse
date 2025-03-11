@@ -27,7 +27,10 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & resource_names = storage.getAllEntityNames(WorkloadEntityType::Resource);
     for (const auto & resource_name : resource_names)
     {
-        auto ast = storage.get(resource_name);
+        auto ast = storage.tryGet(resource_name);
+        if (!ast)
+            /// It might be modified in the meantime, but it's ok to not show those removed resources
+            continue;
         auto & resource = typeid_cast<ASTCreateResourceQuery &>(*ast);
         res_columns[0]->insert(resource_name);
         {

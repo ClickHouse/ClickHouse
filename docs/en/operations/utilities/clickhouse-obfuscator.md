@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/utilities/clickhouse-obfuscator
+slug: /operations/utilities/clickhouse-obfuscator
 title: clickhouse-obfuscator 
 ---
 

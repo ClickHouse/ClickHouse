@@ -817,7 +817,7 @@ date_trunc(unit, value[, timezone])
 
 **Аргументы**
 
--   `unit` — единица измерения времени, в которой задана отсекаемая часть. [String Literal](../syntax.md#syntax-string-literal).
+-   `unit` — единица измерения времени, в которой задана отсекаемая часть. [String Literal](/sql-reference/data-types/string).
     Возможные значения:
 
     - `second`

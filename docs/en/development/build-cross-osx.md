@@ -1,5 +1,5 @@
 ---
-slug: /en/development/build-cross-osx
+slug: /development/build-cross-osx
 sidebar_position: 20
 sidebar_label: Build on Linux for macOS
 ---

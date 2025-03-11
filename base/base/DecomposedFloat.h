@@ -198,8 +198,15 @@ struct DecomposedFloat
             return isNegative() ? -1 : 1;
 
         /// Float has no fractional part means that the numbers are equal.
-        if (large_and_always_integer || (mantissa() & ((1ULL << (Traits::mantissa_bits - normalizedExponent())) - 1)) == 0)
+        if (large_and_always_integer)
             return 0;
+
+        /// Make clang-tidy happy
+        /// We know normalizedExponent() is positive from a check at the start at the function
+        /// We know normalizedExponent() < Traits::mantissa_bits from large_and_always_integer
+        if ((mantissa() & ((1ULL << (static_cast<uint64_t>(Traits::mantissa_bits) - static_cast<uint64_t>(normalizedExponent()))) - 1)) == 0)
+            return 0;
+
         /// Float has fractional part means its abs value is larger.
         return isNegative() ? -1 : 1;
     }

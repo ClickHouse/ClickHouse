@@ -26,6 +26,8 @@
 #include "config.h"
 
 #include "Utils.h"
+#include <Server/CloudPlacementInfo.h>
+#include <IO/SharedThreadPools.h>
 
 namespace DB
 {
@@ -279,6 +281,8 @@ void DisksApp::runInteractiveReplxx()
         if (!processQueryText(input))
             break;
     }
+
+    std::cout << std::endl;
 }
 
 void DisksApp::parseAndCheckOptions(
@@ -500,6 +504,13 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         auto log_level = config().getString("log-level", "none");
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
     }
+
+    PlacementInfo::PlacementInfo::instance().initialize(config());
+
+    getIOThreadPool().initialize(
+        /*max_io_thread_pool_size*/ 100,
+        /*max_io_thread_pool_free_size*/ 0,
+        /*io_thread_pool_queue_size*/ 10000);
 
     registerCommands();
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/SettingsProfileElement.h>
+#include <Common/LoggingFormatStringHelpers.h>
 #include <Common/SettingsChanges.h>
 #include <Common/SettingSource.h>
 #include <unordered_map>

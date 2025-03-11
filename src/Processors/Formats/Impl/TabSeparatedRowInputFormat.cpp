@@ -1,6 +1,8 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
+#include <Columns/IColumn.h>
+#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/Serializations/SerializationNullable.h>

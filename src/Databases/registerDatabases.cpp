@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Databases/DatabaseFactory.h>
 #include <Databases/registerDatabases.h>
 
@@ -39,6 +41,8 @@ void registerDatabaseHDFS(DatabaseFactory & factory);
 void registerDatabaseIceberg(DatabaseFactory & factory);
 #endif
 
+void registerDatabaseBackup(DatabaseFactory & factory);
+
 void registerDatabases()
 {
     auto & factory = DatabaseFactory::instance();
@@ -74,5 +78,7 @@ void registerDatabases()
 #if USE_AVRO
     registerDatabaseIceberg(factory);
 #endif
+
+    registerDatabaseBackup(factory);
 }
 }

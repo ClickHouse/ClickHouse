@@ -538,7 +538,7 @@ murmurHash3_128(expr)
 
 **Аргументы**
 
--   `expr` — список [выражений](../../sql-reference/syntax.md#syntax-expressions). [String](../../sql-reference/data-types/string.md).
+-   `expr` — список [выражений](/sql-reference/syntax#expressions). [String](../../sql-reference/data-types/string.md).
 
 **Возвращаемое значение**
 

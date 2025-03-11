@@ -1,12 +1,14 @@
 #pragma once
 
-#include <Storages/MergeTree/MergeTreeDataPartType.h>
-#include <Interpreters/SystemLog.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/UUID.h>
-#include <Storages/MergeTree/MergeType.h>
+#include <Interpreters/SystemLog.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeAlgorithm.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
+#include <Storages/MergeTree/MergeType.h>
+
 
 namespace ProfileEvents
 {

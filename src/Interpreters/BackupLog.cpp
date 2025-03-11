@@ -32,8 +32,8 @@ ColumnsDescription BackupLogElement::getColumnsDescription()
         {"query_id", std::make_shared<DataTypeString>(), "The ID of a query associated with a backup operation."},
         {"status", std::make_shared<DataTypeEnum8>(getBackupStatusEnumValues()), "Operation status."},
         {"error", std::make_shared<DataTypeString>(), "Error message of the failed operation (empty string for successful operations)."},
-        {"start_time", std::make_shared<DataTypeDateTime>(), "Start time of the operation."},
-        {"end_time", std::make_shared<DataTypeDateTime>(), "End time of the operation."},
+        {"start_time", std::make_shared<DataTypeDateTime64>(6), "Start time of the operation."},
+        {"end_time", std::make_shared<DataTypeDateTime64>(6), "End time of the operation."},
         {"num_files", std::make_shared<DataTypeUInt64>(), "Number of files stored in the backup."},
         {"total_size", std::make_shared<DataTypeUInt64>(), "Total size of files stored in the backup."},
         {"num_entries", std::make_shared<DataTypeUInt64>(), "Number of entries in the backup, i.e. the number of files inside the folder if the backup is stored as a folder, or the number of files inside the archive if the backup is stored as an archive. It is not the same as num_files if it's an incremental backup or if it contains empty files or duplicates. The following is always true: num_entries <= num_files."},
@@ -57,8 +57,8 @@ void BackupLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(info.query_id);
     columns[i++]->insert(static_cast<Int8>(info.status));
     columns[i++]->insert(info.error_message);
-    columns[i++]->insert(static_cast<UInt32>(std::chrono::system_clock::to_time_t(info.start_time)));
-    columns[i++]->insert(static_cast<UInt32>(std::chrono::system_clock::to_time_t(info.end_time)));
+    columns[i++]->insert(static_cast<Decimal64>(info.start_time_us));
+    columns[i++]->insert(static_cast<Decimal64>(info.end_time_us));
     columns[i++]->insert(info.num_files);
     columns[i++]->insert(info.total_size);
     columns[i++]->insert(info.num_entries);

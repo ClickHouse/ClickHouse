@@ -35,10 +35,10 @@ uniqHLL12(x[, ...])
 
 -   提供确定结果（它不依赖于查询处理顺序）。
 
-我们不建议使用此函数。 在大多数情况下, 使用 [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) 或 [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined) 函数。
+我们不建议使用此函数。 在大多数情况下, 使用 [uniq](/sql-reference/aggregate-functions/reference/uniq) 或 [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined) 函数。
 
 **参见**
 
--   [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+-   [uniq](/sql-reference/aggregate-functions/reference/uniq)
 -   [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
--   [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+-   [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)

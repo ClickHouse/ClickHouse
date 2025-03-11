@@ -59,7 +59,7 @@ export -f wait_table_parts_are_merged_into_one_part
 
 timeout 60 bash -c 'wait_table_parts_are_merged_into_one_part t_part_log_has_merge_type_table'
 
-${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS'
+${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS part_log'
 
 ${CLICKHOUSE_CLIENT} -q '
   SELECT

@@ -2,7 +2,6 @@
 
 #include <base/defines.h>
 #include <base/errnoToString.h>
-#include <base/int8_to_string.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/StackTrace.h>
 #include <Core/LogsLevel.h>
@@ -11,7 +10,6 @@
 #include <exception>
 #include <vector>
 
-#include <fmt/core.h>
 #include <fmt/format.h>
 #include <Poco/Exception.h>
 
@@ -66,12 +64,28 @@ public:
 
     /// Collect call stacks of all previous jobs' schedulings leading to this thread job's execution
     static thread_local bool enable_job_stack_trace;
+    using ThreadFramePointersBase = std::vector<StackTrace::FramePointers>;
+
+    /// If thread is going to use thread_frame_pointers then this initializer should be called at the beginning of a thread function.
+    /// It is necessary to force thread_frame_pointers to be initialized - static thread_local members are lazy initializable.
+    static void initializeThreadFramePointers()
+    {
+        [[maybe_unused]] auto &v = thread_frame_pointers;
+    }
+
+    static const ThreadFramePointersBase & getThreadFramePointers();
+    static void setThreadFramePointers(ThreadFramePointersBase frame_pointers);
+    static void clearThreadFramePointers();
+
+    /// Callback for any exception
+    static std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> callback;
+
+protected:
     static thread_local bool can_use_thread_frame_pointers;
     /// Because of unknown order of static destructor calls,
     /// thread_frame_pointers can already be uninitialized when a different destructor generates an exception.
     /// To prevent such scenarios, a wrapper class is created and a function that will return empty vector
     /// if its destructor is already called
-    using ThreadFramePointersBase = std::vector<StackTrace::FramePointers>;
     struct ThreadFramePointers
     {
         ThreadFramePointers();
@@ -79,15 +93,8 @@ public:
 
         ThreadFramePointersBase frame_pointers;
     };
-
-    static ThreadFramePointersBase getThreadFramePointers();
-    static void setThreadFramePointers(ThreadFramePointersBase frame_pointers);
-
-    /// Callback for any exception
-    static std::function<void(const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)> callback;
-
-protected:
     static thread_local ThreadFramePointers thread_frame_pointers;
+    static const ThreadFramePointersBase dummy_frame_pointers;
 
     // used to remove the sensitive information from exceptions if query_masking_rules is configured
     struct MessageMasked
@@ -329,11 +336,11 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace, bool
 
 template <typename T>
 requires std::is_pointer_v<T>
-T exception_cast(std::exception_ptr e)
+T current_exception_cast()
 {
     try
     {
-        std::rethrow_exception(e);
+        throw;
     }
     catch (std::remove_pointer_t<T> & concrete)
     {

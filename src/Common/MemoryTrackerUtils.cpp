@@ -29,6 +29,24 @@ std::optional<UInt64> getMostStrictAvailableSystemMemory()
     return available;
 }
 
+std::optional<UInt64> getCurrentQueryHardLimit()
+{
+    Int64 hard_limit = std::numeric_limits<Int64>::max();
+    MemoryTracker * memory_tracker = DB::CurrentThread::getMemoryTracker();
+    while (memory_tracker)
+    {
+        if (Int64 tracker_limit = memory_tracker->getHardLimit(); tracker_limit > 0)
+        {
+            hard_limit = std::min(hard_limit, tracker_limit);
+        }
+        memory_tracker = memory_tracker->getParent();
+    }
+    if (hard_limit == std::numeric_limits<Int64>::max())
+        return {};
+    return hard_limit;
+}
+
+
 Int64 getCurrentQueryMemoryUsage()
 {
     /// Use query-level memory tracker

@@ -3,10 +3,11 @@
 #include <Common/ObjectStorageKeyGenerator.h>
 
 #include <memory>
+
 namespace DB
 {
 
-struct InMemoryDirectoryPathMap;
+class InMemoryDirectoryPathMap;
 class FlatDirectoryStructureKeyGenerator : public IObjectStorageKeysGenerator
 {
 public:

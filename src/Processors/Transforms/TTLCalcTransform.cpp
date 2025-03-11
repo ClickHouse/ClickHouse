@@ -1,4 +1,6 @@
 #include <Processors/Transforms/TTLCalcTransform.h>
+
+#include <Processors/Port.h>
 #include <Processors/TTL/TTLUpdateInfoAlgorithm.h>
 
 namespace DB

@@ -1,7 +1,9 @@
 #include <Columns/IColumn.h>
-#include <Processors/Formats/IOutputFormat.h>
+#include <Core/Block.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteBufferDecorator.h>
+#include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Port.h>
 
 
 namespace DB
@@ -83,9 +85,8 @@ void IOutputFormat::work()
             setRowsBeforeLimit(rows_before_limit_counter->get());
         if (rows_before_aggregation_counter && rows_before_aggregation_counter->hasAppliedStep())
             setRowsBeforeAggregation(rows_before_aggregation_counter->get());
+
         finalizeUnlocked();
-        if (auto_flush)
-            flushImpl();
         return;
     }
 
@@ -162,6 +163,10 @@ void IOutputFormat::finalizeUnlocked()
 
     writeSuffixIfNeeded();
     finalizeImpl();
+
+    if (auto_flush)
+        flushImpl();
+
     finalizeBuffers();
     finalized = true;
 }
@@ -170,6 +175,21 @@ void IOutputFormat::finalize()
 {
     std::lock_guard lock(writing_mutex);
     finalizeUnlocked();
+}
+
+void IOutputFormat::setTotals(const Block & totals)
+{
+    std::lock_guard lock(writing_mutex);
+    writeSuffixIfNeeded();
+    consumeTotals(Chunk(totals.getColumns(), totals.rows()));
+    are_totals_written = true;
+}
+
+void IOutputFormat::setExtremes(const Block & extremes)
+{
+    std::lock_guard lock(writing_mutex);
+    writeSuffixIfNeeded();
+    consumeExtremes(Chunk(extremes.getColumns(), extremes.rows()));
 }
 
 void IOutputFormat::onProgress(const Progress & progress)

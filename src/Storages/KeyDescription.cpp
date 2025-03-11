@@ -6,6 +6,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/extractKeyExpressionList.h>
 #include <Common/quoteString.h>
 #include <Interpreters/FunctionNameNormalizer.h>

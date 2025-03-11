@@ -10,7 +10,7 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS mv5 TO data_b_02187 AS Select sleepEachRo
 INSERT INTO data_a_02187 VALUES (1);
 -- INSERT USING TABLE
 INSERT INTO data_a_02187 SELECT * FROM system.one;
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log, query_views_log;
 
 SELECT 'VALUES', query_duration_ms >= 250
 FROM system.query_log

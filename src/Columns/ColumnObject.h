@@ -180,6 +180,7 @@ public:
 
     void finalize() override;
     bool isFinalized() const override;
+    bool canBeInsideNullable() const override { return true; }
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;

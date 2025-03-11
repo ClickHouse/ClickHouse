@@ -232,6 +232,9 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }
 
+    if (isBool(constant_value_type))
+        constant_value_ast->custom_type = constant_value_type;
+
     return constant_value_ast;
 }
 

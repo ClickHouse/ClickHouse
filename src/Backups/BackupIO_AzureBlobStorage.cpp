@@ -68,7 +68,7 @@ UInt64 BackupReaderAzureBlobStorage::getFileSize(const String & file_name)
     return object_metadata.size_bytes;
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupReaderAzureBlobStorage::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderAzureBlobStorage::readFile(const String & file_name)
 {
     String key = fs::path(blob_path) / file_name;
     return std::make_unique<ReadBufferFromAzureBlobStorage>(

@@ -10,33 +10,33 @@ slug: /ru/operations/system-tables/query_views_log
 1. Настройте параметры в разделе [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log).
 2. Включите настройку [log_query_views=1](../../operations/settings/settings.md#settings-log-query-views).
 
-Период сброса данных из буфера в памяти задается в параметре `flush_interval_milliseconds` в разделе настроек сервера [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log ). Для принудительного сброса используйте запрос [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs).
+Период сброса данных из буфера в памяти задается в параметре `flush_interval_milliseconds` в разделе настроек сервера [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log ). Для принудительного сброса используйте запрос [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs).
 
 ClickHouse не удаляет данные из таблицы автоматически. Подробнее смотрите раздел [Системные таблицы](../../operations/system-tables/index.md#system-tables-introduction).
 
-Чтобы уменьшить количество запросов, регистрируемых в таблице `query_views_log`, вы можете включить настройку [log_queries_probability](../../operations/settings/settings.md#log-queries-probability).
+Чтобы уменьшить количество запросов, регистрируемых в таблице `query_views_log`, вы можете включить настройку [log_queries_probability](/operations/settings/settings#log_queries_probability)).
 
 Столбцы:
 
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — дата, когда произошло последнее событие с представлением.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время завершения выполнения представления.
 -   `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — дата и время завершения выполнения представления с точностью до микросекунд.
--   `view_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — продолжительность выполнения представления (сумма его этапов) в миллисекундах.
+-   `view_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — продолжительность выполнения представления (сумма его этапов) в миллисекундах.
 -   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор начального запроса (при распределённом выполнении запроса).
 -   `view_name` ([String](../../sql-reference/data-types/string.md)) — имя представления.
 -   `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — UUID представления.
 -   `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — тип представления. Возможные значения:
-    -   `'Default' = 1` — [обычные представления](../../sql-reference/statements/create/view.md#normal). Не должно появляться в этом журнале.
-    -   `'Materialized' = 2` — [материализованные представления](../../sql-reference/statements/create/view.md#materialized).
+    -   `'Default' = 1` — [обычные представления](/sql-reference/statements/create/view#normal-view). Не должно появляться в этом журнале.
+    -   `'Materialized' = 2` — [материализованные представления](/sql-reference/statements/create/view#materialized-view).
     -   `'Live' = 3` — [live представления](../../sql-reference/statements/create/view.md#live-view).
 -   `view_query` ([String](../../sql-reference/data-types/string.md)) — запрос, выполняемый представлением.
 -   `view_target` ([String](../../sql-reference/data-types/string.md)) — имя целевой таблицы представления.
--   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество прочитанных строк.
--   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество прочитанных байт.
--   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество записанных строк.
--   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — количество записанных байт.
+-   `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — количество прочитанных строк.
+-   `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — количество прочитанных байт.
+-   `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — количество записанных строк.
+-   `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — количество записанных байт.
 -   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — максимальная разница между объемом выделенной и освобожденной памяти в контексте этого представления.
--   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — события профиля, которые измеряют различные показатели. Их описание можно найти в таблице [system.events](../../operations/system-tables/events.md#system_tables-events).
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — события профиля, которые измеряют различные показатели. Их описание можно найти в таблице [system.events](/operations/system-tables/events).
 -   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — статус представления. Возможные значения:
     -   `'QueryStart' = 1` — успешное начало выполнения представления. Не должно отображаться.
     -   `'QueryFinish' = 2` — успешное завершение выполнения представления.
@@ -83,5 +83,5 @@ stack_trace:
 
 **См. также**
 
--   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — описание системной таблицы `query_log`, которая содержит общую информацию о выполненных запросах.
--   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — описание системной таблицы `query_thread_log`, которая содержит информацию о каждом потоке выполнения запроса.
+-   [system.query_log](/operations/system-tables/query_log) — описание системной таблицы `query_log`, которая содержит общую информацию о выполненных запросах.
+-   [system.query_thread_log](/operations/system-tables/query_thread_log) — описание системной таблицы `query_thread_log`, которая содержит информацию о каждом потоке выполнения запроса.

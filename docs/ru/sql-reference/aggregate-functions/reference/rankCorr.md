@@ -15,14 +15,14 @@ rankCorr(x, y)
 
 **Аргументы**
 
--   `x` — произвольное значение. [Float32](../../../sql-reference/data-types/float.md#float32-float64) или [Float64](../../../sql-reference/data-types/float.md#float32-float64).
--   `y` — произвольное значение. [Float32](../../../sql-reference/data-types/float.md#float32-float64) или [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+-   `x` — произвольное значение. [Float32](/sql-reference/data-types/float) или [Float64](/sql-reference/data-types/float).
+-   `y` — произвольное значение. [Float32](/sql-reference/data-types/float) или [Float64](/sql-reference/data-types/float).
 
 **Возвращаемое значение**
 
 -   Возвращает коэффициент ранговой корреляции рангов x и y. Значение коэффициента корреляции изменяется в пределах от -1 до +1. Если передается менее двух аргументов, функция возвращает исключение. Значение, близкое к +1, указывает на высокую линейную зависимость, и с увеличением одной случайной величины увеличивается и вторая случайная величина. Значение, близкое к -1, указывает на высокую линейную зависимость, и с увеличением одной случайной величины вторая случайная величина уменьшается. Значение, близкое или равное 0, означает отсутствие связи между двумя случайными величинами.
 
-Тип: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+Тип: [Float64](/sql-reference/data-types/float).
 
 **Пример**
 

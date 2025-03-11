@@ -1,3 +1,4 @@
+#include <Columns/IColumn.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/System/StorageSystemWarnings.h>

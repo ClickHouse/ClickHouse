@@ -30,7 +30,7 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
 
 Запросы, которые являются частью `UNION`, могут быть заключены в круглые скобки. [ORDER BY](order-by.md) и [LIMIT](limit.md) применяются к отдельным запросам, а не к конечному результату. Если вам нужно применить преобразование к конечному результату, вы можете разместить все объединенные с помощью `UNION` запросы в подзапрос в секции [FROM](from.md).
 
-Если используете `UNION` без явного указания `UNION ALL` или `UNION DISTINCT`, то вы можете указать режим объединения с помощью настройки [union_default_mode](../../../operations/settings/settings.md#union-default-mode), значениями которой могут быть `ALL`, `DISTINCT` или пустая строка. Однако если вы используете `UNION` с настройкой `union_default_mode`, значением которой является пустая строка, то будет сгенерировано исключение. В следующих примерах продемонстрированы результаты запросов при разных значениях настройки.
+Если используете `UNION` без явного указания `UNION ALL` или `UNION DISTINCT`, то вы можете указать режим объединения с помощью настройки [union_default_mode](/operations/settings/settings#union_default_mode), значениями которой могут быть `ALL`, `DISTINCT` или пустая строка. Однако если вы используете `UNION` с настройкой `union_default_mode`, значением которой является пустая строка, то будет сгенерировано исключение. В следующих примерах продемонстрированы результаты запросов при разных значениях настройки.
 
 Запрос:
 
@@ -82,4 +82,4 @@ SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
 **Смотрите также**
 
 -   Настройка [insert_null_as_default](../../../operations/settings/settings.md#insert_null_as_default).
--   Настройка [union_default_mode](../../../operations/settings/settings.md#union-default-mode).
+-   Настройка [union_default_mode](/operations/settings/settings#union_default_mode).

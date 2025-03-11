@@ -34,7 +34,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM DROP MARK CACHE"
 # (usually all threads access the file at overlapping times, and the file is opened just once;
 #  but sometimes a thread is much slower than others and ends opening the same file a second time)
 ${CLICKHOUSE_CLIENT} --log_queries=1 --query_id "${QUERY_ID}" -q "SELECT * FROM lazy_mark_test WHERE n3==11 SETTINGS load_marks_asynchronously=0, max_threads=1"
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
 # Expect 2 open files: n3 marks and n3 data.
 ${CLICKHOUSE_CLIENT} -q "select ProfileEvents['FileOpen'] from system.query_log where query_id = '${QUERY_ID}' and type = 'QueryFinish' and current_database = currentDatabase()"

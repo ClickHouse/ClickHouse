@@ -6,6 +6,7 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -57,7 +58,9 @@
 #include <Storages/LiveView/StorageBlocks.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/WindowView/WindowViewSource.h>
+#include <Storages/ReadInOrderOptimizer.h>
 
+#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <Poco/String.h>
@@ -93,6 +96,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 namespace
@@ -1371,10 +1375,14 @@ ASTPtr StorageWindowView::innerQueryParser(const ASTSelectQuery & query)
                         "TIME WINDOW FUNCTION is not specified for {}", getName());
 
     is_tumble = query_info_data.is_tumble;
+    size_t required_args = is_tumble ? 2 : 3;
 
     // Parse time window function
     ASTFunction & window_function = typeid_cast<ASTFunction &>(*query_info_data.window_function);
     const auto & arguments = window_function.arguments->children;
+
+    if (arguments.size() < required_args)
+        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Too few arguments for function {}: expected at least {}, got {}", window_function.name, required_args, arguments.size());
     extractWindowArgument(
         arguments.at(1), window_kind, window_num_units,
         "Illegal type of second argument of function " + window_function.name + " should be Interval");

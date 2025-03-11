@@ -33,7 +33,7 @@ $CLICKHOUSE_CLIENT --max_result_rows 0 --max_result_bytes 0 --query_id "$query_i
     LIMIT 20
     FORMAT Null
 " 2>&1 | grep -m1 -o "Code: 159"
-$CLICKHOUSE_CLIENT -q "system flush logs"
+$CLICKHOUSE_CLIENT -q "system flush logs query_log"
 ${CLICKHOUSE_CURL} -q -sS "$CLICKHOUSE_URL" -d "select 'query_duration', round(query_duration_ms/1000) BETWEEN 1 AND 60 from system.query_log where current_database = '$CLICKHOUSE_DATABASE' and query_id = '$query_id' and type != 'QueryStart'"
 
 
@@ -52,7 +52,7 @@ $CLICKHOUSE_CLIENT --max_result_rows 0 --max_result_bytes 0 --query_id "$query_i
     SETTINGS max_execution_time = 1, timeout_overflow_mode = 'break'
 "
 echo $?
-$CLICKHOUSE_CLIENT -q "system flush logs"
+$CLICKHOUSE_CLIENT -q "system flush logs query_log"
 ${CLICKHOUSE_CURL} -q -sS "$CLICKHOUSE_URL" -d "select 'query_duration', round(query_duration_ms/1000) BETWEEN 1 AND 60 from system.query_log where current_database = '$CLICKHOUSE_DATABASE' and query_id = '$query_id' and type != 'QueryStart'"
 
 

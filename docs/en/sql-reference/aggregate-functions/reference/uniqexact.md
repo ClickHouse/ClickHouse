@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/uniqexact
+slug: /sql-reference/aggregate-functions/reference/uniqexact
 sidebar_position: 207
+title: "uniqExact"
+description: "Calculates the exact number of different argument values."
 ---
 
 # uniqExact
@@ -11,7 +13,7 @@ Calculates the exact number of different argument values.
 uniqExact(x[, ...])
 ```
 
-Use the `uniqExact` function if you absolutely need an exact result. Otherwise use the [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function.
+Use the `uniqExact` function if you absolutely need an exact result. Otherwise use the [uniq](/sql-reference/aggregate-functions/reference/uniq) function.
 
 The `uniqExact` function uses more memory than `uniq`, because the size of the state has unbounded growth as the number of different values increases.
 
@@ -33,7 +35,7 @@ SELECT uniqExact(typecode) FROM opensky.opensky
 
 **See Also**
 
-- [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
-- [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqcombined)
-- [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniqhll12)
-- [uniqTheta](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)
+- [uniq](/sql-reference/aggregate-functions/reference/uniq)
+- [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined)
+- [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
+- [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)

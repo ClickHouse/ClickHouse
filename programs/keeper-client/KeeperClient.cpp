@@ -353,6 +353,8 @@ void KeeperClient::runInteractiveReplxx()
         if (!processQueryText(input))
             break;
     }
+
+    std::cout << std::endl;
 }
 
 void KeeperClient::runInteractiveInputStream()
@@ -439,6 +441,10 @@ int KeeperClient::main(const std::vector<String> & /* args */)
     }
     else
         runInteractive();
+
+    /// Suppress "Finalizing session {}" message.
+    getLogger("ZooKeeperClient")->setLevel("error");
+    zookeeper.reset();
 
     return 0;
 }

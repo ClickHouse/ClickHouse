@@ -6,6 +6,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
+#include <Interpreters/Cache/FileCacheSettings.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <filesystem>
@@ -14,6 +15,10 @@ namespace fs = std::filesystem;
 
 namespace DB
 {
+namespace FileCacheSetting
+{
+    extern const FileCacheSettingsBool cache_on_write_operations;
+}
 
 CachedObjectStorage::CachedObjectStorage(
     ObjectStoragePtr object_storage_,
@@ -120,7 +125,7 @@ std::unique_ptr<WriteBufferFromFileBase> CachedObjectStorage::writeObject( /// N
     auto implementation_buffer = object_storage->writeObject(object, mode, attributes, buf_size, modified_write_settings);
 
     bool cache_on_write = modified_write_settings.enable_filesystem_cache_on_write_operations
-        && FileCacheFactory::instance().getByName(cache_config_name)->getSettings().cache_on_write_operations
+        && FileCacheFactory::instance().getByName(cache_config_name)->getSettings()[FileCacheSetting::cache_on_write_operations]
         && fs::path(object.remote_path).extension() != ".tmp";
 
     /// Need to remove even if cache_on_write == false.

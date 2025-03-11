@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/system-tables/graphite_retentions
+description: "System table containing information about parameters `graphite_rollup` which are used in tables with `GraphiteMergeTree` type engines."
+slug: /operations/system-tables/graphite_retentions
+title: "system.graphite_retentions"
+keywords: ["system table", "graphite_retentions"]
 ---
-# graphite_retentions
 
 Contains information about parameters [graphite_rollup](../../operations/server-configuration-parameters/settings.md#graphite) which are used in tables with [\*GraphiteMergeTree](../../engines/table-engines/mergetree-family/graphitemergetree.md) engines.
 

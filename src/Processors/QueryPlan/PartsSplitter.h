@@ -29,6 +29,7 @@ struct SplitPartsWithRangesByPrimaryKeyResult
   */
 SplitPartsWithRangesByPrimaryKeyResult splitPartsWithRangesByPrimaryKey(
     const KeyDescription & primary_key,
+    const KeyDescription & sorting_key,
     ExpressionActionsPtr sorting_expr,
     RangesInDataParts parts,
     size_t max_layers,

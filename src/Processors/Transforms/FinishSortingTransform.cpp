@@ -56,6 +56,9 @@ void FinishSortingTransform::consume(Chunk chunk)
 {
     generated_prefix = false;
 
+    if (chunk.getNumRows() == 0)
+        return;
+
     // If there were only const columns in sort description, then there is no need to sort.
     // Return the chunks as is.
     if (description.empty())

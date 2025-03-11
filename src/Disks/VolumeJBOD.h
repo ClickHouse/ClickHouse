@@ -81,6 +81,10 @@ private:
 
         bool operator<(const DiskWithSize & rhs) const
         {
+            if (disk->isReadOnly())
+                return true;
+            if (rhs.disk->isReadOnly())
+                return false;
             return free_size < rhs.free_size;
         }
 

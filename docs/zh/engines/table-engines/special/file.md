@@ -15,7 +15,7 @@ slug: /zh/engines/table-engines/special/file
 
     File(Format)
 
-选用的 `Format` 需要支持 `INSERT` 或 `SELECT` 。有关支持格式的完整列表，请参阅 [格式](../../../interfaces/formats.md#formats)。
+选用的 `Format` 需要支持 `INSERT` 或 `SELECT` 。有关支持格式的完整列表，请参阅 [格式](/interfaces/formats#formats-overview)。
 
 ClickHouse 不支持给 `File` 指定文件系统路径。它使用服务器配置中 [路径](../../../operations/server-configuration-parameters/settings.md) 设定的文件夹。
 

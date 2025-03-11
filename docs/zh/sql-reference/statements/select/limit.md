@@ -17,7 +17,7 @@ sidebar_label: LIMIT
 
 如果为 `LIMIT n[,m]` 设置了 `WITH TIES` ，并且声明了 `ORDER BY expr_list`, 除了得到无修饰符的结果（正常情况下的 `limit n`, 前n行数据), 还会返回与第`n`行具有相同排序字段的行(即如果第n+1行的字段与第n行 拥有相同的排序字段，同样返回该结果.
 
-此修饰符可以与： [ORDER BY ... WITH FILL modifier](../../../sql-reference/statements/select/order-by.md#orderby-with-fill) 组合使用.
+此修饰符可以与： [ORDER BY ... WITH FILL modifier](/sql-reference/statements/select/order-by#order-by-expr-with-fill-modifier) 组合使用.
 
 例如以下查询：
 

@@ -3,6 +3,7 @@ import datetime
 import logging
 import os
 import uuid
+import bson
 import warnings
 
 import cassandra.cluster
@@ -224,15 +225,11 @@ class SourceMongo(ExternalSource):
         self.converters = {}
         for field in structure.get_all_fields():
             if field.field_type == "Date":
-                self.converters[field.name] = lambda x: datetime.datetime.strptime(
-                    x, "%Y-%m-%d"
-                )
+                self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d")
             elif field.field_type == "DateTime":
-
-                def converter(x):
-                    return datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S")
-
-                self.converters[field.name] = converter
+                self.converters[field.name] = lambda x: datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S")
+            elif field.field_type == "UUID":
+                self.converters[field.name] = lambda x: bson.Binary(uuid.UUID(x).bytes, subtype=4)
             else:
                 self.converters[field.name] = lambda x: x
 

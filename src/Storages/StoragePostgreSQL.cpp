@@ -354,19 +354,13 @@ public:
         if (nested_type->isNullable())
             nested_type = static_cast<const DataTypeNullable *>(nested_type.get())->getNestedType();
 
-        /// UUIDs inside arrays are expected to be unquoted in PostgreSQL.
-        const bool quoted = !isUUID(nested_type);
-
         writeChar('{', ostr);
         for (size_t i = 0, size = array_field.size(); i < size; ++i)
         {
             if (i != 0)
                 writeChar(',', ostr);
 
-            if (quoted)
-                serialization->serializeTextQuoted(nested_column, i, ostr, settings);
-            else
-                serialization->serializeText(nested_column, i, ostr, settings);
+            serialization->serializeText(nested_column, i, ostr, settings);
         }
         writeChar('}', ostr);
     }

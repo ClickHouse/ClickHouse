@@ -59,7 +59,7 @@ SETTINGS mutations_sync=2;
 SELECT count() from 02581_trips WHERE description = '';
 
 SET max_rows_to_read = 0; -- system.text_log can be really big
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS text_log;
 -- Check that in every mutation there were parts that built sets (log messages like 'Created Set with 10000000 entries from 10000000 rows in 0.388989187 sec.' )
 -- and parts that shared sets (log messages like 'Got set from cache in 0.388930505 sec.' )
 WITH (

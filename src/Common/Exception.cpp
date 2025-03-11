@@ -1,3 +1,4 @@
+#include <base/MemorySanitizer.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
@@ -9,7 +10,6 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Logger.h>
-#include <Common/MemorySanitizer.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/config_version.h>
 #include <Common/filesystemHelpers.h>
@@ -91,6 +91,8 @@ Exception::MessageMasked::MessageMasked(std::string && msg_)
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(msg);
 }
+
+const Exception::ThreadFramePointersBase Exception::dummy_frame_pointers = {};
 
 Exception::Exception(const MessageMasked & msg_masked, int code, bool remote_)
     : Poco::Exception(msg_masked.msg, code)
@@ -241,18 +243,24 @@ Exception::ThreadFramePointers::~ThreadFramePointers()
     can_use_thread_frame_pointers = false;
 }
 
-Exception::ThreadFramePointersBase Exception::getThreadFramePointers()
+const Exception::ThreadFramePointersBase & Exception::getThreadFramePointers()
 {
     if (can_use_thread_frame_pointers)
         return thread_frame_pointers.frame_pointers;
 
-    return {};
+    return dummy_frame_pointers;
 }
 
 void Exception::setThreadFramePointers(ThreadFramePointersBase frame_pointers)
 {
     if (can_use_thread_frame_pointers)
         thread_frame_pointers.frame_pointers = std::move(frame_pointers);
+}
+
+void Exception::clearThreadFramePointers()
+{
+    if (can_use_thread_frame_pointers)
+        thread_frame_pointers.frame_pointers.clear();
 }
 
 static void tryLogCurrentExceptionImpl(Poco::Logger * logger, const std::string & start_of_message, LogsLevel level)

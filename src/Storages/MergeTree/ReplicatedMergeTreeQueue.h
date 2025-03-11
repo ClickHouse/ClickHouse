@@ -313,7 +313,7 @@ private:
 
 public:
     ReplicatedMergeTreeQueue(StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergeStrategyPicker & merge_strategy_picker_);
-    ~ReplicatedMergeTreeQueue();
+    ~ReplicatedMergeTreeQueue() = default;
 
     /// Clears queue state
     void clear();
@@ -440,6 +440,9 @@ public:
     /// it according to part mutation version. Used when we apply alter commands on fly,
     /// without actual data modification on disk.
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot(const MutationsSnapshot::Params & params) const;
+
+    UInt64 getNumberOnFlyDataMutations() const;
+    UInt64 getNumberOnFlyMetadataMutations() const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
     /// (because some mutations are probably done but we are not sure yet), returns true.

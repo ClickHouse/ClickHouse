@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/IProcessor.h>
+#include <Processors/Port.h>
 
 namespace DB
 {

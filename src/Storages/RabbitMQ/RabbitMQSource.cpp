@@ -1,5 +1,6 @@
 #include <Storages/RabbitMQ/RabbitMQSource.h>
 
+#include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>

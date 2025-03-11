@@ -43,8 +43,8 @@ public:
     uint32_t cname = 0;
     SQLType * tp = nullptr;
     ColumnSpecial special = ColumnSpecial::NONE;
-    std::optional<bool> nullable = std::nullopt;
-    std::optional<DModifier> dmod = std::nullopt;
+    std::optional<bool> nullable;
+    std::optional<DModifier> dmod;
 
     SQLColumn() = default;
     SQLColumn(const SQLColumn & c)
@@ -106,22 +106,51 @@ public:
 struct SQLDatabase
 {
 public:
+    std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
     uint32_t dname = 0;
     DatabaseEngineValues deng;
     uint32_t zoo_path_counter;
+    String backed_db;
+    String backed_disk;
 
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
+
+    bool isReplicatedOrSharedDatabase() const { return deng == DatabaseEngineValues::DReplicated || deng == DatabaseEngineValues::DShared; }
+
+    bool isBackupDatabase() const { return deng == DatabaseEngineValues::DBackup; }
+
+    std::optional<String> getCluster() const { return cluster; }
+
+    bool isAttached() const { return attached == DetachStatus::ATTACHED; }
+
+    void finishDatabaseSpecification(DatabaseEngine * dspec)
+    {
+        if (isReplicatedDatabase())
+        {
+            dspec->add_params()->set_svalue("/test/db" + std::to_string(zoo_path_counter));
+            dspec->add_params()->set_svalue("s1");
+            dspec->add_params()->set_svalue("r1");
+        }
+        else if (isBackupDatabase())
+        {
+            dspec->add_params()->mutable_database()->set_database(backed_db);
+            BackupDisk * bd = dspec->add_params()->mutable_disk();
+            bd->set_disk(backed_disk);
+            bd->mutable_database()->set_database("d" + std::to_string(dname));
+        }
+    }
 };
 
 struct SQLBase
 {
 public:
-    bool is_temp = false;
+    bool is_temp = false, is_deterministic = false;
     uint32_t tname = 0;
     std::shared_ptr<SQLDatabase> db = nullptr;
+    std::optional<String> cluster;
     DetachStatus attached = DetachStatus::ATTACHED;
-    std::optional<TableEngineOption> toption = std::nullopt;
+    std::optional<TableEngineOption> toption;
     TableEngineValues teng = TableEngineValues::Null;
     PeerTableDatabase peer_table = PeerTableDatabase::None;
     String file_comp;
@@ -175,10 +204,13 @@ public:
 
     bool isMergeEngine() const { return teng == TableEngineValues::Merge; }
 
+    bool isDistributedEngine() const { return teng == TableEngineValues::Distributed; }
+
     bool isNotTruncableEngine() const
     {
         return isNullEngine() || isSetEngine() || isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine() || isRedisEngine()
-            || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine();
+            || isMongoDBEngine() || isAnyS3Engine() || isHudiEngine() || isDeltaLakeEngine() || isIcebergEngine() || isMergeEngine()
+            || isDistributedEngine();
     }
 
     bool isAnotherRelationalDatabaseEngine() const { return isMySQLEngine() || isPostgreSQLEngine() || isSQLiteEngine(); }
@@ -192,6 +224,10 @@ public:
     bool hasSQLitePeer() const { return peer_table == PeerTableDatabase::SQLite; }
 
     bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::ClickHouse; }
+
+    std::optional<String> getCluster() const { return cluster; }
+
+    bool isAttached() const { return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED; }
 };
 
 struct SQLTable : SQLBase
@@ -231,8 +267,9 @@ public:
 struct SQLView : SQLBase
 {
 public:
-    bool is_materialized = false, is_refreshable = false, is_deterministic = false;
-    uint32_t ncols = 1, staged_ncols = 1;
+    bool is_materialized = false, is_refreshable = false, has_with_cols = false;
+    uint32_t staged_ncols = 0;
+    std::unordered_set<uint32_t> cols;
 };
 
 struct SQLFunction
@@ -240,6 +277,9 @@ struct SQLFunction
 public:
     bool is_deterministic = false;
     uint32_t fname = 0, nargs = 0;
+    std::optional<String> cluster;
+
+    std::optional<String> getCluster() const { return cluster; }
 };
 
 struct ColumnPathChainEntry
@@ -248,20 +288,27 @@ public:
     const String cname;
     SQLType * tp = nullptr;
 
-    ColumnPathChainEntry(const String cn, SQLType * t) : cname(cn), tp(t) { }
+    ColumnPathChainEntry(const String cn, SQLType * t)
+        : cname(cn)
+        , tp(t)
+    {
+    }
 };
 
 struct ColumnPathChain
 {
 public:
-    std::optional<bool> nullable = std::nullopt;
+    std::optional<bool> nullable;
     ColumnSpecial special = ColumnSpecial::NONE;
-    std::optional<DModifier> dmod = std::nullopt;
+    std::optional<DModifier> dmod;
     std::vector<ColumnPathChainEntry> path;
 
     ColumnPathChain(
         const std::optional<bool> nu, const ColumnSpecial cs, const std::optional<DModifier> dm, const std::vector<ColumnPathChainEntry> p)
-        : nullable(nu), special(cs), dmod(dm), path(p)
+        : nullable(nu)
+        , special(cs)
+        , dmod(dm)
+        , path(p)
     {
     }
 

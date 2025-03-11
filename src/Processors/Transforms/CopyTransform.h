@@ -1,8 +1,12 @@
 #pragma once
+
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 
 namespace DB
 {
+
+class Block;
 
 /// Transform which has single input and num_outputs outputs.
 /// Read chunk from input and copy it to all outputs.

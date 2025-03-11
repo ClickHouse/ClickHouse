@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Interpreters/SetVariants.h>
 #include <Core/ColumnNumbers.h>
@@ -8,6 +9,8 @@
 
 namespace DB
 {
+
+class Block;
 
 class IntersectOrExceptTransform : public IProcessor
 {

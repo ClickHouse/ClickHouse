@@ -1,5 +1,4 @@
 #include "ProgressTable.h"
-#include "Common/AllocatorWithMemoryTracking.h"
 #include "Common/ProfileEvents.h"
 #include "base/defines.h"
 
@@ -13,10 +12,11 @@
 #include <Common/TerminalSize.h>
 #include <Common/formatReadable.h>
 
-#include <format>
 #include <mutex>
 #include <numeric>
 #include <unordered_map>
+
+#include <fmt/format.h>
 
 
 namespace DB
@@ -40,7 +40,7 @@ constexpr std::string_view SHOW_CURSOR = "\033[?25h";
 
 std::string moveUpNLines(size_t N)
 {
-    return std::format("\033[{}A", N);
+    return fmt::format("\033[{}A", N);
 }
 
 std::string formatReadableValue(ProfileEvents::ValueType value_type, double value)

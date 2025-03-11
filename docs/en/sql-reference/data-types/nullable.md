@@ -1,5 +1,5 @@
 ---
-slug: /en/sql-reference/data-types/nullable
+slug: /sql-reference/data-types/nullable
 sidebar_position: 44
 sidebar_label: Nullable(T)
 ---
@@ -14,7 +14,7 @@ A `Nullable` type field can't be included in table indexes.
 
 `NULL` is the default value for any `Nullable` type, unless specified otherwise in the ClickHouse server configuration.
 
-## Storage Features
+## Storage Features {#storage-features}
 
 To store `Nullable` type values in a table column, ClickHouse uses a separate file with `NULL` masks in addition to normal file with values. Entries in masks file allow ClickHouse to distinguish between `NULL` and a default value of corresponding data type for each table row. Because of an additional file, `Nullable` column consumes additional storage space compared to a similar normal one.
 
@@ -22,7 +22,7 @@ To store `Nullable` type values in a table column, ClickHouse uses a separate fi
 Using `Nullable` almost always negatively affects performance, keep this in mind when designing your databases.
 :::
 
-## Finding NULL
+## Finding NULL {#finding-null}
 
 It is possible to find `NULL` values in a column by using `null` subcolumn without reading the whole column. It returns `1` if the corresponding value is `NULL` and `0` otherwise.
 
@@ -49,7 +49,7 @@ Result:
 └────────┘
 ```
 
-## Usage Example
+## Usage Example {#usage-example}
 
 ``` sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog

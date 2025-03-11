@@ -8,7 +8,7 @@ INSERT INTO 02751_query_log_test_partitions SELECT number, number FROM numbers(1
 
 SELECT * FROM 02751_query_log_test_partitions WHERE a = 3;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT
     --Remove the prefix string which is a mutable database name.

@@ -223,7 +223,11 @@ StorageKafka::StorageKafka(
     });
 }
 
-StorageKafka::~StorageKafka() = default;
+StorageKafka::~StorageKafka()
+{
+    if (!shutdown_called)
+        shutdown(false);
+}
 
 void StorageKafka::read(
     QueryPlan & query_plan,
@@ -462,7 +466,7 @@ void StorageKafka::cleanConsumers()
         /// Copy consumers for closing to a new vector to close them without a lock
         std::vector<ConsumerPtr> consumers_to_close;
 
-        UInt64 now_usec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        UInt64 now_usec = timeInMicroseconds(std::chrono::system_clock::now());
         {
             for (size_t i = 0; i < consumers.size(); ++i)
             {

@@ -1,5 +1,5 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
-#include <Interpreters/NullableUtils.h>
+#include <DataTypes/NullableUtils.h>
 
 namespace DB
 {

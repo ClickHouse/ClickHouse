@@ -1,7 +1,9 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/custom-partitioning-key
+slug: /engines/table-engines/mergetree-family/custom-partitioning-key
 sidebar_position: 30
 sidebar_label: Custom Partitioning Key
+title: "Custom Partitioning Key"
+description: "Learn how to add a custom partitioning key to MergeTree tables."
 ---
 
 # Custom Partitioning Key
@@ -12,7 +14,7 @@ In most cases you do not need a partition key, and in most other cases you do no
 You should never use too granular of partitioning. Don't partition your data by client identifiers or names. Instead, make a client identifier or name the first column in the ORDER BY expression.
 :::
 
-Partitioning is available for the [MergeTree family tables](../../../engines/table-engines/mergetree-family/mergetree.md), including [replicated tables](../../../engines/table-engines/mergetree-family/replication.md) and [materialized views](../../../sql-reference/statements/create/view.md#materialized-view).
+Partitioning is available for the [MergeTree family tables](../../../engines/table-engines/mergetree-family/mergetree.md), including [replicated tables](../../../engines/table-engines/mergetree-family/replication.md) and [materialized views](/sql-reference/statements/create/view#materialized-view).
 
 A partition is a logical combination of records in a table by a specified criterion. You can set a partition by an arbitrary criterion, such as by month, by day, or by event type. Each partition is stored separately to simplify manipulations of this data. When accessing the data, ClickHouse uses the smallest subset of partitions possible. Partitions improve performance for queries containing a partitioning key because ClickHouse will filter for that partition before selecting the parts and granules within the partition.
 
@@ -48,7 +50,7 @@ When inserting new data to a table, this data is stored as a separate part (chun
 A merge only works for data parts that have the same value for the partitioning expression. This means **you shouldn't make overly granular partitions** (more than about a thousand partitions). Otherwise, the `SELECT` query performs poorly because of an unreasonably large number of files in the file system and open file descriptors.
 :::
 
-Use the [system.parts](../../../operations/system-tables/parts.md#system_tables-parts) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
+Use the [system.parts](../../../operations/system-tables/parts.md) table to view the table parts and partitions. For example, let's assume that we have a `visits` table with partitioning by month. Let's perform the `SELECT` query for the `system.parts` table:
 
 ``` sql
 SELECT
@@ -73,7 +75,7 @@ WHERE table = 'visits'
 
 The `partition` column contains the names of the partitions. There are two partitions in this example: `201901` and `201902`. You can use this column value to specify the partition name in [ALTER ... PARTITION](../../../sql-reference/statements/alter/partition.md) queries.
 
-The `name` column contains the names of the partition data parts. You can use this column to specify the name of the part in the [ALTER ATTACH PART](../../../sql-reference/statements/alter/partition.md#alter_attach-partition) query.
+The `name` column contains the names of the partition data parts. You can use this column to specify the name of the part in the [ALTER ATTACH PART](/sql-reference/statements/alter/partition#attach-partitionpart) query.
 
 Let's break down the name of the part: `201901_1_9_2_11`:
 
@@ -128,13 +130,13 @@ drwxr-xr-x 2 clickhouse clickhouse 4096 Feb  1 16:48 detached
 
 The folders '201901_1_1_0', '201901_1_7_1' and so on are the directories of the parts. Each part relates to a corresponding partition and contains data just for a certain month (the table in this example has partitioning by month).
 
-The `detached` directory contains parts that were detached from the table using the [DETACH](../../../sql-reference/statements/alter/partition.md#alter_detach-partition) query. The corrupted parts are also moved to this directory, instead of being deleted. The server does not use the parts from the `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](../../../sql-reference/statements/alter/partition.md#alter_attach-partition) query.
+The `detached` directory contains parts that were detached from the table using the [DETACH](/sql-reference/statements/detach) query. The corrupted parts are also moved to this directory, instead of being deleted. The server does not use the parts from the `detached` directory. You can add, delete, or modify the data in this directory at any time – the server will not know about this until you run the [ATTACH](/sql-reference/statements/alter/partition#attach-partitionpart) query.
 
 Note that on the operating server, you cannot manually change the set of parts or their data on the file system, since the server will not know about it. For non-replicated tables, you can do this when the server is stopped, but it isn't recommended. For replicated tables, the set of parts cannot be changed in any case.
 
-ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](../../../sql-reference/statements/alter/partition.md#alter_manipulations-with-partitions).
+ClickHouse allows you to perform operations with the partitions: delete them, copy from one table to another, or create a backup. See the list of all operations in the section [Manipulations With Partitions and Parts](/sql-reference/statements/alter/partition).
 
-## Group By optimisation using partition key
+## Group By optimisation using partition key {#group-by-optimisation-using-partition-key}
 
 For some combinations of table's partition key and query's group by key it might be possible to execute aggregation for each partition independently.
 Then we'll not have to merge partially aggregated data from all execution threads at the end,

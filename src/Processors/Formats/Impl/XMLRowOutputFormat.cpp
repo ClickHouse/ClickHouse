@@ -1,6 +1,8 @@
+#include <DataTypes/IDataType.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/XMLRowOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 

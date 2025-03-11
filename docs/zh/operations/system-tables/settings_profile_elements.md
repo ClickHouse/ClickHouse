@@ -26,6 +26,6 @@ slug: /zh/operations/system-tables/settings_profile_elements
 
 -    `max` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — setting 最大值. 未设置则赋 `NULL`.
 
--    `readonly` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges))) — 只允许读查询的配置文件.
+-    `readonly` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt8](/sql-reference/data-types/int-uint#integer-ranges))) — 只允许读查询的配置文件.
 
 -    `inherit_profile` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — 此setting配置文件的父配置文件. 未设置则赋 `NULL`. 设置则将从其父配置文件继承所有设置的值和约束(`min`、`max`、`readonly`).

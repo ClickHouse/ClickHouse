@@ -8,32 +8,28 @@ Header: name String
   Header: __table1.name String
     Join
     Header: __table1.name String
-      Expression
+      Filter (( + Change column names to column identifiers))
       Header: __table1.name String
-        Filter (( + Change column names to column identifiers))
-        Header: __table1.name String
-          ReadFromMergeTree (default.users)
-          Header: name String
-          Indexes:
-            PrimaryKey
-              Keys: 
-                name
-              Condition: (name in [\'Alice\', \'Alice\'])
-              Parts: 1/3
-              Granules: 1/3
-      Expression
+        ReadFromMergeTree (default.users)
+        Header: name String
+        Indexes:
+          PrimaryKey
+            Keys: 
+              name
+            Condition: (name in [\'Alice\', \'Alice\'])
+            Parts: 1/3
+            Granules: 1/3
+      Filter (( + Change column names to column identifiers))
       Header: __table2.name String
-        Filter (( + Change column names to column identifiers))
-        Header: __table2.name String
-          ReadFromMergeTree (default.users2)
-          Header: name String
-          Indexes:
-            PrimaryKey
-              Keys: 
-                name
-              Condition: (name in [\'Alice\', \'Alice\'])
-              Parts: 1/3
-              Granules: 1/3
+        ReadFromMergeTree (default.users2)
+        Header: name String
+        Indexes:
+          PrimaryKey
+            Keys: 
+              name
+            Condition: (name in [\'Alice\', \'Alice\'])
+            Parts: 1/3
+            Granules: 1/3
 SELECT '--';
 --
 EXPLAIN header = 1, indexes = 1
@@ -44,32 +40,28 @@ Header: name String
   Header: __table1.name String
     Join
     Header: __table1.name String
-      Expression
+      Filter (( + Change column names to column identifiers))
       Header: __table1.name String
-        Filter (( + Change column names to column identifiers))
-        Header: __table1.name String
-          ReadFromMergeTree (default.users)
-          Header: name String
-          Indexes:
-            PrimaryKey
-              Keys: 
-                name
-              Condition: (name in [\'Alice\', \'Alice\'])
-              Parts: 1/3
-              Granules: 1/3
-      Expression
+        ReadFromMergeTree (default.users)
+        Header: name String
+        Indexes:
+          PrimaryKey
+            Keys: 
+              name
+            Condition: (name in [\'Alice\', \'Alice\'])
+            Parts: 1/3
+            Granules: 1/3
+      Filter (( + Change column names to column identifiers))
       Header: __table2.name String
-        Filter (( + Change column names to column identifiers))
-        Header: __table2.name String
-          ReadFromMergeTree (default.users2)
-          Header: name String
-          Indexes:
-            PrimaryKey
-              Keys: 
-                name
-              Condition: (name in [\'Alice\', \'Alice\'])
-              Parts: 1/3
-              Granules: 1/3
+        ReadFromMergeTree (default.users2)
+        Header: name String
+        Indexes:
+          PrimaryKey
+            Keys: 
+              name
+            Condition: (name in [\'Alice\', \'Alice\'])
+            Parts: 1/3
+            Granules: 1/3
 SELECT '--';
 --
 EXPLAIN header = 1, indexes = 1
@@ -80,29 +72,25 @@ Header: name String
   Header: __table2.name String
     Join
     Header: __table2.name String
-      Expression
+      Filter (( + Change column names to column identifiers))
       Header: __table1.name String
-        Filter (( + Change column names to column identifiers))
-        Header: __table1.name String
-          ReadFromMergeTree (default.users)
-          Header: name String
-          Indexes:
-            PrimaryKey
-              Keys: 
-                name
-              Condition: (name in [\'Alice\', \'Alice\'])
-              Parts: 1/3
-              Granules: 1/3
-      Expression
+        ReadFromMergeTree (default.users)
+        Header: name String
+        Indexes:
+          PrimaryKey
+            Keys: 
+              name
+            Condition: (name in [\'Alice\', \'Alice\'])
+            Parts: 1/3
+            Granules: 1/3
+      Filter (( + Change column names to column identifiers))
       Header: __table2.name String
-        Filter (( + Change column names to column identifiers))
-        Header: __table2.name String
-          ReadFromMergeTree (default.users2)
-          Header: name String
-          Indexes:
-            PrimaryKey
-              Keys: 
-                name
-              Condition: (name in [\'Alice\', \'Alice\'])
-              Parts: 1/3
-              Granules: 1/3
+        ReadFromMergeTree (default.users2)
+        Header: name String
+        Indexes:
+          PrimaryKey
+            Keys: 
+              name
+            Condition: (name in [\'Alice\', \'Alice\'])
+            Parts: 1/3
+            Granules: 1/3

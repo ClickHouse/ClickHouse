@@ -3,7 +3,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 
 
 namespace DB
@@ -71,12 +71,12 @@ void Range::shrinkToIncludedIfPossible()
     {
         if (left.getType() == Field::Types::UInt64 && left.safeGet<UInt64>() != std::numeric_limits<UInt64>::max())
         {
-            ++left.safeGet<UInt64 &>();
+            ++left.safeGet<UInt64>();
             left_included = true;
         }
         if (left.getType() == Field::Types::Int64 && left.safeGet<Int64>() != std::numeric_limits<Int64>::max())
         {
-            ++left.safeGet<Int64 &>();
+            ++left.safeGet<Int64>();
             left_included = true;
         }
     }
@@ -84,12 +84,12 @@ void Range::shrinkToIncludedIfPossible()
     {
         if (right.getType() == Field::Types::UInt64 && right.safeGet<UInt64>() != std::numeric_limits<UInt64>::min())
         {
-            --right.safeGet<UInt64 &>();
+            --right.safeGet<UInt64>();
             right_included = true;
         }
         if (right.getType() == Field::Types::Int64 && right.safeGet<Int64>() != std::numeric_limits<Int64>::min())
         {
-            --right.safeGet<Int64 &>();
+            --right.safeGet<Int64>();
             right_included = true;
         }
     }
@@ -97,12 +97,12 @@ void Range::shrinkToIncludedIfPossible()
 
 bool Range::equals(const Field & lhs, const Field & rhs)
 {
-    return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
+    return accurateEquals(lhs, rhs);
 }
 
 bool Range::less(const Field & lhs, const Field & rhs)
 {
-    return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
+    return accurateLess(lhs, rhs);
 }
 
 bool Range::empty() const

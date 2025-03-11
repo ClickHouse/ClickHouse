@@ -5,7 +5,6 @@
 #if USE_PARQUET || USE_ORC
 
 #include <unordered_map>
-#include <Core/Block.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -28,6 +27,8 @@ namespace arrow
 
 namespace DB
 {
+
+class Block;
 
 namespace ErrorCodes
 {

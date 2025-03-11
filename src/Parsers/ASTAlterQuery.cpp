@@ -249,6 +249,13 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             partition->format(ostr, settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::UNLOCK_SNAPSHOT)
+    {
+        ostr << (settings.hilite ? hilite_keyword : "") << "UNLOCK SNAPSHOT " << (settings.hilite ? hilite_none : "");
+        ostr << quoteString(snapshot_name);
+        ostr << (settings.hilite ? hilite_keyword : "") << "FROM " << (settings.hilite ? hilite_none : "");
+        snapshot_desc->format(ostr, settings, state, frame);
+    }
     else if (type == ASTAlterCommand::ADD_CONSTRAINT)
     {
         ostr << (settings.hilite ? hilite_keyword : "") << "ADD CONSTRAINT " << (if_not_exists ? "IF NOT EXISTS " : "")
@@ -566,6 +573,11 @@ bool ASTAlterQuery::isFreezeAlter() const
 {
     return isOneCommandTypeOnly(ASTAlterCommand::FREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::FREEZE_ALL)
         || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_PARTITION) || isOneCommandTypeOnly(ASTAlterCommand::UNFREEZE_ALL);
+}
+
+bool ASTAlterQuery::isUnlockSnapshot() const
+{
+    return isOneCommandTypeOnly(ASTAlterCommand::UNLOCK_SNAPSHOT);
 }
 
 bool ASTAlterQuery::isAttachAlter() const

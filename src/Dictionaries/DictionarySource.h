@@ -2,7 +2,7 @@
 
 #include <boost/noncopyable.hpp>
 #include <memory>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 #include <Core/Names.h>
 #include <Core/Block.h>
 #include <Dictionaries/DictionaryStructure.h>

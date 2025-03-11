@@ -10,7 +10,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/Operators.h>
+#include <IO/Operators_pcg_random.h>
 #include <Common/PODArray.h>
 #include <Common/NaNUtils.h>
 #include <Poco/Exception.h>

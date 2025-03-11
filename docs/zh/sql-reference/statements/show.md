@@ -29,7 +29,7 @@ SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
-输出 [system.processes](../../operations/system-tables/processes.md#system_tables-processes)表的内容，包含有当前正在处理的请求列表，除了 `SHOW PROCESSLIST`查询。
+输出 [system.processes](/operations/system-tables/processes)表的内容，包含有当前正在处理的请求列表，除了 `SHOW PROCESSLIST`查询。
 
 
  `SELECT * FROM system.processes` 查询返回和当前请求相关的所有数据
@@ -129,7 +129,7 @@ SHOW CREATE USER [name | CURRENT_USER]
 
 ## SHOW CREATE ROLE {#show-create-role-statement}
 
-显示 [role creation](../../sql-reference/statements/create.md#create-role-statement) 中用到的参数。
+显示 [role creation](/sql-reference/statements/create/role) 中用到的参数。
 
 ### 语法 {#show-create-role-syntax}
 

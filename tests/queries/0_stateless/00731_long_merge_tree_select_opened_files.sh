@@ -24,12 +24,12 @@ for _ in {1..100}; do $CLICKHOUSE_CLIENT $settings --optimize_throw_if_noop=1 -q
 
 # The query may open more files if query log will be flushed during the query.
 # To lower this chance, we also flush logs before the query.
-$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS query_log"
 
 touching_many_parts_query="SELECT count() FROM (SELECT toDayOfWeek(date) AS m, id, count() FROM merge_tree_table GROUP BY id, m ORDER BY count() DESC LIMIT 10 SETTINGS max_threads = 1)"
 $CLICKHOUSE_CLIENT $settings -q "$touching_many_parts_query" &> /dev/null
 
-$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS query_log"
 
 $CLICKHOUSE_CLIENT $settings -q "SELECT ProfileEvents['FileOpen'] as opened_files FROM system.query_log WHERE query = '$touching_many_parts_query' AND current_database = currentDatabase() AND event_date >= yesterday() ORDER BY event_time DESC, opened_files DESC LIMIT 1;"
 

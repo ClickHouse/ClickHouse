@@ -70,10 +70,10 @@ Union
             Prewhere info
             Need filter: 1
               Prewhere filter
-              Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
+              Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
               Actions: INPUT : 0 -> x UInt32 : 0
-                       COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
-                       FUNCTION equals(x : 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
+                       COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
+                       FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
               Positions: 0 2
             Indexes:
               PrimaryKey
@@ -160,10 +160,10 @@ Positions: 1
                 Prewhere info
                 Need filter: 1
                   Prewhere filter
-                  Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
+                  Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
                   Actions: INPUT : 0 -> x UInt32 : 0
-                           COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
-                           FUNCTION equals(x : 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
+                           COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
+                           FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
                   Positions: 0 2
                 Indexes:
                   PrimaryKey
@@ -263,10 +263,10 @@ Positions: 1 0
                 Prewhere info
                 Need filter: 1
                   Prewhere filter
-                  Prewhere filter column: equals(__table1.x, 42_UInt8) (removed)
+                  Prewhere filter column: equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) (removed)
                   Actions: INPUT : 0 -> x UInt32 : 0
-                           COLUMN Const(UInt8) -> 42_UInt8 UInt8 : 1
-                           FUNCTION equals(x : 0, 42_UInt8 :: 1) -> equals(__table1.x, 42_UInt8) UInt8 : 2
+                           COLUMN Const(UInt8) -> _CAST(42_UInt8, \'UInt8\'_String) UInt8 : 1
+                           FUNCTION equals(x : 0, _CAST(42_UInt8, \'UInt8\'_String) :: 1) -> equals(__table1.x, _CAST(42_UInt8, \'UInt8\'_String)) UInt8 : 2
                   Positions: 0 2
                 Indexes:
                   PrimaryKey
@@ -555,12 +555,12 @@ Union
                  ALIAS __table1.n :: 0 -> n UInt64 : 1
         Positions: 1
           Filter ((WHERE + Change column names to column identifiers))
-          Filter column: equals(materialize(__table1.n), 100_UInt8) (removed)
+          Filter column: equals(materialize(__table1.n), _CAST(100_UInt8, \'UInt8\'_String)) (removed)
           Actions: INPUT : 0 -> n UInt64 : 0
-                   COLUMN Const(UInt8) -> 100_UInt8 UInt8 : 1
+                   COLUMN Const(UInt8) -> _CAST(100_UInt8, \'UInt8\'_String) UInt8 : 1
                    ALIAS n : 0 -> __table1.n UInt64 : 2
                    FUNCTION materialize(n :: 0) -> materialize(__table1.n) UInt64 : 3
-                   FUNCTION equals(materialize(__table1.n) :: 3, 100_UInt8 :: 1) -> equals(materialize(__table1.n), 100_UInt8) UInt8 : 0
+                   FUNCTION equals(materialize(__table1.n) :: 3, _CAST(100_UInt8, \'UInt8\'_String) :: 1) -> equals(materialize(__table1.n), _CAST(100_UInt8, \'UInt8\'_String)) UInt8 : 0
           Positions: 0 2
             ReadFromMergeTree (default.tab2)
             ReadType: Default

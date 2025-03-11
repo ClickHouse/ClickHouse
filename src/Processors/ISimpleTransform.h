@@ -1,7 +1,8 @@
 #pragma once
 
+#include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
-
+#include <Processors/Port.h>
 
 namespace DB
 {

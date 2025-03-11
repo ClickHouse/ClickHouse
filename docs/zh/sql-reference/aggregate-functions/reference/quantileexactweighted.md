@@ -7,7 +7,7 @@ sidebar_position: 203
 
 考虑到每个元素的权重，然后准确计算数值序列的[分位数](https://en.wikipedia.org/wiki/Quantile)。
 
-为了准确计算，所有输入的数据被合并为一个数组，并且部分的排序。每个输入值需要根据 `weight` 计算求和。该算法使用哈希表。正因为如此，在数据重复较多的时候使用的内存是少于[quantileExact](../../../sql-reference/aggregate-functions/reference/quantileexact.md#quantileexact)的。 您可以使用此函数代替 `quantileExact` 并指定`weight`为 1 。
+为了准确计算，所有输入的数据被合并为一个数组，并且部分的排序。每个输入值需要根据 `weight` 计算求和。该算法使用哈希表。正因为如此，在数据重复较多的时候使用的内存是少于[quantileExact](/sql-reference/aggregate-functions/reference/quantileexact#quantileexact)的。 您可以使用此函数代替 `quantileExact` 并指定`weight`为 1 。
 
 当在一个查询中使用多个不同层次的 `quantile*` 时，内部状态不会被组合（即查询的工作效率低于组合情况）。在这种情况下，使用 [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) 函数。
 

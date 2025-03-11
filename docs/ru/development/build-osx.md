@@ -12,6 +12,7 @@ sidebar_label: Сборка на Mac OS X
 :::
 
 Сборка должна запускаться с x86_64 (Intel) на macOS версии 10.15 (Catalina) и выше в последней версии компилятора Xcode's native AppleClang, Homebrew's vanilla Clang или в GCC-компиляторах.
+ClickHouse можно скомпилировать на macOS x86_64 (Intel) и arm64 (Apple Silicon) с использованием macOS 10.15 (Catalina) или выше.
 
 ## Установка Homebrew {#install-homebrew}
 
@@ -38,7 +39,7 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
   ``` bash
   $ brew update
-  $ brew install ccache cmake ninja libtool gettext llvm gcc binutils grep findutils nasm
+  $ brew install ccache cmake ninja libtool gettext llvm binutils grep findutils nasm
   ```
 
 ## Просмотр исходников ClickHouse {#checkout-clickhouse-sources}
@@ -49,18 +50,6 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
 
 ## Сборка ClickHouse {#build-clickhouse}
 
-  Чтобы запустить сборку в компиляторе Xcode's native AppleClang:
-
-  ``` bash
-  $ cd ClickHouse
-  $ rm -rf build
-  $ mkdir build
-  $ cd build
-  $ cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
-  $ cmake --build . --config RelWithDebInfo
-  $ cd ..
-  ```
-
 Чтобы запустить сборку в компиляторе Homebrew's vanilla Clang:
 
   ``` bash
@@ -69,18 +58,6 @@ $ /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/
   $ mkdir build
   $ cd build
   $ cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
-  $ cmake --build . --config RelWithDebInfo
-  $ cd ..
-  ```
-
-Чтобы собрать с помощью компилятора Homebrew's vanilla GCC:
-
-  ``` bash
-  $ cd ClickHouse
-  $ rm -rf build
-  $ mkdir build
-  $ cd build
-  $ cmake -DCMAKE_C_COMPILER=$(brew --prefix gcc)/bin/gcc-11 -DCMAKE_CXX_COMPILER=$(brew --prefix gcc)/bin/g++-11 -DCMAKE_BUILD_TYPE=RelWithDebInfo -DENABLE_JEMALLOC=OFF ..
   $ cmake --build . --config RelWithDebInfo
   $ cd ..
   ```

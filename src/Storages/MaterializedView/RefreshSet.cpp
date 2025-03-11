@@ -1,6 +1,8 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
+#include <Common/logger_useful.h>
+
 namespace CurrentMetrics
 {
     extern const Metric RefreshableViews;

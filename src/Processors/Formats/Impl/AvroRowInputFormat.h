@@ -8,7 +8,6 @@
 #include <map>
 #include <vector>
 
-#include <Core/Block.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatSchemaInfo.h>
 #include <Processors/Formats/IRowInputFormat.h>
@@ -27,6 +26,8 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
 }
+
+class Block;
 
 class AvroInputStreamReadBufferAdapter : public avro::InputStream
 {

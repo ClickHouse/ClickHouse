@@ -11,6 +11,8 @@
 #include <string>
 #include <unordered_map>
 
+#include <boost/noncopyable.hpp>
+
 
 namespace DB
 {

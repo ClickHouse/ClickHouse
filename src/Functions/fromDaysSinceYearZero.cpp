@@ -7,6 +7,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/castColumn.h>
+#include <base/int8_to_string.h>
 
 #include <Common/DateLUT.h>
 

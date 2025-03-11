@@ -19,6 +19,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Processors/Chunk.h>
+#include <Processors/Port.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
 
 

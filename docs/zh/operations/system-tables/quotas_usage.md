@@ -8,7 +8,7 @@ slug: /zh/operations/system-tables/quotas_usage
 列信息:
 - `quota_name` ([String](../../sql-reference/data-types/string.md)) — 配额名称.
 - `quota_key` ([String](../../sql-reference/data-types/string.md)) — 配额key值.
-- `is_current` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 当前用户配额使用情况.
+- `is_current` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 当前用户配额使用情况.
 - `start_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md)))) — 计算资源消耗的开始时间.
 - `end_time` ([Nullable](../../sql-reference/data-types/nullable.md)([DateTime](../../sql-reference/data-types/datetime.md)))) — 计算资源消耗的结束时间.
 - `duration` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt32](../../sql-reference/data-types/int-uint.md))) — 计算资源消耗的时间间隔长度，单位为秒.
@@ -33,4 +33,4 @@ slug: /zh/operations/system-tables/quotas_usage
 
 ## 另请参阅 {#see-also}
 
--   [查看配额信息](../../sql-reference/statements/show.md#show-quota-statement)
+-   [查看配额信息](/sql-reference/statements/show#show-quota))

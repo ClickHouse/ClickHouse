@@ -20,7 +20,7 @@ sidebar_label: "Функции интроспекции"
 
 Из соображений безопасности данные функции отключены по умолчанию.
 
-ClickHouse сохраняет отчеты профилировщика в [журнал трассировки](../../operations/system-tables/trace_log.md#system_tables-trace_log) в системной таблице. Убедитесь, что таблица и профилировщик настроены правильно.
+ClickHouse сохраняет отчеты профилировщика в [журнал трассировки](/operations/system-tables/trace_log) в системной таблице. Убедитесь, что таблица и профилировщик настроены правильно.
 
 ## addressToLine {#addresstoline}
 
@@ -100,7 +100,7 @@ LIMIT 1
 \G
 ```
 
-Функция [arrayMap](../../sql-reference/functions/array-functions.md#array-map) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `addressToLine`. Результат этой обработки вы видите в виде `trace_source_code_lines` колонки выходных данных.
+Функция [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `addressToLine`. Результат этой обработки вы видите в виде `trace_source_code_lines` колонки выходных данных.
 
 ``` text
 Row 1:
@@ -186,7 +186,7 @@ LIMIT 1
 \G
 ```
 
-То [arrayMap](../../sql-reference/functions/array-functions.md#array-map) функция позволяет обрабатывать каждый отдельный элемент системы. `trace` массив по типу `addressToSymbols` функция. Результат этой обработки вы видите в виде `trace_symbols` колонка выходных данных.
+То [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) функция позволяет обрабатывать каждый отдельный элемент системы. `trace` массив по типу `addressToSymbols` функция. Результат этой обработки вы видите в виде `trace_symbols` колонка выходных данных.
 
 ``` text
 Row 1:
@@ -283,7 +283,7 @@ LIMIT 1
 \G
 ```
 
-Функция [arrayMap](../../sql-reference/functions/array-functions.md#array-map) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `demangle`.
+Функция [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) позволяет обрабатывать каждый отдельный элемент массива `trace` с помощью функции `demangle`.
 
 ``` text
 Row 1:
@@ -321,7 +321,7 @@ tid()
 
 **Возвращаемое значение**
 
--   Id текущего потока. [Uint64](../../sql-reference/data-types/int-uint.md#uint-ranges).
+-   Id текущего потока. [Uint64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Пример**
 

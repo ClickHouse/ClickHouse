@@ -31,14 +31,6 @@ void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
 void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);
 #endif
 
-#if USE_AWS_S3
-void registerTableFunctionS3(TableFunctionFactory & factory);
-void registerTableFunctionS3Cluster(TableFunctionFactory & factory);
-void registerTableFunctionCOS(TableFunctionFactory & factory);
-void registerTableFunctionOSS(TableFunctionFactory & factory);
-void registerTableFunctionGCS(TableFunctionFactory & factory);
-#endif
-
 #if USE_HIVE
 void registerTableFunctionHive(TableFunctionFactory & factory);
 #endif

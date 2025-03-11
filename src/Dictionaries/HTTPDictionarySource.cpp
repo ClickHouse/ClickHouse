@@ -15,7 +15,6 @@
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
 #include <Storages/NamedCollectionsHelpers.h>
-#include "registerDictionaries.h"
 
 
 namespace DB

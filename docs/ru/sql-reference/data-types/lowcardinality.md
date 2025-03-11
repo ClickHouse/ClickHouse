@@ -48,7 +48,7 @@ ORDER BY id
 -   [low_cardinality_use_single_dictionary_for_part](../../operations/settings/settings.md#low_cardinality_use_single_dictionary_for_part)
 -   [low_cardinality_allow_in_native_format](../../operations/settings/settings.md#low_cardinality_allow_in_native_format)
 -   [allow_suspicious_low_cardinality_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types)
--   [output_format_arrow_low_cardinality_as_dictionary](../../operations/settings/settings.md#output-format-arrow-low-cardinality-as-dictionary)
+-   [output_format_arrow_low_cardinality_as_dictionary](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary)
 
 Функции:
 

@@ -19,7 +19,7 @@ groupArrayMovingSum(window_size)(numbers_for_summing)
 
 **参数**
 
--   `numbers_for_summing` — [表达式](../../../sql-reference/syntax.md#syntax-expressions) 生成数值数据类型值。
+-   `numbers_for_summing` — [表达式](/sql-reference/syntax#expressions) 生成数值数据类型值。
 -   `window_size` — 窗口大小。
 
 **返回值**

@@ -24,7 +24,7 @@ public:
 
         FileCacheSettings getSettings() const;
 
-        void setSettings(const FileCacheSettings & new_settings);
+        void setSettings(FileCacheSettings && new_settings);
 
         const FileCachePtr cache;
         const std::string config_path;

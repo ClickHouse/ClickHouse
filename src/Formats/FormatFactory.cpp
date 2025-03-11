@@ -1,6 +1,5 @@
 #include <Formats/FormatFactory.h>
 
-#include <algorithm>
 #include <unistd.h>
 #include <Formats/FormatSettings.h>
 #include <Interpreters/Context.h>
@@ -306,6 +305,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.column_names_for_schema_inference = settings[Setting::column_names_for_schema_inference];
     format_settings.schema_inference_hints = settings[Setting::schema_inference_hints];
     format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
+    format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
     format_settings.mysql_dump.map_column_names = settings[Setting::input_format_mysql_dump_map_column_names];
     format_settings.sql_insert.max_batch_size = settings[Setting::output_format_sql_insert_max_batch_size];
@@ -508,7 +508,7 @@ std::unique_ptr<ReadBuffer> FormatFactory::wrapReadBufferIfNeeded(
             getLogger("FormatFactory"),
             "Using ParallelReadBuffer with {} workers with chunks of {} bytes",
             max_download_threads,
-            settings[Setting::max_download_buffer_size]);
+            settings[Setting::max_download_buffer_size].value);
 
         res = wrapInParallelReadBufferIfSupported(
             buf,

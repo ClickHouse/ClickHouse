@@ -1,5 +1,5 @@
 ---
-slug: /en/interfaces/third-party/gui
+slug: /interfaces/third-party/gui
 sidebar_position: 28
 sidebar_label: Visual Interfaces
 ---

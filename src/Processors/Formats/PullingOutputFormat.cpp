@@ -1,5 +1,6 @@
-#include <Processors/Formats/PullingOutputFormat.h>
 #include <IO/NullWriteBuffer.h>
+#include <Processors/Formats/PullingOutputFormat.h>
+#include <Processors/Port.h>
 
 namespace DB
 {

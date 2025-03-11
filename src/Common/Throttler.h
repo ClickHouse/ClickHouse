@@ -58,15 +58,18 @@ public:
     bool isThrottling() const;
 
     Int64 getAvailable();
-    UInt64 getMaxSpeed() const { return static_cast<UInt64>(max_speed); }
-    UInt64 getMaxBurst() const { return static_cast<UInt64>(max_burst); }
+    UInt64 getMaxSpeed();
+    UInt64 getMaxBurst();
+
+    void setMaxSpeed(size_t max_speed_);
 
 private:
     void addImpl(size_t amount, size_t & count_value, double & tokens_value);
+    void addImpl(size_t amount, size_t & count_value, double & tokens_value, size_t & max_speed_value);
 
     size_t count{0};
-    const size_t max_speed{0}; /// in tokens per second.
-    const size_t max_burst{0}; /// in tokens.
+    size_t max_speed TSA_GUARDED_BY(mutex){0}; /// in tokens per second.
+    size_t max_burst TSA_GUARDED_BY(mutex){0}; /// in tokens.
     const UInt64 limit{0}; /// 0 - not limited.
     const char * limit_exceeded_exception_message = nullptr;
     std::mutex mutex;

@@ -969,13 +969,7 @@ private:
     /// Does the loading, possibly in the separate thread.
     void doLoading(const String & name, size_t loading_id, bool forced_to_reload, size_t min_id_to_finish_loading_dependencies_, bool async, ThreadGroupPtr thread_group = {})
     {
-        SCOPE_EXIT_SAFE(
-            if (thread_group)
-                CurrentThread::detachFromGroupIfNotDetached();
-        );
-
-        if (thread_group)
-            CurrentThread::attachToGroup(thread_group);
+        ThreadGroupSwitcher switcher(thread_group, "ExternalLoader");
 
         /// Do not account memory that was occupied by the dictionaries for the query/user context.
         MemoryTrackerBlockerInThread memory_blocker;

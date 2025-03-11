@@ -26,6 +26,15 @@ struct DeserializeBinaryBulkStateDynamicElement : public ISerialization::Deseria
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
     bool read_from_shared_variant;
     ColumnPtr shared_variant;
+
+
+    ISerialization::DeserializeBinaryBulkStatePtr clone() const override
+    {
+        auto new_state = std::make_shared<DeserializeBinaryBulkStateDynamicElement>(*this);
+        new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
+        new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
+        return new_state;
+    }
 };
 
 void SerializationDynamicElement::enumerateStreams(

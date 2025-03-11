@@ -13,7 +13,7 @@ struct ArrayHasSubstrSelectArraySourcePair : public ArraySourcePairSelector<Arra
     template <typename FirstSource, typename SecondSource>
     static void callFunction(FirstSource && first,
                              bool is_second_const, bool is_second_nullable, SecondSource && second,
-                             ColumnUInt8 & result)
+                             UInt8 * result, size_t size)
     {
         using SourceType = typename std::decay_t<SecondSource>;
 
@@ -22,41 +22,41 @@ struct ArrayHasSubstrSelectArraySourcePair : public ArraySourcePairSelector<Arra
             using NullableSource = NullableArraySource<SourceType>;
 
             if (is_second_const)
-                arrayAllAny<ArraySearchType::Substr>(first, static_cast<ConstSource<NullableSource> &>(second), result);
+                arrayAllAny<ArraySearchType::Substr>(first, static_cast<ConstSource<NullableSource> &>(second), result, size);
             else
-                arrayAllAny<ArraySearchType::Substr>(first, static_cast<NullableSource &>(second), result);
+                arrayAllAny<ArraySearchType::Substr>(first, static_cast<NullableSource &>(second), result, size);
         }
         else
         {
             if (is_second_const)
-                arrayAllAny<ArraySearchType::Substr>(first, static_cast<ConstSource<SourceType> &>(second), result);
+                arrayAllAny<ArraySearchType::Substr>(first, static_cast<ConstSource<SourceType> &>(second), result, size);
             else
-                arrayAllAny<ArraySearchType::Substr>(first, second, result);
+                arrayAllAny<ArraySearchType::Substr>(first, second, result, size);
         }
     }
 
-    template <typename FirstSource, typename SecondSource>
-    static void selectSourcePair(bool is_first_const, bool is_first_nullable, FirstSource && first,
-                                 bool is_second_const, bool is_second_nullable, SecondSource && second,
-                                 ColumnUInt8 & result)
+    template <typename Source>
+    static void selectSourcePair(bool is_first_const, bool is_first_nullable, Source && first,
+                                 bool is_second_const, bool is_second_nullable, Source && second,
+                                 UInt8 * result, size_t size)
     {
-        using SourceType = typename std::decay_t<FirstSource>;
+        using SourceType = typename std::decay_t<Source>;
 
         if (is_first_nullable)
         {
             using NullableSource = NullableArraySource<SourceType>;
 
             if (is_first_const)
-                callFunction(static_cast<ConstSource<NullableSource> &>(first), is_second_const, is_second_nullable, second, result);
+                callFunction(static_cast<ConstSource<NullableSource> &>(first), is_second_const, is_second_nullable, second, result, size);
             else
-                callFunction(static_cast<NullableSource &>(first), is_second_const, is_second_nullable, second, result);
+                callFunction(static_cast<NullableSource &>(first), is_second_const, is_second_nullable, second, result, size);
         }
         else
         {
             if (is_first_const)
-                callFunction(static_cast<ConstSource<SourceType> &>(first), is_second_const, is_second_nullable, second, result);
+                callFunction(static_cast<ConstSource<SourceType> &>(first), is_second_const, is_second_nullable, second, result, size);
             else
-                callFunction(first, is_second_const, is_second_nullable, second, result);
+                callFunction(first, is_second_const, is_second_nullable, second, result, size);
         }
     }
 };
@@ -65,7 +65,7 @@ struct ArrayHasSubstrSelectArraySourcePair : public ArraySourcePairSelector<Arra
 
 void sliceHasSubstr(IArraySource & first, IArraySource & second, ColumnUInt8 & result)
 {
-    ArrayHasSubstrSelectArraySourcePair::select(first, second, result);
+    ArrayHasSubstrSelectArraySourcePair::select(first, second, result.getData().data(), result.size());
 }
 
 }

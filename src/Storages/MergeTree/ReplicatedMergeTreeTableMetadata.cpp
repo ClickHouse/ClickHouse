@@ -11,6 +11,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -347,7 +349,9 @@ void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTabl
     }
 
     auto parsed_primary_key = KeyDescription::parse(primary_key, columns, context, true);
-    String parsed_zk_ttl_table = formattedAST(TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key).definition_ast);
+    // Strict checking of suspicious TTL is not needed here
+    String parsed_zk_ttl_table = formattedAST(
+        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, /* is_attach = */ true).definition_ast);
     if (ttl_table != parsed_zk_ttl_table)
     {
         throw Exception(ErrorCodes::METADATA_MISMATCH, "Existing table metadata in ZooKeeper differs in TTL. "

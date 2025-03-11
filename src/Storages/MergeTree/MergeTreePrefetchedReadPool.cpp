@@ -403,7 +403,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
             getPartNameForLogging(parts_ranges[i].data_part),
             part_stat.sum_marks,
             part_stat.approx_size_of_mark,
-            settings[Setting::filesystem_prefetch_step_bytes],
+            settings[Setting::filesystem_prefetch_step_bytes].value,
             part_stat.prefetch_step_marks,
             toString(parts_ranges[i].ranges));
     }
@@ -416,7 +416,7 @@ void MergeTreePrefetchedReadPool::fillPerThreadTasks(size_t threads, size_t sum_
         sum_marks,
         threads,
         min_marks_per_thread,
-        settings[Setting::filesystem_prefetches_limit],
+        settings[Setting::filesystem_prefetches_limit].value,
         total_size_approx);
 
     size_t allowed_memory_usage = settings[Setting::filesystem_prefetch_max_memory_usage];

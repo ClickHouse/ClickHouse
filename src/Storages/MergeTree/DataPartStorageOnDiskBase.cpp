@@ -1,6 +1,8 @@
 #include <string_view>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
+#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
+#include <Disks/IDiskTransaction.h>
 #include <Disks/TemporaryFileOnDisk.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
@@ -15,6 +17,8 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+
+#include <fmt/ranges.h>
 
 namespace DB
 {

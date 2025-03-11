@@ -23,9 +23,9 @@ ClickHouse所需内存取决于:
 - 查询的复杂程度。
 - 查询处理的数据量。
 
-要计算所需的内存大小，您应该考虑用于[GROUP BY](../sql-reference/statements/select/group-by.md#select-group-by-clause)、[DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct)、[JOIN](../sql-reference/statements/select/join.md#select-join) 和其他操作所需的临时数据量。
+要计算所需的内存大小，您应该考虑用于[GROUP BY](/sql-reference/statements/select/group-by)、[DISTINCT](../sql-reference/statements/select/distinct.md#select-distinct)、[JOIN](../sql-reference/statements/select/join.md#select-join) 和其他操作所需的临时数据量。
 
-ClickHouse可以使用外部存储器来存储临时数据。详情请见[在外部存储器中分组](../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory)。
+ClickHouse可以使用外部存储器来存储临时数据。详情请见[在外部存储器中分组](/sql-reference/statements/select/group-by#group-by-in-external-memory)。
 
 ## 交换文件 {#swap-file}
 

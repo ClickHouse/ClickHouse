@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <array>
+#include <string_view>
 
 #if defined(__SSE2__)
     #include <emmintrin.h>
@@ -51,7 +52,7 @@ struct SearchSymbols
 #if defined(__SSE4_2__)
         if (str.size() > BUFFER_SIZE)
         {
-            throw std::runtime_error("SearchSymbols can contain at most " + std::to_string(BUFFER_SIZE) + " symbols and " + std::to_string(str.size()) + " was provided\n");
+            throw std::runtime_error("SearchSymbols may contain at most " + std::to_string(BUFFER_SIZE) + " symbols but " + std::to_string(str.size()) + " symbols were provided");
         }
 
         char tmp_safety_buffer[BUFFER_SIZE] = {0};
@@ -236,6 +237,32 @@ inline const char * find_last_symbols_sse2(const char * const begin, const char 
     return return_mode == ReturnMode::End ? end : nullptr;
 }
 
+template <bool positive, ReturnMode return_mode>
+inline const char * find_last_symbols_sse2(const char * const begin, const char * const end, const char * symbols, size_t num_chars)
+{
+    const char * pos = end;
+
+#if defined(__SSE2__)
+    const auto needles = mm_is_in_prepare(symbols, num_chars);
+    for (; pos - 16 >= begin; pos -= 16)
+    {
+        __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos - 16));
+
+        __m128i eq = mm_is_in_execute(bytes, needles);
+
+        uint16_t bit_mask = maybe_negate<positive>(uint16_t(_mm_movemask_epi8(eq)));
+        if (bit_mask)
+            return pos - 1 - (__builtin_clz(bit_mask) - 16);    /// because __builtin_clz works with mask as uint32.
+    }
+#endif
+
+    --pos;
+    for (; pos >= begin; --pos)
+        if (maybe_negate<positive>(is_in(*pos, symbols, num_chars)))
+            return pos;
+
+    return return_mode == ReturnMode::End ? end : nullptr;
+}
 
 template <bool positive, ReturnMode return_mode, size_t num_chars,
     char c01,     char c02 = 0, char c03 = 0, char c04 = 0,
@@ -343,9 +370,22 @@ inline const char * find_first_symbols_dispatch(const std::string_view haystack,
 {
 #if defined(__SSE4_2__)
     if (symbols.str.size() >= 5)
-        return find_first_symbols_sse42<positive, return_mode>(haystack.begin(), haystack.end(), symbols);
+        return find_first_symbols_sse42<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols);
 #endif
-    return find_first_symbols_sse2<positive, return_mode>(haystack.begin(), haystack.end(), symbols.str.data(), symbols.str.size());
+    return find_first_symbols_sse2<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols.str.data(), symbols.str.size());
+}
+
+template <bool positive, ReturnMode return_mode, char... symbols>
+inline const char * find_last_symbols_dispatch(const char * begin, const char * end)
+    requires(0 <= sizeof...(symbols) && sizeof...(symbols) <= 16)
+{
+    return find_last_symbols_sse2<positive, return_mode, symbols...>(begin, end);
+}
+
+template <bool positive, ReturnMode return_mode>
+inline const char * find_last_symbols_dispatch(const std::string_view haystack, const SearchSymbols & symbols)
+{
+    return find_last_symbols_sse2<positive, return_mode>(haystack.data(), haystack.data() + haystack.size(), symbols.str.data(), symbols.str.size());
 }
 
 }
@@ -424,25 +464,35 @@ inline const char * find_first_not_symbols_or_null(std::string_view haystack, co
 template <char... symbols>
 inline const char * find_last_symbols_or_null(const char * begin, const char * end)
 {
-    return detail::find_last_symbols_sse2<true, detail::ReturnMode::Nullptr, symbols...>(begin, end);
+    return detail::find_last_symbols_dispatch<true, detail::ReturnMode::Nullptr, symbols...>(begin, end);
 }
 
 template <char... symbols>
 inline char * find_last_symbols_or_null(char * begin, char * end)
 {
-    return const_cast<char *>(detail::find_last_symbols_sse2<true, detail::ReturnMode::Nullptr, symbols...>(begin, end));
+    return const_cast<char *>(detail::find_last_symbols_dispatch<true, detail::ReturnMode::Nullptr, symbols...>(begin, end));
+}
+
+inline const char * find_last_symbols_or_null(std::string_view haystack, const SearchSymbols & symbols)
+{
+    return detail::find_last_symbols_dispatch<true, detail::ReturnMode::Nullptr>(haystack, symbols);
 }
 
 template <char... symbols>
 inline const char * find_last_not_symbols_or_null(const char * begin, const char * end)
 {
-    return detail::find_last_symbols_sse2<false, detail::ReturnMode::Nullptr, symbols...>(begin, end);
+    return detail::find_last_symbols_dispatch<false, detail::ReturnMode::Nullptr, symbols...>(begin, end);
 }
 
 template <char... symbols>
 inline char * find_last_not_symbols_or_null(char * begin, char * end)
 {
-    return const_cast<char *>(detail::find_last_symbols_sse2<false, detail::ReturnMode::Nullptr, symbols...>(begin, end));
+    return const_cast<char *>(detail::find_last_symbols_dispatch<false, detail::ReturnMode::Nullptr, symbols...>(begin, end));
+}
+
+inline const char * find_last_not_symbols_or_null(std::string_view haystack, const SearchSymbols & symbols)
+{
+    return detail::find_last_symbols_dispatch<false, detail::ReturnMode::Nullptr>(haystack, symbols);
 }
 
 template <char... symbols>

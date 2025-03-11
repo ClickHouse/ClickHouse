@@ -1,5 +1,5 @@
 ---
-slug: /en/operations/startup-scripts
+slug: /operations/startup-scripts
 sidebar_label: Startup Scripts
 ---
 

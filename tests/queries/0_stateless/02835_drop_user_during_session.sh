@@ -48,7 +48,7 @@ function wait_for_queries_start()
     done
 }
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS session_log"
 ${CLICKHOUSE_CLIENT} -q "DELETE FROM system.session_log WHERE user = '${TEST_USER}'"
 
 # DROP USE CASE
@@ -103,7 +103,7 @@ ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE user = '${TEST_USER}' SYNC" >/dev/null
 
 wait
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS session_log"
 
 echo "port_0_sessions:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count(*) FROM system.session_log WHERE user = '${TEST_USER}' AND client_port = 0"

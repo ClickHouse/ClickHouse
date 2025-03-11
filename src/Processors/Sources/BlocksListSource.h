@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Core/Block_fwd.h>
 #include <Processors/ISource.h>
-
 
 namespace DB
 {

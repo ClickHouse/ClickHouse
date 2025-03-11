@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} -q '
 ${CLICKHOUSE_CLIENT} -q 'INSERT INTO table_with_single_pk SELECT number, toString(number % 10) FROM numbers(1000000)'
 
 # Check NewPart
-${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS'
+${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS part_log'
 ${CLICKHOUSE_CLIENT} -q "
     WITH (
          SELECT (event_time, event_time_microseconds)
@@ -71,7 +71,7 @@ export -f get_inactive_parts_count
 export -f wait_table_inactive_parts_are_gone
 timeout 60 bash -c 'wait_table_inactive_parts_are_gone table_with_single_pk'
 
-${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS;'
+${CLICKHOUSE_CLIENT} -q 'SYSTEM FLUSH LOGS part_log;'
 ${CLICKHOUSE_CLIENT} -q "
     WITH (
          SELECT (event_time, event_time_microseconds)

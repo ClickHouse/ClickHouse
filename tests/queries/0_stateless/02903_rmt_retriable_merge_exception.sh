@@ -48,7 +48,7 @@ part_name='%'
 # wait while there be at least one 'No active replica has part all_0_1_1 or covering part' in logs
 for _ in {0..50}; do
     no_active_repilica_messages=$($CLICKHOUSE_CLIENT -m -q "
-        system flush logs;
+        system flush logs text_log;
 
         select count()
         from system.text_log
@@ -69,7 +69,7 @@ done
 
 $CLICKHOUSE_CLIENT -m -q "
     system start pulling replication log rmt2;
-    system flush logs;
+    system flush logs text_log;
 
     select
         level, count() > 0

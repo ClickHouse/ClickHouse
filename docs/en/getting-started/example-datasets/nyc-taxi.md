@@ -1,21 +1,20 @@
 ---
-slug: /en/getting-started/example-datasets/nyc-taxi
+description: "Data for billions of taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009"
+slug: /getting-started/example-datasets/nyc-taxi
 sidebar_label: New York Taxi Data
 sidebar_position: 2
-description: Data for billions of taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009
+title: "New York Taxi Data"
 ---
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-
-# New York Taxi Data
 
 The New York taxi data consists of 3+ billion taxi and for-hire vehicle (Uber, Lyft, etc.) trips originating in New York City since 2009. The dataset can be obtained in a couple of ways:
 
 - insert the data directly into ClickHouse Cloud from S3 or GCS
 - download prepared partitions
 
-## Create the table trips
+## Create the table trips {#create-the-table-trips}
 
 Start by creating a table for the taxi rides:
 
@@ -43,7 +42,7 @@ ENGINE = MergeTree
 PRIMARY KEY (pickup_datetime, dropoff_datetime);
 ```
 
-## Load the Data directly from Object Storage
+## Load the Data directly from Object Storage {#load-the-data-directly-from-object-storage}
 
 Let's grab a small subset of the data for getting familiar with it. The data is in TSV files in object storage, which is easily streamed into
 ClickHouse Cloud using the `s3` table function. 
@@ -115,7 +114,7 @@ FROM s3(
 </TabItem>
 </Tabs>
 
-## Sample Queries
+## Sample Queries {#sample-queries}
 
 Let's see how many rows were inserted:
 

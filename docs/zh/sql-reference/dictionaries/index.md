@@ -10,7 +10,7 @@ sidebar_label: 字典
 
 ClickHouse支持一些特殊函数配合字典在查询中使用。 将字典与函数结合使用比将 `JOIN` 操作与引用表结合使用更简单、更有效。
 
-[NULL](../../sql-reference/syntax.md#null-literal) 值不能存储在字典中。
+[NULL](/operations/settings/formats#input_format_null_as_default) 值不能存储在字典中。
 
 ClickHouse支持:
 
