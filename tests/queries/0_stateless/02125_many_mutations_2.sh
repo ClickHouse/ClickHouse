@@ -54,7 +54,7 @@ select count() from system.mutations where database = currentDatabase() and tabl
 system start merges many_mutations;
 optimize table many_mutations final SETTINGS optimize_throw_if_noop = 1;
 alter table many_mutations update y = y + 1 where 1 settings mutations_sync=2;
-system flush logs;
+system flush logs part_log;
 select count() from system.mutations where database = currentDatabase() and table = 'many_mutations' and not is_done;
 select count() from many_mutations;
 select * from system.part_log where database = currentDatabase() and table == 'many_mutations' and peak_memory_usage > 1e9;

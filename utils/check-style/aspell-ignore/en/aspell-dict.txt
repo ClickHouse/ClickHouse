@@ -310,6 +310,7 @@ FOSDEM
 FQDN
 Failover
 FarmHash
+FastFormats
 FileCluster
 FileLog
 FilesystemCacheBytes
@@ -868,9 +869,9 @@ QueryCacheBytes
 QueryCacheEntries
 QueryCacheHits
 QueryCacheMisses
-QueryCacheNondeterministicFunctionHandling
-QueryCacheSystemTableHandling
 QueryPreempted
+QueryResultCacheNondeterministicFunctionHandling
+QueryResultCacheSystemTableHandling
 QueryThread
 QuickAssist
 QuickSight
@@ -1370,6 +1371,7 @@ backupview
 balancer
 basename
 bcrypt
+benchmarked
 benchmarking
 bfloat
 bigrams
@@ -1752,6 +1754,7 @@ enum's
 enums
 erfc
 errorCodeToName
+estimateCompressionRatio
 etag
 evalMLMethod
 exFAT
@@ -1895,6 +1898,7 @@ greaterOrEquals
 greaterorequals
 greenspace
 groupArray
+groupArrayArray
 groupArrayInsertAt
 groupArrayIntersect
 groupArrayLast
@@ -3223,4 +3227,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-groupArrayArray

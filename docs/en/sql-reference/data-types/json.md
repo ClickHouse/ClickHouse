@@ -11,13 +11,13 @@ import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 
 <DeprecatedBadge/>
 
-**This feature is not production-ready and deprecated.** If you need to work with JSON documents, consider using [this guide](/docs/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in Beta. Further details [here](/docs/sql-reference/data-types/newjson).
+**This feature is not production-ready and deprecated.** If you need to work with JSON documents, consider using [this guide](/integrations/data-formats/json/overview) instead. A new implementation to support JSON object is in Beta. Further details [here](/sql-reference/data-types/newjson).
 
 <hr />
 
 Stores JavaScript Object Notation (JSON) documents in a single column.
 
-`JSON` can be used as an alias to `Object('json')` when setting [use_json_alias_for_old_object_type](../../operations/settings/settings.md#usejsonaliasforoldobjecttype) is enabled.
+`JSON` can be used as an alias to `Object('json')` when setting [use_json_alias_for_old_object_type](/operations/settings/settings#use_json_alias_for_old_object_type) is enabled.
 
 ## Example {#example}
 

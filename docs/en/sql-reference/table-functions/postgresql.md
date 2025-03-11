@@ -26,7 +26,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 - `schema` — Non-default table schema. Optional.
 - `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional.
 
-Arguments also can be passed using [named collections](/docs/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 **Returned Value**
 
@@ -97,7 +97,7 @@ Selecting data from ClickHouse using plain arguments:
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
 ```
 
-Or using [named collections](/docs/operations/named-collections.md):
+Or using [named collections](operations/named-collections.md):
 
 ```sql
 CREATE NAMED COLLECTION mypg AS
@@ -147,7 +147,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
-- [Using PostgreSQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
+- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#postgresql)
 
 ## Related content {#related-content}
 

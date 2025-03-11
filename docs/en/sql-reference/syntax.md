@@ -76,7 +76,7 @@ Keywords are **case-insensitive** when they correspond to:
 - Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
 
 :::note
-You can check whether a data type name is case-sensitive in the [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families) table.
+You can check whether a data type name is case-sensitive in the [system.data_type_families](/operations/system-tables/data_type_families) table.
 :::
 
 In contrast to standard SQL, all other keywords (including functions names) are **case-sensitive**.
@@ -222,9 +222,9 @@ To store `NULL` in a table field, it must be of the [Nullable](../sql-reference/
 :::note
 The following should be noted for `NULL`:
 
-- Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](../interfaces/formats.md#formats).
+- Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](/interfaces/formats).
 - `NULL` processing is nuanced. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. We recommend to read the documentation for each operation.
-- In queries, you can check `NULL` using the [`IS NULL`](../sql-reference/operators/index.md#is-null) and [`IS NOT NULL`](../sql-reference/operators/index.md#is-not-null) operators and the related functions `isNull` and `isNotNull`.
+- In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isnull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isnotnull) operators and the related functions `isNull` and `isNotNull`.
 :::
 
 ### Heredoc {#heredoc}
@@ -323,8 +323,8 @@ now()
 ```
 
 There are also:
-- [Regular functions](../sql-reference/functions/overview).
-- [Aggregate functions](../sql-reference/aggregate-functions/index.md).
+- [Regular functions](/sql-reference/functions/overview).
+- [Aggregate functions](/sql-reference/aggregate-functions).
 
 Some aggregate functions can contain two lists of arguments in brackets. For example: 
 
@@ -361,9 +361,9 @@ Data types and table engines in the `CREATE` query are written the same way as i
 In other words, they may or may not contain an argument list in brackets. 
 
 For more information, see the sections:
-- [Data types](/docs/sql-reference/data-types/index.md)
-- [Table engines](/docs/engines/table-engines/index.md)
-- [CREATE](/docs/sql-reference/statements/create/index.md).
+- [Data types](/sql-reference/data-types/index.md)
+- [Table engines](/engines/table-engines/index.md)
+- [CREATE](/sql-reference/statements/create/index.md).
 
 ## Expressions {#expressions}
 
@@ -393,7 +393,7 @@ The parts of the syntax above are explained below.
 
 | Part of syntax | Description                                                                                                                                      | Example                                                                 | Notes                                                                                                                                                |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](./functions/type-conversion-functions.md#castx-t) function, the `AS` keyword has another meaning. See the description of the function. |
+| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](/sql-reference/functions/type-conversion-functions#cast) function, the `AS` keyword has another meaning. See the description of the function. |
 | `expr`         | Any expression supported by ClickHouse.                                                                                                          | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                                                      |
 | `alias`        | Name for `expr`. Aliases should comply with the [identifiers](#identifiers) syntax.                                                                       | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                                                      |
 
@@ -443,10 +443,10 @@ ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the
 This substitution caused the exception.
 
 :::note
-You can change this default behavior by setting [prefer_column_name_to_alias](../operations/settings/settings.md#prefer-column-name-to-alias) to `1`.
+You can change this default behavior by setting [prefer_column_name_to_alias](/operations/settings/settings#prefer_column_name_to_alias) to `1`.
 :::
 
 ## Asterisk {#asterisk}
 
 In a `SELECT` query, an asterisk can replace the expression. 
-For more information, see the section [SELECT](/docs/sql-reference/statements/select/index.md#asterisk).
+For more information, see the section [SELECT](/sql-reference/statements/select/index.md#asterisk).

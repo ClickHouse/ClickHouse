@@ -14,7 +14,7 @@ Functions for [searching](string-search-functions.md) in strings and for [replac
 
 Checks whether the input string is empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
-The function is also available for [arrays](array-functions.md#function-empty) and [UUIDs](uuid-functions.md#empty).
+The function is also available for [arrays](/sql-reference/functions/array-functions#empty) and [UUIDs](uuid-functions.md#empty).
 
 **Syntax**
 
@@ -48,7 +48,7 @@ Result:
 
 Checks whether the input string is non-empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
-The function is also available for [arrays](array-functions.md#function-notempty) and [UUIDs](uuid-functions.md#notempty).
+The function is also available for [arrays](/sql-reference/functions/array-functions#notempty) and [UUIDs](uuid-functions.md#notempty).
 
 **Syntax**
 

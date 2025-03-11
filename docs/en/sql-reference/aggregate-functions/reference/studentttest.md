@@ -71,4 +71,4 @@ Result:
 **See Also**
 
 - [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
-- [welchTTest function](welchttest.md#welchttest)
+- [welchTTest function](/sql-reference/aggregate-functions/reference/welchttest)
