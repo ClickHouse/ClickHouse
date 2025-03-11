@@ -675,7 +675,6 @@ void LocalServer::processConfig()
     auto logging = (getClientConfiguration().has("logger.console")
                     || getClientConfiguration().has("logger.level")
                     || getClientConfiguration().has("log-level")
-                    || getClientConfiguration().has("send_logs_level")
                     || getClientConfiguration().has("logger.log"));
 
     auto level = getClientConfiguration().getString("log-level", "trace");
@@ -691,8 +690,7 @@ void LocalServer::processConfig()
     else
     {
         getClientConfiguration().setString("logger", "logger");
-        auto log_level_default = logging ? level : "fatal";
-        getClientConfiguration().setString("logger.level", getClientConfiguration().getString("log-level", getClientConfiguration().getString("send_logs_level", log_level_default)));
+        getClientConfiguration().setString("logger.level", logging ? level : "fatal");
         buildLoggers(getClientConfiguration(), logger(), "clickhouse-local");
     }
 

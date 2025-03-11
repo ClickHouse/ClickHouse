@@ -427,6 +427,9 @@ bool LocalConnection::poll(size_t)
 
                 if (needSendProgressOrMetrics())
                     return true;
+
+                if (needSendLogs())
+                    return true;
             }
         }
         catch (const Exception & e)

@@ -1808,7 +1808,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
+            if (isEmbeeddedClient())
             {
                 setInsertionTable(parsed_insert_query);
             }
@@ -3176,7 +3176,7 @@ void ClientBase::runInteractive()
         /// Load suggestion data from the server.
         if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
             suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
-        else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL || client_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
+        else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL || client_context->getApplicationType() == Context::ApplicationType::SERVER)
             suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
     }
 

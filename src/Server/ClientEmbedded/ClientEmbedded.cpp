@@ -164,7 +164,7 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-    global_context->setApplicationType(Context::ApplicationType::EMBEDDED_CLIENT);
+    global_context->setApplicationType(Context::ApplicationType::SERVER);
     global_context->setSettings(cmd_settings);
 
     is_interactive = stdin_is_a_tty;
