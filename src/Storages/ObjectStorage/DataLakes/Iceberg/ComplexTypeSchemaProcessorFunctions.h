@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <sstream>
+#include <variant>
 #include <vector>
 
 #include <Core/NamesAndTypes.h>
@@ -9,9 +10,11 @@
 #include <Interpreters/ActionsDAG.h>
 
 #include <Functions/IFunction.h>
+#include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
+#include "Core/Field.h"
 #include "DataTypes/IDataType.h"
 
 namespace DB
@@ -28,58 +31,89 @@ enum class ChangeType : uint8_t
     REORDERING,
 };
 
+enum class TransformType : uint8_t
+{
+    STRUCT,
+    ARRAY
+};
+
 class IcebergChangeSchemaOperation
 {
 public:
-    explicit IcebergChangeSchemaOperation(ChangeType change_type_) : change_type(change_type_) { }
+    struct Edge
+    {
+        String path;
+        TransformType child_type;
+    };
+
+    explicit IcebergChangeSchemaOperation(ChangeType change_type_, const std::vector<Edge> & root_) : change_type(change_type_), root(root_)
+    {
+    }
 
     ChangeType getType() const { return change_type; }
 
+    const std::vector<Edge> & getPath() const { return root; }
+
 protected:
     ChangeType change_type;
+    std::vector<Edge> root;
 };
 
 class IcebergDeletingOperation : public IcebergChangeSchemaOperation
 {
 public:
-    IcebergDeletingOperation(const std::vector<std::string> & root_, const std::string & field_name_)
-        : IcebergChangeSchemaOperation(ChangeType::DELETING), root(root_), field_name(field_name_)
+    IcebergDeletingOperation(const std::vector<Edge> & root_, const std::string & field_name_)
+        : IcebergChangeSchemaOperation(ChangeType::DELETING, root_), field_name(field_name_)
     {
     }
 
-    std::vector<std::string> root;
     std::string field_name;
 };
 
 class IcebergAddingOperation : public IcebergChangeSchemaOperation
 {
 public:
-    IcebergAddingOperation(const std::vector<std::string> & root_, const std::string & field_name_)
-        : IcebergChangeSchemaOperation(ChangeType::ADDING), root(root_), field_name(field_name_)
+    IcebergAddingOperation(const std::vector<Edge> & root_, const std::string & field_name_)
+        : IcebergChangeSchemaOperation(ChangeType::ADDING, root_), field_name(field_name_)
     {
     }
 
-    std::vector<std::string> root;
     std::string field_name;
 };
 
 class IcebergReorderingOperation : public IcebergChangeSchemaOperation
 {
 public:
-    IcebergReorderingOperation(const std::vector<std::string> & root_, const std::vector<size_t> & permutation_)
-        : IcebergChangeSchemaOperation(ChangeType::REORDERING), root(root_), permutation(permutation_)
+    IcebergReorderingOperation(const std::vector<Edge> & root_, const std::vector<size_t> & permutation_)
+        : IcebergChangeSchemaOperation(ChangeType::REORDERING, root_), permutation(permutation_)
     {
     }
 
-    std::vector<std::string> root;
     std::vector<size_t> permutation;
 };
 
-struct IIcebergSchemaTransform
+using ComplexNode = std::variant<Tuple, Array>;
+
+class IIcebergSchemaTransform
 {
-    virtual void transform(Tuple & initial_node) = 0;
+public:
+    explicit IIcebergSchemaTransform(std::vector<IcebergChangeSchemaOperation::Edge> path_);
+
+    virtual void transformChildNode(Tuple & initial_node) = 0;
+
+    void transform(ComplexNode & initial_node);
 
     virtual ~IIcebergSchemaTransform() = default;
+
+protected:
+    /// Get real pathes from template
+    std::vector<std::vector<size_t>> traverseAllPathes(const ComplexNode & initial_node);
+
+    /// index_path is a template for real pathes
+    /// If current node is ARRAY, then index in path will be equals to -1
+    /// In `traverseAllPathes` function this -1 will be replaced to values 0,1,...length_array
+    std::vector<int> index_path;
+    std::vector<IcebergChangeSchemaOperation::Edge> path;
 };
 
 class ExecutableEvolutionFunction : public IExecutableFunction
@@ -99,6 +133,7 @@ public:
 private:
     void lazyInitialize() const;
     static void fillMissingElementsInPermutation(std::vector<size_t> & permutation, size_t target_size);
+    static Poco::JSON::Array::Ptr makeArrayFromObject(Poco::JSON::Object::Ptr object);
 
     DataTypePtr type;
     DataTypePtr old_type;
