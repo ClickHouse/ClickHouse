@@ -860,6 +860,8 @@ void LocalServer::processConfig()
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
     std::string default_database = server_settings[ServerSetting::default_database];
+    if (default_database.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     {
         DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
         if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)
