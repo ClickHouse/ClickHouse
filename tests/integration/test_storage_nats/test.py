@@ -149,7 +149,7 @@ def wait_for_table_is_ready(instance, table_name, sleep_timeout = 0.5, time_limi
     assert(check_table_is_ready(instance, table_name))
 
 # waiting for subscription to nats subjects (after subscription direct selection is not available and completed with an error)
-def wait_for_mv_is_ready(instance, table_name, sleep_timeout = 0.5, time_limit_sec = 60):
+def wait_for_mv_attached_to_table(instance, table_name, sleep_timeout = 0.5, time_limit_sec = 60):
     deadline = time.monotonic() + time_limit_sec
     while check_table_is_ready(instance, table_name) and time.monotonic() < deadline:
         time.sleep(sleep_timeout)
@@ -201,7 +201,7 @@ def test_nats_select(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
 
     messages = []
     for i in range(50):
@@ -232,7 +232,7 @@ def test_nats_json_without_delimiter(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
     
     messages = ""
     for i in range(25):
@@ -272,7 +272,7 @@ def test_nats_csv_with_delimiter(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
 
     messages = []
     for i in range(50):
@@ -318,7 +318,7 @@ def test_nats_tsv_with_delimiter(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
 
     messages = []
     for i in range(50):
@@ -352,7 +352,7 @@ def test_nats_macros(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
     
     message = ""
     for i in range(50):
@@ -389,7 +389,7 @@ def test_nats_materialized_view(nats_cluster):
             SELECT * FROM test.nats group by (key, value);
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
     
     messages = []
     for i in range(50):
@@ -423,7 +423,7 @@ def test_nats_materialized_view_with_subquery(nats_cluster):
             SELECT * FROM (SELECT * FROM test.nats);
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
     
     messages = []
     for i in range(50):
@@ -460,7 +460,7 @@ def test_nats_many_materialized_views(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
     
     messages = []
     for i in range(50):
@@ -502,7 +502,7 @@ def test_nats_protobuf(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
 
     data = b""
     for i in range(0, 20):
@@ -561,7 +561,7 @@ def test_nats_big_message(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
 
     asyncio.run(nats_produce_messages(nats_cluster, "big", messages))
 
@@ -606,7 +606,7 @@ def test_nats_mv_combo(nats_cluster):
                 mv_id
             )
         )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
 
     i = [0]
     messages_num = 10000
@@ -915,7 +915,7 @@ def test_nats_many_inserts(nats_cluster):
             SELECT * FROM test.nats_consume;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats_consume")
+    wait_for_mv_attached_to_table(instance, "test.nats_consume")
 
     messages_num = 10000
     values = []
@@ -995,7 +995,7 @@ def test_nats_overloaded_insert(nats_cluster):
             SELECT * FROM test.nats_consume;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats_consume")
+    wait_for_mv_attached_to_table(instance, "test.nats_consume")
 
     messages_num = 100000
 
@@ -1062,7 +1062,7 @@ def test_nats_virtual_column(nats_cluster):
         SELECT value, key, _subject FROM test.nats_virtuals;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats_virtuals")
+    wait_for_mv_attached_to_table(instance, "test.nats_virtuals")
     
     message_num = 10
     i = 0
@@ -1123,7 +1123,7 @@ def test_nats_virtual_column_with_materialized_view(nats_cluster):
         FROM test.nats_virtuals_mv;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats_virtuals_mv")
+    wait_for_mv_attached_to_table(instance, "test.nats_virtuals_mv")
     
     message_num = 10
     i = 0
@@ -1203,7 +1203,7 @@ def test_nats_many_consumers_to_each_queue(nats_cluster):
                 table_id
             )
         )
-        wait_for_mv_is_ready(instance, "test.many_consumers_{}".format(table_id))
+        wait_for_mv_attached_to_table(instance, "test.many_consumers_{0}".format(table_id))
 
     i = [0]
     messages_num = 1000
@@ -1286,7 +1286,7 @@ def test_nats_restore_failed_connection_without_losses_on_write(nats_cluster):
             SELECT * FROM test.consume;
         """
     )
-    wait_for_mv_is_ready(instance, "test.consume")
+    wait_for_mv_attached_to_table(instance, "test.consume")
 
     messages_num = 100000
     values = []
@@ -1379,7 +1379,7 @@ def test_nats_no_connection_at_startup_2(nats_cluster):
             SELECT * FROM test.cs;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.cs")
 
     messages_num = 1000
     messages = []
@@ -1421,7 +1421,7 @@ def test_nats_format_factory_settings(nats_cluster):
             SELECT * FROM test.format_settings;
         """
     )
-    wait_for_mv_is_ready(instance, "test.format_settings")
+    wait_for_mv_attached_to_table(instance, "test.format_settings")
 
 
     message = json.dumps(
@@ -1473,7 +1473,7 @@ def test_nats_drop_mv(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
     
     messages = []
     for i in range(20):
@@ -1498,7 +1498,7 @@ def test_nats_drop_mv(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
 
     messages = []
     for i in range(20, 40):
@@ -1523,7 +1523,7 @@ def test_nats_drop_mv(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
 
     messages = []
     for i in range(40, 50):
@@ -1559,7 +1559,7 @@ def test_nats_predefined_configuration(nats_cluster):
             SELECT * FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
 
     asyncio.run(
         nats_produce_messages(
@@ -1643,7 +1643,7 @@ def test_max_rows_per_message(nats_cluster):
         SELECT key, value FROM test.nats;
         """
     )
-    wait_for_mv_is_ready(instance, "test.nats")
+    wait_for_mv_attached_to_table(instance, "test.nats")
 
     num_rows = 5
 
@@ -1739,7 +1739,7 @@ def test_row_based_formats(nats_cluster):
             SELECT key, value FROM test.nats;
             """
         )
-        wait_for_mv_is_ready(instance, "test.nats")
+        wait_for_mv_attached_to_table(instance, "test.nats")
 
         insert_messages = 0
 
@@ -1896,7 +1896,7 @@ def test_block_based_formats_2(nats_cluster):
             SELECT key, value FROM test.nats;
             """
         )
-        wait_for_mv_is_ready(instance, "test.nats")
+        wait_for_mv_attached_to_table(instance, "test.nats")
 
         insert_messages = 0
 
