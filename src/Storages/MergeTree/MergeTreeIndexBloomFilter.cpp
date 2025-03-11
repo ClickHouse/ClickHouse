@@ -1,38 +1,24 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Common/HashTable/ClearableHashMap.h>
-#include <Common/HashTable/Hash.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/BloomFilterHash.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
-#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexUtils.h>
 #include <Storages/MergeTree/RPNBuilder.h>
-#include <base/types.h>
 
 
 namespace DB
@@ -42,7 +28,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int INCORRECT_QUERY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
@@ -488,7 +473,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & tuple_data_type = typeid_cast<const DataTypeTuple *>(type.get());
 
             if (tuple_data_type->getElements().size() != key_node_function_arguments_size || tuple_column->getColumns().size() != key_node_function_arguments_size)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
+                return false;
 
             bool match_with_subtype = false;
             const auto & sub_columns = tuple_column->getColumns();
@@ -675,7 +660,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (function_name == "has" || function_name == "indexOf")
         {
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
+                return false;
 
             /// We can treat `indexOf` function similar to `has`.
             /// But it is little more cumbersome, compare: `has(arr, elem)` and `indexOf(arr, elem) != 0`.
@@ -694,10 +679,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         else if (function_name == "hasAny" || function_name == "hasAll")
         {
             if (!array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument for function {} must be an array.", function_name);
+                return false;
 
             if (value_field.getType() != Field::Types::Array)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument for function {} must be an array.", function_name);
+                return false;
 
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
             ColumnPtr column;
@@ -728,8 +713,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         else
         {
             if (array_type)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                                "An array type of bloom_filter supports only has(), indexOf(), and hasAny() functions.");
+                return false;
 
             out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -780,7 +764,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             const auto * value_tuple_data_type = typeid_cast<const DataTypeTuple *>(value_type.get());
 
             if (tuple.size() != key_node_function_arguments_size)
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments of function {}", function_name);
+                return false;
 
             bool match_with_subtype = false;
             const DataTypes & subtypes = value_tuple_data_type->getElements();
