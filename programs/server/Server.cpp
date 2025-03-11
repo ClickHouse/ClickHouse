@@ -666,12 +666,10 @@ void sanityChecks(Server & server)
     std::string logs_path = server.config().getString("logger.log", "");
 
     if (server.logger().is(Poco::Message::PRIO_TEST))
-    {
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::SERVER_LOGGING_LEVEL_TEST,
             PreformattedMessage::create(
                 "Server logging level is set to 'test' and performance is degraded. This cannot be used in production."));
-    }
 #if defined(OS_LINUX)
     try
     {
@@ -685,11 +683,9 @@ void sanityChecks(Server & server)
         };
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
         if (!fast_clock_sources.contains(readLine(filename)))
-        {
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_FAST_CLOCK_SOURCE_NOT_USED,
                 PreformattedMessage::create("Linux is not using a fast clock source. Performance can be degraded. Check {}", filename));
-        }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -699,12 +695,10 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/vm/overcommit_memory";
         if (readNumber(filename) == 2)
-        {
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_MEMORY_OVERCOMMIT_DISABLED,
                 PreformattedMessage::create("Linux memory overcommit is disabled. Check {}", String(filename)));
-        }
-        }
+    }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
     }
@@ -713,11 +707,9 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
         if (readLine(filename).find("[always]") != std::string::npos)
-        {
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
                 PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
-        }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -727,11 +719,9 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/pid_max";
         if (readNumber(filename) < 30000)
-        {
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_MAX_PID_TOO_LOW,
                PreformattedMessage::create("Linux max PID is too low. Check {}", String(filename)));
-        }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -741,11 +731,9 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/threads-max";
         if (readNumber(filename) < 30000)
-        {
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::LINUX_MAX_THREADS_COUNT_TOO_LOW,
                 PreformattedMessage::create("Linux threads max count is too low. Check {}", String(filename)));
-        }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -755,14 +743,12 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/task_delayacct";
         if (readNumber(filename) == 0)
-        {
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::DELAY_ACCOUNTING_DISABLED,
                 PreformattedMessage::create(
                     "Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it "
                     "using `echo 1 > {}` or by using sysctl.",
                     String(filename)));
-        }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -770,22 +756,18 @@ void sanityChecks(Server & server)
 
     std::string dev_id = getBlockDeviceId(data_path);
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
-    {
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
             PreformattedMessage::create(
                 "Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: {}", String(data_path)));
-    }
 #endif
 
     try
     {
         if (getAvailableMemoryAmount() < (2l << 30))
-        {
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::AVAILABLE_MEMORY_TOO_LOW,
                 PreformattedMessage::create("Available memory at server startup is too low (2GiB)."));
-        }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -794,11 +776,9 @@ void sanityChecks(Server & server)
     try
     {
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
-        {
             server.context()->addOrUpdateWarningMessage(
                 Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
                 PreformattedMessage::create("Available disk space for data at server startup is too low (1GiB): {}", String(data_path)));
-        }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -810,11 +790,9 @@ void sanityChecks(Server & server)
         {
             auto logs_parent = fs::path(logs_path).parent_path();
             if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
-            {
                 server.context()->addOrUpdateWarningMessage(
                     Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
                     PreformattedMessage::create("Available disk space for logs at server startup is too low (1GiB): {}", String(logs_parent)));
-            }
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -873,14 +851,12 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 if (result != "1\n" && result != "true\n")
                 {
                     if (result != "0\n" && result != "false\n")
-                    {
                         context->addOrUpdateWarningMessage(
                             Context::WarningType::SKIPPING_CONDITION_QUERY,
                             PreformattedMessage::create(
                                 "The condition query returned `{}`, which can't be interpreted as a boolean (`0`, "
                                 "`false`, `1`, `true`). Will skip this query.",
                                 result));
-                    }
 
                     continue;
                 }
@@ -1066,11 +1042,9 @@ try
 #endif
 
     if (ThreadFuzzer::instance().isEffective())
-    {
         global_context->addOrUpdateWarningMessage(
             Context::WarningType::THREAD_FUZZER_IS_ENABLED,
             PreformattedMessage::create("ThreadFuzzer is enabled. Application will run slowly and unstable."));
-    }
 
 #if defined(SANITIZER)
     auto sanitizers = getSanitizerNames();
