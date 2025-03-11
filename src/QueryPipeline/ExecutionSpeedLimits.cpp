@@ -2,6 +2,7 @@
 
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentThread.h>
+#include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
 #include <base/sleep.h>
 
@@ -103,7 +104,7 @@ void ExecutionSpeedLimits::throttle(
 }
 
 template <typename... Args>
-static bool handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args)
+bool ExecutionSpeedLimits::handleOverflowMode(OverflowMode mode, int code, FormatStringHelper<Args...> fmt, Args &&... args)
 {
     switch (mode)
     {
