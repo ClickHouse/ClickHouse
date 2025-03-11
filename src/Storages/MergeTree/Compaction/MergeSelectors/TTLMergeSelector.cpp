@@ -63,7 +63,7 @@ public:
             --sorted_suffix_size;
 
             if (auto range = buildRange(center, max_total_size_to_merge))
-                return std::move(range);
+                return range;
         }
 
         return std::nullopt;
