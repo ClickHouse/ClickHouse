@@ -46,14 +46,6 @@ SECRETS = [
         type=Secret.Type.AWS_SSM_VAR,
     ),
     azure_secret,
-    # Secret.Config(
-    #     name="clickhouse_github_secret_key.clickhouse-app-id",
-    #     type=Secret.Type.AWS_SSM_SECRET,
-    # ),
-    # Secret.Config(
-    #     name="clickhouse_github_secret_key.clickhouse-app-key",
-    #     type=Secret.Type.AWS_SSM_SECRET,
-    # ),
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -71,23 +63,36 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
+    # new images
+    # Docker.Config(
+    #     name="clickhouse/fasttest",
+    #     path="./ci/docker/fasttest",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/binary-builder",
+    #     path="./ci/docker/binary-builder",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=["clickhouse/fasttest"],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/stateless-test",
+    #     path="./ci/docker/stateless-test",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
     Docker.Config(
         name="clickhouse/fasttest",
-        path="./ci/docker/fasttest",
+        path="./docker/test/fasttest",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-util"],
     ),
     Docker.Config(
         name="clickhouse/binary-builder",
-        path="./ci/docker/binary-builder",
+        path="./docker/packager/binary-builder",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/fasttest"],
-    ),
-    Docker.Config(
-        name="clickhouse/stateless-test",
-        path="./ci/docker/stateless-test",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
     ),
     Docker.Config(
         name="clickhouse/test-old-centos",
@@ -101,53 +106,65 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # Docker.Config(
-    #     name="clickhouse/cctools",
-    #     path="./ci/docker/packager/cctools",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/test-util",
-    #     path="./ci/docker/test/util",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/fuzzer",
-    #     path="./ci/docker/test/fuzzer",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/performance-comparison",
-    #     path="./ci/docker/test/performance-comparison",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/keeper-jepsen-test",
-    #     path="./ci/docker/test/keeper-jepsen",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/server-jepsen-test",
-    #     path="./ci/docker/test/server-jepsen",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
+    Docker.Config(
+        name="clickhouse/cctools",
+        path="./docker/packager/cctools",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/test-util",
+        path="./docker/test/util",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/test-base",
+        path="./docker/test/base",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-util"],
+    ),
+    Docker.Config(
+        name="clickhouse/unit-test",
+        path="./docker/test/unit",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/stateless-test",
+        path="./docker/test/stateless",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/fuzzer",
+        path="./docker/test/fuzzer",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/performance-comparison",
+        path="./docker/test/performance-comparison",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/keeper-jepsen-test",
+        path="./docker/test/keeper-jepsen",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/server-jepsen-test",
+        path="./docker/test/server-jepsen",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
     # Docker.Config(
     #     name="clickhouse/sqllogic-test",
     #     path="./ci/docker/test/sqllogic",
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/stateful-test",
-    #     path="./ci/docker/stateful-test",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/stateless-test"],
     # ),
     Docker.Config(
         name="clickhouse/integration-test",
@@ -155,7 +172,6 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # TODO: move images into ./ci
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./docker/test/integration/runner",
@@ -183,9 +199,7 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/mysql-java-client",
         path="./docker/test/integration/mysql_java_client",
-        # TODO: amd image on arm runner hangs on "RUN javac MySQLJavaClientTest.java"
-        #  fix and enable for both platforms
-        platforms=[Docker.Platforms.AMD],
+        platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
