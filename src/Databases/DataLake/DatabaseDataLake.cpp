@@ -52,6 +52,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int DATALAKE_DATABASE_ERROR;
 }
 
 namespace
@@ -248,19 +249,22 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 {
     auto catalog = getCatalog();
     auto table_metadata = DataLake::TableMetadata().withSchema().withLocation();
-    if (lightweight)
-        table_metadata = table_metadata.withLightweight();
 
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
     if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
-    table_metadata = table_metadata.withDataLakeSpecificMetadata();
+    table_metadata = table_metadata.withDataLakeSpecificProperties();
 
     auto [namespace_name, table_name] = parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
         return nullptr;
+
+    if (!lightweight && !table_metadata.isDefaultReadableTable())
+    {
+        throw Exception::createRuntime(ErrorCodes::DATALAKE_DATABASE_ERROR, table_metadata.getReasonWhyTableIsUnreadable());
+    }
 
     /// Take database engine definition AST as base.
     ASTStorage * storage = database_engine_definition->as<ASTStorage>();
@@ -403,7 +407,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     bool /* throw_on_error */) const
 {
     auto catalog = getCatalog();
-    auto table_metadata = DataLake::TableMetadata().withLightweight().withLocation().withSchema();
+    auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
 
     const auto [namespace_name, table_name] = parseTableName(name);
     catalog->getTableMetadata(namespace_name, table_name, table_metadata);

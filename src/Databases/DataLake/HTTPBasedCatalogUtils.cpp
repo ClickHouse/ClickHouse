@@ -61,7 +61,12 @@ std::pair<Poco::Dynamic::Var, std::string> makeHTTPRequestAndReadJSON(
     }
     catch (const Poco::Exception & poco_ex)
     {
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
         std::string message = poco_ex.displayText() + " Cannot parse json: " + json_str;
+#else
+        std::string message = " Cannot parse json: " + poco_ex.displayText();
+#endif
         throw DB::Exception::createRuntime(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, std::move(message));
     }
 }
