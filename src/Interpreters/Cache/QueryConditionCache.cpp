@@ -60,7 +60,7 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     {
         ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
-        std::lock_guard lock(entry->mutex);
+        std::shared_lock lock(entry->mutex);
 
         LOG_DEBUG(
             logger,
