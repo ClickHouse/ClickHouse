@@ -335,8 +335,9 @@ bool StatementGenerator::joinedTableOrFunction(
         = 5 * static_cast<uint32_t>(!fc.clusters.empty() && this->allow_engine_udf && (can_recurse || has_table || has_view));
     const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
+    const uint32_t values = 2 * static_cast<uint32_t>(can_recurse);
     const uint32_t prob_space = derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf
-        + cluster_udf + merge_index_udf + loop_udf;
+        + cluster_udf + merge_index_udf + loop_udf + values;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -647,6 +648,36 @@ bool StatementGenerator::joinedTableOrFunction(
         auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, tof->mutable_tfunc()->mutable_loop());
         UNUSED(u);
         this->depth--;
+    }
+    else if (
+        values
+        && nopt
+            < (derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values + 1))
+    {
+        SQLRelation rel(rel_name);
+        const uint32_t ncols = std::min<uint32_t>(this->fc.max_width - this->width, (rg.nextSmallNumber() % 3) + UINT32_C(1));
+        const uint32_t nrows = (rg.nextSmallNumber() % 3) + UINT32_C(1);
+        ValuesStatement * vs = tof->mutable_tfunc()->mutable_values();
+
+        this->depth++;
+        for (uint32_t i = 0; i < nrows; i++)
+        {
+            ExprList * elist = i == 0 ? vs->mutable_expr_list() : vs->add_extra_expr_lists();
+
+            for (uint32_t j = 0; j < ncols; j++)
+            {
+                this->width++;
+                generateExpression(rg, j == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+            }
+            this->width -= ncols;
+        }
+        this->depth--;
+        for (uint32_t i = 0; i < ncols; i++)
+        {
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i + 1)}));
+        }
+        this->levels[this->current_level].rels.emplace_back(rel);
     }
     else
     {

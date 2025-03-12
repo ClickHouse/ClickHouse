@@ -2024,6 +2024,19 @@ CONV_FN(GenerateRandomFunc, grfunc)
     ret += ")";
 }
 
+CONV_FN(ValuesStatement, values)
+{
+    ret += "VALUES (";
+    ExprListToString(ret, values.expr_list());
+    ret += ")";
+    for (int i = 0; i < values.extra_expr_lists_size(); i++)
+    {
+        ret += ", (";
+        ExprListToString(ret, values.extra_expr_lists(i));
+        ret += ")";
+    }
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -2072,6 +2085,9 @@ CONV_FN(TableFunction, tf)
             break;
         case TableFunctionType::kGrandom:
             GenerateRandomFuncToString(ret, tf.grandom());
+            break;
+        case TableFunctionType::kValues:
+            ValuesStatementToString(ret, tf.values());
             break;
         default:
             ret += "numbers(10)";
@@ -3039,19 +3055,6 @@ CONV_FN(Drop, dt)
     {
         ret += " SETTINGS ";
         SettingValuesToString(ret, dt.setting_values());
-    }
-}
-
-CONV_FN(ValuesStatement, values)
-{
-    ret += "VALUES (";
-    ExprListToString(ret, values.expr_list());
-    ret += ")";
-    for (int i = 0; i < values.extra_expr_lists_size(); i++)
-    {
-        ret += ", (";
-        ExprListToString(ret, values.extra_expr_lists(i));
-        ret += ")";
     }
 }
 

@@ -1281,6 +1281,7 @@ const std::vector<CHFunction> CHTableFuncs = {
     CHFunction(SQLTableFunc::TFS3Cluster, 0, 0, 2, 9),
     CHFunction(SQLTableFunc::TFsqlite, 0, 0, 2, 2),
     CHFunction(SQLTableFunc::TFurl, 0, 0, 1, 4),
-    CHFunction(SQLTableFunc::TFurlCluster, 0, 0, 4, 4)};
+    CHFunction(SQLTableFunc::TFurlCluster, 0, 0, 4, 4),
+    CHFunction(SQLTableFunc::TFvalues, 0, 0, 1, ulimited_params)};
 
 }

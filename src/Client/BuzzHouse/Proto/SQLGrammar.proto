@@ -1545,24 +1545,53 @@ enum SQLFunc {
 }
 
 enum SQLTableFunc {
-    TFcluster = 1;
-    TFclusterAllReplicas = 2;
-    TFfile = 3;
-    TFfileCluster = 4;
-    TFformat = 5;
-    TFgenerateSeries = 6;
-    TFgenerateRandom = 7;
-    TFmerge = 8;
-    TFmergeTreeIndex = 9;
-    TFmysql = 10;
-    TFpostgresql = 11;
-    TFremote = 12;
-    TFremoteSecure = 13;
-    TFS3 = 14;
-    TFS3Cluster = 15;
-    TFsqlite = 16;
-    TFurl = 17;
-    TFurlCluster = 18;
+    TFazureBlobStorage = 1;
+    TFazureBlobStorageCluster = 2;
+    TFcluster = 3;
+    TFclusterAllReplicas = 4;
+    TFdeltaLake = 5;
+    TFdeltaLakeCluster = 6;
+    TFdictionary = 7;
+    TFexecutable = 8;
+    TFfile = 9;
+    TFfileCluster = 10;
+    TFformat = 11;
+    TFgcs = 12;
+    TFfuzzJSON = 13;
+    TFfuzzQuery = 14;
+    TFgenerateRandom = 15;
+    TFmergeTreeIndex = 16;
+    TFhdfs = 17;
+    TFhdfsCluster = 18;
+    TFhudi = 19;
+    TFhudiCluster = 20;
+    TFiceberg = 21;
+    TFicebergCluster = 22;
+    TFinput = 23;
+    TFjdbc = 24;
+    TFmerge = 25;
+    TFmongodb = 26;
+    TFmysql = 27;
+    TFnull = 28;
+    TFnumbers = 29;
+    TFtimeSeriesData = 30;
+    TFtimeSeriesMetrics = 31;
+    TFtimeSeriesTags = 32;
+    TFzeros = 33;
+    TFgenerateSeries = 34;
+    TFodbc = 35;
+    TFpostgresql = 36;
+    TFredis = 37;
+    TFremote = 38;
+    TFremoteSecure = 39;
+    TFS3 = 40;
+    TFS3Cluster = 41;
+    TFsqlite = 42;
+    TFurl = 43;
+    TFurlCluster = 44;
+    TFvalues = 45;
+    TFview = 46;
+    TFloop = 47;
 }
 
 message Database {
@@ -2488,6 +2517,11 @@ message GenerateRandomFunc {
     optional uint64 max_array_length = 4;
 }
 
+message ValuesStatement {
+    required ExprList expr_list = 1;
+    repeated ExprList extra_expr_lists = 2;
+}
+
 message TableFunction {
     oneof jtf_oneof {
         FileFunc file = 1;
@@ -2504,6 +2538,7 @@ message TableFunction {
         MergeTreeIndexFunc mtindex = 12;
         TableOrFunction loop = 13;
         GenerateRandomFunc grandom = 14;
+        ValuesStatement values = 15;
     }
 }
 
@@ -3130,11 +3165,6 @@ message Drop {
     optional Cluster cluster = 7;
     optional bool sync = 8;
     optional SettingValues setting_values = 9;
-}
-
-message ValuesStatement {
-    required ExprList expr_list = 2;
-    repeated ExprList extra_expr_lists = 3;
 }
 
 message InsertFromFile {
