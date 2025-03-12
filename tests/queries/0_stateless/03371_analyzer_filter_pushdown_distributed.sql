@@ -23,6 +23,8 @@ c2 String
 )
 ENGINE = Distributed('test_cluster_two_shards', currentDatabase(), 'bug_table', cityHash64(c1));
 
+set distributed_product_mode = 'allow';
+
 set prefer_localhost_replica=1;
 
 WITH alias_1 AS 
