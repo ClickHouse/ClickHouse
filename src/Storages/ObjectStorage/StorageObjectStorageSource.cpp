@@ -954,7 +954,8 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     ConfigurationPtr configuration_,
     std::unique_ptr<IObjectIterator> archives_iterator_,
     ContextPtr context_,
-    ObjectInfos * read_keys_, bool ignore_archive_globs_)
+    ObjectInfos * read_keys_,
+    bool ignore_archive_globs_)
     : WithContext(context_)
     , object_storage(object_storage_)
     , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs())

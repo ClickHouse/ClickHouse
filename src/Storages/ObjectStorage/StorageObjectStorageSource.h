@@ -257,7 +257,8 @@ public:
         ConfigurationPtr configuration_,
         std::unique_ptr<IObjectIterator> archives_iterator_,
         ContextPtr context_,
-        ObjectInfos * read_keys_, bool ignore_archive_globs_ = false);
+        ObjectInfos * read_keys_,
+        bool ignore_archive_globs_ = false);
 
     ObjectInfoPtr next(size_t processor) override;
 
