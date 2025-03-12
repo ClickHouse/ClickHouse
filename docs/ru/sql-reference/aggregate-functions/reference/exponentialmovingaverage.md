@@ -28,7 +28,7 @@ exponentialMovingAverage(x)(value, timestamp)
 
 -   Возвращает [экспоненциальное скользящее среднее](https://ru.wikipedia.org/wiki/Скользящая_средняя#Экспоненциально_взвешенное_скользящее_среднее) за прошедшее время `x` в последний момент времени.
 
-Тип: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
+Тип: [Float64](/sql-reference/data-types/float).
 
 **Пример**
 

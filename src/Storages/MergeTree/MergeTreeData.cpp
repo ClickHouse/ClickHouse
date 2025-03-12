@@ -834,7 +834,7 @@ void MergeTreeData::checkProperties(
 
             const auto settings = getSettings();
             if (projections_names.size() >= (*settings)[MergeTreeSetting::max_projections])
-                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections]);
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections].value);
 
             /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
             bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
@@ -2051,7 +2051,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 "(don't forget to return setting back to default value)",
                 suspicious_broken_parts,
                 formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
-                (*settings)[MergeTreeSetting::max_suspicious_broken_parts]);
+                (*settings)[MergeTreeSetting::max_suspicious_broken_parts].value);
 
         if (suspicious_broken_parts_bytes > (*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes])
             throw Exception(
@@ -2245,7 +2245,7 @@ try
 
                 LOG_DEBUG(log,
                     "Stopped loading outdated data parts because task was canceled. "
-                    "Loaded {} parts, {} left unloaded", num_loaded_parts, outdated_unloaded_data_parts.size());
+                    "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
                 return;
             }
 
@@ -2281,7 +2281,7 @@ try
     runner.waitForAllToFinishAndRethrowFirstError();
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
-        num_loaded_parts, is_async ? "asynchronously" : "synchronously");
+        num_loaded_parts.load(), is_async ? "asynchronously" : "synchronously");
 
     {
         std::lock_guard lock(outdated_data_parts_mutex);
@@ -5364,17 +5364,23 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 void MergeTreeData::checkAlterPartitionIsPossible(
     const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr local_context) const
 {
-    for (const auto & disk : getDisks())
-        if (!disk->supportsHardLinks())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE PARTITION is not supported for immutable disk '{}'", disk->getName());
-
+    const auto disks = getDisks();
+    auto disk_without_hardlink_support_it
+        = std::find_if(disks.begin(), disks.end(), [](const auto & disk_ptr) { return !disk_ptr->supportsHardLinks(); });
     for (const auto & command : commands)
     {
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION && !settings[Setting::allow_drop_detached])
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                 "Cannot execute query: DROP DETACHED PART "
                                 "is disabled (see allow_drop_detached setting)");
+
+        if (disk_without_hardlink_support_it != disks.end() && command.type != PartitionCommand::DROP_PARTITION
+            && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Partition operation ALTER TABLE {} is not supported for immutable disk '{}'",
+                command.typeToString(),
+                (*disk_without_hardlink_support_it)->getName());
 
         if (command.partition && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
         {
@@ -8598,7 +8604,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
                 " min_rows_for_wide_part = {}"
                 ", min_bytes_for_wide_part = {}"
                 ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
-                settings[MergeTreeSetting::min_rows_for_wide_part], settings[MergeTreeSetting::min_bytes_for_wide_part]);
+                settings[MergeTreeSetting::min_rows_for_wide_part].value, settings[MergeTreeSetting::min_bytes_for_wide_part].value);
         }
 
         return false;

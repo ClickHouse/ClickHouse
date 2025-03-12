@@ -90,5 +90,5 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 
 -   [Introspection Functions](../../sql-reference/functions/introspection.md) — 哪些内省功能是可用的以及如何使用它们.
 -   [system.trace_log](../system-tables/trace_log.md) — 包含由抽样查询分析器收集的堆栈跟踪.
--   [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — `arrayMap` 函数的描述和使用示例
--   [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — `arrayFilter` 函数的描述和使用示例.
+-   [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) — `arrayMap` 函数的描述和使用示例
+-   [arrayFilter](/sql-reference/functions/array-functions#arrayfilterfunc-arr1-) — `arrayFilter` 函数的描述和使用示例.

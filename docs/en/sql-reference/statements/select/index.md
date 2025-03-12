@@ -45,7 +45,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [PREWHERE clause](../../../sql-reference/statements/select/prewhere.md)
 - [WHERE clause](../../../sql-reference/statements/select/where.md)
 - [WINDOW clause](../../../sql-reference/window-functions/index.md)
-- [GROUP BY clause](../../../sql-reference/statements/select/group-by.md)
+- [GROUP BY clause](/sql-reference/statements/select/group-by)
 - [LIMIT BY clause](../../../sql-reference/statements/select/limit-by.md)
 - [HAVING clause](../../../sql-reference/statements/select/having.md)
 - [QUALIFY clause](../../../sql-reference/statements/select/qualify.md)
@@ -59,7 +59,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 
 ## SELECT Clause {#select-clause}
 
-[Expressions](../../../sql-reference/syntax.md#syntax-expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](../../../sql-reference/statements/select/group-by.md) aggregation.
+[Expressions](/sql-reference/syntax#expressions) specified in the `SELECT` clause are calculated after all the operations in the clauses described above are finished. These expressions work as if they apply to separate rows in the result. If expressions in the `SELECT` clause contain aggregate functions, then ClickHouse processes aggregate functions and expressions used as their arguments during the [GROUP BY](/sql-reference/statements/select/group-by) aggregation.
 
 If you want to include all columns in the result, use the asterisk (`*`) symbol. For example, `SELECT * FROM ...`.
 
@@ -149,7 +149,7 @@ Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. How
 
 You can use synonyms (`AS` aliases) in any part of a query.
 
-The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional arguments. To enable this, switch on the [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) setting. Then, for example, `ORDER BY 1,2` will be sorting rows in the table on the first and then the second column.
+The `GROUP BY`, `ORDER BY`, and `LIMIT BY` clauses can support positional arguments. To enable this, switch on the [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments) setting. Then, for example, `ORDER BY 1,2` will be sorting rows in the table on the first and then the second column.
 
 ## Implementation Details {#implementation-details}
 
@@ -224,7 +224,7 @@ SELECT * EXCEPT (i) from columns_transformers;
 
 ### REPLACE {#replace}
 
-Specifies one or more [expression aliases](../../../sql-reference/syntax.md#syntax-expression_aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`.
+Specifies one or more [expression aliases](/sql-reference/syntax#expression-aliases). Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches the alias is replaced by the expression in that `REPLACE`.
 
 This modifier does not change the names or order of columns. However, it can change the value and the value type.
 
