@@ -252,7 +252,7 @@ void FilterStep::updateOutputHeader()
         return;
 }
 
-void FilterStep::setQueryConditionKey(size_t condition_hash_)
+void FilterStep::setQueryConditionHash(size_t condition_hash_)
 {
     condition_hash = condition_hash_;
 }
