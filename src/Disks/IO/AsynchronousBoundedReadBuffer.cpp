@@ -244,6 +244,15 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedBytes, result.size);
     }
 
+    /// Trim buffer if it is much larger than the read result.
+    if (memory.size() > result.size * 1.5)
+    {
+        Memory<> shrinked;
+        shrinked.resize(result.size);
+        memcpy(shrinked.data(), memory.data(), result.size);
+        memory.swap(shrinked);
+    }
+
     bytes_to_ignore = 0;
     resetWorkingBuffer();
 
