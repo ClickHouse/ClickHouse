@@ -93,7 +93,7 @@ void StringDictionaryReader::readSpace(
     while (rows_read < rows_to_read)
     {
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
         if (plain)
         {
@@ -120,7 +120,7 @@ void StringDictionaryReader::read(MutableColumnPtr & column, OptionalRowSet & ro
     while (rows_read < rows_to_read)
     {
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
         if (plain)
         {
@@ -143,7 +143,7 @@ void StringDictionaryReader::read(MutableColumnPtr & column, OptionalRowSet & ro
 void StringDictionaryReader::computeRowSetSpace(
     OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t null_count, size_t rows_to_read)
 {
-    readAndDecodePage();
+    readAndDecodePageIfNeeded();
     chassert(rows_to_read <= state.offsets.remain_rows);
     if (plain)
     {
@@ -184,7 +184,7 @@ void StringDictionaryReader::computeRowSet(OptionalRowSet & row_set, size_t rows
 {
     if (!scan_spec.filter || !row_set.has_value())
         return;
-    readAndDecodePage();
+    readAndDecodePageIfNeeded();
     chassert(rows_to_read <= state.offsets.remain_rows);
     if (plain)
     {
@@ -239,7 +239,7 @@ void StringDirectReader::readSpace(
     {
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
 
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
         size_t total_size = plain_decoder->calculateStringTotalSizeSpace(state.data, row_set, null_map, rows_to_read - null_count);
         string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_to_read);
@@ -257,7 +257,7 @@ void StringDirectReader::read(MutableColumnPtr & column, OptionalRowSet & row_se
     while (rows_read < rows_to_read)
     {
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         ColumnString * string_column = reinterpret_cast<ColumnString *>(column.get());
         size_t total_size = plain_decoder->calculateStringTotalSize(state.data, row_set, rows_can_read);
         string_column->getOffsets().reserve(string_column->getOffsets().size() + rows_can_read);
@@ -271,13 +271,13 @@ void StringDirectReader::read(MutableColumnPtr & column, OptionalRowSet & row_se
 
 void StringDirectReader::computeRowSetSpace(OptionalRowSet & row_set, PaddedPODArray<UInt8> & null_map, size_t, size_t rows_to_read)
 {
-    readAndDecodePage();
+    readAndDecodePageIfNeeded();
     computeRowSetPlainStringSpace(state.data.buffer, row_set, scan_spec.filter, rows_to_read, null_map);
 }
 
 void StringDirectReader::computeRowSet(OptionalRowSet & row_set, size_t rows_to_read)
 {
-    readAndDecodePage();
+    readAndDecodePageIfNeeded();
     computeRowSetPlainString(state.data.buffer, row_set, scan_spec.filter, rows_to_read);
 }
 DataTypePtr StringDirectReader::getResultType()

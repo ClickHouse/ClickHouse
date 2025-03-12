@@ -44,7 +44,7 @@ void BooleanColumnReader::computeRowSet(OptionalRowSet & row_set, size_t rows_to
     }
     if (!row_set)
         return;
-    readAndDecodePage();
+    readAndDecodePageIfNeeded();
     initBitReader();
 
     buffer.resize(rows_to_read);
@@ -62,7 +62,7 @@ void BooleanColumnReader::computeRowSetSpace(
     }
     if (!row_set)
         return;
-    readAndDecodePage();
+    readAndDecodePageIfNeeded();
     initBitReader();
 
     buffer.resize(rows_to_read - null_count);
@@ -85,7 +85,7 @@ void BooleanColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_s
         size_t rows_read = 0;
         while (rows_read < rows_to_read)
         {
-            readAndDecodePage();
+            readAndDecodePageIfNeeded();
             initBitReader();
 
             auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
@@ -117,7 +117,7 @@ void BooleanColumnReader::readSpace(
         size_t rows_read = 0;
         while (rows_read < rows_to_read)
         {
-            readAndDecodePage();
+            readAndDecodePageIfNeeded();
             initBitReader();
 
             auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);

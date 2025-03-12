@@ -223,8 +223,8 @@ public:
     }
     /// init page data
     virtual void readPageIfNeeded();
-    /// read next page
-    void readAndDecodePage()
+    /// read next page if there are no rows left in current page
+    void readAndDecodePageIfNeeded()
     {
         loadDictPageIfNeeded();
         readPageIfNeeded();
@@ -232,7 +232,7 @@ public:
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Page exhausted");
         }
-        decodePage();
+        decodePageIfNeed();
     }
     virtual DataTypePtr getResultType() = 0;
     /// create empty result column
@@ -240,13 +240,13 @@ public:
     /// get all definition levels of current page
     virtual const PaddedPODArray<Int16> & getDefinitionLevels()
     {
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         return state.def_levels;
     }
     /// get all repetition levels of current page
     virtual const PaddedPODArray<Int16> & getRepetitionLevels()
     {
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         return state.rep_levels;
     }
     /// levels offset in current page
@@ -295,7 +295,7 @@ public:
     virtual void setOffsetIndex(std::shared_ptr<parquet::OffsetIndex> offset_index_) { offset_index = std::move(offset_index_); }
 
 protected:
-    void decodePage();
+    void decodePageIfNeed();
     void initDataPageDecoder(parquet::Encoding::type encoding);
     virtual void skipPageIfNeed();
     bool readPage();

@@ -97,7 +97,7 @@ void FixedLengthColumnDirectReader<DataType>::read(MutableColumnPtr & column, Op
     size_t rows_read = 0;
     while (rows_read < rows_to_read)
     {
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         if constexpr (std::is_same_v<DataType, typename DB::DataTypeFixedString>)
         {
@@ -124,7 +124,7 @@ void FixedLengthColumnDirectReader<DataType>::readSpace(
     size_t rows_read = 0;
     while (rows_read < rows_to_read)
     {
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         if constexpr (std::is_same_v<DataType, typename DB::DataTypeFixedString>)
         {
@@ -310,7 +310,7 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::readSpace(
     size_t rows_read = 0;
     while (rows_read < rows_to_read)
     {
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         if (plain)
         {
@@ -354,7 +354,7 @@ void FixedLengthColumnDictionaryReader<DataType, DictValueType>::read(
     size_t rows_read = 0;
     while (rows_read < rows_to_read)
     {
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         if (plain)
         {

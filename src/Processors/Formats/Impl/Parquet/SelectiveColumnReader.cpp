@@ -169,7 +169,7 @@ void SelectiveColumnReader::readDataPageV2(const parquet::DataPageV2 & page)
     chassert(state.lazy_skip_rows == 0);
 }
 
-void SelectiveColumnReader::decodePage()
+void SelectiveColumnReader::decodePageIfNeed()
 {
     if (state.page)
         return;

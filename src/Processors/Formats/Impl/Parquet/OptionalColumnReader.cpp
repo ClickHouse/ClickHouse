@@ -84,7 +84,7 @@ void OptionalColumnReader::read(MutableColumnPtr & column, OptionalRowSet & row_
     auto & null_data = nullable_column->getNullMapData();
     while (rows_read < rows_to_read)
     {
-        child->readAndDecodePage();
+        child->readAndDecodePageIfNeeded();
         auto rows_can_read = std::min(rows_to_read - rows_read, child->availableRows());
         if (!rows_can_read) break;
         auto original_filter_offset = row_set? row_set->getOffset() : 0;
@@ -155,7 +155,7 @@ void OptionalColumnReader::applyLazySkip()
     skipPageIfNeed();
     while (state.lazy_skip_rows)
     {
-        child->readAndDecodePage();
+        child->readAndDecodePageIfNeeded();
         auto remain_skipped_rows = skipValuesInCurrentPage(state.lazy_skip_rows);
         if (remain_skipped_rows == state.lazy_skip_rows)
         {

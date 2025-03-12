@@ -66,7 +66,7 @@ void NumberColumnDirectReader<DataType, SerializedType>::computeRowSet(OptionalR
 {
     if (!applyColumnIndex<typename IndexTypeTraits<SerializedType>::IndexType>(row_set, scan_spec.filter, state.getCurrentPagePosition(), column_index, false))
         return;
-    readAndDecodePage();
+    readAndDecodePageIfNeeded();
     chassert(rows_to_read <= state.offsets.remain_rows);
     state.data.checkSize(sizeof(SerializedType) * rows_to_read);
     const SerializedType * start = reinterpret_cast<const SerializedType *>(state.data.buffer);
@@ -79,7 +79,7 @@ void NumberColumnDirectReader<DataType, SerializedType>::read(MutableColumnPtr &
     size_t rows_read = 0;
     while (rows_read < rows_to_read)
     {
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         auto * number_column = static_cast<DataType::ColumnType *>(column.get());
         auto & data = number_column->getData();
@@ -108,7 +108,7 @@ void NumberColumnDirectReader<DataType, SerializedType>::readSpace(
     size_t rows_read = 0;
     while (rows_read < rows_to_read)
     {
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         auto * number_column = static_cast<DataType::ColumnType *>(column.get());
         auto & data = number_column->getData();
@@ -126,7 +126,7 @@ void NumberColumnDirectReader<DataType, SerializedType>::computeRowSetSpace(
 {
     if (!applyColumnIndex<typename IndexTypeTraits<SerializedType>::IndexType>(row_set, scan_spec.filter, state.getCurrentPagePosition(), column_index, true))
         return;
-    readAndDecodePage();
+    readAndDecodePageIfNeeded();
     const SerializedType * start = reinterpret_cast<const SerializedType *>(state.data.buffer);
     computeRowSetPlainSpace(start, row_set, scan_spec.filter, null_map, rows_to_read);
 }
@@ -172,7 +172,7 @@ void NumberDictionaryReader<DataType, SerializedType>::computeRowSet(OptionalRow
         return;
     if (!applyColumnIndex<typename IndexTypeTraits<SerializedType>::IndexType>(row_set, scan_spec.filter, state.getCurrentPagePosition(), column_index, false))
         return;
-    readAndDecodePage();
+    readAndDecodePageIfNeeded();
     chassert(rows_to_read <= state.offsets.remain_rows);
     if (plain)
     {
@@ -193,7 +193,7 @@ void NumberDictionaryReader<DataType, SerializedType>::computeRowSetSpace(
         return;
     if (!applyColumnIndex<typename IndexTypeTraits<SerializedType>::IndexType>(row_set, scan_spec.filter, state.getCurrentPagePosition(), column_index, true))
         return;
-    readAndDecodePage();
+    readAndDecodePageIfNeeded();
     chassert(rows_to_read <= state.offsets.remain_rows);
     if (plain)
     {
@@ -237,7 +237,7 @@ void NumberDictionaryReader<DataType, SerializedType>::read(MutableColumnPtr & c
     size_t rows_read = 0;
     while (rows_read < rows_to_read)
     {
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         auto * number_column = static_cast<DataType::ColumnType *>(column.get());
         auto & data = number_column->getData();
@@ -278,7 +278,7 @@ void NumberDictionaryReader<DataType, SerializedType>::readSpace(
     size_t rows_read = 0;
     while (rows_read < rows_to_read)
     {
-        readAndDecodePage();
+        readAndDecodePageIfNeeded();
         auto rows_can_read = std::min(rows_to_read - rows_read, state.offsets.remain_rows);
         auto * number_column = static_cast<DataType::ColumnType *>(column.get());
         auto & data = number_column->getData();
