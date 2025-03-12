@@ -27,6 +27,7 @@
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/NestedElementsValidationTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/formatAST.h>
@@ -50,6 +51,7 @@
 #include "Processors/Chunk.h"
 #include "QueryPipeline/Chain.h"
 #include "base/defines.h"
+#include "base/scope_guard.h"
 
 namespace ProfileEvents
 {
@@ -105,6 +107,7 @@ namespace Setting
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsBool log_profile_events;
     extern const SettingsBool calculate_text_stack_trace;
+    extern const SettingsBool use_async_executor_for_materialized_views;
 }
 
 namespace MergeTreeSetting
@@ -526,7 +529,7 @@ void ViewsManager::buildRelaitions()
                     "Target table '{}' of view '{}' doesn't exists.",
                     current, init_table_id);
 
-            if (parent && inner_tables.contains(parent))
+            if (parent)
             {
                 if (init_context->getSettingsRef()[Setting::ignore_materialized_views_with_dropped_target_table])
                     return false;
@@ -536,10 +539,6 @@ void ViewsManager::buildRelaitions()
                     "Target table '{}' of view '{}' doesn't exists. To ignore this view use setting "
                     "ignore_materialized_views_with_dropped_target_table",
                     current, parent);
-            }
-            else
-            {
-                LOG_WARNING(getLogger("ViewsManager"), "Trying to access table {} but it doesn't exist", current);
             }
         }
 
@@ -767,12 +766,12 @@ void ViewsManager::buildRelaitions()
     std::function<void(StorageIDPrivate)> expand = [&] (StorageIDPrivate id)
     {
         path.pushBack(id);
+        SCOPE_EXIT( path.popBack(); );
 
         if (!register_path(path))
             return;
 
         auto storage = storages.at(id);
-
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get()))
         {
             expand(materialized_view->getTargetTableId());
@@ -792,9 +791,6 @@ void ViewsManager::buildRelaitions()
                 expand(child);
             }
         }
-
-        path.popBack();
-        return;
     };
 
     expand(init_table_id);
@@ -877,15 +873,32 @@ Chain ViewsManager::createSelect(StorageIDPrivate view_id) const
     auto source_table_id = source_tables.at(view_id);
     auto input_header = input_headers.at(view_id);
 
-    auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform<PullingPipelineExecutor>>(
-        input_header, select_header,
-        select_query,
-        source_table_id, storages.at(source_table_id), metadata_snapshots.at(source_table_id),
-        view_id, storage, metadata_snapshots.at(view_id),
-        select_context);
+    if (select_context->getSettingsRef()[Setting::use_async_executor_for_materialized_views])
+    {
+        auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform<PullingAsyncPipelineExecutor>>(
+            input_header, select_header,
+            select_query,
+            source_table_id, storages.at(source_table_id), metadata_snapshots.at(source_table_id),
+            view_id, storage, metadata_snapshots.at(view_id),
+            select_context);
 
-    executing_inner_query->setRuntimeData(thread_groups.at(view_id));
-    result.addSource(std::move(executing_inner_query));
+        executing_inner_query->setRuntimeData(thread_groups.at(view_id));
+
+        result.addSource(std::move(executing_inner_query));
+    }
+    else
+    {
+        auto executing_inner_query = std::make_shared<ExecutingInnerQueryFromViewTransform<PullingPipelineExecutor>>(
+            input_header, select_header,
+            select_query,
+            source_table_id, storages.at(source_table_id), metadata_snapshots.at(source_table_id),
+            view_id, storage, metadata_snapshots.at(view_id),
+            select_context);
+
+        executing_inner_query->setRuntimeData(thread_groups.at(view_id));
+
+        result.addSource(std::move(executing_inner_query));
+    }
 
 #ifdef DEBUG_OR_SANITIZER_BUILD
     result.addSource(std::make_shared<DeduplicationToken::CheckTokenTransform>("Right before Inner query", input_header));
