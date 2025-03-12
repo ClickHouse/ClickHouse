@@ -1030,7 +1030,8 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
         # when the delay is too long (>50sec) broker will decide to remove us from the consumer group,
         # and will start answering "Broker: Unknown member"
         instance.wait_for_log_line(
-            "Exception during commit attempt: Local: Waiting for coordinator", timeout=45
+            "Exception during commit attempt: Local: Waiting for coordinator",
+            timeout=45,
         )
         instance.wait_for_log_line("All commit attempts failed", look_behind_lines=500)
 
