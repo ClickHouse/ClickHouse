@@ -8,7 +8,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 
 namespace ProfileEvents
 {
@@ -144,15 +143,13 @@ void FilterTransform::doTransform(Chunk & chunk)
         if (!mark_info)
             return;
 
-        const auto & data_part = mark_info->getDataPart();
-        auto storage_id = data_part->storage.getStorageID();
         query_condition_cache->write(
-                storage_id.uuid,
-                data_part->name,
-                *condition_hash,
-                mark_info->getMarkRanges(),
-                data_part->index_granularity->getMarksCount(),
-                data_part->index_granularity->hasFinalMark());
+                    mark_info->table_uuid,
+                    mark_info->part_name,
+                    *condition_hash,
+                    mark_info->mark_ranges,
+                    mark_info->marks_count,
+                    mark_info->has_final_mark);
     };
 
     {
