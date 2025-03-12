@@ -687,6 +687,10 @@ public:
     void setMutationWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
     void setThrowOnUnknownWorkload(bool value);
+    UInt64 getConcurrentThreadsSoftLimitNum() const;
+    UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
+    String getConcurrentThreadsScheduler() const;
+    std::pair<UInt64, String> setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler);
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
