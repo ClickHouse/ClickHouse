@@ -55,8 +55,9 @@ public:
     const std::vector<ManifestFileEntry> & getFiles() const;
     Int32 getSchemaId() const;
 
-    DB::KeyDescription getPartitionKeyDescription() const;
-    std::vector<Int32> getPartitionKeyColumnIDs() const;
+    bool hasPartitionKey() const;
+    const DB::KeyDescription & getPartitionKeyDescription() const;
+    const std::vector<Int32> & getPartitionKeyColumnIDs() const;
 private:
     std::unique_ptr<ManifestFileContentImpl> impl;
 };

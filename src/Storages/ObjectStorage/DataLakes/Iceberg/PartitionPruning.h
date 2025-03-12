@@ -25,7 +25,7 @@ class PartitionPruner
 private:
     const DB::IcebergSchemaProcessor * schema_processor;
     Int32 current_schema_id;
-    DB::KeyDescription partition_key;
+    const DB::KeyDescription * partition_key;
 
     std::optional<DB::KeyCondition> key_condition;
     /// NOTE: tricky part to support RENAME column in partition key.

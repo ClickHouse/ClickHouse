@@ -20,6 +20,7 @@ namespace DB::ErrorCodes
 extern const int ILLEGAL_COLUMN;
 extern const int UNSUPPORTED_METHOD;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
+extern const int LOGICAL_ERROR;
 }
 
 namespace Iceberg
@@ -186,7 +187,8 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         this->partition_column_ids.push_back(source_id);
     }
 
-    this->partition_key_description = DB::KeyDescription::getKeyFromAST(partition_key_ast, ColumnsDescription(partition_columns_description), context);
+    if (!partition_column_ids.empty())
+        this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(partition_key_ast, ColumnsDescription(partition_columns_description), context));
 
     std::optional<const ColumnNullable *> sequence_number_column = std::nullopt;
     if (format_version_ > 1)
@@ -258,12 +260,19 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     }
 }
 
-DB::KeyDescription ManifestFileContent::getPartitionKeyDescription() const
+bool ManifestFileContent::hasPartitionKey() const
 {
-    return impl->partition_key_description;
+    return !impl->partition_column_ids.empty();
 }
 
-std::vector<Int32> ManifestFileContent::getPartitionKeyColumnIDs() const
+const DB::KeyDescription & ManifestFileContent::getPartitionKeyDescription() const
+{
+    if (!hasPartitionKey())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Table has no partition key, but it was requested");
+    return *(impl->partition_key_description);
+}
+
+const std::vector<Int32> & ManifestFileContent::getPartitionKeyColumnIDs() const
 {
     return impl->partition_column_ids;
 }

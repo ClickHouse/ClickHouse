@@ -107,12 +107,14 @@ PartitionPruner::PartitionPruner(
     DB::ContextPtr context)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
-    , partition_key(manifest_file.getPartitionKeyDescription())
 {
-    auto transformed_dag = transformFilterDagForManifest(filter_dag, manifest_file.getSchemaId(), manifest_file.getPartitionKeyColumnIDs());
-
-    if (transformed_dag != nullptr)
-        key_condition.emplace(transformed_dag.get(), context, partition_key.column_names, partition_key.expression, true /* single_point */);
+    if (manifest_file.hasPartitionKey())
+    {
+        partition_key = &manifest_file.getPartitionKeyDescription();
+        auto transformed_dag = transformFilterDagForManifest(filter_dag, manifest_file.getSchemaId(), manifest_file.getPartitionKeyColumnIDs());
+        if (transformed_dag != nullptr)
+            key_condition.emplace(transformed_dag.get(), context, partition_key->column_names, partition_key->expression, true /* single_point */);
+    }
 }
 
 bool PartitionPruner::canBePruned(const ManifestFileEntry & entry) const
@@ -130,7 +132,7 @@ bool PartitionPruner::canBePruned(const ManifestFileEntry & entry) const
     }
 
     bool can_be_true = key_condition->mayBeTrueInRange(
-        partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
+        partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
 
     return !can_be_true;
 }

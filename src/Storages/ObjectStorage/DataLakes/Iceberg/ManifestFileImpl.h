@@ -55,7 +55,7 @@ public:
 
     Int32 schema_id;
 
-    DB::KeyDescription partition_key_description;
+    std::optional<DB::KeyDescription> partition_key_description;
     std::vector<Int32> partition_column_ids;
     // Size - number of files
     std::vector<ManifestFileEntry> files;
