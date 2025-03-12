@@ -102,7 +102,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), query->formatUnsafeWithCredentials());
+            configuration->getEngineName(), query->formatWithSecretsOneLine());
     }
 
     ASTs & args = expression_list->children;

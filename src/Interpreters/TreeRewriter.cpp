@@ -723,7 +723,7 @@ void collectJoinedColumns(TableJoin & analyzed_join, ASTTableJoin & table_join,
         if (any_keys_empty)
             throw DB::Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                                 "Cannot get JOIN keys from JOIN ON section: '{}', found keys: {}",
-                                table_join.on_expression->formatUnsafeWithCredentials(), TableJoin::formatClauses(analyzed_join.getClauses()));
+                                table_join.on_expression->formatWithSecretsOneLine(), TableJoin::formatClauses(analyzed_join.getClauses()));
 
         if (is_asof)
         {
@@ -1244,7 +1244,7 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         ss << "Missing columns:";
         for (const auto & name : unknown_required_source_columns)
             ss << " '" << name << "'";
-        ss << " while processing: '" << query->formatUnsafeWithCredentials() << "'";
+        ss << " while processing: '" << query->formatWithSecretsOneLine() << "'";
 
         ss << ", required columns:";
         for (const auto & name : columns_context.requiredColumns())

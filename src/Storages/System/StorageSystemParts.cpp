@@ -316,7 +316,7 @@ void StorageSystemParts::processNextStorage(
         add_ttl_info_map(part->ttl_infos.moves_ttl);
 
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatUnsafeWithCredentials());
+            columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatWithSecretsOneLine());
 
         add_ttl_info_map(part->ttl_infos.recompression_ttl);
         add_ttl_info_map(part->ttl_infos.group_by_ttl);

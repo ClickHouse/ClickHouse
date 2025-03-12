@@ -110,7 +110,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const Settings & settings_,
     DataKind data_kind_)
     : query(query_->clone())
-    , query_str(query->formatUnsafeWithCredentials())
+    , query_str(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
     , settings(settings_)
@@ -1162,7 +1162,7 @@ template <typename E>
 void AsynchronousInsertQueue::finishWithException(
     const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception)
 {
-    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", query->formatUnsafeWithCredentials()));
+    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", query->formatWithSecretsOneLine()));
 
     for (const auto & entry : entries)
     {

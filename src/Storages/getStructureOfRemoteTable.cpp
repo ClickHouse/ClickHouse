@@ -51,7 +51,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
             return table_function_ptr->getActualTableStructure(context, /*is_insert_query*/ true);
         }
 
-        auto table_func_name = table_func_ptr->formatUnsafeWithCredentials();
+        auto table_func_name = table_func_ptr->formatWithSecretsOneLine();
         query = "DESC TABLE " + table_func_name;
     }
     else

@@ -127,12 +127,12 @@ const auto & getNode(const CNFQuery::AtomicFormula & atom)
 
 std::string nodeToString(const ASTPtr & ast)
 {
-    return ast->formatUnsafeWithCredentials();
+    return ast->formatWithSecretsOneLine();
 }
 
 std::string nodeToString(const QueryTreeNodePtr & node)
 {
-    return node->toAST()->formatUnsafeWithCredentials();
+    return node->toAST()->formatWithSecretsOneLine();
 }
 
 const auto & getArguments(const ASTFunction * function)

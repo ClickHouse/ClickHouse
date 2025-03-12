@@ -83,7 +83,7 @@ ColumnDefault & ColumnDefault::operator=(ColumnDefault && other) noexcept
 
 bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs)
 {
-    auto expression_str = [](const ASTPtr & expr) { return expr ? expr->formatUnsafeWithCredentials() : String(); };
+    auto expression_str = [](const ASTPtr & expr) { return expr ? expr->formatWithSecretsOneLine() : String(); };
     return lhs.kind == rhs.kind && expression_str(lhs.expression) == expression_str(rhs.expression);
 }
 

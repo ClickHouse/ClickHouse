@@ -240,7 +240,7 @@ CNFQuery TreeCNFConverter::toCNF(
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
             "Cannot convert expression '{}' to CNF, because it produces to many clauses."
             "Size of boolean formula in CNF can be exponential of size of source formula.",
-            query->formatUnsafeWithCredentials());
+            query->formatWithSecretsOneLine());
 
     return *cnf;
 }

@@ -2834,7 +2834,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         if (!ParserDataType().parse(pos, type_ast, expected))
             return Action::NONE;
 
-        layers.back()->pushOperand(std::make_shared<ASTLiteral>(type_ast->formatUnsafeWithCredentials()));
+        layers.back()->pushOperand(std::make_shared<ASTLiteral>(type_ast->formatWithSecretsOneLine()));
         return Action::OPERATOR;
     }
 

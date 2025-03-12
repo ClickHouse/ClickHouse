@@ -67,7 +67,7 @@ void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const Sto
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatUnsafeWithCredentials());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatWithSecretsOneLine());
 
     TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
         table_function,

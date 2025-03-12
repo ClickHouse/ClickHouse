@@ -98,7 +98,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
         return std::make_shared<CompressionCodecNone>();
     }
 
-    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", ast->formatUnsafeWithCredentials());
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", ast->formatWithSecretsOneLine());
 }
 
 

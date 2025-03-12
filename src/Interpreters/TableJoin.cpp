@@ -1024,7 +1024,7 @@ void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
 {
     auto & cond_ast = is_left ? clauses.back().on_filter_condition_left : clauses.back().on_filter_condition_right;
     LOG_TRACE(getLogger("TableJoin"), "Adding join condition for {} table: {} -> {}",
-              (is_left ? "left" : "right"), ast ? ast->formatUnsafeWithCredentials() : "NULL", cond_ast ? cond_ast->formatUnsafeWithCredentials() : "NULL");
+              (is_left ? "left" : "right"), ast ? ast->formatWithSecretsOneLine() : "NULL", cond_ast ? cond_ast->formatWithSecretsOneLine() : "NULL");
     addJoinConditionWithAnd(cond_ast, ast);
 }
 
@@ -1076,7 +1076,7 @@ void TableJoin::assertHasOneOnExpr() const
         for (const auto & onexpr : clauses)
             text.push_back(onexpr.formatDebug());
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}: [{}], query: '{}'",
-                            clauses.size(), fmt::join(text, " | "), table_join.formatUnsafeWithCredentials());
+                            clauses.size(), fmt::join(text, " | "), table_join.formatWithSecretsOneLine());
     }
 }
 

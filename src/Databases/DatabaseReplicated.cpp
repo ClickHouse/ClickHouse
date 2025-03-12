@@ -805,7 +805,7 @@ void DatabaseReplicated::dumpLocalTablesForDebugOnly(const ContextPtr & local_co
     {
         auto ast_ptr = tryGetCreateTableQuery(table_name, local_context);
         if (ast_ptr)
-            LOG_DEBUG(log, "[local] Table {} create query is {}", table_name, ast_ptr->formatUnsafeWithCredentials());
+            LOG_DEBUG(log, "[local] Table {} create query is {}", table_name, ast_ptr->formatWithSecretsOneLine());
         else
             LOG_DEBUG(log, "[local] Table {} has no create query", table_name);
     }
@@ -820,7 +820,7 @@ void DatabaseReplicated::dumpTablesInZooKeeperForDebugOnly() const
         auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
         if (query_ast)
         {
-            LOG_DEBUG(log, "[zookeeper] Table {} create query is {}", table_name, query_ast->formatUnsafeWithCredentials());
+            LOG_DEBUG(log, "[zookeeper] Table {} create query is {}", table_name, query_ast->formatWithSecretsOneLine());
         }
         else
         {
@@ -853,17 +853,17 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
             {
                 LOG_DEBUG(log, "AST for table {} is the same (nullptr) in local and ZK", table_name);
             }
-            else if (local_ast_ptr != nullptr && zk_ast_ptr != nullptr && local_ast_ptr->formatUnsafeWithCredentials() != zk_ast_ptr->formatUnsafeWithCredentials())
+            else if (local_ast_ptr != nullptr && zk_ast_ptr != nullptr && local_ast_ptr->formatWithSecretsOneLine() != zk_ast_ptr->formatWithSecretsOneLine())
             {
-                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper {}", table_name, local_ast_ptr->formatUnsafeWithCredentials(), zk_ast_ptr->formatUnsafeWithCredentials());
+                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper {}", table_name, local_ast_ptr->formatWithSecretsOneLine(), zk_ast_ptr->formatWithSecretsOneLine());
             }
             else if (local_ast_ptr == nullptr)
             {
-                LOG_ERROR(log, "AST differs for table {}, local nullptr, in zookeeper {}", table_name, zk_ast_ptr->formatUnsafeWithCredentials());
+                LOG_ERROR(log, "AST differs for table {}, local nullptr, in zookeeper {}", table_name, zk_ast_ptr->formatWithSecretsOneLine());
             }
             else if (zk_ast_ptr == nullptr)
             {
-                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper nullptr", table_name, local_ast_ptr->formatUnsafeWithCredentials());
+                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper nullptr", table_name, local_ast_ptr->formatWithSecretsOneLine());
             }
             else
             {
@@ -875,7 +875,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
             if (local_ast_ptr == nullptr)
                 LOG_ERROR(log, "Table {} exists locally, but missing in ZK", table_name);
             else
-                LOG_ERROR(log, "Table {} exists locally with AST {}, but missing in ZK", table_name, local_ast_ptr->formatUnsafeWithCredentials());
+                LOG_ERROR(log, "Table {} exists locally with AST {}, but missing in ZK", table_name, local_ast_ptr->formatWithSecretsOneLine());
         }
     }
     for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk)
@@ -884,7 +884,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
         {
             auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(table_name, table_metadata);
             if (zk_ast_ptr == nullptr)
-                LOG_ERROR(log, "Table {} exists in ZK with AST {}, but missing locally", table_name, zk_ast_ptr->formatUnsafeWithCredentials());
+                LOG_ERROR(log, "Table {} exists in ZK with AST {}, but missing locally", table_name, zk_ast_ptr->formatWithSecretsOneLine());
             else
                 LOG_ERROR(log, "Table {} exists in ZK, but missing locally", table_name);
         }
@@ -1129,7 +1129,7 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     LOG_DEBUG(log, "Proposing query: {}", query->formatForLogging());
 
     DDLLogEntry entry;
-    entry.query = query->formatUnsafeWithCredentials();
+    entry.query = query->formatWithSecretsOneLine();
     entry.initiator = ddl_worker->getCommonHostID();
     entry.setSettingsIfRequired(query_context);
     entry.tracing_context = OpenTelemetry::CurrentContext();

@@ -12,7 +12,7 @@ std::string astToString(ASTPtr ast_ptr)
     if (!ast_ptr)
         return "";
 
-    return ast_ptr->formatUnsafeWithCredentials();
+    return ast_ptr->formatWithSecretsOneLine();
 }
 
 std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadataPtr metadata_snapshot, MergeTreeDataPartPtr part)

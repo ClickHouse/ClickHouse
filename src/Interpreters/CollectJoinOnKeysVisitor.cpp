@@ -69,7 +69,7 @@ void CollectJoinOnKeysMatcher::Data::addAsofJoinKeys(const ASTPtr & left_ast, co
     {
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
                         "Expressions {} and {} are from the same table but from different arguments of equal function in ASOF JOIN",
-                        left_ast->formatUnsafeWithCredentials(), right_ast->formatUnsafeWithCredentials());
+                        left_ast->formatWithSecretsOneLine(), right_ast->formatWithSecretsOneLine());
     }
 }
 
@@ -112,7 +112,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
         {
             if (!isDeterminedIdentifier(table_numbers.first))
                 throw Exception(ErrorCodes::AMBIGUOUS_COLUMN_NAME,
-                    "Ambiguous columns in expression '{}' in JOIN ON section", ast->formatUnsafeWithCredentials());
+                    "Ambiguous columns in expression '{}' in JOIN ON section", ast->formatWithSecretsOneLine());
             data.analyzed_join.addJoinCondition(ast, isLeftIdentifier(table_numbers.first));
             return;
         }
@@ -137,7 +137,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     {
         if (data.asof_left_key || data.asof_right_key)
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "ASOF JOIN expects exactly one inequality in ON section. "
-                            "Unexpected '{}'", ast->formatUnsafeWithCredentials());
+                            "Unexpected '{}'", ast->formatWithSecretsOneLine());
 
         ASTPtr left = func.arguments->children.at(0);
         ASTPtr right = func.arguments->children.at(1);
@@ -148,7 +148,7 @@ void CollectJoinOnKeysMatcher::visit(const ASTFunction & func, const ASTPtr & as
     }
 
     throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Unsupported JOIN ON conditions. Unexpected '{}'",
-                    ast->formatUnsafeWithCredentials());
+                    ast->formatWithSecretsOneLine());
 }
 
 void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<const ASTIdentifier *> & out)
@@ -157,7 +157,7 @@ void CollectJoinOnKeysMatcher::getIdentifiers(const ASTPtr & ast, std::vector<co
     {
         if (func->name == "arrayJoin")
             throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Not allowed function in JOIN ON. Unexpected '{}'",
-                            ast->formatUnsafeWithCredentials());
+                            ast->formatWithSecretsOneLine());
     }
     else if (const auto * ident = ast->as<ASTIdentifier>())
     {

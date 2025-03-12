@@ -104,7 +104,7 @@ void StorageURLCluster::updateQueryToSendIfNeeded(ASTPtr & query, const StorageS
 
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
     if (!expression_list)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatUnsafeWithCredentials());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function urlCluster, got '{}'", query->formatWithSecretsOneLine());
 
     TableFunctionURLCluster::updateStructureAndFormatArgumentsIfNeeded(
         table_function,

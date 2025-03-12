@@ -184,7 +184,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);
-    entry.query = query_ptr->formatUnsafeWithCredentials();
+    entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);
     entry.tracing_context = OpenTelemetry::CurrentContext();

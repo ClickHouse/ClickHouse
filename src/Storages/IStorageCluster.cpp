@@ -211,7 +211,7 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
             std::vector<IConnectionPool::Entry>{try_results.front()},
-            query_to_send->formatUnsafeWithCredentials(),
+            query_to_send->formatWithSecretsOneLine(),
             getOutputHeader(),
             new_context,
             /*throttler=*/nullptr,

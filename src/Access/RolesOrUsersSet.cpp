@@ -182,14 +182,14 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
 String RolesOrUsersSet::toString() const
 {
     auto ast = toAST();
-    return serializeAST(*ast);
+    return ast->formatWithSecretsOneLine();
 }
 
 
 String RolesOrUsersSet::toStringWithNames(const AccessControl & access_control) const
 {
     auto ast = toASTWithNames(access_control);
-    return serializeAST(*ast);
+    return ast->formatWithSecretsOneLine();
 }
 
 

@@ -78,7 +78,7 @@ std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
     auto res = getKeyValueFromASTImpl(ast, true, context);
 
     if (!res || !std::holds_alternative<Field>(res->second))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to get key value from ast '{}'", ast->formatUnsafeWithCredentials());
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to get key value from ast '{}'", ast->formatWithSecretsOneLine());
 
     return {res->first, std::get<Field>(res->second)};
 }

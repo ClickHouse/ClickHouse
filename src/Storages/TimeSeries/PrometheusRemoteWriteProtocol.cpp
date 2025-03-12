@@ -544,7 +544,7 @@ namespace
                 ContextMutablePtr insert_context = Context::createCopy(context);
                 insert_context->setCurrentQueryId(context->getCurrentQueryId() + ":" + String{toString(table_kind)});
 
-                LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), insert_query->formatUnsafeWithCredentials());
+                LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), insert_query->formatWithSecretsOneLine());
 
                 InterpreterInsertQuery interpreter(
                     insert_query,

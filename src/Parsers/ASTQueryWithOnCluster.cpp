@@ -12,7 +12,7 @@ namespace DB
 
 std::string ASTQueryWithOnCluster::getRewrittenQueryWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const
 {
-    return getRewrittenASTWithoutOnCluster(params)->formatUnsafeWithCredentials();
+    return getRewrittenASTWithoutOnCluster(params)->formatWithSecretsOneLine();
 }
 
 

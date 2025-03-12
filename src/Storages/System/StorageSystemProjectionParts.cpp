@@ -262,7 +262,7 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
         {
             if (part->default_codec)
-                columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatUnsafeWithCredentials());
+                columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatWithSecretsOneLine());
             else
                 columns[res_index++]->insertDefault();
         }

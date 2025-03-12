@@ -190,7 +190,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
                 encryption_codecs_pos.insert(i);
         }
 
-        String codec_description = codecs_descriptions->formatUnsafeWithCredentials();
+        String codec_description = codecs_descriptions->formatWithSecretsOneLine();
 
         if (sanity_check)
         {
@@ -266,7 +266,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         return ast;
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", ast->formatUnsafeWithCredentials());
+    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", ast->formatWithSecretsOneLine());
 }
 
 

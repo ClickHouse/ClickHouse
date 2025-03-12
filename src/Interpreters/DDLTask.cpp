@@ -243,7 +243,7 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
 {
     /// Convert rewritten AST back to string.
-    query_str = query->formatUnsafeWithCredentials();
+    query_str = query->formatWithSecretsOneLine();
     query_for_logging = query->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]);
 }
 

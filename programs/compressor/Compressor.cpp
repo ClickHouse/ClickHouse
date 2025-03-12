@@ -58,7 +58,7 @@ void checkAndWriteHeader(DB::ReadBuffer & in, DB::WriteBuffer & out)
         if (size_compressed > DBMS_MAX_COMPRESSED_SIZE)
             throw DB::Exception(DB::ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed. Most likely corrupted data.");
 
-        DB::writeText(codec->getFullCodecDesc()->formatUnsafeWithCredentials(), out);
+        DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), out);
         DB::writeChar('\t', out);
         DB::writeText(size_decompressed, out);
         DB::writeChar('\t', out);

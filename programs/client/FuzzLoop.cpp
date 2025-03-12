@@ -475,7 +475,7 @@ bool Client::processBuzzHouseQuery(const String & full_query)
 
         if ((orig_ast = parseQuery(begin, begin + full_query.size(), client_context->getSettingsRef(), false)))
         {
-            String query_to_execute = orig_ast->formatUnsafeWithCredentials();
+            String query_to_execute = orig_ast->formatWithSecretsOneLine();
             const auto res = processFuzzingStep(query_to_execute, orig_ast, false);
             server_up &= res.value_or(true);
         }

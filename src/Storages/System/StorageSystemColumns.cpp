@@ -187,7 +187,7 @@ protected:
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(toString(column.default_desc.kind));
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(column.default_desc.expression->formatUnsafeWithCredentials());
+                        res_columns[res_index++]->insert(column.default_desc.expression->formatWithSecretsOneLine());
                 }
                 else
                 {
@@ -241,7 +241,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (column.codec)
-                        res_columns[res_index++]->insert(column.codec->formatUnsafeWithCredentials());
+                        res_columns[res_index++]->insert(column.codec->formatWithSecretsOneLine());
                     else
                         res_columns[res_index++]->insertDefault();
                 }

@@ -86,7 +86,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     if (!kind_literal || kind_literal->value.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function '{}' requires a String argument for EXPLAIN kind, got '{}'",
-            getName(), kind_arg->formatUnsafeWithCredentials());
+            getName(), kind_arg->formatWithSecretsOneLine());
 
     ASTExplainQuery::ExplainKind kind = ASTExplainQuery::fromString(kind_literal->value.safeGet<String>());
     auto explain_query = std::make_shared<ASTExplainQuery>(kind);
@@ -95,7 +95,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
     if (!settings_arg || settings_arg->value.getType() != Field::Types::String)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function '{}' requires a serialized string settings argument, got '{}'",
-            getName(), function->arguments->children[1]->formatUnsafeWithCredentials());
+            getName(), function->arguments->children[1]->formatWithSecretsOneLine());
 
     const auto & settings_str = settings_arg->value.safeGet<String>();
     if (!settings_str.empty())
@@ -117,7 +117,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
         if (!subquery)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function '{}' requires a subquery argument, got '{}'",
-                getName(), subquery_arg->formatUnsafeWithCredentials());
+                getName(), subquery_arg->formatWithSecretsOneLine());
 
         if (subquery->children.empty())
             throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
@@ -128,7 +128,7 @@ void TableFunctionExplain::parseArguments(const ASTPtr & ast_function, ContextPt
         if (!query_arg->as<ASTSelectWithUnionQuery>())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Table function '{}' requires a EXPLAIN's SELECT query argument, got '{}'",
-                getName(), query_arg->formatUnsafeWithCredentials());
+                getName(), query_arg->formatWithSecretsOneLine());
 
         explain_query->setExplainedQuery(query_arg);
     }

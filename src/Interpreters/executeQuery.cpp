@@ -419,7 +419,7 @@ QueryLogElement logQueryStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     if (settings[Setting::log_formatted_queries])
-        elem.formatted_query = query_ast->formatUnsafeWithCredentials();
+        elem.formatted_query = query_ast->formatWithSecretsOneLine();
     elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast->getQueryKind();
 
@@ -739,7 +739,7 @@ void logExceptionBeforeStart(
     {
         elem.query_kind = ast->getQueryKind();
         if (settings[Setting::log_formatted_queries])
-            elem.formatted_query = ast->formatUnsafeWithCredentials();
+            elem.formatted_query = ast->formatWithSecretsOneLine();
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);

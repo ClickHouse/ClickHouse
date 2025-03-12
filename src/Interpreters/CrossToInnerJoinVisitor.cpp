@@ -192,7 +192,7 @@ std::vector<JoinedElement> getTables(const ASTSelectQuery & select)
             if (!join->children.empty())
                 throw Exception(
                     ErrorCodes::LOGICAL_ERROR, "CROSS JOIN has {} expressions: [{}, ...]",
-                    join->children.size(), join->children[0]->formatUnsafeWithCredentials());
+                    join->children.size(), join->children[0]->formatWithSecretsOneLine());
         }
     }
 
@@ -240,7 +240,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
             if (joined.tableJoin()->kind != JoinKind::Cross)
                 continue;
 
-            String query_before = joined.tableJoin()->formatUnsafeWithCredentials();
+            String query_before = joined.tableJoin()->formatWithSecretsOneLine();
             bool rewritten = false;
             const auto & expr_it = asts_to_join_on.find(i);
             if (expr_it != asts_to_join_on.end())
@@ -248,7 +248,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                 ASTPtr on_expr = makeOnExpression(expr_it->second);
                 if (rewritten = joined.rewriteCrossToInner(on_expr); rewritten)
                 {
-                    LOG_DEBUG(getLogger("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, joined.tableJoin()->formatUnsafeWithCredentials());
+                    LOG_DEBUG(getLogger("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, joined.tableJoin()->formatWithSecretsOneLine());
                 }
             }
 
@@ -262,7 +262,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                     "Please, try to simplify WHERE section "
                     "or set the setting `cross_to_inner_join_rewrite` to 1 to allow slow CROSS JOIN for this case "
                     "(cannot rewrite '{} WHERE {}' to INNER JOIN)",
-                    query_before, select.where()->formatUnsafeWithCredentials());
+                    query_before, select.where()->formatWithSecretsOneLine());
             }
         }
     }

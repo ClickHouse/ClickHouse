@@ -85,7 +85,7 @@ ProjectionsDescription ProjectionsDescription::clone() const
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name && definition_ast->formatUnsafeWithCredentials() == other.definition_ast->formatUnsafeWithCredentials();
+    return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
 }
 
 ProjectionDescription

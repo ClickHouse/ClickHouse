@@ -186,7 +186,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     {
         Tuple tuple;
         tuple.push_back(main_table.getShortName());
-        tuple.push_back(additional_filter_ast->formatUnsafeWithCredentials());
+        tuple.push_back(additional_filter_ast->formatWithSecretsOneLine());
         new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
     }
 

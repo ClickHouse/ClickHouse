@@ -45,4 +45,3 @@ struct fmt::formatter<DB::ASTPtr>
         return fmt::format_to(context.out(), "{}", DB::serializeAST(*ast));
     }
 };
-

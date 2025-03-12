@@ -134,7 +134,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             if (!settings_ast->as<ASTSetQuery>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN settings must be a SET query");
-            settings_str = settings_ast->formatUnsafeWithCredentials();
+            settings_str = settings_ast->formatWithSecretsOneLine();
         }
 
         const ASTPtr & explained_ast = explain_query.getExplainedQuery();
@@ -432,7 +432,7 @@ std::optional<std::pair<char, String>> ParserCompoundIdentifier::splitSpecialDel
 ASTPtr createFunctionCast(const ASTPtr & expr_ast, const ASTPtr & type_ast)
 {
     /// Convert to canonical representation in functional form: CAST(expr, 'type')
-    auto type_literal = std::make_shared<ASTLiteral>(type_ast->formatUnsafeWithCredentials());
+    auto type_literal = std::make_shared<ASTLiteral>(type_ast->formatWithSecretsOneLine());
     return makeASTFunction("CAST", expr_ast, std::move(type_literal));
 }
 

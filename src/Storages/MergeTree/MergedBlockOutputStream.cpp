@@ -370,7 +370,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         write_plain_file(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, [&](auto & buffer)
         {
-            writeText(default_codec->getFullCodecDesc()->formatUnsafeWithCredentials(), buffer);
+            writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
         });
     }
     else

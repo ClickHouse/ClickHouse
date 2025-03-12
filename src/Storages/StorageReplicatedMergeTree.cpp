@@ -6464,7 +6464,7 @@ void StorageReplicatedMergeTree::alter(
     {
         if (!query)
             return "";
-        return query->formatUnsafeWithCredentials();
+        return query->formatWithSecretsOneLine();
     };
 
     const auto zookeeper = getZooKeeperAndAssertNotReadonly();

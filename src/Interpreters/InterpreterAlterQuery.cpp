@@ -176,7 +176,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                     if (!mut_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
-                            command_ast->formatUnsafeWithCredentials(), rewritten_command_ast->formatUnsafeWithCredentials());
+                            command_ast->formatWithSecretsOneLine(), rewritten_command_ast->formatWithSecretsOneLine());
                 }
             }
 

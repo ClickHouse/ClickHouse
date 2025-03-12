@@ -287,6 +287,7 @@ public:
         bool one_line,
         bool show_secrets,
         bool print_pretty_type_names,
+        bool hilite,
         IdentifierQuotingRule identifier_quoting_rule,
         IdentifierQuotingStyle identifier_quoting_style) const;
 
@@ -297,7 +298,9 @@ public:
       */
     String formatForLogging(size_t max_length = 0) const;
     String formatForErrorMessage() const;
-    String formatUnsafeWithCredentials() const;
+    String formatWithSecretsOneLine() const;
+    /// Intended for pretty-printing (multi-line + hiliting).
+    String formatWithSecretsPretty() const;
 
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
 

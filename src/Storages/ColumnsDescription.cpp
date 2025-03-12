@@ -107,7 +107,7 @@ ColumnDescription & ColumnDescription::operator=(ColumnDescription && other) noe
 
 bool ColumnDescription::operator==(const ColumnDescription & other) const
 {
-    auto ast_to_str = [](const ASTPtr & ast) { return ast ? ast->formatUnsafeWithCredentials() : String{}; };
+    auto ast_to_str = [](const ASTPtr & ast) { return ast ? ast->formatWithSecretsOneLine() : String{}; };
 
     return name == other.name
         && type->equals(*other.type)
