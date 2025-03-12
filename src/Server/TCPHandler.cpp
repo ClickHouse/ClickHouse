@@ -119,6 +119,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool apply_settings_from_server;
+    extern const SettingsUInt64 parallel_block_marshaling_threads;
 }
 
 namespace ServerSetting
@@ -2515,7 +2516,7 @@ void TCPHandler::initBlockQueue(QueryState & state)
     if (!state.block_queue)
     {
         state.block_queue = std::make_unique<BlockQueue>(
-            8,
+            state.query_context->getSettingsRef()[Setting::parallel_block_marshaling_threads],
             [this, &state](const Block & block)
             {
                 return prepare(

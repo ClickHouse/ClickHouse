@@ -458,7 +458,12 @@ void ConvertBlobColumnsTransform::transform(Chunk & chunk)
 
 Pipe createRemoteSourcePipe(
     RemoteQueryExecutorPtr query_executor,
-    bool add_aggregation_info, bool add_totals, bool add_extremes, bool async_read, bool async_query_sending)
+    bool add_aggregation_info,
+    bool add_totals,
+    bool add_extremes,
+    bool async_read,
+    bool async_query_sending,
+    size_t parallel_marshalling_threads)
 {
     Pipe pipe(std::make_shared<RemoteSource>(query_executor, add_aggregation_info, async_read, async_query_sending));
 
@@ -468,10 +473,9 @@ Pipe createRemoteSourcePipe(
     if (add_extremes)
         pipe.addExtremesSource(std::make_shared<RemoteExtremesSource>(query_executor));
 
-    const size_t threads = 8;
-    pipe.resize(threads);
+    pipe.resize(parallel_marshalling_threads);
     pipe.addSimpleTransform([&](const Block & header) { return std::make_shared<ConvertBlobColumnsTransform>(header); });
-    pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), threads));
+    pipe.addTransform(std::make_shared<SortChunksBySequenceNumber>(pipe.getHeader(), parallel_marshalling_threads));
 
     return pipe;
 }
