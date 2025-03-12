@@ -6,6 +6,21 @@
 namespace DB::QueryPlanOptimizations
 {
 
+/// This is not really an optimization. The purpose of this function is to extract and hash the filter condition of WHERE or PREWHERE
+/// filters. These correspond to these steps:
+///
+///   [...]
+///     ^
+///     |
+///     |
+///   FilterStep
+///     ^
+///     |
+///     |
+///   ReadFromMergeTree
+///
+/// Later on, the hashed filter condition will be used as a key in the query condition cache.
+///
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (!optimization_settings.use_query_condition_cache)
