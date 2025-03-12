@@ -52,10 +52,14 @@ public:
             {"to_weights", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), nullptr, "Array"},
         };
         validateFunctionArguments(*this, arguments, args_descriptors);
+        std::vector<DataTypePtr> nested_types;
+        nested_types.reserve(2);
         for (size_t index = 2; index < 4; ++index)
         {
             const DataTypeArray * array_type = checkAndGetDataType<DataTypeArray>(arguments[index].type.get());
-            auto nested_type = array_type->getNestedType();
+            const DataTypePtr nested_type = array_type->getNestedType();
+            nested_types.emplace_back(nested_type);
+            // TODO: extend to work with different types?
             if (!WhichDataType(nested_type).isFloat64())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -64,12 +68,18 @@ public:
                     getName(),
                     nested_type->getName());
         }
+
+        if (nested_types[0]->getName() != nested_types[1]->getName())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Arguments 3 and 4 of function {} must be arrays of the same types. Found {} and {} instead.",
+                getName(),
+                nested_types[0]->getName(),
+                nested_types[1]->getName());
         return std::make_shared<DataTypeFloat64>();
     }
 
-    ColumnPtr executeImpl(
-        const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count
-    ) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         size_t num_arguments = arguments.size();
 
@@ -109,7 +119,7 @@ private:
         const size_t n = to.size();
         if (m==0 || n==0)
         {
-            return static_cast<UInt32>(std::max(m, n));
+            return static_cast<UInt32>(m + n);
         }
         PODArrayWithStackMemory<size_t, 32> v0(n + 1);
 
@@ -128,11 +138,10 @@ private:
             }
         }
         return static_cast<UInt32>(v0[n]);
-
     }
 
     template <typename N>
-    bool simpleLevenshteinString(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
+    bool levenshteinString(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
     {
         const N * from_data = checkAndGetColumn<N>(&columns[0]->getData());
         const N * to_data = checkAndGetColumn<N>(&columns[1]->getData());
@@ -170,7 +179,7 @@ private:
     }
 
     template <typename N>
-    bool simpleLevenshteinNumber(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
+    bool levenshteinNumber(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
     {
         const ColumnVectorOrDecimal<N> * column_from = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[0]->getData());
         const ColumnVectorOrDecimal<N> * column_to = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[1]->getData());
@@ -196,7 +205,7 @@ private:
         return true;
     }
 
-    void SimpleLevenshteinGeneric(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
+    void levenshteinGeneric(std::vector<const ColumnArray *> columns, ColumnUInt32::Container & res_values) const
     {
         const ColumnArray * column_from = columns[0];
         const ColumnArray * column_to = columns[1];
@@ -211,7 +220,196 @@ private:
         }
     }
 
-    ColumnPtr weightedLevenshteinImpl(std::vector<const ColumnArray *> columns, bool similarity) const
+    template<typename N>
+    Float64 levenshteinDistanceWeighted(const std::vector<N> from, const std::vector<N> to,
+                                        const std::vector<Float64> from_weights, const std::vector<Float64> to_weights) const
+    {
+        auto sum_vec = [](const std::vector<Float64> & vector) -> Float64
+        {
+            return std::accumulate(vector.begin(), vector.end(), .0);
+        };
+        const size_t m = std::min(from.size(), to.size());
+        const size_t n = std::max(from.size(), to.size());
+        if (m==0 || n==0)
+        {
+            return sum_vec(from_weights) + sum_vec(to_weights);
+        }
+        // Consume minimum memory by allocating sliding vectors for min `m`
+        auto & lhs = (from.size() <= to.size()) ? from : to;
+        const std::vector<Float64> & lhs_w = (from.size() <= to.size()) ? from_weights : to_weights;
+        auto & rhs = (from.size() <= to.size()) ? to : from;
+        const std::vector<Float64> & rhs_w = (from.size() <= to.size()) ? to_weights : from_weights;
+
+        PODArrayWithStackMemory<Float64, 64> v0(m + 1);
+        PODArrayWithStackMemory<Float64, 64> v1(m + 1);
+
+        v0[0] = 0;
+        std::partial_sum(lhs_w.begin(), lhs_w.end(), v0.begin() + 1);
+
+        for (size_t i = 0; i < n; ++i)
+        {
+            v1[0] = v0[0] + rhs_w[i];
+            for (size_t j = 0; j < m; ++j)
+            {
+                if (lhs[j] == rhs[i])
+                {
+                    v1[j + 1] = v0[j];
+                    continue;
+                }
+
+                v1[j+1] = std::min({v0[j + 1] + rhs_w[i],          // deletion
+                                    v1[j] + lhs_w[j],              // insertion
+                                    v0[j] + lhs_w[j] + rhs_w[i]}); // substitusion
+            }
+            std::swap(v0, v1);
+        }
+        return v0[m];
+    }
+
+    template <typename N>
+    bool levenshteinWeightedString(std::vector<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
+    {
+        const N * from_data = checkAndGetColumn<N>(&columns[0]->getData());
+        const N * to_data = checkAndGetColumn<N>(&columns[1]->getData());
+        if (!from_data || !to_data)
+            return false;
+        const ColumnArray::Offsets & from_offsets = columns[0]->getOffsets();
+        ColumnArray::Offset prev_from_offset = 0;
+
+        const ColumnArray::Offsets & to_offsets = columns[1]->getOffsets();
+        ColumnArray::Offset prev_to_offset = 0;
+
+        const ColumnVector<Float64> * column_from_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[2]->getData());
+        const ColumnVector<Float64> * column_to_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[3]->getData());
+        if (!column_from_weights || !column_to_weights)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Function {} wrong type of weight columns",
+                getName());
+        const PaddedPODArray<Float64> & vec_from_weights = column_from_weights->getData();
+        const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
+        ColumnArray::Offset prev_from_weights_offset = 0;
+
+        const PaddedPODArray<Float64> & vec_to_weights = column_to_weights->getData();
+        const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
+        ColumnArray::Offset prev_to_weights_offset = 0;
+
+        for (size_t row = 0; row < columns[0]->size(); row++)
+        {
+            const size_t m = from_offsets[row] - prev_from_offset;
+            const size_t n = to_offsets[row] - prev_to_offset;
+            const std::vector<StringRef> & from = [&]()
+            {
+                std::vector<StringRef> temp;
+                temp.reserve(m);
+                for (size_t j = 0; j < m; ++j) { temp.emplace_back(from_data->getDataAt(prev_from_offset + j)); }
+                return temp;
+            }();
+            const std::vector<StringRef> & to = [&]()
+            {
+                std::vector<StringRef> temp;
+                temp.reserve(m);
+                for (size_t j = 0; j < n; ++j) { temp.emplace_back(to_data->getDataAt(prev_to_offset + j)); }
+                return temp;
+            }();
+            prev_from_offset = from_offsets[row];
+            prev_to_offset = to_offsets[row];
+
+            const std::vector<Float64> from_weights(vec_from_weights.begin() + prev_from_weights_offset, vec_from_weights.begin() + from_weights_offsets[row]);
+            prev_from_weights_offset = from_weights_offsets[row];
+            const std::vector<Float64> to_weights(vec_to_weights.begin() + prev_to_weights_offset, vec_to_weights.begin() + to_weights_offsets[row]);
+            prev_to_weights_offset = to_weights_offsets[row];
+
+            res_values[row] = levenshteinDistanceWeighted<StringRef>(from, to, from_weights, to_weights);
+        }
+        return true;
+    }
+
+    template <typename N>
+    bool levenshteinWeightedNumber(std::vector<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
+    {
+        const ColumnVectorOrDecimal<N> * column_from = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[0]->getData());
+        const ColumnVectorOrDecimal<N> * column_to = checkAndGetColumn<ColumnVectorOrDecimal<N>>(&columns[1]->getData());
+        if (!column_from || !column_to)
+            return false;
+        const PaddedPODArray<N> & vec_from = column_from->getData();
+        const ColumnArray::Offsets & from_offsets = columns[0]->getOffsets();
+        ColumnArray::Offset prev_from_offset = 0;
+
+        const PaddedPODArray<N> & vec_to = column_to->getData();
+        const ColumnArray::Offsets & to_offsets = columns[1]->getOffsets();
+        ColumnArray::Offset prev_to_offset = 0;
+
+        const ColumnVector<Float64> * column_from_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[2]->getData());
+        const ColumnVector<Float64> * column_to_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[3]->getData());
+        if (!column_from_weights || !column_to_weights)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Function {} wrong type of weight columns",
+                getName());
+        const PaddedPODArray<Float64> & vec_from_weights = column_from_weights->getData();
+        const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
+        ColumnArray::Offset prev_from_weights_offset = 0;
+
+        const PaddedPODArray<Float64> & vec_to_weights = column_to_weights->getData();
+        const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
+        ColumnArray::Offset prev_to_weights_offset = 0;
+
+        for (size_t row = 0; row < columns[0]->size(); row++)
+        {
+            const std::vector<N> from(vec_from.begin() + prev_from_offset, vec_from.begin() + from_offsets[row]);
+            prev_from_offset = from_offsets[row];
+            const std::vector<N> to(vec_to.begin() + prev_to_offset, vec_to.begin() + to_offsets[row]);
+            prev_to_offset = to_offsets[row];
+
+            const std::vector<Float64> from_weights(vec_from_weights.begin() + prev_from_weights_offset, vec_from_weights.begin() + from_weights_offsets[row]);
+            prev_from_weights_offset = from_weights_offsets[row];
+            const std::vector<Float64> to_weights(vec_to_weights.begin() + prev_to_weights_offset, vec_to_weights.begin() + to_weights_offsets[row]);
+            prev_to_weights_offset = to_weights_offsets[row];
+
+            res_values[row] = levenshteinDistanceWeighted<N>(from, to, from_weights, to_weights);
+        }
+        return true;
+    }
+
+    void levenshteinWeightedGeneric(std::vector<const ColumnArray *> columns, ColumnFloat64::Container & res_values) const
+    {
+        const ColumnArray * column_from = columns[0];
+        const ColumnArray * column_to = columns[1];
+
+        const ColumnVector<Float64> * column_from_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[2]->getData());
+        const ColumnVector<Float64> * column_to_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[3]->getData());
+        if (!column_from_weights || !column_to_weights)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Function {} wrong type of weight columns",
+                getName());
+        const PaddedPODArray<Float64> & vec_from_weights = column_from_weights->getData();
+        const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
+        ColumnArray::Offset prev_from_weights_offset = 0;
+
+        const PaddedPODArray<Float64> & vec_to_weights = column_to_weights->getData();
+        const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
+        ColumnArray::Offset prev_to_weights_offset = 0;
+
+        for (size_t row = 0; row < column_from->size(); row++)
+        {
+            // Effective Levenshtein realization from Common/levenshteinDistance
+            Array from = (*column_from)[row].safeGet<Array>();
+            Array to = (*column_to)[row].safeGet<Array>();
+            const std::vector<Field> from_vec(from.begin(), from.end());
+            const std::vector<Field> to_vec(to.begin(), to.end());
+
+            const std::vector<Float64> from_weights(vec_from_weights.begin() + prev_from_weights_offset, vec_from_weights.begin() + from_weights_offsets[row]);
+            prev_from_weights_offset = from_weights_offsets[row];
+            const std::vector<Float64> to_weights(vec_to_weights.begin() + prev_to_weights_offset, vec_to_weights.begin() + to_weights_offsets[row]);
+            prev_to_weights_offset = to_weights_offsets[row];
+
+            res_values[row] = levenshteinDistanceWeighted<Field>(from_vec, to_vec, from_weights, to_weights);
+        }
+    }
+
+    MutableColumnPtr weightedLevenshteinImpl(std::vector<const ColumnArray *> columns) const
     {
         for (size_t i = 0; i < 2; i++)
         {
@@ -224,7 +422,7 @@ private:
                 if (hs.size() != weights.size())
                     throw Exception(
                         ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH,
-                        "Arguments {} ({}, size {}) and {} ({}, size {}) of function {} must be arrays of the same size.",
+                        "Arguments {} ({}, size {}) and {} ({}, size {}) of function {} must be arrays of the same size",
                         toString(i + 1),
                         hs_column->getName(),
                         hs.size(),
@@ -237,68 +435,19 @@ private:
         auto res = ColumnFloat64::create();
         ColumnFloat64::Container & res_values = res->getData();
         res_values.resize(columns[0]->size());
-        auto get_float = [](const Field & element) -> Float64 { return element.safeGet<Float64>(); };
-        auto sum_array = [](const Array & array) -> Float64 {
-            return std::accumulate(array.begin(), array.end(), 0.0, [](Float64 acc, const Field &field){return acc + field.safeGet<Float64>();});
-        };
-        for (size_t row = 0; row < columns[0]->size(); row++)
-        {
-            // Levenshtein with sliding vectors and weighted elements
-            // https://www.codeproject.com/Articles/13525/Fast-memory-efficient-Levenshtein-algorithm
-            Array lhs = (*columns[0])[row].safeGet<Array>();
-            Array rhs = (*columns[1])[row].safeGet<Array>();
-            Array lhs_w = (*columns[2])[row].safeGet<Array>();
-            Array rhs_w = (*columns[3])[row].safeGet<Array>();
-            const size_t m = lhs.size();
-            const size_t n = rhs.size();
-            if (m==0 || n==0)
-            {
-                if (similarity)
-                    res_values[row] = m == n;
-                else
-                    res_values[row] = sum_array(lhs_w) + sum_array(rhs_w);
-                continue;
-            }
-            PODArrayWithStackMemory<Float64, 64> v0(m + 1);
-            PODArrayWithStackMemory<Float64, 64> v1(m + 1);
-            v0[0] = 0;
-            for (size_t i = 0; i < m; i++)
-            {
-                v0[i + 1] = v0[i] + get_float(lhs_w[i]);
-            }
-
-            for (size_t i = 0; i < n; ++i)
-            {
-                v1[0] = v0[0] + get_float(rhs_w[i]);
-                for (size_t j = 0; j < m; ++j)
-                {
-                    if (lhs[j] == rhs[i])
-                    {
-                        v1[j + 1] = v0[j];
-                        continue;
-                    }
-
-                    v1[j+1] = std::min({v0[j + 1] + get_float(rhs_w[i]),                     // deletion
-                                        v1[j] + get_float(lhs_w[j]),                         // insertion
-                                        v0[j] + get_float(lhs_w[j]) + get_float(rhs_w[i])}); // substitusion
-                }
-                std::swap(v0, v1);
-            }
-            if (!similarity)
-            {
-                // weighed Levenshtein
-                res_values[row] = v0[m];
-                continue;
-            }
-            // arrays similarity
-            Float64 weights_sum = sum_array(lhs_w) + sum_array(rhs_w);
-            if (weights_sum == 0.0)
-            {
-                res_values[row] = 1.0;
-                continue;
-            }
-            res_values[row] = 1 - (v0[m]/weights_sum);
-        }
+        if (levenshteinWeightedNumber<UInt8>(columns, res_values) || levenshteinWeightedNumber<UInt16>(columns, res_values)
+            || levenshteinWeightedNumber<UInt32>(columns, res_values) || levenshteinWeightedNumber<UInt64>(columns, res_values)
+            || levenshteinWeightedNumber<UInt128>(columns, res_values) || levenshteinWeightedNumber<UInt256>(columns, res_values)
+            || levenshteinWeightedNumber<Int8>(columns, res_values) || levenshteinWeightedNumber<Int16>(columns, res_values)
+            || levenshteinWeightedNumber<Int32>(columns, res_values) || levenshteinWeightedNumber<Int64>(columns, res_values)
+            || levenshteinWeightedNumber<Int128>(columns, res_values) || levenshteinWeightedNumber<Int256>(columns, res_values)
+            || levenshteinWeightedNumber<Float32>(columns, res_values) || levenshteinWeightedNumber<Float64>(columns, res_values)
+            || levenshteinWeightedNumber<Decimal32>(columns, res_values) || levenshteinWeightedNumber<Decimal64>(columns, res_values)
+            || levenshteinWeightedNumber<Decimal128>(columns, res_values) || levenshteinWeightedNumber<Decimal256>(columns, res_values)
+            || levenshteinWeightedNumber<DateTime64>(columns, res_values)
+            || levenshteinWeightedString<ColumnString>(columns, res_values) || levenshteinWeightedString<ColumnFixedString>(columns, res_values))
+            return res;
+        levenshteinWeightedGeneric(columns, res_values);
         return res;
     }
 };
@@ -328,19 +477,19 @@ ColumnPtr FunctionArrayLevenshtein<SimpleLevenshtein>::execute(std::vector<const
     auto res = ColumnUInt32::create();
     ColumnUInt32::Container & res_values = res->getData();
     res_values.resize(columns[0]->size());
-    if (simpleLevenshteinNumber<UInt8>(columns, res_values) || simpleLevenshteinNumber<UInt16>(columns, res_values)
-        || simpleLevenshteinNumber<UInt32>(columns, res_values) || simpleLevenshteinNumber<UInt64>(columns, res_values)
-        || simpleLevenshteinNumber<UInt128>(columns, res_values) || simpleLevenshteinNumber<UInt256>(columns, res_values)
-        || simpleLevenshteinNumber<Int8>(columns, res_values) || simpleLevenshteinNumber<Int16>(columns, res_values)
-        || simpleLevenshteinNumber<Int32>(columns, res_values) || simpleLevenshteinNumber<Int64>(columns, res_values)
-        || simpleLevenshteinNumber<Int128>(columns, res_values) || simpleLevenshteinNumber<Int256>(columns, res_values)
-        || simpleLevenshteinNumber<Float32>(columns, res_values) || simpleLevenshteinNumber<Float64>(columns, res_values)
-        || simpleLevenshteinNumber<Decimal32>(columns, res_values) || simpleLevenshteinNumber<Decimal64>(columns, res_values)
-        || simpleLevenshteinNumber<Decimal128>(columns, res_values) || simpleLevenshteinNumber<Decimal256>(columns, res_values)
-        || simpleLevenshteinNumber<DateTime64>(columns, res_values)
-        || simpleLevenshteinString<ColumnString>(columns, res_values) || simpleLevenshteinString<ColumnFixedString>(columns, res_values))
+    if (levenshteinNumber<UInt8>(columns, res_values) || levenshteinNumber<UInt16>(columns, res_values)
+        || levenshteinNumber<UInt32>(columns, res_values) || levenshteinNumber<UInt64>(columns, res_values)
+        || levenshteinNumber<UInt128>(columns, res_values) || levenshteinNumber<UInt256>(columns, res_values)
+        || levenshteinNumber<Int8>(columns, res_values) || levenshteinNumber<Int16>(columns, res_values)
+        || levenshteinNumber<Int32>(columns, res_values) || levenshteinNumber<Int64>(columns, res_values)
+        || levenshteinNumber<Int128>(columns, res_values) || levenshteinNumber<Int256>(columns, res_values)
+        || levenshteinNumber<Float32>(columns, res_values) || levenshteinNumber<Float64>(columns, res_values)
+        || levenshteinNumber<Decimal32>(columns, res_values) || levenshteinNumber<Decimal64>(columns, res_values)
+        || levenshteinNumber<Decimal128>(columns, res_values) || levenshteinNumber<Decimal256>(columns, res_values)
+        || levenshteinNumber<DateTime64>(columns, res_values)
+        || levenshteinString<ColumnString>(columns, res_values) || levenshteinString<ColumnFixedString>(columns, res_values))
         return res;
-    SimpleLevenshteinGeneric(columns, res_values);
+    levenshteinGeneric(columns, res_values);
     return res;
 }
 
@@ -353,7 +502,7 @@ struct Weighted
 template <>
 ColumnPtr FunctionArrayLevenshtein<Weighted>::execute(std::vector<const ColumnArray *> columns) const
 {
-    return weightedLevenshteinImpl(columns, false);
+    return weightedLevenshteinImpl(columns);
 }
 
 struct Similarity
@@ -365,7 +514,46 @@ struct Similarity
 template <>
 ColumnPtr FunctionArrayLevenshtein<Similarity>::execute(std::vector<const ColumnArray *> columns) const
 {
-    return weightedLevenshteinImpl(columns, true);
+     MutableColumnPtr distance = weightedLevenshteinImpl(columns);
+     auto result = ColumnFloat64::create();
+     ColumnFloat64::Container & res_values = result->getData();
+     res_values.resize(distance->size());
+     const ColumnVector<Float64> * column_from_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[2]->getData());
+     const ColumnVector<Float64> * column_to_weights = checkAndGetColumn<ColumnVector<Float64>>(&columns[3]->getData());
+     if (!column_from_weights || !column_to_weights)
+         throw Exception(
+                 ErrorCodes::LOGICAL_ERROR,
+                 "Function {} wrong type of weight columns",
+                 getName());
+     const PaddedPODArray<Float64> & vec_from_weights = column_from_weights->getData();
+     const ColumnArray::Offsets & from_weights_offsets = columns[2]->getOffsets();
+     ColumnArray::Offset prev_from_weights_offset = 0;
+
+     const PaddedPODArray<Float64> & vec_to_weights = column_to_weights->getData();
+     const ColumnArray::Offsets & to_weights_offsets = columns[3]->getOffsets();
+     ColumnArray::Offset prev_to_weights_offset = 0;
+     for (size_t row = 0; row < distance->size(); row++)
+     {
+         const std::vector<Float64> from_weights(vec_from_weights.begin() + prev_from_weights_offset, vec_from_weights.begin() + from_weights_offsets[row]);
+         prev_from_weights_offset = from_weights_offsets[row];
+         const std::vector<Float64> to_weights(vec_to_weights.begin() + prev_to_weights_offset, vec_to_weights.begin() + to_weights_offsets[row]);
+         prev_to_weights_offset = to_weights_offsets[row];
+
+         if (distance->getFloat64(row) == 0)
+         {
+             res_values[row] = 1.0;
+             continue;
+         }
+         Float64 weights_sum = std::accumulate(from_weights.begin(), from_weights.end(), 0.0) +
+                               std::accumulate(to_weights.begin(), to_weights.end(), 0.0);
+         if (weights_sum == 0.0)
+         {
+             res_values[row] = 1.0;
+             continue;
+         }
+         res_values[row] = 1.0 - (distance->getFloat64(row) / weights_sum);
+     }
+     return result;
 }
 
 REGISTER_FUNCTION(ArrayLevenshtein)

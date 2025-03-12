@@ -11,6 +11,15 @@ INSERT INTO simple_levenshtein VALUES
 SELECT arrayLevenshtein(lhs, rhs) FROM simple_levenshtein;
 SELECT '';
 
+-- arrayLevenshtein for different types
+SELECT arrayLevenshtein(['1', '2'], ['1']),
+  arrayLevenshtein([toFixedString('1', 16), toFixedString('2', 16)], [toFixedString('1', 16)]),
+  arrayLevenshtein([toUInt16(1)], [toUInt16(2), 1]),
+  arrayLevenshtein([toFloat32(1.1), 2], [toFloat32(1.1)]),
+  arrayLevenshtein([toFloat64(1.1), 2], [toFloat64(1.1)]),
+  arrayLevenshtein([toDate('2025-01-01'), toDate('2025-01-02')], [toDate('2025-01-01')]);
+SELECT '';
+
 -- arrayLevenshteinWeighted
 CREATE TABLE weighted_levenshtein (lhs Array(String), rhs Array(String), lhs_weights Array(Float64), rhs_weights Array(Float64)) ENGINE MergeTree ORDER BY tuple();
 INSERT INTO weighted_levenshtein VALUES
@@ -26,6 +35,15 @@ INSERT INTO weighted_levenshtein VALUES
   (['A', 'B'], ['C', 'A', 'B'], [1, 2], [4, 5, 6]),
   (['A', 'B', 'C', 'D', 'E', 'F', 'G'], ['A', 'B', 'X', 'D', 'E', 'Y', 'G'], [1, 1, 1, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1, 1]);
 SELECT arrayLevenshteinWeighted(lhs, rhs, lhs_weights, rhs_weights) FROM weighted_levenshtein;
+SELECT '';
+
+-- arrayLevenshtein for different types
+SELECT arrayLevenshteinWeighted(['1', '2'], ['1'], [1., 2], [1.]),
+  arrayLevenshteinWeighted([toFixedString('1', 16), toFixedString('2', 16)], [toFixedString('1', 16)], [1., 2], [1.]),
+  arrayLevenshteinWeighted([toUInt16(1)], [toUInt16(2), 1], [1.], [2., 1]),
+  arrayLevenshteinWeighted([toFloat32(1.1), 2], [toFloat32(1.1)], [1., 2], [1.]),
+  arrayLevenshteinWeighted([toFloat64(1.1), 2], [toFloat64(1.1)], [1., 2], [1.]),
+  arrayLevenshteinWeighted([toDate('2025-01-01'), toDate('2025-01-02')], [toDate('2025-01-01')], [1., 2], [1.]);
 SELECT '';
 
 -- arraySimilarity
