@@ -621,7 +621,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCasin, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCacos, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCatan, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCpow, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCpow, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCcosh, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCacosh, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCsinh, 0, 0, 1, 1),
