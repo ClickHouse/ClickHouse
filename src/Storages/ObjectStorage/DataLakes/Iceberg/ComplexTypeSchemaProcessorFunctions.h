@@ -43,6 +43,7 @@ public:
     struct Edge
     {
         String path;
+        String new_path;
         TransformType parent_type;
     };
 
