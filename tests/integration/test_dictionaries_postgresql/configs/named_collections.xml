@@ -15,7 +15,7 @@
             <port>5432</port>
             <database>postgres_database</database>
             <table>test_table</table>
-            <schema>test_schema</schema>
+            <schema>test_schema_2</schema>
         </postgres2>
         <postgres3>
             <user>postgres</user>
