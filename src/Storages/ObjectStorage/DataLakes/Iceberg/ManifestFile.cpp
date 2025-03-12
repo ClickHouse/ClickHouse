@@ -225,11 +225,10 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         const auto file_path = getProperFilePathFromMetadataInfo(file_path_string_column->getDataAt(i).toView(), common_path, table_location);
 
         DB::Row partition_key_value;
-        std::unordered_map<Int32, Range> partition_ranges;
-        for (size_t j = 0; j < partition_columns.size(); ++j)
+        for (const auto & partition_column : partition_columns)
         {
             Field partition_value;
-            partition_columns[j]->get(i, partition_value);
+            partition_column->get(i, partition_value);
             partition_key_value.emplace_back(partition_value);
         }
         FileEntry file = FileEntry{DataFileEntry{file_path}};
