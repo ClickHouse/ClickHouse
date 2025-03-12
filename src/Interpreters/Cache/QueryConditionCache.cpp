@@ -1,5 +1,8 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
-#include <Storages/MergeTree/MergeTreeData.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
+#include <Common/logger_useful.h>
+#include <IO/WriteHelpers.h>
 
 namespace ProfileEvents
 {
