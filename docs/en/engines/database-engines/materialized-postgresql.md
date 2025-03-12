@@ -5,6 +5,7 @@ sidebar_position: 60
 title: 'MaterializedPostgreSQL'
 description: 'Creates a ClickHouse database with tables from PostgreSQL database.'
 ---
+
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 

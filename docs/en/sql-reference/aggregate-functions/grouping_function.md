@@ -1,5 +1,7 @@
 ---
 slug: /sql-reference/aggregate-functions/grouping_function
+title: 'GROUPING'
+description: 'Documentation for the GROUPING aggregate function.'
 ---
 
 # GROUPING

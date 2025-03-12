@@ -1,5 +1,7 @@
 ---
 slug: /guides/developer/transactional
+title: 'Transactional (ACID) support'
+description: 'Page describing transactional (ACID) support in ClickHouse'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

@@ -4,7 +4,10 @@ slug: /operations/system-tables/asynchronous_metrics
 title: 'system.asynchronous_metrics'
 keywords: ['system table', 'asynchronous_metrics']
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.asynchronous_metrics
 
 <SystemTableCloud/>
 
