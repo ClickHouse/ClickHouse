@@ -22,6 +22,7 @@
 #include <IO/Operators.h>
 #include <Core/SortDescription.h>
 #include <Planner/PlannerActionsVisitor.h>
+#include <Common/logger_useful.h>
 
 #include <stack>
 #include <base/sort.h>
@@ -248,6 +249,8 @@ const ActionsDAG::Node & ActionsDAG::addAlias(const Node & child, std::string al
     node.result_type = child.result_type;
     node.result_name = std::move(alias);
     node.column = child.column;
+    LOG_DEBUG(&Poco::Logger::get("DAG"), "Adding child {}", child.result_name);
+    LOG_DEBUG(&Poco::Logger::get("DAG"), "CHILD HAS COLUMN {}", child.column != nullptr);
     node.children.emplace_back(&child);
 
     return addNode(std::move(node));
@@ -1409,6 +1412,7 @@ std::string ActionsDAG::dumpDAG() const
             if (i)
                 out << ", ";
             out << map[node.children[i]];
+            out << "|" << node.children[i]->result_name;
         }
         out << ")";
 

@@ -6,6 +6,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IteratorWrapper.h>
+#include <Storages/KeyDescription.h>
 
 #include <cstdint>
 #include <variant>
@@ -36,23 +37,15 @@ struct DataFileEntry
 
 using FileEntry = std::variant<DataFileEntry>; // In the future we will add PositionalDeleteFileEntry and EqualityDeleteFileEntry here
 
+/// Description of Data file in manifest file
 struct ManifestFileEntry
 {
     ManifestEntryStatus status;
     Int64 added_sequence_number;
-    std::unordered_map<Int32, DB::Range> partition_ranges;
 
     FileEntry file;
-
-    std::vector<DB::Range> getPartitionRanges(const std::vector<Int32> & partition_columns_ids) const;
+    DB::Row partition_key_value;
 };
-
-struct PartitionColumnInfo
-{
-    PartitionTransform transform;
-    Int32 source_id;
-};
-
 
 class ManifestFileContent
 {
@@ -61,10 +54,9 @@ public:
 
     const std::vector<ManifestFileEntry> & getFiles() const;
     Int32 getSchemaId() const;
-    const std::vector<PartitionColumnInfo> & getPartitionColumnInfos() const;
-    Int32 getPartitionSpecId() const;
 
-
+    DB::KeyDescription getPartitionKeyDescription() const;
+    std::vector<Int32> getPartitionKeyColumnIDs() const;
 private:
     std::unique_ptr<ManifestFileContentImpl> impl;
 };

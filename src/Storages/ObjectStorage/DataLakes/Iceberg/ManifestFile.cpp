@@ -10,6 +10,11 @@
 #include <Columns/ColumnTuple.h>
 #include <Poco/JSON/Parser.h>
 #include "DataTypes/DataTypeTuple.h"
+#include <Common/logger_useful.h>
+#include <Storages/ColumnsDescription.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/queryToString.h>
+#include <DataTypes/DataTypeNullable.h>
 
 namespace DB::ErrorCodes
 {
@@ -29,6 +34,7 @@ constexpr const char * SUBCOLUMN_FILE_PATH_NAME = "file_path";
 constexpr const char * SUBCOLUMN_CONTENT_NAME = "content";
 constexpr const char * SUBCOLUMN_PARTITION_NAME = "partition";
 
+
 const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles() const
 {
     return impl->files;
@@ -37,24 +43,6 @@ const std::vector<ManifestFileEntry> & ManifestFileContent::getFiles() const
 Int32 ManifestFileContent::getSchemaId() const
 {
     return impl->schema_id;
-}
-
-std::vector<DB::Range> ManifestFileEntry::getPartitionRanges(const std::vector<Int32> & partition_columns_ids) const
-{
-    std::vector<DB::Range> filtered_partition_ranges;
-    filtered_partition_ranges.reserve(partition_columns_ids.size());
-    for (const auto & partition_column_id : partition_columns_ids)
-    {
-        filtered_partition_ranges.push_back(partition_ranges.at(partition_column_id));
-    }
-    return filtered_partition_ranges;
-}
-
-
-const std::vector<PartitionColumnInfo> & ManifestFileContent::getPartitionColumnInfos() const
-{
-    chassert(impl != nullptr);
-    return impl->partition_column_infos;
 }
 
 
@@ -73,7 +61,8 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     Int32 schema_id_,
     const IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number,
-    const String & table_location)
+    const String & table_location,
+    DB::ContextPtr context)
 {
     this->schema_id = schema_id_;
 
@@ -167,26 +156,33 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     std::vector<uint8_t> partition_spec_json_bytes = avro_metadata["partition-spec"];
     String partition_spec_json_string
         = String(reinterpret_cast<char *>(partition_spec_json_bytes.data()), partition_spec_json_bytes.size());
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Partition json spec string {}", partition_spec_json_string);
     Poco::Dynamic::Var partition_spec_json = parser.parse(partition_spec_json_string);
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
     std::vector<ColumnPtr> partition_columns;
+    DB::NamesAndTypesList partition_columns_description;
+    std::shared_ptr<DB::ASTFunction> partition_key_ast = std::make_shared<DB::ASTFunction>();
+    partition_key_ast->name = "tuple";
+    partition_key_ast->arguments = std::make_shared<DB::ASTExpressionList>();
+    partition_key_ast->children.push_back(partition_key_ast->arguments);
 
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
         auto current_field = partition_specification->getObject(static_cast<UInt32>(i));
 
         auto source_id = current_field->getValue<Int32>("source-id");
-        PartitionTransform transform = getTransform(current_field->getValue<String>("transform"));
+        DB::NameAndTypePair current_column = schema_processor.getFieldCharacteristics(schema_id, source_id);
 
-        if (transform == PartitionTransform::Unsupported || transform == PartitionTransform::Void)
-        {
-            continue;
-        }
-
-        partition_column_infos.emplace_back(transform, source_id);
+        partition_columns_description.emplace_back(current_column.name, removeNullable(current_column.type));
+        partition_key_ast->arguments->children.push_back(getASTFromTransform(current_field->getValue<String>("transform"), partition_columns_description.back().name));
         partition_columns.push_back(removeNullable(big_partition_tuple->getColumnPtr(i)));
+        this->partition_column_ids.push_back(source_id);
     }
+
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "PARTITION KEY AST {}", queryToString(partition_key_ast));
+    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "GOT NAMES AND TYPES {}", partition_columns_description.toString());
+    this->partition_key_description = DB::KeyDescription::getKeyFromAST(partition_key_ast, ColumnsDescription(partition_columns_description), context);
 
     std::optional<const ColumnNullable *> sequence_number_column = std::nullopt;
     if (format_version_ > 1)
@@ -224,17 +220,15 @@ ManifestFileContentImpl::ManifestFileContentImpl(
 
         const auto file_path = getProperFilePathFromMetadataInfo(file_path_string_column->getDataAt(i).toView(), common_path, table_location);
 
+        DB::Row partition_key_value;
         std::unordered_map<Int32, Range> partition_ranges;
         for (size_t j = 0; j < partition_columns.size(); ++j)
         {
-            const Int32 source_id = partition_column_infos[j].source_id;
-            partition_ranges.emplace(
-                source_id,
-                getPartitionRange(
-                    partition_column_infos[j].transform,
-                    i,
-                    partition_columns[j],
-                    schema_processor.getFieldCharacteristics(schema_id, source_id).type));
+            Field partition_value;
+            partition_columns[j]->get(i, partition_value);
+
+            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "PARTITION KEY {} VALUE: {}", j, partition_value.dump());
+            partition_key_value.emplace_back(partition_value);
         }
         FileEntry file = FileEntry{DataFileEntry{file_path}};
 
@@ -259,8 +253,18 @@ ManifestFileContentImpl::ManifestFileContentImpl(
                     break;
             }
         }
-        this->files.emplace_back(status, added_sequence_number, partition_ranges, file);
+        this->files.emplace_back(status, added_sequence_number, file, partition_key_value);
     }
+}
+
+DB::KeyDescription ManifestFileContent::getPartitionKeyDescription() const
+{
+    return impl->partition_key_description;
+}
+
+std::vector<Int32> ManifestFileContent::getPartitionKeyColumnIDs() const
+{
+    return impl->partition_column_ids;
 }
 
 }

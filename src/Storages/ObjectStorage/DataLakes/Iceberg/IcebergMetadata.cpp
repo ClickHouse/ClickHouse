@@ -462,7 +462,9 @@ ManifestFileContent IcebergMetadata::initializeManifestFile(const String & filen
         schema_id,
         schema_processor,
         inherited_sequence_number,
-        table_location);
+        table_location,
+        getContext());
+
     return ManifestFileContent(std::move(manifest_file_impl));
 }
 
@@ -498,24 +500,6 @@ IcebergSnapshot IcebergMetadata::getSnapshot(const String & filename) const
     return IcebergSnapshot{getManifestList(filename)};
 }
 
-std::vector<Int32>
-getRelevantPartitionColumnIds(const ManifestFileIterator & entry, const IcebergSchemaProcessor & schema_processor, Int32 current_schema_id)
-{
-    std::vector<Int32> partition_column_ids;
-    partition_column_ids.reserve(entry->getPartitionColumnInfos().size());
-    for (const auto & partition_column_info : entry->getPartitionColumnInfos())
-    {
-        std::optional<NameAndTypePair> name_and_type
-            = schema_processor.tryGetFieldCharacteristics(current_schema_id, partition_column_info.source_id);
-        if (name_and_type)
-        {
-            partition_column_ids.push_back(partition_column_info.source_id);
-        }
-    }
-    return partition_column_ids;
-}
-
-
 Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 {
     if (!current_snapshot)
@@ -527,39 +511,86 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
     Strings data_files;
     for (const auto & manifest_list_entry : *(current_snapshot->manifest_list_iterator))
     {
-        const auto & partition_columns_ids
-            = getRelevantPartitionColumnIds(manifest_list_entry.manifest_file, schema_processor, current_schema_id);
-        const auto & partition_pruning_columns_names_and_types
-            = schema_processor.tryGetFieldsCharacteristics(current_schema_id, partition_columns_ids);
-
-        ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            ActionsDAG(partition_pruning_columns_names_and_types), ExpressionActionsSettings(getContext()));
-        const KeyCondition partition_key_condition(
-            filter_dag, getContext(), partition_pruning_columns_names_and_types.getNames(), partition_minmax_idx_expr);
-
-        const auto & data_files_in_manifest = manifest_list_entry.manifest_file->getFiles();
-        for (const auto & manifest_file_entry : data_files_in_manifest)
+        if (filter_dag != nullptr)
         {
-            if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
+            auto partition_key = manifest_list_entry.manifest_file->getPartitionKeyDescription();
+
+            auto partition_column_ids = manifest_list_entry.manifest_file->getPartitionKeyColumnIDs();
+            int32_t schema_id_manifest = manifest_list_entry.manifest_file->getSchemaId();
+            ActionsDAG dag_with_renames;
+
+            for (size_t i = 0; i < partition_column_ids.size(); ++i)
             {
-                if (partition_key_condition
-                        .checkInHyperrectangle(
-                            manifest_file_entry.getPartitionRanges(partition_columns_ids),
-                            partition_pruning_columns_names_and_types.getTypes())
-                        .can_be_true)
+                const auto & column_id = partition_column_ids[i];
+                const auto column_name_in_manifest = schema_processor.tryGetFieldCharacteristics(schema_id_manifest, column_id);
+                if (auto new_column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id); new_column && new_column->name != column_name_in_manifest->name)
+                {
+                    auto * node = &dag_with_renames.addInput(column_name_in_manifest->name, column_name_in_manifest->type);
+                    node = &dag_with_renames.addAlias(*node, new_column->name);
+                    dag_with_renames.getOutputs().push_back(node);
+                }
+            }
+
+            const auto & data_files_in_manifest = manifest_list_entry.manifest_file->getFiles();
+            LOG_DEBUG(log, "RENAME DAG\n {}", dag_with_renames.dumpDAG());
+            LOG_DEBUG(log, "WORKING DAG\n {}", filter_dag->dumpDAG());
+            auto merged_dag = DB::ActionsDAG::merge(std::move(dag_with_renames), filter_dag->clone());
+            LOG_DEBUG(log, "NULLPTR {}", filter_dag->getOutputs().at(0) == nullptr);
+
+            LOG_DEBUG(log, "Merged DAG\n {}", merged_dag.dumpDAG());
+            const KeyCondition partition_key_condition(&merged_dag, getContext(), partition_key.column_names, partition_key.expression, true /* single_point */);
+            for (const auto & manifest_file_entry : data_files_in_manifest)
+            {
+                if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
+                {
+                    const auto & partition_value = manifest_file_entry.partition_key_value;
+
+                    LOG_DEBUG(log, "Partition value size {}", partition_value.size());
+                    std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
+                    for (auto & field : index_value)
+                    {
+                        LOG_DEBUG(log, "Field data {}", field.dump());
+                        // NULL_LAST
+                        if (field.isNull())
+                            field = POSITIVE_INFINITY;
+                    }
+
+                    bool can_be_true = partition_key_condition.mayBeTrueInRange(
+                        partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
+
+                    if (can_be_true)
+                    {
+                        if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
+                            data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
+                        LOG_DEBUG(log, "File {} is not prunned", std::get<DataFileEntry>(manifest_file_entry.file).file_name);
+                    }
+                    else
+                    {
+                        LOG_DEBUG(log, "File {} is prunned", std::get<DataFileEntry>(manifest_file_entry.file).file_name);
+                        ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
+                    }
+                }
+            }
+        }
+        else
+        {
+            const auto & data_files_in_manifest = manifest_list_entry.manifest_file->getFiles();
+            for (const auto & manifest_file_entry : data_files_in_manifest)
+            {
+                if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
                 {
                     if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
                         data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
                 }
-                else
-                    ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
             }
         }
     }
 
-
     if (!filter_dag)
-        return (cached_unprunned_files_for_current_snapshot = data_files).value();
+    {
+        cached_unprunned_files_for_current_snapshot = data_files;
+        return cached_unprunned_files_for_current_snapshot.value();
+    }
 
     return data_files;
 }

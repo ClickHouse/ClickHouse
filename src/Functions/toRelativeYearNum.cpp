@@ -8,10 +8,12 @@ namespace DB
 {
 
 using FunctionToRelativeYearNum = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToRelativeYearNumImpl<ResultPrecision::Standard>>;
+using FunctionToYearNumSinceEpoch = FunctionDateOrDateTimeToSomething<DataTypeUInt16, ToYearNumSinceEpochImpl<ResultPrecision::Standard>>;
 
 REGISTER_FUNCTION(ToRelativeYearNum)
 {
     factory.registerFunction<FunctionToRelativeYearNum>();
+    factory.registerFunction<FunctionToYearNumSinceEpoch>();
 }
 
 }
