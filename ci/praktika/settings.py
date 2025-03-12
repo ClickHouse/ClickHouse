@@ -19,7 +19,7 @@ class _Settings:
     # Enables a single job (DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME) for building all platforms and merge
     ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB = False
     DOCKER_BUILD_ARM_LINUX_JOB_NAME = "Dockers Build (arm)"
-    DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME = "Dockers Build and Merge"
+    DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME = "Dockers Build (amd) and Merge"
     DOCKER_BUILD_AND_MERGE_RUNS_ON: Optional[List[str]] = None
     DOCKER_BUILD_ARM_RUNS_ON: Optional[List[str]] = None
 
