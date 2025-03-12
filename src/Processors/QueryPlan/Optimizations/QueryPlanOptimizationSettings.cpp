@@ -79,6 +79,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     optimize_projection = from[Setting::optimize_use_projections];
+    use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
@@ -88,7 +89,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class
     keep_logical_steps = false;
-    use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     is_explain = false;
 
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
