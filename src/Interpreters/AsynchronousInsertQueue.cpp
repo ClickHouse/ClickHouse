@@ -20,7 +20,6 @@
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -111,7 +110,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const Settings & settings_,
     DataKind data_kind_)
     : query(query_->clone())
-    , query_str(queryToString(query))
+    , query_str(query->formatUnsafeWithCredentials())
     , user_id(user_id_)
     , current_roles(current_roles_)
     , settings(settings_)
@@ -1163,7 +1162,7 @@ template <typename E>
 void AsynchronousInsertQueue::finishWithException(
     const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception)
 {
-    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", queryToString(query)));
+    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", query->formatUnsafeWithCredentials()));
 
     for (const auto & entry : entries)
     {

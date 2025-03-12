@@ -11,7 +11,6 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Columns/ColumnConst.h>
 #include <Core/Defines.h>
@@ -86,7 +85,7 @@ ProjectionsDescription ProjectionsDescription::clone() const
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name && queryToString(definition_ast) == queryToString(other.definition_ast);
+    return name == other.name && definition_ast->formatUnsafeWithCredentials() == other.definition_ast->formatUnsafeWithCredentials();
 }
 
 ProjectionDescription

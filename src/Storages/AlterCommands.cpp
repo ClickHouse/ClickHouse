@@ -34,7 +34,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSQLSecurity.h>
-#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
@@ -1122,7 +1121,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
         if (!metadata.table_ttl.definition_ast)
             return true;
         /// If TTL had not been changed, do not require mutations
-        return queryToString(metadata.table_ttl.definition_ast) != queryToString(ttl);
+        return metadata.table_ttl.definition_ast->formatUnsafeWithCredentials() != ttl->formatUnsafeWithCredentials();
     }
 
     if (!ttl || type != MODIFY_COLUMN)
@@ -1131,7 +1130,7 @@ bool AlterCommand::isTTLAlter(const StorageInMemoryMetadata & metadata) const
     bool column_ttl_changed = true;
     for (const auto & [name, ttl_ast] : metadata.columns.getColumnTTLs())
     {
-        if (name == column_name && queryToString(*ttl) == queryToString(*ttl_ast))
+        if (name == column_name && ttl->formatUnsafeWithCredentials() == ttl_ast->formatUnsafeWithCredentials())
         {
             column_ttl_changed = false;
             break;
@@ -1364,7 +1363,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
     {
         if (!query)
             return "";
-        return queryToString(query);
+        return query->formatUnsafeWithCredentials();
     };
 
     for (size_t i = 0; i < size(); ++i)

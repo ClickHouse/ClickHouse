@@ -3,7 +3,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 
 #include <Common/FieldAccurateComparison.h>
 
@@ -128,12 +127,12 @@ const auto & getNode(const CNFQuery::AtomicFormula & atom)
 
 std::string nodeToString(const ASTPtr & ast)
 {
-    return queryToString(ast);
+    return ast->formatUnsafeWithCredentials();
 }
 
 std::string nodeToString(const QueryTreeNodePtr & node)
 {
-    return queryToString(node->toAST());
+    return node->toAST()->formatUnsafeWithCredentials();
 }
 
 const auto & getArguments(const ASTFunction * function)

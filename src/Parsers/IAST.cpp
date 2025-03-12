@@ -188,6 +188,39 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
 
+String IAST::formatForLogging(size_t max_length) const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/max_length,
+        /*one_line=*/true,
+        /*show_secrets=*/false,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
+String IAST::formatForErrorMessage() const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        /*show_secrets=*/false,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
+String IAST::formatUnsafeWithCredentials() const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        /*show_secrets=*/true,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
 bool IAST::childrenHaveSecretParts() const
 {
     for (const auto & child : children)

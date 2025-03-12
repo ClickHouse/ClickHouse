@@ -5,7 +5,6 @@
 
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
@@ -103,7 +102,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), queryToString(query));
+            configuration->getEngineName(), query->formatUnsafeWithCredentials());
     }
 
     ASTs & args = expression_list->children;

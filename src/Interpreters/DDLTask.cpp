@@ -16,7 +16,6 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 
 
@@ -244,7 +243,7 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
 {
     /// Convert rewritten AST back to string.
-    query_str = queryToString(*query);
+    query_str = query->formatUnsafeWithCredentials();
     query_for_logging = query->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]);
 }
 
