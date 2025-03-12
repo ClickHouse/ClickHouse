@@ -1530,7 +1530,6 @@ For more details, see [GraphiteMergeTree](../../engines/table-engines/mergetree-
 </graphite_rollup_example>
 ```
 
-<<<<<<< HEAD
 ## google_protos_path {#google_protos_path}
 
 Defines a directory containing proto files for Protobuf types.
@@ -1607,9 +1606,6 @@ Example:
 ```
 
 ## http_port/https_port {#http_porthttps_port}
-=======
-## http_port/https_port
->>>>>>> origin/backport/25.1/77447
 
 The port for connecting to the server over HTTP(s).
 
@@ -1637,7 +1633,6 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-<<<<<<< HEAD
 ## http_options_response {#http_options_response}
 
 Used to add headers to the response in an `OPTIONS` HTTP request.
@@ -1669,9 +1664,6 @@ Example:
 ```
 
 ## hsts_max_age {#hsts_max_age}
-=======
-## hsts_max_age
->>>>>>> origin/backport/25.1/77447
 
 Expired time for HSTS in seconds.
 
@@ -1849,7 +1841,6 @@ Maximal number of requests through a single keep-alive connection until it will 
 <max_keep_alive_requests>10</max_keep_alive_requests>
 ```
 
-<<<<<<< HEAD
 ## ldap_servers {#ldap_servers}
 
 List LDAP servers with their connection parameters here to:
@@ -1917,9 +1908,6 @@ Example (typical Active Directory with configured user DN detection for further 
 ```
 
 ## listen_host {#listen_host}
-=======
-## listen_host
->>>>>>> origin/backport/25.1/77447
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -2208,7 +2196,6 @@ Keys:
 </send_crash_reports>
 ```
 
-<<<<<<< HEAD
 ## ssh_server {#ssh_server}
 
 The public part of the host key will be written to the known_hosts file
@@ -2313,9 +2300,6 @@ For the `volume_priority`:
 - The priority of volumes may not be identical.
 
 ## macros {#macros}
-=======
-## macros
->>>>>>> origin/backport/25.1/77447
 
 Parameter substitutions for replicated tables.
 
@@ -2348,7 +2332,6 @@ Type: String
 
 Default: ""
 
-<<<<<<< HEAD
 ## remap_executable {#remap_executable}
 
 Setting to reallocate memory for machine code ("text") using huge pages.
@@ -2366,9 +2349,6 @@ Example:
 ```
 
 ## max_open_files {#max_open_files}
-=======
-## max_open_files
->>>>>>> origin/backport/25.1/77447
 
 The maximum number of open files.
 
@@ -2382,7 +2362,6 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 <max_open_files>262144</max_open_files>
 ```
 
-<<<<<<< HEAD
 ## max_session_timeout {#max_session_timeout}
 
 Maximum session timeout, in seconds.
@@ -2396,9 +2375,6 @@ Example:
 ```
 
 ## max_table_size_to_drop {#max_table_size_to_drop}
-=======
-## max_table_size_to_drop
->>>>>>> origin/backport/25.1/77447
 
 Restriction on deleting tables.
 
@@ -2584,7 +2560,6 @@ For more information, see the MergeTreeSettings.h header file.
 </replicated_merge_tree>
 ```
 
-<<<<<<< HEAD
 ## opentelemetry_span_log {#opentelemetry_span_log}
 
 Settings for the [`opentelemetry_span_log`](../system-tables/opentelemetry_span_log.md) system table.
@@ -2611,9 +2586,6 @@ Example:
 ```
 
 ## openSSL {#openssl}
-=======
-## openSSL
->>>>>>> origin/backport/25.1/77447
 
 SSL client/server configuration.
 
@@ -3095,11 +3067,9 @@ The default server configuration file `config.xml` contains the following settin
 </crash_log>
 ```
 
-<<<<<<< HEAD
 ## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
 
 This setting specifies the cache path for custom (created from SQL) cached disks.
-`custom_cached_disks_base_directory` has higher priority for custom disks over `filesystem_caches_path` (found in `filesystem_caches_path.xml`),
 which is used if the former one is absent.
 The filesystem cache setting path must lie inside that directory,
 otherwise an exception will be thrown preventing the disk from being created.
@@ -3116,13 +3086,7 @@ Example:
 ```
 
 ## backup_log {#backup_log}
-=======
-## backup_log
->>>>>>> origin/backport/25.1/77447
 
-Settings for the [backup_log](../../operations/system-tables/backup_log.md) system table for logging `BACKUP` and `RESTORE` operations.
-
-Parameters:
 
 
 | Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
@@ -3158,11 +3122,9 @@ Parameters:
 </clickhouse>
 ```
 
-<<<<<<< HEAD
 ## blog_storage_log {#blog_storage_log}
 
 Settings for the [`blob_storage_log`](../system-tables/blob_storage_log.md) system table.
-
 <SystemLogParameters/>
 
 Example:
@@ -3178,13 +3140,7 @@ Example:
 ```
 
 ## query_masking_rules {#query_masking_rules}
-=======
-## query_masking_rules
->>>>>>> origin/backport/25.1/77447
 
-Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
-[`system.query_log`](/docs/en/operations/system-tables/query_log), [`system.text_log`](/docs/en/operations/system-tables/text_log), [`system.processes`](/docs/en/operations/system-tables/processes) tables, and in logs sent to the client. That allows preventing
-sensitive data leakage from SQL queries such as names, emails, personal identifiers or credit card numbers to logs.
 
 **Example**
 
@@ -3237,7 +3193,6 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 
 ## timezone
 
-<<<<<<< HEAD
 List of hosts which are allowed to be used in URL-related storage engines and table functions.
 
 When adding a host with the `\<host\>` xml tag:
@@ -3258,9 +3213,6 @@ For example:
 ## timezone {#timezone}
 
 The server's time zone.
-=======
-The server’s time zone.
->>>>>>> origin/backport/25.1/77447
 
 Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
 
@@ -3390,7 +3342,6 @@ Path to the file that contains:
 <users_config>users.xml</users_config>
 ```
 
-<<<<<<< HEAD
 ## validate_tcp_client_information {#validate_tcp_client_information}
 
 Determines whether validation of client information is enabled when a query packet is received.
@@ -3447,9 +3398,6 @@ The default settings are:
 ```
 
 ## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
-=======
-## wait_dictionaries_load_at_startup
->>>>>>> origin/backport/25.1/77447
 
 This setting allows to specify behavior if `dictionaries_lazy_load` is `false`.
 (If `dictionaries_lazy_load` is `true` this setting doesn't affect anything.)
@@ -3613,7 +3561,6 @@ Type: String
 
 Default: `/var/lib/clickhouse/access/`.
 
-<<<<<<< HEAD
 ## allow_plaintext_password {#allow_plaintext_password}
 
 Sets whether plaintext-password types (insecure) are allowed or not.
@@ -3668,9 +3615,6 @@ Accepted values are:
 ```
 
 ## user_directories {#user_directories}
-=======
-## user_directories
->>>>>>> origin/backport/25.1/77447
 
 Section of the configuration file that contains settings:
 - Path to configuration file with predefined users.
@@ -3728,7 +3672,6 @@ To add an LDAP server as a remote user directory of users that are not defined l
 </ldap>
 ```
 
-<<<<<<< HEAD
 ## top_level_domains_list {#top_level_domains_list}
 
 Defines a list of custom top level domains to add where each entry is, of the format `<name>/path/to/file</name>`.
@@ -3746,9 +3689,6 @@ See also:
 which accepts a custom TLD list name, returning the part of the domain that includes top-level subdomains up to the first significant subdomain.
 
 ## total_memory_profiler_step {#total_memory_profiler_step}
-=======
-## total_memory_profiler_step
->>>>>>> origin/backport/25.1/77447
 
 Sets the memory size (in bytes) for a stack trace at every peak allocation step. The data is stored in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `query_id` equal to an empty string.
 
