@@ -1838,24 +1838,24 @@ struct ToMonthNumSinceEpochImpl
     static auto execute(Int64 t, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return time_zone.toRelativeMonthNumSinceEpoch(t);
+            return time_zone.toMonthNumSinceEpoch(t);
         else
-            return static_cast<UInt16>(time_zone.toRelativeMonthNumSinceEpoch(t));
+            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(t));
     }
     static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeMonthNumSinceEpoch(static_cast<time_t>(t));
+        return time_zone.toMonthNumSinceEpoch(static_cast<time_t>(t));
     }
     static auto execute(Int32 d, const DateLUTImpl & time_zone)
     {
         if constexpr (precision_ == ResultPrecision::Extended)
-            return time_zone.toRelativeMonthNumSinceEpoch(ExtendedDayNum(d));
+            return time_zone.toMonthNumSinceEpoch(ExtendedDayNum(d));
         else
-            return static_cast<UInt16>(time_zone.toRelativeMonthNumSinceEpoch(ExtendedDayNum(d)));
+            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(ExtendedDayNum(d)));
     }
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
-        return time_zone.toRelativeMonthNumSinceEpoch(DayNum(d));
+        return time_zone.toMonthNumSinceEpoch(DayNum(d));
     }
     static constexpr bool hasPreimage() { return false; }
 

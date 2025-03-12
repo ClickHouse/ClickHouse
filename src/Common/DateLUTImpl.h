@@ -956,7 +956,7 @@ public:
     }
 
     template <typename DateOrTime>
-    Int32 toRelativeMonthNumSinceEpoch(DateOrTime v) const
+    Int32 toMonthNumSinceEpoch(DateOrTime v) const
     {
         const LUTIndex i = toLUTIndex(v);
         return (lut[i].year - 1970) * 12 + lut[i].month - 1;
