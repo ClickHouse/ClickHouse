@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/geo/svg
 sidebar_label: SVG
-title: "Functions for Generating SVG images from Geo data"
+title: 'Functions for Generating SVG images from Geo data'
 ---
 
 ## Svg {#svg}

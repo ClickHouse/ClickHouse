@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/urlCluster
 sidebar_position: 201
 sidebar_label: urlCluster
-title: "urlCluster"
-description: "Allows processing files from URL in parallel from many nodes in a specified cluster."
+title: 'urlCluster'
+description: 'Allows processing files from URL in parallel from many nodes in a specified cluster.'
 ---
 
 # urlCluster Table Function

@@ -1,9 +1,11 @@
 ---
-description: "System table containing information about in-progress data part moves of MergeTree tables. Each data part movement is represented by a single row."
+description: 'System table containing information about in-progress data part moves of MergeTree tables. Each data part movement is represented by a single row.'
 slug: /operations/system-tables/moves
-title: "system.moves"
-keywords: ["system table", "moves"]
+title: 'system.moves'
+keywords: ['system table', 'moves']
 ---
+
+# system.moves
 
 The table contains information about in-progress [data part moves](/sql-reference/statements/alter/partition#move-partitionpart) of [MergeTree](/engines/table-engines/mergetree-family/mergetree.md) tables. Each data part movement is represented by a single row.
 

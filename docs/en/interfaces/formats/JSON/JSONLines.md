@@ -1,5 +1,5 @@
 ---
-title: JSONLines
+title: 'JSONLines'
 slug: /interfaces/formats/JSONLines
 keywords: [JSONLines]
 ---

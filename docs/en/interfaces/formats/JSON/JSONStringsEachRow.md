@@ -1,5 +1,5 @@
 ---
-title: JSONStringsEachRow
+title: 'JSONStringsEachRow'
 slug: /interfaces/formats/JSONStringsEachRow
 keywords: [JSONStringsEachRow]
 input_format: false

@@ -2,7 +2,7 @@
 description:  "The TPC-H benchmark data set and queries."
 slug: /getting-started/example-datasets/tpch
 sidebar_label: TPC-H
-title: "TPC-H (1999)"
+title: 'TPC-H (1999)'
 ---
 
 A popular benchmark which models the internal data warehouse of a wholesale supplier.

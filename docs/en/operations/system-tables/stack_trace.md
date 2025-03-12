@@ -1,11 +1,13 @@
 ---
-description: "System table which contains stack traces of all server threads. Allows developers to introspect the server state."
+description: 'System table which contains stack traces of all server threads. Allows developers to introspect the server state.'
 slug: /operations/system-tables/stack_trace
-title: "system.stack_trace"
-keywords: ["system table", "stack_trace"]
+title: 'system.stack_trace'
+keywords: ['system table', 'stack_trace']
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.stack_trace
 
 <SystemTableCloud/>
 

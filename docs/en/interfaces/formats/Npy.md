@@ -1,7 +1,7 @@
 ---
-title: Npy
+title: 'Npy'
 slug: /interfaces/formats/Npy
-keywords: [Npy]
+keywords: ['Npy']
 input_format: true
 output_format: true
 alias: []

@@ -1,5 +1,5 @@
 ---
-title: JSONStrings
+title: 'JSONStrings'
 slug: /interfaces/formats/JSONStrings
 keywords: [JSONStrings]
 input_format: true

@@ -1,5 +1,5 @@
 ---
-title: JSONObjectEachRow
+title: 'JSONObjectEachRow'
 slug: /interfaces/formats/JSONObjectEachRow
 keywords: [JSONObjectEachRow]
 input_format: true

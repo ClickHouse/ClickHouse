@@ -1,5 +1,5 @@
 ---
-title: JSONColumns
+title: 'JSONColumns'
 slug: /interfaces/formats/JSONColumns
 keywords: [JSONColumns]
 input_format: true

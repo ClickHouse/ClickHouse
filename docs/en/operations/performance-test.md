@@ -2,7 +2,7 @@
 slug: /operations/performance-test
 sidebar_position: 54
 sidebar_label: Testing Hardware
-title: "How to Test Your Hardware with ClickHouse"
+title: 'How to Test Your Hardware with ClickHouse'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';

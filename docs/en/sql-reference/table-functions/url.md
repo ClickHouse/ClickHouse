@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/url
 sidebar_position: 200
 sidebar_label: url
-title: "url"
-description: "Creates a table from the `URL` with given `format` and `structure`"
+title: 'url'
+description: 'Creates a table from the `URL` with given `format` and `structure`'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

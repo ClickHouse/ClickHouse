@@ -1,5 +1,5 @@
 ---
-title: TabSeparated
+title: 'TabSeparated'
 slug: /interfaces/formats/TabSeparated
 keywords: [TabSeparated, TSV]
 input_format: true

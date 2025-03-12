@@ -1,5 +1,5 @@
 ---
-title: ArrowStream
+title: 'ArrowStream'
 slug: /interfaces/formats/ArrowStream
 keywords: [ArrowStream]
 input_format: true

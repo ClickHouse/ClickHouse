@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/azureBlobStorageCluster
 sidebar_position: 15
 sidebar_label: azureBlobStorageCluster
-title: "azureBlobStorageCluster"
-description: "Allows processing files from Azure Blob storage in parallel with many nodes in a specified cluster."
+title: 'azureBlobStorageCluster'
+description: 'Allows processing files from Azure Blob storage in parallel with many nodes in a specified cluster.'
 ---
 
 # azureBlobStorageCluster Table Function

@@ -1,5 +1,5 @@
 ---
-title: PrettyNoEscapesMonoBlock
+title: 'PrettyNoEscapesMonoBlock'
 slug: /interfaces/formats/PrettyNoEscapesMonoBlock
 keywords: [PrettyNoEscapesMonoBlock]
 input_format: false

@@ -1,9 +1,11 @@
 ---
-description: "System table containing information about configured roles."
+description: 'System table containing information about configured roles.'
 slug: /operations/system-tables/roles
-title: "system.roles"
-keywords: ["system table", "roles"]
+title: 'system.roles'
+keywords: ['system table', 'roles']
 ---
+
+# system.roles
 
 Contains information about configured [roles](../../guides/sre/user-management/index.md#role-management).
 

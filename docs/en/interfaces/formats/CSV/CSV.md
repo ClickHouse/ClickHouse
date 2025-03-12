@@ -1,5 +1,5 @@
 ---
-title: CSV
+title: 'CSV'
 slug: /interfaces/formats/CSV
 keywords: [CSV]
 input_format: true

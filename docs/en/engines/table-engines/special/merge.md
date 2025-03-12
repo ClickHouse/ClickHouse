@@ -2,8 +2,8 @@
 slug: /engines/table-engines/special/merge
 sidebar_position: 30
 sidebar_label: Merge
-title: "Merge Table Engine"
-description: "The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously."
+title: 'Merge Table Engine'
+description: 'The `Merge` engine (not to be confused with `MergeTree`) does not store data itself, but allows reading from any number of other tables simultaneously.'
 ---
 
 # Merge Table Engine

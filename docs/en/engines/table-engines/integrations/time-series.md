@@ -2,8 +2,8 @@
 slug: /engines/table-engines/special/time_series
 sidebar_position: 60
 sidebar_label: TimeSeries
-title: "TimeSeries Engine"
-description: "A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels)."
+title: 'TimeSeries Engine'
+description: 'A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels).'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

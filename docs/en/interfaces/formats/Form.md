@@ -1,7 +1,7 @@
 ---
-title: Form
+title: 'Form'
 slug: /interfaces/formats/Form
-keywords: [Form]
+keywords: ['Form']
 input_format: true
 output_format: false
 alias: []

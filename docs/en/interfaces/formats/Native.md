@@ -1,7 +1,7 @@
 ---
-title: Native
+title: 'Native'
 slug: /interfaces/formats/Native
-keywords: [Native]
+keywords: ['Native']
 input_format: true
 output_format: true
 alias: []

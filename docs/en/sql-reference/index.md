@@ -1,6 +1,7 @@
 ---
-keywords: [clickhouse, docs, sql reference, sql statements, sql, syntax]
-title: SQL Reference
+slug: /sql-reference
+keywords: ['clickhouse', 'docs', 'sql reference', 'sql statements', 'sql', 'syntax']
+title: 'SQL Reference'
 ---
 
 import { TwoColumnList } from '/src/components/two_column_list'

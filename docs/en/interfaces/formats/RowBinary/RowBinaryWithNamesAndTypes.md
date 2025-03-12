@@ -1,5 +1,5 @@
 ---
-title: RowBinaryWithNamesAndTypes
+title: 'RowBinaryWithNamesAndTypes'
 slug: /interfaces/formats/RowBinaryWithNamesAndTypes
 keywords: [RowBinaryWithNamesAndTypes]
 input_format: true

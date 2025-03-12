@@ -1,5 +1,5 @@
 ---
-title: JSONEachRow
+title: 'JSONEachRow'
 slug: /interfaces/formats/JSONEachRow
 keywords: [JSONEachRow]
 ---

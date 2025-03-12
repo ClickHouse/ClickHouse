@@ -1,5 +1,5 @@
 ---
-title: CustomSeparatedIgnoreSpacesWithNames
+title: 'CustomSeparatedIgnoreSpacesWithNames'
 slug: /interfaces/formats/CustomSeparatedIgnoreSpacesWithNames
 keywords: [CustomSeparatedIgnoreSpacesWithNames]
 ---

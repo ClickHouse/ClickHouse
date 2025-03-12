@@ -2,7 +2,7 @@
 slug: /sql-reference/functions/tuple-map-functions
 sidebar_position: 120
 sidebar_label: Maps
-title: Map Functions
+title: 'Map Functions'
 ---
 
 ## map {#map}

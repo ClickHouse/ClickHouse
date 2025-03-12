@@ -1,5 +1,5 @@
 ---
-title: Parquet
+title: 'Parquet'
 slug: /interfaces/formats/Parquet
 keywords: [Parquet]
 input_format: true

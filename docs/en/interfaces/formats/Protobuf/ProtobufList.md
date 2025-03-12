@@ -1,5 +1,5 @@
 ---
-title: ProtobufList
+title: 'ProtobufList'
 slug: /interfaces/formats/ProtobufList
 keywords: [ProtobufList]
 input_format: true

@@ -1,5 +1,5 @@
 ---
-title: PrettyMonoBlock
+title: 'PrettyMonoBlock'
 slug: /interfaces/formats/PrettyMonoBlock
 keywords: [PrettyMonoBlock]
 input_format: false

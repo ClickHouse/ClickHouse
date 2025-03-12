@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/timeSeriesMetrics
 sidebar_position: 145
 sidebar_label: timeSeriesMetrics
-title: "timeSeriesMetrics"
-description: "timeSeriesMetrics returns the metrics table used by table `db_name.time_series_table` whose table engine is the TimeSeries engine."
+title: 'timeSeriesMetrics'
+description: 'timeSeriesMetrics returns the metrics table used by table `db_name.time_series_table` whose table engine is the TimeSeries engine.'
 ---
 
 # timeSeriesMetrics Table Function

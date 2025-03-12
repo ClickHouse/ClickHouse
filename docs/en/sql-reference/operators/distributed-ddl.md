@@ -1,7 +1,7 @@
 ---
 title: Distributed DDL Queries (ON CLUSTER Clause)
 slug: /sql-reference/other/distributed-ddl
-description: Page for Distributed DDL
+title: 'Page for Distributed DDL'
 sidebar_label: Distributed DDL
 ---
 

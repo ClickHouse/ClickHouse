@@ -3,7 +3,7 @@ slug: /sql-reference/data-types/newjson
 sidebar_position: 63
 sidebar_label: JSON
 keywords: [json, data type]
-title: "JSON Data Type"
+title: 'JSON Data Type'
 ---
 import BetaBadge from '@theme/badges/BetaBadge';
 

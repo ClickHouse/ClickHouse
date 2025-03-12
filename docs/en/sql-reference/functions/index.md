@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions
-title: Functions
-description: Landing page for Functions
+title: 'Functions'
+title: 'Landing page for Functions'
 sidebar: sqlreference
 ---
 

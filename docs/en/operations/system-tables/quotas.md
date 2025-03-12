@@ -1,9 +1,11 @@
 ---
-description: "System table containing information about quotas."
+description: 'System table containing information about quotas.'
 slug: /operations/system-tables/quotas
-title: "system.quotas"
-keywords: ["system table", "quotas", "quota"]
+title: 'system.quotas'
+keywords: ['system table', 'quotas', 'quota']
 ---
+
+# system.quotas
 
 Contains information about [quotas](../../operations/system-tables/quotas.md).
 

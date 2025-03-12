@@ -1,5 +1,5 @@
 ---
-title: LineAsString
+title: 'LineAsString'
 slug: /interfaces/formats/LineAsString
 keywords: [LineAsString]
 input_format: true

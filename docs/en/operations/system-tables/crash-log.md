@@ -1,8 +1,8 @@
 ---
-description: "System table containing information about stack traces for fatal errors."
+description: 'System table containing information about stack traces for fatal errors.'
 slug: /operations/system-tables/crash-log
-title: "system.crash_log"
-keywords: ["system table", "crash_log"]
+title: 'system.crash_log'
+keywords: ['system table', 'crash_log']
 ---
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 

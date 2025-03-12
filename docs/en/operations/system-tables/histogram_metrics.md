@@ -1,6 +1,10 @@
 ---
+title: 'histogram_metrics'
 slug: /en/operations/system-tables/histogram_metrics
+description: 'This table contains histogram metrics that can be calculated instantly and exported in the Prometheus format. It is always up to date.'
+keywords: ['system table', 'histogram_metrics']
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 # histogram_metrics {#histogram_metrics}

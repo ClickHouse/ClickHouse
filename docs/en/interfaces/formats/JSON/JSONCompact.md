@@ -1,5 +1,5 @@
 ---
-title: JSONCompact
+title: 'JSONCompact'
 slug: /interfaces/formats/JSONCompact
 keywords: [JSONCompact]
 input_format: true

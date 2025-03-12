@@ -1,8 +1,8 @@
 ---
-description: "System table containing information about columns in all tables"
+description: 'System table containing information about columns in all tables'
 slug: /operations/system-tables/columns
-title: "system.columns"
-keywords: ["system table", "columns"]
+title: 'system.columns'
+keywords: ['system table', 'columns']
 ---
 
 Contains information about columns in all tables.
@@ -31,62 +31,4 @@ The `system.columns` table contains the following columns (the column type is sh
 - `compression_codec` ([String](../../sql-reference/data-types/string.md)) — Compression codec name.
 - `character_octet_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Maximum length in bytes for binary data, character data, or text data and images. In ClickHouse makes sense only for `FixedString` data type. Otherwise, the `NULL` value is returned.
 - `numeric_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Accuracy of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse it is bit width for integer types and decimal precision for `Decimal` types. Otherwise, the `NULL` value is returned.
-- `numeric_precision_radix` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The base of the number system is the accuracy of approximate numeric data, exact numeric data, integer data or monetary data. In ClickHouse it's 2 for integer types and 10 for `Decimal` types. Otherwise, the `NULL` value is returned.
-- `numeric_scale` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The scale of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse makes sense only for `Decimal` types. Otherwise, the `NULL` value is returned.
-- `datetime_precision` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Decimal precision of `DateTime64` data type. For other data types, the `NULL` value is returned.
-
-**Example**
-
-```sql
-SELECT * FROM system.columns LIMIT 2 FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-database:                INFORMATION_SCHEMA
-table:                   COLUMNS
-name:                    table_catalog
-type:                    String
-position:                1
-default_kind:
-default_expression:
-data_compressed_bytes:   0
-data_uncompressed_bytes: 0
-marks_bytes:             0
-comment:
-is_in_partition_key:     0
-is_in_sorting_key:       0
-is_in_primary_key:       0
-is_in_sampling_key:      0
-compression_codec:
-character_octet_length:  ᴺᵁᴸᴸ
-numeric_precision:       ᴺᵁᴸᴸ
-numeric_precision_radix: ᴺᵁᴸᴸ
-numeric_scale:           ᴺᵁᴸᴸ
-datetime_precision:      ᴺᵁᴸᴸ
-
-Row 2:
-──────
-database:                INFORMATION_SCHEMA
-table:                   COLUMNS
-name:                    table_schema
-type:                    String
-position:                2
-default_kind:
-default_expression:
-data_compressed_bytes:   0
-data_uncompressed_bytes: 0
-marks_bytes:             0
-comment:
-is_in_partition_key:     0
-is_in_sorting_key:       0
-is_in_primary_key:       0
-is_in_sampling_key:      0
-compression_codec:
-character_octet_length:  ᴺᵁᴸᴸ
-numeric_precision:       ᴺᵁᴸᴸ
-numeric_precision_radix: ᴺᵁᴸᴸ
-numeric_scale:           ᴺᵁᴸᴸ
-datetime_precision:      ᴺᵁᴸᴸ
-```
+- `numeric_precision_radix` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The base of the number system is the accuracy of approximate numeric data, exact numeric data, integer data or monetary data. In ClickHouse it's 2 for integer types and 10 for `Decimal` types. Otherwise, the `

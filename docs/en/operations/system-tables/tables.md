@@ -1,9 +1,11 @@
 ---
-description: "System table containing metadata of each table that the server knows about."
+description: 'System table containing metadata of each table that the server knows about.'
 slug: /operations/system-tables/tables
-title: "system.tables"
-keywords: ["system table", "tables"]
+title: 'system.tables'
+keywords: ['system table', 'tables']
 ---
+
+# system.tables
 
 Contains metadata of each table that the server knows about.
 
@@ -58,7 +60,7 @@ Columns:
 
 - `total_bytes` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `NULL` (does not includes any underlying storage).
 
-    - If the table stores data on disk, returns used space on disk (i.e. compressed).
+    - If the table stores data on disk, returns used space on disk (i.e. compressed).
     - If the table stores data in memory, returns approximated number of used bytes in memory.
 
 - `total_bytes_uncompressed` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total number of uncompressed bytes, if it's possible to quickly determine the exact number of bytes from the part checksums for the table on storage, otherwise `NULL` (does not take underlying storage (if any) into account).

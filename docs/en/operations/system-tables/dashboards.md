@@ -1,8 +1,8 @@
 ---
-description: "Contains queries used by `/dashboard` page accessible though the HTTP interface. useful for monitoring and troubleshooting."
+description: 'Contains queries used by `/dashboard` page accessible though the HTTP interface. useful for monitoring and troubleshooting.'
 slug: /operations/system-tables/dashboards
-title: "system.dashboards"
-keywords: ["system table", "dashboards", "monitoring", "troubleshooting"]
+title: 'system.dashboards'
+keywords: ['system table', 'dashboards', 'monitoring', 'troubleshooting']
 ---
 
 Contains queries used by `/dashboard` page accessible though [HTTP interface](/interfaces/http.md).

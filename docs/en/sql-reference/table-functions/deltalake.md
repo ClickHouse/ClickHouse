@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/deltalake
 sidebar_position: 45
 sidebar_label: deltaLake
-title: "deltaLake"
-description: "Provides a read-only table-like interface to the Delta Lake tables in Amazon S3."
+title: 'deltaLake'
+description: 'Provides a read-only table-like interface to the Delta Lake tables in Amazon S3.'
 ---
 
 # deltaLake Table Function

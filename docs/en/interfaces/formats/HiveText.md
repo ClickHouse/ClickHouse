@@ -1,7 +1,7 @@
 ---
-title: HiveText
+title: 'HiveText'
 slug: /interfaces/formats/HiveText
-keywords: [HiveText]
+keywords: ['HiveText']
 ---
 
 ## Description {#description}

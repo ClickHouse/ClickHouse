@@ -1,5 +1,5 @@
 ---
-title: CustomSeparatedWithNamesAndTypes
+title: 'CustomSeparatedWithNamesAndTypes'
 slug: /interfaces/formats/CustomSeparatedWithNamesAndTypes
 keywords: [CustomSeparatedWithNamesAndTypes]
 input_format: true

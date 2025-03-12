@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/dictionary
 sidebar_position: 47
 sidebar_label: dictionary
-title: "dictionary"
-description: "Displays the dictionary data as a ClickHouse table. Works the same way as the Dictionary engine."
+title: 'dictionary'
+description: 'Displays the dictionary data as a ClickHouse table. Works the same way as the Dictionary engine.'
 ---
 
 # dictionary Table Function

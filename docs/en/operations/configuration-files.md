@@ -2,7 +2,7 @@
 slug: /operations/configuration-files
 sidebar_position: 50
 sidebar_label: Configuration Files
-title: Configuration Files
+title: 'Configuration Files'
 ---
 
 :::note

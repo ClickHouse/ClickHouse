@@ -1,5 +1,5 @@
 ---
-title: TabSeparatedWithNames
+title: 'TabSeparatedWithNames'
 slug: /interfaces/formats/TabSeparatedWithNames
 keywords: [TabSeparatedWithNames]
 input_format: true

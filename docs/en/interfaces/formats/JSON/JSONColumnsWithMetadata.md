@@ -1,5 +1,5 @@
 ---
-title: JSONColumnsWithMetadata
+title: 'JSONColumnsWithMetadata'
 slug: /interfaces/formats/JSONColumnsWithMetadata
 keywords: [JSONColumnsWithMetadata]
 input_format: true

@@ -1,5 +1,5 @@
 ---
-title: PrettySpace
+title: 'PrettySpace'
 slug: /interfaces/formats/PrettySpace
 keywords: [PrettySpace]
 input_format: false

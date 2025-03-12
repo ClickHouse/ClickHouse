@@ -1,5 +1,5 @@
 ---
-title: TabSeparatedRaw
+title: 'TabSeparatedRaw'
 slug: /interfaces/formats/TabSeparatedRaw
 keywords: [TabSeparatedRaw]
 input_format: true

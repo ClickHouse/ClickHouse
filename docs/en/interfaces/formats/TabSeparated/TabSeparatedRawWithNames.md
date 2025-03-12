@@ -1,5 +1,5 @@
 ---
-title: TabSeparatedRawWithNames
+title: 'TabSeparatedRawWithNames'
 slug: /interfaces/formats/TabSeparatedRawWithNames
 keywords: [TabSeparatedRawWithNames, TSVRawWithNames, RawWithNames]
 input_format: true

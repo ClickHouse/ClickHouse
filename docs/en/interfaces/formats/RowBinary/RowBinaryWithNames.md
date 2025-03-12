@@ -1,5 +1,5 @@
 ---
-title: RowBinaryWithNames
+title: 'RowBinaryWithNames'
 slug: /interfaces/formats/RowBinaryWithNames
 keywords: [RowBinaryWithNames]
 input_format: true

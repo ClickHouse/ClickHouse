@@ -2,8 +2,8 @@
 slug: /engines/table-engines/mergetree-family/mergetree
 sidebar_position: 11
 sidebar_label:  MergeTree
-title: "MergeTree"
-description: "`MergeTree`-family table engines are designed for high data ingest rates and huge data volumes."
+title: 'MergeTree'
+description: '`MergeTree`-family table engines are designed for high data ingest rates and huge data volumes.'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

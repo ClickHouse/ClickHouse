@@ -2,7 +2,7 @@
 slug: /sql-reference/functions/tuple-functions
 sidebar_position: 180
 sidebar_label: Tuples
-title: Tuple Functions
+title: 'Tuple Functions'
 ---
 
 ## tuple {#tuple}

@@ -1,5 +1,5 @@
 ---
-title: Arrow
+title: 'Arrow'
 slug: /interfaces/formats/Arrow
 keywords: [Arrow]
 input_format: true

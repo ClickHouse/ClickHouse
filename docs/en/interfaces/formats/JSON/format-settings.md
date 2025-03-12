@@ -1,5 +1,5 @@
 ---
-title: Format Settings For JSON
+title: 'Format' Settings For JSON
 slug: /interfaces/formats/JSON/format-settings
 keywords: [Format Settings, JSON]
 ---

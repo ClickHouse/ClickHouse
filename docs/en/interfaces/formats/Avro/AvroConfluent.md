@@ -1,5 +1,5 @@
 ---
-title: AvroConfluent
+title: 'AvroConfluent'
 slug: /interfaces/formats/AvroConfluent
 keywords: [AvroConfluent]
 input_format: true

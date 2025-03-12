@@ -1,7 +1,7 @@
 ---
-title: RawBLOB
+title: 'RawBLOB'
 slug: /interfaces/formats/RawBLOB
-keywords: [RawBLOB]
+keywords: ['RawBLOB']
 ---
 
 ## Description {#description}

@@ -1,5 +1,5 @@
 ---
-title: TemplateIgnoreSpaces
+title: 'TemplateIgnoreSpaces'
 slug: /interfaces/formats/TemplateIgnoreSpaces
 keywords: [TemplateIgnoreSpaces]
 input_format: true

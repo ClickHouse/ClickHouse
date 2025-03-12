@@ -1,5 +1,5 @@
 ---
-title: CustomSeparated
+title: 'CustomSeparated'
 slug: /interfaces/formats/CustomSeparated
 keywords: [CustomSeparated]
 input_format: true

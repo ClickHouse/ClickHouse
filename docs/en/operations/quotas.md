@@ -2,7 +2,7 @@
 slug: /operations/quotas
 sidebar_position: 51
 sidebar_label: Quotas
-title: Quotas
+title: 'Quotas'
 ---
 
 Quotas allow you to limit resource usage over a period of time or track the use of resources.

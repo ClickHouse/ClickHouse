@@ -1,10 +1,12 @@
 ---
-description: "System table containing information about events that occurred with data parts in the MergeTree family tables, such as adding or merging of data."
+description: 'System table containing information about events that occurred with data parts in the MergeTree family tables, such as adding or merging of data.'
 slug: /operations/system-tables/part_log
-title: "system.part_log"
-keywords: ["system table", "part_log"]
+title: 'system.part_log'
+keywords: ['system table', 'part_log']
 ---
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.part_log
 
 <SystemTableCloud/>
 

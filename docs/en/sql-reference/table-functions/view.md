@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/view
 sidebar_position: 210
 sidebar_label: view
-title: view
-description: "Turns a subquery into a table. The function implements views."
+title: 'view'
+description: 'Turns a subquery into a table. The function implements views.'
 ---
 
 # view Table Function

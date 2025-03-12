@@ -2,7 +2,7 @@
 title: "Settings Overview"
 sidebar_position: 1
 slug: /operations/settings/overview
-description: "Overview page for settings."
+description: 'Overview page for settings.'
 ---
 
 # Settings Overview

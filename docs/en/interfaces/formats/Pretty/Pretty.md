@@ -1,5 +1,5 @@
 ---
-title: Pretty
+title: 'Pretty'
 slug: /interfaces/formats/Pretty
 keywords: [Pretty]
 input_format: false

@@ -1,5 +1,5 @@
 ---
-title: RowBinaryWithDefaults
+title: 'RowBinaryWithDefaults'
 slug: /interfaces/formats/RowBinaryWithDefaults
 keywords: [RowBinaryWithDefaults]
 input_format: true

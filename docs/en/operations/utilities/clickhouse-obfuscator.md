@@ -1,6 +1,6 @@
 ---
 slug: /operations/utilities/clickhouse-obfuscator
-title: clickhouse-obfuscator 
+title: 'clickhouse-obfuscator' 
 ---
 
 A simple tool for table data obfuscation.

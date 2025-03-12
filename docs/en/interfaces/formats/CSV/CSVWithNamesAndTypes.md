@@ -1,5 +1,5 @@
 ---
-title: CSVWithNamesAndTypes
+title: 'CSVWithNamesAndTypes'
 slug: /interfaces/formats/CSVWithNamesAndTypes
 keywords: [CSVWithNamesAndTypes]
 input_format: true

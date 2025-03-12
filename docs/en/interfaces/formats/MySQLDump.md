@@ -1,7 +1,7 @@
 ---
-title: MySQLDump
+title: 'MySQLDump'
 slug: /interfaces/formats/MySQLDump
-keywords: [MySQLDump]
+keywords: ['MySQLDump']
 input_format: true
 output_format: false
 alias: []

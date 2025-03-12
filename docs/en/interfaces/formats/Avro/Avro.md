@@ -1,5 +1,5 @@
 ---
-title: Avro
+title: 'Avro'
 slug: /interfaces/formats/Avro
 keywords: [Avro]
 input_format: true

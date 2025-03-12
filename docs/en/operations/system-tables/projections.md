@@ -1,9 +1,11 @@
 ---
-description: "System table containing information about existing projections in all tables."
+description: 'System table containing information about existing projections in all tables.'
 slug: /operations/system-tables/projections
-title: "system.projections"
-keywords: ["system table", "projections"]
+title: 'system.projections'
+keywords: ['system table', 'projections']
 ---
+
+# system.projections
 
 Contains information about existing projections in all tables.
 

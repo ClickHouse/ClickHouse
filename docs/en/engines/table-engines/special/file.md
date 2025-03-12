@@ -2,8 +2,8 @@
 slug: /engines/table-engines/special/file
 sidebar_position: 40
 sidebar_label:  File
-title: "File Table Engine"
-description: "The File table engine keeps the data in a file in one of the supported file formats (`TabSeparated`, `Native`, etc.)."
+title: 'File Table Engine'
+description: 'The File table engine keeps the data in a file in one of the supported file formats (`TabSeparated`, `Native`, etc.).'
 ---
 
 # File Table Engine

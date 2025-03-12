@@ -2,7 +2,7 @@
 slug: /sql-reference/statements/check-grant
 sidebar_position: 56
 sidebar_label: CHECK GRANT
-title: "CHECK GRANT Statement"
+title: 'CHECK GRANT Statement'
 ---
 
 The `CHECK GRANT` query is used to check whether the current user/role has been granted a specific privilege.

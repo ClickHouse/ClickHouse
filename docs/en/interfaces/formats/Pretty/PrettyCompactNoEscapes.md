@@ -1,5 +1,5 @@
 ---
-title: PrettyCompactNoEscapes
+title: 'PrettyCompactNoEscapes'
 slug: /interfaces/formats/PrettyCompactNoEscapes
 keywords: [PrettyCompactNoEscapes]
 input_format: false

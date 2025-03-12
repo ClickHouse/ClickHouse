@@ -2,8 +2,8 @@
 slug: /engines/database-engines/lazy
 sidebar_label: Lazy
 sidebar_position: 20
-title: "Lazy"
-description: "Keeps tables in RAM only `expiration_time_in_seconds` seconds after last access. Can be used only with Log type tables."
+title: 'Lazy'
+description: 'Keeps tables in RAM only `expiration_time_in_seconds` seconds after last access. Can be used only with Log type tables.'
 ---
 
 # Lazy

@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/deltalakeCluster
 sidebar_position: 46
 sidebar_label: deltaLakeCluster
-title: "deltaLakeCluster"
-description: "This is an extension to the deltaLake table function."
+title: 'deltaLakeCluster'
+description: 'This is an extension to the deltaLake table function.'
 ---
 
 # deltaLakeCluster Table Function

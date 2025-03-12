@@ -1,5 +1,5 @@
 ---
-title: JSONCompactStringsEachRowWithNamesAndTypes
+title: 'JSONCompactStringsEachRowWithNamesAndTypes'
 slug: /interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes
 keywords: [JSONCompactStringsEachRowWithNamesAndTypes]
 ---

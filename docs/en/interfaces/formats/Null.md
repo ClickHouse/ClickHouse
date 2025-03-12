@@ -1,7 +1,7 @@
 ---
-title: "Null"
+title: 'Null'
 slug: /interfaces/formats/Null
-keywords: ["Null"]
+keywords: ['Null']
 input_format: false
 output_format: true
 alias: []

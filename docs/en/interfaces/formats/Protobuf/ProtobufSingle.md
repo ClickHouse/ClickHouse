@@ -1,5 +1,5 @@
 ---
-title: ProtobufSingle
+title: 'ProtobufSingle'
 slug: /interfaces/formats/ProtobufSingle
 keywords: [ProtobufSingle]
 input_format: true

@@ -2,8 +2,8 @@
 slug: /engines/table-engines/special/filelog
 sidebar_position: 160
 sidebar_label: FileLog
-title: "FileLog Engine"
-description: "This engine allows processing of application log files as a stream of records."
+title: 'FileLog Engine'
+description: 'This engine allows processing of application log files as a stream of records.'
 ---
 
 # FileLog Engine {#filelog-engine}

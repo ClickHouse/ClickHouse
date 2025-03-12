@@ -2,8 +2,8 @@
 slug: /engines/table-engines/integrations/redis
 sidebar_position: 175
 sidebar_label: Redis
-title: "Redis"
-description: "This engine allows integrating ClickHouse with Redis."
+title: 'Redis'
+description: 'This engine allows integrating ClickHouse with Redis.'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

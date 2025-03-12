@@ -2,8 +2,8 @@
 slug: /engines/table-engines/integrations/azureBlobStorage
 sidebar_position: 10
 sidebar_label: Azure Blob Storage
-title: "AzureBlobStorage Table Engine"
-description: "This engine provides an integration with Azure Blob Storage ecosystem."
+title: 'AzureBlobStorage Table Engine'
+description: 'This engine provides an integration with Azure Blob Storage ecosystem.'
 ---
 
 # AzureBlobStorage Table Engine

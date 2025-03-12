@@ -1,5 +1,5 @@
 ---
-title: LineAsStringWithNamesAndTypes
+title: 'LineAsStringWithNamesAndTypes'
 slug: /interfaces/formats/LineAsStringWithNamesAndTypes
 keywords: [LineAsStringWithNamesAndTypes]
 input_format: false

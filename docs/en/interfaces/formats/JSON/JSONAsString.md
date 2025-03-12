@@ -1,5 +1,5 @@
 ---
-title: JSONAsString
+title: 'JSONAsString'
 slug: /interfaces/formats/JSONAsString
 keywords: [JSONAsString]
 input_format: true

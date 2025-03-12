@@ -1,7 +1,7 @@
 ---
-title: SQLInsert
+title: 'SQLInsert'
 slug: /interfaces/formats/SQLInsert
-keywords: [SQLInsert]
+keywords: ['SQLInsert']
 input_format: false
 output_format: true
 alias: []

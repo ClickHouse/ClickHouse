@@ -1,5 +1,5 @@
 ---
-title: Template
+title: 'Template'
 slug: /interfaces/formats/Template
 keywords: [Template]
 input_format: true

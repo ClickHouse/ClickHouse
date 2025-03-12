@@ -1,5 +1,5 @@
 ---
-description: "Overview of what system tables are and why they are useful."
+description: 'Overview of what system tables are and why they are useful.'
 slug: /operations/system-tables/
 sidebar_position: 52
 sidebar_label: Overview

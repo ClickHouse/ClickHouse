@@ -2,8 +2,8 @@
 slug: /engines/table-engines/integrations/s3queue
 sidebar_position: 181
 sidebar_label: S3Queue
-title: "S3Queue Table Engine"
-description: "This engine provides integration with the Amazon S3 ecosystem and allows streaming imports. Similar to the Kafka and RabbitMQ engines, but provides S3-specific features."
+title: 'S3Queue Table Engine'
+description: 'This engine provides integration with the Amazon S3 ecosystem and allows streaming imports. Similar to the Kafka and RabbitMQ engines, but provides S3-specific features.'
 ---
 
 import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'

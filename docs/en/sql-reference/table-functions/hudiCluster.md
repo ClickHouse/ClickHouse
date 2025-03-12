@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/hudiCluster
 sidebar_position: 86
 sidebar_label: hudiCluster
-title: "hudiCluster Table Function"
-description: "An extension to the hudi table function. Allows processing files from Apache Hudi tables in Amazon S3 in parallel with many nodes in a specified cluster."
+title: 'hudiCluster Table Function'
+description: 'An extension to the hudi table function. Allows processing files from Apache Hudi tables in Amazon S3 in parallel with many nodes in a specified cluster.'
 ---
 
 # hudiCluster Table Function

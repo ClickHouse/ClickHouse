@@ -1,5 +1,5 @@
 ---
-title: JSONEachRowWithProgress
+title: 'JSONEachRowWithProgress'
 slug: /interfaces/formats/JSONEachRowWithProgress
 keywords: [JSONEachRowWithProgress]
 input_format: false

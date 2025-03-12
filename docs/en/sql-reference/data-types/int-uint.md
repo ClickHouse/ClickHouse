@@ -2,7 +2,7 @@
 slug: /sql-reference/data-types/int-uint
 sidebar_position: 2
 sidebar_label: Int | UInt
-title: Int | UInt Types
+title: 'Int | UInt Types'
 ---
 
 ClickHouse offers a number of fixed-length integers, 

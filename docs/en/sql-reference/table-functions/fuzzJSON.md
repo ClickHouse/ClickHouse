@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/fuzzJSON
 sidebar_position: 75
 sidebar_label: fuzzJSON
-title: "fuzzJSON"
-description: "Perturbs a JSON string with random variations."
+title: 'fuzzJSON'
+description: 'Perturbs a JSON string with random variations.'
 ---
 
 # fuzzJSON Table Function

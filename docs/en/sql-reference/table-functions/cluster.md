@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/cluster
 sidebar_position: 30
 sidebar_label: cluster
-title: "clusterAllReplicas"
-description: "Allows accessing all shards (configured in the `remote_servers` section) of a cluster without creating a Distributed table."
+title: 'clusterAllReplicas'
+description: 'Allows accessing all shards (configured in the `remote_servers` section) of a cluster without creating a Distributed table.'
 ---
 
 # clusterAllReplicas Table Function

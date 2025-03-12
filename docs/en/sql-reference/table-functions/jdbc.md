@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/jdbc
 sidebar_position: 100
 sidebar_label: jdbc
-title: "jdbc"
-description: "Returns a table that is connected via JDBC driver."
+title: 'jdbc'
+description: 'Returns a table that is connected via JDBC driver.'
 ---
 
 # jdbc Table Function

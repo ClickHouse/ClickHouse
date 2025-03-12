@@ -1,9 +1,11 @@
 ---
-description: "System table containing information about mutations of MergeTree tables and their progress. Each mutation command is represented by a single row."
+description: 'System table containing information about mutations of MergeTree tables and their progress. Each mutation command is represented by a single row.'
 slug: /operations/system-tables/mutations
-title: "system.mutations"
-keywords: ["system table", "mutations"]
+title: 'system.mutations'
+keywords: ['system table', 'mutations']
 ---
+
+# system.mutations
 
 The table contains information about [mutations](/sql-reference/statements/alter/index.md#mutations) of [MergeTree](/engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
 

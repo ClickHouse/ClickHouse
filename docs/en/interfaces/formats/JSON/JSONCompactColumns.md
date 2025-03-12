@@ -1,5 +1,5 @@
 ---
-title: JSONCompactColumns
+title: 'JSONCompactColumns'
 slug: /interfaces/formats/JSONCompactColumns
 keywords: [JSONCompactColumns]
 input_format: true

@@ -1,7 +1,7 @@
 ---
-title: ORC
+title: 'ORC'
 slug: /interfaces/formats/ORC
-keywords: [ORC]
+keywords: ['ORC']
 input_format: true
 output_format: true
 alias: []

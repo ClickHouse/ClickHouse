@@ -1,7 +1,7 @@
 ---
-description: "Explore the WikiStat dataset containing 0.5 trillion records."
+description: 'Explore the WikiStat dataset containing 0.5 trillion records.'
 sidebar_label: WikiStat
-title: "WikiStat"
+title: 'WikiStat'
 slug: /getting-started/example-datasets/wikistat
 ---
 
