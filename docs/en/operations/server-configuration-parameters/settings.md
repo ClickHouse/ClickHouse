@@ -984,9 +984,9 @@ Default: `1`
 
 ## shutdown_wait_unfinished_queries {#shutdown_wait_unfinished_queries}
 
-If set true ClickHouse will wait for running queries finish before shutdown.
+The number of seconds ClickHouse will wait for running queries finish before shutdown.
 
-Type: `Bool`
+Type: `UInt64`
 
 Default: `0`
 
