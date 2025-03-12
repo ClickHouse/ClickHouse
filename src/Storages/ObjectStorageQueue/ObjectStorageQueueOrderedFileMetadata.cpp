@@ -543,7 +543,12 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
 
         const auto failed_idx = zkutil::getFailedOpIndex(code, responses);
         if (prev_value != 0
-            && failed_idx == 2 /// create idx for bucket 1, skip idx=1 (for bucket 0)
+            /// idx=0 - for delete node request
+            /// idx=1 - for create bucket 0 request
+            /// idx=2 - for create bucket 1 request
+            /// Failed idx=2 means that metadata was updated concurrently by another replica,
+            /// in this case we just quit.
+            && failed_idx == 2
             && code == Coordination::Error::ZNODEEXISTS)
         {
             LOG_TRACE(log,
