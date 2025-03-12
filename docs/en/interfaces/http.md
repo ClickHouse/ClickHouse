@@ -1,7 +1,9 @@
 ---
 slug: /interfaces/http
-sidebar_position: 19
-sidebar_label: HTTP Interface
+title: 'HTTP Interface'
+description: 'Documentation for the HTTP interface in ClickHouse'
+sidebar_position: 15
+sidebar_label: 'HTTP Interface'
 ---
 
 import PlayUI from '@site/static/images/play.png';

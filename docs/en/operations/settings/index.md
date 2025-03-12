@@ -1,6 +1,6 @@
 ---
-title: Settings
-description: Table of Contents page for Settings
+title: 'Settings'
+description: 'Table of Contents page for Settings'
 sidebar_position: 1
 slug: /operations/settings/
 ---

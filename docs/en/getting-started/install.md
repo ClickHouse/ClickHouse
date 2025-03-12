@@ -1,7 +1,8 @@
 ---
-sidebar_label: Install
-keywords: [clickhouse, install, getting started, quick start]
-description: Install ClickHouse
+sidebar_label: 'Install'
+keywords: ['clickhouse', 'install', 'getting started', 'quick start']
+description: 'Install ClickHouse'
+title: 'Install ClickHouse'
 slug: /install
 ---
 

@@ -1,6 +1,8 @@
 ---
 slug: /operations/backup
-description: In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data.
+title: 'Backup and Restore'
+description: 'Page detailing backups and restore operations in ClickHouse'
+sidebar_label: 'Backup'
 ---
 
 # Backup and Restore

@@ -1,7 +1,9 @@
 ---
 slug: /interfaces/jdbc
-sidebar_position: 22
-sidebar_label: JDBC Driver
+title: 'JDBC Driver'
+description: 'Documentation for the ClickHouse JDBC driver'
+sidebar_position: 30
+sidebar_label: 'JDBC Driver'
 ---
 
 # JDBC Driver

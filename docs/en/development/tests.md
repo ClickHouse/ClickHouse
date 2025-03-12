@@ -1,10 +1,12 @@
 ---
 slug: /development/tests
-sidebar_position: 40
-sidebar_label: Testing
+title: 'Testing ClickHouse'
+description: 'Guide to testing ClickHouse and running the test suite'
+sidebar_position: 85
+sidebar_label: 'Testing'
 ---
 
-# Testing
+# Testing ClickHouse
 
 ## Functional Tests {#functional-tests}
 

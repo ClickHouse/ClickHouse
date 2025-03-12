@@ -1,8 +1,8 @@
 ---
 slug: /interfaces/schema-inference
-sidebar_position: 21
-sidebar_label: Schema inference
-title: Automatic schema inference from input data
+title: 'Automatic schema inference from input data'
+description: 'Page describing automatic schema inference from input data in ClickHouse'
+sidebar_label: 'Schema inference'
 ---
 
 ClickHouse can automatically determine the structure of input data in almost all supported [Input formats](formats.md).
