@@ -120,14 +120,8 @@ endif()
 list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_ssl.c")
 
 if(WITH_SSL AND WITH_CURL)
-    set(WITH_OAUTHBEARER_OIDC 1)
-endif()
-
-if(WITH_CURL)
+  set(WITH_OAUTHBEARER_OIDC 1)
   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdhttp.c") # needed for WITH_OAUTHBEARER_OIDC
-endif()
-
-if(WITH_OAUTHBEARER_OIDC)
   list(APPEND SRCS "${RDKAFKA_SOURCE_DIR}/rdkafka_sasl_oauthbearer_oidc.c")
 endif()
 
