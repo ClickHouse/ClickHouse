@@ -1,12 +1,10 @@
-[env]
-CC = "@CMAKE_C_COMPILER@"
-CXX = "@CMAKE_CXX_COMPILER@"
-CFLAGS = "@RUST_CFLAGS@"
-CXXFLAGS = "@RUST_CXXFLAGS@"
-
 [build]
 rustflags = @RUSTFLAGS@
 rustdocflags = @RUSTFLAGS@
+@RUSTCWRAPPER@
+
+[term]
+quiet = true
 
 [unstable]
 @RUST_CARGO_BUILD_STD@
