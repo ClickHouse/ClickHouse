@@ -97,6 +97,7 @@ JoinKind reverseJoinKind(JoinKind kind)
 void serializeJoinKind(JoinKind kind, WriteBuffer & out)
 {
     uint8_t val = uint8_t(kind);
+    chassert(val <= JoinKindMax);
     writeIntBinary(val, out);
 }
 
@@ -114,6 +115,7 @@ JoinKind deserializeJoinKind(ReadBuffer & in)
 void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out)
 {
     uint8_t val = uint8_t(strictness);
+    chassert(val <= JoinStrictnessMax);
     writeIntBinary(val, out);
 }
 
@@ -131,6 +133,7 @@ JoinStrictness deserializeJoinStrictness(ReadBuffer & in)
 void serializeJoinLocality(JoinLocality locality, WriteBuffer & out)
 {
     uint8_t val = uint8_t(locality);
+    chassert(val <= JoinLocalityMax);
     writeIntBinary(val, out);
 }
 JoinLocality deserializeJoinLocality(ReadBuffer & in)
