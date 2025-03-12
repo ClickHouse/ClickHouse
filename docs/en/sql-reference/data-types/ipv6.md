@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/ipv6
 sidebar_position: 30
-sidebar_label: IPv6
+sidebar_label: 'IPv6'
 ---
 
 ## IPv6 {#ipv6}

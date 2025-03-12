@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/ulid-functions
 sidebar_position: 190
-sidebar_label: ULID
+sidebar_label: 'ULID'
 ---
 
 # Functions for Working with ULID

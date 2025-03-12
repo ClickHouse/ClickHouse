@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/distance-functions
 sidebar_position: 55
-sidebar_label: Distance
+sidebar_label: 'Distance'
 ---
 
 # Distance Functions

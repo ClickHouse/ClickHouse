@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/system
 sidebar_position: 36
-sidebar_label: SYSTEM
+sidebar_label: 'SYSTEM'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

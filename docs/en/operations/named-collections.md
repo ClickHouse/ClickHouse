@@ -1,7 +1,7 @@
 ---
 slug: /operations/named-collections
 sidebar_position: 69
-sidebar_label: "Named collections"
+sidebar_label: 'Named collections'
 title: "Named collections"
 ---
 

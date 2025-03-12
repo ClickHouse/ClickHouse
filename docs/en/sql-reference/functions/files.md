@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/files
 sidebar_position: 75
-sidebar_label: Files
+sidebar_label: 'Files'
 ---
 
 ## file {#file}

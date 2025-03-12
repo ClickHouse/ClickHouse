@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/drop
 sidebar_position: 44
-sidebar_label: DROP
+sidebar_label: 'DROP'
 ---
 
 # DROP Statements

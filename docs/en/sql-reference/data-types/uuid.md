@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/uuid
 sidebar_position: 24
-sidebar_label: UUID
+sidebar_label: 'UUID'
 ---
 
 # UUID

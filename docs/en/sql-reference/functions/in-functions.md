@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/in-functions
 sidebar_position: 90
-sidebar_label: IN Operator
+sidebar_label: 'IN Operator'
 ---
 
 # Functions for Implementing the IN Operator

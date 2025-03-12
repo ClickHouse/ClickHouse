@@ -1,7 +1,7 @@
 ---
 slug: /engines/table-engines/log-family/
 sidebar_position: 20
-sidebar_label:  Log Family
+sidebar_label: 'Log Family'
 ---
 
 # Log Engine Family

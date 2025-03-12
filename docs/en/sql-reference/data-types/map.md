@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/map
 sidebar_position: 36
-sidebar_label: Map(K, V)
+sidebar_label: 'Map(K, V)'
 ---
 
 # Map(K, V)

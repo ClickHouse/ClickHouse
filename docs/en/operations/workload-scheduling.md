@@ -1,7 +1,7 @@
 ---
 slug: /operations/workload-scheduling
 sidebar_position: 69
-sidebar_label: "Workload scheduling"
+sidebar_label: 'Workload scheduling'
 title: 'Workload scheduling'
 ---
 

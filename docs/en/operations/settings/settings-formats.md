@@ -1,6 +1,6 @@
 ---
 title: 'Format Settings'
-sidebar_label: Format Settings
+sidebar_label: 'Format Settings'
 slug: /operations/settings/formats
 toc_max_heading_level: 2
 description: 'Settings related to formats'

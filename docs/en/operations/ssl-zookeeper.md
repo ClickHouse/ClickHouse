@@ -1,7 +1,7 @@
 ---
 slug: /operations/ssl-zookeeper
 sidebar_position: 45
-sidebar_label: Secured Communication with Zookeeper
+sidebar_label: 'Secured Communication with Zookeeper'
 ---
 
 # Optional secured communication between ClickHouse and Zookeeper

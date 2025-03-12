@@ -1,7 +1,7 @@
 ---
 description: '131 million rows of weather observation data for the last 128 yrs'
 slug: /getting-started/example-datasets/tw-weather
-sidebar_label: Taiwan Historical Weather Datasets
+sidebar_label: 'Taiwan Historical Weather Datasets'
 sidebar_position: 1
 title: 'Taiwan Historical Weather Datasets'
 ---

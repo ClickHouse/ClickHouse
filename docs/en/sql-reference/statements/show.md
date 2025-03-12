@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/show
 sidebar_position: 37
-sidebar_label: SHOW
+sidebar_label: 'SHOW'
 title: 'SHOW Statements'
 ---
 

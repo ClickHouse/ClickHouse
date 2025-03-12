@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/variant
 sidebar_position: 40
-sidebar_label: Variant(T1, T2, ...)
+sidebar_label: 'Variant(T1, T2, ...)'
 ---
 import BetaBadge from '@theme/badges/BetaBadge';
 

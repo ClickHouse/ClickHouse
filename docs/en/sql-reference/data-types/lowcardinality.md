@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/lowcardinality
 sidebar_position: 42
-sidebar_label: LowCardinality(T)
+sidebar_label: 'LowCardinality(T)'
 ---
 
 # LowCardinality(T)

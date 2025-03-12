@@ -1,7 +1,7 @@
 ---
 slug: /operations/utilities/clickhouse-local
 sidebar_position: 60
-sidebar_label: clickhouse-local
+sidebar_label: 'clickhouse-local'
 ---
 
 # clickhouse-local

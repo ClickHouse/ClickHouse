@@ -1,7 +1,7 @@
 ---
 description: 'A terabyte of Click Logs from Criteo'
 slug: /getting-started/example-datasets/criteo
-sidebar_label: Terabyte Click Logs from Criteo
+sidebar_label: 'Terabyte Click Logs from Criteo'
 title: 'Terabyte Click Logs from Criteo'
 ---
 

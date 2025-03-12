@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/use
 sidebar_position: 53
-sidebar_label: USE
+sidebar_label: 'USE'
 ---
 
 # USE Statement

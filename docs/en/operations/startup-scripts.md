@@ -1,6 +1,6 @@
 ---
 slug: /operations/startup-scripts
-sidebar_label: Startup Scripts
+sidebar_label: 'Startup Scripts'
 ---
 
 # Startup Scripts

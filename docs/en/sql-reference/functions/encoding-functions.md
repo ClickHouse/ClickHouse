@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/encoding-functions
 sidebar_position: 65
-sidebar_label: Encoding
+sidebar_label: 'Encoding'
 ---
 
 # Encoding Functions

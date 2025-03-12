@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/datetime64
 sidebar_position: 18
-sidebar_label: DateTime64
+sidebar_label: 'DateTime64'
 ---
 
 # DateTime64

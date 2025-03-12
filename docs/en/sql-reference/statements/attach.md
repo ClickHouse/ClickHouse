@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/attach
 sidebar_position: 40
-sidebar_label: ATTACH
+sidebar_label: 'ATTACH'
 title: 'ATTACH Statement'
 ---
 

@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/move
 sidebar_position: 54
-sidebar_label: MOVE
+sidebar_label: 'MOVE'
 ---
 
 # MOVE access entity statement

@@ -1,7 +1,7 @@
 ---
 slug: /development/contrib
 sidebar_position: 60
-sidebar_label: Third-Party Libraries
+sidebar_label: 'Third-Party Libraries'
 title: 'Third-Party Libraries'
 description: 'Page describing ClickHouse third-party usage and how to add and maintain third-party libraries.'
 ---

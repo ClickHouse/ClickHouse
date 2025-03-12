@@ -1,6 +1,6 @@
 ---
 slug: /sql-reference/dictionaries
-sidebar_label: Defining Dictionaries
+sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35
 ---
 

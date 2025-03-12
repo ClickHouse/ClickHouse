@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/decimal
 sidebar_position: 6
-sidebar_label: Decimal
+sidebar_label: 'Decimal'
 ---
 
 # Decimal, Decimal(P), Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S)

@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/functions-for-nulls
 sidebar_position: 135
-sidebar_label: Nullable
+sidebar_label: 'Nullable'
 ---
 
 # Functions for Working with Nullable Values

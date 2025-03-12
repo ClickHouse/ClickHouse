@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/arithmetic-functions
 sidebar_position: 5
-sidebar_label: Arithmetic
+sidebar_label: 'Arithmetic'
 ---
 
 # Arithmetic Functions

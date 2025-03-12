@@ -2,7 +2,7 @@
 slug: /development/tests
 title: 'Testing ClickHouse'
 description: 'Guide to testing ClickHouse and running the test suite'
-sidebar_position: 85
+sidebar_position: 40
 sidebar_label: 'Testing'
 ---
 

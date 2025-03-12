@@ -2,7 +2,7 @@
 slug: /development/build-cross-riscv
 title: 'How to Build ClickHouse on Linux for RISC-V 64'
 description: 'Guide for building ClickHouse from source for the RISC-V 64 architecture'
-sidebar_position: 35
+sidebar_position: 30
 sidebar_label: 'Build on Linux for RISC-V 64'
 ---
 

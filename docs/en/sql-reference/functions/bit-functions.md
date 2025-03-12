@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/bit-functions
 sidebar_position: 20
-sidebar_label: Bit
+sidebar_label: 'Bit'
 ---
 
 # Bit Functions

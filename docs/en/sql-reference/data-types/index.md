@@ -1,6 +1,6 @@
 ---
 slug: /sql-reference/data-types/
-sidebar_label: List of data types
+sidebar_label: 'List of data types'
 sidebar_position: 1
 ---
 

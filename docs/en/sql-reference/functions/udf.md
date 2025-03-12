@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/udf
 sidebar_position: 15
-sidebar_label: UDF
+sidebar_label: 'UDF'
 ---
 
 import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';

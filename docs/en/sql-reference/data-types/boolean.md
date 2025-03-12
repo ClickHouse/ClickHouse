@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/boolean
 sidebar_position: 22
-sidebar_label: Bool
+sidebar_label: 'Bool'
 ---
 
 # Bool

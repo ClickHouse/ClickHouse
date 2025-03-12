@@ -1,7 +1,7 @@
 ---
 slug: /interfaces/third-party/proxy
 sidebar_position: 29
-sidebar_label: Proxies
+sidebar_label: 'Proxies'
 ---
 
 # Proxy Servers from Third-party Developers

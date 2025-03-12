@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/comparison-functions
 sidebar_position: 35
-sidebar_label: Comparison
+sidebar_label: 'Comparison'
 ---
 
 # Comparison Functions

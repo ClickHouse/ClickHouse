@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/math-functions
 sidebar_position: 125
-sidebar_label: Mathematical
+sidebar_label: 'Mathematical'
 ---
 
 # Mathematical Functions

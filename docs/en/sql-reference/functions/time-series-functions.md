@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/time-series-functions
 sidebar_position: 172
-sidebar_label: Time Series
+sidebar_label: 'Time Series'
 ---
 
 # Time Series Functions

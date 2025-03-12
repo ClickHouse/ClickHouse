@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/array-functions
 sidebar_position: 10
-sidebar_label: Arrays
+sidebar_label: 'Arrays'
 ---
 
 # Array Functions

@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/
 sidebar_position: 1
-sidebar_label: List of statements
+sidebar_label: 'List of statements'
 ---
 
 # ClickHouse SQL Statements

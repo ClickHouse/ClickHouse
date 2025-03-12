@@ -1,7 +1,7 @@
 ---
 slug: /operations/quotas
 sidebar_position: 51
-sidebar_label: Quotas
+sidebar_label: 'Quotas'
 title: 'Quotas'
 ---
 

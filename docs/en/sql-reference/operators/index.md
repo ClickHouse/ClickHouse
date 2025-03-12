@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/operators/
 sidebar_position: 38
-sidebar_label: Operators
+sidebar_label: 'Operators'
 displayed_sidebar: sqlreference
 ---
 

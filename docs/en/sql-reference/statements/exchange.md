@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/exchange
 sidebar_position: 49
-sidebar_label: EXCHANGE
+sidebar_label: 'EXCHANGE'
 ---
 
 # EXCHANGE Statement

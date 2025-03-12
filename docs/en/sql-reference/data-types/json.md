@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/object-data-type
 sidebar_position: 26
-sidebar_label: Object Data Type
+sidebar_label: 'Object Data Type'
 keywords: [object, data type]
 ---
 

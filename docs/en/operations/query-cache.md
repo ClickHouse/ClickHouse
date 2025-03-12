@@ -1,7 +1,7 @@
 ---
 slug: /operations/query-cache
 sidebar_position: 65
-sidebar_label: Query Cache
+sidebar_label: 'Query Cache'
 ---
 
 # Query Cache

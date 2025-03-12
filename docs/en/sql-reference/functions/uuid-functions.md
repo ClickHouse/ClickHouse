@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/uuid-functions
 sidebar_position: 205
-sidebar_label: UUIDs
+sidebar_label: 'UUIDs'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';

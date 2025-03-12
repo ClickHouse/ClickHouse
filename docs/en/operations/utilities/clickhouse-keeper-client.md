@@ -1,6 +1,6 @@
 ---
 slug: /operations/utilities/clickhouse-keeper-client
-sidebar_label: clickhouse-keeper-client
+sidebar_label: 'clickhouse-keeper-client'
 ---
 
 # clickhouse-keeper-client

@@ -1,6 +1,6 @@
 ---
 slug: /sql-reference/window-functions/first_value
-sidebar_label: first_value
+sidebar_label: 'first_value'
 sidebar_position: 3
 ---
 

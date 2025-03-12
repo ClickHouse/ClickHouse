@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/logical-functions
 sidebar_position: 110
-sidebar_label: Logical
+sidebar_label: 'Logical'
 ---
 
 # Logical Functions

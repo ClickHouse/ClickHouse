@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/conditional-functions
 sidebar_position: 40
-sidebar_label: Conditional
+sidebar_label: 'Conditional'
 ---
 
 # Conditional Functions

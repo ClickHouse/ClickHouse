@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/aggregate-functions/combinators
 sidebar_position: 37
-sidebar_label: Combinators
+sidebar_label: 'Combinators'
 ---
 
 # Aggregate Function Combinators

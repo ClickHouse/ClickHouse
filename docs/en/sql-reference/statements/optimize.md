@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/optimize
 sidebar_position: 47
-sidebar_label: OPTIMIZE
+sidebar_label: 'OPTIMIZE'
 title: 'OPTIMIZE Statement'
 ---
 

@@ -1,7 +1,7 @@
 ---
 slug: /interfaces/third-party/integrations
 sidebar_position: 27
-sidebar_label: Integrations
+sidebar_label: 'Integrations'
 ---
 
 # Integration Libraries from Third-party Developers

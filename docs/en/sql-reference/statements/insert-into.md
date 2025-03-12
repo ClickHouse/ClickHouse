@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/insert-into
 sidebar_position: 33
-sidebar_label: INSERT INTO
+sidebar_label: 'INSERT INTO'
 ---
 
 # INSERT INTO Statement

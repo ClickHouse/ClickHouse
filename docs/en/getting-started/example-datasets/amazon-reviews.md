@@ -1,8 +1,8 @@
 ---
 slug: /getting-started/example-datasets/amazon-reviews
-sidebar_label: Amazon customer reviews
+sidebar_label: 'Amazon customer reviews'
 title: 'Amazon Customer Review'
-title: 'Over 150M customer reviews of Amazon products'
+description: 'Over 150M customer reviews of Amazon products'
 ---
 
 This dataset contains over 150M customer reviews of Amazon products. The data is in snappy-compressed Parquet files in AWS S3 that total 49GB in size (compressed). Let's walk through the steps to insert it into ClickHouse.

@@ -1,7 +1,7 @@
 ---
 description: 'Dataset containing all of the commits and changes for the ClickHouse repository'
 slug: /getting-started/example-datasets/github
-sidebar_label: Github Repo
+sidebar_label: 'Github Repo'
 sidebar_position: 1
 title: 'Writing Queries in ClickHouse using GitHub Data'
 ---

@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/aggregatefunction
 sidebar_position: 46
-sidebar_label: AggregateFunction
+sidebar_label: 'AggregateFunction'
 ---
 
 # AggregateFunction

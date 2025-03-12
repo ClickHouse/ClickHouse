@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/aggregate-functions/parametric-functions
 sidebar_position: 38
-sidebar_label: Parametric
+sidebar_label: 'Parametric'
 ---
 
 # Parametric Aggregate Functions

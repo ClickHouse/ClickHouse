@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/splitting-merging-functions
 sidebar_position: 165
-sidebar_label: Splitting Strings
+sidebar_label: 'Splitting Strings'
 ---
 
 # Functions for Splitting Strings

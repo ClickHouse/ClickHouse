@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/machine-learning-functions
 sidebar_position: 115
-sidebar_label: Machine Learning
+sidebar_label: 'Machine Learning'
 ---
 
 # Machine Learning Functions

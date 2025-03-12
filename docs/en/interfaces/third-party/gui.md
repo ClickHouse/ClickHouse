@@ -1,7 +1,7 @@
 ---
 slug: /interfaces/third-party/gui
 sidebar_position: 28
-sidebar_label: Visual Interfaces
+sidebar_label: 'Visual Interfaces'
 ---
 
 # Visual Interfaces from Third-party Developers

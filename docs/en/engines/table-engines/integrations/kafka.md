@@ -1,7 +1,7 @@
 ---
 slug: /engines/table-engines/integrations/kafka
 sidebar_position: 110
-sidebar_label: Kafka
+sidebar_label: 'Kafka'
 title: 'Kafka'
 description: 'The Kafka engine works with Apache Kafka and lets you publish or subscribe to data flows, organize fault-tolerant storage, and process streams as they become available.'
 ---

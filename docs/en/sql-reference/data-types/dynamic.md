@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/dynamic
 sidebar_position: 62
-sidebar_label: Dynamic
+sidebar_label: 'Dynamic'
 ---
 import BetaBadge from '@theme/badges/BetaBadge';
 

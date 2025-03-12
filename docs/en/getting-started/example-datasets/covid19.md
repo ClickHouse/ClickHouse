@@ -1,7 +1,7 @@
 ---
 description: 'COVID-19 Open-Data is a large, open-source database of COVID-19 epidemiological data and related factors like demographics, economics, and government responses'
 slug: /getting-started/example-datasets/covid19
-sidebar_label: COVID-19 Open-Data
+sidebar_label: 'COVID-19 Open-Data'
 title: 'COVID-19 Open-Data'
 ---
 

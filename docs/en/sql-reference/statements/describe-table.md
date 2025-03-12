@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/describe-table
 sidebar_position: 42
-sidebar_label: DESCRIBE TABLE
+sidebar_label: 'DESCRIBE TABLE'
 title: 'DESCRIBE TABLE'
 ---
 

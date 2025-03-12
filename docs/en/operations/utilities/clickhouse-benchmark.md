@@ -1,7 +1,7 @@
 ---
 slug: /operations/utilities/clickhouse-benchmark
 sidebar_position: 61
-sidebar_label: clickhouse-benchmark
+sidebar_label: 'clickhouse-benchmark'
 ---
 
 # clickhouse-benchmark 

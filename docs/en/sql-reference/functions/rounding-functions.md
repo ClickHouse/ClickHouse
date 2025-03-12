@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/rounding-functions
 sidebar_position: 155
-sidebar_label: Rounding
+sidebar_label: 'Rounding'
 ---
 
 # Rounding Functions

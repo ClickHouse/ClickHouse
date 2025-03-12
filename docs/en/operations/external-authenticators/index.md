@@ -1,7 +1,7 @@
 ---
 slug: /operations/external-authenticators/
 sidebar_position: 48
-sidebar_label: External User Authenticators and Directories
+sidebar_label: 'External User Authenticators and Directories'
 title: 'External User Authenticators and Directories'
 pagination_next: 'operations/external-authenticators/kerberos'
 ---

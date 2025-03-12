@@ -1,6 +1,6 @@
 ---
 slug: /sql-reference/statements/undrop
-sidebar_label: UNDROP
+sidebar_label: 'UNDROP'
 ---
 
 # UNDROP TABLE

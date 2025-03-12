@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/date
 sidebar_position: 12
-sidebar_label: Date
+sidebar_label: 'Date'
 ---
 
 # Date

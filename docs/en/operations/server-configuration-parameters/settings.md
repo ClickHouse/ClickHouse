@@ -1,7 +1,7 @@
 ---
 slug: /operations/server-configuration-parameters/settings
 sidebar_position: 57
-sidebar_label: Global Server Settings
+sidebar_label: 'Global Server Settings'
 description: This section contains descriptions of server settings that cannot be changed at the session or query level.
 keywords: [global server settings]
 ---

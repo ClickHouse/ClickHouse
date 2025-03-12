@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/newjson
 sidebar_position: 63
-sidebar_label: JSON
+sidebar_label: 'JSON'
 keywords: [json, data type]
 title: 'JSON Data Type'
 ---

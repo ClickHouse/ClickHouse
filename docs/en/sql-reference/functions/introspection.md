@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/introspection
 sidebar_position: 100
-sidebar_label: Introspection
+sidebar_label: 'Introspection'
 ---
 
 # Introspection Functions

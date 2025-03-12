@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/syntax
 sidebar_position: 2
-sidebar_label: Syntax
+sidebar_label: 'Syntax'
 title: 'Syntax'
 displayed_sidebar: sqlreference
 ---

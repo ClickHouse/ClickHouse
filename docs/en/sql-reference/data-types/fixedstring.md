@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/data-types/fixedstring
 sidebar_position: 10
-sidebar_label: FixedString(N)
+sidebar_label: 'FixedString(N)'
 ---
 
 # FixedString(N)

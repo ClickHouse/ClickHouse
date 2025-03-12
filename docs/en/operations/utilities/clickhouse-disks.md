@@ -1,7 +1,7 @@
 ---
 slug: /operations/utilities/clickhouse-disks
 sidebar_position: 59
-sidebar_label: clickhouse-disks
+sidebar_label: 'clickhouse-disks'
 ---
 
 # Clickhouse-disks

@@ -2,7 +2,7 @@
 slug: /development/style
 title: 'C++ Style Guide'
 description: 'Coding style guidelines for ClickHouse C++ development'
-sidebar_position: 80
+sidebar_position: 70
 sidebar_label: 'C++ Style Guide'
 ---
 

@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/revoke
 sidebar_position: 39
-sidebar_label: REVOKE
+sidebar_label: 'REVOKE'
 ---
 
 # REVOKE Statement

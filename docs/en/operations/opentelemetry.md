@@ -1,7 +1,7 @@
 ---
 slug: /operations/opentelemetry
 sidebar_position: 62
-sidebar_label: Tracing ClickHouse with OpenTelemetry
+sidebar_label: 'Tracing ClickHouse with OpenTelemetry'
 title: 'Tracing ClickHouse with OpenTelemetry'
 ---
 

@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/set
 sidebar_position: 50
-sidebar_label: SET
+sidebar_label: 'SET'
 ---
 
 # SET Statement

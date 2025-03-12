@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/type-conversion-functions
 sidebar_position: 185
-sidebar_label: Type Conversion
+sidebar_label: 'Type Conversion'
 ---
 
 # Type Conversion Functions

@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/statements/kill
 sidebar_position: 46
-sidebar_label: KILL
+sidebar_label: 'KILL'
 title: 'KILL Statements'
 ---
 

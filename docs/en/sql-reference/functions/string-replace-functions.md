@@ -1,7 +1,7 @@
 ---
 slug: /sql-reference/functions/string-replace-functions
 sidebar_position: 150
-sidebar_label: Replacing in Strings
+sidebar_label: 'Replacing in Strings'
 ---
 
 # Functions for Replacing in Strings
