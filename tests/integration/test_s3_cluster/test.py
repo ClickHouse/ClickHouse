@@ -361,7 +361,7 @@ def test_parallel_distributed_insert_select_with_schema_inference(started_cluste
     node.query(
         """
     CREATE TABLE parallel_insert_select ON CLUSTER 'first_shard' (a String, b UInt64)
-    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/insert_select_with_replicated', '{replica}')
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/test_parallel_distributed_insert_select_with_schema_inference', '{replica}')
     ORDER BY (a, b);
         """
     )
