@@ -1,3 +1,7 @@
+#include "config.h"
+
+#if USE_AVRO
+
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Common/DateLUTImpl.h>
@@ -133,3 +137,5 @@ bool PartitionPruner::canBePruned(const ManifestFileEntry & entry) const
 
 
 }
+
+#endif

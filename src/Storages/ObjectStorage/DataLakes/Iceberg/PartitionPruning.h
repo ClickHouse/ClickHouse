@@ -1,4 +1,7 @@
 #pragma once
+#include "config.h"
+
+#if USE_AVRO
 
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
@@ -6,6 +9,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
+
 
 namespace Iceberg
 {
@@ -41,3 +45,5 @@ public:
 };
 
 }
+
+#endif
