@@ -974,7 +974,11 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             if (dag->result_name == prewhere_info->prewhere_column_name)
             {
                 auto stats = drop_mark_ranges(dag);
-                LOG_DEBUG(log, "PREWHERE contition {} by query condition cache has dropped {}/{} granules.", prewhere_info->prewhere_column_name, stats.granules_dropped, stats.total_granules);
+                LOG_DEBUG(log,
+                        "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
+                        stats.granules_dropped,
+                        stats.total_granules,
+                        prewhere_info->prewhere_column_name);
                 break;
             }
         }
@@ -984,7 +988,11 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     {
         const auto * dag = filter_actions_dag->getOutputs().front();
         auto stats = drop_mark_ranges(dag);
-        LOG_DEBUG(log, "WHERE condition {} by query condition cache has dropped {}/{} granules.", filter_actions_dag->getOutputs().front()->result_name, stats.granules_dropped, stats.total_granules);
+        LOG_DEBUG(log,
+                "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
+                stats.granules_dropped,
+                stats.total_granules,
+                filter_actions_dag->getOutputs().front()->result_name);
     }
 }
 
