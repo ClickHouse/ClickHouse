@@ -2407,6 +2407,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::NOT_IN),        Operator("notIn",           9,  2)},
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
+    {toStringView(Keyword::IN_BLOOM_FILTER), Operator("inBloomFilter", 9, 2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
