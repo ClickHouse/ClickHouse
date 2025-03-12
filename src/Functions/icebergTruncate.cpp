@@ -154,7 +154,7 @@ public:
             auto modulo_func = FunctionFactory::instance().get("positiveModulo", context)->build(modulo_arguments);
             auto modulo_result_type = modulo_func->getResultType();
             auto modulo_result = modulo_func->execute(modulo_arguments, modulo_result_type, input_rows_count, false);
-            ColumnWithTypeAndName modulo_result_with_type(modulo_result, modulo_result_type, (*modulo_result)[0].dump());
+            ColumnWithTypeAndName modulo_result_with_type(modulo_result, modulo_result_type, "");
             auto minus_arguments = {arguments[1], modulo_result_with_type};
             auto minus_func = FunctionFactory::instance().get("minus", context)->build(minus_arguments);
             auto minus_result_type = minus_func->getResultType();
