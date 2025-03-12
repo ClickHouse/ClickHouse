@@ -118,7 +118,7 @@ CONV_FN(ExprColAlias, eca)
     }
 }
 
-void convertToSQLString(String & ret, const String & s)
+static void convertToSQLString(String & ret, const String & s)
 {
     for (size_t i = 0; i < s.length(); i++)
     {
@@ -704,7 +704,7 @@ CONV_FN(EnumDefValue, edf)
     ret += std::to_string(edf.number());
 }
 
-void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
+static void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
 {
     using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
     switch (btn.bottom_one_of_case())
@@ -1790,7 +1790,7 @@ CONV_FN(GenerateSeriesFunc, gsf)
 
 CONV_FN(TableFunction, tf);
 
-void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
+static void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
 {
     using TableOrFunctionType = TableOrFunction::JtfOneofCase;
     switch (tof.jtf_oneof_case())
@@ -2024,9 +2024,11 @@ CONV_FN(GenerateRandomFunc, grfunc)
     ret += ")";
 }
 
-CONV_FN(ValuesStatement, values)
+static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
 {
-    ret += "VALUES (";
+    ret += "VALUES ";
+    ret += tudf ? "(" : "";
+    ret += "(";
     ExprListToString(ret, values.expr_list());
     ret += ")";
     for (int i = 0; i < values.extra_expr_lists_size(); i++)
@@ -2035,6 +2037,7 @@ CONV_FN(ValuesStatement, values)
         ExprListToString(ret, values.extra_expr_lists(i));
         ret += ")";
     }
+    ret += tudf ? ")" : "";
 }
 
 CONV_FN(TableFunction, tf)
@@ -2087,7 +2090,7 @@ CONV_FN(TableFunction, tf)
             GenerateRandomFuncToString(ret, tf.grandom());
             break;
         case TableFunctionType::kValues:
-            ValuesStatementToString(ret, tf.values());
+            ValuesStatementToString(ret, true, tf.values());
             break;
         default:
             ret += "numbers(10)";
@@ -3096,7 +3099,7 @@ CONV_FN(Insert, insert)
     }
     if (insert.has_values())
     {
-        ValuesStatementToString(ret, insert.values());
+        ValuesStatementToString(ret, false, insert.values());
     }
     else if (insert.has_select())
     {
