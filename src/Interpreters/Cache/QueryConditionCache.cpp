@@ -88,6 +88,11 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
 
 }
 
+std::vector<QueryConditionCache::Cache::KeyMapped> QueryConditionCache::dump() const
+{
+    return cache.dump();
+}
+
 void QueryConditionCache::clear()
 {
     cache.clear();

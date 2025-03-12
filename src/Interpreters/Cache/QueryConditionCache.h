@@ -67,6 +67,9 @@ public:
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
     std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, size_t condition_hash);
 
+    /// For debugging and system tables
+    std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
+
     void clear();
 
     void setMaxSizeInBytes(size_t max_size_in_bytes);
