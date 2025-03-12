@@ -48,7 +48,13 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto * join = typeid_cast<JoinStepLogical *>(parent.get());
     if (!join)
         return 0;
-    auto & join_info = join->getJoinInfo();
+    const auto & join_algorithms = join->getJoinSettings().join_algorithms;
+    for (const auto & join_algorithm : join_algorithms)
+    {
+        if (join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH)
+            return 0;
+    }
+    const auto & join_info = join->getJoinInfo();
     if (join_info.strictness != JoinStrictness::All)
         return 0;
     if (!isInner(join_info.kind))

@@ -11,7 +11,7 @@
 namespace DB
 {
 
-    class ReadFromSystemOneBlock : public SourceStepWithFilter
+class ReadFromSystemOneBlock : public SourceStepWithFilter
 {
 public:
     std::string getName() const override { return "ReadFromSystemOneBlock"; }
