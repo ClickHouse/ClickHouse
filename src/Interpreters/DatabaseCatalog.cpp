@@ -36,6 +36,7 @@
 
 #include <base/isSharedPtrUnique.h>
 #include <boost/range/adaptor/map.hpp>
+#include <fmt/ranges.h>
 
 #include "config.h"
 
@@ -514,10 +515,12 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 
 void DatabaseCatalog::assertDatabaseExists(const String & database_name) const
 {
+    if (database_name.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Database name cannot be empty");
+
     DatabasePtr db;
     {
         std::lock_guard lock{databases_mutex};
-        assert(!database_name.empty());
         if (auto it = databases.find(database_name); it != databases.end())
             db = it->second;
     }

@@ -14,7 +14,6 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 #include <Common/thread_local_rng.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
@@ -398,6 +397,10 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
 
     getContext()->checkAccess(AccessType::DROP_DATABASE, database_name);
 
+    auto * const db_replicated = dynamic_cast<DatabaseReplicated *>(database.get());
+    if (truncate && db_replicated)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "TRUNCATE DATABASE is not implemented for replicated databases");
+
     if (query.kind == ASTDropQuery::Kind::Detach && query.permanently)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH PERMANENTLY is not implemented for databases");
 
@@ -459,6 +462,7 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
             uuids_to_wait.push_back(table_to_wait);
         }
     }
+
     // only if operation is DETACH
     if ((!drop || !truncate) && query.sync)
     {

@@ -18,7 +18,7 @@ For example, `'id UInt32, name String'`.
 This function can be used only in `INSERT SELECT` query and only once but otherwise behaves like ordinary table function
 (for example, it can be used in subquery, etc.).
 
-Data can be sent in any way like for ordinary `INSERT` query and passed in any available [format](../../interfaces/formats.md#formats)
+Data can be sent in any way like for ordinary `INSERT` query and passed in any available [format](/sql-reference/formats)
 that must be specified in the end of query (unlike ordinary `INSERT SELECT`).
 
 The main feature of this function is that when server receives data from client it simultaneously converts it

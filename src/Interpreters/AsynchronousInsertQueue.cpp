@@ -966,7 +966,7 @@ try
 
         bool pulling_pipeline = false;
         logQueryFinish(
-            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCacheUsage::None, internal);
+            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryResultCacheUsage::None, internal);
     };
 
     try

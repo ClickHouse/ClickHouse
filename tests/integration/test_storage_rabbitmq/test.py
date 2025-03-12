@@ -3872,3 +3872,62 @@ def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
         i += 2
 
     connection.close()
+
+
+def test_rabbitmq_json_type(rabbitmq_cluster):
+    instance.query(
+        """
+        SET allow_experimental_json_type=1;
+        CREATE TABLE test.rabbitmq (data JSON)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_exchange_name = 'json_type',
+                     rabbitmq_format = 'JSONAsObject',
+                     rabbitmq_commit_on_select = 1,
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_max_block_size=100,
+                     rabbitmq_queue_base = 'json_type',
+                     rabbitmq_row_delimiter = '\\n';
+        CREATE TABLE test.view (a Int64)
+            ENGINE = MergeTree()
+            ORDER BY a;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT data.a::Int64 as a FROM test.rabbitmq;
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+
+    messages = [
+        '{"a" : 1}',
+        '{"a" : 2}',
+    ]
+
+    for message in messages:
+        channel.basic_publish(exchange="json_type", routing_key="", body=message)
+    connection.close()
+
+    while int(instance.query("SELECT count() FROM test.view")) < 2:
+        time.sleep(1)
+
+    result = instance.query("SELECT * FROM test.view ORDER BY a;")
+
+    expected = """\
+1
+2
+"""
+
+    assert TSV(result) == TSV(expected)
+
+    instance.query(
+        """
+        DROP TABLE test.view;
+        DROP TABLE test.consumer;
+        DROP TABLE test.rabbitmq;
+    """
+    )
