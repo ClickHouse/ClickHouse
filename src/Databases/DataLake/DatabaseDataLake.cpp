@@ -225,7 +225,6 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
         return table_metadata.getLocation();
     else
         return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
-
 }
 
 bool DatabaseDataLake::empty() const
