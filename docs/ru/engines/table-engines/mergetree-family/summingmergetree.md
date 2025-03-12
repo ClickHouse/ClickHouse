@@ -134,6 +134,6 @@ ClickHouse может слить куски данных таким образо
 [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 ```
 
-При запросе данных используйте функцию [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) для агрегации `Map`.
+При запросе данных используйте функцию [sumMap(key, value)](/sql-reference/aggregate-functions/reference/summap) для агрегации `Map`.
 
 Для вложенной структуры данных не нужно указывать её столбцы в кортеже столбцов для суммирования.

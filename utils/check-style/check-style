@@ -468,6 +468,10 @@ ls -1d $ROOT_PATH/contrib/*-cmake | xargs -I@ find @ -name 'CMakeLists.txt' -or 
 # DOS/Windows newlines
 find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | xargs grep -l -P '\r$' && echo "^ Files contain DOS/Windows newlines (\r\n instead of \n)."
 
+# Left/right single/double quotation marks (too easy to confuse with standard single/double quotation marks)
+EXCLUDE_QUOTATION_MARKS='src/Functions/HTMLCharacterReference.generated.cpp|src/Parsers/Lexer.cpp'
+find $ROOT_PATH/{base,src,programs,utils,docs/en} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | grep -vP $EXCLUDE_QUOTATION_MARKS | xargs grep -l -P '”|“|‘|’' && echo "^ Files contain left or right single/double quotation marks: ”, “, ‘, or ’."
+
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
 find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' |
     grep -vP $EXCLUDE |
@@ -487,4 +491,10 @@ DIFF=$(comm -3 <(grep -o "\b$PATTERN\w*\b" $ROOT_PATH/src/Core/Settings.cpp | so
 find $ROOT_PATH/{src,base,programs,utils} -name '*.cpp' -or -name '*.h' | xargs grep -l "magic_enum.hpp" | grep -v EnumReflection.h | while read -r line;
 do
     echo "Found the inclusion of magic_enum.hpp in '${line}'. Please use <base/EnumReflection.h> instead"
+done
+
+# Currently fmt::format is faster both at compile and runtime
+find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -vP $EXCLUDE | xargs grep -l "std::format" | while read -r file;
+do
+    echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
 done

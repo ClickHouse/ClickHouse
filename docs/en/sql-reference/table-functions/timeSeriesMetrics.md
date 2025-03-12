@@ -1,13 +1,15 @@
 ---
-slug: /en/sql-reference/table-functions/timeSeriesMetrics
+slug: /sql-reference/table-functions/timeSeriesMetrics
 sidebar_position: 145
 sidebar_label: timeSeriesMetrics
+title: "timeSeriesMetrics"
+description: "timeSeriesMetrics returns the metrics table used by table `db_name.time_series_table` whose table engine is the TimeSeries engine."
 ---
 
-# timeSeriesMetrics
+# timeSeriesMetrics Table Function
 
 `timeSeriesMetrics(db_name.time_series_table)` - Returns the [metrics](../../engines/table-engines/integrations/time-series.md#metrics-table) table
-used by table `db_name.time_series_table` which table engine is [TimeSeries](../../engines/table-engines/integrations/time-series.md):
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](../../engines/table-engines/integrations/time-series.md) engine:
 
 ``` sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries METRICS metrics_table
