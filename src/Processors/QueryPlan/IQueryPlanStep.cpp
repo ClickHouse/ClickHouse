@@ -1,7 +1,8 @@
-#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <IO/Operators.h>
 #include <Processors/IProcessor.h>
 #include <Processors/Port.h>
-#include <IO/Operators.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Common/CurrentThread.h>
 
 #include <fmt/format.h>
 
