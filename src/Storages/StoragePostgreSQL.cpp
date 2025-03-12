@@ -1,5 +1,4 @@
 #include "StoragePostgreSQL.h"
-#include "DataTypes/DataTypeFixedString.h"
 
 #if USE_LIBPQXX
 #include <Processors/Sources/PostgreSQLSource.h>
@@ -16,6 +15,7 @@
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
