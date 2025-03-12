@@ -99,6 +99,7 @@ namespace Setting
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsUInt64 max_block_size;
     extern const SettingsBool insert_null_as_default;
+    extern const SettingsMaxThreads max_threads;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsMilliseconds log_queries_min_query_duration_ms;
     extern const SettingsLogQueriesType log_queries_min_type;
@@ -460,13 +461,15 @@ Chain ViewsManager::createPreSink() const
 Chain ViewsManager::createSink() const
 {
     return createSink(root.view_id);
-
 }
 
 
 Chain ViewsManager::createPostSink() const
 {
-    return createPostSink(root.view_id, 0);
+    auto chain = createPostSink(root.view_id, 0);
+    chain.setNumThreads(init_context->getSettingsRef()[Setting::max_threads]);
+    chain.setConcurrencyControl(init_context->getSettingsRef()[Setting::use_concurrency_control]);
+    return chain;
 }
 
 
@@ -514,7 +517,7 @@ void ViewsManager::buildRelaitions()
         auto current = path.current();
         LOG_DEBUG(logger, "register_path: {}", path.debugString());
 
-        auto storage = DatabaseCatalog::instance().tryGetTable(current, init_context);
+        auto storage = current == init_table_id ? init_storage : DatabaseCatalog::instance().tryGetTable(current, init_context);
         if (!storage)
         {
             if (current == init_table_id)
@@ -1137,10 +1140,8 @@ Chain ViewsManager::createPostSink(StorageIDPrivate view_id, size_t level) const
 
     std::list<ProcessorPtr> processors;
     QueryPlanResourceHolder resources;
-    size_t max_parallel_streams = 0;
     for (auto & chain : view_chains)
     {
-        max_parallel_streams += std::max<size_t>(chain.getNumThreads(), 1);
         resources.append(chain.detachResources());
         connect(*out, chain.getInputPort());
         connect(chain.getOutputPort(), *in);
@@ -1154,8 +1155,6 @@ Chain ViewsManager::createPostSink(StorageIDPrivate view_id, size_t level) const
 
     auto result = Chain(std::move(processors));
     result.attachResources(std::move(resources));
-    result.setNumThreads(max_parallel_streams);
-    result.setConcurrencyControl(insert_contexts.at(view_id)->getSettingsRef()[Setting::use_concurrency_control]);
 
     LOG_DEBUG(logger, "createPostSink: {}, input {}, output {}", view_id, result.getInputHeader().dumpStructure(), result.getOutputHeader().dumpStructure());
 

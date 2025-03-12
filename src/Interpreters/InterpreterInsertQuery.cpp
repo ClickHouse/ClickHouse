@@ -560,11 +560,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     pipeline.addChains(std::move(sink_chains));
 
     if (!settings[Setting::parallel_view_processing] && views_involved)
-    {
-        /// Don't use more threads for INSERT than for SELECT to reduce memory consumption.
-        if (pipeline.getNumThreads() > num_select_threads)
-            pipeline.setMaxThreads(num_select_threads);
-    }
+        pipeline.setMaxThreads(num_select_threads);
+    else
+        pipeline.setMaxThreads(std::max<size_t>(num_select_threads, settings[Setting::max_insert_threads]));
 
     LOG_DEBUG(getLogger("InterpreterInsertQuery"), "EmptySink");
     pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
@@ -627,7 +625,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     QueryPipeline pipeline = QueryPipeline(std::move(chain));
 
-    pipeline.setNumThreads(std::min<size_t>(pipeline.getNumThreads(), settings[Setting::max_threads]));
+    auto max_insert_threads = std::max<size_t>(1, std::max<size_t>(settings[Setting::max_threads], settings[Setting::max_insert_threads]));
+    LOG_DEBUG(getLogger("InterpreterInsertQuery"), "set num thread at {}", max_insert_threads);
+    pipeline.setNumThreads(max_insert_threads);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
 
     if (query.hasInlinedData() && !async_insert)
