@@ -10,10 +10,8 @@
 #include <Columns/ColumnTuple.h>
 #include <Poco/JSON/Parser.h>
 #include "DataTypes/DataTypeTuple.h"
-#include <Common/logger_useful.h>
 #include <Storages/ColumnsDescription.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 #include <DataTypes/DataTypeNullable.h>
 
 namespace DB::ErrorCodes
