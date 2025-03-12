@@ -917,7 +917,13 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
-        return nullptr;
+    {
+        auto key = callback();
+        if (key.empty())
+            return nullptr;
+
+        return std::make_shared<ObjectInfo>(key, std::nullopt);
+    }
 
     return buffer[current_index];
 }
