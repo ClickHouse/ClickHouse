@@ -9,7 +9,7 @@ namespace DB
 
 class Context;
 class ViewsManager;
-using ViewsManagerPtr = std::shared_ptr<ViewsManager>;
+using ViewsManagerConstPtr = std::shared_ptr<const ViewsManager>;
 
 /// Sink which is returned from Storage::write.
 class SinkToStorage : public ExceptionKeepingTransform
@@ -20,13 +20,13 @@ friend class PartitionedSink;
 public:
     explicit SinkToStorage(const Block & header);
 
-    ViewsManagerPtr views_manager;
+    ViewsManagerConstPtr views_manager;
 
     const Block & getHeader() const { return inputs.front().getHeader(); }
     void addTableLock(const TableLockHolder & lock) { table_locks.push_back(lock); }
     void addInterpreterContext(std::shared_ptr<const Context> context) { interpreter_context.emplace_back(std::move(context)); }
 
-    void setViewManager(ViewsManagerPtr views_manager_) { views_manager = views_manager_; }
+    void setViewManager(ViewsManagerConstPtr views_manager_) { views_manager = views_manager_; }
 
 protected:
     virtual void consume(Chunk & chunk) = 0;

@@ -44,6 +44,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
@@ -511,7 +512,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     {
         auto out = views_manager->createPreSink();
         out.addViewsManager(views_manager);
-        presink_chains.emplace_back(std::move(out));
+        presink_chains.push_back(std::move(out));
     }
 
     std::vector<Chain> sink_chains;
@@ -526,7 +527,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         if (!table->noPushingToViews())
             out.appendChainNotStrict(views_manager->createPostSink());
 
-        sink_chains.emplace_back(std::move(out));
+        sink_chains.push_back(std::move(out));
     }
 
     pipeline.resize(presink_chains.size());
@@ -543,14 +544,19 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             });
     }
 
+    LOG_DEBUG(getLogger("InterpreterInsertQuery"), "presink_chains");
     for (auto & chain : presink_chains)
         pipeline.addResources(chain.detachResources());
     pipeline.addChains(std::move(presink_chains));
 
+    LOG_DEBUG(getLogger("InterpreterInsertQuery"), "resize");
     pipeline.resize(sink_streams_size);
 
+    LOG_DEBUG(getLogger("InterpreterInsertQuery"), "sink_chains");
     for (auto & chain : sink_chains)
+    {
         pipeline.addResources(chain.detachResources());
+    }
     pipeline.addChains(std::move(sink_chains));
 
     if (!settings[Setting::parallel_view_processing] && views_involved)
@@ -560,6 +566,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             pipeline.setMaxThreads(num_select_threads);
     }
 
+    LOG_DEBUG(getLogger("InterpreterInsertQuery"), "EmptySink");
     pipeline.setSinks([&](const Block & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
     {
         return std::make_shared<EmptySink>(cur_header);

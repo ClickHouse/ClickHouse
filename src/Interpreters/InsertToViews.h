@@ -84,6 +84,7 @@ private:
 
 public:
     using Ptr = std::shared_ptr<ViewsManager>;
+    using ConstPtr = std::shared_ptr<const ViewsManager>;
 
     template <class... Args>
     static Ptr create(Args &&... args)
@@ -96,22 +97,22 @@ public:
     }
     static Ptr create(StorageID table_id, ASTPtr query, Block insert_header, ContextPtr context);
 
-    Chain createPreSink();
-    Chain createSink();
-    Chain createPostSink();
+    Chain createPreSink() const ;
+    Chain createSink() const;
+    Chain createPostSink() const;
     Chain createRetry(Dependencies path);
 
-    void logQueryView(StorageID view_id, std::exception_ptr exception);
+    void logQueryView(StorageID view_id, std::exception_ptr exception) const;
 
 protected:
     ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, ContextPtr context);
 
 private:
     void buildRelaitions();
-    Chain createSelect(StorageIDPrivate view_id);
-    Chain createPreSink(StorageIDPrivate view_id);
-    Chain createSink(StorageIDPrivate view_id);
-    Chain createPostSink(StorageIDPrivate view_id, size_t level);
+    Chain createSelect(StorageIDPrivate view_id) const;
+    Chain createPreSink(StorageIDPrivate view_id) const;
+    Chain createSink(StorageIDPrivate view_id) const;
+    Chain createPostSink(StorageIDPrivate view_id, size_t level) const;
 
     StorageID init_table_id;
     StoragePtr init_storage;

@@ -37,6 +37,7 @@
 
 #include <Core/Settings.h>
 #include "Common/CurrentThread.h"
+#include "Common/Logger.h"
 #include "Common/ThreadStatus.h"
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
@@ -46,6 +47,7 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
 #include "Interpreters/StorageID.h"
+#include "Processors/Chunk.h"
 #include "QueryPipeline/Chain.h"
 #include "base/defines.h"
 
@@ -188,7 +190,7 @@ class FinalizingViewsTransform final : public IProcessor
     }
 
 public:
-    explicit FinalizingViewsTransform(std::vector<Block> headers, std::vector<ViewsManager::StorageIDPrivate> views, ViewsManagerPtr views_manager_)
+    explicit FinalizingViewsTransform(std::vector<Block> headers, std::vector<ViewsManager::StorageIDPrivate> views, ViewsManager::ConstPtr views_manager_)
         : IProcessor(initPorts(std::move(headers)), {Block()})
         , output(outputs.front())
         , views_manager(views_manager_)
@@ -286,7 +288,7 @@ private:
 
     OutputPort & output;
 
-    ViewsManagerPtr views_manager;
+    ViewsManager::ConstPtr views_manager;
     std::vector<ViewStatus> statuses;
     std::exception_ptr first_exception;
 };
@@ -340,6 +342,7 @@ protected:
         if (res.is_done)
             state.reset();
 
+        LOG_DEBUG(getLogger("InnerSelect"), "generate rows {} data {}", res.chunk.getNumRows(), res.chunk.dumpStructure());
         return res;
     }
 
@@ -372,6 +375,8 @@ private:
         /// InterpreterSelectQuery will do processing of alias columns.
         auto local_context = Context::createCopy(context);
 
+        LOG_DEBUG(getLogger("InnerSelect"), "source_id {}, data {}", source_id, data_block.rows());
+
         local_context->addViewSource(std::make_shared<StorageValues>(
             source_id,
             source_storage_metadata->getColumns(),
@@ -382,11 +387,15 @@ private:
 
         if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
-            InterpreterSelectQueryAnalyzer interpreter(select_query, local_context, local_context->getViewSource(), SelectQueryOptions().ignoreAccessCheck());
+            LOG_DEBUG(getLogger("InnerSelect"), "A");
+
+            //local_context->getViewSource()
+            InterpreterSelectQueryAnalyzer interpreter(select_query, local_context,local_context->getViewSource(), SelectQueryOptions().ignoreAccessCheck());
             pipeline = interpreter.buildQueryPipeline();
         }
         else
         {
+            LOG_DEBUG(getLogger("InnerSelect"), "B");
             InterpreterSelectQuery interpreter(select_query, local_context, SelectQueryOptions().ignoreAccessCheck());
             pipeline = interpreter.buildQueryPipeline();
         }
@@ -439,20 +448,20 @@ ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, 
 }
 
 
-Chain ViewsManager::createPreSink()
+Chain ViewsManager::createPreSink() const
 {
     return createPreSink(root.view_id);
 }
 
 
-Chain ViewsManager::createSink()
+Chain ViewsManager::createSink() const
 {
     return createSink(root.view_id);
 
 }
 
 
-Chain ViewsManager::createPostSink()
+Chain ViewsManager::createPostSink() const
 {
     return createPostSink(root.view_id, 0);
 }
@@ -486,13 +495,14 @@ void ViewsManager::buildRelaitions()
             path.pop_back();
         }
 
-        bool empty() const { return path.empty(); }
+
+        [[maybe_unused]] bool empty() const { return path.empty(); }
         const StorageIDPrivate & back() const { return path.back(); }
         const StorageIDPrivate & current() const { return back(); }
         const StorageIDPrivate & parent() const { if (path.size() > 1) return *++path.rbegin(); return empty_id; }
         const StorageIDPrivate & prevParent() const { if (path.size() > 2) return *++++path.rbegin(); return empty_id; }
         const StorageIDPrivate & prevPrevParent() const { if (path.size() > 3) return *++++++path.rbegin(); return empty_id; }
-        String debugString() const { return fmt::format("", fmt::join(path, " :-> ")); }
+        String debugString() const { return fmt::format("{}", fmt::join(path, " :-> ")); }
     };
 
     auto register_path = [&] (const VisitedPath & path)
@@ -563,14 +573,15 @@ void ViewsManager::buildRelaitions()
         if (insert_settings[Setting::min_insert_block_size_bytes_for_materialized_views])
             insert_context->setSetting("min_insert_block_size_bytes", insert_settings[Setting::min_insert_block_size_bytes_for_materialized_views].value);
 
+        storages[current] = storage;
+        metadata_snapshots[current] = metadata;
+        storage_locks[current] = std::move(lock);
+
+
         if (dynamic_cast<StorageMaterializedView *>(storage.get()))
         {
             if (current == init_table_id)
             {
-                storages[current] = storage;
-                metadata_snapshots[current] = metadata;
-                storage_locks[current] = std::move(lock);
-
                 select_queries[current] = init_query->as<ASTInsertQuery>()->select;
 
                 select_contexts[current] = init_context;
@@ -610,10 +621,6 @@ void ViewsManager::buildRelaitions()
             else
                 select_header = InterpreterSelectQuery(select_query, select_context, SelectQueryOptions()).getSampleBlock();
 
-            storages[current] = storage;
-            metadata_snapshots[current] = metadata;
-            storage_locks[current] = std::move(lock);
-
             select_queries[current] = select_query;
             input_headers[current] = output_headers.at(path.prevParent());
             select_headers[current] = select_header;
@@ -640,10 +647,6 @@ void ViewsManager::buildRelaitions()
         {
             if (current == init_table_id)
             {
-                storages[current] = storage;
-                metadata_snapshots[current] = metadata;
-                storage_locks[current] = std::move(lock);
-
                 select_queries[current] = init_query->as<ASTInsertQuery>()->select;
                 select_contexts[current] = init_context;
                 insert_contexts[current] = init_context;
@@ -651,14 +654,9 @@ void ViewsManager::buildRelaitions()
                 thread_groups[current] = CurrentThread::getGroup();
                 view_types[current] = QueryViewsLogElement::ViewType::LIVE;
                 root = {init_table_id, init_table_id};
-                LOG_DEBUG(logger, "register_path: dependency {} -> X", current);
                 dependent_views[current] = {};
                 return true;
             }
-
-            storages[current] = storage;
-            metadata_snapshots[current] = metadata;
-            storage_locks[current] = std::move(lock);
 
             select_queries[current] = live_view->getInnerQuery();
             input_headers[current] = output_headers.at(path.prevParent());
@@ -673,7 +671,6 @@ void ViewsManager::buildRelaitions()
                 init_context->getQueryContext()->addQueryAccessInfo(init_table_id, /*column_names=*/ {});
             }
 
-            LOG_DEBUG(logger, "register_path: dependency {} -> {}", path.prevParent(), current);
             dependent_views[path.prevParent()].push_back(current);
 
             return true;
@@ -682,10 +679,6 @@ void ViewsManager::buildRelaitions()
         {
             if (current == init_table_id)
             {
-                storages[current] = storage;
-                metadata_snapshots[current] = metadata;
-                storage_locks[current] = std::move(lock);
-
                 select_queries[current] = init_query->as<ASTInsertQuery>()->select;
                 select_contexts[current] = init_context;
                 insert_contexts[current] = init_context;
@@ -693,14 +686,9 @@ void ViewsManager::buildRelaitions()
                 thread_groups[current] = CurrentThread::getGroup();
                 view_types[current] = QueryViewsLogElement::ViewType::LIVE;
                 root = {init_table_id, init_table_id};
-                LOG_DEBUG(logger, "register_path: dependency {} -> X", current);
                 dependent_views[current] = {};
                 return true;
             }
-
-            storages[current] = storage;
-            metadata_snapshots[current] = metadata;
-            storage_locks[current] = std::move(lock);
 
             select_queries[current] = window_view->getMergeableQuery();
             select_contexts[current] = select_context;
@@ -715,17 +703,12 @@ void ViewsManager::buildRelaitions()
                 init_context->getQueryContext()->addQueryAccessInfo(init_table_id, /*column_names=*/ {});
             }
 
-            LOG_DEBUG(logger, "register_path: dependency {} -> {}", path.prevParent(), current);
             dependent_views[path.prevParent()].push_back(current);
 
             return true;
         }
         else
         {
-            storages[current] = storage;
-            metadata_snapshots[current] = metadata;
-            storage_locks[current] = std::move(lock);
-
             inner_tables[parent] = current;
 
             if (init_context->hasQueryContext())
@@ -748,7 +731,6 @@ void ViewsManager::buildRelaitions()
 
                 view_types[{}] = QueryViewsLogElement::ViewType::DEFAULT;
 
-                LOG_DEBUG(logger, "register_path: dependency {} -> X", "<empty>");
                 dependent_views[{}] = {};
 
                 root = {{}, init_table_id};
@@ -774,9 +756,6 @@ void ViewsManager::buildRelaitions()
                 insert_contexts.at(view_id)->checkAccess(AccessType::INSERT, current, metadata->getSampleBlock().getNames());
             }
 
-            LOG_DEBUG(logger, "register_path: current table {}, view {}, parent view {}", current, view_id, path.prevPrevParent());
-
-            LOG_DEBUG(logger, "register_path: dependency {} -> {}", path.prevPrevParent(), view_id);
             dependent_views[path.prevPrevParent()].push_back(view_id);
 
             return true;
@@ -855,7 +834,7 @@ Chain ViewsManager::createRetry(Dependencies path)
 }
 
 
-Chain ViewsManager::createSelect(StorageIDPrivate view_id)
+Chain ViewsManager::createSelect(StorageIDPrivate view_id) const
 {
     LOG_DEBUG(logger, "createSelect: {}", view_id);
 
@@ -918,7 +897,7 @@ Chain ViewsManager::createSelect(StorageIDPrivate view_id)
 }
 
 
-Chain ViewsManager::createPreSink(StorageIDPrivate view_id)
+Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
 {
     LOG_DEBUG(logger, "createPreSink: {}", view_id);
 
@@ -1013,7 +992,7 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id)
 }
 
 
-Chain ViewsManager::createSink(StorageIDPrivate view_id)
+Chain ViewsManager::createSink(StorageIDPrivate view_id) const
 {
     auto inner_id = inner_tables.at(view_id);
     LOG_DEBUG(logger, "createSink: {} ({})", view_id, inner_id);
@@ -1079,7 +1058,7 @@ Chain ViewsManager::createSink(StorageIDPrivate view_id)
 }
 
 
-Chain ViewsManager::createPostSink(StorageIDPrivate view_id, size_t level)
+Chain ViewsManager::createPostSink(StorageIDPrivate view_id, size_t level) const
 {
     auto inner_table = inner_tables.at(view_id);
     LOG_DEBUG(logger, "createPostSink: {} ({})", view_id, inner_table);
@@ -1183,7 +1162,7 @@ String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 }
 
 
-void ViewsManager::logQueryView(StorageID view_id, std::exception_ptr exception)
+void ViewsManager::logQueryView(StorageID view_id, std::exception_ptr exception) const
 {
     LOG_DEBUG(logger, "logQueryView {}", view_id);
 
