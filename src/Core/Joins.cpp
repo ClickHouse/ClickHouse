@@ -105,7 +105,7 @@ JoinKind deserializeJoinKind(ReadBuffer & in)
     uint8_t val;
     readIntBinary(val, in);
 
-    if (val >= JoinKind::MAX)
+    if (val > JoinKindMax)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinKind", val);
 
     return static_cast<JoinKind>(val);
@@ -122,7 +122,7 @@ JoinStrictness deserializeJoinStrictness(ReadBuffer & in)
     uint8_t val;
     readIntBinary(val, in);
 
-    if (val >= JoinStrictness::MAX)
+    if (val > JoinStrictnessMax)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinStrictness", val);
 
     return static_cast<JoinStrictness>(val);
@@ -138,7 +138,7 @@ JoinLocality deserializeJoinLocality(ReadBuffer & in)
     uint8_t val;
     readIntBinary(val, in);
 
-    if (val >= JoinLocality::MAX)
+    if (val > JoinLocalityMax)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinLocality", UInt16(val));
 
     return static_cast<JoinLocality>(val);

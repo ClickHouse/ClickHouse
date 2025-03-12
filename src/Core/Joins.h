@@ -18,8 +18,9 @@ enum class JoinKind : uint8_t
     Cross, /// Direct product. Strictness and condition doesn't matter.
     Comma, /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
     Paste, /// Used to join parts without `ON` clause.
-    MAX, /// Fake value used for check during deserialization.
 };
+
+constexpr uint8_t JoinKindMax = static_cast<uint8_t>(JoinKind::Paste);
 
 void serializeJoinKind(JoinKind kind, WriteBuffer & out);
 JoinKind deserializeJoinKind(ReadBuffer & in);
@@ -49,8 +50,9 @@ enum class JoinStrictness : uint8_t
     Asof, /// For the last JOIN column, pick the latest value
     Semi, /// LEFT or RIGHT. SEMI LEFT JOIN filters left table by values exists in right table. SEMI RIGHT - otherwise.
     Anti, /// LEFT or RIGHT. Same as SEMI JOIN but filter values that are NOT exists in other table.
-    MAX, /// Fake value used for check during deserialization.
 };
+
+constexpr uint8_t JoinStrictnessMax = static_cast<uint8_t>(JoinStrictness::Anti);
 
 void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out);
 JoinStrictness deserializeJoinStrictness(ReadBuffer & in);
@@ -63,8 +65,9 @@ enum class JoinLocality : uint8_t
     Unspecified = 0,
     Local, /// Perform JOIN, using only data available on same servers (co-located data).
     Global, /// Collect and merge data from remote servers, and broadcast it to each server.
-    MAX, /// Fake value used for check during deserialization.
 };
+
+constexpr uint8_t JoinLocalityMax = static_cast<uint8_t>(JoinLocality::Global);
 
 void serializeJoinLocality(JoinLocality locality, WriteBuffer & out);
 JoinLocality deserializeJoinLocality(ReadBuffer & in);
