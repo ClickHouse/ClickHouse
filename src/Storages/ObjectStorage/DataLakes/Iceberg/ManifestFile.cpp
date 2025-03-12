@@ -174,8 +174,13 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         auto source_id = current_field->getValue<Int32>("source-id");
         DB::NameAndTypePair current_column = schema_processor.getFieldCharacteristics(schema_id, source_id);
 
+        auto partition_ast = getASTFromTransform(current_field->getValue<String>("transform"), current_column.name);
+        /// Unsupported partition key expression
+        if (partition_ast == nullptr)
+            continue;
+
+        partition_key_ast->arguments->children.push_back(partition_ast);
         partition_columns_description.emplace_back(current_column.name, removeNullable(current_column.type));
-        partition_key_ast->arguments->children.push_back(getASTFromTransform(current_field->getValue<String>("transform"), partition_columns_description.back().name));
         partition_columns.push_back(removeNullable(big_partition_tuple->getColumnPtr(i)));
         this->partition_column_ids.push_back(source_id);
     }
@@ -224,8 +229,6 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         {
             Field partition_value;
             partition_columns[j]->get(i, partition_value);
-
-            LOG_DEBUG(&Poco::Logger::get("DEBUG"), "PARTITION KEY {} VALUE: {}", j, partition_value.dump());
             partition_key_value.emplace_back(partition_value);
         }
         FileEntry file = FileEntry{DataFileEntry{file_path}};

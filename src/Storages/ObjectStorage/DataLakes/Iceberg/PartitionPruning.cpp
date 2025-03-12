@@ -10,6 +10,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
 using namespace DB;
 
@@ -46,7 +47,7 @@ DB::ASTPtr getASTFromTransform(const String & transform_name, const String & col
     {
         function->name = "icebergTruncate";
         auto argument_start = transform_name.find('[');
-        auto argument_width = transform_name.length() - 1 - argument_start;
+        auto argument_width = transform_name.length() - 2 - argument_start;
         std::string width = transform_name.substr(argument_start + 1, argument_width);
         size_t truncate_width = DB::parse<size_t>(width);
         function->arguments->children.push_back(std::make_shared<DB::ASTLiteral>(truncate_width));
@@ -64,5 +65,62 @@ DB::ASTPtr getASTFromTransform(const String & transform_name, const String & col
     function->arguments->children.push_back(std::make_shared<DB::ASTIdentifier>(column_name));
     return function;
 }
+
+std::unique_ptr<DB::ActionsDAG> PartitionPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, Int32 manifest_schema_id, const std::vector<Int32> & partition_column_ids) const
+{
+    if (source_dag == nullptr)
+        return nullptr;
+
+    ActionsDAG dag_with_renames;
+    for (const auto & column_id : partition_column_ids)
+    {
+        const auto column_name_in_manifest = schema_processor->tryGetFieldCharacteristics(manifest_schema_id, column_id);
+        if (auto new_column = schema_processor->tryGetFieldCharacteristics(current_schema_id, column_id); new_column && new_column->name != column_name_in_manifest->name)
+        {
+            const auto * node = &dag_with_renames.addInput(column_name_in_manifest->name, column_name_in_manifest->type);
+            node = &dag_with_renames.addAlias(*node, new_column->name);
+            dag_with_renames.getOutputs().push_back(node);
+        }
+    }
+    return std::make_unique<DB::ActionsDAG>(DB::ActionsDAG::merge(std::move(dag_with_renames), source_dag->clone()));
+
+}
+
+PartitionPruner::PartitionPruner(
+    const DB::IcebergSchemaProcessor * schema_processor_,
+    Int32 current_schema_id_,
+    const DB::ActionsDAG * filter_dag,
+    const ManifestFileContent & manifest_file,
+    DB::ContextPtr context)
+    : schema_processor(schema_processor_)
+    , current_schema_id(current_schema_id_)
+    , partition_key(manifest_file.getPartitionKeyDescription())
+{
+    auto transformed_dag = transformFilterDagForManifest(filter_dag, manifest_file.getSchemaId(), manifest_file.getPartitionKeyColumnIDs());
+
+    if (transformed_dag != nullptr)
+        key_condition.emplace(transformed_dag.get(), context, partition_key.column_names, partition_key.expression, true /* single_point */);
+}
+
+bool PartitionPruner::canBePruned(const ManifestFileEntry & entry) const
+{
+    if (!key_condition.has_value())
+        return false;
+
+    const auto & partition_value = entry.partition_key_value;
+    std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
+    for (auto & field : index_value)
+    {
+        // NULL_LAST
+        if (field.isNull())
+            field = POSITIVE_INFINITY;
+    }
+
+    bool can_be_true = key_condition->mayBeTrueInRange(
+        partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
+
+    return !can_be_true;
+}
+
 
 }

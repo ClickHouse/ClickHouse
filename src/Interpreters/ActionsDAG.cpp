@@ -1410,7 +1410,6 @@ std::string ActionsDAG::dumpDAG() const
             if (i)
                 out << ", ";
             out << map[node.children[i]];
-            out << "|" << node.children[i]->result_name;
         }
         out << ")";
 

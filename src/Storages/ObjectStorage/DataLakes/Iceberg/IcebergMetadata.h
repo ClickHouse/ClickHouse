@@ -128,8 +128,6 @@ private:
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     std::optional<Iceberg::ManifestFileIterator> tryGetManifestFile(const String & filename) const;
-
-    std::unique_ptr<ActionsDAG> transformFilterDagForManifest(const ActionsDAG * source_dag, Int32 manifest_schema_id, const std::vector<Int32> & partition_column_ids) const;
 };
 
 }

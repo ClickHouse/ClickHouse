@@ -25,6 +25,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -500,25 +501,6 @@ IcebergSnapshot IcebergMetadata::getSnapshot(const String & filename) const
     return IcebergSnapshot{getManifestList(filename)};
 }
 
-std::unique_ptr<DB::ActionsDAG> IcebergMetadata::transformFilterDagForManifest(const ActionsDAG * source_dag, Int32 manifest_schema_id, const std::vector<Int32> & partition_column_ids) const
-{
-    if (source_dag == nullptr)
-        return nullptr;
-
-    ActionsDAG dag_with_renames;
-    for (const auto & column_id : partition_column_ids)
-    {
-        const auto column_name_in_manifest = schema_processor.tryGetFieldCharacteristics(manifest_schema_id, column_id);
-        if (auto new_column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id); new_column && new_column->name != column_name_in_manifest->name)
-        {
-            auto * node = &dag_with_renames.addInput(column_name_in_manifest->name, column_name_in_manifest->type);
-            node = &dag_with_renames.addAlias(*node, new_column->name);
-            dag_with_renames.getOutputs().push_back(node);
-        }
-    }
-    return std::make_unique<DB::ActionsDAG>(DB::ActionsDAG::merge(std::move(dag_with_renames), source_dag->clone()));
-}
-
 Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 {
     if (!current_snapshot)
@@ -530,34 +512,23 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
     Strings data_files;
     for (const auto & manifest_list_entry : *(current_snapshot->manifest_list_iterator))
     {
-        auto transformed_dag = transformFilterDagForManifest(filter_dag, manifest_list_entry.manifest_file->getSchemaId(), manifest_list_entry.manifest_file->getPartitionKeyColumnIDs());
-        auto partition_key = manifest_list_entry.manifest_file->getPartitionKeyDescription();
+        PartitionPruner pruner(&schema_processor, current_schema_id, filter_dag, *manifest_list_entry.manifest_file, getContext());
         const auto & data_files_in_manifest = manifest_list_entry.manifest_file->getFiles();
-
-        const KeyCondition partition_key_condition(transformed_dag.get(), getContext(), partition_key.column_names, partition_key.expression, true /* single_point */);
         for (const auto & manifest_file_entry : data_files_in_manifest)
         {
             if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
             {
-                const auto & partition_value = manifest_file_entry.partition_key_value;
-                std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
-                for (auto & field : index_value)
+                if (pruner.canBePruned(manifest_file_entry))
                 {
-                    // NULL_LAST
-                    if (field.isNull())
-                        field = POSITIVE_INFINITY;
+                    LOG_DEBUG(log, "File {} is pruned", std::get<DataFileEntry>(manifest_file_entry.file).file_name);
+                    ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
                 }
-
-                bool can_be_true = partition_key_condition.mayBeTrueInRange(
-                    partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
-
-                if (can_be_true)
+                else
                 {
+                    LOG_DEBUG(log, "File {} is not pruned", std::get<DataFileEntry>(manifest_file_entry.file).file_name);
                     if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
                         data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
                 }
-                else
-                    ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
             }
         }
     }
