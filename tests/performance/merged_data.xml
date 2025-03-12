@@ -1,6 +1,6 @@
 <test>
     <create_query>CREATE TABLE IF NOT EXISTS t_merged_data (a UInt64, b Nullable(UInt64), c String, d Nullable(String)) ENGINE = Memory()</create_query>
-    <fill_query>insert into t_opt_orderby select * from  generateRandom('a UInt64, b Nullable(UInt64), c String, d Nullable(String)') limit 1000000</fill_query>
+    <fill_query>insert into t_merged_data select * from  generateRandom('a UInt64, b Nullable(UInt64), c String, d Nullable(String)') limit 1000000</fill_query>
 
     <settings>
         <max_threads>1</max_threads>
