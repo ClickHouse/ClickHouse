@@ -27,7 +27,7 @@ private:
     /// NOTE: tricky part to support RENAME column in partition key.
     /// Takes ActionDAG representation of user's WHERE expression and
     /// rename columns to the their origina numeric id's in iceberg
-    std::unique_ptr<DB::ActionsDAG> transformFilterDagForManifest(const DB::ActionsDAG * source_dag, const DB::DataTypes & key_data_types, const std::vector<Int32> & partition_column_ids) const;
+    std::unique_ptr<DB::ActionsDAG> transformFilterDagForManifest(const DB::ActionsDAG * source_dag, Int32 manifest_schema_id, const std::vector<Int32> & partition_column_ids) const;
 public:
     PartitionPruner(
         const DB::IcebergSchemaProcessor * schema_processor_,

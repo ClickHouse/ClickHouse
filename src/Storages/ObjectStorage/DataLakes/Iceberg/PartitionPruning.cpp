@@ -67,17 +67,14 @@ DB::ASTPtr getASTFromTransform(const String & transform_name, const String & col
     return function;
 }
 
-std::unique_ptr<DB::ActionsDAG> PartitionPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, const DB::DataTypes & key_data_types, const std::vector<Int32> & partition_column_ids) const
+std::unique_ptr<DB::ActionsDAG> PartitionPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, Int32 manifest_schema_id, const std::vector<Int32> & partition_column_ids) const
 {
     if (source_dag == nullptr)
         return nullptr;
 
     ActionsDAG dag_with_renames;
-    chassert(key_data_types.size() == partition_column_ids.size());
-    for (size_t i = 0; i < partition_column_ids.size(); ++i)
+    for (const auto column_id : partition_column_ids)
     {
-        auto column_id = partition_column_ids[i];
-        const auto & column_type = key_data_types[i];
         auto column = schema_processor->tryGetFieldCharacteristics(current_schema_id, column_id);
 
         /// Columns which we dropped and doesn't exist in current schema
@@ -85,6 +82,8 @@ std::unique_ptr<DB::ActionsDAG> PartitionPruner::transformFilterDagForManifest(c
         if (!column.has_value())
             continue;
 
+        /// We take data type from manifest schema, not latest type
+        auto column_type = schema_processor->getFieldCharacteristics(manifest_schema_id, column_id).type;
         auto numeric_column_name = DB::backQuote(DB::toString(column_id));
         const auto * node = &dag_with_renames.addInput(numeric_column_name, column_type);
         node = &dag_with_renames.addAlias(*node, column->name);
@@ -106,7 +105,7 @@ PartitionPruner::PartitionPruner(
     , current_schema_id(current_schema_id_)
     , partition_key(manifest_file.getPartitionKeyDescription())
 {
-    auto transformed_dag = transformFilterDagForManifest(filter_dag, partition_key.data_types, manifest_file.getPartitionKeyColumnIDs());
+    auto transformed_dag = transformFilterDagForManifest(filter_dag, manifest_file.getSchemaId(), manifest_file.getPartitionKeyColumnIDs());
 
     if (transformed_dag != nullptr)
         key_condition.emplace(transformed_dag.get(), context, partition_key.column_names, partition_key.expression, true /* single_point */);
