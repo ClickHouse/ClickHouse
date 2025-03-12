@@ -44,8 +44,6 @@ private:
     const RE2 regexp;
     const std::string_view replacement;
 
-    const bool fail_on_match;
-
 #ifndef NDEBUG
     mutable std::atomic<std::uint64_t> matches_count = 0;
 #endif
@@ -54,17 +52,12 @@ public:
     //* TODO: option with hyperscan? https://software.intel.com/en-us/articles/why-and-how-to-replace-pcre-with-hyperscan
     // re2::set should also work quite fast, but it doesn't return the match position, only which regexp was matched
 
-    MaskingRule(
-        const std::string & name_,
-        const std::string & regexp_string_,
-        const std::string & replacement_string_,
-        bool fail_on_match_)
+    MaskingRule(const std::string & name_, const std::string & regexp_string_, const std::string & replacement_string_)
         : name(name_)
         , replacement_string(replacement_string_)
         , regexp_string(regexp_string_)
         , regexp(regexp_string, RE2::Quiet)
         , replacement(replacement_string)
-        , fail_on_match(fail_on_match_)
     {
         if (!regexp.ok())
             throw Exception(ErrorCodes::CANNOT_COMPILE_REGEXP,
@@ -76,16 +69,6 @@ public:
     uint64_t apply(std::string & data) const
     {
         auto m = RE2::GlobalReplace(&data, regexp, replacement);
-
-        if unlikely(fail_on_match && m > 0)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Sensitive data appeared in logs. The rule {} ({}) was triggered on the log line: {}",
-                name,
-                regexp_string,
-                data
-            );
-
 #ifndef NDEBUG
         matches_count += m;
 #endif
@@ -157,11 +140,10 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
             }
 
             auto replace = config.getString(rule_config_prefix + ".replace", "******");
-            bool fail_on_match = config.getBool(rule_config_prefix + "fail_on_match", false);
 
             try
             {
-                addMaskingRule(rule_name, regexp, replace, fail_on_match);
+                addMaskingRule(rule_name, regexp, replace);
             }
             catch (DB::Exception & e)
             {
@@ -181,12 +163,9 @@ SensitiveDataMasker::SensitiveDataMasker(const Poco::Util::AbstractConfiguration
 }
 
 void SensitiveDataMasker::addMaskingRule(
-    const std::string & name,
-    const std::string & regexp_string,
-    const std::string & replacement_string,
-    bool fail_on_match)
+    const std::string & name, const std::string & regexp_string, const std::string & replacement_string)
 {
-    all_masking_rules.push_back(std::make_unique<MaskingRule>(name, regexp_string, replacement_string, fail_on_match));
+    all_masking_rules.push_back(std::make_unique<MaskingRule>(name, regexp_string, replacement_string));
 }
 
 

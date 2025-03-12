@@ -5,25 +5,5 @@
             <regexp>TOPSECRET.TOPSECRET</regexp>
             <replace>[hidden]</replace>
         </rule>
-        <rule>
-            <name>Minio</name>
-            <regexp>(?i)ClickHouse_Minio_P@ssw0rd</regexp>
-            <fail_on_match>true</fail_on_match>
-        </rule>
-        <rule>
-            <name>PostgreSQL</name>
-            <regexp>(?i)ClickHouse_PostgreSQL_P@ssw0rd</regexp>
-            <fail_on_match>true</fail_on_match>
-        </rule>
-        <rule>
-            <name>MySQL</name>
-            <regexp>(?i)ClickHouse_MySQL_P@ssw0rd</regexp>
-            <fail_on_match>true</fail_on_match>
-        </rule>
-        <rule>
-            <name>MongoDB</name>
-            <regexp>(?i)ClickHouse_MongoDB_P@ssw0rd</regexp>
-            <fail_on_match>true</fail_on_match>
-        </rule>
     </query_masking_rules>
 </clickhouse>
