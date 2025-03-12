@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/
+slug: /en/sql-reference/statements/
 sidebar_position: 1
 sidebar_label: List of statements
 ---

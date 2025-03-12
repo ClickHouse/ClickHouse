@@ -16,12 +16,8 @@ services:
             --log-error=/var/log/mysql/error.log
             --general-log=ON
             --general-log-file=/var/log/mysql/general.log
-            --ssl-ca=/etc/mysql/certs/ca.pem
-            --ssl-cert=/etc/mysql/certs/server-cert.pem
-            --ssl-key=/etc/mysql/certs/server-key.pem
         volumes:
             - type: ${MYSQL8_LOGS_FS:-tmpfs}
               source: ${MYSQL8_LOGS:-}
               target: /var/log/mysql/
-            - ../helpers/mysql_cert:/etc/mysql/certs
         user: ${MYSQL8_DOCKER_USER}

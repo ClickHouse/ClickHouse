@@ -1,14 +1,13 @@
-#include <Columns/IColumn.h>
-#include <Core/AccurateComparison.h>
-#include <Core/Field.h>
 #include <Core/SettingsFields.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeString.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
+#include <Core/Field.h>
+#include <Core/AccurateComparison.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
+#include <IO/ReadHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <boost/algorithm/string/predicate.hpp>
 #include <cctz/time_zone.h>
@@ -54,7 +53,7 @@ namespace
     {
         if (f.getType() == Field::Types::String)
         {
-            return stringToNumber<T>(f.safeGet<String>());
+            return stringToNumber<T>(f.safeGet<const String &>());
         }
         if (f.getType() == Field::Types::UInt64)
         {
@@ -123,11 +122,11 @@ namespace
         if (f.getType() == Field::Types::String)
         {
             /// Allow to parse Map from string field. For the convenience.
-            const auto & str = f.safeGet<String>();
+            const auto & str = f.safeGet<const String &>();
             return stringToMap(str);
         }
 
-        return f.safeGet<Map>();
+        return f.safeGet<const Map &>();
     }
 
 }
@@ -221,7 +220,7 @@ namespace
     UInt64 fieldToMaxThreads(const Field & f)
     {
         if (f.getType() == Field::Types::String)
-            return stringToMaxThreads(f.safeGet<String>());
+            return stringToMaxThreads(f.safeGet<const String &>());
         return fieldToNumber<UInt64>(f);
     }
 }
@@ -437,7 +436,7 @@ namespace
 
     char fieldToChar(const Field & f)
     {
-        return stringToChar(f.safeGet<String>());
+        return stringToChar(f.safeGet<const String &>());
     }
 }
 

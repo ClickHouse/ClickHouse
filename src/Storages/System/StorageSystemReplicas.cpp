@@ -12,7 +12,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/ReplicatedTableStatus.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/DatabaseCatalog.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -139,7 +138,11 @@ public:
 
             auto get_status_task = [this, storage, with_zk_fields, promise, thread_group = CurrentThread::getGroup()]() mutable
             {
-                ThreadGroupSwitcher switcher(thread_group, "SystemReplicas");
+                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
+                if (thread_group)
+                    CurrentThread::attachToGroupIfDetached(thread_group);
+
+                setThreadName("SystemReplicas");
 
                 try
                 {
@@ -477,8 +480,8 @@ void ReadFromSystemReplicas::initializePipeline(QueryPipelineBuilder & pipeline,
         if (query_status)
             query_status->checkTimeLimit();
 
-        auto & storage = replicated_tables[(*col_database)[i].safeGet<String>()]
-            [(*col_table)[i].safeGet<String>()];
+        auto & storage = replicated_tables[(*col_database)[i].safeGet<const String &>()]
+            [(*col_table)[i].safeGet<const String &>()];
 
         auto [request_id, future] = get_status_requests.addRequest(storage, with_zk_fields);
         futures.emplace_back(future);

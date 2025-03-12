@@ -23,14 +23,13 @@ from typing import (
 
 from build_download_helper import APIException, get_gh_api
 from ci_config import CI
-from ci_utils import Shell, cd
+from ci_utils import Shell
 from env_helper import (
     GITHUB_JOB,
     GITHUB_REPOSITORY,
     GITHUB_RUN_ID,
     GITHUB_RUN_URL,
     GITHUB_WORKSPACE,
-    REPO_COPY,
     REPORT_PATH,
 )
 
@@ -486,20 +485,11 @@ class JobReport:
             start_time = datetime.datetime.strptime(
                 self.start_time, "%Y-%m-%d %H:%M:%S"
             )
-            current_time = datetime.datetime.now()
+            current_time = datetime.datetime.now(datetime.timezone.utc)
             self.duration = (current_time - start_time).total_seconds()
 
     def __post_init__(self):
-        assert self.status.lower() in (
-            SUCCESS,
-            ERROR,
-            FAILURE,
-            PENDING,
-            SKIPPED.lower(),
-        ), f"Invalid status [{self.status}]"
-        self.additional_files = sorted(  # type: ignore[assignment]
-            self.additional_files, key=lambda x: str(x).rsplit("/", maxsplit=1)[-1]
-        )
+        assert self.status in (SUCCESS, ERROR, FAILURE, PENDING)
 
     @classmethod
     def exist(cls) -> bool:
@@ -535,8 +525,7 @@ class JobReport:
         # temporary WA to ease integration with praktika
         check_name = os.getenv("JOB_NAME", "")
         if check_name:
-            with cd(REPO_COPY):
-                self.to_praktika_result(job_name=check_name).dump()
+            self.to_praktika_result(job_name=check_name).dump()
 
         return self
 

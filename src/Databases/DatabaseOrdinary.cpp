@@ -1,25 +1,21 @@
 #include <filesystem>
-#include <memory>
 
-#include <Core/Defines.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Databases/DDLDependencyVisitor.h>
-#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/DatabasesCommon.h>
+#include <Databases/DDLDependencyVisitor.h>
+#include <Databases/DDLLoadingDependencyVisitor.h>
 #include <Databases/TablesLoader.h>
-#include <Disks/ObjectStorages/DiskObjectStorage.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -27,16 +23,17 @@
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/PoolId.h>
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool.h>
+#include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
-#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Common/logger_useful.h>
+#include <Common/CurrentMetrics.h>
+#include <Core/Defines.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -72,6 +69,8 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
 }
+
+static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
 
@@ -205,12 +204,16 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     String table_metadata_path = full_path;
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
     String statement = getObjectDefinitionFromCreateQuery(ast);
-    writeMetadataFile(
-        db_disk,
-        /*file_path=*/table_metadata_tmp_path,
-        /*content=*/statement,
-        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+    {
+        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
+        writeString(statement, *out);
 
+        out->next();
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            out->sync();
+        out->finalize();
+        out.reset();
+    }
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 
     LOG_INFO(
@@ -323,46 +326,23 @@ void DatabaseOrdinary::loadTableFromMetadata(
 
     LOG_TRACE(log, "Loading table {}", name.getFullName());
 
-    constexpr size_t max_tries = 3;
-    size_t tries = 0;
-    time_t sleep_time = 1;
-
-    while (true)
+    try
     {
-        try
-        {
-            auto [table_name, table] = createTableFromAST(
-                query,
-                name.database,
-                getTableDataPath(query),
-                local_context,
-                mode);
+        auto [table_name, table] = createTableFromAST(
+            query,
+            name.database,
+            getTableDataPath(query),
+            local_context,
+            mode);
 
-            attachTable(local_context, table_name, table, getTableDataPath(query));
-            return;
-        }
-        catch (Coordination::Exception & e)
-        {
-            e.addMessage(
-                "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
-                + " from query " + serializeAST(query));
-
-            if (!Coordination::isHardwareError(e.code))
-                throw;
-            tryLogCurrentException(log);
-            sleepForSeconds(sleep_time);
-            sleep_time *= 2;
-            ++tries;
-            if (tries > max_tries)
-                throw;
-        }
-        catch (Exception & e)
-        {
-            e.addMessage(
-                "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
-                + " from query " + serializeAST(query));
-            throw;
-        }
+        attachTable(local_context, table_name, table, getTableDataPath(query));
+    }
+    catch (Exception & e)
+    {
+        e.addMessage(
+            "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
+            + " from query " + serializeAST(query));
+        throw;
     }
 }
 
@@ -598,7 +578,15 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     /// Read the definition of the table and replace the necessary parts with new ones.
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
-    String statement = readMetadataFile(db_disk, table_metadata_path);
+    String statement;
+
+    {
+        ReadSettings read_settings = getReadSettings();
+        read_settings.local_fs_method = LocalFSReadMethod::read;
+        read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
+        auto in = db_disk->readFile(table_metadata_path, read_settings);
+        readStringUntilEOF(statement, *in);
+    }
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(
@@ -613,11 +601,16 @@ void DatabaseOrdinary::alterTable(ContextPtr local_context, const StorageID & ta
     applyMetadataChangesToCreateQuery(ast, metadata, local_context);
 
     statement = getObjectDefinitionFromCreateQuery(ast);
-    writeMetadataFile(
-        db_disk,
-        /*file_path=*/table_metadata_tmp_path,
-        /*content=*/statement,
-        /*fsync_metadata=*/getContext()->getSettingsRef()[Setting::fsync_metadata]);
+    {
+        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
+        writeString(statement, *out);
+
+        out->next();
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            out->sync();
+        out->finalize();
+        out.reset();
+    }
 
     /// The create query of the table has been just changed, we need to update dependencies too.
     auto ref_dependencies = getDependenciesFromCreateQuery(local_context->getGlobalContext(), table_id.getQualifiedName(), ast, local_context->getCurrentDatabase());

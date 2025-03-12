@@ -1,6 +1,5 @@
 SET query_plan_join_swap_table = false;
 SET allow_experimental_analyzer = 1;
-SET enable_parallel_replicas=0;
 
 EXPLAIN PIPELINE
 SELECT * FROM

@@ -1,5 +1,5 @@
 ---
-slug: /development/build-cross-arm
+slug: /en/development/build-cross-arm
 sidebar_position: 25
 sidebar_label: Build on Linux for AARCH64
 ---

@@ -3,7 +3,7 @@ sidebar_label: ClickHouse Playground
 sidebar_position: 2
 keywords: [clickhouse, playground, getting, started, docs]
 description: The ClickHouse Playground allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
-slug: /getting-started/playground
+slug: /en/getting-started/playground
 ---
 
 # ClickHouse Playground

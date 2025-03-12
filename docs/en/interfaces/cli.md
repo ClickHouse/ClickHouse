@@ -1,19 +1,16 @@
 ---
-slug: /interfaces/cli
+slug: /en/interfaces/cli
 sidebar_position: 17
 sidebar_label: ClickHouse Client
 title: ClickHouse Client
 ---
-
-import cloud_connect_button from '@site/static/images/_snippets/cloud-connect-button.png';
-import connection_details_native from '@site/static/images/_snippets/connection-details-native.png'
 
 ClickHouse provides a native command-line client for executing SQL queries directly against a ClickHouse server. It supports both interactive mode (for live query execution) and batch mode (for scripting and automation). Query results can be displayed in the terminal or exported to a file, with support for all ClickHouse output [formats](formats.md), such as Pretty, CSV, JSON, and more.
 
 The client provides real-time feedback on query execution with a progress bar and the number of rows read, bytes processed and query execution time. It supports both [command-line options](#command-line-options) and [configuration files](#configuration_files).
 
 
-## Install {#install}
+## Install
 
 To download ClickHouse, run:
 
@@ -31,7 +28,7 @@ See [Install ClickHouse](../getting-started/install.md) for more installation op
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version for client and server.
 
 
-## Run {#run}
+## Run
 
 :::note
 If you only downloaded but did not install ClickHouse, use `./clickhouse client` instead of `clickhouse-client`.
@@ -70,7 +67,7 @@ For a complete list of command-line options, see [Command Line Options](#command
 
 The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console. Select the service that you want to connect to and click **Connect**:
 
-<img src={cloud_connect_button}
+<img src={require('../_snippets/images/cloud-connect-button.png').default}
   class="image"
   alt="ClickHouse Cloud service connect button"
   style={{width: '30em'}} />
@@ -79,7 +76,7 @@ The details for your ClickHouse Cloud service are available in the ClickHouse Cl
 
 Choose **Native**, and the details are shown with an example `clickhouse-client` command:
 
-<img src={connection_details_native}
+<img src={require('../_snippets/images/connection-details-native.png').default}
   class="image"
   alt="ClickHouse Cloud Native TCP connection details"
   style={{width: '40em'}} />
@@ -175,7 +172,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 ```
 
 
-## Notes {#notes}
+## Notes
 
 In interactive mode, the default output format is `PrettyCompact`. You can change the format in the `FORMAT` clause of the query or by specifying the `--format` command-line option. To use the Vertical format, you can use `--vertical` or specify `\G` at the end of the query. In this format, each value is printed on a separate line, which is convenient for wide tables.
 
@@ -552,7 +549,7 @@ Substitution value for a parameter of a [query with parameters](#cli-queries-wit
 
 **`-q [ --query ] <query>`**
 
-The query to run in batch mode. Can be specified multiple times (`--query "SELECT 1" --query "SELECT 2"`) or once with multiple semicolon-separated queries (`--query "SELECT 1; SELECT 2;"`). In the latter case, `INSERT` queries with formats other than `VALUES` must be separated by empty lines.
+The query to run in batch mode. Can be specified multiple times (`--query "SELECT 1" --query "SELECT 2"`) or once with multiple comma-separated queries (`--query "SELECT 1; SELECT 2;"`). In the latter case, `INSERT` queries with formats other than `VALUES` must be separated by empty lines.
 
 A single query can also be specified without a parameter:
 ```bash
@@ -579,7 +576,7 @@ Query settings can be specified as command-line options in the client, for examp
 $ clickhouse-client --max_threads 1
 ```
 
-See [Settings](../operations/settings/settings.md) for a list of settings.
+See [Core Settings](../operations/settings/settings.md) for a list of settings.
 
 ### Formatting Options {#command-line-options-formatting}
 

@@ -63,7 +63,7 @@
                 <type>cache</type>
                 <disk>s3</disk>
                 <path>/jbod1/</path>
-                <max_size>1000000</max_size>
+                <max_size>1000000000</max_size>
                 <max_file_segment_size>1Gi</max_file_segment_size>
             </s3_with_cache_and_jbod>
             <s3_r>
@@ -160,8 +160,6 @@
         <disable_freeze_partition_for_zero_copy_replication>0</disable_freeze_partition_for_zero_copy_replication>
         <disable_detach_partition_for_zero_copy_replication>0</disable_detach_partition_for_zero_copy_replication>
         <disable_fetch_partition_for_zero_copy_replication>0</disable_fetch_partition_for_zero_copy_replication>
-        <vertical_merge_algorithm_min_rows_to_activate>131072</vertical_merge_algorithm_min_rows_to_activate>
-        <vertical_merge_algorithm_min_columns_to_activate>11</vertical_merge_algorithm_min_columns_to_activate>
     </merge_tree>
 
     <database_catalog_unused_dir_hide_timeout_sec>0</database_catalog_unused_dir_hide_timeout_sec>

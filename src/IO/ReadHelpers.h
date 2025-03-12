@@ -25,7 +25,7 @@
 #include <Common/Allocator.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
-#include <Common/exp10_i32.h>
+#include <Common/intExp.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -594,9 +594,6 @@ template <typename T> bool tryReadFloatTextFast(T & x, ReadBuffer & in);
 
 /// simple: all until '\n' or '\t'
 void readString(String & s, ReadBuffer & buf);
-
-/// Reads maximum n bytes to string.
-void readString(String & s, ReadBuffer & buf, size_t n);
 
 void readEscapedString(String & s, ReadBuffer & buf);
 

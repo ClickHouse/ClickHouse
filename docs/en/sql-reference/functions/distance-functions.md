@@ -1,12 +1,12 @@
 ---
-slug: /sql-reference/functions/distance-functions
+slug: /en/sql-reference/functions/distance-functions
 sidebar_position: 55
 sidebar_label: Distance
 ---
 
 # Distance Functions
 
-## L1Norm {#l1norm}
+## L1Norm
 
 Calculates the sum of absolute values of a vector.
 
@@ -42,7 +42,7 @@ Result:
 └────────────────┘
 ```
 
-## L2Norm {#l2norm}
+## L2Norm
 
 Calculates the square root of the sum of the squares of the vector values.
 
@@ -77,7 +77,7 @@ Result:
 │ 2.23606797749979 │
 └──────────────────┘
 ```
-## L2SquaredNorm {#l2squarednorm}
+## L2SquaredNorm
 
 Calculates the square root of the sum of the squares of the vector values (the [L2Norm](#l2norm)) squared.
 
@@ -113,7 +113,7 @@ Result:
 └───────────────────────┘
 ```
 
-## LinfNorm {#linfnorm}
+## LinfNorm
 
 Calculates the maximum of absolute values of a vector.
 
@@ -149,7 +149,7 @@ Result:
 └───────────────────┘
 ```
 
-## LpNorm {#lpnorm}
+## LpNorm
 
 Calculates the root of `p`-th power of the sum of the absolute values of a vector in the power of `p`.
 
@@ -186,7 +186,7 @@ Result:
 └────────────────────┘
 ```
 
-## L1Distance {#l1distance}
+## L1Distance
 
 Calculates the distance between two points (the values of the vectors are the coordinates) in `L1` space (1-norm ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry) distance)).
 
@@ -223,7 +223,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## L2Distance {#l2distance}
+## L2Distance
 
 Calculates the distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
@@ -260,7 +260,7 @@ Result:
 └────────────────────────────┘
 ```
 
-## L2SquaredDistance {#l2squareddistance}
+## L2SquaredDistance
 
 Calculates the sum of the squares of the difference between the corresponding elements of two vectors.
 
@@ -297,7 +297,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## LinfDistance {#linfdistance}
+## LinfDistance
 
 Calculates the distance between two points (the values of the vectors are the coordinates) in `L_{inf}` space ([maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
 
@@ -334,7 +334,7 @@ Result:
 └──────────────────────────────┘
 ```
 
-## LpDistance {#lpdistance}
+## LpDistance
 
 Calculates the distance between two points (the values of the vectors are the coordinates) in `Lp` space ([p-norm distance](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
 
@@ -373,7 +373,7 @@ Result:
 ```
 
 
-## L1Normalize {#l1normalize}
+## L1Normalize
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L1` space ([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry)).
 
@@ -409,7 +409,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## L2Normalize {#l2normalize}
+## L2Normalize
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in Euclidean space (using [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
 
@@ -445,7 +445,7 @@ Result:
 └─────────────────────┘
 ```
 
-## LinfNormalize {#linfnormalize}
+## LinfNormalize
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `L_{inf}` space (using [maximum norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#Maximum_norm_(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm))).
 
@@ -481,7 +481,7 @@ Result:
 └───────────────────────┘
 ```
 
-## LpNormalize {#lpnormalize}
+## LpNormalize
 
 Calculates the unit vector of a given vector (the values of the tuple are the coordinates) in `Lp` space (using [p-norm](https://en.wikipedia.org/wiki/Norm_(mathematics)#p-norm)).
 
@@ -518,7 +518,7 @@ Result:
 └─────────────────────────────────────────┘
 ```
 
-## cosineDistance {#cosinedistance}
+## cosineDistance
 
 Calculates the cosine distance between two vectors (the values of the tuples are the coordinates). The smaller the returned value is, the more similar are the vectors.
 

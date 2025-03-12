@@ -8,8 +8,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 
-#include <Processors/Port.h>
-
 namespace DB
 {
 

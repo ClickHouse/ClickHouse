@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/window-functions/percent_rank
+slug: /en/sql-reference/window-functions/percent_rank
 sidebar_label: percent_rank
 sidebar_position: 8
 ---

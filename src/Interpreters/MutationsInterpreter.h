@@ -1,9 +1,10 @@
 #pragma once
 
-#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/Context.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
 
 
@@ -184,7 +185,6 @@ private:
     SelectQueryOptions select_limits;
 
     LoggerPtr logger;
-
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the

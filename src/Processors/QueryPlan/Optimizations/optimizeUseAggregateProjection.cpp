@@ -16,7 +16,6 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
 
-#include <Columns/ColumnAggregateFunction.h>
 #include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Storages/StorageDummy.h>

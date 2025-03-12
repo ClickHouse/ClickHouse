@@ -8,6 +8,8 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ConcurrentHashJoin.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/TableJoin.h>
@@ -30,7 +32,7 @@
 
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
-#include <DataTypes/NullableUtils.h>
+#include <Interpreters/NullableUtils.h>
 #include <base/defines.h>
 #include <base/types.h>
 
@@ -145,12 +147,14 @@ namespace ErrorCodes
 
 
 ConcurrentHashJoin::ConcurrentHashJoin(
+    ContextPtr context_,
     std::shared_ptr<TableJoin> table_join_,
     size_t slots_,
     const Block & right_sample_block,
     const StatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_)
-    : table_join(table_join_)
+    : context(context_)
+    , table_join(table_join_)
     , slots(toPowerOfTwo(std::min<UInt32>(static_cast<UInt32>(slots_), 256)))
     , pool(std::make_unique<ThreadPool>(
           CurrentMetrics::ConcurrentHashJoinPoolThreads,
@@ -170,7 +174,14 @@ ConcurrentHashJoin::ConcurrentHashJoin(
             pool->scheduleOrThrow(
                 [&, i, thread_group = CurrentThread::getGroup()]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
+                    SCOPE_EXIT_SAFE({
+                        if (thread_group)
+                            CurrentThread::detachFromGroupIfNotDetached();
+                    });
+
+                    if (thread_group)
+                        CurrentThread::attachToGroupIfDetached(thread_group);
+                    setThreadName("ConcurrentJoin");
 
                     /// reserve is not needed anyway - either we will use fixed-size hash map or shared two-level map (then reserve will be done in a special way below)
                     const size_t reserve_size = 0;
@@ -213,7 +224,14 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
             pool->scheduleOrThrow(
                 [join = hash_joins[0], i, this, thread_group = CurrentThread::getGroup()]()
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "ConcurrentJoin");
+                    SCOPE_EXIT_SAFE({
+                        if (thread_group)
+                            CurrentThread::detachFromGroupIfNotDetached();
+                    });
+
+                    if (thread_group)
+                        CurrentThread::attachToGroupIfDetached(thread_group);
+                    setThreadName("ConcurrentJoin");
 
                     auto clear_space_in_buckets = [&](auto & maps, HashJoin::Type type, size_t idx)
                     {
@@ -576,13 +594,15 @@ IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_ta
     return hash;
 }
 
+UInt64 calculateCacheKey(
+    std::shared_ptr<TableJoin> & table_join, const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info)
+{
+    return calculateCacheKey(table_join, preCalculateCacheKey(right_table_expression, select_query_info));
+}
+
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash)
 {
-    // This condition is always true for ConcurrentHashJoin (see `TableJoin::allowParallelHashJoin()`),
-    // but this method is called from generic code.
-    if (!table_join || !table_join->oneDisjunct())
-        return 0;
-
+    chassert(table_join && table_join->oneDisjunct());
     const auto keys
         = NameOrderedSet{table_join->getClauses().at(0).key_names_right.begin(), table_join->getClauses().at(0).key_names_right.end()};
     for (const auto & name : keys)

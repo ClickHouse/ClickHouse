@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/variant
+slug: /en/sql-reference/data-types/variant
 sidebar_position: 40
 sidebar_label: Variant(T1, T2, ...)
 ---
@@ -24,7 +24,7 @@ because working with values of such types can lead to ambiguity. By default, cre
 The Variant data type is a beta feature. To use it, set `enable_variant_type = 1`.
 :::
 
-## Creating Variant {#creating-variant}
+## Creating Variant
 
 Using `Variant` type in table column definition:
 
@@ -114,7 +114,7 @@ SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as 
 └───────────────────────────────┘
 ```
 
-## Reading Variant nested types as subcolumns {#reading-variant-nested-types-as-subcolumns}
+## Reading Variant nested types as subcolumns
 
 Variant type supports reading a single nested type from a Variant column using the type name as a subcolumn.
 So, if you have column `variant Variant(T1, T2, T3)` you can read a subcolumn of type `T2` using syntax `variant.T2`,
@@ -193,11 +193,11 @@ SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Conversion between a Variant column and other columns {#conversion-between-a-variant-column-and-other-columns}
+## Conversion between a Variant column and other columns
 
 There are 4 possible conversions that can be performed with a column of type `Variant`.
 
-### Converting a String column to a Variant column {#converting-a-string-column-to-a-variant-column}
+### Converting a String column to a Variant column
 
 Conversion from `String` to `Variant` is performed by parsing a value of `Variant` type from the string value:
 
@@ -231,7 +231,7 @@ SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String
 └─────────────────────────────────────────────┴───────────────────────────────────────────────┘
 ```
 
-### Converting an ordinary column to a Variant column {#converting-an-ordinary-column-to-a-variant-column}
+### Converting an ordinary column to a Variant column
 
 It is possible to convert an ordinary column with type `T` to a `Variant` column containing this type:
 
@@ -256,7 +256,7 @@ SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as v
 └───────────┴──────────────┘
 ```
 
-### Converting a Variant column to an ordinary column {#converting-a-variant-column-to-an-ordinary-column}
+### Converting a Variant column to an ordinary column
 
 It is possible to convert a `Variant` column to an ordinary column. In this case all nested variants will be converted to a destination type:
 
@@ -274,7 +274,7 @@ SELECT v::Nullable(Float64) FROM test;
 └──────────────────────────────┘
 ```
 
-### Converting a Variant to another Variant {#converting-a-variant-to-another-variant}
+### Converting a Variant to another Variant
 
 It is possible to convert a `Variant` column to another `Variant` column, but only if the destination `Variant` column contains all nested types from the original `Variant`:
 
@@ -293,7 +293,7 @@ SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
 ```
 
 
-## Reading Variant type from the data {#reading-variant-type-from-the-data}
+## Reading Variant type from the data
 
 All text formats (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc) supports reading `Variant` type. During data parsing ClickHouse tries to insert value into most appropriate variant type.
 
@@ -327,7 +327,7 @@ $$)
 ```
 
 
-## Comparing values of Variant type {#comparing-values-of-variant-data}
+## Comparing values of Variant type
 
 Values of a `Variant` type can be compared only with values with the same `Variant` type.
 
@@ -446,7 +446,7 @@ SELECT v, variantType(v) FROM test ORDER by v;
 
 **Note** by default `Variant` type is not allowed in `GROUP BY`/`ORDER BY` keys, if you want to use it consider its special comparison rule and enable `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by` settings.
 
-## JSONExtract functions with Variant {#jsonextract-functions-with-variant}
+## JSONExtract functions with Variant
 
 All `JSONExtract*` functions support `Variant` type:
 

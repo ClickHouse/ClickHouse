@@ -43,7 +43,6 @@ ALL_DECLARATION_FILES="
     $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
     $ROOT_PATH/src/Storages/SetSettings.cpp
     $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp
-    $ROOT_PATH/src/Interpreters/Cache/FileCacheSettings.cpp
 "
 
 # We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration

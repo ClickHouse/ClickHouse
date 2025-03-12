@@ -1,8 +1,6 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/uniqcombined
+slug: /en/sql-reference/aggregate-functions/reference/uniqcombined
 sidebar_position: 205
-title: "uniqCombined"
-description: "Calculates the approximate number of different argument values."
 ---
 
 # uniqCombined
@@ -37,10 +35,10 @@ The `uniqCombined` function:
 - Provides the result deterministically (it does not depend on the query processing order).
 
 :::note    
-Since it uses a 32-bit hash for non-`String` types, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](/sql-reference/aggregate-functions/reference/uniqcombined64).
+Since it uses a 32-bit hash for non-`String` types, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64).
 :::
 
-Compared to the [uniq](/sql-reference/aggregate-functions/reference/uniq) function, the `uniqCombined` function:
+Compared to the [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function, the `uniqCombined` function:
 
 - Consumes several times less memory.
 - Calculates with several times higher accuracy.
@@ -62,13 +60,12 @@ Result:
 └──────────────────────┘
 ```
 
-See the example section of [uniqCombined64](/sql-reference/aggregate-functions/reference/uniqcombined64) for an example of the difference between `uniqCombined` and `uniqCombined64` for much larger inputs.
+See the example section of [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64) for an example of the difference between `uniqCombined` and `uniqCombined64` for much larger inputs.
 
 **See Also**
 
-- [uniq](/sql-reference/aggregate-functions/reference/uniq)
-- [uniqCombined64](/sql-reference/aggregate-functions/reference/uniqcombined64)
-- [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
-- [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
-- [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)
-
+- [uniq](../../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq)
+- [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
+- [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
+- [uniqExact](../../../sql-reference/aggregate-functions/reference/uniqexact.md#agg_function-uniqexact)
+- [uniqTheta](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)

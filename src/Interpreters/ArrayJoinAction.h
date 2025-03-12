@@ -1,7 +1,9 @@
 #pragma once
 
-#include <Core/Block.h>
 #include <Core/Names.h>
+#include <Core/Block.h>
+#include <Interpreters/Context_fwd.h>
+
 
 namespace DB
 {

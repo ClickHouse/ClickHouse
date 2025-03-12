@@ -106,15 +106,14 @@ void registerBackupEngineS3(BackupFactory & factory)
 
         if (params.open_mode == IBackup::OpenMode::READ)
         {
-            auto reader = std::make_shared<BackupReaderS3>(
-                S3::URI{s3_uri},
-                access_key_id,
-                secret_access_key,
-                params.allow_s3_native_copy,
-                params.read_settings,
-                params.write_settings,
-                params.context,
-                params.is_internal_backup);
+            auto reader = std::make_shared<BackupReaderS3>(S3::URI{s3_uri},
+                                                           access_key_id,
+                                                           secret_access_key,
+                                                           params.allow_s3_native_copy,
+                                                           params.read_settings,
+                                                           params.write_settings,
+                                                           params.context,
+                                                           params.is_internal_backup);
 
             return std::make_unique<BackupImpl>(params, archive_params, reader);
         }

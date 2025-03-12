@@ -138,11 +138,6 @@ public:
 
     void startupImpl(ContextPtr context) override;
 
-    void refresh() override
-    {
-        metadata_storage->refresh();
-    }
-
     ReservationPtr reserve(UInt64 bytes) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(
@@ -164,7 +159,6 @@ public:
         const WriteSettings & settings) override;
 
     Strings getBlobPath(const String & path) const override;
-    bool areBlobPathsRandom() const override;
     void writeFileUsingBlobWritingFunction(const String & path, WriteMode mode, WriteBlobFunction && write_blob_function) override;
 
     void copyFile( /// NOLINT
@@ -196,8 +190,6 @@ public:
     /// For example: WebObjectStorage is read only as it allows to read from a web server
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
-
-    bool isPlain() const;
 
     /// Is object write-once?
     /// For example: S3PlainObjectStorage is write once, this means that it

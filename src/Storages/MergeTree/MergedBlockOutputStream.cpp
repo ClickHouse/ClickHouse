@@ -285,104 +285,125 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     /// NOTE: You do not need to call fsync here, since it will be called later for the all written_files.
     WrittenFiles written_files;
 
-    auto write_hashed_file = [&](const auto & filename, auto && writer)
+    if (new_part->isProjectionPart())
     {
-        auto out = new_part->getDataPartStorage().writeFile(filename, 4096, write_settings);
-        HashingWriteBuffer out_hashing(*out);
-        writer(out_hashing);
-        out_hashing.finalize();
-        checksums.files[filename].file_size = out_hashing.count();
-        checksums.files[filename].file_hash = out_hashing.getHash();
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
-    };
-
-    auto write_plain_file = [&](const auto & filename, auto && writer)
-    {
-        auto out = new_part->getDataPartStorage().writeFile(filename, 4096, write_settings);
-        writer(*out);
-        out->preFinalize();
-        written_files.emplace_back(std::move(out));
-    };
-
-    if (!new_part->isProjectionPart())
+        if (new_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
+        {
+            auto count_out = new_part->getDataPartStorage().writeFile("count.txt", 4096, write_settings);
+            HashingWriteBuffer count_out_hashing(*count_out);
+            writeIntText(rows_count, count_out_hashing);
+            count_out_hashing.finalize();
+            checksums.files["count.txt"].file_size = count_out_hashing.count();
+            checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
+            count_out->preFinalize();
+            written_files.emplace_back(std::move(count_out));
+        }
+    }
+    else
     {
         if (new_part->uuid != UUIDHelpers::Nil)
         {
-            write_hashed_file(IMergeTreeDataPart::UUID_FILE_NAME, [&](auto & buffer)
-            {
-                writeUUIDText(new_part->uuid, buffer);
-            });
+            auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::UUID_FILE_NAME, 4096, write_settings);
+            HashingWriteBuffer out_hashing(*out);
+            writeUUIDText(new_part->uuid, out_hashing);
+            out_hashing.finalize();
+            checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_size = out_hashing.count();
+            checksums.files[IMergeTreeDataPart::UUID_FILE_NAME].file_hash = out_hashing.getHash();
+            out->preFinalize();
+            written_files.emplace_back(std::move(out));
         }
 
         if (new_part->storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         {
-            if (auto file = new_part->partition.store(metadata_snapshot, new_part->storage.getContext(), new_part->getDataPartStorage(), checksums))
-            {
+            if (auto file = new_part->partition.store(
+                new_part->storage.getInMemoryMetadataPtr(), new_part->storage.getContext(),
+                new_part->getDataPartStorage(), checksums))
                 written_files.emplace_back(std::move(file));
-            }
 
             if (new_part->minmax_idx->initialized)
             {
-                auto files = new_part->minmax_idx->store(metadata_snapshot, new_part->getDataPartStorage(), checksums);
+                auto files = new_part->minmax_idx->store(new_part->storage, new_part->getDataPartStorage(), checksums);
                 for (auto & file : files)
                     written_files.emplace_back(std::move(file));
             }
             else if (rows_count)
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
-            }
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}. It is a bug.",
+                    new_part->name);
+        }
+
+        {
+            auto count_out = new_part->getDataPartStorage().writeFile("count.txt", 4096, write_settings);
+            HashingWriteBuffer count_out_hashing(*count_out);
+            writeIntText(rows_count, count_out_hashing);
+            count_out_hashing.finalize();
+            checksums.files["count.txt"].file_size = count_out_hashing.count();
+            checksums.files["count.txt"].file_hash = count_out_hashing.getHash();
+            count_out->preFinalize();
+            written_files.emplace_back(std::move(count_out));
         }
     }
 
-    write_hashed_file("count.txt", [&](auto & buffer)
-    {
-        writeIntText(rows_count, buffer);
-    });
-
     if (!new_part->ttl_infos.empty())
     {
-        write_hashed_file("ttl.txt", [&](auto & buffer)
-        {
-            new_part->ttl_infos.write(buffer);
-        });
+        /// Write a file with ttl infos in json format.
+        auto out = new_part->getDataPartStorage().writeFile("ttl.txt", 4096, write_settings);
+        HashingWriteBuffer out_hashing(*out);
+        new_part->ttl_infos.write(out_hashing);
+        out_hashing.finalize();
+        checksums.files["ttl.txt"].file_size = out_hashing.count();
+        checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
     }
 
-    const auto & serialization_infos = new_part->getSerializationInfos();
-    if (!serialization_infos.empty())
+    if (!new_part->getSerializationInfos().empty())
     {
-        write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
-        {
-            serialization_infos.writeJSON(buffer);
-        });
+        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, write_settings);
+        HashingWriteBuffer out_hashing(*out);
+        new_part->getSerializationInfos().writeJSON(out_hashing);
+        out_hashing.finalize();
+        checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
+        checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
     }
 
-    write_plain_file("columns.txt", [&](auto & buffer)
     {
-        new_part->getColumns().writeText(buffer);
-    });
+        /// Write a file with a description of columns.
+        auto out = new_part->getDataPartStorage().writeFile("columns.txt", 4096, write_settings);
+        new_part->getColumns().writeText(*out);
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
+    }
 
-    write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {
-        writeIntText(new_part->getMetadataVersion(), buffer);
-    });
+        /// Write a file with a description of columns.
+        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, write_settings);
+        DB::writeIntText(new_part->getMetadataVersion(), *out);
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
+    }
 
     if (default_codec != nullptr)
     {
-        write_plain_file(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, [&](auto & buffer)
-        {
-            writeText(queryToString(default_codec->getFullCodecDesc()), buffer);
-        });
+        auto out = new_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, write_settings);
+        DB::writeText(queryToString(default_codec->getFullCodecDesc()), *out);
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
     }
     else
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compression codec have to be specified for part on disk, empty for {}", new_part->name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Compression codec have to be specified for part on disk, empty for{}. "
+                "It is a bug.", new_part->name);
     }
 
-    write_plain_file("checksums.txt", [&](auto & buffer)
     {
-        checksums.write(buffer);
-    });
+        /// Write file with checksums.
+        auto out = new_part->getDataPartStorage().writeFile("checksums.txt", 4096, write_settings);
+        checksums.write(*out);
+        out->preFinalize();
+        written_files.emplace_back(std::move(out));
+    }
 
     return written_files;
 }

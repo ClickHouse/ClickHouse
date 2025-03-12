@@ -1,9 +1,7 @@
 ---
-slug: /sql-reference/table-functions/azureBlobStorage
+slug: /en/sql-reference/table-functions/azureBlobStorage
 sidebar_position: 10
 sidebar_label: azureBlobStorage
-title: "azureBlobStorage"
-description: "Provides a table-like interface to select/insert files in Azure Blob Storage. Similar to the s3 function."
 keywords: [azure blob storage]
 ---
 
@@ -27,7 +25,7 @@ azureBlobStorage(- connection_string|storage_account_url, container_name, blobpa
 - `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](/sql-reference/formats) of the file.
+- `format` — The [format](../../interfaces/formats.md#formats) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
@@ -37,7 +35,7 @@ A table with the specified structure for reading or writing data in the specifie
 
 **Examples**
 
-Similar to the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Below we assume Azurite is available at the hostname `azurite1`.
+Similar to the [AzureBlobStorage](/docs/en/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Below we assume Azurite is available at the hostname `azurite1`.
 
 Write data into azure blob storage using the following :
 
@@ -83,7 +81,7 @@ SELECT count(*) FROM azureBlobStorage('DefaultEndpointsProtocol=https;AccountNam
 
 **See Also**
 
-- [AzureBlobStorage Table Engine](engines/table-engines/integrations/azureBlobStorage.md)
+- [AzureBlobStorage Table Engine](/docs/en/engines/table-engines/integrations/azureBlobStorage.md)
 
 ## Hive-style partitioning {#hive-style-partitioning}
 
@@ -95,36 +93,4 @@ Use virtual column, created with Hive-style partitioning
 
 ``` sql
 SELECT * from azureBlobStorage(config, storage_account_url='...', container='...', blob_path='http://data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
-```
-
-## Using Shared Access Signatures (SAS) {#using-shared-access-signatures-sas-sas-tokens}
-
-A Shared Access Signature (SAS) is a URI that grants restricted access to an Azure Storage container or file. Use it to provide time-limited access to storage account resources without sharing your storage account key. More details [here](https://learn.microsoft.com/en-us/rest/api/storageservices/delegate-access-with-shared-access-signature).
-
-The `azureBlobStorage` function supports Shared Access Signatures (SAS).
-
-A [Blob SAS token](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/how-to-guides/create-sas-tokens?tabs=Containers) contains all the information needed to authenticate the request, including the target blob, permissions, and validity period. To construct a blob URL, append the SAS token to the blob service endpoint. For example, if the endpoint is `https://clickhousedocstest.blob.core.windows.net/`, the request becomes:
-
-```sql
-SELECT count()
-FROM azureBlobStorage('BlobEndpoint=https://clickhousedocstest.blob.core.windows.net/;SharedAccessSignature=sp=r&st=2025-01-29T14:58:11Z&se=2025-01-29T22:58:11Z&spr=https&sv=2022-11-02&sr=c&sig=Ac2U0xl4tm%2Fp7m55IilWl1yHwk%2FJG0Uk6rMVuOiD0eE%3D', 'exampledatasets', 'example.csv')
-
-┌─count()─┐
-│      10 │
-└─────────┘
-
-1 row in set. Elapsed: 0.425 sec.
-```
-
-Alternatively, users can use the generated [Blob SAS URL](https://learn.microsoft.com/en-us/azure/ai-services/translator/document-translation/how-to-guides/create-sas-tokens?tabs=Containers):
-
-```sql
-SELECT count() 
-FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st=2025-01-29T14:58:11Z&se=2025-01-29T22:58:11Z&spr=https&sv=2022-11-02&sr=c&sig=Ac2U0xl4tm%2Fp7m55IilWl1yHwk%2FJG0Uk6rMVuOiD0eE%3D', 'exampledatasets', 'example.csv')
-
-┌─count()─┐
-│      10 │
-└─────────┘
-
-1 row in set. Elapsed: 0.153 sec.
 ```

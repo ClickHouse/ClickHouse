@@ -1,5 +1,5 @@
 ---
-slug: /operations/caches
+slug: /en/operations/caches
 sidebar_position: 65
 sidebar_label: Caches
 title: "Cache Types"
@@ -24,8 +24,5 @@ Additional cache types:
 - Schema inference cache.
 - [Filesystem cache](storing-data.md) over S3, Azure, Local and other disks.
 - [Query cache](query-cache.md).
-- Format schema cache.
 
 To drop one of the caches, use [SYSTEM DROP ... CACHE](../sql-reference/statements/system.md#drop-mark-cache) statements.
-
-To drop the format schema cache, use the [SYSTEM DROP FORMAT SCHEMA CACHE](/sql-reference/statements/system#system-drop-schema-format) statement.

@@ -1,7 +1,7 @@
 ---
-title: TabSeparatedRawWithNamesAndTypes
-slug: /interfaces/formats/TabSeparatedRawWithNamesAndTypes
-keywords: [TabSeparatedRawWithNamesAndTypes, TSVRawWithNamesAndTypes, RawWithNamesAndTypes]
+title : TabSeparatedRawWithNamesAndTypes
+slug : /en/interfaces/formats/TabSeparatedRawWithNamesAndTypes
+keywords : [TabSeparatedRawWithNamesAndTypes, TSVRawWithNamesAndTypes, RawWithNamesAndTypes]
 input_format: true
 output_format: true
 alias: ['TSVRawWithNamesAndTypes', 'RawWithNamesAndTypes']
@@ -11,7 +11,7 @@ alias: ['TSVRawWithNamesAndTypes', 'RawWithNamesAndTypes']
 |-------|--------|---------------------------------------------------|
 | ✔     | ✔      | `TSVRawWithNamesAndNames`, `RawWithNamesAndNames` |
 
-## Description {#description}
+## Description
 
 Differs from the [`TabSeparatedWithNamesAndTypes`](./TabSeparatedWithNamesAndTypes.md) format,
 in that the rows are written without escaping.
@@ -20,6 +20,6 @@ in that the rows are written without escaping.
 When parsing with this format, tabs or line-feeds are not allowed in each field.
 :::
 
-## Example Usage {#example-usage}
+## Example Usage
 
-## Format Settings {#format-settings}
+## Format Settings

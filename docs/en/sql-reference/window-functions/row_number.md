@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/window-functions/row_number
+slug: /en/sql-reference/window-functions/row_number
 sidebar_label: row_number
 sidebar_position: 2
 ---

@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/statements/exchange
+slug: /en/sql-reference/statements/exchange
 sidebar_position: 49
 sidebar_label: EXCHANGE
 ---
@@ -19,7 +19,7 @@ The `EXCHANGE` query is supported by the [Atomic](../../engines/database-engines
 EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
 ```
 
-## EXCHANGE TABLES {#exchange-tables}
+## EXCHANGE TABLES
 
 Exchanges the names of two tables.
 
@@ -29,7 +29,7 @@ Exchanges the names of two tables.
 EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
 ```
 
-## EXCHANGE DICTIONARIES {#exchange-dictionaries}
+## EXCHANGE DICTIONARIES
 
 Exchanges the names of two dictionaries.
 

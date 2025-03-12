@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 
 #include <fmt/format.h>
-#include <fmt/ranges.h>
 
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

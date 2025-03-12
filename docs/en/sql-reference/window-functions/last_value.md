@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/window-functions/last_value
+slug: /en/sql-reference/window-functions/last_value
 sidebar_label: last_value
 sidebar_position: 4
 ---
