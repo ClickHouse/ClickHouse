@@ -187,6 +187,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
 namespace MergeTreeSetting
@@ -718,6 +719,12 @@ Pipe ReadFromMergeTree::read(
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
 
+    const size_t total_query_nodes = is_parallel_reading_from_replicas
+        ? std::min<size_t>(
+              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+              context->getSettingsRef()[Setting::max_parallel_replicas])
+        : 1;
+
     PoolSettings pool_settings{
         .threads = max_streams,
         .sum_marks = sum_marks,
@@ -725,6 +732,7 @@ Pipe ReadFromMergeTree::read(
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = use_uncompressed_cache,
         .use_const_size_tasks_for_remote_reading = settings[Setting::merge_tree_use_const_size_tasks_for_remote_reading],
+        .total_query_nodes = total_query_nodes,
     };
 
     if (read_type == ReadType::ParallelReplicas)
@@ -1034,12 +1042,19 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
+    const size_t total_query_nodes = is_parallel_reading_from_replicas
+        ? std::min<size_t>(
+              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
+              context->getSettingsRef()[Setting::max_parallel_replicas])
+        : 1;
+
     PoolSettings pool_settings{
         .threads = num_streams,
         .sum_marks = parts_with_ranges.getMarksCountAllParts(),
         .min_marks_for_concurrent_read = info.min_marks_for_concurrent_read,
         .preferred_block_size_bytes = settings[Setting::preferred_block_size_bytes],
         .use_uncompressed_cache = info.use_uncompressed_cache,
+        .total_query_nodes = total_query_nodes,
     };
 
     Pipes pipes;
