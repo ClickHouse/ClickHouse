@@ -357,7 +357,10 @@ void IcebergMetadata::updateSnapshot()
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
         if (snapshot->getValue<Int64>("snapshot-id") == relevant_snapshot_id)
         {
-            relevant_snapshot = IcebergSnapshot{getManifestList(snapshot->getValue<String>("manifest-list")), relevant_snapshot_id};
+            relevant_snapshot = IcebergSnapshot{
+                getManifestList(getProperFilePathFromMetadataInfo(
+                    snapshot->getValue<String>("manifest-list"), configuration_ptr->getPath(), table_location)),
+                relevant_snapshot_id};
             relevant_snapshot_schema_id = snapshot->getValue<Int32>("schema-id");
             addTableSchemaById(relevant_snapshot_schema_id);
             return;
