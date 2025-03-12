@@ -61,7 +61,7 @@ private:
     void doTransform(Chunk & chunk);
     void removeFilterIfNeed(Columns & columns) const;
 
-    void writeIntoQueryConditionCache(MarkRangesInfoPtr mark_info);
+    void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_info);
 };
 
 }

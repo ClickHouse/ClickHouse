@@ -2,7 +2,6 @@
 
 #include <Common/CacheBase.h>
 #include <Storages/MergeTree/MarkRange.h>
-#include <Processors/Chunk.h>
 
 namespace DB
 {
@@ -23,7 +22,9 @@ public:
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
 
     /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
-    void write(size_t predicate_hash, const MarkRangesInfoPtr & mark_info);
+    void write(
+        const UUID & table_id, const String & part_name, size_t predicate_hash,
+        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
 
     /// Check the cache if it contains an entry for the given table + part id and predicate hash.
     std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, size_t predicate_hash);

@@ -258,7 +258,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_filtered_rows);
 }
 
-void FilterTransform::writeIntoQueryConditionCache(MarkRangesInfoPtr mark_info)
+void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_info)
 {
     if (!query_condition_cache)
         return;
@@ -268,8 +268,13 @@ void FilterTransform::writeIntoQueryConditionCache(MarkRangesInfoPtr mark_info)
         if (!merged_mark_info)
             return;
 
-        query_condition_cache->write(*condition_hash, merged_mark_info);
-
+        query_condition_cache->write(
+            merged_mark_info->table_uuid,
+            merged_mark_info->part_name,
+            *condition_hash,
+            merged_mark_info->mark_ranges,
+            merged_mark_info->marks_count,
+            merged_mark_info->has_final_mark);
         merged_mark_info = nullptr;
         return;
     }
@@ -281,8 +286,13 @@ void FilterTransform::writeIntoQueryConditionCache(MarkRangesInfoPtr mark_info)
         /// If it is the same part, merge the mark ranges, otherwise update to the query condition cache.
         if (merged_mark_info->table_uuid != mark_info->table_uuid || merged_mark_info->part_name != mark_info->part_name)
         {
-            query_condition_cache->write(*condition_hash, merged_mark_info);
-
+            query_condition_cache->write(
+                merged_mark_info->table_uuid,
+                merged_mark_info->part_name,
+                *condition_hash,
+                merged_mark_info->mark_ranges,
+                merged_mark_info->marks_count,
+                merged_mark_info->has_final_mark);
             merged_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
         }
         else

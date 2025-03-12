@@ -15,35 +15,37 @@ QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max
 {
 }
 
-void QueryConditionCache::write(size_t predicate_hash, const MarkRangesInfoPtr & mark_info)
+void QueryConditionCache::write(
+    const UUID & table_id, const String & part_name, size_t predicate_hash,
+    const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark)
 {
-    Key key = {mark_info->table_uuid, mark_info->part_name, predicate_hash};
+    Key key = {table_id, part_name, predicate_hash};
 
-    auto load_func = [&](){ return std::make_shared<Entry>(mark_info->marks_count); };
+    auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
-    chassert(mark_info->marks_count == entry->matching_marks.size());
+    chassert(marks_count == entry->matching_marks.size());
 
     {
         std::lock_guard lock(entry->mutex);
 
         /// The input mark ranges are the areas which the scan can skip later on.
-        for (const auto & mark_range : mark_info->mark_ranges)
+        for (const auto & mark_range : mark_ranges)
             std::fill(entry->matching_marks.begin() + mark_range.begin, entry->matching_marks.begin() + mark_range.end, false);
 
-        if (mark_info->has_final_mark)
-            entry->matching_marks[mark_info->marks_count - 1] = false;
+        if (has_final_mark)
+            entry->matching_marks[marks_count - 1] = false;
 
         LOG_DEBUG(
             logger,
             "{} entry for table_id: {}, part_name: {}, predicate_hash: {}, marks_count: {}, has_final_mark: {}, ranges: {}",
             inserted ? "Inserted" : "Updated",
-            mark_info->table_uuid,
-            mark_info->part_name,
+            table_id,
+            part_name,
             predicate_hash,
-            mark_info->marks_count,
-            mark_info->has_final_mark,
-            toString(mark_info->mark_ranges));
+            marks_count,
+            has_final_mark,
+            toString(mark_ranges));
     }
 }
 
