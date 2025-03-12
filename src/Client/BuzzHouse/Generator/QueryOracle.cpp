@@ -182,7 +182,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     std::error_code ec;
     Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
-    SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
+    SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickKeyRandomlyFromMap(out_in);
 
@@ -274,7 +274,7 @@ void QueryOracle::generateImportQuery(
     }
     if (outf == OutFormat::OUT_CSV || outf == OutFormat::OUT_Parquet)
     {
-        SetValue * sv = iff->mutable_settings()->mutable_set_value();
+        SetValue * sv = ins->mutable_setting_values()->mutable_set_value();
 
         if (outf == OutFormat::OUT_CSV)
         {
@@ -360,7 +360,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     std::error_code ec;
     bool explain = false;
     Select * sel = nullptr;
-    InsertSelect * insel = nullptr;
+    Insert * ins = nullptr;
     const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
 
     peer_query = pq;
@@ -380,7 +380,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
     else
     {
-        Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
+        ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tfunction()->mutable_file();
 
         if (!std::filesystem::remove(qfile, ec) && ec)
@@ -389,8 +389,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         }
         ff->set_path(qfile.generic_string());
         ff->set_outformat(OutFormat::OUT_CSV);
-        insel = ins->mutable_insert_select();
-        sel = insel->mutable_select();
+        sel = ins->mutable_select();
     }
 
     gen.setAllowNotDetermistic(false);
@@ -436,8 +435,8 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     if (!measure_performance && !explain && !global_aggregate)
     {
         /// If not global aggregate, use ORDER BY clause
-        Select * osel = insel->release_select();
-        SelectStatementCore * nsel = insel->mutable_select()->mutable_select_core();
+        Select * osel = ins->release_select();
+        SelectStatementCore * nsel = ins->mutable_select()->mutable_select_core();
         nsel->mutable_from()
             ->mutable_tos()
             ->mutable_join_clause()
@@ -625,7 +624,7 @@ void QueryOracle::replaceQueryWithTablePeers(
 
     sq2.CopyFrom(sq1);
     Select & nsel = const_cast<Select &>(
-        measure_performance ? sq2.explain().inner_query().select().sel() : sq2.explain().inner_query().insert().insert_select().select());
+        measure_performance ? sq2.explain().inner_query().select().sel() : sq2.explain().inner_query().insert().select());
     /// Replace references
     findTablesWithPeersAndReplace(rg, nsel, gen, peer_query != PeerQuery::ClickHouseOnly);
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
@@ -645,7 +644,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         SQLQuery next;
         const SQLTable & t = gen.tables.at(entry);
         Insert * ins = next.mutable_explain()->mutable_inner_query()->mutable_insert();
-        SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
+        SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
 
         // Then insert the data
         gen.setTableRemote(rg, false, t, ins->mutable_tfunction());

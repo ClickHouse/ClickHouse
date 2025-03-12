@@ -3044,12 +3044,6 @@ CONV_FN(Drop, dt)
 
 CONV_FN(ValuesStatement, values)
 {
-    if (values.has_setting_values())
-    {
-        ret += "SETTINGS ";
-        SettingValuesToString(ret, values.setting_values());
-        ret += " ";
-    }
     ret += "VALUES (";
     ExprListToString(ret, values.expr_list());
     ret += ")";
@@ -3061,52 +3055,9 @@ CONV_FN(ValuesStatement, values)
     }
 }
 
-CONV_FN(InsertFromFile, insert_file)
-{
-    ret += "FROM INFILE '";
-    ret += insert_file.path();
-    ret += "'";
-    if (insert_file.has_fcomp())
-    {
-        ret += " COMPRESSION '";
-        ret += FileCompression_Name(insert_file.fcomp()).substr(4);
-        ret += "'";
-    }
-    if (insert_file.has_settings())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, insert_file.settings());
-    }
-    ret += " FORMAT ";
-    ret += InFormat_Name(insert_file.format()).substr(3);
-}
-
-CONV_FN(InsertSelect, insert_sel)
-{
-    if (insert_sel.has_setting_values())
-    {
-        ret += "SETTINGS ";
-        SettingValuesToString(ret, insert_sel.setting_values());
-        ret += " ";
-    }
-    SelectToString(ret, insert_sel.select());
-}
-
-CONV_FN(InsertStringQuery, insert_query)
-{
-    if (insert_query.has_setting_values())
-    {
-        ret += "SETTINGS ";
-        SettingValuesToString(ret, insert_query.setting_values());
-        ret += " ";
-    }
-    ret += "VALUES ";
-    ret += insert_query.query();
-}
-
 CONV_FN(Insert, insert)
 {
-    if (insert.has_ctes() && insert.has_est() && insert.has_insert_select())
+    if (insert.has_ctes() && insert.has_est() && insert.has_select())
     {
         CTEsToString(ret, insert.ctes());
     }
@@ -3134,21 +3085,45 @@ CONV_FN(Insert, insert)
         ret += ")";
     }
     ret += " ";
+    if (!insert.has_insert_file() && insert.has_setting_values())
+    {
+        ret += "SETTINGS ";
+        SettingValuesToString(ret, insert.setting_values());
+        ret += " ";
+    }
     if (insert.has_values())
     {
         ValuesStatementToString(ret, insert.values());
     }
-    else if (insert.has_insert_select())
+    else if (insert.has_select())
     {
-        InsertSelectToString(ret, insert.insert_select());
+        SelectToString(ret, insert.select());
     }
     else if (insert.has_insert_file())
     {
-        InsertFromFileToString(ret, insert.insert_file());
+        const InsertFromFile & insert_file = insert.insert_file();
+
+        ret += "FROM INFILE '";
+        ret += insert_file.path();
+        ret += "'";
+        if (insert_file.has_fcomp())
+        {
+            ret += " COMPRESSION '";
+            ret += FileCompression_Name(insert_file.fcomp()).substr(4);
+            ret += "'";
+        }
+        if (insert.has_setting_values())
+        {
+            ret += " SETTINGS ";
+            SettingValuesToString(ret, insert.setting_values());
+        }
+        ret += " FORMAT ";
+        ret += InFormat_Name(insert_file.format()).substr(3);
     }
     else if (insert.has_query())
     {
-        InsertStringQueryToString(ret, insert.query());
+        ret += "VALUES ";
+        ret += insert.query();
     }
     else
     {

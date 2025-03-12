@@ -3133,26 +3133,14 @@ message Drop {
 }
 
 message ValuesStatement {
-    optional SettingValues setting_values = 1;
     required ExprList expr_list = 2;
     repeated ExprList extra_expr_lists = 3;
-}
-
-message InsertSelect {
-    optional SettingValues setting_values = 1;
-    required Select select = 2;
 }
 
 message InsertFromFile {
     required string path = 1;
     optional FileCompression fcomp = 2;
-    optional SettingValues settings = 3;
-    required InFormat format = 4;
-}
-
-message InsertStringQuery {
-    optional SettingValues setting_values = 1;
-    required string query = 2;
+    required InFormat format = 3;
 }
 
 message Insert {
@@ -3164,10 +3152,11 @@ message Insert {
     repeated ColumnPath cols = 4;
     oneof insert_oneof {
         ValuesStatement values = 5;
-        InsertSelect insert_select = 6;
+        Select select = 6;
         InsertFromFile insert_file = 7;
-        InsertStringQuery query = 8;
+        string query = 8;
     }
+    optional SettingValues setting_values = 9;
 }
 
 message PartitionExpr {

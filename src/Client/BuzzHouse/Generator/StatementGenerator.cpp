@@ -639,7 +639,6 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
     if (noption < 801)
     {
         const uint64_t nrows = rows_dist(rg.generator);
-        InsertStringQuery * iquery = ins->mutable_query();
 
         for (uint64_t i = 0; i < nrows; i++)
         {
@@ -683,16 +682,11 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             }
             buf += ")";
         }
-        iquery->set_query(buf);
-        if (rg.nextSmallNumber() < 3)
-        {
-            generateSettingValues(rg, serverSettings, iquery->mutable_setting_values());
-        }
+        ins->set_query(buf);
     }
     else if (noption < 951)
     {
-        InsertSelect * isel = ins->mutable_insert_select();
-        Select * sel = isel->mutable_select();
+        Select * sel = ins->mutable_select();
 
         if (noption < 901)
         {
@@ -739,10 +733,6 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             generateSelect(rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), sel);
             this->levels.clear();
         }
-        if (rg.nextSmallNumber() < 3)
-        {
-            generateSettingValues(rg, serverSettings, isel->mutable_setting_values());
-        }
     }
     else
     {
@@ -776,12 +766,12 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             }
         }
         this->levels.clear();
-        if (rg.nextSmallNumber() < 3)
-        {
-            generateSettingValues(rg, serverSettings, vs->mutable_setting_values());
-        }
     }
     this->entries.clear();
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, ins->mutable_setting_values());
+    }
 }
 
 void StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr)
