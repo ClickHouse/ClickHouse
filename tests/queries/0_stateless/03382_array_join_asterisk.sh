@@ -16,9 +16,9 @@ $CLICKHOUSE_CLIENT -q "
   CREATE TABLE t (t0 UInt64, t1 UInt64) ENGINE=MergeTree() ORDER BY t0;
 "
 
-$CLICKHOUSE_CLIENT -q "SELECT 1 FROM (SELECT 1 AS x) x ARRAY JOIN $FUNCTION_NAME(x.x); -- { serverError TYPE_MISMATCH }"
-$CLICKHOUSE_CLIENT -q "SELECT number from numbers(1) array join *; -- { serverError TYPE_MISMATCH }"
-$CLICKHOUSE_CLIENT -q "SELECT number from numbers(1) array join 1,*; -- { serverError TYPE_MISMATCH }"
+$CLICKHOUSE_CLIENT -q "SELECT 1 FROM (SELECT 1 AS x) x ARRAY JOIN $FUNCTION_NAME(x.x); -- { serverError TYPE_MISMATCH, ALIAS_REQUIRED }"
+$CLICKHOUSE_CLIENT -q "SELECT number from numbers(1) array join *; -- { serverError TYPE_MISMATCH, ALIAS_REQUIRED }"
+$CLICKHOUSE_CLIENT -q "SELECT number from numbers(1) array join 1,*; -- { serverError TYPE_MISMATCH, ALIAS_REQUIRED }"
 
 $CLICKHOUSE_CLIENT -q "
   DROP FUNCTION IF EXISTS $FUNCTION_NAME;

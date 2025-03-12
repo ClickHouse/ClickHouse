@@ -22,8 +22,9 @@ $CLICKHOUSE_CLIENT -q "CREATE VIEW x AS (SELECT $FUNCTION_NAME(COLUMNS(''))); --
 $CLICKHOUSE_CLIENT -q "CREATE VIEW x AS (SELECT $FUNCTION_NAME(COLUMNS('t.*'))); -- { serverError BAD_ARGUMENTS }"
 $CLICKHOUSE_CLIENT -q "CREATE VIEW x AS (SELECT $FUNCTION_NAME(COLUMNS('t.t*')) FROM t); -- { serverError BAD_ARGUMENTS }"
 
-# Using UDF normally should work
-$CLICKHOUSE_CLIENT -q "
+# Using UDF normally should work (but it didn't with the old analyzer).
+# Feel free to delete it in the future if this changes
+$CLICKHOUSE_CLIENT --enable-analyzer=1 -q "
   SELECT COLUMNS('t*') APPLY $FUNCTION_NAME FROM t;
   SELECT $FUNCTION_NAME(COLUMNS('t1')) FROM t;
 "
