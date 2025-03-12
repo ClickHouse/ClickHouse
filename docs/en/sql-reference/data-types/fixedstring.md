@@ -1,7 +1,9 @@
 ---
 slug: /sql-reference/data-types/fixedstring
+description: 'Documentation for the FixedString data type in ClickHouse'
 sidebar_position: 10
 sidebar_label: 'FixedString(N)'
+title: 'FixedString(N)'
 ---
 
 # FixedString(N)

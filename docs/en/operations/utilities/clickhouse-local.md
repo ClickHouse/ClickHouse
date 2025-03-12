@@ -2,6 +2,7 @@
 slug: /operations/utilities/clickhouse-local
 sidebar_position: 60
 sidebar_label: 'clickhouse-local'
+description: 'Guide to using clickhouse-local for processing data without a server'
 ---
 
 # clickhouse-local

@@ -1,5 +1,6 @@
 ---
 slug: /sql-reference/data-types/decimal
+description: 'Documentation for the Decimal data types in ClickHouse, which provide fixed-point arithmetic with configurable precision'
 sidebar_position: 6
 sidebar_label: 'Decimal'
 ---

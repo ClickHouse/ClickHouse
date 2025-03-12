@@ -1,5 +1,7 @@
 ---
 slug: /sql-reference/data-types/datetime64
+title: 'DateTime64'
+description: 'Documentation for the DateTime64 data type in ClickHouse, which stores timestamps with sub-second precision'
 sidebar_position: 18
 sidebar_label: 'DateTime64'
 ---

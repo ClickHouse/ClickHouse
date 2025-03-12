@@ -1,5 +1,6 @@
 ---
 slug: /operations/external-authenticators/
+description: 'Overview of external authentication methods supported by ClickHouse'
 sidebar_position: 48
 sidebar_label: 'External User Authenticators and Directories'
 title: 'External User Authenticators and Directories'

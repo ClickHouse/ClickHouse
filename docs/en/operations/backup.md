@@ -1,8 +1,9 @@
 ---
 slug: /operations/backup
 title: 'Backup and Restore'
-description: 'Page detailing backups and restore operations in ClickHouse'
-sidebar_label: 'Backup'
+description: 'Guide to backing up and restoring ClickHouse databases and tables'
+sidebar_position: 10
+sidebar_label: 'Backup and Restore'
 ---
 
 # Backup and Restore

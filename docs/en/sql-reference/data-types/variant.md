@@ -1,8 +1,11 @@
 ---
 slug: /sql-reference/data-types/variant
+title: 'Variant(T1, T2, ...)'
+description: 'Documentation for the Variant data type in ClickHouse'
 sidebar_position: 40
 sidebar_label: 'Variant(T1, T2, ...)'
 ---
+
 import BetaBadge from '@theme/badges/BetaBadge';
 
 # Variant(T1, T2, ...)

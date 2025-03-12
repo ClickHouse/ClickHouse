@@ -1,7 +1,7 @@
 ---
 slug: /interfaces/http
 title: 'HTTP Interface'
-description: 'Documentation for the HTTP interface in ClickHouse'
+description: 'Documentation for the HTTP interface in ClickHouse, which provides REST API access to ClickHouse from any platform and programming language'
 sidebar_position: 15
 sidebar_label: 'HTTP Interface'
 ---

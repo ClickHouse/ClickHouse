@@ -1,5 +1,6 @@
 ---
 slug: /sql-reference/data-types/special-data-types/
+description: 'Overview of special data types in ClickHouse that are used for intermediate results during query execution'
 sidebar_label: Special Data Types
 sidebar_position: 55
 ---

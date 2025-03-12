@@ -1,7 +1,9 @@
 ---
 slug: /sql-reference/data-types/aggregatefunction
+description: 'Documentation for the AggregateFunction data type in ClickHouse, which stores intermediate states of aggregate functions'
 sidebar_position: 46
 sidebar_label: 'AggregateFunction'
+title: 'AggregateFunction'
 ---
 
 # AggregateFunction

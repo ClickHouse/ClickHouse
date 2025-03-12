@@ -1,5 +1,6 @@
 ---
 slug: /operations/optimizing-performance/sampling-query-profiler
+description: 'Documentation for the sampling query profiler tool in ClickHouse'
 sidebar_position: 54
 sidebar_label: 'Query Profiling'
 ---
