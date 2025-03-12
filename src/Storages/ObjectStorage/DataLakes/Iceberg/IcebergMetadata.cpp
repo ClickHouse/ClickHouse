@@ -520,12 +520,10 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
             {
                 if (pruner.canBePruned(manifest_file_entry))
                 {
-                    LOG_DEBUG(log, "File {} is pruned", std::get<DataFileEntry>(manifest_file_entry.file).file_name);
                     ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
                 }
                 else
                 {
-                    LOG_DEBUG(log, "File {} is not pruned", std::get<DataFileEntry>(manifest_file_entry.file).file_name);
                     if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
                         data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
                 }
