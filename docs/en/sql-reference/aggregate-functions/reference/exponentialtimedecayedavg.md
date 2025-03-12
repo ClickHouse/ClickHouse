@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedAvg
 sidebar_position: 133
-title: "exponentialTimeDecayedAvg"
-description: "Returns the exponentially smoothed weighted moving average of values of a time series at point `t` in time."
+title: 'exponentialTimeDecayedAvg'
+description: 'Returns the exponentially smoothed weighted moving average of values of a time series at point `t` in time.'
 ---
 
 ## exponentialTimeDecayedAvg {#exponentialtimedecayedavg}

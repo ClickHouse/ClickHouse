@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/last_value
 sidebar_position: 160
-title: "last_value"
-description: "Selects the last encountered value, similar to `anyLast`, but could accept NULL."
+title: 'last_value'
+description: 'Selects the last encountered value, similar to `anyLast`, but could accept NULL.'
 ---
 
 # last_value

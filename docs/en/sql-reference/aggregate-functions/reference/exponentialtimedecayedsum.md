@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedSum
 sidebar_position: 136
-title: "exponentialTimeDecayedSum"
-description: "Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time."
+title: 'exponentialTimeDecayedSum'
+description: 'Returns the sum of exponentially smoothed moving average values of a time series at the index `t` in time.'
 ---
 
 ## exponentialTimeDecayedSum {#exponentialtimedecayedsum}

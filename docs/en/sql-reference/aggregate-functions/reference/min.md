@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/min
 sidebar_position: 168
-title: min
-description: "Aggregate function that calculates the minimum across a group of values."
+title: 'min'
+description: 'Aggregate function that calculates the minimum across a group of values.'
 ---
 
 Aggregate function that calculates the minimum across a group of values.

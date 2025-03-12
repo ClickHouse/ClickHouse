@@ -1,9 +1,9 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/intervalLengthSum
 sidebar_position: 155
-sidebar_label: intervalLengthSum
-title: intervalLengthSum
-description: "Calculates the total length of union of all ranges (segments on numeric axis)."
+sidebar_label: 'intervalLengthSum'
+title: 'intervalLengthSum'
+description: 'Calculates the total length of union of all ranges (segments on numeric axis).'
 ---
 
 Calculates the total length of union of all ranges (segments on numeric axis).

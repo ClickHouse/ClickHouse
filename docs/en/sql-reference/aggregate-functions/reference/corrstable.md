@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/corrstable
 sidebar_position: 119
-title: "corrStable"
-description: "Calculates the Pearson correlation coefficient, but uses a numerically stable algorithm."
+title: 'corrStable'
+description: 'Calculates the Pearson correlation coefficient, but uses a numerically stable algorithm.'
 ---
 
 # corrStable

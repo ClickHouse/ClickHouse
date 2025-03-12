@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/quantiles
 sidebar_position: 177
-title: "quantiles Functions"
-description: "quantiles, quantilesExactExclusive, quantilesExactInclusive, quantilesGK"
+title: 'quantiles Functions'
+description: 'quantiles, quantilesExactExclusive, quantilesExactInclusive, quantilesGK'
 ---
 
 # quantiles Functions

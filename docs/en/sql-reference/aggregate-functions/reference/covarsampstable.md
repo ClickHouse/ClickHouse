@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/covarsampstable
 sidebar_position: 126
-title: "covarSampStable"
-description: "Similar to covarSamp but works slower while providing a lower computational error."
+title: 'covarSampStable'
+description: 'Similar to covarSamp but works slower while providing a lower computational error.'
 ---
 
 # covarSampStable

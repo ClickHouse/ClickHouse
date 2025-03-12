@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/anylast
 sidebar_position: 105
-title: "anyLast"
-description: "Selects the last encountered value of a column."
+title: 'anyLast'
+description: 'Selects the last encountered value of a column.'
 ---
 
 # anyLast

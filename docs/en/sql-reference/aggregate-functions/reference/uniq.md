@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/uniq
 sidebar_position: 204
-title: "uniq"
-description: "Calculates the approximate number of different values of the argument."
+title: 'uniq'
+description: 'Calculates the approximate number of different values of the argument.'
 ---
 
 # uniq

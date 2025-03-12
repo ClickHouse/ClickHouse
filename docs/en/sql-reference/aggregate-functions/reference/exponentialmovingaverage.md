@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/exponentialMovingAverage
 sidebar_position: 132
-title: "exponentialMovingAverage"
-description: "Calculates the exponential moving average of values for the determined time."
+title: 'exponentialMovingAverage'
+description: 'Calculates the exponential moving average of values for the determined time.'
 ---
 
 ## exponentialMovingAverage {#exponentialmovingaverage}

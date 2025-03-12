@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/minmap
 sidebar_position: 169
-title: "minMap"
-description: "Calculates the minimum from `value` array according to the keys specified in the `key` array."
+title: 'minMap'
+description: 'Calculates the minimum from `value` array according to the keys specified in the `key` array.'
 ---
 
 # minMap

@@ -1,8 +1,8 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/median
 sidebar_position: 167
-title: "median"
-description: "The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample."
+title: 'median'
+description: 'The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.'
 ---
 
 # median
