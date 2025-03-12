@@ -127,7 +127,7 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
         res.type = MutationCommand::Type::READ_COLUMN;
         const auto & ast_col_decl = command->col_decl->as<ASTColumnDeclaration &>();
         if (nullptr == ast_col_decl.type)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY COLUMN mutation command doesn't specify type: {}", serializeAST(*command));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "MODIFY COLUMN mutation command doesn't specify type: {}", command->formatWithSecretsOneLine());
         res.column_name = ast_col_decl.name;
         res.data_type = DataTypeFactory::instance().get(ast_col_decl.type);
         return res;

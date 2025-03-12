@@ -344,7 +344,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
         {
             e.addMessage(
                 "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
-                + " from query " + serializeAST(query));
+                + " from query " + query.formatWithSecretsOneLine());
 
             if (!Coordination::isHardwareError(e.code))
                 throw;
@@ -359,7 +359,7 @@ void DatabaseOrdinary::loadTableFromMetadata(
         {
             e.addMessage(
                 "Cannot attach table " + backQuote(name.database) + "." + backQuote(query.getTable()) + " from metadata file " + file_path
-                + " from query " + serializeAST(query));
+                + " from query " + query.formatWithSecretsOneLine());
             throw;
         }
     }

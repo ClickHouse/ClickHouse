@@ -209,7 +209,7 @@ String genInOpExprCis(std::vector<String> & tokens, IParser::Pos & token_pos, co
     if (kqlfun_p.parse(pos, select, expected))
     {
         rebuildSubqueryForInOperator(select, true);
-        new_expr += ch_op + " (" + serializeAST(*select) + ")";
+        new_expr += ch_op + " (" + select->formatWithSecretsOneLine() + ")";
         token_pos = pos;
         return new_expr;
     }
@@ -256,7 +256,7 @@ std::string genInOpExpr(IParser::Pos & token_pos, const std::string & kql_op, co
     if (kqlfun_p.parse(pos, select, expected))
     {
         rebuildSubqueryForInOperator(select, false);
-        auto new_expr = ch_op + " (" + serializeAST(*select) + ")";
+        auto new_expr = ch_op + " (" + select->formatWithSecretsOneLine() + ")";
         token_pos = pos;
         return new_expr;
     }

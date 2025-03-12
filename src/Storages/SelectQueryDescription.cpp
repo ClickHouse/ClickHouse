@@ -63,7 +63,7 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
             throw Exception(
                 ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW,
                 "StorageMaterializedView cannot be created from table functions ({})",
-                serializeAST(*subquery));
+                subquery->formatWithSecretsOneLine());
 
         auto & inner_query = ast_select->list_of_selects->children.at(0);
 

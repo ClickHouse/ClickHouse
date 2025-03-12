@@ -23,7 +23,7 @@ namespace
     PreformattedMessage wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, const String & alias)
     {
         return PreformattedMessage::create("Different expressions with the same alias {}:\n{}\nand\n{}\n",
-                                           backQuoteIfNeed(alias), serializeAST(*ast), serializeAST(*prev_ast));
+                                           backQuoteIfNeed(alias), ast->formatWithSecretsOneLine(), prev_ast->formatWithSecretsOneLine());
     }
 
 }

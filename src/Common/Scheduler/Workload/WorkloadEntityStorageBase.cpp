@@ -620,7 +620,7 @@ void WorkloadEntityStorageBase::applyEvent(
 {
     if (event.entity) // CREATE || CREATE OR REPLACE
     {
-        LOG_DEBUG(log, "Create or replace workload entity: {}", serializeAST(*event.entity));
+        LOG_DEBUG(log, "Create or replace workload entity: {}", event.entity->formatWithSecretsOneLine());
 
         auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(event.entity.get());
 

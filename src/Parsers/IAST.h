@@ -299,8 +299,7 @@ public:
     String formatForLogging(size_t max_length = 0) const;
     String formatForErrorMessage() const;
     String formatWithSecretsOneLine() const;
-    /// Intended for pretty-printing (multi-line + hiliting).
-    String formatWithSecretsPretty() const;
+    String formatWithSecretsMultiLine() const;
 
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
 

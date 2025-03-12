@@ -50,7 +50,7 @@ TEST_P(TableOverrideTest, applyOverrides)
         ASSERT_NE(nullptr, override_table_ast);
         applyTableOverrideToCreateQuery(*override_table_ast, table);
     }
-    EXPECT_EQ(expected_query, serializeAST(*table));
+    EXPECT_EQ(expected_query, table->formatWithSecretsOneLine());
 }
 
 INSTANTIATE_TEST_SUITE_P(ApplyTableOverrides, TableOverrideTest,

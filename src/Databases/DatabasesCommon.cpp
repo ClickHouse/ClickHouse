@@ -49,7 +49,7 @@ namespace
 void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
 {
     /// First validate that the query can be parsed
-    const auto serialized_query = serializeAST(query);
+    const auto serialized_query = query.formatWithSecretsOneLine();
     ParserCreateQuery parser;
     ASTPtr new_query_raw = parseQuery(
         parser,

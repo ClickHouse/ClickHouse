@@ -966,6 +966,7 @@ static BlockIO executeQueryImpl(
                     /*one_line=*/true,
                     /*show_secrets=*/true,
                     /*print_pretty_type_names=*/false,
+                    /*hilite=*/false,
                     /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
                     /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 
@@ -1001,6 +1002,7 @@ static BlockIO executeQueryImpl(
                     /*one_line=*/true,
                     /*show_secrets=*/true,
                     /*print_pretty_type_names=*/false,
+                    /*hilite=*/false,
                     /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
                     /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 
@@ -1042,7 +1044,7 @@ static BlockIO executeQueryImpl(
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);
             if (visitor.getNumberOfReplacedParameters())
-                query = serializeAST(*out_ast);
+                query = out_ast->formatWithSecretsOneLine();
             else
                 query.assign(begin, query_end);
         }

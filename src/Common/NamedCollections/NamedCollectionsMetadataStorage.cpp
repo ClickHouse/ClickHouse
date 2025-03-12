@@ -593,7 +593,7 @@ void NamedCollectionsMetadataStorage::writeCreateQuery(const ASTCreateNamedColle
         changes.begin(), changes.end(),
         [](const SettingChange & lhs, const SettingChange & rhs) { return lhs.name < rhs.name; });
 
-    storage->write(getFileName(query.collection_name), serializeAST(*normalized_query), replace);
+    storage->write(getFileName(query.collection_name), normalized_query->formatWithSecretsOneLine(), replace);
 }
 
 bool NamedCollectionsMetadataStorage::isReplicated() const

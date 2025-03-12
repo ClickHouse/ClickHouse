@@ -661,7 +661,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
-    String res = serializeAST(*q);
+    String res = q->formatWithSecretsOneLine();
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 

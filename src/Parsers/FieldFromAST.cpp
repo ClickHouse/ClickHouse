@@ -89,10 +89,10 @@ String FieldFromASTImpl::toString(bool show_secrets) const
         auto hidden = ast->clone();
         HideDiskConfigurationVisitor::Data data{};
         HideDiskConfigurationVisitor{data}.visit(hidden);
-        return serializeAST(*hidden);
+        return hidden->formatWithSecretsOneLine();
     }
 
-    return serializeAST(*ast);
+    return ast->formatWithSecretsOneLine();
 }
 
 }

@@ -226,14 +226,14 @@ String IAST::formatWithSecretsOneLine() const
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 }
 
-String IAST::formatWithSecretsPretty() const
+String IAST::formatWithSecretsMultiLine() const
 {
     return formatWithPossiblyHidingSensitiveData(
         /*max_length=*/0,
         /*one_line=*/false,
         /*show_secrets=*/true,
         /*print_pretty_type_names=*/false,
-        /*hilite=*/true,
+        /*hilite=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 }

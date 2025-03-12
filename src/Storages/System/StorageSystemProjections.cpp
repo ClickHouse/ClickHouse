@@ -149,7 +149,7 @@ protected:
                     // 'query' column
                     if (column_mask[src_index++])
                     {
-                        res_columns[res_index++]->insert(serializeAST(*projection.definition_ast->children.at(0)));
+                        res_columns[res_index++]->insert(projection.definition_ast->children.at(0)->formatWithSecretsOneLine());
                     }
                 }
             }

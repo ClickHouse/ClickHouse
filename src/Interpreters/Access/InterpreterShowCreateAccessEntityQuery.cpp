@@ -273,7 +273,7 @@ QueryPipeline InterpreterShowCreateAccessEntityQuery::executeImpl()
 
     /// Prepare description of the result column.
     const auto & show_query = query_ptr->as<const ASTShowCreateAccessEntityQuery &>();
-    String desc = serializeAST(show_query);
+    String desc = show_query.formatWithSecretsOneLine();
     String prefix = "SHOW ";
     if (startsWith(desc, prefix))
         desc = desc.substr(prefix.length()); /// `desc` always starts with "SHOW ", so we can trim this prefix.

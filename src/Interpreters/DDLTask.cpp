@@ -120,7 +120,7 @@ String DDLLogEntry::toString() const
         ASTSetQuery ast;
         ast.is_standalone = false;
         ast.changes = *settings;
-        wb << "settings: " << serializeAST(ast) << "\n";
+        wb << "settings: " << ast.formatWithSecretsOneLine() << "\n";
     }
 
     if (version >= OPENTELEMETRY_ENABLED_VERSION)

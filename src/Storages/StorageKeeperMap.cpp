@@ -104,7 +104,7 @@ std::string formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    return serializeAST(*ast);
+    return ast->formatWithSecretsOneLine();
 }
 
 void verifyTableId(const StorageID & table_id)

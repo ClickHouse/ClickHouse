@@ -35,7 +35,7 @@ String ConstraintsDescription::toString() const
     for (const auto & constraint : constraints)
         list.children.push_back(constraint);
 
-    return serializeAST(list);
+    return list.formatWithSecretsOneLine();
 }
 
 ConstraintsDescription ConstraintsDescription::parse(const String & str)

@@ -1471,7 +1471,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 }
 
                 auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
-                LOG_INFO(log, "Executing {}", serializeAST(*query_ast));
+                LOG_INFO(log, "Executing {}", query_ast->formatWithSecretsOneLine());
                 auto create_query_context = make_query_context();
                 InterpreterCreateQuery(query_ast, create_query_context).execute();
             };

@@ -97,6 +97,7 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
                     /*one_line=*/true,
                     /*show_secrets=*/true,
                     /*print_pretty_type_names=*/false,
+                    /*hilite=*/false,
                     /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
                     /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
         else
@@ -122,6 +123,7 @@ void BaseExternalTable::parseStructureFromTypesField(const std::string & argumen
                 /*one_line=*/true,
                 /*show_secrets=*/true,
                 /*print_pretty_type_names=*/false,
+                /*hilite=*/false,
                 /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
                 /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks));
 }
