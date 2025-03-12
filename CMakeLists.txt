@@ -63,8 +63,8 @@ if (ENABLE_CHECK_HEAVY_BUILDS)
     set (RLIMIT_AS 10000000000)
     # set CPU time limit to 1000 seconds
     set (RLIMIT_CPU 1000)
-    # set stack size to 16M
-    set (RLIMIT_STACK 16000000)
+    # set stack size to 128M
+    set (RLIMIT_STACK 128000000)
 
     # Sanitizers are too heavy. Some architectures too.
     if (SANITIZE OR SANITIZE_COVERAGE OR WITH_COVERAGE OR ARCH_RISCV64 OR ARCH_LOONGARCH64)
