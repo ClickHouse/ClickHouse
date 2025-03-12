@@ -51,7 +51,6 @@ Upcoming meetups
 * [Los Gatos Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/306445660) - March 12, 2025
 * [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/306046697) - March 19, 2025
 * [Delhi Meetup](https://www.meetup.com/clickhouse-delhi-user-group/events/306253492/) - March 22, 2025
-* [Zurich Meetup](https://www.meetup.com/clickhouse-switzerland-meetup-group/events/306435122/) - March 24, 2025
 * [Budapest Meetup](https://www.meetup.com/clickhouse-hungary-user-group/events/306435234/) - March 25, 2025
 * [Boston Meetup](https://www.meetup.com/clickhouse-boston-user-group/events/305882607) - March 25, 2025
 * [Sao Paulo Meetup](https://www.meetup.com/clickhouse-brasil-user-group/events/306385974/) - March 25, 2025
