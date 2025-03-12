@@ -1,11 +1,13 @@
 #include "FlatDirectoryStructureKeyGenerator.h"
 #include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
-#include <Common/ObjectStorageKey.h>
+#include "Common/ObjectStorageKey.h"
+#include <Common/SharedLockGuard.h>
+#include <Common/SharedMutex.h>
 #include <Common/getRandomASCIIString.h>
 
 #include <optional>
+#include <shared_mutex>
 #include <string>
-
 
 namespace DB
 {
@@ -27,13 +29,14 @@ ObjectStorageKey FlatDirectoryStructureKeyGenerator::generate(const String & pat
     std::optional<std::filesystem::path> remote_path;
     {
         const auto ptr = path_map.lock();
-        auto res = ptr->getRemotePathInfoIfExists(p);
-        if (res)
-            return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, res->path);
+        SharedLockGuard lock(ptr->mutex);
+        auto it = ptr->map.find(p);
+        if (it != ptr->map.end())
+            return ObjectStorageKey::createAsRelative(key_prefix.has_value() ? *key_prefix : storage_key_prefix, it->second.path);
 
-        res = ptr->getRemotePathInfoIfExists(directory);
-        if (res)
-            remote_path = res->path;
+        it = ptr->map.find(directory);
+        if (it != ptr->map.end())
+            remote_path = it->second.path;
     }
     constexpr size_t part_size = 32;
     std::filesystem::path key = remote_path.has_value() ? *remote_path

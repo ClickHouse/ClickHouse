@@ -10,12 +10,13 @@ import re
 import shlex
 import shutil
 import signal
+import string
 import subprocess
 import sys
 import time
 from collections import OrderedDict, defaultdict
 from itertools import chain
-from typing import Any, Dict, Final, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional
 
 import yaml  # type: ignore[import-untyped]
 
@@ -31,6 +32,8 @@ NUM_WORKERS = 5
 SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
+CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-odbc-bridge"
+CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH = "usr/bin/clickhouse-library-bridge"
 
 FLAKY_TRIES_COUNT = 3  # run whole pytest several times
 FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
@@ -96,6 +99,96 @@ def chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
     for i in range(0, len(lst), n):
         yield lst[i : i + n]
+
+
+def get_counters(fname: str) -> Dict[str, List[str]]:
+    counters = {
+        "ERROR": set([]),
+        "PASSED": set([]),
+        "FAILED": set([]),
+        "SKIPPED": set([]),
+    }  # type: Dict[str, Any]
+
+    with open(fname, "r", encoding="utf-8") as out:
+        for line in out:
+            line = line.strip()
+            # Example of log:
+            #
+            #     test_mysql_protocol/test.py::test_golang_client
+            #     [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+            #
+            # And only the line with test status should be matched
+            if not (".py::" in line and " " in line):
+                continue
+
+            line = line.strip()
+            # [gw0] [  7%] ERROR test_mysql_protocol/test.py::test_golang_client
+            # ^^^^^^^^^^^^^
+            if line.strip().startswith("["):
+                line = re.sub(r"^\[[^\[\]]*\] \[[^\[\]]*\] ", "", line)
+
+            line_arr = line.split(" ")
+            if len(line_arr) < 2:
+                logging.debug("Strange line %s", line)
+                continue
+
+            # Lines like:
+            #
+            #     ERROR test_mysql_protocol/test.py::test_golang_client
+            #     PASSED test_replicated_users/test.py::test_rename_replicated[QUOTA]
+            #     PASSED test_drop_is_lock_free/test.py::test_query_is_lock_free[detach part]
+            #
+            state = line_arr.pop(0)
+            test_name = " ".join(line_arr)
+
+            # Normalize test names for lines like this:
+            #
+            #    FAILED test_storage_s3/test.py::test_url_reconnect_in_the_middle - Exception
+            #    FAILED test_distributed_ddl/test.py::test_default_database[configs] - AssertionError: assert ...
+            #
+            test_name = re.sub(
+                r"^(?P<test_name>[^\[\] ]+)(?P<test_param>\[[^\[\]]*\]|)(?P<test_error> - .*|)$",
+                r"\g<test_name>\g<test_param>",
+                test_name,
+            )
+
+            if state in counters:
+                counters[state].add(test_name)
+            else:
+                # will skip lines like:
+                #     30.76s call     test_host_ip_change/test.py::test_ip_drop_cache
+                #     5.71s teardown  test_host_ip_change/test.py::test_ip_change[node1]
+                # and similar
+                logging.debug("Strange state in line %s", line)
+
+    return {k: list(v) for k, v in counters.items()}
+
+
+def parse_test_times(fname):
+    read = False
+    description_output = []
+    with open(fname, "r", encoding="utf-8") as out:
+        for line in out:
+            if read and "==" in line:
+                break
+            if read and line.strip():
+                description_output.append(line.strip())
+            if "slowest durations" in line:
+                read = True
+    return description_output
+
+
+def get_test_times(output):
+    result = defaultdict(float)
+    for line in output:
+        if ".py" in line:
+            line_arr = line.strip().split(" ")
+            test_time = line_arr[0]
+            test_name = " ".join([elem for elem in line_arr[2:] if elem])
+            if test_name not in result:
+                result[test_name] = 0.0
+            result[test_name] += float(test_time[:-1])
+    return result
 
 
 def clear_ip_tables_and_restart_daemons():
@@ -248,44 +341,6 @@ class ClickhouseIntegrationTestsRunner:
         sys.exit(13)
 
     @staticmethod
-    def _parse_report(
-        report_path: str,
-    ) -> Tuple[Dict[str, Set[str]], Dict[str, float]]:
-        def worst_status(current: Optional[str], new: str) -> str:
-            new = new.upper()  # report["outcome"] is in lower case
-            if current is None:
-                return new
-            for status in statuses:
-                if status in (current, new):
-                    return status
-            raise ValueError(
-                f"The previous `{current}` and new `{new}` statuses are unexpected"
-            )
-
-        tests_results = {}  # type: Dict[str,str]
-        statuses = ["ERROR", "FAILED", "SKIPPED", "PASSED"]  # type: Final
-        counters = {key: set() for key in statuses}  # type: Dict[str, Set[str]]
-        times = {}  # type: Dict[str, float]
-        with open(report_path, "r", encoding="utf-8") as rfd:
-            reports = [json.loads(l) for l in rfd]
-        for report in reports:
-            if report["$report_type"] != "TestReport":
-                continue
-            # Report file contains a few reports for same test: setup, call, teardown
-            test_name = report["nodeid"]
-
-            # Parse test result status
-            tests_results[test_name] = worst_status(
-                tests_results.get(test_name), report["outcome"]
-            )
-            # Parse test times
-            times[test_name] = times.get(test_name, 0) + report["duration"]
-
-        for test, result in tests_results.items():
-            counters[result].add(test)
-        return (counters, times)
-
-    @staticmethod
     def _can_run_with(path, opt):
         with open(path, "r", encoding="utf-8") as script:
             for line in script:
@@ -298,6 +353,8 @@ class ClickhouseIntegrationTestsRunner:
             "clickhouse-common-static_",
             "clickhouse-server_",
             "clickhouse-client",
+            "clickhouse-odbc-bridge_",
+            "clickhouse-library-bridge_",
             "clickhouse-common-static-dbg_",
         ):  # order matters
             logging.info("Installing package %s", package)
@@ -306,7 +363,7 @@ class ClickhouseIntegrationTestsRunner:
                     full_path = os.path.join(debs_path, f)
                     logging.info("Package found in %s", full_path)
                     log_name = "install_" + f + ".log"
-                    log_path = os.path.join(self.path(), log_name)
+                    log_path = os.path.join(str(self.path()), log_name)
                     cmd = f"dpkg -x {full_path} ."
                     logging.info("Executing installation cmd %s", cmd)
                     with TeePopen(cmd, log_file=log_path) as proc:
@@ -317,11 +374,29 @@ class ClickhouseIntegrationTestsRunner:
                     break
             else:
                 raise FileNotFoundError(f"Package with {package} not found")
+        # logging.info("Unstripping binary")
+        # logging.info(
+        #     "Unstring %s",
+        #     subprocess.check_output(
+        #         "eu-unstrip /usr/bin/clickhouse {}".format(CLICKHOUSE_BINARY_PATH),
+        #         shell=True,
+        #     ),
+        # )
 
         logging.info("All packages installed")
         os.chmod(CLICKHOUSE_BINARY_PATH, 0o777)
+        os.chmod(CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH, 0o777)
+        os.chmod(CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH, 0o777)
         shutil.copy(
             CLICKHOUSE_BINARY_PATH, os.getenv("CLICKHOUSE_TESTS_SERVER_BIN_PATH")  # type: ignore
+        )
+        shutil.copy(
+            CLICKHOUSE_ODBC_BRIDGE_BINARY_PATH,
+            os.getenv("CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"),  # type: ignore
+        )
+        shutil.copy(
+            CLICKHOUSE_LIBRARY_BRIDGE_BINARY_PATH,
+            os.getenv("CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"),  # type: ignore
         )
 
     @staticmethod
@@ -355,11 +430,9 @@ class ClickhouseIntegrationTestsRunner:
         image_cmd = self._get_runner_image_cmd()
         runner_opts = self._get_runner_opts()
         out_file_full = os.path.join(self.result_path, "runner_get_all_tests.log")
-        report_file = "runner_get_all_tests.jsonl"
         cmd = (
             f"cd {self.repo_path}/tests/integration && "
-            f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- "
-            f"--setup-plan --report-log={report_file}"
+            f"timeout --signal=KILL 1h ./runner {runner_opts} {image_cmd} -- --setup-plan "
         )
 
         logging.info(
@@ -375,22 +448,16 @@ class ClickhouseIntegrationTestsRunner:
                         print("    " + line, end="")
                 raise ex
 
-        # Add report_file to the uploaded files
-        shutil.move(
-            os.path.join(self.repo_path, "tests", "integration", report_file),
-            os.path.join(self.result_path, report_file),
-        )
         all_tests = set()
-        with open(
-            os.path.join(self.result_path, report_file), "r", encoding="utf-8"
-        ) as rfd:
-            reports = [json.loads(j) for j in rfd]
-
-        all_tests = {
-            r["nodeid"]
-            for r in reports
-            if r.get("when") == "setup" and r.get("outcome") == "passed"
-        }
+        with open(out_file_full, "r", encoding="utf-8") as all_tests_fd:
+            for line in all_tests_fd:
+                if (
+                    line[0] in string.whitespace  # test names at the start of lines
+                    or "::test" not in line  # test names contain '::test'
+                    or "SKIPPED" in line  # pytest.mark.skip/-if
+                ):
+                    continue
+                all_tests.add(line.strip())
 
         assert all_tests
 
@@ -425,9 +492,7 @@ class ClickhouseIntegrationTestsRunner:
         return result
 
     @staticmethod
-    def _update_counters(
-        main_counters: Dict[str, List[str]], current_counters: Dict[str, Set[str]]
-    ) -> None:
+    def _update_counters(main_counters, current_counters):
         for test in current_counters["PASSED"]:
             if test not in main_counters["PASSED"]:
                 if test in main_counters["FAILED"]:
@@ -578,8 +643,8 @@ class ClickhouseIntegrationTestsRunner:
             if i == 0:
                 test_data_dirs = self._find_test_data_dirs(self.repo_path, test_names)
 
-            report_name = f"{test_group_str}_{i}.jsonl"
-            report_path = os.path.join(self.repo_path, "tests/integration", report_name)
+            info_basename = test_group_str + "_" + str(i) + ".nfo"
+            info_path = os.path.join(self.repo_path, "tests/integration", info_basename)
 
             test_cmd = " ".join([shlex.quote(test) for test in sorted(test_names)])
             parallel_cmd = f" --parallel {num_workers} " if num_workers > 0 else ""
@@ -595,13 +660,12 @@ class ClickhouseIntegrationTestsRunner:
             cmd = (
                 f"cd {self.repo_path}/tests/integration && "
                 f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} "
-                f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- "
-                f"-rfEps --run-id={i} --color=no --durations=0 "
-                f"--report-log={report_name} --report-log-exclude-logs-on-passed-tests "
-                f"{_get_deselect_option(self.should_skip_tests())}"
+                f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- -rfEps --run-id={i} "
+                f"--color=no --durations=0 {_get_deselect_option(self.should_skip_tests())} "
+                f"| tee {info_path}"
             )
 
-            log_basename = f"{test_group_str}_{i}.log"
+            log_basename = test_group_str + "_" + str(i) + ".log"
             log_path = os.path.join(self.repo_path, "tests/integration", log_basename)
             logging.info("Executing cmd: %s", cmd)
             # ignore retcode, since it meaningful due to pipe to tee
@@ -612,7 +676,7 @@ class ClickhouseIntegrationTestsRunner:
 
             extra_logs_names = [log_basename]
             log_result_path = os.path.join(
-                self.path(), "integration_run_" + log_basename
+                str(self.path()), "integration_run_" + log_basename
             )
             shutil.copy(log_path, log_result_path)
             log_paths.append(log_result_path)
@@ -631,20 +695,28 @@ class ClickhouseIntegrationTestsRunner:
                 self.repo_path, "tests/integration/dockerd.log"
             )
             if os.path.exists(dockerd_log_path):
-                new_name = f"{test_group_str}_{i}_{os.path.basename(dockerd_log_path)}"
+                new_name = (
+                    test_group_str
+                    + "_"
+                    + str(i)
+                    + "_"
+                    + os.path.basename(dockerd_log_path)
+                )
                 os.rename(
                     dockerd_log_path,
                     os.path.join(self.repo_path, "tests/integration", new_name),
                 )
                 extra_logs_names.append(new_name)
 
-            if os.path.exists(report_path):
-                extra_logs_names.append(report_name)
-                new_counters, new_tests_times = self._parse_report(report_path)
+            if os.path.exists(info_path):
+                extra_logs_names.append(info_basename)
+                new_counters = get_counters(info_path)
                 for state, tests in new_counters.items():
                     logging.info(
                         "Tests with %s state (%s): %s", state, len(tests), tests
                     )
+                times_lines = parse_test_times(info_path)
+                new_tests_times = get_test_times(times_lines)
                 self._update_counters(counters, new_counters)
                 for test_name, test_time in new_tests_times.items():
                     tests_times[test_name] = test_time
@@ -657,7 +729,8 @@ class ClickhouseIntegrationTestsRunner:
 
             if extra_logs_names or test_data_dirs_diff:
                 extras_result_path = os.path.join(
-                    self.path(), f"integration_run_{test_group_str}_{i}.tar.zst"
+                    str(self.path()),
+                    f"integration_run_{test_group_str}_{i}.tar.zst",
                 )
                 self._compress_logs(
                     os.path.join(self.repo_path, "tests/integration"),
@@ -1029,8 +1102,8 @@ def run():
         subprocess.check_call("sudo -E dmesg -T", shell=True)
 
     status = (state, description)
-    out_results_file = os.path.join(runner.path(), "test_results.tsv")
-    out_status_file = os.path.join(runner.path(), "check_status.tsv")
+    out_results_file = os.path.join(str(runner.path()), "test_results.tsv")
+    out_status_file = os.path.join(str(runner.path()), "check_status.tsv")
     write_results(out_results_file, out_status_file, test_results, status)
     logging.info("Result written")
 

@@ -1,8 +1,6 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/groupbitmap
 sidebar_position: 148
-title: "groupBitmap"
-description: "Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return a bitmap object"
 ---
 
 # groupBitmap

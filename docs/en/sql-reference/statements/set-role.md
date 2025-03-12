@@ -11,7 +11,7 @@ Activates roles for the current user.
 SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
 ```
 
-## SET DEFAULT ROLE {#set-default-role}
+## SET DEFAULT ROLE
 
 Sets default roles to a user.
 
@@ -21,7 +21,7 @@ Default roles are automatically activated at user login. You can set as default 
 SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
 ```
 
-## Examples {#examples}
+## Examples
 
 Set multiple default roles to a user:
 

@@ -65,8 +65,7 @@
             left: 0;
             width: var(--status-width);
             background-color: var(--tile-background);
-            padding-left: 15px;
-            padding-right: 15px;
+            padding: 20px;
             box-sizing: border-box;
             font-size: 18px;
             margin: 0;
@@ -92,8 +91,7 @@
         .key-value-pair {
             display: flex;               /* Enable Flexbox for alignment */
             justify-content: space-between; /* Distribute space between key and value */
-            padding-bottom: 15px;
-            padding-top: 15px;
+            margin-bottom: 20px;         /* Add space between each pair */
         }
 
         .json-key {
@@ -103,6 +101,7 @@
         .json-value {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
+            letter-spacing: -0.5px;
         }
         .external-link {
             color: var(--file-link-color);
@@ -110,6 +109,7 @@
             font-family: 'Source Code Pro', monospace, sans-serif;
             cursor: pointer;
             display: inline-block;
+            margin-top: 5px;
             text-decoration: none;
         }
 
@@ -120,8 +120,8 @@
         .json-value-small {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
+            letter-spacing: -0.5px;
             font-size: 0.75rem;
-            justify-content: left;
         }
         .dropdown-value {
             width: 100px;
@@ -160,6 +160,7 @@
         #info-content {
             text-align: left;
             padding: 10px;
+            margin-bottom: 20px;
         }
 
         #footer {
@@ -386,15 +387,7 @@
         return 'status-other';
     }
 
-    function addInfoLineToStatus(info) {
-        const statusContainer = document.getElementById('status-container');
-        const line = document.createElement('div');
-        line.className = 'json-value-small';
-        line.textContent = info;
-        statusContainer.appendChild(line);
-    }
-
-    function addKeyValueToStatus(key, value, options = null, optionValues = null, link = null) {
+    function addKeyValueToStatus(key, value, options = null, link = null) {
         const statusContainer = document.getElementById('status-container');
 
         let keyValuePair = document.createElement('div');
@@ -411,15 +404,16 @@
             valueElement = document.createElement('select');
             valueElement.className = 'dropdown-value';
 
-            options.forEach((optionTextContent, i) => {
+            options.forEach(optionValue => {
                 const option = document.createElement('option');
-                option.value = optionValues?.[i] ?? optionTextContent;
-                option.textContent = optionTextContent;
+                option.value = optionValue;
+                option.textContent = optionValue.slice(0, 10);
 
                 // Set the initially selected option
-                if (option.value === value) {
+                if (optionValue === value) {
                     option.selected = true;
                 }
+
                 valueElement.appendChild(option);
             });
 
@@ -439,7 +433,7 @@
             } else {
                 // Create a simple text display if no options or link are provided
                 valueElement = document.createElement('div');
-                valueElement.className = "json-value";
+                valueElement.className = key !== "" ? "json-value" : "json-value-small";
                 valueElement.textContent = value || 'N/A';
             }
         }
@@ -808,11 +802,7 @@
 
             const infoCell = document.createElement('td');
             infoCell.colSpan = row.children.length; // Make it span the full width
-
-            infoCell.innerHTML = '<pre></pre>';
-            // Append content securely, without interpreting HTML tags.
-            infoCell.firstChild.textContent = infoText;
-
+            infoCell.innerHTML = infoText.replace(/\n/g, '<br>'); // Preserve line breaks
             infoCell.classList.add('info-text');
 
             infoRow.appendChild(infoCell);
@@ -1022,27 +1012,11 @@
         }
         // Status and info
         if (PR > 0) {
-            addKeyValueToStatus("PR", PR, null, null, runtimeCache.prLink);
+            addKeyValueToStatus("PR", PR, null, runtimeCache.prLink);
         }
-        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1).sha || sha) : sha;
-        const shaSelectorText = [];
-        const shaSelectorValues = [];
-
-        runtimeCache.commits.forEach(({ sha, message }) => {
-            const shortSha = (sha || "").substring(0, 8);
-            shaSelectorText.push(message ? `${shortSha}: ${message}` : shortSha);
-            shaSelectorValues.push(sha);
-        });
-        shaSelectorText.push("latest");
-        shaSelectorValues.push("latest");
-        addKeyValueToStatus("sha", sha || "latest", shaSelectorText, shaSelectorValues);
-
-        if (PR > 0) {
-            const { pr_title, git_branch } = runtimeCache.json0?.ext || {};
-            if (pr_title) addInfoLineToStatus(pr_title);
-            if (git_branch) addInfoLineToStatus(git_branch);
-        }
-        addInfoLineToStatus(current_sha);
+        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1) || sha) : sha;
+        addKeyValueToStatus("sha", sha || "latest", runtimeCache.commits.concat(["latest"]));
+        addKeyValueToStatus("", current_sha);
         addStatusToStatus(result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileButtonToStatus('files', result.links);
@@ -1071,42 +1045,37 @@
         let hasNewData = false;
 
         if (!runtimeCache.commits || sha === 'latest') {
-            const { data, updated } = await fetchJson(`${baseUrl}/${suffix}/commits.json`);
+            const { data, updated } = await fetchJson(
+                `${baseUrl}/${suffix}/commits.json`,
+            );
             if (updated) {
-                runtimeCache.commits = data ? data : [];
+                runtimeCache.commits = data ? data.map(item => item.sha) : [];
                 hasNewData = true;
             }
         }
 
-        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha : sha;
-
-        const fetchTasks = [];
+        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1] : sha;
         if (nameParams.length > 1) {
-            const task1 = normalizeTaskName(nameParams[1]);
-            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task1}.json`;
-            fetchTasks.push(fetchJson(path1));
-        }
+            const task = normalizeTaskName(nameParams[1]);
+            const path = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task}.json`;
+            const { data, updated } = await fetchJson(path);
 
-        const task0 = normalizeTaskName(nameParams[0]);
-        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task0}.json`;
-        fetchTasks.push(fetchJson(path0));
-
-        // Run fetchJson calls in parallel
-        const results = await Promise.all(fetchTasks);
-
-        if (nameParams.length > 1) {
-            const { data, updated } = results[0]; // First request result
             if (updated) {
                 runtimeCache.json1 = data;
                 hasNewData = true;
             }
         }
 
-        const { data, updated } = results[fetchTasks.length - 1]; // Last request result (always task0)
-        if (updated) {
-            runtimeCache.json0 = data;
-            hasNewData = true;
-            data.links.forEach(storeLink);
+        {
+            const task = normalizeTaskName(nameParams[0]);
+            const path = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task}.json`;
+
+            const { data, updated } = await fetchJson(path);
+            if (updated) {
+                runtimeCache.json0 = data;
+                hasNewData = true;
+                data.links.forEach(storeLink);
+            }
         }
 
         return hasNewData;
@@ -1126,6 +1095,7 @@
             }
         }
         setInterval(checkForUpdates, 30000);
+        checkForUpdates();
     }
 
     function updatePageTitle(PR, REF, sha, nameParams) {
@@ -1163,13 +1133,8 @@
         renderFooter(nameParams)
         updatePageTitle(PR, REF, sha, nameParams)
 
-        if (
-            (nameParams?.length === 1 &&
-                ["running", "pending"].includes(runtimeCache?.json0?.status)) ||
-            (nameParams?.length === 2 &&
-                (["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null))
-        ) {
-            console.log("Auto-reload started");
+        if (runtimeCache.json0?.status === "running" || runtimeCache.json0?.status === "pending") {
+            console.log("autoreload started")
             startAutoRefresh(PR, REF, sha, nameParams);
         }
     }

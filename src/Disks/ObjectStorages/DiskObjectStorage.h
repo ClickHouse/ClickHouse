@@ -138,11 +138,6 @@ public:
 
     void startupImpl(ContextPtr context) override;
 
-    void refresh() override
-    {
-        metadata_storage->refresh();
-    }
-
     ReservationPtr reserve(UInt64 bytes) override;
 
     std::unique_ptr<ReadBufferFromFileBase> readFile(

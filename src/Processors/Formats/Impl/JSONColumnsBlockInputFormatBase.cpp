@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Processors/Formats/Impl/JSONColumnsBlockInputFormatBase.h>
 #include <Processors/Formats/ISchemaReader.h>
 #include <Formats/JSONUtils.h>

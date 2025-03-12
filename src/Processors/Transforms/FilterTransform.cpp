@@ -1,20 +1,11 @@
 #include <Processors/Transforms/FilterTransform.h>
 
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-
-namespace ProfileEvents
-{
-    extern const Event FilterTransformPassedRows;
-    extern const Event FilterTransformPassedBytes;
-}
 
 namespace DB
 {
@@ -28,19 +19,6 @@ bool FilterTransform::canUseType(const DataTypePtr & filter_type)
 {
     return filter_type->onlyNull() || isUInt8(removeLowCardinalityAndNullable(filter_type));
 }
-
-auto incrementProfileEvents = [](size_t num_rows, const Columns & columns)
-{
-    ProfileEvents::increment(ProfileEvents::FilterTransformPassedRows, num_rows);
-
-    size_t num_bytes = 0;
-    for (const auto & column : columns)
-    {
-        if (column)
-            num_bytes += column->byteSize();
-    }
-    ProfileEvents::increment(ProfileEvents::FilterTransformPassedBytes, num_bytes);
-};
 
 Block FilterTransform::transformHeader(
     const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column)
@@ -65,8 +43,7 @@ FilterTransform::FilterTransform(
     String filter_column_name_,
     bool remove_filter_column_,
     bool on_totals_,
-    std::shared_ptr<std::atomic<size_t>> rows_filtered_,
-    std::optional<size_t> condition_hash_)
+    std::shared_ptr<std::atomic<size_t>> rows_filtered_)
     : ISimpleTransform(
             header_,
             transformHeader(header_, expression_ ? &expression_->getActionsDAG() : nullptr, filter_column_name_, remove_filter_column_),
@@ -76,7 +53,6 @@ FilterTransform::FilterTransform(
     , remove_filter_column(remove_filter_column_)
     , on_totals(on_totals_)
     , rows_filtered(rows_filtered_)
-    , condition_hash(condition_hash_)
 {
     transformed_header = getInputPort().getHeader();
     if (expression)
@@ -86,9 +62,6 @@ FilterTransform::FilterTransform(
     auto & column = transformed_header.getByPosition(filter_column_position).column;
     if (column)
         constant_filter_description = ConstantFilterDescription(*column);
-
-    if (condition_hash.has_value())
-        query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
 }
 
 IProcessor::Status FilterTransform::prepare()
@@ -135,26 +108,6 @@ void FilterTransform::doTransform(Chunk & chunk)
     auto columns = chunk.detachColumns();
     DataTypes types;
 
-    auto write_into_query_condition_cache = [&]()
-    {
-        if (!query_condition_cache)
-            return;
-
-        auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
-        if (!mark_info)
-            return;
-
-        const auto & data_part = mark_info->getDataPart();
-        auto storage_id = data_part->storage.getStorageID();
-        query_condition_cache->write(
-                storage_id.uuid,
-                data_part->name,
-                *condition_hash,
-                mark_info->getMarkRanges(),
-                data_part->index_granularity->getMarksCount(),
-                data_part->index_granularity->hasFinalMark());
-    };
-
     {
         Block block = getInputPort().getHeader().cloneWithColumns(columns);
         columns.clear();
@@ -168,7 +121,6 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_true || on_totals)
     {
-        incrementProfileEvents(num_rows_before_filtration, columns);
         removeFilterIfNeed(columns);
         chunk.setColumns(std::move(columns), num_rows_before_filtration);
         return;
@@ -185,17 +137,16 @@ void FilterTransform::doTransform(Chunk & chunk)
     constant_filter_description = ConstantFilterDescription(*filter_column);
 
     if (constant_filter_description.always_false)
-    {
-        write_into_query_condition_cache();
-        incrementProfileEvents(0, {});
         return; /// Will finish at next prepare call
+
+    if (constant_filter_description.always_true)
+    {
+        removeFilterIfNeed(columns);
+        chunk.setColumns(std::move(columns), num_rows_before_filtration);
+        return;
     }
 
     std::unique_ptr<IFilterDescription> filter_description;
-
-    if (isColumnConst(*filter_column))
-        filter_column = filter_column->convertToFullColumnIfConst();
-
     if (filter_column->isSparse())
         filter_description = std::make_unique<SparseFilterDescription>(*filter_column);
     else
@@ -231,15 +182,10 @@ void FilterTransform::doTransform(Chunk & chunk)
     else
         num_filtered_rows = filter_description->countBytesInFilter();
 
-    incrementProfileEvents(num_filtered_rows, columns);
-
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
-    {
-        write_into_query_condition_cache();
         /// SimpleTransform will skip it.
         return;
-    }
 
     /// If all the rows pass through the filter.
     if (num_filtered_rows == num_rows_before_filtration)
