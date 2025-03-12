@@ -459,6 +459,9 @@ bool StatementGenerator::joinedTableOrFunction(
             levels_backup[entry.first] = entry.second;
         }
         this->levels.clear();
+
+        this->current_level++;
+        this->levels[this->current_level] = QueryLevel(this->current_level);
         if (val == GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers)
         {
             if (noption < 4)
@@ -517,12 +520,16 @@ bool StatementGenerator::joinedTableOrFunction(
                 }
             }
         }
+        limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
+        this->levels.erase(this->current_level);
+        this->ctes.erase(this->current_level);
+        this->current_level--;
+
         for (const auto & entry : levels_backup)
         {
             this->levels[entry.first] = entry.second;
         }
 
-        limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
         rel.cols.emplace_back(SQLRelationCol(rel_name, {cname}));
         this->levels[this->current_level].rels.emplace_back(rel);
     }
@@ -667,7 +674,6 @@ bool StatementGenerator::joinedTableOrFunction(
         }
         this->levels.clear();
 
-        this->depth++;
         this->current_level++;
         this->levels[this->current_level] = QueryLevel(this->current_level);
         for (uint32_t i = 0; i < nrows; i++)
@@ -684,7 +690,6 @@ bool StatementGenerator::joinedTableOrFunction(
         this->levels.erase(this->current_level);
         this->ctes.erase(this->current_level);
         this->current_level--;
-        this->depth--;
 
         for (const auto & entry : levels_backup)
         {
