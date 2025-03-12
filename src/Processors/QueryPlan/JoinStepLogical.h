@@ -51,6 +51,7 @@ public:
         SortingStep::Settings sorting_settings_);
 
     String getName() const override { return "JoinLogical"; }
+    String getSerializationName() const override { return "Join"; }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
@@ -90,6 +91,11 @@ public:
         hash_table_key_hash_left = left_key_hash;
         hash_table_key_hash_right = right_key_hash;
     }
+
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
+    void serialize(Serialization & ctx) const override;
+
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 protected:
     void updateOutputHeader() override;

@@ -75,9 +75,6 @@
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
     M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
-    M(SkippingIndexCacheHits, "Number of times an index granule has been found in the skipping index cache.", ValueType::Number) \
-    M(SkippingIndexCacheMisses, "Number of times an index granule has not been found in the skipping index cache and had to be read from disk.", ValueType::Number) \
-    M(SkippingIndexCacheWeightLost, "Approximate number of bytes evicted from the secondary index cache.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
@@ -592,6 +589,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadRun, "Number of times background thread executed free space keeping job", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, "Time for which background thread executed free space keeping job", ValueType::Milliseconds) \
+    M(FilesystemCacheFailedEvictionCandidates, "Number of file segments which unexpectedly failed to be evicted during dynamic filesystem cache eviction", ValueType::Number) \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer", ValueType::Number) \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem", ValueType::Number) \
