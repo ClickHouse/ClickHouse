@@ -249,7 +249,8 @@ void LocalConnection::sendQuery(
 
     try
     {
-        state->io = executeQuery(state->query, query_context, QueryFlags{}, state->stage).second;
+        query_context->setSetting("serialize_query_plan", false);
+        state->io = executeQuery(state->query, nullptr, query_context, QueryFlags{}, state->stage).second;
 
         if (state->io.pipeline.pushing())
         {
@@ -322,6 +323,11 @@ void LocalConnection::sendQuery(
         state->io.onException();
         state->exception = std::make_unique<Exception>(Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Unknown exception"));
     }
+}
+
+void LocalConnection::sendQueryPlan(const QueryPlan &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Not implemented");
 }
 
 void LocalConnection::sendData(const Block & block, const String &, bool)
