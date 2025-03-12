@@ -401,6 +401,7 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
+    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -2395,6 +2396,8 @@ try
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     std::string default_database = server_settings[ServerSetting::default_database].toString();
+    if (default_database.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
