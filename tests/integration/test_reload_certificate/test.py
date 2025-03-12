@@ -164,6 +164,7 @@ def test_cert_with_pass_phrase():
     )
 
 
+@pytest.mark.skip(reason="https://github.com/ClickHouse/ClickHouse/issues/77461")
 def test_chain_reload():
     """Check cert chain reload"""
     check_certificate_switch("first", "WithChain")
