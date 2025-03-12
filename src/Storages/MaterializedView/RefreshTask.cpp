@@ -10,7 +10,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/executeQuery.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -256,7 +259,7 @@ void RefreshTask::stop()
     if (std::exchange(scheduling.stop_requested, true))
         return;
     interruptExecution();
-    scheduleRefresh();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::run()
@@ -271,7 +274,7 @@ void RefreshTask::cancel()
 {
     std::lock_guard guard(mutex);
     interruptExecution();
-    scheduleRefresh();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::wait()
@@ -345,7 +348,7 @@ void RefreshTask::notify()
     if (view && view->getContext()->getRefreshSet().refreshesStopped())
         interruptExecution();
     scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
-    scheduleRefresh();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::setFakeTime(std::optional<Int64> t)
@@ -528,7 +531,8 @@ void RefreshTask::refreshTask()
         scheduling.unexpected_error = getCurrentExceptionMessage(true);
         coordination.watches->should_reread_znodes.store(true);
         coordination.running_znode_exists = false;
-        scheduleRefresh();
+        setState(RefreshState::Scheduling, lock);
+        refresh_task->schedule();
         lock.unlock();
 
         tryLogCurrentException(log,
@@ -606,7 +610,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             /// We log the refresh as one INSERT SELECT query, but the timespan and exceptions also
             /// cover the surrounding CREATE, EXCHANGE, and DROP queries.
             query_log_elem = logQueryStart(
-                start_time, refresh_context, query_for_logging, refresh_query, pipeline,
+                start_time, refresh_context, query_for_logging, normalized_query_hash, refresh_query, pipeline,
                 &interpreter, /*internal*/ false, view_storage_id.database_name,
                 view_storage_id.table_name, /*async_insert*/ false);
 
@@ -638,7 +642,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             if (execution.interrupt_execution.load())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
 
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, pipeline, /*pulling_pipeline*/ false, query_span, QueryCache::Usage::None, /*internal*/ false);
+            logQueryFinish(*query_log_elem, refresh_context, refresh_query, pipeline, /*pulling_pipeline*/ false, query_span, QueryResultCacheUsage::None, /*internal*/ false);
             query_log_elem = std::nullopt;
             query_span = nullptr;
             process_list_entry.reset(); // otherwise it needs to be alive for logQueryException

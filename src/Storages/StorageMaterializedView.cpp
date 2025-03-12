@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/executeQuery.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
