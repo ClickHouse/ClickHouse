@@ -8,12 +8,14 @@
 #include <base/types.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_NUMBER;
 }
 
 class ReadBuffer;
@@ -36,10 +38,30 @@ struct SettingFieldNumber
     Type value;
     bool changed = false;
 
-    explicit SettingFieldNumber(Type x = 0) : value(x) {}
+    explicit SettingFieldNumber(Type x = 0)
+    {
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (!std::isfinite(x))
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
+                                "Float setting value must be finite, got {}", x);
+        }
+        value = x;
+    }
     explicit SettingFieldNumber(const Field & f);
 
-    SettingFieldNumber & operator=(Type x) { value = x; changed = true; return *this; }
+    SettingFieldNumber & operator=(Type x)
+    {
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            if (!std::isfinite(x))
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
+                                "Float setting value must be finite, got {}", x);
+        }
+        value = x;
+        changed = true;
+        return *this;
+    }
     SettingFieldNumber & operator=(const Field & f);
 
     operator Type() const { return value; } /// NOLINT
