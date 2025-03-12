@@ -656,11 +656,20 @@ bool StatementGenerator::joinedTableOrFunction(
                + merge_index_udf + loop_udf + values + 1))
     {
         SQLRelation rel(rel_name);
+        std::unordered_map<uint32_t, QueryLevel> levels_backup;
         const uint32_t ncols = std::min<uint32_t>(this->fc.max_width - this->width, (rg.nextSmallNumber() % 3) + UINT32_C(1));
         const uint32_t nrows = (rg.nextSmallNumber() % 3) + UINT32_C(1);
         ValuesStatement * vs = tof->mutable_tfunc()->mutable_values();
 
+        for (const auto & entry : this->levels)
+        {
+            levels_backup[entry.first] = entry.second;
+        }
+        this->levels.clear();
+
         this->depth++;
+        this->current_level++;
+        this->levels[this->current_level] = QueryLevel(this->current_level);
         for (uint32_t i = 0; i < nrows; i++)
         {
             ExprList * elist = i == 0 ? vs->mutable_expr_list() : vs->add_extra_expr_lists();
@@ -672,7 +681,16 @@ bool StatementGenerator::joinedTableOrFunction(
             }
             this->width -= ncols;
         }
+        this->levels.erase(this->current_level);
+        this->ctes.erase(this->current_level);
+        this->current_level--;
         this->depth--;
+
+        for (const auto & entry : levels_backup)
+        {
+            this->levels[entry.first] = entry.second;
+        }
+
         for (uint32_t i = 0; i < ncols; i++)
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i + 1)}));
