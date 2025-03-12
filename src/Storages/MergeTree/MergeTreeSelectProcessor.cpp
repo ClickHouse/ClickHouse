@@ -177,7 +177,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             query_condition_cache->write(storage_id.uuid,
                                 data_part->name,
                                 dag->getHash(),
-                                task->getPreWhereUnmatchedMarks(),
+                                task->getPrewhereUnmatchedMarks(),
                                 data_part->index_granularity->getMarksCount(),
                                 data_part->index_granularity->hasFinalMark());
                             break;
@@ -237,7 +237,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 .is_finished = false};
         }
         if (reader_settings.use_query_condition_cache && prewhere_info)
-            task->addPreWhereUnmatchedMarks(res.read_mark_ranges);
+            task->addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
         return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
     }
