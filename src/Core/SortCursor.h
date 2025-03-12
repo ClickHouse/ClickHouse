@@ -601,7 +601,7 @@ private:
         else
             return;
 
-        /// Linear detection at most 8 elements to quickly find a small batch size.
+        /// Linear detection at most 16 elements to quickly find a small batch size.
         /// This heuristic helps to avoid the overhead of binary search for small batches.
         constexpr size_t max_linear_detection = 16;
         size_t i = 0;

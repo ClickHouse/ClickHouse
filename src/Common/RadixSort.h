@@ -16,13 +16,7 @@
 #include <base/bit_cast.h>
 #include <base/extended_types.h>
 #include <base/sort.h>
-#include <Common/TargetSpecific.h>
 #include <Common/PODArray.h>
-
-#if USE_MULTITARGET_CODE
-#include <immintrin.h>
-#endif
-
 
 /** Radix sort, has the following functionality:
   *
@@ -264,11 +258,6 @@ private:
         return getPart(N, keyToBits(Traits::extractKey(elem)));
     }
 
-    static ALWAYS_INLINE KeyBits extractPartFromKey(size_t N, Key & key)
-    {
-        return getPart(N, keyToBits(key));
-    }
-
     static void insertionSortInternal(Element * arr, size_t size)
     {
         Element * end = arr + size;
@@ -313,7 +302,7 @@ private:
         }
 
         {
-            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
+            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions.
             CountType sums[NUM_PASSES] = {0};
 
             for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
@@ -344,12 +333,14 @@ private:
                 }
 
                 /// Place the element on the next free position.
-                auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + pos]++];
+                auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + pos]];
                 dest = reader[i];
 
                 /// On the last pass, we do the reverse transformation.
                 if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
                     Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(reader[i]))));
+
+                histograms[pass * HISTOGRAM_SIZE + pos]++;
             }
         }
 
@@ -605,13 +596,6 @@ public:
     {
         radixSortLSDInternal<true>(arr, size, reverse, destination);
     }
-
-    /*
-    static void executeLSDWithSOA(Key * arr, UInt32 * indices, size_t size, bool reverse, Result * destination)
-    {
-        radixSortLSDInternalWithSOA<true>(arr, indices, size, reverse, destination);
-    }
-    */
 
     /** Tries to fast sort elements for common sorting patterns (unstable).
       * If fast sort cannot be performed, execute least significant digit radix sort.
