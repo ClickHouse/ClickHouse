@@ -121,7 +121,7 @@ def create_clickhouse_iceberg_database(
     started_cluster, node, name, additional_settings={}
 ):
     settings = {
-        "catalog_type": "iceberg_rest",
+        "catalog_type": "iceberg",
         "warehouse": "demo",
         "storage_endpoint": "http://minio:9000/warehouse",
     }
