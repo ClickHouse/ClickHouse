@@ -213,6 +213,7 @@ struct HashMethodSingleLowCardinalityColumn : public SingleColumnMethod
     template <typename Data>
     ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row_, Arena & pool)
     {
+        std::cout << "@@@@@@@@@@@@@@@@@ emplaceKey1 called" << std::endl;
         size_t row = getIndexAt(row_);
 
         if (is_nullable && row == 0)

@@ -2,6 +2,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
+#include <iostream>
 
 namespace DB
 {
@@ -43,6 +44,7 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     columns_for_aggregator.resize(description.aggregate_descriptions.size());
     const Settings & settings = storage_.getContext()->getSettingsRef();
 
+    std::cout << "TTLAggregationAlgorithm::TTLAggregationAlgorithm( called!@!" << std::endl;
     Aggregator::Params params(
         keys,
         aggregates,

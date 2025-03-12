@@ -487,6 +487,7 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
+        std::cout << "@@@@@@ AggregateFunctionSum.h::add called, row_num=" << row_num << std::endl;
         const auto & column = assert_cast<const ColVecType &>(*columns[0]);
         this->data(place).add(static_cast<TResult>(column.getData()[row_num]));
     }
