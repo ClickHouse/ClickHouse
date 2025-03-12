@@ -98,6 +98,7 @@ protected:
 
 private:
     void buildRelaitions();
+    void resolveRoot();
     Chain createSelect(StorageIDPrivate view_id);
     Chain createPreSink(StorageIDPrivate view_id);
     Chain createSink(StorageIDPrivate view_id);
@@ -108,6 +109,8 @@ private:
     ASTPtr init_query;
     Block init_header;
     ContextPtr init_context;
+
+    BundleID root;
 
     MapIdManyId dependent_views;
     MapIdId inner_tables;

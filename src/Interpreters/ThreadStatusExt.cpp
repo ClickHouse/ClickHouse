@@ -121,8 +121,6 @@ UInt64 ThreadGroup::getThreadsTotalElapsedMs() const
     return elapsed_total_threads_counter_ms;
 }
 
-
-
 void ThreadGroup::linkThread(UInt64 thread_id)
 {
     std::lock_guard lock(mutex);

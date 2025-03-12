@@ -437,44 +437,157 @@ ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, 
 
 Chain ViewsManager::createPreSink()
 {
-    return createPreSink({});
+    return createPreSink(root.view_id);
 }
 
 Chain ViewsManager::createSink()
 {
-    return createSink({});
+    return createSink(root.view_id);
 
 }
 Chain ViewsManager::createPostSink()
 {
-    return createPostSink({}, 0);
+    return createPostSink(root.view_id, 0);
+}
+
+void ViewsManager::resolveRoot()
+{
+    LOG_DEBUG(logger, "resolveInitTable: {}", init_table_id);
+    auto table_metadata = init_storage->getInMemoryMetadataPtr();
+    auto lock = init_storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    chassert(lock);
+
+    if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(init_storage.get()))
+    {
+        auto inner_table_id = materialized_view->getTargetTableId();
+        auto inner_table_storage = DatabaseCatalog::instance().tryGetTable(inner_table_id, init_context);
+
+        /// If target table was dropped, ignore this materialized view.
+        if (!inner_table_storage)
+        {
+            throw Exception(
+                ErrorCodes::UNKNOWN_TABLE,
+                "Target table '{}' of view '{}' doesn't exists.",
+                inner_table_id.getFullTableName(),
+                init_table_id.getFullTableName());
+        }
+
+        auto inner_lock = inner_table_storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+        if (inner_lock == nullptr)
+        {
+            // In case the materialized view is dropped/detached at this point, we register a warning and ignore it
+            assert(inner_table_storage->is_dropped || inner_table_storage->is_detached);
+            throw Exception(
+                ErrorCodes::UNKNOWN_TABLE,
+                "Target table '{}' of view '{}' doesn't exists.",
+                inner_table_id.getFullTableName(),
+                init_table_id.getFullTableName());
+        }
+
+
+        inner_tables[init_table_id] = inner_table_id;
+
+        storages[inner_table_id] = inner_table_storage;
+        metadata_snapshots[inner_table_id] = inner_table_storage->getInMemoryMetadataPtr();
+        storage_locks[inner_table_id] = std::move(inner_lock);
+
+
+        storages[init_table_id] = init_storage;
+        metadata_snapshots[init_table_id] = table_metadata;
+        storage_locks[init_table_id] = std::move(lock);
+
+        select_queries[init_table_id] = init_query->as<ASTInsertQuery>()->select;
+
+        select_contexts[init_table_id] = init_context;
+        insert_contexts[init_table_id] = init_context;
+
+        input_headers[init_table_id] = init_header;
+        select_headers[init_table_id] = init_header;
+        output_headers[init_table_id] = table_metadata->getSampleBlock();
+
+        view_types[init_table_id] = QueryViewsLogElement::ViewType::MATERIALIZED;
+
+        thread_groups[init_table_id] = CurrentThread::getGroup();
+
+        root = {init_table_id, inner_table_id};
+    }
+    else if (dynamic_cast<StorageLiveView *>(init_storage.get()))
+    {
+        inner_tables[init_table_id] = init_table_id;
+
+        storages[init_table_id] = init_storage;
+        metadata_snapshots[init_table_id] = table_metadata;
+        storage_locks[init_table_id] = std::move(lock);
+
+        select_queries[init_table_id] = init_query->as<ASTInsertQuery>()->select;
+
+        select_contexts[init_table_id] = init_context;
+        insert_contexts[init_table_id] = init_context;
+
+        input_headers[init_table_id] = init_header;
+        select_headers[init_table_id] = init_header;
+        output_headers[init_table_id] = table_metadata->getSampleBlock();
+
+        thread_groups[init_table_id] = CurrentThread::getGroup();
+
+        view_types[init_table_id] = QueryViewsLogElement::ViewType::LIVE;
+
+        root = {init_table_id, init_table_id};
+    }
+    else if (dynamic_cast<StorageWindowView *>(init_storage.get()))
+    {
+        inner_tables[init_table_id] = init_table_id;
+
+        storages[init_table_id] = init_storage;
+        metadata_snapshots[init_table_id] = table_metadata;
+        storage_locks[init_table_id] = std::move(lock);
+
+        select_queries[init_table_id] = init_query->as<ASTInsertQuery>()->select;
+
+        select_contexts[init_table_id] = init_context;
+        insert_contexts[init_table_id] = init_context;
+
+        input_headers[init_table_id] = init_header;
+        select_headers[init_table_id] = init_header;
+        output_headers[init_table_id] = table_metadata->getSampleBlock();
+
+        thread_groups[init_table_id] = CurrentThread::getGroup();
+
+
+        view_types[init_table_id] = QueryViewsLogElement::ViewType::WINDOW;
+
+        root = {init_table_id, init_table_id};
+    }
+    else
+    {
+        inner_tables[{}] = init_table_id;
+
+        storages[init_table_id] = init_storage;
+        metadata_snapshots[init_table_id] = table_metadata;
+        storage_locks[init_table_id] = std::move(lock);
+
+        select_queries[{}] = init_query->as<ASTInsertQuery>()->select;
+
+        select_contexts[{}] = init_context;
+        insert_contexts[{}] = init_context;
+
+        input_headers[{}] = init_header;
+        select_headers[{}] = init_header;
+        output_headers[{}] = table_metadata->getSampleBlock();
+
+        thread_groups[{}] = CurrentThread::getGroup();
+
+        view_types[{}] = QueryViewsLogElement::ViewType::DEFAULT;
+
+        root = {{}, init_table_id};
+    }
 }
 
 void ViewsManager::buildRelaitions()
 {
     LOG_DEBUG(logger, "buildRelaitions: {}", init_table_id);
 
-    auto table_metadata = init_storage->getInMemoryMetadataPtr();
-
-    storages[init_table_id] = init_storage;
-    metadata_snapshots[init_table_id] = table_metadata;
-    auto lock = init_storage->tryLockForShare(init_context->getInitialQueryId(), init_context->getSettingsRef()[Setting::lock_acquire_timeout]);
-    chassert(lock);
-    storage_locks[init_table_id] = std::move(lock);
-
-    inner_tables[{}] = init_table_id;
-
-    select_queries[{}] = init_query->as<ASTInsertQuery>()->select;
-
-    select_contexts[{}] = init_context;
-    insert_contexts[{}] = init_context;
-
-    input_headers[{}] = init_header;
-    select_headers[{}] = init_header;
-    output_headers[{}] = table_metadata->getSampleBlock();
-    view_types[{}] = QueryViewsLogElement::ViewType::DEFAULT;
-
-    thread_groups[{}] = CurrentThread::getGroup();
+    resolveRoot();
 
     struct QueueItem
     {
@@ -483,7 +596,7 @@ void ViewsManager::buildRelaitions()
     };
 
     std::queue<QueueItem> bfs_q;
-    bfs_q.push({/*parent*/{}, /*current*/{{}, init_table_id}});
+    bfs_q.push({/*parent*/{}, /*current*/ root});
 
     while (!bfs_q.empty())
     {
@@ -749,7 +862,7 @@ Chain ViewsManager::createSelect(StorageIDPrivate view_id)
 
 Chain ViewsManager::createPreSink(StorageIDPrivate view_id)
 {
-    LOG_DEBUG(logger, "createPreSink: {}", view_id.getNameForLogs());
+    LOG_DEBUG(logger, "createPreSink: {}", view_id);
 
     /// We create a pipeline of several streams, into which we will write data.
     Chain chain;
@@ -760,7 +873,7 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id)
     auto select_header = select_headers.at(view_id);
 
     auto inner_id = inner_tables.at(view_id);
-    LOG_DEBUG(logger, "createPreSink: {}, inner id {}", view_id.getNameForLogs(), inner_id.getNameForLogs());
+    LOG_DEBUG(logger, "createPreSink: {}, inner id {}", view_id, inner_id);
 
     auto inner_storage = storages.at(inner_id);
     auto inner_metadata_snapshot = metadata_snapshots.at(inner_id);
@@ -776,7 +889,7 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id)
     auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(select_header, adding_missing_defaults_dag.getRequiredColumnsNames(), insert_context);
     auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
 
-    LOG_DEBUG(logger, "createPreSink: {}, transformed header add default {}", view_id.getNameForLogs(), ExpressionTransform::transformHeader(select_header, adding_missing_defaults_actions->getActionsDAG()).dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, transformed header add default {}", view_id, ExpressionTransform::transformHeader(select_header, adding_missing_defaults_actions->getActionsDAG()).dumpStructure());
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
@@ -789,7 +902,7 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id)
 
     auto convert_action = std::make_shared<ExpressionActions>(std::move(converting));
 
-    LOG_DEBUG(logger, "createPreSink: {}, transformed header cast types {}", view_id.getNameForLogs(), ExpressionTransform::transformHeader(chain.getOutputHeader(), convert_action->getActionsDAG()).dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, transformed header cast types {}", view_id, ExpressionTransform::transformHeader(chain.getOutputHeader(), convert_action->getActionsDAG()).dumpStructure());
 
     chain.addSink(std::make_shared<ExpressionTransform>(chain.getOutputHeader(), convert_action));
 
@@ -828,13 +941,15 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id)
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     chain.addSink(std::make_shared<NestedElementsValidationTransform>(inner_storage_header));
 
+    LOG_DEBUG(logger, "createPreSink: {}, iinner_storage_header {}", view_id, inner_storage_header.dumpStructure());
+
     auto counting = std::make_shared<CountingTransform>(inner_storage_header, insert_context->getQuota());
     counting->setProcessListElement(insert_context->getProcessListElement());
     counting->setProgressCallback(insert_context->getProgressCallback());
     counting->setRuntimeData(thread_groups.at(view_id));
     chain.addSink(std::move(counting));
 
-    LOG_DEBUG(logger, "createPreSink: {}, input {}, output {}", view_id.getNameForLogs(), chain.getInputHeader().dumpStructure(), chain.getOutputHeader().dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, input {}, output {}", view_id, chain.getInputHeader().dumpStructure(), chain.getOutputHeader().dumpStructure());
 
     return chain;
 }
