@@ -6,7 +6,7 @@
 namespace DB::QueryPlanOptimizations
 {
 
-void tryUpdateQueryConditionCache(const QueryPlanOptimizationSettings & optimization_settings, const Stack & stack)
+void updateQueryConditionCache(const QueryPlanOptimizationSettings & optimization_settings, const Stack & stack)
 {
     if (!optimization_settings.use_query_condition_cache)
         return;
