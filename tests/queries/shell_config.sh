@@ -150,7 +150,7 @@ function clickhouse_client_removed_host_parameter()
 {
     # removing only `--host=value` and `--host value` (removing '-hvalue' feels to dangerous) with python regex.
     # bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
-    $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
+    $(echo "$CLICKHOUSE_CLIENT"  | python3 -c "import sys, re; print(re.sub(r'--host(\s+|=)[^\s]+', '', sys.stdin.read()))") "$@"
 }
 
 function wait_for_queries_to_finish()
