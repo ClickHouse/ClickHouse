@@ -13,6 +13,11 @@ std::unordered_map<String, CHSetting> serverSettings = {
          [](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.5, 0, UINT32_C(8192))); },
          {"0", "8", "32", "1024", "4096", "10000"},
          false)},
+    {"aggregation_memory_efficient_merge_threads",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
+         {"0", "1", std::to_string(std::thread::hardware_concurrency())},
+         false)},
     {"allow_aggregate_partitions_independently", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"allow_asynchronous_read_from_io_pool_for_merge_tree", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"allow_changing_replica_until_first_data_packet", CHSetting(trueOrFalse, {}, false)},
@@ -43,6 +48,9 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"async_query_sending_for_remote", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"async_socket_for_remote", CHSetting(trueOrFalse, {"0", "1"}, false)},
     {"backup_restore_keeper_fault_injection_probability", CHSetting(probRange, {}, false)},
+    {"cache_warmer_threads",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); }, {}, false)},
     {"calculate_text_stack_trace", CHSetting(trueOrFalse, {}, false)},
     {"cancel_http_readonly_queries_on_client_close", CHSetting(trueOrFalse, {}, false)},
     {"cast_ipv4_ipv6_default_on_conversion_error", CHSetting(trueOrFalse, {}, false)},
@@ -532,6 +540,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          [](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 21)); },
          {"0", "8", "32", "64", "1024", "1000000"},
          false)},
+    {"max_download_threads",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
+         {"0", "1", std::to_string(std::thread::hardware_concurrency())},
+         false)},
     {"max_final_threads",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
@@ -594,6 +607,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     /// {"max_temporary_columns",  CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
     /// {"max_temporary_non_const_columns", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
     {"max_threads",
+     CHSetting(
+         [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
+         {"0", "1", std::to_string(std::thread::hardware_concurrency())},
+         false)},
+    {"max_threads_for_indexes",
      CHSetting(
          [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, std::thread::hardware_concurrency())); },
          {"0", "1", std::to_string(std::thread::hardware_concurrency())},
