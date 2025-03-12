@@ -21,6 +21,7 @@
 #include <Common/Throttler.h>
 #include <Common/OvercommitTracker.h>
 #include <base/defines.h>
+#include <Common/logger_useful.h>
 
 #include <condition_variable>
 #include <list>
@@ -231,8 +232,9 @@ public:
         progress_in.incrementPiecewiseAtomically(value);
 
         if (priority_handle){
-            UInt64 wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_waiting_time].totalMilliseconds();
-            priority_handle->waitIfNeed(std::chrono::milliseconds(wait_time));        /// NOTE Could make timeout customizable.
+            UInt64 wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_wait_time_ms].totalMilliseconds();
+            LOG_INFO(getLogger("ProcessList"), "Update the progress with current wait time {}", wait_time)
+            priority_handle->waitIfNeed(std::chrono::milliseconds(wait_time));
         }
             
 
@@ -415,13 +417,13 @@ protected:
     QueryStatusPtr getProcessListElement(const String & query_id) const;
 
     /// limit for insert. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
-    size_t c = 0;
+    size_t max_insert_queries_amount = 0;
 
     /// limit for select. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     size_t max_select_queries_amount = 0;
 
     /// timeout in millisecond to wait for low priority query to wait for higher priority query to finish
-    size_t low_priority_wait_timeout_millisec = 0;
+    size_t low_priority_query_wait_time_ms = 0;
 
     /// amount of queries by query kind.
     QueryKindAmounts query_kind_amounts;
@@ -489,19 +491,21 @@ public:
     size_t getMaxInsertQueriesAmount() const
     {
         Lock lock(mutex);
+        LOG_WARNING(getLogger("ProcessList"), "Getting the low priority query wait time  {}", low_priority_query_wait_time_ms_);
         return max_insert_queries_amount;
     }
 
-    void setLowPriorityWaitTimeoutMillisec(size_t low_priority_wait_timeout_millisec_)
+    void setLowPriorityQueryWaitTimeMs(size_t low_priority_query_wait_time_ms_)
     {
         Lock lock(mutex);
-        low_priority_wait_timeout_millisec = low_priority_wait_timeout_millisec_;
+        LOG_WARNING(getLogger("ProcessList"), "Setting the low priority query wait time to {}", low_priority_query_wait_time_ms_);
+        low_priority_query_wait_time_ms = low_priority_query_wait_time_ms_;
     }
 
-    size_t getLowPriorityWaitTimeoutMillisec() const
+    size_t getLowPriorityQueryWaitTimeMs() const
     {
         Lock lock(mutex);
-        return low_priority_wait_timeout_millisec;
+        return low_priority_query_wait_time_ms;
     }
 
     void setMaxSelectQueriesAmount(size_t max_select_queries_amount_)

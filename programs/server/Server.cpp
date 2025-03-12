@@ -319,7 +319,7 @@ namespace ServerSetting
     extern const ServerSettingsDouble page_cache_free_memory_ratio;
     extern const ServerSettingsUInt64 page_cache_lookahead_blocks;
     extern const ServerSettingsUInt64 page_cache_shards;
-    extern const ServerSettingsUInt64 low_priority_wait_timeout_millisec;
+    extern const ServerSettingsUInt64 low_priority_query_wait_time_ms;
 }
 
 }
@@ -1961,7 +1961,7 @@ try
             global_context->getProcessList().setMaxInsertQueriesAmount(new_server_settings[ServerSetting::max_concurrent_insert_queries]);
             global_context->getProcessList().setMaxSelectQueriesAmount(new_server_settings[ServerSetting::max_concurrent_select_queries]);
             global_context->getProcessList().setMaxWaitingQueriesAmount(new_server_settings[ServerSetting::max_waiting_queries]);
-            global_context->getProcessList().setLowPriorityWaitTimeoutMillisec(new_server_settings[ServerSetting::low_priority_wait_timeout_millisec]);
+            global_context->getProcessList().setLowPriorityWaitTimeoutMillisec(new_server_settings[ServerSetting::low_priority_query_wait_time_ms]);
 
             if (config->has("keeper_server"))
                 global_context->updateKeeperConfiguration(*config);

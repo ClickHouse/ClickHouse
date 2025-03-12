@@ -1022,8 +1022,8 @@ namespace DB
     ```
     )", 0) \
     DECLARE(Bool, storage_shared_set_join_use_inner_uuid, false, "If enabled, an inner UUID is generated during the creation of SharedSet and SharedJoin. ClickHouse Cloud only", 0) \
-    DECLARE(UInt64, low_priority_wait_timeout_millisec, 1000, R"(
-    Timeout in milliseconds low priority query will wait for high priority query to finish
+    DECLARE(UInt64, low_priority_query_wait_time_ms, 1000, R"(
+    Timeout in milliseconds task of low priority query will wait for high priority query to finish
     )", 0)
 
 // clang-format on
@@ -1135,6 +1135,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_concurrent_select_queries",
             {std::to_string(context->getProcessList().getMaxSelectQueriesAmount()), ChangeableWithoutRestart::Yes}},
             {"max_waiting_queries", {std::to_string(context->getProcessList().getMaxWaitingQueriesAmount()), ChangeableWithoutRestart::Yes}},
+            {"low_priority_query_wait_time_ms", {std::to_string(context->getProcessList().getLowPriorityQueryWaitTimeMs()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_soft_limit_num", {std::to_string(context->getConcurrentThreadsSoftLimitNum()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_soft_limit_ratio_to_cores", {std::to_string(context->getConcurrentThreadsSoftLimitRatioToCores()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_scheduler", {context->getConcurrentThreadsScheduler(), ChangeableWithoutRestart::Yes}},
