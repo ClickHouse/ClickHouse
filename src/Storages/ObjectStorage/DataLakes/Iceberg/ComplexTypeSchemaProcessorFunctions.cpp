@@ -1,10 +1,12 @@
 #include <memory>
+#include <sstream>
 #include <stack>
 #include <variant>
 
 #include <Core/Field.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
 #include "Common/Exception.h"
 #include "Columns/IColumn.h"
@@ -104,10 +106,8 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
     for (const auto & path_to_transform : all_paths_to_transform)
     {
         auto current_node = initial_node;
-        ComplexNode result_node = current_node;
 
         std::vector<ComplexNode> nodes_in_path;
-
         for (size_t i = 0; i < path_to_transform.size(); ++i)
         {
             auto subfield_index = path_to_transform[i];
@@ -127,7 +127,10 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
                     current_node = std::move(tmp_node_array);
                 }
                 else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type in iceberg complex schema transform");
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Incorrect type in iceberg complex schema transform {}",
+                        current_tuple[subfield_index].getTypeName());
             }
             else
             {
@@ -175,23 +178,20 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
 class DeletingTransform : public IIcebergSchemaTransform
 {
 public:
-    explicit DeletingTransform(
-        const IcebergDeletingOperation & operation_, DataTypePtr old_type, const std::vector<std::vector<size_t>> & permutations)
+    explicit DeletingTransform(const IcebergDeletingOperation & operation_, DataTypePtr old_type, const std::vector<size_t> & permutation)
         : IIcebergSchemaTransform(operation_.getPath()), operation(operation_)
     {
-        for (size_t height = 0; height < operation_.getPath().size(); ++height)
+        for (const auto & path : operation_.getPath())
         {
-            auto path = operation_.getPath()[height];
             if (path.parent_type == TransformType::STRUCT)
             {
                 auto current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
                 auto element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
 
-                const auto & permutation = permutations[height];
                 size_t result_index = current_types.size();
                 for (size_t i = 0; i < current_types.size(); ++i)
                 {
-                    if (element_names[permutation[i]] == path.path)
+                    if (element_names[i] == path.path)
                     {
                         result_index = i;
                         break;
@@ -216,7 +216,6 @@ public:
         index_to_delete = current_types.size();
         for (size_t i = 0; i < current_types.size(); ++i)
         {
-            const auto & permutation = permutations[operation_.getPath().size()];
             if (element_names[permutation[i]] == operation.field_name)
                 index_to_delete = i;
         }
@@ -226,6 +225,8 @@ public:
 
     void transformChildNode(Tuple & initial_node) override { initial_node.erase(initial_node.begin() + index_to_delete); }
 
+    size_t getDeleteIndex() const { return index_to_delete; }
+
 private:
     IcebergDeletingOperation operation;
     size_t index_to_delete;
@@ -234,34 +235,52 @@ private:
 class AddingTransform : public IIcebergSchemaTransform
 {
 public:
-    explicit AddingTransform(const IcebergAddingOperation & operation_, DataTypePtr type)
+    explicit AddingTransform(const IcebergAddingOperation & operation_, DataTypePtr type, DataTypePtr old_type)
         : IIcebergSchemaTransform(operation_.getPath()), operation(operation_)
     {
         for (const auto & path : operation_.getPath())
         {
             if (path.parent_type == TransformType::STRUCT)
             {
+                auto old_current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
+                auto old_element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
+
+                size_t old_result_index = old_current_types.size();
+                for (size_t i = 0; i < old_current_types.size(); ++i)
+                {
+                    if (old_element_names[i] == path.path)
+                    {
+                        old_result_index = i;
+                        break;
+                    }
+                }
+                if (old_result_index == old_current_types.size())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in old data", path.path);
+
+                index_path.push_back(static_cast<Int32>(old_result_index));
+                old_type = old_current_types[old_result_index];
+
                 current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
                 auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
 
                 size_t result_index = current_types.size();
                 for (size_t i = 0; i < current_types.size(); ++i)
                 {
-                    if (element_names[i] == path.path)
+                    if (element_names[i] == path.new_path)
                     {
                         result_index = i;
                         break;
                     }
                 }
                 if (result_index == current_types.size())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in data", path.path);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in new data", path.new_path);
 
-                index_path.push_back(static_cast<Int32>(result_index));
                 type = current_types[result_index];
             }
             else
             {
                 index_path.push_back(-1);
+                old_type = std::static_pointer_cast<const DataTypeArray>(old_type)->getNestedType();
                 type = std::static_pointer_cast<const DataTypeArray>(type)->getNestedType();
             }
         }
@@ -412,7 +431,6 @@ void ExecutableEvolutionFunction::lazyInitialize() const
         Poco::JSON::Array::Ptr old_subfields = nullptr;
         Poco::JSON::Array::Ptr fields = nullptr;
         std::vector<IcebergChangeSchemaOperation::Edge> current_path = {};
-        std::vector<std::vector<size_t>> permutations = {};
         bool is_struct = false;
     };
 
@@ -422,47 +440,49 @@ void ExecutableEvolutionFunction::lazyInitialize() const
         auto subfields = field->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
         auto old_subfields = old_json->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
 
-        walk_stack.push(TraverseItem{old_subfields, subfields, {}, {}, true});
+        walk_stack.push(TraverseItem{old_subfields, subfields, {}, true});
     }
-    else if (old_json->isObject("type") && old_json->getObject("type")->getValue<std::string>("type") == "list")
+    else if (
+        old_json->isObject("type") && old_json->getObject("type")->getValue<std::string>("type") == "list"
+        && old_json->getObject("type")->isObject("element"))
     {
         if (field->getObject("type")->isObject("element"))
         {
             auto subfields = field->getObject("type")->getObject("element");
             auto old_subfields = old_json->getObject("type")->getObject("element");
 
-            walk_stack.push({makeArrayFromObject(old_subfields), makeArrayFromObject(subfields), {}, {}, false});
+            walk_stack.push({makeArrayFromObject(old_subfields), makeArrayFromObject(subfields), {}, false});
         }
     }
 
+    std::map<size_t, std::vector<std::shared_ptr<IIcebergSchemaTransform>>> per_layer_transforms;
+
     while (!walk_stack.empty())
     {
-        auto [old_subfields, subfields, current_path, parent_permutations, is_struct] = walk_stack.top();
+        auto [old_subfields, subfields, current_path, is_struct] = walk_stack.top();
         walk_stack.pop();
 
         if (!is_struct)
         {
             auto old_subfield = old_subfields->getObject(static_cast<UInt32>(0));
             auto subfield = subfields->getObject(static_cast<UInt32>(0));
-            parent_permutations.push_back({});
 
-            current_path.push_back({"", TransformType::ARRAY});
+            current_path.push_back({"", "", TransformType::ARRAY});
+
             if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "struct")
             {
                 walk_stack.push(
                     {old_subfield->get("fields").extract<Poco::JSON::Array::Ptr>(),
                      subfield->get("fields").extract<Poco::JSON::Array::Ptr>(),
                      current_path,
-                     parent_permutations,
                      true});
             }
-            if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "list")
+            if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "list" && old_subfield->isObject("element"))
             {
                 walk_stack.push(
                     {makeArrayFromObject(old_subfield->getObject("element")),
                      makeArrayFromObject(subfield->getObject("element")),
                      current_path,
-                     parent_permutations,
                      true});
             }
             current_path.pop_back();
@@ -497,13 +517,14 @@ void ExecutableEvolutionFunction::lazyInitialize() const
         }
 
         fillMissingElementsInPermutation(initial_permutation, old_subfields->size());
-        parent_permutations.push_back(initial_permutation);
         {
             auto operation = IcebergReorderingOperation(current_path, initial_permutation);
             auto transform = std::make_shared<ReorderingTransform>(operation, old_type);
-            transforms.push_back(transform);
+            per_layer_transforms[current_path.size()].push_back(transform);
         }
         /// Stage 2: Deleting extra fields in current schema.
+        /// All transforms should be ordered by indices of deletion in decreasing order.
+        std::vector<std::pair<size_t, std::shared_ptr<DeletingTransform>>> delete_transforms;
         for (size_t j = 0; j < old_subfields->size(); ++j)
         {
             auto old_subfield = old_subfields->getObject(static_cast<UInt32>(j));
@@ -511,11 +532,15 @@ void ExecutableEvolutionFunction::lazyInitialize() const
             if (!id_to_type.contains(id_old_subfield))
             {
                 auto operation = IcebergDeletingOperation(current_path, old_subfield->getValue<String>("name"));
-                auto transform = std::make_shared<DeletingTransform>(operation, old_type, parent_permutations);
-                transforms.push_back(transform);
+                auto transform = std::make_shared<DeletingTransform>(operation, old_type, initial_permutation);
+                delete_transforms.push_back({transform->getDeleteIndex(), transform});
                 continue;
             }
         }
+        std::sort(
+            delete_transforms.begin(), delete_transforms.end(), [](const auto & lhs, const auto & rhs) { return lhs.first > rhs.first; });
+        for (const auto & [_, transform] : delete_transforms)
+            per_layer_transforms[current_path.size()].push_back(transform);
 
         /// Stage 3: Adding new fields from new object.
         for (size_t j = 0; j < subfields->size(); ++j)
@@ -525,8 +550,8 @@ void ExecutableEvolutionFunction::lazyInitialize() const
             if (!old_types.contains(id_subfield))
             {
                 auto operation = IcebergAddingOperation(current_path, subfield->getValue<String>("name"));
-                auto transform = std::make_shared<AddingTransform>(operation, type);
-                transforms.push_back(transform);
+                auto transform = std::make_shared<AddingTransform>(operation, type, old_type);
+                per_layer_transforms[current_path.size()].push_back(transform);
             }
         }
 
@@ -545,25 +570,27 @@ void ExecutableEvolutionFunction::lazyInitialize() const
             {
                 auto child_subfields = subfield->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
                 auto child_old_subfields = old_subfield->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
-                current_path.push_back({old_subfield->getValue<std::string>("name"), TransformType::STRUCT});
-                walk_stack.push({child_old_subfields, child_subfields, current_path, parent_permutations, true});
+                current_path.push_back(
+                    {old_subfield->getValue<std::string>("name"), subfield->getValue<std::string>("name"), TransformType::STRUCT});
+                walk_stack.push({child_old_subfields, child_subfields, current_path, true});
                 current_path.pop_back();
             }
-            else if (subfield->isObject("type") && subfield->getObject("type")->getValue<std::string>("type") == "list")
+            else if (
+                subfield->isObject("type") && subfield->getObject("type")->getValue<std::string>("type") == "list"
+                && subfield->getObject("type")->isObject("element"))
             {
                 auto child_subfield = subfield->getObject("type")->getObject("element");
                 auto child_old_subfield = old_subfield->getObject("type")->getObject("element");
-                current_path.push_back({"", TransformType::ARRAY});
-                walk_stack.push(
-                    {makeArrayFromObject(child_old_subfield),
-                     makeArrayFromObject(child_subfield),
-                     current_path,
-                     parent_permutations,
-                     false});
+                current_path.push_back({"", "", TransformType::ARRAY});
+                walk_stack.push({makeArrayFromObject(child_old_subfield), makeArrayFromObject(child_subfield), current_path, false});
                 current_path.pop_back();
             }
         }
     }
+
+    for (int height = static_cast<Int32>(per_layer_transforms.rbegin()->first); height >= 0; --height)
+        for (const auto & transform : per_layer_transforms[height])
+            transforms.push_back(transform);
 }
 
 }
