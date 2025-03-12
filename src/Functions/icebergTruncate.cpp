@@ -54,6 +54,8 @@ public:
         return 2;
     }
 
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         if (arguments.size() != 2)
