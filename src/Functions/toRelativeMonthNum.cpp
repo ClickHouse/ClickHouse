@@ -8,12 +8,10 @@ namespace DB
 {
 
 using FunctionToRelativeMonthNum = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToRelativeMonthNumImpl<ResultPrecision::Standard>>;
-using FunctionToMonthNumSinceEpoch = FunctionDateOrDateTimeToSomething<DataTypeUInt32, ToMonthNumSinceEpochImpl<ResultPrecision::Standard>>;
 
 REGISTER_FUNCTION(ToRelativeMonthNum)
 {
     factory.registerFunction<FunctionToRelativeMonthNum>();
-    factory.registerFunction<FunctionToMonthNumSinceEpoch>();
 }
 
 }
