@@ -429,6 +429,7 @@ public:
         Arena * arena,
         ssize_t if_argument_pos = -1) const override
     {
+        // 72610: тут везде проверяется places, должно быть корректно ставить nullptr
         if (if_argument_pos >= 0)
         {
             const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();

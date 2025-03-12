@@ -1,4 +1,7 @@
 #include <algorithm>
+#include <future>
+#include <iostream>
+#include <numeric>
 #include <optional>
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
@@ -209,7 +212,8 @@ Aggregator::Params::Params(
     bool only_merge_, // true for projections
     bool optimize_group_by_constant_keys_,
     float min_hit_rate_to_use_consecutive_keys_optimization_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const StatsCollectingParams & stats_collecting_params_,
+    size_t limit_length_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -232,6 +236,7 @@ Aggregator::Params::Params(
     , optimize_group_by_constant_keys(optimize_group_by_constant_keys_)
     , min_hit_rate_to_use_consecutive_keys_optimization(min_hit_rate_to_use_consecutive_keys_optimization_)
     , stats_collecting_params(stats_collecting_params_)
+    , limit_length(limit_length_)
 {
 }
 
@@ -981,6 +986,7 @@ void NO_INLINE Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
+    std::cout << "@@@@@@@@@@@@ Aggregator::executeImpl called" << std::endl;
     UInt64 total_rows = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_rows ? static_cast<double>(consecutive_keys_cache_stats.hits) / total_rows : 1.0;
     bool use_cache = !is_simple_count && cache_hit_rate >= params.min_hit_rate_to_use_consecutive_keys_optimization;
@@ -1076,7 +1082,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
         if (all_keys_are_const)
         {
-            state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
+            state.emplaceKey(method.data, 0, *aggregates_pool, params.limit_length).setMapped(place);
         }
         else
         {
@@ -1095,7 +1101,7 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
+                state.emplaceKey(method.data, i, *aggregates_pool, params.limit_length).setMapped(place);
             }
         }
         return;
@@ -1235,9 +1241,40 @@ void NO_INLINE Aggregator::executeImplBatch(
 
     state.resetCache();
 
+    std::cout << "params.keys:";
+    for (const auto& key : params.keys) {
+        std::cout << " " << key;
+    }
+    std::cout << std::endl;
+    std::cout << "keys_size: " << params.keys_size << std::endl;
+    std::cout << "aggregates.size(): " << params.aggregates.size() << std::endl;
+    std::cout << "aggregates_size: " << params.aggregates_size << std::endl;
+    std::cout << "overflow_row: " << params.overflow_row << std::endl;
+    std::cout << "max_rows_to_group_by: " << params.max_rows_to_group_by << std::endl;
+    // std::cout << params.group_by_overflow_mode << std::endl;
+    std::cout << "group_by_two_level_threshold: " << params.group_by_two_level_threshold << std::endl;
+    std::cout << "group_by_two_level_threshold_bytes: " << params.group_by_two_level_threshold_bytes << std::endl;
+    std::cout << "max_bytes_before_external_group_by: " << params.max_bytes_before_external_group_by << std::endl;
+    std::cout << "empty_result_for_aggregation_by_empty_set: " << params.empty_result_for_aggregation_by_empty_set << std::endl;
+    std::cout << "tmp_data_scope: " << params.tmp_data_scope << std::endl;
+    std::cout << "max_threads: " << params.max_threads << std::endl;
+    std::cout << "min_free_disk_space: " << params.min_free_disk_space << std::endl;
+    std::cout << "compile_aggregate_expressions: " << params.compile_aggregate_expressions << std::endl;
+    std::cout << "min_count_to_compile_aggregate_expression: " << params.min_count_to_compile_aggregate_expression << std::endl;
+    std::cout << "max_block_size: " << params.max_block_size << std::endl;
+    std::cout << "only_merge: " << params.only_merge << std::endl;
+    std::cout << "enable_prefetch: " << params.enable_prefetch << std::endl;
+    std::cout << "optimize_group_by_constant_keys: " << params.optimize_group_by_constant_keys << std::endl;
+    std::cout << "min_hit_rate_to_use_consecutive_keys_optimization: " << params.min_hit_rate_to_use_consecutive_keys_optimization << std::endl;
+    // std::cout << params.stats_collecting_params << std::endl;
+    std::cout << "params.stats_collecting_params.key: " << params.stats_collecting_params.key << std::endl;
+    std::cout << "params.stats_collecting_params.max_entries_for_hash_table_stats: " << params.stats_collecting_params.max_entries_for_hash_table_stats << std::endl;
+    std::cout << "params.stats_collecting_params.max_size_to_preallocate: " << params.stats_collecting_params.max_size_to_preallocate << std::endl;
+
     /// For all rows.
     if (!no_more_keys)
     {
+        std::cout << "@@@@@@@@@@@@@@@, key_start: " << key_start << ", key_end: " << key_end << std::endl;
         for (size_t i = key_start; i < key_end; ++i)
         {
             AggregateDataPtr aggregate_data = nullptr;
@@ -1254,7 +1291,8 @@ void NO_INLINE Aggregator::executeImplBatch(
                 }
             }
 
-            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool);
+            // std::cout << "@@@@@ method.data: " << method.data << std::endl;
+            auto emplace_result = state.emplaceKey(method.data, i, *aggregates_pool, params.limit_length);
 
             /// If a new key is inserted, initialize the states of the aggregate functions, and possibly something related to the key.
             if (emplace_result.isInserted())
@@ -1286,8 +1324,10 @@ void NO_INLINE Aggregator::executeImplBatch(
             else
                 aggregate_data = emplace_result.getMapped();
 
+            // 72610: Видимо в крайнем случае можно убрать этот assert и ставить places[i]=nullptr
             assert(aggregate_data != nullptr);
             places[i] = aggregate_data;
+            std::cout << "@@@@@ aggregate_data: " << aggregate_data << std::endl;
         }
     }
     else
@@ -1302,6 +1342,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             else
                 aggregate_data = overflow_row;
             places[i] = aggregate_data;
+            std::cout << "@@@@@ aggregate_data: " << aggregate_data << std::endl;
         }
     }
 
@@ -1328,6 +1369,7 @@ void Aggregator::executeAggregateInstructions(
     bool all_keys_are_const,
     bool use_compiled_functions [[maybe_unused]]) const
 {
+    std::cout << "@@@@ executeAggregateInstructions called" << std::endl;
 #if USE_EMBEDDED_COMPILER
     if (use_compiled_functions)
     {
@@ -1362,6 +1404,7 @@ void Aggregator::executeAggregateInstructions(
 #endif
 
     /// Add values to the aggregate functions.
+    std::cout << "@@@@ aggregate_functions.size(): " << aggregate_functions.size() << std::endl;
     for (size_t i = 0; i < aggregate_functions.size(); ++i)
     {
 #if USE_EMBEDDED_COMPILER
@@ -1373,11 +1416,13 @@ void Aggregator::executeAggregateInstructions(
 
         if (all_keys_are_const || (inst->can_optimize_equal_keys_ranges && has_only_one_value_since_last_reset))
         {
+            std::cout << "@@@@ if statement " << std::endl;
             ProfileEvents::increment(ProfileEvents::AggregationOptimizedEqualRangesOfKeys);
             addBatchSinglePlace(row_begin, row_end, inst, places[key_start] + inst->state_offset, aggregates_pool);
         }
         else
         {
+            std::cout << "@@@@ else statement " << std::endl;
             addBatch(row_begin, row_end, inst, places.get(), aggregates_pool);
         }
     }
@@ -1444,25 +1489,33 @@ void Aggregator::addBatch(
     AggregateDataPtr * places,
     Arena * arena)
 {
-    if (inst->offsets)
+    std::cout << "@@@@@ inst->offsets: " << inst->offsets << std::endl;
+    std::cout << "@@@@@ inst->has_sparse_arguments: " << inst->has_sparse_arguments << std::endl;
+    if (inst->offsets) {
+        std::cout << "@@@@@ first if statement" << std::endl;
         inst->batch_that->addBatchArray(
             row_begin, row_end, places,
             inst->state_offset,
             inst->batch_arguments,
             inst->offsets,
             arena);
-    else if (inst->has_sparse_arguments)
+    }
+    else if (inst->has_sparse_arguments) {
+        std::cout << "@@@@@ second else if statement" << std::endl;
         inst->batch_that->addBatchSparse(
             row_begin, row_end, places,
             inst->state_offset,
             inst->batch_arguments,
             arena);
-    else
+    }
+    else {
+        std::cout << "@@@@@ third else statement" << std::endl;
         inst->batch_that->addBatch(
             row_begin, row_end, places,
             inst->state_offset,
             inst->batch_arguments,
             arena);
+    }
 }
 
 

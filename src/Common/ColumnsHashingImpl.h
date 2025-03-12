@@ -2,9 +2,16 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
+#include "Common/HashTable/FixedHashSet.h"
+#include "Common/HashTable/HashMap.h"
+#include "Common/HashTable/HashTable.h"
+#include "Common/HashTable/StringHashMap.h"
+#include "Common/HashTable/TwoLevelStringHashMap.h"
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <Interpreters/KeysNullMap.h>
+#include "Interpreters/AggregatedData.h"
+#include <Interpreters/AggregationCommon.h>
+#include <typeinfo>
 
 namespace DB
 {
@@ -184,9 +191,14 @@ public:
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
+    // 72610: data -- мап (или сет)
+    // 72610: по row достается key_holder (указатель на ключ?) из выкачанных с диска данных
+    // 72610: вызывается emplaceImpl, которая возвращает результат попытки вставки ключа в мап
+    // 72610: если ключ не нужен благодаря оптимизации, корректно ли вернуть EmplaceResult(false)?
     template <typename Data>
-    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool, size_t limit_length = 9223372036854775807ll)
     {
+        std::cout << "@@@@@@@@@@@@@@@@@ emplaceKey2 called" << std::endl;
         if constexpr (nullable)
         {
             if (isNullAt(row))
@@ -211,7 +223,7 @@ public:
         }
 
         auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-        return emplaceImpl(key_holder, data);
+        return emplaceImpl(key_holder, data, limit_length);
     }
 
     template <typename Data>
@@ -310,35 +322,72 @@ protected:
             null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
     }
 
+    // 72610: key_holder -- указатель на ключ
+    // 72610: data -- мап (или сет)
+    // 72610: emplaceImpl пытается вставить в мап и возвращает получилось ли и итератор, если да
+    // 72610: если ключ не нужен благодаря оптимизации, корректно ли вернуть EmplaceResult(false)?
     template <typename Data, typename KeyHolder>
-    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data)
+    ALWAYS_INLINE EmplaceResult emplaceImpl(KeyHolder & key_holder, Data & data, size_t limit_length)
     {
+        std::cout << "\t@@@@@@ emplaceImpl called" << std::endl;
+        std::cout << "\t@@@@@@ has_mapped: " << has_mapped << std::endl;
+        std::cout << "\t@@@@@@ sizeof(has_mapped): " << sizeof(has_mapped) << std::endl;
+        std::cout << "\t@@@@@@ consecutive_keys_optimization: " << consecutive_keys_optimization << std::endl;
+        std::cout << "\t@@@@@@ sizeof(consecutive_keys_optimization): " << sizeof(consecutive_keys_optimization) << std::endl;
         if constexpr (consecutive_keys_optimization)
         {
             if (cache.found && cache.check(keyHolderGetKey(key_holder)))
             {
-                if constexpr (has_mapped)
+                std::cout << "\t@@@@@@ has_mapped: " << has_mapped << std::endl;
+                if constexpr (has_mapped) {
+                    // std::cout << "\t@@@@@@ cache.value.second: " << cache.value.second << std::endl;
                     return EmplaceResult(cache.value.second, cache.value.second, false);
+                }
                 else
                     return EmplaceResult(false);
             }
         }
 
+        // StringHashMap<char *> qq;
+        // TwoLevelStringHashMap<char *> ww;
+        // DB::AggregationDataWithNullKey<StringHashMap<char *>> ee;
+        // DB::AggregationDataWithNullKeyTwoLevel<TwoLevelStringHashMap<char *, Allocator<true, true>, DB::StringHashTableWithNullKey>> rr;
+        // FixedHashSet<char8_t> tt;
+
         typename Data::LookupResult it;
         bool inserted = false;
-        data.emplace(key_holder, it, inserted);
-        const size_t limit_size = 2;
-        if (data.size() >= limit_size + 1) { // TODO do == and assert <=
-            auto min_key = key_holder;
-            for (const auto& data_it : data) {
-                if (data_it.first < min_key) {
-                    min_key = data_it.first;
-                }
-            }
-            data.erase(min_key);
-            if (min_key == key_holder) {
-                return EmplaceResult(false);
-            }
+        // std::cout << "\t@@@@@@ before emplace of key_holder=" << key_holder << ", data.size(): " << data.size() << std::endl;
+        std::cout << "\t@@@@@@ before emplace data.size(): " << data.size() << std::endl;
+        data.emplace(key_holder, it, inserted); // видимо попытка вставки нового ключа (по которому делает group by) в мапу
+        std::cout << "\t@@@@@@ after emplace  data.size(): " << data.size() << std::endl;
+        // std::cout << "\t@@@@@@ it->getMapped(): " << it->getMapped() << std::endl;
+        std::cout << "\t@@@@@@ inserted: " << inserted << std::endl;
+    
+        // HashMapTable<StringRef, HashMapCellWithSavedHash<StringRef, char*, StringRefHash64, HashTableNoState>, StringRefHash64, HashTableGrowerWithPrecalculation<8ul>, Allocator<true, true> > hhh;
+        // HashMapTable<StringRef, HashMapCellWithSavedHash<StringRef, char*, StringRefHash64,HashTableNoState>,StringRefHash64,HashTableGrowerWithPrecalculation<8ul>,Allocator<true, true>> hhh;
+        // for (const auto& data_it : hhh) {
+        //     (void)data_it;
+        // }
+        // (void)hhh;
+
+        std::cout << "^^^^^^^^ Type of data: " << typeid(data).name() << std::endl;
+
+        if (data.size() >= limit_length + 1) { // TODO do == and assert <=
+        //     data.forEachMapped([](auto el) {
+        //         std::cout << "forEachMapped el: " << el << std::endl;
+        //     });
+            std::cout << "data.size() >= limit_length + 1" << std::endl;
+        //     // auto min_key = key_holder;
+        //     // for (const auto& data_it : data) {
+        //     //     (void)data_it;
+        //         // if (data_it.getKey() < min_key) {
+        //         //     min_key = data_it.getKey();
+        //         // }
+        //     // }
+        //     // data.erase(min_key);
+        //     // if (min_key == key_holder) {
+        //     //     return EmplaceResult(false);
+        //     // }
         }
 
         [[maybe_unused]] Mapped * cached = nullptr;
@@ -372,6 +421,7 @@ protected:
             }
         }
 
+        // std::cout << "@@@@@@@ it->getMapped(): " << it->getMapped() << std::endl;
         if constexpr (has_mapped)
             return EmplaceResult(it->getMapped(), *cached, inserted);
         else

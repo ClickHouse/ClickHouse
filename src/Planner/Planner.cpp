@@ -10,6 +10,9 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
+#include <Interpreters/evaluateConstantExpression.h>
+#include <Common/ErrorCodes.h>
+#include <iostream>
 #include <DataTypes/DataTypeString.h>
 
 #include <Functions/FunctionFactory.h>
@@ -477,6 +480,7 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const SelectQueryInfo & select_query_info,
+    const QueryNode & query_node,
     bool aggregate_descriptions_remove_arguments = false)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -495,6 +499,9 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
             aggregate_description.argument_names.clear();
     }
 
+    auto limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    std::cout << "Planner.Cpp: getAggregatorParams: limit: " << limit_length << std::endl;
+    std::cout << "Planner.Cpp: getAggregatorParams: query_analysis_result.limit_length: " << query_analysis_result.limit_length << std::endl;
     Aggregator::Params aggregator_params = Aggregator::Params(
         aggregation_analysis_result.aggregation_keys,
         aggregate_descriptions,
@@ -517,7 +524,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         /* only_merge */ false,
         settings[Setting::optimize_group_by_constant_keys],
         settings[Setting::min_hit_rate_to_use_consecutive_keys_optimization],
-        stats_collecting_params);
+        stats_collecting_params,
+        query_analysis_result.limit_length);
 
     return aggregator_params;
 }
@@ -537,10 +545,15 @@ void addAggregationStep(QueryPlan & query_plan,
     const AggregationAnalysisResult & aggregation_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
-    const SelectQueryInfo & select_query_info)
+    const SelectQueryInfo & select_query_info,
+    const QueryNode & query_node)
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
-    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info);
+
+    auto limit_length = query_node.getLimit()->as<ConstantNode &>().getValue().safeGet<UInt64>();
+    std::cout << "addAggregationStep: limit: " << limit_length << std::endl;
+
+    auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result, select_query_info, query_node);
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
@@ -621,6 +634,7 @@ void addMergingAggregatedStep(QueryPlan & query_plan,
         && aggregation_analysis_result.grouping_sets_parameters_list.empty())
         max_threads = 1;
 
+    std::cout << "void addMergingAggregatedStep(QueryPlan & query_plan, called!@!" << std::endl;
     Aggregator::Params params(
         keys,
         aggregation_analysis_result.aggregate_descriptions,
@@ -712,6 +726,7 @@ void addCubeOrRollupStepIfNeeded(QueryPlan & query_plan,
         aggregation_analysis_result,
         query_analysis_result,
         select_query_info,
+        query_node,
         true /*aggregate_descriptions_remove_arguments*/);
 
     if (query_node.isGroupByWithRollup())
@@ -1706,7 +1721,7 @@ void Planner::buildPlanForQueryNode()
                     "Before GROUP BY",
                     useful_sets);
 
-            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
+            addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
         }
 
         /** If we have aggregation, we can't execute any later-stage

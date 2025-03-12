@@ -26,6 +26,7 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
+#include <iostream>
 
 namespace DB
 {
@@ -846,6 +847,7 @@ std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & c
         ctx.settings[QueryPlanSerializationSetting::max_entries_for_hash_table_stats],
         ctx.settings[QueryPlanSerializationSetting::max_size_to_preallocate_for_aggregation]);
 
+    std::cout << "std::unique_ptr<IQueryPlanStep> AggregatingStep::deserialize(Deserialization & ctx) called!@!" << std::endl;
     Aggregator::Params params
     {
         keys,
