@@ -591,7 +591,7 @@ void ViewsManager::buildRelaitions()
 
                 input_headers[current] = init_header;
                 select_headers[current] = init_header;
-                output_headers[current] = metadata->getSampleBlock();
+                output_headers[current] = metadata->getSampleBlockInsertable();
 
                 thread_groups[current] = CurrentThread::getGroup();
 
@@ -727,7 +727,7 @@ void ViewsManager::buildRelaitions()
 
                 input_headers[{}] = init_header;
                 select_headers[{}] = init_header;
-                output_headers[{}] = metadata->getSampleBlock();
+                output_headers[{}] = metadata->getSampleBlockInsertable();
 
                 thread_groups[{}] = CurrentThread::getGroup();
 
@@ -745,7 +745,7 @@ void ViewsManager::buildRelaitions()
             }
 
             const auto & view_id = path.parent();
-            output_headers[view_id] = metadata->getSampleBlock();
+            output_headers[view_id] = metadata->getSampleBlockInsertable();
 
             // TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
             auto view_storage = storages.at(view_id);
@@ -755,7 +755,7 @@ void ViewsManager::buildRelaitions()
             if (check_access)
             {
                 LOG_DEBUG(logger, "call checkAccess");
-                insert_contexts.at(view_id)->checkAccess(AccessType::INSERT, current, metadata->getSampleBlock().getNames());
+                insert_contexts.at(view_id)->checkAccess(AccessType::INSERT, current, metadata->getSampleBlockInsertable().getNames());
             }
 
             dependent_views[path.prevPrevParent()].push_back(view_id);
@@ -769,7 +769,9 @@ void ViewsManager::buildRelaitions()
     std::function<void(StorageIDPrivate)> expand = [&] (StorageIDPrivate id)
     {
         path.pushBack(id);
-        SCOPE_EXIT( path.popBack(); );
+        SCOPE_EXIT({
+             path.popBack();
+        });
 
         if (!register_path(path))
             return;
@@ -930,7 +932,7 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
 
     auto inner_storage = storages.at(inner_id);
     auto inner_metadata_snapshot = metadata_snapshots.at(inner_id);
-    auto inner_storage_header = inner_metadata_snapshot->getSampleBlock();
+    auto inner_storage_header = inner_metadata_snapshot->getSampleBlockInsertable();
 
     auto adding_missing_defaults_dag = addMissingDefaults(
         select_header,
@@ -994,7 +996,12 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
     /// but currently we don't have methods for serialization of nested structures "as a whole".
     chain.addSink(std::make_shared<NestedElementsValidationTransform>(inner_storage_header));
 
-    LOG_DEBUG(logger, "createPreSink: {}, iinner_storage_header {}", view_id, inner_storage_header.dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, input_header {}", view_id, input_headers.at(view_id).dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, select_header {}", view_id, select_header.dumpStructure());
+
+    LOG_DEBUG(logger, "createPreSink: {}, inner_storage_header {}", view_id, inner_storage_header.dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, output_headers {}", view_id, output_headers.at(view_id).dumpStructure());
+
 
     auto counting = std::make_shared<CountingTransform>(inner_storage_header, insert_context->getQuota());
     counting->setProcessListElement(insert_context->getProcessListElement());
