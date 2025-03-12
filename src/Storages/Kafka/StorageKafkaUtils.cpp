@@ -350,10 +350,30 @@ void consumerGracefulStop(
     //
     // To mitigate this, we now:
     //   (1) Avoid calling unsubscribe (letting rebalance occur naturally via consumer group timeout).
-    //   (2) Pause the consumer to stop processing new messages.
-    //   (3) Disconnect the toppar queues to reduce the risk of lock inversion (less cascading locks).
-    //   (4) Set up different rebalance callbacks to repeat (2) if a rebalance will occur before consumer destruction.
-    //   (4) Poll the event queue to process any remaining callbacks.
+    //   (2) Set up different rebalance callbacks to repeat (3) if a rebalance will occur before consumer destruction.
+    //   (3) Pause the consumer to stop processing new messages.
+    //   (4) Disconnect the toppar queues to reduce the risk of lock inversion (less cascading locks).
+    //   (5) Poll the event queue to process any remaining callbacks.
+
+    consumer.set_revocation_callback(
+        [](const cppkafka::TopicPartitionList &)
+        {
+            // we don't care during the destruction
+        });
+
+    consumer.set_assignment_callback(
+        [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
+        {
+            if (!topic_partitions.empty())
+            {
+                consumer.pause_partitions(topic_partitions);
+            }
+
+            // it's not clear if get_partition_queue will work in that context
+            // as just after processing the callback cppkafka will call run assign
+            // and that can reset the queues
+
+        });
 
     try
     {
@@ -374,26 +394,6 @@ void consumerGracefulStop(
     {
         LOG_ERROR(log, "Error during pause (consumerGracefulStop): {}", e.what());
     }
-
-    consumer.set_assignment_callback(
-        [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
-        {
-            if (!topic_partitions.empty())
-            {
-                consumer.pause_partitions(topic_partitions);
-            }
-
-            // it's not clear if get_partition_queue will work in that context
-            // as just after processing the callback cppkafka will call run assign
-            // and that can reset the queues
-
-        });
-
-    consumer.set_revocation_callback(
-        [](const cppkafka::TopicPartitionList &)
-        {
-            // we don't care during the destruction
-        });
 
     drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
 }
