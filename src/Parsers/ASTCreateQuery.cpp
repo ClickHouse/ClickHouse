@@ -71,40 +71,42 @@ ASTPtr ASTStorage::clone() const
 
 void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
+    auto modified_frame{frame};
     if (engine)
     {
+        modified_frame.create_engine_name = engine->name;
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ENGINE" << (s.hilite ? hilite_none : "") << " = ";
-        engine->formatImpl(ostr, s, state, frame);
+        engine->formatImpl(ostr, s, state, modified_frame);
     }
     if (partition_by)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PARTITION BY " << (s.hilite ? hilite_none : "");
-        partition_by->formatImpl(ostr, s, state, frame);
+        partition_by->formatImpl(ostr, s, state, modified_frame);
     }
     if (primary_key)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "PRIMARY KEY " << (s.hilite ? hilite_none : "");
-        primary_key->formatImpl(ostr, s, state, frame);
+        primary_key->formatImpl(ostr, s, state, modified_frame);
     }
     if (order_by)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "ORDER BY " << (s.hilite ? hilite_none : "");
-        order_by->formatImpl(ostr, s, state, frame);
+        order_by->formatImpl(ostr, s, state, modified_frame);
     }
     if (sample_by)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SAMPLE BY " << (s.hilite ? hilite_none : "");
-        sample_by->formatImpl(ostr, s, state, frame);
+        sample_by->formatImpl(ostr, s, state, modified_frame);
     }
     if (ttl_table)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "TTL " << (s.hilite ? hilite_none : "");
-        ttl_table->formatImpl(ostr, s, state, frame);
+        ttl_table->formatImpl(ostr, s, state, modified_frame);
     }
     if (settings)
     {
         ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << "SETTINGS " << (s.hilite ? hilite_none : "");
-        settings->formatImpl(ostr, s, state, frame);
+        settings->formatImpl(ostr, s, state, modified_frame);
     }
 }
 
@@ -494,11 +496,10 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
     if (dictionary_attributes_list)
     {
         ostr << (settings.one_line ? " (" : "\n(");
-        FormatStateStacked frame_nested = frame;
         if (settings.one_line)
-            dictionary_attributes_list->formatImpl(ostr, settings, state, frame_nested);
+            dictionary_attributes_list->formatImpl(ostr, settings, state, frame);
         else
-            dictionary_attributes_list->formatImplMultiline(ostr, settings, state, frame_nested);
+            dictionary_attributes_list->formatImplMultiline(ostr, settings, state, frame);
         ostr << (settings.one_line ? ")" : "\n)");
     }
 

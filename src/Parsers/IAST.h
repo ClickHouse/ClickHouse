@@ -250,6 +250,7 @@ public:
         bool surround_each_list_element_with_parens = false;
         bool allow_operators = true; /// Format some functions, such as "plus", "in", etc. as operators.
         size_t list_element_index = 0;
+        std::string create_engine_name;
         const IAST * current_select = nullptr;
     };
 
