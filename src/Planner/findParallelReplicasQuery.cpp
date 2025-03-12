@@ -28,6 +28,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool enable_adaptive_short_circuit_lazy_execution;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
     extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
 }
@@ -488,6 +489,7 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
 {
     auto processed_stage = QueryProcessingStage::WithMergeableState;
     auto context = planner_context->getQueryContext();
+    const auto & settings = context->getSettingsRef();
 
     QueryTreeNodePtr modified_query_tree = query_node.clone();
 
@@ -525,7 +527,8 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     /// header is a header which is returned by the follower.
     /// They are different because tables will have different aliases (e.g. _table1 or _table5).
     /// Here we just rename columns by position, with the hope the types would match.
-    auto step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting));
+    bool enable_adaptive_short_circuit_lazy_execution = settings[Setting::enable_adaptive_short_circuit_lazy_execution];
+    auto step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(converting), enable_adaptive_short_circuit_lazy_execution);
     step->setStepDescription("Convert distributed names");
     query_plan.addStep(std::move(step));
 

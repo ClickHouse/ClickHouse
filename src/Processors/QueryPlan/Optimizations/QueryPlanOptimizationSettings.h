@@ -94,6 +94,8 @@ struct QueryPlanOptimizationSettings
     /// If query condition cache is enabled, the query condition cache needs to be updated in the WHERE stage.
     bool use_query_condition_cache = false;
     bool is_explain;
+
+    bool enable_adaptive_short_circuit_execution;
 };
 
 }

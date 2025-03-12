@@ -6109,6 +6109,9 @@ Trigger processor to spill data into external storage adpatively. grace join is 
     DECLARE(Bool, allow_experimental_ts_to_grid_aggregate_function, false, R"(
 Experimental tsToGrid aggregate function for Prometheus-like timeseries resampling. Cloud only
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_adaptive_short_circuit_lazy_execution, false, R"(
+Enable dynamic evaluation of whether a short-circuit function's argument should be lazily executed.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

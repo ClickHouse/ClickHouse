@@ -670,6 +670,7 @@ public:
 
     explicit FunctionComparison(ComparisonParams params_) : params(std::move(params_)) {}
 
+    bool isNoExcept() const override { return true; }
 private:
     const ComparisonParams params;
 

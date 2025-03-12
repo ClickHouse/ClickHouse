@@ -71,6 +71,7 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
     if (!filter_step)
         return;
 
+    bool enable_adaptive_short_circuit_execution = filter_step->enableAdaptiveShortCircuit();
     const auto & context = source_step_with_filter->getContext();
     const auto & settings = context->getSettingsRef();
 
@@ -191,14 +192,16 @@ void optimizePrewhere(Stack & stack, QueryPlan::Nodes &)
             source_step_with_filter->getOutputHeader(),
             std::move(split_result.second),
             filter_step->getFilterColumnName(),
-            filter_step->removesFilterColumn());
+            filter_step->removesFilterColumn(),
+            enable_adaptive_short_circuit_execution);
     }
     else
     {
         /// Have to keep this expression to change column names to column identifiers
         filter_node->step = std::make_unique<ExpressionStep>(
             source_step_with_filter->getOutputHeader(),
-            std::move(split_result.second));
+            std::move(split_result.second),
+            enable_adaptive_short_circuit_execution);
     }
 }
 

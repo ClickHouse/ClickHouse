@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -565,8 +566,9 @@ static QueryPlan::Node * findReadingStep(QueryPlan::Node & node)
     return nullptr;
 }
 
-std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections)
+std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    bool allow_implicit_projections = optimization_settings.optimize_use_implicit_projections;
     if (node.children.size() != 1)
         return {};
 
@@ -819,11 +821,13 @@ std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, Qu
                 projection_reading_node.step->getOutputHeader(),
                 std::move(best_candidate->dag),
                 result_name,
-                true);
+                true,
+                optimization_settings.enable_adaptive_short_circuit_execution);
         }
         else
             aggregate_projection_node->step
-                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(best_candidate->dag));
+                = std::make_unique<ExpressionStep>(projection_reading_node.step->getOutputHeader(), std::move(best_candidate->dag),
+                    optimization_settings.enable_adaptive_short_circuit_execution);
 
         aggregate_projection_node->children.push_back(&projection_reading_node);
     }

@@ -100,6 +100,7 @@ namespace Setting
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
+    extern const SettingsBool enable_adaptive_short_circuit_lazy_execution;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -384,13 +385,17 @@ public:
 void addExpressionStep(QueryPlan & query_plan,
     ActionsAndProjectInputsFlagPtr & expression_actions,
     const std::string & step_description,
-    UsefulSets & useful_sets)
+    UsefulSets & useful_sets,
+    const PlannerContextPtr & planner_context)
 {
     auto actions = std::move(expression_actions->dag);
     if (expression_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
 
-    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions));
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(),
+        std::move(actions),
+        settings[Setting::enable_adaptive_short_circuit_lazy_execution]);
     appendSetsFromActionsDAG(expression_step->getExpression(), useful_sets);
     expression_step->setStepDescription(step_description);
     query_plan.addStep(std::move(expression_step));
@@ -399,16 +404,19 @@ void addExpressionStep(QueryPlan & query_plan,
 void addFilterStep(QueryPlan & query_plan,
     FilterAnalysisResult & filter_analysis_result,
     const std::string & step_description,
-    UsefulSets & useful_sets)
+    UsefulSets & useful_sets,
+    const PlannerContextPtr & planner_context)
 {
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
 
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     auto where_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
         std::move(actions),
         filter_analysis_result.filter_column_name,
-        filter_analysis_result.remove_filter_column);
+        filter_analysis_result.remove_filter_column,
+        settings[Setting::enable_adaptive_short_circuit_lazy_execution]);
     appendSetsFromActionsDAG(where_step->getExpression(), useful_sets);
     where_step->setStepDescription(step_description);
     query_plan.addStep(std::move(where_step));
@@ -992,7 +1000,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(QueryPlan & query_plan,
     if (expressions_analysis_result.hasLimitBy())
     {
         auto & limit_by_analysis_result = expressions_analysis_result.getLimitBy();
-        addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
+        addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets, planner_context);
         /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
@@ -1209,7 +1217,8 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     auto filter_step = std::make_unique<FilterStep>(query_plan.getCurrentHeader(),
         std::move(filter_info.actions),
         filter_info.column_name,
-        filter_info.do_remove_column);
+        filter_info.do_remove_column,
+        settings[Setting::enable_adaptive_short_circuit_lazy_execution]);
     filter_step->setStepDescription("additional result filter");
     query_plan.addStep(std::move(filter_step));
 }
@@ -1360,6 +1369,8 @@ void Planner::buildPlanForUnionNode()
 
     Block union_common_header = buildCommonHeaderForUnion(query_plans_headers, union_mode);
 
+    const auto & query_context = planner_context->getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
     for (size_t i = 0; i < queries_size; ++i)
     {
         auto & query_node_plan = query_plans[i];
@@ -1370,15 +1381,15 @@ void Planner::buildPlanForUnionNode()
             query_node_plan->getCurrentHeader().getColumnsWithTypeAndName(),
             union_common_header.getColumnsWithTypeAndName(),
             ActionsDAG::MatchColumnsMode::Position);
-        auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(), std::move(actions_dag));
+        auto converting_step = std::make_unique<ExpressionStep>(query_node_plan->getCurrentHeader(),
+            std::move(actions_dag),
+            settings[Setting::enable_adaptive_short_circuit_lazy_execution]);
         converting_step->setStepDescription("Conversion before UNION");
         query_node_plan->addStep(std::move(converting_step));
 
         query_plans_headers[i] = query_node_plan->getCurrentHeader();
     }
 
-    const auto & query_context = planner_context->getQueryContext();
-    const auto & settings = query_context->getSettingsRef();
     auto max_threads = settings[Setting::max_threads];
 
     bool is_distinct = union_mode == SelectUnionMode::UNION_DISTINCT || union_mode == SelectUnionMode::INTERSECT_DISTINCT
@@ -1614,13 +1625,13 @@ void Planner::buildPlanForQueryNode()
     if (query_processing_info.isFirstStage())
     {
         if (expression_analysis_result.hasWhere())
-            addFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE", useful_sets);
+            addFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE", useful_sets, planner_context);
 
         if (expression_analysis_result.hasAggregation())
         {
             auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
             if (aggregation_analysis_result.before_aggregation_actions)
-                addExpressionStep(query_plan, aggregation_analysis_result.before_aggregation_actions, "Before GROUP BY", useful_sets);
+                addExpressionStep(query_plan, aggregation_analysis_result.before_aggregation_actions, "Before GROUP BY", useful_sets, planner_context);
 
             addAggregationStep(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info);
         }
@@ -1639,7 +1650,7 @@ void Planner::buildPlanForQueryNode()
                   */
                 auto & window_analysis_result = expression_analysis_result.getWindow();
                 if (window_analysis_result.before_window_actions)
-                    addExpressionStep(query_plan, window_analysis_result.before_window_actions, "Before WINDOW", useful_sets);
+                    addExpressionStep(query_plan, window_analysis_result.before_window_actions, "Before WINDOW", useful_sets, planner_context);
             }
             else
             {
@@ -1648,7 +1659,7 @@ void Planner::buildPlanForQueryNode()
                   * now, on shards (first_stage).
                   */
                 auto & projection_analysis_result = expression_analysis_result.getProjection();
-                addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);
+                addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets, planner_context);
 
                 if (query_node.isDistinct())
                 {
@@ -1664,7 +1675,7 @@ void Planner::buildPlanForQueryNode()
                 if (expression_analysis_result.hasSort())
                 {
                     auto & sort_analysis_result = expression_analysis_result.getSort();
-                    addExpressionStep(query_plan, sort_analysis_result.before_order_by_actions, "Before ORDER BY", useful_sets);
+                    addExpressionStep(query_plan, sort_analysis_result.before_order_by_actions, "Before ORDER BY", useful_sets, planner_context);
                 }
             }
         }
@@ -1704,7 +1715,7 @@ void Planner::buildPlanForQueryNode()
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
-                addFilterStep(query_plan, expression_analysis_result.getHaving(), "HAVING", useful_sets);
+                addFilterStep(query_plan, expression_analysis_result.getHaving(), "HAVING", useful_sets, planner_context);
         }
 
         if (query_processing_info.isFromAggregationState())
@@ -1719,16 +1730,16 @@ void Planner::buildPlanForQueryNode()
             {
                 auto & window_analysis_result = expression_analysis_result.getWindow();
                 if (expression_analysis_result.hasAggregation())
-                    addExpressionStep(query_plan, window_analysis_result.before_window_actions, "Before window functions", useful_sets);
+                    addExpressionStep(query_plan, window_analysis_result.before_window_actions, "Before window functions", useful_sets, planner_context);
 
                 addWindowSteps(query_plan, planner_context, window_analysis_result);
             }
 
             if (expression_analysis_result.hasQualify())
-                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", useful_sets);
+                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", useful_sets, planner_context);
 
             auto & projection_analysis_result = expression_analysis_result.getProjection();
-            addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);
+            addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets, planner_context);
 
             if (query_node.isDistinct())
             {
@@ -1744,7 +1755,7 @@ void Planner::buildPlanForQueryNode()
             if (expression_analysis_result.hasSort())
             {
                 auto & sort_analysis_result = expression_analysis_result.getSort();
-                addExpressionStep(query_plan, sort_analysis_result.before_order_by_actions, "Before ORDER BY", useful_sets);
+                addExpressionStep(query_plan, sort_analysis_result.before_order_by_actions, "Before ORDER BY", useful_sets, planner_context);
             }
         }
         else
@@ -1797,7 +1808,7 @@ void Planner::buildPlanForQueryNode()
         if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())
         {
             auto & limit_by_analysis_result = expression_analysis_result.getLimitBy();
-            addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets);
+            addExpressionStep(query_plan, limit_by_analysis_result.before_limit_by_actions, "Before LIMIT BY", useful_sets, planner_context);
             addLimitByStep(query_plan, limit_by_analysis_result, query_node, false /*do_not_skip_offset*/);
         }
 
@@ -1828,7 +1839,7 @@ void Planner::buildPlanForQueryNode()
         if (!query_processing_info.isToAggregationState())
         {
             auto & projection_analysis_result = expression_analysis_result.getProjection();
-            addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", useful_sets);
+            addExpressionStep(query_plan, projection_analysis_result.project_names_actions, "Project names", useful_sets, planner_context);
         }
 
         // For additional_result_filter setting
