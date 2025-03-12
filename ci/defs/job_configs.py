@@ -476,6 +476,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/queries/0_stateless/",
+                "./tests/ci/stress.py",
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",

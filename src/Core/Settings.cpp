@@ -1,3 +1,4 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/BaseSettings.h>
@@ -435,8 +436,10 @@ Maximum number of files that could be returned in batch by ListObject request
 Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
 
 Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
+- 0 — `INSERT` query creates a new file or fail if file exists and s3_create_new_file_on_insert is not set.
 - 1 — `INSERT` query replaces existing content of the file with the new data.
+
+See more details [here](/integrations/s3#inserting-data).
 )", 0) \
     DECLARE(Bool, azure_truncate_on_insert, false, R"(
 Enables or disables truncate before insert in azure engine tables.
@@ -447,8 +450,10 @@ Enables or disables creating a new file on each insert in s3 engine tables. If e
 initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query creates a new file.
+- 0 — `INSERT` query creates a new file or fail if file exists and s3_truncate_on_insert is not set.
+- 1 — `INSERT` query creates a new file on each insert using suffix (from the second one) if s3_truncate_on_insert is not set.
+
+See more details [here](/integrations/s3#inserting-data).
 )", 0) \
     DECLARE(Bool, s3_skip_empty_files, true, R"(
 Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
@@ -5321,7 +5326,7 @@ Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket 
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only has an effect in ClickHouse Cloud. Discard connection if some data is unread.
 )", 0) \
-    DECLARE(Bool, distributed_cache_min_bytes_for_seek, 0, R"(
+    DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
