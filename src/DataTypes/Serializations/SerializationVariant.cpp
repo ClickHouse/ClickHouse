@@ -647,6 +647,8 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
         size_t limit_in_granule = std::min(limit, state.remaining_rows_in_granule);
         if (state.granule_format == CompactDiscriminatorsGranuleFormat::COMPACT)
         {
+            auto & data = discriminators.getData();
+            data.resize_fill(data.size() + limit_in_granule, state.compact_discr);
             auto remained_limit_in_granule = limit_in_granule;
 
             if (rows_offset)
@@ -659,14 +661,8 @@ std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deseri
                 rows_offset -= skipped_rows;
             }
 
-            if (remained_limit_in_granule)
-            {
-                if (state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR)
-                    variant_limits[state.compact_discr] += remained_limit_in_granule;
-
-                auto & data = discriminators.getData();
-                data.resize_fill(data.size() + remained_limit_in_granule, state.compact_discr);
-            }
+            if (remained_limit_in_granule && state.compact_discr != ColumnVariant::NULL_DISCRIMINATOR)
+                variant_limits[state.compact_discr] += remained_limit_in_granule;
         }
         else
         {
