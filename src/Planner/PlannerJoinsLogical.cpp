@@ -560,8 +560,7 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         Names(outer_scope_columns.begin(), outer_scope_columns.end()),
         settings[Setting::join_use_nulls],
         JoinSettings(settings),
-        SortingStep::Settings(settings),
-        planner_context->getQueryContext());
+        SortingStep::Settings(settings));
 }
 
 PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expression, const PlannerContextPtr & planner_context)

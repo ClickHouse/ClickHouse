@@ -49,8 +49,7 @@ public:
         Names required_output_columns_,
         bool use_nulls_,
         JoinSettings join_settings_,
-        SortingStep::Settings sorting_settings_,
-        ContextPtr query_context_);
+        SortingStep::Settings sorting_settings_);
 
     String getName() const override { return "JoinLogical"; }
 
@@ -85,7 +84,6 @@ public:
 
     JoinExpressionActions & getExpressionActions() { return expression_actions; }
 
-    ContextPtr getContext() const { return query_context; }
     const JoinSettings & getSettings() const { return join_settings; }
     bool useNulls() const { return use_nulls; }
 
@@ -108,8 +106,6 @@ protected:
 
     PreparedJoinStorage prepared_join_storage;
     IQueryTreeNode::HashState hash_table_key_hash;
-
-    ContextPtr query_context;
 
     /// Add some information from convertToPhysical to description in explain output.
     std::vector<std::pair<String, String>> runtime_info_description;
