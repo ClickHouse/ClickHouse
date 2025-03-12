@@ -22,6 +22,7 @@ CachedInMemoryReadBufferFromFile::CachedInMemoryReadBufferFromFile(
     , inner_read_until_position(read_until_position)
 {
     cache_key.offset = 0;
+    file_size = in->tryGetFileSize();
 }
 
 String CachedInMemoryReadBufferFromFile::getFileName() const
