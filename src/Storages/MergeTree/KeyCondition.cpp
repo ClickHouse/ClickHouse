@@ -37,7 +37,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <cassert>
@@ -587,7 +586,6 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
             return *it->second;
     }
 
-    LOG_DEBUG(&Poco::Logger::get("KEYCONDITION"), "NODE {}", node.result_name);
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
 
@@ -595,16 +593,12 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
     {
         case (ActionsDAG::ActionType::INPUT):
         {
-            LOG_DEBUG(&Poco::Logger::get("KEYCONDITION"), "INPUT {}", node.result_name);
             /// Note: inputs order is not important here. Will match columns by names.
             res = &inverted_dag.addInput({node.column, node.result_type, node.result_name});
             break;
         }
         case (ActionsDAG::ActionType::COLUMN):
         {
-            LOG_DEBUG(&Poco::Logger::get("KEYCONDITION"), "HAS COLUMN RAW {}", node.column != nullptr);
-            LOG_DEBUG(&Poco::Logger::get("KEYCONDITION"), "HAS COLUMN {}", node.column.get() != nullptr);
-            LOG_DEBUG(&Poco::Logger::get("KEYCONDITION"), "typeid {}", typeid_cast<const ColumnConst *>(node.column.get()) != nullptr);
             String name;
             if (const auto * column_const = typeid_cast<const ColumnConst *>(node.column.get());
                 column_const && column_const->getDataType() != TypeIndex::Function)
@@ -623,9 +617,6 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         }
         case (ActionsDAG::ActionType::ALIAS):
         {
-            LOG_DEBUG(&Poco::Logger::get("KEYCONDITION"), "ALIAS {} CHILDREN SIZE {}", node.result_name, node.children.size());
-
-            LOG_DEBUG(&Poco::Logger::get("KEYCONDITION"), "CHILDREN {}", node.children.front()->result_name);
             /// Ignore aliases
             res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, need_inversion);
             handled_inversion = true;
@@ -640,7 +631,6 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
         case (ActionsDAG::ActionType::FUNCTION):
         {
             auto name = node.function_base->getName();
-            LOG_DEBUG(&Poco::Logger::get("KEYCONDITION"), "FUNNCTION {}", name);
             if (name == "not")
             {
                 res = &cloneASTWithInversionPushDown(*node.children.front(), inverted_dag, to_inverted, context, !need_inversion);
@@ -776,11 +766,7 @@ ActionsDAG KeyCondition::cloneASTWithInversionPushDown(ActionsDAG::NodeRawConstP
     std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> to_inverted;
 
     for (auto & node : nodes)
-    {
-        LOG_DEBUG(&Poco::Logger::get("KeyCondition"), "Looking at node {}", node->result_name);
         node = &DB::cloneASTWithInversionPushDown(*node, res, to_inverted, context, false);
-        LOG_DEBUG(&Poco::Logger::get("KeyCondition"), "override node {}", node->result_name);
-    }
 
     if (nodes.size() > 1)
     {

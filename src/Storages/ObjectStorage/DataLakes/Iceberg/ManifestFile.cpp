@@ -156,7 +156,7 @@ ManifestFileContentImpl::ManifestFileContentImpl(
     std::vector<uint8_t> partition_spec_json_bytes = avro_metadata["partition-spec"];
     String partition_spec_json_string
         = String(reinterpret_cast<char *>(partition_spec_json_bytes.data()), partition_spec_json_bytes.size());
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "Partition json spec string {}", partition_spec_json_string);
+
     Poco::Dynamic::Var partition_spec_json = parser.parse(partition_spec_json_string);
     const Poco::JSON::Array::Ptr & partition_specification = partition_spec_json.extract<Poco::JSON::Array::Ptr>();
 
@@ -180,8 +180,6 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         this->partition_column_ids.push_back(source_id);
     }
 
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "PARTITION KEY AST {}", queryToString(partition_key_ast));
-    LOG_DEBUG(&Poco::Logger::get("DEBUG"), "GOT NAMES AND TYPES {}", partition_columns_description.toString());
     this->partition_key_description = DB::KeyDescription::getKeyFromAST(partition_key_ast, ColumnsDescription(partition_columns_description), context);
 
     std::optional<const ColumnNullable *> sequence_number_column = std::nullopt;
