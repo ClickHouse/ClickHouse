@@ -1,0 +1,17 @@
+<test>
+    <create_query>CREATE TABLE IF NOT EXISTS t_merged_data (a UInt64, b Nullable(UInt64), c String, d Nullable(String)) ENGINE = Memory()</create_query>
+    <fill_query>insert into t_opt_orderby select * from  generateRandom('a UInt64, b Nullable(UInt64), c String, d Nullable(String)') limit 1000000</fill_query>
+
+    <settings>
+        <max_threads>1</max_threads>
+        <compile_sort_description>0</compile_sort_description>
+    </settings>
+
+    <query>select * from t_merged_data order by a</query>
+    <query>select * from t_merged_data order by b</query>
+    <query>select * from t_merged_data order by c</query>
+    <query>select * from t_merged_data order by d</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_merged_data</drop_query>
+
+</test>
