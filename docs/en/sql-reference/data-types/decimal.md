@@ -115,5 +115,5 @@ DB::Exception: Can't compare.
 ```
 
 **See also**
-- [isDecimalOverflow](../../sql-reference/functions/other-functions.md#is-decimal-overflow)
-- [countDigits](../../sql-reference/functions/other-functions.md#count-digits)
+- [isDecimalOverflow](/sql-reference/functions/other-functions#isdecimaloverflow)
+- [countDigits](/sql-reference/functions/other-functions#countdigits)
