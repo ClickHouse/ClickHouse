@@ -2781,24 +2781,24 @@ BoolMask KeyCondition::checkInRange(
             key_ranges.push_back(Range::createWholeUniverseWithoutNull());
     }
 
-    std::cerr << "Checking for: [";
-    for (size_t i = 0; i != used_key_size; ++i)
-        std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_keys[i]);
-    std::cerr << " ... ";
+    // std::cerr << "Checking for: [";
+    // for (size_t i = 0; i != used_key_size; ++i)
+    //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), left_keys[i]);
+    // std::cerr << " ... ";
 
-    for (size_t i = 0; i != used_key_size; ++i)
-        std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_keys[i]);
-    std::cerr << "]" << ": " << initial_mask.can_be_true << " : " << initial_mask.can_be_false << "\n";
+    // for (size_t i = 0; i != used_key_size; ++i)
+    //     std::cerr << (i != 0 ? ", " : "") << applyVisitor(FieldVisitorToString(), right_keys[i]);
+    // std::cerr << "]" << ": " << initial_mask.can_be_true << " : " << initial_mask.can_be_false << "\n";
 
     return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
 
-        std::cerr << "Hyperrectangle: ";
-        for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
-            std::cerr << (i != 0 ? " × " : "") << key_ranges[i].toString();
-        std::cerr << ": " << res.can_be_true << " : " << res.can_be_false << "\n";
+        // std::cerr << "Hyperrectangle: ";
+        // for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
+        //     std::cerr << (i != 0 ? " × " : "") << key_ranges[i].toString();
+        // std::cerr << ": " << res.can_be_true << " : " << res.can_be_false << "\n";
 
         return res;
     });
