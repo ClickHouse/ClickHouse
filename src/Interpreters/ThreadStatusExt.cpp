@@ -166,7 +166,11 @@ ThreadGroupPtr ThreadGroup::createForBackgroundProcess(ContextPtr storage_contex
 
 ThreadGroupPtr ThreadGroup::createForMaterializedView()
 {
-    auto group = std::make_shared<ThreadGroup>(CurrentThread::getGroup());
+    auto current_group = CurrentThread::getGroup();
+    if (!current_group)
+        return nullptr;
+
+    auto group = std::make_shared<ThreadGroup>(current_group);
     group->memory_tracker.setDescription("MaterializeView");
     return group;
 }

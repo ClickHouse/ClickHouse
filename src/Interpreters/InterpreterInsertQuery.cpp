@@ -579,7 +579,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block, getContext());
 
     Chain chain = views_manager->createPreSink();
-    chain.appendChainNotStrict(views_manager->createSink());
+    if (!no_destination)
+        chain.appendChainNotStrict(views_manager->createSink());
     chain.appendChainNotStrict(views_manager->createPostSink());
     chain.addViewsManager(views_manager);
 

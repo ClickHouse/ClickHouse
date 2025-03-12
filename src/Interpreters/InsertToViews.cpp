@@ -509,6 +509,12 @@ void ViewsManager::resolveRoot()
 
         thread_groups[init_table_id] = CurrentThread::getGroup();
 
+        if (init_context->hasQueryContext())
+        {
+            init_context->getQueryContext()->addViewAccessInfo(inner_table_id.getFullTableName());
+            init_context->getQueryContext()->addQueryAccessInfo(inner_table_id, /*column_names=*/ {});
+        }
+
         root = {init_table_id, inner_table_id};
     }
     else if (dynamic_cast<StorageLiveView *>(init_storage.get()))
@@ -532,6 +538,12 @@ void ViewsManager::resolveRoot()
 
         view_types[init_table_id] = QueryViewsLogElement::ViewType::LIVE;
 
+        if (init_context->hasQueryContext())
+        {
+            init_context->getQueryContext()->addViewAccessInfo(init_table_id.getFullTableName());
+            init_context->getQueryContext()->addQueryAccessInfo(init_table_id, /*column_names=*/ {});
+        }
+
         root = {init_table_id, init_table_id};
     }
     else if (dynamic_cast<StorageWindowView *>(init_storage.get()))
@@ -553,8 +565,13 @@ void ViewsManager::resolveRoot()
 
         thread_groups[init_table_id] = CurrentThread::getGroup();
 
-
         view_types[init_table_id] = QueryViewsLogElement::ViewType::WINDOW;
+
+        if (init_context->hasQueryContext())
+        {
+            init_context->getQueryContext()->addViewAccessInfo(init_table_id.getFullTableName());
+            init_context->getQueryContext()->addQueryAccessInfo(init_table_id, /*column_names=*/ {});
+        }
 
         root = {init_table_id, init_table_id};
     }
@@ -578,6 +595,11 @@ void ViewsManager::resolveRoot()
         thread_groups[{}] = CurrentThread::getGroup();
 
         view_types[{}] = QueryViewsLogElement::ViewType::DEFAULT;
+
+        if (init_context->hasQueryContext())
+        {
+            init_context->getQueryContext()->addQueryAccessInfo(init_table_id, /*column_names=*/ {});
+        }
 
         root = {{}, init_table_id};
     }
@@ -754,8 +776,11 @@ void ViewsManager::buildRelaitions()
 
             thread_groups[child_id] = ThreadGroup::createForMaterializedView();
 
-            init_context->getQueryContext()->addViewAccessInfo(child_id.getFullTableName());
-            init_context->getQueryContext()->addQueryAccessInfo(inner_tables.at(child_id), /*column_names=*/ {});
+            if (init_context->hasQueryContext())
+            {
+                init_context->getQueryContext()->addViewAccessInfo(child_id.getFullTableName());
+                init_context->getQueryContext()->addQueryAccessInfo(inner_tables.at(child_id), /*column_names=*/ {});
+            }
         }
     }
 }
@@ -1139,6 +1164,9 @@ void ViewsManager::logQueryView(StorageID view_id, std::exception_ptr exception)
         return;
 
     auto thread_group = thread_groups.at(view_id);
+    if (!thread_group)
+        return;
+
     UInt64 elapsed_ms = thread_group->getThreadsTotalElapsedMs();
 
     UInt64 min_query_duration = settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds();
