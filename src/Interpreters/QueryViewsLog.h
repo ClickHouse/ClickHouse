@@ -35,48 +35,6 @@ struct QueryViewsLogElement
         WINDOW = 4,
     };
 
-    struct ViewRuntimeStats
-    {
-        String target_name;
-        ViewType type = ViewType::DEFAULT;
-        ThreadStatus * thread_status = nullptr;
-        std::atomic_uint64_t elapsed_ms = 0;
-        std::chrono::time_point<std::chrono::system_clock> event_time = {};
-        ViewStatus event_status = ViewStatus::QUERY_START;
-
-        ViewRuntimeStats(String target_name_, ThreadStatus * thread_status_)
-            : target_name(std::move(target_name_))
-            , thread_status(thread_status_)
-            , event_time(std::chrono::system_clock::now())
-            , event_status(ViewStatus::EXCEPTION_BEFORE_START)
-        {}
-
-        ViewRuntimeStats() = default;
-        ViewRuntimeStats(const ViewRuntimeStats & other)
-            : target_name(other.target_name)
-            , type(other.type)
-            , thread_status(other.thread_status)
-            , elapsed_ms(other.elapsed_ms.load())
-            , event_time(other.event_time)
-            , event_status(other.event_status)
-        {}
-
-        ViewRuntimeStats(ViewRuntimeStats && other) noexcept
-            : target_name(std::move(other.target_name))
-            , type(std::move(other.type))
-            , thread_status(std::move(other.thread_status))
-            , elapsed_ms(other.elapsed_ms.load())
-            , event_time(std::move(other.event_time))
-            , event_status(std::move(other.event_status))
-        {}
-
-        void setStatus(ViewStatus s)
-        {
-            event_status = s;
-            event_time = std::chrono::system_clock::now();
-        }
-    };
-
     time_t event_time{};
     Decimal64 event_time_microseconds{};
     UInt64 view_duration_ms{};

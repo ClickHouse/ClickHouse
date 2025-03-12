@@ -1,11 +1,16 @@
 #pragma once
 
 #include <Interpreters/StorageID.h>
+#include <Interpreters/QueryViewsLog.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/IStorage.h>
-#include <QueryPipeline/Chain.h>
-#include <Common/Logger.h>
 
+#include <QueryPipeline/Chain.h>
+#include "Common/ThreadStatus.h"
+#include <Common/Logger.h>
+#include "Interpreters/ExpressionAnalyzer.h"
+
+#include <exception>
 #include <map>
 #include <memory>
 #include <vector>
@@ -16,6 +21,8 @@ namespace DB
 class ViewsManager : public std::enable_shared_from_this<ViewsManager>
 {
 private:
+    friend class FinalizingViewsTransform;
+
     struct StorageIDPrivate : public StorageID
     {
         using StorageID::StorageID;
@@ -62,7 +69,8 @@ private:
     using MapIdLock = std::map<StorageIDPrivate, TableLockHolder>;
     using MapIdContext = std::map<StorageIDPrivate, ContextPtr>;
     using MapIdBlock = std::map<StorageIDPrivate, Block>;
-
+    using MapIdThreadGroup = std::map<StorageIDPrivate, ThreadGroupPtr>;
+    using MapIdViewType = std::map<StorageIDPrivate, QueryViewsLogElement::ViewType>;
 
 public:
     using Ptr = std::shared_ptr<ViewsManager>;
@@ -82,6 +90,8 @@ public:
     Chain createSink();
     Chain createPostSink();
     Chain createRetry(Dependencies path);
+
+    void logQueryView(StorageID view_id, std::exception_ptr exception);
 
 protected:
     ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, ContextPtr context);
@@ -104,6 +114,7 @@ private:
     MapIdId source_tables;
 
     MapIdStorage storages;
+    MapIdViewType view_types;
     MapIdLock storage_locks;
     MapIdMetadata metadata_snapshots;
     MapIdAST select_queries;
@@ -112,6 +123,7 @@ private:
     MapIdBlock input_headers;
     MapIdBlock output_headers;
     MapIdBlock select_headers;
+    MapIdThreadGroup thread_groups;
 
     bool deduplicate_blocks_in_dependent_materialized_views = false;
     bool insert_null_as_default = false;

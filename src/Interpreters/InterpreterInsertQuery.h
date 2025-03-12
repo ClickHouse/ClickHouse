@@ -5,19 +5,13 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
-#include <Common/ThreadStatus.h>
-
 #include <Processors/Sinks/SinkToStorage.h>
 
 namespace DB
 {
 
 class Chain;
-class ThreadStatus;
 class ReadBuffer;
-
-struct ThreadStatusesHolder;
-using ThreadStatusesHolderPtr = std::shared_ptr<ThreadStatusesHolder>;
 
 /** Interprets the INSERT query.
   */
@@ -44,15 +38,6 @@ public:
     /// Return explicitly specified column names to insert.
     /// It not explicit names were specified, return nullopt.
     std::optional<Names> getInsertColumnNames() const;
-
-    Chain buildChain(
-        const StoragePtr & table,
-        size_t view_level,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Names & columns,
-        ThreadStatusesHolderPtr thread_status_holder = {},
-        std::atomic_uint64_t * elapsed_counter_ms = nullptr,
-        bool check_access = false);
 
     static void extendQueryLogElemImpl(QueryLogElement & elem, ContextPtr context_);
 
@@ -83,14 +68,6 @@ private:
     const bool async_insert;
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
-
-    std::pair<std::vector<Chain>, std::vector<Chain>> buildPreAndSinkChains(
-        size_t presink_streams,
-        size_t sink_streams,
-        StoragePtr table,
-        size_t view_level,
-        const StorageMetadataPtr & metadata_snapshot,
-        const Block & query_sample_block);
 
     QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
