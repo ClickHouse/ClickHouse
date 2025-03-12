@@ -5706,6 +5706,12 @@ When the ratio of rows containing NULL values to the total number of rows exceed
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
+    DECLARE(Int64, iceberg_timestamp_ms, 0, R"(
+Query Iceberg table using the snapshot that was current at a specific timestamp.
+)", 0) \
+    DECLARE(Int64, iceberg_snapshot_id, 0, R"(
+Query Iceberg table using the specific snapshot id.
+)", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
