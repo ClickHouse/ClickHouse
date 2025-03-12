@@ -42,8 +42,18 @@ private:
         {
             if (hasUUID() && other.hasUUID())
                 return uuid < other.uuid;
-
             return std::tuple(database_name, table_name) < std::tuple(other.database_name, other.table_name);
+        }
+
+        bool operator == (const StorageID & other) const
+        {
+            if (empty() && other.empty())
+                return true;
+            if (empty())
+                return false;
+            if (other.empty())
+                return false;
+            return StorageID::operator==(other);
         }
     };
 
@@ -98,7 +108,6 @@ protected:
 
 private:
     void buildRelaitions();
-    void resolveRoot();
     Chain createSelect(StorageIDPrivate view_id);
     Chain createPreSink(StorageIDPrivate view_id);
     Chain createSink(StorageIDPrivate view_id);
