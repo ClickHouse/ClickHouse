@@ -4,9 +4,9 @@
 
 #if USE_AVRO
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IteratorWrapper.h>
 #include <Storages/KeyDescription.h>
+#include <Core/Field.h>
 
 #include <cstdint>
 #include <variant>
