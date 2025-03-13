@@ -1,10 +1,12 @@
 ---
-slug: /operations/caches
+description: 'When performing queries, ClickHouse uses different caches.'
+sidebar_label: 'Caches'
 sidebar_position: 65
-sidebar_label: Caches
-title: "Cache Types"
-description: When performing queries, ClickHouse uses different caches.
+slug: /operations/caches
+title: 'Cache Types'
 ---
+
+# Cache Types
 
 When performing queries, ClickHouse uses different caches.
 

@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/window-functions/
-sidebar_label: Window Functions
+description: 'Overview page for window functions'
+sidebar_label: 'Window Functions'
 sidebar_position: 1
+slug: /sql-reference/window-functions/
+title: 'Window Functions'
 ---
 
 # Window Functions 

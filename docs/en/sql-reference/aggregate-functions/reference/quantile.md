@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantile
+description: 'Computes an approximate quantile of a numeric data sequence.'
 sidebar_position: 170
-title: "quantile"
-description: "Computes an approximate quantile of a numeric data sequence."
+slug: /sql-reference/aggregate-functions/reference/quantile
+title: 'quantile'
 ---
 
 # quantile
