@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/group-by
 sidebar_label: GROUP BY
 description: 'Documentation for GROUP BY Clause'
+title: 'GROUP BY Clause'
 ---
 
 # GROUP BY Clause

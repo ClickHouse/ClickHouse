@@ -3,6 +3,7 @@ slug: /operations/optimizing-performance/sampling-query-profiler
 description: 'Documentation for the sampling query profiler tool in ClickHouse'
 sidebar_position: 54
 sidebar_label: 'Query Profiling'
+title: 'Sampling Query Profiler'
 ---
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 

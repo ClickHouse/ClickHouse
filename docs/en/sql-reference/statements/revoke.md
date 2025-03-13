@@ -3,6 +3,7 @@ slug: /sql-reference/statements/revoke
 sidebar_position: 39
 sidebar_label: 'REVOKE'
 description: 'Documentation for REVOKE Statement'
+title: 'REVOKE Statement'
 ---
 
 # REVOKE Statement

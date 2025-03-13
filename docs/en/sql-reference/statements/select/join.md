@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/join
 sidebar_label: Joining Tables
 description: 'Documentation for JOIN Clause'
+title: 'JOIN Clause'
 ---
 
 # JOIN Clause

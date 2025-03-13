@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/with
 sidebar_label: WITH
 description: 'Documentation for WITH Clause'
+title: 'WITH Clause'
 ---
 
 # WITH Clause

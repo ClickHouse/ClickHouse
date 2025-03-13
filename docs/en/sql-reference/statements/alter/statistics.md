@@ -3,6 +3,7 @@ slug: /sql-reference/statements/alter/statistics
 sidebar_position: 45
 sidebar_label: STATISTICS
 description: 'Documentation for Manipulating Column Statistics'
+title: 'Manipulating Column Statistics'
 ---
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

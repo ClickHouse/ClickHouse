@@ -5,8 +5,9 @@ keywords: ['Avro']
 input_format: true
 output_format: true
 alias: []
-description: 'Documentation for the format'
+description: 'Documentation for the Avro format'
 ---
+
 import DataTypesMatching from './_snippets/data-types-matching.md'
 
 | Input | Output | Alias |

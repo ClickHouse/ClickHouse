@@ -3,6 +3,7 @@ slug: /operations/utilities/clickhouse-disks
 sidebar_position: 59
 sidebar_label: 'clickhouse-disks'
 description: 'Documentation for Clickhouse-disks'
+title: 'Clickhouse-disks'
 ---
 
 # Clickhouse-disks

@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/where
 sidebar_label: WHERE
 description: 'Documentation for WHERE Clause'
+title: 'WHERE Clause'
 ---
 
 # WHERE Clause

@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/all
 sidebar_label: ALL
 description: 'Documentation for ALL Clause'
+title: 'ALL Clause'
 ---
 
 # ALL Clause

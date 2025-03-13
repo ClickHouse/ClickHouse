@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/from
 sidebar_label: FROM
 description: 'Documentation for FROM Clause'
+title: 'FROM Clause'
 ---
 
 # FROM Clause

@@ -3,6 +3,7 @@ slug: /sql-reference/functions/nlp-functions
 sidebar_position: 130
 sidebar_label: 'NLP'
 description: 'Documentation for Natural Language Processing (NLP) Functions'
+title: 'Natural Language Processing (NLP) Functions'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

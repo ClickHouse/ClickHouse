@@ -3,6 +3,7 @@ slug: /engines/table-engines/integrations/
 sidebar_position: 40
 sidebar_label:  Integrations
 description: 'Documentation for Table Engines for Integrations'
+title: 'Table Engines for Integrations'
 ---
 
 # Table Engines for Integrations

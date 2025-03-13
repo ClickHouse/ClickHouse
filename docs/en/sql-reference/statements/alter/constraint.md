@@ -3,6 +3,7 @@ slug: /sql-reference/statements/alter/constraint
 sidebar_position: 43
 sidebar_label: CONSTRAINT
 description: 'Documentation for Manipulating Constraints'
+title: 'Manipulating Constraints'
 ---
 
 # Manipulating Constraints

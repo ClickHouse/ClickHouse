@@ -3,6 +3,7 @@ slug: /sql-reference/functions/logical-functions
 sidebar_position: 110
 sidebar_label: 'Logical'
 description: 'Documentation for Logical Functions'
+title: 'Logical Functions'
 ---
 
 # Logical Functions

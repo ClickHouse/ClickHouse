@@ -3,6 +3,7 @@ slug: /sql-reference/statements/move
 sidebar_position: 54
 sidebar_label: 'MOVE'
 description: 'Documentation for MOVE access entity statement'
+title: 'MOVE access entity statement'
 ---
 
 # MOVE access entity statement

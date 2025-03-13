@@ -3,6 +3,7 @@ slug: /sql-reference/data-types/boolean
 description: 'Documentation for the Boolean data type in ClickHouse'
 sidebar_position: 33
 sidebar_label: 'Boolean'
+title: 'Bool'
 ---
 
 # Bool

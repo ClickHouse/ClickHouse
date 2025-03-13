@@ -3,6 +3,7 @@ slug: /sql-reference/functions/string-replace-functions
 sidebar_position: 150
 sidebar_label: 'Replacing in Strings'
 description: 'Documentation for Functions for Replacing in Strings'
+title: 'Functions for Replacing in Strings'
 ---
 
 # Functions for Replacing in Strings

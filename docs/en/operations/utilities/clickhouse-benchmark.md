@@ -3,6 +3,7 @@ slug: /operations/utilities/clickhouse-benchmark
 sidebar_position: 61
 sidebar_label: 'clickhouse-benchmark'
 description: 'Documentation for clickhouse-benchmark '
+title: 'clickhouse-benchmark'
 ---
 
 # clickhouse-benchmark 

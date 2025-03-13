@@ -4,6 +4,7 @@ sidebar_position: 57
 sidebar_label: 'Global Server Settings'
 description: This section contains descriptions of server settings that cannot be changed at the session or query level.
 keywords: [global server settings]
+title: 'Global Server Settings'
 ---
 
 import Tabs from '@theme/Tabs';

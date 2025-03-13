@@ -5,8 +5,9 @@ keywords: ['BSONEachRow']
 input_format: true
 output_format: true
 alias: []
-description: 'Documentation for the format'
+description: 'Documentation for the BSONEachRow format'
 ---
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |

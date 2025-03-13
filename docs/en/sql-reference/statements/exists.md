@@ -3,6 +3,7 @@ slug: /sql-reference/statements/exists
 sidebar_position: 45
 sidebar_label: 'EXISTS'
 description: 'Documentation for EXISTS Statement'
+title: 'EXISTS Statement'
 ---
 
 # EXISTS Statement

@@ -3,6 +3,7 @@ slug: /sql-reference/statements/alter/
 sidebar_position: 35
 sidebar_label: ALTER
 description: 'Documentation for ALTER'
+title: 'ALTER'
 ---
 
 # ALTER

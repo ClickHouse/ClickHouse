@@ -5,8 +5,9 @@ keywords: ['AvroConfluent']
 input_format: true
 output_format: false
 alias: []
-description: 'Documentation for the format'
+description: 'Documentation for the AvroConfluent format'
 ---
+
 import DataTypesMatching from './_snippets/data-types-matching.md'
 
 | Input | Output | Alias |

@@ -3,6 +3,7 @@ slug: /sql-reference/functions/comparison-functions
 sidebar_position: 35
 sidebar_label: 'Comparison'
 description: 'Documentation for Comparison Functions'
+title: 'Comparison Functions'
 ---
 
 # Comparison Functions

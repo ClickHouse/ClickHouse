@@ -3,6 +3,7 @@ slug: /sql-reference/statements/drop
 sidebar_position: 44
 sidebar_label: 'DROP'
 description: 'Documentation for DROP Statements'
+title: 'DROP Statements'
 ---
 
 # DROP Statements

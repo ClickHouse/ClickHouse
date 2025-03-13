@@ -3,6 +3,7 @@ slug: /sql-reference/statements/alter/view
 sidebar_position: 50
 sidebar_label: VIEW
 description: 'Documentation for ALTER TABLE ... MODIFY QUERY Statement'
+title: 'ALTER TABLE ... MODIFY QUERY Statement'
 ---
 
 # ALTER TABLE ... MODIFY QUERY Statement

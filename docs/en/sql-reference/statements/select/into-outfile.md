@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/into-outfile
 sidebar_label: INTO OUTFILE
 description: 'Documentation for INTO OUTFILE Clause'
+title: 'INTO OUTFILE Clause'
 ---
 
 # INTO OUTFILE Clause

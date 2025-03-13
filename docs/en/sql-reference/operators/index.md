@@ -4,6 +4,7 @@ sidebar_position: 38
 sidebar_label: 'Operators'
 displayed_sidebar: sqlreference
 description: 'Documentation for Operators'
+title: 'Operators'
 ---
 
 # Operators

@@ -5,7 +5,7 @@ keywords: ['CSV']
 input_format: true
 output_format: true
 alias: []
-description: 'Documentation for the format'
+description: 'Documentation for the CSV format'
 ---
 ## Description {#description}
 

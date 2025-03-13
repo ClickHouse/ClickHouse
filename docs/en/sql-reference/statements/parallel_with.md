@@ -3,6 +3,7 @@ slug: /sql-reference/statements/parallel_with
 sidebar_position: 53
 sidebar_label: 'PARALLEL WITH'
 description: 'Documentation for PARALLEL WITH Clause'
+title: 'PARALLEL WITH Clause'
 ---
 
 # PARALLEL WITH Clause

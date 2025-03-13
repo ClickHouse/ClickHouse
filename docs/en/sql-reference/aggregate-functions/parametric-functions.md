@@ -3,6 +3,7 @@ slug: /sql-reference/aggregate-functions/parametric-functions
 sidebar_position: 38
 sidebar_label: 'Parametric'
 description: 'Documentation for Parametric Aggregate Functions'
+title: 'Parametric Aggregate Functions'
 ---
 
 # Parametric Aggregate Functions

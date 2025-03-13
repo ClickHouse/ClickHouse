@@ -3,6 +3,7 @@ slug: /sql-reference/functions/encryption-functions
 sidebar_position: 70
 sidebar_label: 'Encryption'
 description: 'Documentation for Encryption Functions'
+title: 'Encryption Functions'
 ---
 
 # Encryption Functions

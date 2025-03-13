@@ -3,6 +3,7 @@ slug: /sql-reference/statements/create/
 sidebar_position: 34
 sidebar_label: CREATE
 description: 'Documentation for CREATE Queries'
+title: 'CREATE Queries'
 ---
 
 # CREATE Queries

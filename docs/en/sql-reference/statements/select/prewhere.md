@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/prewhere
 sidebar_label: PREWHERE
 description: 'Documentation for PREWHERE Clause'
+title: 'PREWHERE Clause'
 ---
 
 # PREWHERE Clause

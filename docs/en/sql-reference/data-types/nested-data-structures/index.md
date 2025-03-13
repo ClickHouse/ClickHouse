@@ -3,6 +3,7 @@ slug: /sql-reference/data-types/nested-data-structures/nested
 description: 'Overview of nested data structures in ClickHouse'
 sidebar_position: 57
 sidebar_label: Nested(Name1 Type1, Name2 Type2, ...)
+title: 'Nested'
 ---
 
 # Nested

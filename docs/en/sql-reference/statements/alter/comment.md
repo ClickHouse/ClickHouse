@@ -3,6 +3,7 @@ slug: /sql-reference/statements/alter/comment
 sidebar_position: 51
 sidebar_label: COMMENT
 description: 'Documentation for ALTER TABLE ... MODIFY COMMENT'
+title: 'ALTER TABLE ... MODIFY COMMENT'
 ---
 
 # ALTER TABLE ... MODIFY COMMENT

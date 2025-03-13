@@ -3,6 +3,7 @@ slug: /sql-reference/functions/files
 sidebar_position: 75
 sidebar_label: 'Files'
 description: 'Documentation for Files'
+title: 'Files'
 ---
 
 ## file {#file}

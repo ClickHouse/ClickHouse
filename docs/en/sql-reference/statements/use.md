@@ -3,6 +3,7 @@ slug: /sql-reference/statements/use
 sidebar_position: 53
 sidebar_label: 'USE'
 description: 'Documentation for USE Statement'
+title: 'USE Statement'
 ---
 
 # USE Statement

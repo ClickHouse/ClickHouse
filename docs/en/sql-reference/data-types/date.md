@@ -3,6 +3,7 @@ slug: /sql-reference/data-types/date
 description: 'Documentation for the Date data type in ClickHouse'
 sidebar_position: 34
 sidebar_label: 'Date'
+title: 'Date'
 ---
 
 # Date

@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/format
 sidebar_label: FORMAT
 description: 'Documentation for FORMAT Clause'
+title: 'FORMAT Clause'
 ---
 
 # FORMAT Clause

@@ -3,6 +3,7 @@ slug: /interfaces/third-party/client-libraries
 sidebar_position: 26
 sidebar_label: 'Client Libraries'
 description: 'Overview of available third-party client libraries for different programming languages'
+title: 'Client Libraries from Third-party Developers'
 ---
 
 # Client Libraries from Third-party Developers

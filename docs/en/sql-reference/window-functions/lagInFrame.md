@@ -3,6 +3,7 @@ slug: /sql-reference/window-functions/lagInFrame
 sidebar_label: 'lagInFrame'
 description: 'Documentation for the lagInFrame window function'
 sidebar_position: 9
+title: 'lagInFrame'
 ---
 
 # lagInFrame

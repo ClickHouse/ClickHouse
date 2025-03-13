@@ -5,7 +5,7 @@ keywords: ['ArrowStream']
 input_format: true
 output_format: true
 alias: []
-description: 'Documentation for the format'
+description: 'Documentation for the ArrowStream format'
 ---
 | Input | Output | Alias |
 |-------|--------|-------|

@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/qualify
 sidebar_label: QUALIFY
 description: 'Documentation for QUALIFY Clause'
+title: 'QUALIFY Clause'
 ---
 
 # QUALIFY Clause

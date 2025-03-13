@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/intersect
 sidebar_label: INTERSECT
 description: 'Documentation for INTERSECT Clause'
+title: 'INTERSECT Clause'
 ---
 
 # INTERSECT Clause

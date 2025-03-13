@@ -3,6 +3,7 @@ slug: /sql-reference/statements/exchange
 sidebar_position: 49
 sidebar_label: 'EXCHANGE'
 description: 'Documentation for EXCHANGE Statement'
+title: 'EXCHANGE Statement'
 ---
 
 # EXCHANGE Statement
