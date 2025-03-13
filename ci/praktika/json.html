@@ -244,12 +244,32 @@
         }
 
         table {
-            table-layout: auto;
+            table-layout: fixed; /* Ensures columns behave properly */
+            width: auto; /* Table shrinks to fit content */
+            max-width: 100%; /* Prevents overflow */
             border-collapse: collapse;
         }
 
-        th.name-column, td.name-column {
-            white-space: nowrap;
+        th, td {
+            white-space: nowrap; /* Prevent text wrapping */
+        }
+
+        th.name-column, td.name-column,
+        th.status-column, td.status-column,
+        td.dur-column, th.dur-column {
+            width: 1px;
+            max-width: fit-content;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        td.dur-column {
+            text-align: right;
+        }
+
+        th.time-column, td.time-column {
+            width: auto; /* This column takes remaining space */
+            text-align: left;
         }
 
         .name-column a {
@@ -269,23 +289,8 @@
             text-decoration: none; /* No underline */
         }
 
-        th.status-column, td.status-column {
-            white-space: nowrap; /* Prevent text from wrapping */
-            overflow: hidden; /* Hide the overflowed text */
-        }
-
         .status-column span[style*="pointer"] {
             text-decoration: underline;
-        }
-
-        th.time-column, td.time-column {
-            max-width: 120px; /* Set the maximum width for the column */
-            white-space: nowrap; /* Prevent text from wrapping */
-            text-align: right;
-        }
-
-        th.info-column, td.info-column {
-            width: 100%; /* Allow the column to take all the remaining space */
         }
 
         th, td {
@@ -748,9 +753,7 @@
         statusContainer.appendChild(keyValuePair);
     }
 
-    // Define the fixed columns globally, so both functions can use it
-    const columns = ['status', 'name', 'start_time', 'duration'];
-    // const columns = ['status', 'name', 'start_time', 'duration', 'info'];
+    const columns = ['status', 'name', 'duration', 'start_time'];
 
     const columnSymbols = {
         // name: '🗂️',
@@ -774,7 +777,7 @@
                 th.textContent = columnSymbols[column] || column;
                 th.style.cursor = 'pointer'; // Make headers clickable
                 th.setAttribute('data-sort-direction', 'asc'); // Default sort direction
-                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns)); // Add click event to sort the table
+                th.addEventListener('click', () => sortTable(results, column, columnSymbols[column] || column, tbody, nest_level, columns));
                 headerRow.appendChild(th);
             });
             thead.appendChild(headerRow);
@@ -846,14 +849,10 @@
                     td.textContent = value ? formatTimestamp(value, false) : '';
 
                 } else if (column === 'duration') {
-                    td.classList.add('time-column');
+                    td.classList.add('dur-column');
                     td.textContent = value ? formatDuration(value) : '';
 
-                } else if (column === 'info') {
-                    td.textContent = value && value.includes('\n') ? '↵' : (value || '');
-                    td.classList.add('info-column');
                 }
-
                 row.appendChild(td);
             });
 
