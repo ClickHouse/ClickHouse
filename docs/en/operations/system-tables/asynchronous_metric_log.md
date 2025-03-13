@@ -1,7 +1,7 @@
 ---
 description: "System table containing historical values for `system.asynchronous_metrics`, which are saved once per time interval (one second by default)"
 slug: /operations/system-tables/asynchronous_metric_log
-title: "system.asynchronous_metric_log"
+title: "asynchronous_metric_log"
 keywords: ["system table", "asynchronous_metric_log"]
 ---
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

@@ -173,7 +173,9 @@ def main():
     if res and JobStages.BUILD in stages:
         Shell.check("sccache --show-stats")
         if build_type in BUILD_TYPE_TO_DEB_PACKAGE_TYPE:
-            targets = "clickhouse-bundle"
+            targets = (
+                "clickhouse-bundle clickhouse-odbc-bridge clickhouse-library-bridge"
+            )
         elif build_type == BuildTypes.FUZZERS:
             targets = "fuzzers"
         else:

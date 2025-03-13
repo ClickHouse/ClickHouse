@@ -3,13 +3,11 @@
 
 #if USE_PROMETHEUS_PROTOBUFS
 
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
-#include <Common/logger_useful.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <Core/Settings.h>

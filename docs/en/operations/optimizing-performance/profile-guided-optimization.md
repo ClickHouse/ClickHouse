@@ -12,7 +12,7 @@ According to the tests, PGO helps with achieving better performance for ClickHou
 
 More information about PGO in ClickHouse you can read in the corresponding GitHub [issue](https://github.com/ClickHouse/ClickHouse/issues/44567).
 
-## How to build ClickHouse with PGO? {#how-to-build-clickhouse-with-pgo}
+## How to build ClickHouse with PGO?
 
 There are two major kinds of PGO: [Instrumentation](https://clang.llvm.org/docs/UsersManual.html#using-sampling-profilers) and [Sampling](https://clang.llvm.org/docs/UsersManual.html#using-sampling-profilers) (also known as AutoFDO). In this guide is described the Instrumentation PGO with ClickHouse.
 

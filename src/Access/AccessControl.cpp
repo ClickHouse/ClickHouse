@@ -621,9 +621,7 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
         /// It is typical when users install ClickHouse, type some password and instantly forget it.
         if (credentials.getUserName().empty() || credentials.getUserName() == "default")
         {
-            if (credentials.allowInteractiveBasicAuthenticationInTheBrowser())
-                error_code = ErrorCodes::REQUIRED_PASSWORD;
-
+            error_code = ErrorCodes::REQUIRED_PASSWORD;
             message << R"(
 
 If you use ClickHouse Cloud, the password can be reset at https://clickhouse.cloud/

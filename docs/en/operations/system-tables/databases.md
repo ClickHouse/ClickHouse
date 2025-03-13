@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about the databases that are available to the current user."
 slug: /operations/system-tables/databases
-title: "system.databases"
+title: "databases"
 keywords: ["system table", "databases"]
 ---
 

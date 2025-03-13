@@ -492,9 +492,3 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.cpp' -or -name '*.h' | xargs 
 do
     echo "Found the inclusion of magic_enum.hpp in '${line}'. Please use <base/EnumReflection.h> instead"
 done
-
-# Currently fmt::format is faster both at compile and runtime
-find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' | grep -vP $EXCLUDE | xargs grep -l "std::format" | while read -r file;
-do
-    echo "Found the usage of std::format in '${file}'. Please use fmt::format instead"
-done

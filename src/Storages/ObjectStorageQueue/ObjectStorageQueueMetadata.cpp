@@ -156,7 +156,7 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
     LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
-              table_metadata.mode, table_metadata.buckets.load(), table_metadata.processing_threads_num.load(), buckets_num);
+              table_metadata.mode, table_metadata.buckets, table_metadata.processing_threads_num, buckets_num);
 
     update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
@@ -612,7 +612,6 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
         }
 
         if (code == Coordination::Error::ZBADVERSION
-            || code == Coordination::Error::ZNODEEXISTS
             || code == Coordination::Error::ZSESSIONEXPIRED)
             continue;
 
@@ -655,23 +654,12 @@ size_t ObjectStorageQueueMetadata::unregisterActive(const StorageID & storage_id
     const auto registry_path = zookeeper_path / "registry";
     const auto table_path = registry_path / getProcessorID(storage_id);
 
-    auto code = zk_client->tryRemove(table_path);
+    zk_client->tryRemove(table_path);
     const size_t remaining_nodes_num = zk_client->getChildren(registry_path).size();
 
-    const auto self = Info::create(storage_id);
-    if (code == Coordination::Error::ZOK)
-    {
-        LOG_TRACE(log, "Table '{}' has been removed from the active registry (remaining nodes: {})", self.table_id, remaining_nodes_num);
-    }
-    else
-    {
-        LOG_DEBUG(
-            log,
-            "Cannot remove table '{}' from the active registry, reason: {} (remaining nodes: {})",
-            self.table_id,
-            Coordination::errorMessage(code),
-            remaining_nodes_num);
-    }
+    LOG_TRACE(
+        log, "Removed {} from active registry (remaining: {})",
+        storage_id.getFullTableName(), remaining_nodes_num);
 
     return remaining_nodes_num;
 }
@@ -719,15 +707,12 @@ size_t ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage
             }
         }
         if (!found)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: table '{}' is not registered", self.table_id);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unregister: not registered");
 
         code = zk_client->trySet(registry_path, new_registry_str, stat.version);
 
         if (code == Coordination::Error::ZOK)
-        {
-            LOG_TRACE(log, "Table '{}' has been removed from the registry", self.table_id);
             return count;
-        }
 
         if (Coordination::isHardwareError(code)
             || code == Coordination::Error::ZBADVERSION)
@@ -1043,7 +1028,7 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
     };
 
     LOG_TEST(log, "Checking node limits (max size: {}, max age: {}) for {}",
-             table_metadata.tracked_files_limit.load(), table_metadata.tracked_files_ttl_sec.load(), get_nodes_str());
+             table_metadata.tracked_files_limit, table_metadata.tracked_files_ttl_sec, get_nodes_str());
 
     static constexpr size_t keeper_multi_batch_size = 100;
     Coordination::Requests remove_requests;

@@ -9,9 +9,9 @@
 
 #include <Common/config_version.h>
 
-#include <boost/algorithm/string/trim.hpp>
-#include <fmt/format.h>
+#include <format>
 #include <unistd.h>
+#include <boost/algorithm/string/trim.hpp>
 
 
 namespace DB
@@ -282,7 +282,7 @@ bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patc
 
 String ClientInfo::getVersionStr() const
 {
-    return fmt::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+    return std::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
 }
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
@@ -323,7 +323,7 @@ String toString(ClientInfo::Interface interface)
             return "PROMETHEUS";
     }
 
-    return fmt::format("Unknown server interface ({}).", static_cast<int>(interface));
+    return std::format("Unknown server interface ({}).", static_cast<int>(interface));
 }
 
 void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)

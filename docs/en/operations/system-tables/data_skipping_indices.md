@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about existing data skipping indices in all the tables."
 slug: /operations/system-tables/data_skipping_indices
-title: "system.data_skipping_indices"
+title: "data_skipping_indices"
 keywords: ["system table", "data_skipping_indices"]
 ---
 
@@ -38,7 +38,7 @@ expr:        clicks
 granularity: 1
 data_compressed_bytes:   58
 data_uncompressed_bytes: 6
-marks_bytes:             48
+marks:                   48
 
 Row 2:
 ──────
@@ -51,5 +51,5 @@ expr:        assumeNotNull(contacts_null)
 granularity: 1
 data_compressed_bytes:   58
 data_uncompressed_bytes: 6
-marks_bytes:             48
+marks:                   48
 ```

@@ -3,17 +3,14 @@ slug: /sql-reference/table-functions/sqlite
 sidebar_position: 185
 sidebar_label: sqlite
 title: sqlite
-description: "Allows to perform queries on data stored in a SQLite database."
 ---
 
-# sqlite Table Function
-
-Allows to perform queries on data stored in a [SQLite](../../engines/database-engines/sqlite.md) database.
+Allows to perform queries on a data stored in an [SQLite](../../engines/database-engines/sqlite.md) database.
 
 **Syntax**
 
-```sql
-sqlite('db_path', 'table_name')
+``` sql
+    sqlite('db_path', 'table_name')
 ```
 
 **Arguments**
