@@ -1,6 +1,7 @@
 #include "StorageObjectStorageStableTaskDistributor.h"
 #include <Common/SipHash.h>
 #include <consistent_hashing.h>
+#include <optional>
 
 namespace DB
 {
@@ -13,7 +14,7 @@ StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistrib
 {
 }
 
-String StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica, size_t number_of_replicas)
+std::optional<String> StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica, size_t number_of_replicas)
 {
     LOG_TRACE(
         log,
@@ -22,13 +23,11 @@ String StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_c
     );
     
     // 1. Check pre-queued files first
-    String file = getPreQueuedFile(number_of_current_replica);
-    if (!file.empty())
+    if (auto file = getPreQueuedFile(number_of_current_replica))
         return file;
     
     // 2. Try to find a matching file from the iterator
-    file = getMatchingFileFromIterator(number_of_current_replica, number_of_replicas);
-    if (!file.empty())
+    if (auto file = getMatchingFileFromIterator(number_of_current_replica, number_of_replicas))
         return file;
 
     // 3. Process unprocessed files if iterator is exhausted
@@ -43,7 +42,7 @@ size_t StorageObjectStorageStableTaskDistributor::getReplicaForFile(const String
     return ConsistentHashing(sipHash64(file_path), number_of_replicas);
 }
 
-String StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t number_of_current_replica)
+std::optional<String> StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t number_of_current_replica)
 {
     std::lock_guard lock(mutex);
     
@@ -69,10 +68,10 @@ String StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t number
         return next_file;
     }
     
-    return "";
+    return std::nullopt;
 }
 
-String StorageObjectStorageStableTaskDistributor::getMatchingFileFromIterator(size_t number_of_current_replica, size_t number_of_replicas)
+std::optional<String> StorageObjectStorageStableTaskDistributor::getMatchingFileFromIterator(size_t number_of_current_replica, size_t number_of_replicas)
 {
     while (!iterator_exhausted)
     {
@@ -112,10 +111,10 @@ String StorageObjectStorageStableTaskDistributor::getMatchingFileFromIterator(si
         }
     }
     
-    return "";
+    return std::nullopt;
 }
 
-String StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica)
+std::optional<String> StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica)
 {
     std::lock_guard lock(mutex);
     
@@ -135,7 +134,7 @@ String StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t n
         return next_file;
     }
     
-    return "";
+    return std::nullopt;
 }
 
 }

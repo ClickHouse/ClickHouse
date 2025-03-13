@@ -18,13 +18,13 @@ class StorageObjectStorageStableTaskDistributor
 public:
     StorageObjectStorageStableTaskDistributor(std::shared_ptr<IObjectIterator> iterator_);
 
-    String getNextTask(size_t number_of_current_replica, size_t number_of_replicas);
+    std::optional<String> getNextTask(size_t number_of_current_replica, size_t number_of_replicas);
 
 private:
     static size_t getReplicaForFile(const String & file_path, size_t number_of_replicas);
-    String getPreQueuedFile(size_t number_of_current_replica);
-    String getMatchingFileFromIterator(size_t number_of_current_replica, size_t number_of_replicas);
-    String getAnyUnprocessedFile(size_t number_of_current_replica);
+    std::optional<String> getPreQueuedFile(size_t number_of_current_replica);
+    std::optional<String> getMatchingFileFromIterator(size_t number_of_current_replica, size_t number_of_replicas);
+    std::optional<String> getAnyUnprocessedFile(size_t number_of_current_replica);
 
     std::shared_ptr<IObjectIterator> iterator;
 
