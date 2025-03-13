@@ -132,8 +132,12 @@ protected:
     void processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query);
     void processInsertQuery(const String & query_to_execute, ASTPtr parsed_query);
 
-    void processParsedSingleQuery(const String & full_query, const String & query_to_execute,
-        ASTPtr parsed_query, std::optional<bool> echo_query_ = {}, bool report_error = false);
+    void processParsedSingleQuery(
+        const String & full_query,
+        ASTPtr parsed_query,
+        bool & is_async_insert_with_inlined_data,
+        std::optional<bool> echo_query_ = {},
+        bool report_error = false);
 
     static void adjustQueryEnd(const char *& this_query_end, const char * all_queries_end, uint32_t max_parser_depth, uint32_t max_parser_backtracks);
     virtual void setupSignalHandler() = 0;
@@ -143,7 +147,7 @@ protected:
     bool executeMultiQuery(const String & all_queries_text);
     MultiQueryProcessingStage analyzeMultiQueryText(
         const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
-        String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
+        ASTPtr & parsed_query,
         std::unique_ptr<Exception> & current_exception);
 
     void clearTerminal();
