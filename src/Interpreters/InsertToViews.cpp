@@ -592,7 +592,7 @@ void ViewsManager::buildRelaitions()
 
                 input_headers[current] = init_header;
                 select_headers[current] = init_header;
-                output_headers[current] = metadata->getSampleBlockInsertable();
+                output_headers[current] = metadata->getSampleBlock();
 
                 thread_groups[current] = CurrentThread::getGroup();
 
@@ -728,7 +728,7 @@ void ViewsManager::buildRelaitions()
 
                 input_headers[{}] = init_header;
                 select_headers[{}] = init_header;
-                output_headers[{}] = metadata->getSampleBlockInsertable();
+                output_headers[{}] = metadata->getSampleBlock();
 
                 thread_groups[{}] = CurrentThread::getGroup();
 
@@ -746,7 +746,7 @@ void ViewsManager::buildRelaitions()
             }
 
             const auto & view_id = path.parent();
-            output_headers[view_id] = metadata->getSampleBlockInsertable();
+            output_headers[view_id] = metadata->getSampleBlock();
 
             // TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
             auto view_storage = storages.at(view_id);
@@ -931,7 +931,7 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
     auto insert_context = insert_contexts.at(view_id);
 
     //auto header = InterpreterInsertQuery::getSampleBlock() ;//(const ASTInsertQuery &query, const StoragePtr &table, const StorageMetadataPtr &metadata_snapshot, ContextPtr context_)
-    auto insertion_storage_header = metadata->getSampleBlockInsertable();
+    auto insertion_storage_header = metadata->getSampleBlock();
 
     auto adding_missing_defaults_dag = addMissingDefaults(
         select_header,

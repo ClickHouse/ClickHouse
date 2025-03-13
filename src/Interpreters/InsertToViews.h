@@ -94,7 +94,7 @@ public:
     }
     static Ptr create(StorageID table_id, ASTPtr query, Block insert_header, ContextPtr context);
 
-    Chain createPreSink() const ;
+    Chain createPreSink() const;
     Chain createSink() const;
     Chain createPostSink() const;
     Chain createRetry(Dependencies path);
