@@ -1,5 +1,6 @@
 #include "StorageObjectStorageStableTaskDistributor.h"
 #include <Common/SipHash.h>
+#include <consistent_hashing.h>
 
 namespace DB
 {
@@ -39,8 +40,7 @@ size_t StorageObjectStorageStableTaskDistributor::getReplicaForFile(const String
     if (number_of_replicas == 0)
         return 0;
         
-    UInt64 hash_value = sipHash64(file_path);
-    return hash_value % number_of_replicas;
+    return ConsistentHashing(sipHash64(file_path), number_of_replicas);
 }
 
 String StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t number_of_current_replica)
