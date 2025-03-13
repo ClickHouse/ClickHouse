@@ -50,7 +50,7 @@ public:
     void dumpTableContent(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq1);
     void generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2);
     void generateClearQuery(const SQLTable & t, SQLQuery & sq3);
-    void generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
+    void generateImportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4);
 
     /// Run query with different settings oracle
     void generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1);
