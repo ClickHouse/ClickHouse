@@ -30,6 +30,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
 FROM system.query_log
 WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
   AND query LIKE '%SELECT * FROM (SELECT avg(number) as avg FROM numbers(1, 100) SETTINGS enable_writes_to_query_cache = true)
 SETTINGS use_query_cache = true, query_cache_for_subqueries = true, enable_writes_to_query_cache = false;%'
 ORDER BY event_time_microseconds DESC
@@ -43,6 +44,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryCacheHits']
 FROM system.query_log
 WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
   AND query LIKE '%SELECT avg(number) as avg FROM numbers(1, 100) SETTINGS use_query_cache = true, query_cache_for_subqueries = true;%'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;

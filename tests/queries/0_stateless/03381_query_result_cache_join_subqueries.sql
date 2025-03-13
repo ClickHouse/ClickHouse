@@ -17,6 +17,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryCacheHits']
 FROM system.query_log
 WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
   AND query LIKE '%SELECT t1.number + 1, t2.avg FROM numbers(1, 100) as t1 JOIN (SELECT toUInt64(ceil(avg(number))) as avg FROM numbers(1, 100)) AS t2 ON t1.number = t2.avg SETTINGS use_query_cache = true, query_cache_for_subqueries = true;%'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;

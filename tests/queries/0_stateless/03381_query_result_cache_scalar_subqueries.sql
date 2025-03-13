@@ -17,6 +17,7 @@ SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryCacheHits']
 FROM system.query_log
 WHERE type = 'QueryFinish'
+  AND current_database = currentDatabase()
   AND query LIKE '%SELECT number, (SELECT ceil(avg(number)) FROM numbers(1, 100)) as scalar_value FROM numbers(1, 3) SETTINGS use_query_cache = true, query_cache_for_subqueries = true;%'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
