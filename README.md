@@ -59,6 +59,7 @@ Upcoming meetups
 * [Washington DC Meetup](https://www.meetup.com/clickhouse-dc-user-group/events/306439995) - March 27, 2025
 * [Sydney Meetup](https://www.meetup.com/clickhouse-australia-user-group/events/306549810/) - April 1, 2025
 * [Oslo Meetup](https://www.meetup.com/open-source-real-time-data-warehouse-real-time-analytics/events/306414327/) - April 8, 2025
+* [Kuala Lumper Meetup with CNCF](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/306697678/) - April 16 2025
 * [London Meetup](https://www.meetup.com/clickhouse-london-user-group/events/306047172/) - May 14, 2025
 
 Recent meetups

@@ -5,12 +5,12 @@
 namespace DB
 {
 
-class StorageSystemQueryResultCache final : public IStorageSystemOneBlock
+class StorageSystemQueryConditionCache final : public IStorageSystemOneBlock
 {
 public:
-    explicit StorageSystemQueryResultCache(const StorageID & table_id);
+    explicit StorageSystemQueryConditionCache(const StorageID & table_id_);
 
-    std::string getName() const override { return "SystemQueryResultCache"; }
+    std::string getName() const override { return "SystemQueryConditionCache"; }
 
     static ColumnsDescription getColumnsDescription();
 
