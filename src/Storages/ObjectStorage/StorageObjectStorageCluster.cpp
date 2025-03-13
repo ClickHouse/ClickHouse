@@ -93,7 +93,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), queryToString(query));
+            configuration->getEngineName(), query->formatForErrorMessage());
     }
 
     auto * expression_list = table_function->arguments->as<ASTExpressionList>();
@@ -102,7 +102,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), query->formatWithSecretsOneLine());
+            configuration->getEngineName(), query->formatForErrorMessage());
     }
 
     ASTs & args = expression_list->children;
