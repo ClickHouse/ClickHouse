@@ -1,5 +1,5 @@
 ---
-description:  "The TPC-H benchmark data set and queries."
+description: 'The TPC-H benchmark data set and queries.'
 slug: /getting-started/example-datasets/tpch
 sidebar_label: 'TPC-H'
 title: 'TPC-H (1999)'

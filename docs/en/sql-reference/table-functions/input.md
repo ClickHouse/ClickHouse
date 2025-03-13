@@ -3,8 +3,8 @@ slug: /sql-reference/table-functions/input
 sidebar_position: 95
 sidebar_label: input
 title: 'input'
-description: "Table function that allows effectively converting and inserting data sent to the
-server with a given structure to a table with another structure."
+description: 'Table function that allows effectively converting and inserting data sent to the
+server with a given structure to a table with another structure.'
 ---
 
 # input Table Function
