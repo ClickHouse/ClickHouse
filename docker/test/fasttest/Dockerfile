@@ -33,15 +33,12 @@ RUN apt-get update \
 
 # Install a newer ninja directly (We need 1.11 at least to support C++ modules)
 ARG NINJA_VERSION=1.12.1
-RUN arch=${TARGETARCH:-amd64} \
-    && case $arch in \
-        amd64) ninjafile=ninja-linux.zip ;; \
-        arm64) ninjafile=ninja-linux-aarch64.zip ;; \
-      esac \
-    && mkdir /tmp/ninja \
+RUN mkdir /tmp/ninja \
     && cd /tmp/ninja \
-    && curl -L https://github.com/ninja-build/ninja/releases/download/v$NINJA_VERSION/$ninjafile --output ninja-linux.zip \
-    && unzip ninja-linux.zip \
+    && curl -L https://github.com/ninja-build/ninja/archive/refs/tags/v$NINJA_VERSION.zip -o ninja.zip \
+    && unzip ninja.zip \
+    && cd ninja-$NINJA_VERSION \
+    && ./configure.py --bootstrap \
     && cp ninja /usr/bin/ninja \
     && cd / \
     && rm -rf /tmp/ninja
