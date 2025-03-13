@@ -74,7 +74,7 @@ TEST_P(ParserTest, parseQuery)
                 }
 
                 {
-                    String formatted_ast = ast_clone->formatWithSecretsOneLine();
+                    String formatted_ast = ast_clone->formatWithSecretsMultiLine();
                     EXPECT_EQ(expected_ast, formatted_ast);
                 }
             }
@@ -87,7 +87,7 @@ TEST_P(ParserTest, parseQuery)
                 }
                 else
                 {
-                    String formatted_ast = ast->clone()->formatWithSecretsOneLine();
+                    String formatted_ast = ast->clone()->formatWithSecretsMultiLine();
                     EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
                 }
             }
