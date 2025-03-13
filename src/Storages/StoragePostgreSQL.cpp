@@ -224,10 +224,10 @@ void StoragePostgreSQL::read(
 class SerializationPostgreSQLFixedString : public SerializationFixedString
 {
 private:
-    size_t pg_n;
+    size_t size;
 
 public:
-    explicit SerializationPostgreSQLFixedString(size_t n_) : SerializationFixedString(n_), pg_n(n_) {}
+    explicit SerializationPostgreSQLFixedString(size_t n_) : SerializationFixedString(n_), size(n_) {}
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
     {
@@ -243,23 +243,25 @@ public:
         if (isFixedString(column_type))
         {
             data = reinterpret_cast<const char *>(
-                &assert_cast<const ColumnFixedString *>(nested_column)->getChars()[pg_n * row_num]);
+                &assert_cast<const ColumnFixedString *>(nested_column)->getChars()[size * row_num]);
         }
         else if (isString(column_type))
             data = assert_cast<const ColumnString &>(column).getDataAt(row_num).data;
         else
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't serialize type {} as a FixedString", nested_column->getName());
 
-        auto size = pg_n;
-        for (size_t i = 0; i < pg_n; ++i)
+        /// Write only the amount of UTF-8 characters actually used. PostgreSQL complains if we pass
+        /// any \0 because it doesn't interpret them as valid UTF-8.
+        auto write_size = size;
+        for (size_t i = 0; i < size; ++i)
         {
             if (data[i] == 0)
             {
-                size = i;
+                write_size = i;
                 break;
             }
         }
-        writeString(data, size, ostr);
+        writeString(data, write_size, ostr);
     }
 };
 
