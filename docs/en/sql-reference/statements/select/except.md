@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for EXCEPT Clause'
+sidebar_label: 'EXCEPT'
 slug: /sql-reference/statements/select/except
-sidebar_label: EXCEPT
+title: 'EXCEPT Clause'
 ---
 
 # EXCEPT Clause
@@ -216,5 +218,5 @@ Result:
 
 **See Also**
 
-- [UNION](union.md#union-clause)
-- [INTERSECT](intersect.md#intersect-clause)
+- [UNION](/sql-reference/statements/select/union)
+- [INTERSECT](/sql-reference/statements/select/intersect)

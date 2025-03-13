@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/attach
+description: 'Documentation for Attach'
+sidebar_label: 'ATTACH'
 sidebar_position: 40
-sidebar_label: ATTACH
-title: "ATTACH Statement"
+slug: /sql-reference/statements/attach
+title: 'ATTACH Statement'
 ---
 
 Attaches a table or a dictionary, for example, when moving a database to another server.

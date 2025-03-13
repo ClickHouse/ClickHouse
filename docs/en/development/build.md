@@ -1,7 +1,9 @@
 ---
-slug: /development/build
+description: 'Step-by-step guide for building ClickHouse from source on Linux systems'
+sidebar_label: 'Build on Linux'
 sidebar_position: 10
-sidebar_label: Build on Linux
+slug: /development/build
+title: 'How to Build ClickHouse on Linux'
 ---
 
 # How to Build ClickHouse on Linux
@@ -46,7 +48,7 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 For other Linux distributions, check if you can install any of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of January 2025, Clang 18 or higher is required.
+As of March 2025, Clang 19 or higher is required.
 GCC or other compilers are not supported.
 
 ## Install the Rust compiler (optional) {#install-the-rust-compiler-optional}
@@ -172,7 +174,7 @@ You can also run your custom-built ClickHouse binary with the config file from t
 ```bash
 sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
-````
+```
 
 ### Building on Any Linux {#building-on-any-linux}
 

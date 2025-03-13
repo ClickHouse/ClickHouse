@@ -3,6 +3,7 @@
 
 #if USE_PROMETHEUS_PROTOBUFS
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnVector.h>

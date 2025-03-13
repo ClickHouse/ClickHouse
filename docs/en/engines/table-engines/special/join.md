@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/special/join
+description: 'Optional prepared data structure for usage in JOIN operations.'
+sidebar_label: 'Join'
 sidebar_position: 70
-sidebar_label: Join
-title: "Join Table Engine"
-description: "Optional prepared data structure for usage in JOIN operations."
+slug: /engines/table-engines/special/join
+title: 'Join Table Engine'
 ---
 
 # Join Table Engine
@@ -30,7 +30,7 @@ See the detailed description of the [CREATE TABLE](/sql-reference/statements/cre
 
 ### join_strictness {#join_strictness}
 
-`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join-types).
+`join_strictness` – [JOIN strictness](/sql-reference/statements/select/join#supported-types-of-join).
 
 ### join_type {#join_type}
 
@@ -73,15 +73,15 @@ When creating a table, the following settings are applied:
 
 #### max_rows_in_join {#max_rows_in_join}
 
-[max_rows_in_join](/operations/settings/query-complexity.md/#settings-max_rows_in_join)
+[max_rows_in_join](/operations/settings/query-complexity#settings-max_rows_in_join)
 
 #### max_bytes_in_join {#max_bytes_in_join}
 
-[max_bytes_in_join](/operations/settings/query-complexity.md/#settings-max_bytes_in_join)
+[max_bytes_in_join](/operations/settings/query-complexity#settings-max_bytes_in_join)
 
 #### join_overflow_mode {#join_overflow_mode}
 
-[join_overflow_mode](/operations/settings/query-complexity.md/#settings-join_overflow_mode)
+[join_overflow_mode](/operations/settings/query-complexity#settings-join_overflow_mode)
 
 #### join_any_take_last_row {#join_any_take_last_row}
 

@@ -1,9 +1,10 @@
 ---
-description: "Learn how to load OpenCelliD data into ClickHouse, connect Apache Superset to ClickHouse and build a dashboard based on data"
-slug: /getting-started/example-datasets/cell-towers
-sidebar_label: Geo Data
+description: 'Learn how to load OpenCelliD data into ClickHouse, connect Apache Superset
+  to ClickHouse and build a dashboard based on data'
+sidebar_label: 'Geo Data'
 sidebar_position: 3
-title: "Geo Data using the Cell Tower Dataset"
+slug: /getting-started/example-datasets/cell-towers
+title: 'Geo Data using the Cell Tower Dataset'
 ---
 
 import ConnectionDetails from '@site/docs/_snippets/_gather_your_details_http.mdx';
@@ -14,6 +15,7 @@ import CodeBlock from '@theme/CodeBlock';
 import ActionsMenu from '@site/docs/_snippets/_service_actions_menu.md';
 import SQLConsoleDetail from '@site/docs/_snippets/_launch_sql_console.md';
 import SupersetDocker from '@site/docs/_snippets/_add_superset_detail.md';
+import cloud_load_data_sample from '@site/static/images/_snippets/cloud-load-data-sample.png';
 
 ## Goal {#goal}
 
@@ -44,7 +46,7 @@ ClickHouse Cloud provides an easy-button for uploading this dataset from S3.  Lo
 
 Choose the **Cell Towers** dataset from the **Sample data** tab, and **Load data**:
 
-![Load cell towers dataset](@site/docs/_snippets/images/cloud-load-data-sample.png)
+<img src={cloud_load_data_sample} class="image" alt="Load cell towers dataset" />
 
 ### Examine the schema of the cell_towers table {#examine-the-schema-of-the-cell_towers-table}
 ```sql

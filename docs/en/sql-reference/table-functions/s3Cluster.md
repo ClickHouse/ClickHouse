@@ -1,9 +1,11 @@
 ---
-slug: /sql-reference/table-functions/s3Cluster
+description: 'An extension to the s3 table function, which allows processing files
+  from Amazon S3 and Google Cloud Storage in parallel with many nodes in a specified
+  cluster.'
+sidebar_label: 's3Cluster'
 sidebar_position: 181
-sidebar_label: s3Cluster
-title: "s3Cluster"
-description: "An extension to the s3 table function, which allows processing files from Amazon S3 and Google Cloud Storage in parallel with many nodes in a specified cluster."
+slug: /sql-reference/table-functions/s3Cluster
+title: 's3Cluster'
 ---
 
 # s3Cluster Table Function
@@ -26,7 +28,7 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 - `NOSIGN` — If this keyword is provided in place of credentials, all the requests will not be signed.
 - `access_key_id` and `secret_access_key` — Keys that specify credentials to use with given endpoint. Optional.
 - `session_token` - Session token to use with the given keys. Optional when passing keys.
-- `format` — The [format](../../interfaces/formats.md#formats) of the file.
+- `format` — The [format](/sql-reference/formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 - `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
 - `headers` - Parameter is optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`. See [here](/sql-reference/table-functions/s3#accessing-requester-pays-buckets) for example of use.

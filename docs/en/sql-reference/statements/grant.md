@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/grant
+description: 'Documentation for GRANT Statement'
+sidebar_label: 'GRANT'
 sidebar_position: 38
-sidebar_label: GRANT
+slug: /sql-reference/statements/grant
+title: 'GRANT Statement'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -610,7 +612,7 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 
 ### SOURCES {#sources}
 
-Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
+Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](/sql-reference/table-functions).
 
 - `SOURCES`. Level: `GROUP`
     - `AZURE`. Level: `GLOBAL`
@@ -698,7 +700,7 @@ Allows using a specified table engine when creating a table. Applies to [table e
 Grants all the privileges on regulated entity to a user account or a role.
 
 :::note
-The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/cloud/security/cloud-access-management#initial-settings) for further details.
+The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/cloud/security/cloud-access-management/overview#initial-settings) for further details.
 Users can also use the `GRANT CURRENT GRANTS` as the default user to achieve similar effects to `ALL`.
 :::
 

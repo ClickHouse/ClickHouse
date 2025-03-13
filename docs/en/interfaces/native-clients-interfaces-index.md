@@ -1,7 +1,8 @@
 ---
+description: 'Native clients and interfaces for ClickHouse'
+keywords: ['clients', 'interfaces', 'CLI', 'SQL console', 'drivers']
 slug: /interfaces/natives-clients-and-interfaces
-keywords: [clients, interfaces, CLI, SQL console, drivers]
-description: Native clients and interfaces for ClickHouse
+title: 'Native Clients and Interfaces'
 ---
 
 # Native Clients & Interfaces

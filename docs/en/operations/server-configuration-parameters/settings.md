@@ -1,9 +1,11 @@
 ---
-slug: /operations/server-configuration-parameters/settings
+description: 'This section contains descriptions of server settings that cannot be
+  changed at the session or query level.'
+keywords: ['global server settings']
+sidebar_label: 'Global Server Settings'
 sidebar_position: 57
-sidebar_label: Global Server Settings
-description: This section contains descriptions of server settings that cannot be changed at the session or query level.
-keywords: [global server settings]
+slug: /operations/server-configuration-parameters/settings
+title: 'Global Server Settings'
 ---
 
 import Tabs from '@theme/Tabs';
@@ -255,6 +257,19 @@ Type: `UInt64`
 
 Default: `0`
 
+## concurrent_threads_scheduler {#concurrent_threads_scheduler}
+
+The policy on how to perform a scheduling of CPU slots specified by `concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores`. Algorithm used to govern how limited number of CPU slots are distributed among concurrent queries. Scheduler may be changed at runtime without server restart.
+
+Type: String
+
+Default: `round_robin`
+
+Possible values:
+
+- `round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads` CPU slots. One slot per thread. On contention CPU slot are granted to queries using round-robin. Note that the first slot is granted unconditionally, which could lead to unfairness and increased latency of queries having high `max_threads` in presence of high number of queries with `max_threads` = 1.
+- `fair_round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads - 1` CPU slots. Variation of `round_robin` that does not require a CPU slot for the first thread of every query. This way queries having `max_threads` = 1 do not require any slot and could not unfairly allocate all slots. There are no slots granted unconditionally.
+
 ## default_database {#default_database}
 
 The default database name.
@@ -309,7 +324,7 @@ Default: `SLRU`
 
 ## index_mark_cache_size {#index_mark_cache_size}
 
-Maximum size of cache for index marks.
+Size of cache for index marks.
 
 :::note
 
@@ -324,7 +339,7 @@ Default: `0`
 
 ## index_mark_cache_size_ratio {#index_mark_cache_size_ratio}
 
-The size of the protected queue (in case of SLRU policy) in the index mark cache relative to the cache's total size.
+The size of the protected queue in the index mark cache relative to the cache's total size.
 
 Type: `Double`
 
@@ -340,7 +355,7 @@ Default: `SLRU`
 
 ## index_uncompressed_cache_size {#index_uncompressed_cache_size}
 
-Maximum size of cache for uncompressed blocks of `MergeTree` indices.
+Size of cache for uncompressed blocks of `MergeTree` indices.
 
 :::note
 A value of `0` means disabled.
@@ -354,47 +369,11 @@ Default: `0`
 
 ## index_uncompressed_cache_size_ratio {#index_uncompressed_cache_size_ratio}
 
-The size of the protected queue (in case of SLRU policy) in the index uncompressed cache relative to the cache's total size.
+The size of the protected queue in the index uncompressed cache relative to the cache's total size.
 
 Type: `Double`
 
 Default: `0.5`
-
-## skipping_index_cache_policy {#skipping_index_cache_policy}
-
-Skipping index cache policy name.
-
-Type: `String`
-
-Default: `SLRU`
-
-## skipping_index_cache_size {#skipping_index_cache_size}
-
-Size of cache for skipping indexes. Zero means disabled.
-
-:::note
-This setting can be modified at runtime and will take effect immediately.
-:::
-
-Type: `UInt64`
-
-Default: `5368709120` (= 5 GiB)
-
-## skipping_index_cache_size_ratio {#skipping_index_cache_size_ratio}
-
-The size of the protected queue (in case of SLRU policy) in the skipping index cache relative to the cache's total size.
-
-Type: `Double`
-
-Default: `0.5`
-
-## skipping_index_cache_max_entries {#skipping_index_cache_max_entries}
-
-The maximum number of entries in the skipping index cache.
-
-Type: `UInt64`
-
-Default: `10000000`
 
 ## io_thread_pool_queue_size {#io_thread_pool_queue_size}
 
@@ -430,7 +409,35 @@ Default: `5368709120`
 
 ## mark_cache_size_ratio {#mark_cache_size_ratio}
 
-The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.
+The size of the protected queue in the mark cache relative to the cache's total size.
+
+Type: `Double`
+
+Default: `0.5`
+
+## query_condition_cache_policy {#query_condition_cache_policy}
+
+Query condition cache policy name.
+
+Type: `String`
+
+Default: `SLRU`
+
+## query_condition_cache_size {#query_condition_cache_size}
+
+Maximum size of the query condition cache.
+
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
+Type: `UInt64`
+
+Default: `1073741824` (100 MiB)
+
+## query_condition_cache_size_ratio {#query_condition_cache_size_ratio}
+
+The size of the protected queue (in case of SLRU policy) in the query condition cache relative to the cache's total size.
 
 Type: `Double`
 
@@ -1121,7 +1128,7 @@ Default: `SLRU`
 
 ## uncompressed_cache_size {#uncompressed_cache_size}
 
-Maximum cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
+Cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option use_uncompressed_cache is enabled.
 
@@ -1139,7 +1146,7 @@ Default: `0`
 
 ## uncompressed_cache_size_ratio {#uncompressed_cache_size_ratio}
 
-The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.
+The size of the protected queue in the uncompressed cache relative to the cache's total size.
 
 Type: Double
 
@@ -1597,8 +1604,8 @@ Example:
 
 ## http_handlers {#http_handlers}
 
-Allows using custom HTTP handlers. 
-To add a new http handler simply add a new `<rule>`. 
+Allows using custom HTTP handlers.
+To add a new http handler simply add a new `<rule>`.
 Rules are checked from top to bottom as defined,
 and the first match will run the handler.
 
@@ -1617,7 +1624,7 @@ The following settings can be configured by sub-tags:
 | Sub-tags           | Definition                                                                                                                                                            |
 |--------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `url`              | A location for redirect                                                                                                                                               |
-| `type`             | Supported types: static, dynamic_query_handler, predefined_query_handler, redirect                                                                                    | 
+| `type`             | Supported types: static, dynamic_query_handler, predefined_query_handler, redirect                                                                                    |
 | `status`           | Use with static type, response status code                                                                                                                            |
 | `query_param_name` | Use with dynamic_query_handler type, extracts and executes the value corresponding to the `<query_param_name>` value in HTTP request params                             |
 | `query`            | Use with predefined_query_handler type, executes query when the handler is called                                                                                     |
@@ -1690,7 +1697,7 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 
 ## http_options_response {#http_options_response}
 
-Used to add headers to the response in an `OPTIONS` HTTP request. 
+Used to add headers to the response in an `OPTIONS` HTTP request.
 The `OPTIONS` method is used when making CORS preflight requests.
 
 For more information, see [OPTIONS](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/OPTIONS).
@@ -1925,7 +1932,7 @@ Setting `user_dn_detection` can be configured with sub-tags:
 | Setting         | Description                                                                                                                                                                                                                                                                                                                                    |
 |-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `\{user_name\}` and '\{bind_dn\}' substrings of the template with the actual user name and bind DN during the LDAP search.                                                                                                       |
-| `scope`         | scope of the LDAP search. Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).                                                                                                                                                                                                                                       |                                                                                                                               
+| `scope`         | scope of the LDAP search. Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).                                                                                                                                                                                                                                       |
 | `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `\{user_name\}`, `\{bind_dn\}`, and `\{base_dn\}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note, that the special characters must be escaped properly in XML.  |
 
 Example:
@@ -2233,7 +2240,7 @@ Keys:
 The public part of the host key will be written to the known_hosts file
 on the SSH client side on the first connect.
 
-Host Key Configurations are inactive by default. 
+Host Key Configurations are inactive by default.
 Uncomment the host key configurations, and provide the path to the respective ssh key to active them:
 
 Example:
@@ -2250,7 +2257,7 @@ Example:
 
 Port for the SSH server which allows the user to connect and execute queries in an interactive fashion using the embedded client over the PTY.
 
-Example: 
+Example:
 
 ```xml
 <tcp_ssh_port>9022</tcp_ssh_port>
@@ -2374,7 +2381,7 @@ Default: `false`
 This feature is highly experimental.
 :::
 
-Example: 
+Example:
 
 ```xml
 <remap_executable>false</remap_executable>
@@ -2396,7 +2403,7 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 
 ## max_session_timeout {#max_session_timeout}
 
-Maximum session timeout, in seconds. 
+Maximum session timeout, in seconds.
 
 Default: `3600`
 
@@ -2648,7 +2655,7 @@ Example:
     <max_size_rows>1048576</max_size_rows>
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-    <flush_on_crash>false</flush_on_crash>    
+    <flush_on_crash>false</flush_on_crash>
 </opentelemetry_span_log>
 ```
 
@@ -3048,13 +3055,13 @@ The default server configuration file `config.xml` contains the following settin
 ## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
 
 This setting specifies the cache path for custom (created from SQL) cached disks.
-`custom_cached_disks_base_directory` has higher priority for custom disks over `filesystem_caches_path` (found in `filesystem_caches_path.xml`), 
+`custom_cached_disks_base_directory` has higher priority for custom disks over `filesystem_caches_path` (found in `filesystem_caches_path.xml`),
 which is used if the former one is absent.
 The filesystem cache setting path must lie inside that directory,
 otherwise an exception will be thrown preventing the disk from being created.
 
 :::note
-This will not affect disks created on an older version for which the server was upgraded. 
+This will not affect disks created on an older version for which the server was upgraded.
 In this case, an exception will not be thrown, to allow the server to successfully start.
 :::
 
@@ -3100,7 +3107,7 @@ Example:
 <blob_storage_log>
     <database>system</database
     <table>blob_storage_log</table
-    <partition_by>toYYYYMM(event_date)</partition_by> 
+    <partition_by>toYYYYMM(event_date)</partition_by>
     <flush_interval_milliseconds>7500</flush_interval_milliseconds
     <ttl>event_date + INTERVAL 30 DAY</ttl>
 </blob_storage_log>
@@ -3168,7 +3175,7 @@ When adding a host with the `\<host\>` xml tag:
 - if the host is specified as an IP address, then it is checked as specified in the URL. For example: `[2a02:6b8:a::a]`.
 - if there are redirects and support for redirects is enabled, then every redirect (the location field) is checked.
 
-For example: 
+For example:
 
 ```sql
 <remote_url_allow_hosts>
@@ -3352,7 +3359,7 @@ Settings for optional improvements in the access control system.
 | `table_engines_require_grant`                   | Sets whether creating a table with a specific table engine requires a grant.                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false` |
 | `role_cache_expiration_time_seconds`            | Sets the number of seconds since last access, that a role is stored in the Role Cache.                                                                                                                                                                                                                                                                                                                                                                                                                           | `600`   |
 
-Example: 
+Example:
 
 ```xml
 <access_control_improvements>
@@ -3559,7 +3566,7 @@ Default: `1` (authType plaintext_password is allowed)
 
 ## allow_no_password {#allow_no_password}
 
-Sets whether an insecure password type of no_password is allowed or not. 
+Sets whether an insecure password type of no_password is allowed or not.
 
 Default: `1` (authType no_password is allowed)
 
@@ -3578,7 +3585,7 @@ Default: `1`
 ```
 ## default_session_timeout {#default_session_timeout}
 
-Default session timeout, in seconds. 
+Default session timeout, in seconds.
 
 Default: `60`
 
@@ -3670,8 +3677,8 @@ For example:
 </top_level_domains_lists>
 ```
 
-See also: 
-- function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cuttofirstsignificantsubdomaincustom) and variations thereof, 
+See also:
+- function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cuttofirstsignificantsubdomaincustom) and variations thereof,
 which accepts a custom TLD list name, returning the part of the domain that includes top-level subdomains up to the first significant subdomain.
 
 ## total_memory_profiler_step {#total_memory_profiler_step}

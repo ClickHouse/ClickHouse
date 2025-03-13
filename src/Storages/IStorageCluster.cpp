@@ -24,8 +24,10 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/StorageDictionary.h>
 
+#include <algorithm>
 #include <memory>
 #include <string>
+
 
 namespace DB
 {
@@ -35,6 +37,9 @@ namespace Setting
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsBool parallel_replicas_local_plan;
+    extern const SettingsString cluster_for_parallel_replicas;
+    extern const SettingsNonZeroUInt64 max_parallel_replicas;
 }
 
 IStorageCluster::IStorageCluster(
@@ -183,29 +188,36 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     auto new_context = updateSettings(context->getSettingsRef());
     const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+
     size_t replica_index = 0;
-    size_t number_of_replicas = 0;
-    std::vector<IConnectionPool::Entry> try_results;
+    auto max_replicas_to_use = static_cast<UInt64>(cluster->getShardsInfo().size());
+    if (current_settings[Setting::max_parallel_replicas] > 1)
+        max_replicas_to_use = std::min(max_replicas_to_use, current_settings[Setting::max_parallel_replicas].value);
 
     for (const auto & shard_info : cluster->getShardsInfo())
     {
-        auto shard_try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY);
-        for (auto & try_result : shard_try_results)
-        {
-            number_of_replicas++;
-            try_results.emplace_back(std::move(try_result));
-        }
-    }
+        if (pipes.size() >= max_replicas_to_use)
+            break;
 
-    for (auto & try_result : try_results)
-    {
+        /// We're taking all replicas as shards,
+        /// so each shard will have only one address to connect to.
+        auto try_results = shard_info.pool->getMany(
+            timeouts,
+            current_settings,
+            PoolMode::GET_ONE,
+            {},
+            /*skip_unavailable_endpoints=*/true);
+
+        if (try_results.empty())
+            continue;
+
         IConnections::ReplicaInfo replica_info{
             .number_of_current_replica = replica_index++,
-            .number_of_replicas = number_of_replicas,
+            .number_of_replicas = max_replicas_to_use,
         };
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-            std::vector<IConnectionPool::Entry>{try_result},
+            std::vector<IConnectionPool::Entry>{try_results.front()},
             queryToString(query_to_send),
             getOutputHeader(),
             new_context,
