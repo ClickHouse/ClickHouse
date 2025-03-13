@@ -1,4 +1,5 @@
 ---
+description: 'Documentation for Table Engines'
 slug: /engines/table-engines/
 toc_folder_title: Table Engines
 toc_priority: 26

@@ -1,10 +1,11 @@
 ---
-title: CSV
-slug: /interfaces/formats/CSV
-keywords: [CSV]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the CSV format'
+input_format: true
+keywords: ['CSV']
+output_format: true
+slug: /interfaces/formats/CSV
+title: 'CSV'
 ---
 
 ## Description {#description}

@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/estimateCompressionRatio
+description: 'Estimates the compression ratio of a given column without compressing
+  it.'
 sidebar_position: 132
-title: "estimateCompressionRatio"
-description: "Estimates the compression ratio of a given column without compressing it."
+slug: /sql-reference/aggregate-functions/reference/estimateCompressionRatio
+title: 'estimateCompressionRatio'
 ---
 
 ## estimateCompressionRatio {#estimatecompressionration}

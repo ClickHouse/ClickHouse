@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/numbers
 sidebar_position: 145
 sidebar_label: numbers
-title: "numbers"
-description: "Returns tables with a single 'number' column that contains specifiable integers."
+title: 'numbers'
+description: 'Returns tables with a single `number` column that contains specifiable integers.'
 ---
 
 # numbers Table Function

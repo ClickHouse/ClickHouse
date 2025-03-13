@@ -1,7 +1,10 @@
 ---
+description: 'Guide to using the format utility for working with ClickHouse data formats'
 slug: /operations/utilities/clickhouse-format
-title: clickhouse-format
+title: 'clickhouse-format'
 ---
+
+# clickhouse-format utility
 
 Allows formatting input queries.
 

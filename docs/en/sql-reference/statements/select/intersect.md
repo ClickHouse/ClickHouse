@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for INTERSECT Clause'
+sidebar_label: 'INTERSECT'
 slug: /sql-reference/statements/select/intersect
-sidebar_label: INTERSECT
+title: 'INTERSECT Clause'
 ---
 
 # INTERSECT Clause
