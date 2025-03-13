@@ -42,6 +42,10 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_database_iceberg;
 }
+namespace StorageObjectStorageSetting
+{
+    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+}
 
 namespace ErrorCodes
 {
@@ -174,7 +178,7 @@ bool DatabaseIceberg::isTableExist(const String & name, ContextPtr /* context_ *
 StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_) const
 {
     auto catalog = getCatalog();
-    auto table_metadata = Iceberg::TableMetadata().withLocation().withSchema();
+    auto table_metadata = Iceberg::TableMetadata().withLocation().withSchema().withDataLakeSpecificMetadata();
 
     const bool with_vended_credentials = settings[DatabaseIcebergSetting::vended_credentials].value;
     if (with_vended_credentials)
@@ -224,7 +228,24 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
         storage_type = table_metadata.getStorageType();
 
     const auto configuration = getConfiguration(storage_type);
-    auto storage_settings = std::make_unique<StorageObjectStorageSettings>();
+
+    auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
+    if (auto table_specific_metadata = table_metadata.getDataLakeSpecificMetadata();
+        table_specific_metadata.has_value())
+    {
+        auto metadata_location = table_specific_metadata->iceberg_metadata_file_location;
+        if (!metadata_location.empty())
+        {
+            const auto data_location = table_metadata.getLocation();
+            if (metadata_location.starts_with(data_location))
+            {
+                size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
+                metadata_location = metadata_location.substr(data_location.size() + remove_slash);
+            }
+        }
+
+        (*storage_settings)[DB::StorageObjectStorageSetting::iceberg_metadata_file_path] = metadata_location;
+    }
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.
