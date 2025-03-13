@@ -4,10 +4,9 @@ set -ex
 
 GIT_BRANCH=$(git branch --show-current)
 
-git checkout yarn.lock
 if [ "$GIT_DOCS_BRANCH" ] && ! [ "$GIT_DOCS_BRANCH" == "$GIT_BRANCH" ]; then
   git fetch origin --depth=1 -- "$GIT_DOCS_BRANCH:$GIT_DOCS_BRANCH"
-  git checkout "$GIT_DOCS_BRANCH"
+  git checkout -f "$GIT_DOCS_BRANCH"
 else
   # Update docs repo
   git pull
