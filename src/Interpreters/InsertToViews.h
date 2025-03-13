@@ -28,11 +28,8 @@ private:
         using StorageID::StorageID;
 
         StorageIDPrivate()
-            : StorageIDPrivate("EMPTY", "EMPTY")
-        {
-            database_name.clear();
-            table_name.clear();
-        }
+            : StorageIDPrivate(StorageID::createEmpty())
+        {}
 
         StorageIDPrivate(const StorageID & other) // NOLINT this is an implicit c-tor
             : StorageID(other)

@@ -2,6 +2,7 @@
 #include <stack>
 #include <vector>
 #include <Interpreters/InsertToViews.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -917,27 +918,25 @@ Chain ViewsManager::createSelect(StorageIDPrivate view_id) const
 
 Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
 {
-    LOG_DEBUG(logger, "createPreSink: {}", view_id);
-
-    /// We create a pipeline of several streams, into which we will write data.
     Chain chain;
 
-    auto select_context = select_contexts.at(view_id);
-    auto insert_context = insert_contexts.at(view_id);
+    auto table_id = inner_tables.at(view_id);
+
+    LOG_DEBUG(logger, "createPreSink: {}, table id {}", view_id, table_id);
+
+    auto storage = storages.at(table_id);
+    auto metadata = metadata_snapshots.at(table_id);
 
     auto select_header = select_headers.at(view_id);
+    auto insert_context = insert_contexts.at(view_id);
 
-    auto inner_id = inner_tables.at(view_id);
-    LOG_DEBUG(logger, "createPreSink: {}, inner id {}", view_id, inner_id);
-
-    auto inner_storage = storages.at(inner_id);
-    auto inner_metadata_snapshot = metadata_snapshots.at(inner_id);
-    auto inner_storage_header = inner_metadata_snapshot->getSampleBlockInsertable();
+    //auto header = InterpreterInsertQuery::getSampleBlock() ;//(const ASTInsertQuery &query, const StoragePtr &table, const StorageMetadataPtr &metadata_snapshot, ContextPtr context_)
+    auto insertion_storage_header = metadata->getSampleBlockInsertable();
 
     auto adding_missing_defaults_dag = addMissingDefaults(
         select_header,
-        inner_storage_header.getNamesAndTypesList(),
-        inner_metadata_snapshot->getColumns(),
+        insertion_storage_header.getNamesAndTypesList(),
+        metadata->getColumns(),
         insert_context,
         insert_null_as_default);
 
@@ -952,7 +951,7 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
 
     auto converting = ActionsDAG::makeConvertingActions(
         chain.getOutputHeader().getColumnsWithTypeAndName(),
-        inner_storage_header.getColumnsWithTypeAndName(),
+        insertion_storage_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
 
     auto convert_action = std::make_shared<ExpressionActions>(std::move(converting));
@@ -964,8 +963,8 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
     /// Note that we wrap transforms one on top of another, so we write them in reverse of data processing order.
     /// Checking constraints. It must be done after calculation of all defaults, so we can check them on calculated columns.
     /// Add implicit sign constraint for Collapsing and VersionedCollapsing tables.
-    auto constraints = inner_metadata_snapshot->getConstraints();
-    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(inner_storage);
+    auto constraints = metadata->getConstraints();
+    auto storage_merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
     if (storage_merge_tree
         && (storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::Collapsing
             || storage_merge_tree->merging_params.mode == MergeTreeData::MergingParams::VersionedCollapsing)
@@ -988,22 +987,22 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
         constraints = ConstraintsDescription(constraints_ast);
     }
     if (!constraints.empty())
-        chain.addSink(std::make_shared<CheckConstraintsTransform>(inner_id, inner_storage_header, constraints, insert_context));
+        chain.addSink(std::make_shared<CheckConstraintsTransform>(table_id, insertion_storage_header, constraints, insert_context));
 
     /// Add transform to check if the sizes of arrays - elements of nested data structures doesn't match.
     /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
     /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
     /// but currently we don't have methods for serialization of nested structures "as a whole".
-    chain.addSink(std::make_shared<NestedElementsValidationTransform>(inner_storage_header));
+    chain.addSink(std::make_shared<NestedElementsValidationTransform>(insertion_storage_header));
 
     LOG_DEBUG(logger, "createPreSink: {}, input_header {}", view_id, input_headers.at(view_id).dumpStructure());
     LOG_DEBUG(logger, "createPreSink: {}, select_header {}", view_id, select_header.dumpStructure());
 
-    LOG_DEBUG(logger, "createPreSink: {}, inner_storage_header {}", view_id, inner_storage_header.dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, inner_storage_header {}", view_id, insertion_storage_header.dumpStructure());
     LOG_DEBUG(logger, "createPreSink: {}, output_headers {}", view_id, output_headers.at(view_id).dumpStructure());
 
 
-    auto counting = std::make_shared<CountingTransform>(inner_storage_header, insert_context->getQuota());
+    auto counting = std::make_shared<CountingTransform>(insertion_storage_header, insert_context->getQuota());
     counting->setProcessListElement(insert_context->getProcessListElement());
     counting->setProgressCallback(insert_context->getProgressCallback());
     counting->setRuntimeData(thread_groups.at(view_id));
@@ -1042,11 +1041,12 @@ Chain ViewsManager::createSink(StorageIDPrivate view_id) const
             sink->setViewManager(shared_from_this());
             chain.addSource(std::move(sink));
         }
-        else if (dynamic_cast<StorageMaterializedView *>(view_storage.get()))
+        else if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view_storage.get()))
         {
             LOG_DEBUG(logger, "createSink: {}, for StorageMaterializedView", view_id.getNameForLogs());
 
-            auto sink = view_storage->write(select_queries.at(view_id), metadata_snapshots.at(view_id), insert_contexts.at(view_id), /*async_insert*/ false);
+            auto async_insert = false;
+            auto sink = materialized_view->write(select_queries.at(view_id), metadata_snapshots.at(view_id), insert_contexts.at(view_id), async_insert);
 
             LOG_DEBUG(logger, "createSink: {}, sink structure: {}", view_id, sink->getHeader().dumpStructure());
 
@@ -1066,7 +1066,8 @@ Chain ViewsManager::createSink(StorageIDPrivate view_id) const
 
         IInterpreter::checkStorageSupportsTransactionsIfNeeded(storages.at(inner_id), insert_contexts.at(view_id));
 
-        auto sink = storages.at(inner_id)->write(select_queries.at(view_id), metadata_snapshots.at(inner_id), insert_contexts.at(view_id), false);
+        auto async_insert = false;
+        auto sink = storages.at(inner_id)->write(select_queries.at(view_id), metadata_snapshots.at(inner_id), insert_contexts.at(view_id), async_insert);
         metadata_snapshots.at(inner_id)->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setViewManager(shared_from_this());

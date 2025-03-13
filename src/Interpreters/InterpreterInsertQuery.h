@@ -44,6 +44,7 @@ public:
     void extendQueryLogElemImpl(QueryLogElement & elem, const ASTPtr & ast, ContextPtr context_) const override;
 
     StoragePtr getTable(ASTInsertQuery & query);
+
     static Block getSampleBlock(
         const ASTInsertQuery & query,
         const StoragePtr & table,
