@@ -2877,6 +2877,9 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
 void ClientBase::applySettingsFromServerIfNeeded()
 {
     const Settings & settings = client_context->getSettingsRef();
+    if (!settings[Setting::apply_settings_from_server])
+        return;
+
     SettingsChanges changes_to_apply;
     for (const SettingChange & change : settings_from_server)
     {
@@ -2886,8 +2889,7 @@ void ClientBase::applySettingsFromServerIfNeeded()
             changes_to_apply.push_back(change);
     }
 
-    if (settings[Setting::apply_settings_from_server])
-        global_context->applySettingsChanges(changes_to_apply);
+    global_context->applySettingsChanges(changes_to_apply);
 }
 
 void ClientBase::startKeystrokeInterceptorIfExists()
