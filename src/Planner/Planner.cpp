@@ -1909,12 +1909,12 @@ void Planner::buildPlanForQueryNode()
             settings[Setting::query_cache_compress_entries],
             /* is_subquery = */ true);
 
-        const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
+        const size_t num_query_runs = settings[Setting::query_cache_min_query_runs] ? query_result_cache->recordQueryRun(key) : 1; /// try to avoid locking a mutex in recordQueryRun()
         if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
         {
             LOG_TRACE(getLogger("QueryResultCache"),
                     "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                    num_query_runs, settings[Setting::query_cache_min_query_runs]);
+                    num_query_runs, settings[Setting::query_cache_min_query_runs].value);
         }
         else
         {

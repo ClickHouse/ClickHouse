@@ -1474,8 +1474,8 @@ static BlockIO executeQueryImpl(
                         if (num_query_runs <= settings[Setting::query_cache_min_query_runs])
                         {
                             LOG_TRACE(getLogger("QueryResultCache"),
-                                    "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
-                                    num_query_runs, settings[Setting::query_cache_min_query_runs]);
+                                        "Skipped insert because the query ran {} times but the minimum required number of query runs to cache the query result is {}",
+                                        num_query_runs, settings[Setting::query_cache_min_query_runs].value);
                         }
                         else
                         {
@@ -1546,18 +1546,11 @@ static BlockIO executeQueryImpl(
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](QueryPipeline & query_pipeline) mutable
             {
-<<<<<<< HEAD
                 /// Trigger the actual write of the buffered query result into the query cache. This is done explicitly to prevent
                 /// partial/garbage results in case of exceptions during query execution.
                 /// Should call this even if QueryResultCacheUsage::Read, because QueryResultCache may be used for write in subqueries.
                 if (context->getCanUseQueryResultCache())
                     query_pipeline.finalizeWriteInQueryResultCache();
-=======
-                if (query_result_cache_usage == QueryResultCacheUsage::Write)
-                    /// Trigger the actual write of the buffered query result into the query result cache. This is done explicitly to
-                    /// prevent partial/garbage results in case of exceptions during query execution.
-                    query_pipeline.finalizeWriteInQueryResultCache();
->>>>>>> 79c95f1d4a5c3b85fe89395e580ae42cbaaef9b3
 
                 logQueryFinish(elem, context, out_ast, query_pipeline, pulling_pipeline, query_span, query_result_cache_usage, internal);
 
