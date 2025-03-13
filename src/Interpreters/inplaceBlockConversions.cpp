@@ -231,7 +231,7 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
             if (subpath.empty() || subpath.back().type != ISerialization::Substream::ArraySizes)
                 return;
 
-            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath);
+            auto stream_name = ISerialization::getFileNameForStream(*available_column, subpath, {});
             const auto & current_offsets_column = subpath.back().data.column;
 
             /// If for some reason multiple offsets columns are present
@@ -364,7 +364,7 @@ void fillMissingColumns(
                 if (level >= num_dimensions)
                     return;
 
-                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath);
+                auto stream_name = ISerialization::getFileNameForStream(*requested_column, subpath, {});
                 auto it = offsets_columns.find(stream_name);
                 if (it != offsets_columns.end())
                     current_offsets[level] = it->second;
