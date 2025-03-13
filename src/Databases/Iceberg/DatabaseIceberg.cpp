@@ -229,7 +229,7 @@ StoragePtr DatabaseIceberg::tryGetTable(const String & name, ContextPtr context_
 
     const auto configuration = getConfiguration(storage_type);
 
-    auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
+    auto storage_settings = std::make_unique<StorageObjectStorageSettings>();
     if (auto table_specific_metadata = table_metadata.getDataLakeSpecificMetadata();
         table_specific_metadata.has_value())
     {
