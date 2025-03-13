@@ -5,7 +5,7 @@
     <source>
         <executable>
             <format>JSONEachRow</format>
-            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'x UInt64, y UInt64' --query "SELECT x, y, x + y AS a, x * y AS b FROM table"</command>
+            <command>awk '{ print "{\"x\":" $1 ",\"y\":" $2 ",\"a\":" ($1+$2) ",\"b\":" ($1*$2) "}"}'</command>
         </executable>
     </source>
     <lifetime>0</lifetime>
@@ -17,7 +17,6 @@
     <structure>
         <key>
             <attribute>
-                <name>x</name>
                 <type>UInt64</type>
             </attribute>
             <attribute>
@@ -43,7 +42,7 @@
     <source>
         <executable>
             <format>JSONEachRow</format>
-            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'x UInt64' --query "SELECT x, x + x AS a, x * x AS b FROM table"</command>
+            <command>awk '{ print "{\"x\":" $1 ",\"a\":" ($1+$1) ",\"b\":" ($1*$1) "}"}'</command>
         </executable>
     </source>
     <lifetime>0</lifetime>
@@ -74,7 +73,7 @@
     <source>
         <executable>
             <format>JSONEachRow</format>
-            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'x UInt64, y UInt64' --query "SELECT x, y, x + y AS a, x * y AS b FROM table"</command>
+            <command>awk '{ print "{\"x\":" $1 ",\"y\":" $2 ",\"a\":" ($1+$2) ",\"b\":" ($1*$2) "}"}'</command>
         </executable>
     </source>
     <lifetime>0</lifetime>
@@ -123,8 +122,8 @@
 
     <source>
         <executable>
-            <format>JSONEachRow</format>
-            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'id UInt64' --query "SELECT id, 'Value' AS value FROM table"</command>
+            <format>TabSeparated</format>
+            <command>awk -F'\t' '{print $1 "\t" "Value"}'</command>
             <implicit_key>false</implicit_key>
         </executable>
     </source>
@@ -157,7 +156,7 @@
     <source>
         <executable>
             <format>JSONEachRow</format>
-            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'id UInt64' --query "SELECT 'Value' AS value FROM table"</command>
+            <command>awk '{ print "{\"id\":" $1 ",\"value\":\"Value\"}"}'</command>
             <implicit_key>true</implicit_key>
         </executable>
     </source>
@@ -197,8 +196,8 @@
 
     <source>
         <executable>
-            <format>JSONEachRow</format>
-            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'id UInt64, id_key String' --query "SELECT id, id_key, 'Value' AS value FROM table"</command>
+            <format>TabSeparated</format>
+            <command>awk -F'\t' '{print $1 "\t" $2 "\t" "Value"}'</command>
             <implicit_key>false</implicit_key>
         </executable>
     </source>
@@ -239,7 +238,7 @@
     <source>
         <executable>
             <format>JSONEachRow</format>
-            <command>cd /; clickhouse-local --input-format JSONEachRow --output-format JSONEachRow --structure 'id UInt64, id_key String' --query "SELECT 'Value' AS value FROM table"</command>
+            <command>awk '{ print "{\"id\":" $1 ",\"value\":\"Value\"}"}'</command>
             <implicit_key>true</implicit_key>
         </executable>
     </source>
