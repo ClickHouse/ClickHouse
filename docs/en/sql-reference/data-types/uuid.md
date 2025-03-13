@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/uuid
+description: 'Documentation for the UUID data type in ClickHouse'
+sidebar_label: 'UUID'
 sidebar_position: 24
-sidebar_label: UUID
+slug: /sql-reference/data-types/uuid
+title: 'UUID'
 ---
 
 # UUID

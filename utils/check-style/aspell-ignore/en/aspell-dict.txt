@@ -3230,3 +3230,7 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
+Cramer
+Smirnov
+Theils
+Welch

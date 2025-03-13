@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/partition
+description: 'Documentation for Partition'
+sidebar_label: 'PARTITION'
 sidebar_position: 38
-sidebar_label: PARTITION
-title: "Manipulating Partitions and Parts"
+slug: /sql-reference/statements/alter/partition
+title: 'Manipulating Partitions and Parts'
 ---
 
 The following operations with [partitions](/engines/table-engines/mergetree-family/custom-partitioning-key.md) are available:

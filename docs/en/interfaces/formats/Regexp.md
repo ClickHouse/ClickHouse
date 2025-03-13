@@ -1,10 +1,11 @@
 ---
-title: Regexp
-slug: /interfaces/formats/Regexp
-keywords: [Regexp]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the Regexp format'
+input_format: true
+keywords: ['Regexp']
+output_format: false
+slug: /interfaces/formats/Regexp
+title: 'Regexp'
 ---
 
 | Input | Output | Alias |

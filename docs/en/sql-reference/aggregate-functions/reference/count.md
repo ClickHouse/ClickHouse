@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/count
+description: 'Counts the number of rows or not-NULL values.'
 sidebar_position: 120
-title: "count"
-description: "Counts the number of rows or not-NULL values."
+slug: /sql-reference/aggregate-functions/reference/count
+title: 'count'
 ---
 
 # count
