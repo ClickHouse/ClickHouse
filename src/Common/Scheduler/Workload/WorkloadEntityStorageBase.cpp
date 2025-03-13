@@ -401,6 +401,25 @@ bool WorkloadEntityStorageBase::storeEntity(
             validator.updateFromChanges(workload->changes);
         }
 
+        // Validate resource
+        if (resource)
+        {
+            if (resource->operations.size() == 1 && resource->operations[0].mode == ASTCreateResourceQuery::AccessMode::Cpu)
+            {
+                if (!cpu_name.empty() && cpu_name != resource->getResourceName())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second CPU resource is not allowed. Current CPU resource name: '{}'.", cpu_name);
+            }
+            else
+            {
+                // Check that CPU and IO are not mixed in one resource
+                for (const auto & operation : resource->operations)
+                {
+                    if (operation.mode == ASTCreateResourceQuery::AccessMode::Cpu)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to use CPU with READ or WRITE access in the same resource. Create different resources for IO and CPU.");
+                }
+            }
+        }
+
         forEachReference(create_entity_query,
             [this, workload] (const String & target, const String & source, ReferenceType type)
             {
@@ -623,10 +642,15 @@ void WorkloadEntityStorageBase::applyEvent(
         LOG_DEBUG(log, "Create or replace workload entity: {}", serializeAST(*event.entity));
 
         auto * workload = typeid_cast<ASTCreateWorkloadQuery *>(event.entity.get());
+        auto * resource = typeid_cast<ASTCreateResourceQuery *>(event.entity.get());
 
-        // Validate workload
+        // Update root workload
         if (workload && !workload->hasParent())
             root_name = workload->getWorkloadName();
+
+        // Update cpu resource
+        if (resource && resource->operations.size() == 1 && resource->operations[0].mode == ASTCreateResourceQuery::AccessMode::Cpu)
+            cpu_name = resource->getResourceName();
 
         // Remove references of a replaced entity (only for CREATE OR REPLACE)
         if (auto it = entities.find(event.name); it != entities.end())
@@ -647,6 +671,9 @@ void WorkloadEntityStorageBase::applyEvent(
 
         if (event.name == root_name)
             root_name.clear();
+
+        if (event.name == cpu_name)
+            cpu_name.clear();
 
         // Clean up references
         removeReferences(it->second);

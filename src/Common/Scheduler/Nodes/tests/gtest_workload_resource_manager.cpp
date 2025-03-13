@@ -5,7 +5,7 @@
 
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
-#include <Common/Scheduler/Nodes/IOResourceManager.h>
+#include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
 
 #include <Interpreters/Context.h>
 
@@ -136,14 +136,14 @@ private:
     }
 };
 
-struct ResourceTest : ResourceTestManager<IOResourceManager>
+struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
 {
     WorkloadEntityTestStorage storage;
 
     explicit ResourceTest(size_t thread_count = 1)
         : ResourceTestManager(thread_count, DoNotInitManager)
     {
-        manager = std::make_shared<IOResourceManager>(storage);
+        manager = std::make_shared<WorkloadResourceManager>(storage);
     }
 
     void query(const String & query_str)
@@ -175,7 +175,7 @@ struct ResourceTest : ResourceTestManager<IOResourceManager>
 
 using TestGuard = ResourceTest::Guard;
 
-TEST(SchedulerIOResourceManager, Smoke)
+TEST(SchedulerWorkloadResourceManager, Smoke)
 {
     ResourceTest t;
 
@@ -202,7 +202,7 @@ TEST(SchedulerIOResourceManager, Smoke)
     }
 }
 
-TEST(SchedulerIOResourceManager, Fairness)
+TEST(SchedulerWorkloadResourceManager, Fairness)
 {
     // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
     // Requests from A use `value = 1` and from B `value = -1` is used.
@@ -260,7 +260,7 @@ TEST(SchedulerIOResourceManager, Fairness)
     t.wait(); // Wait for threads to finish before destructing locals
 }
 
-TEST(SchedulerIOResourceManager, DropNotEmptyQueue)
+TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
 {
     ResourceTest t;
 
@@ -295,7 +295,7 @@ TEST(SchedulerIOResourceManager, DropNotEmptyQueue)
     t.wait(); // Wait for threads to finish before destructing locals
 }
 
-TEST(SchedulerIOResourceManager, DropNotEmptyQueueLong)
+TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
 {
     ResourceTest t;
 

@@ -17,7 +17,6 @@ struct SchedulingSettings
     Priority priority;
 
     /// Throttling constraints.
-    /// Up to 2 independent throttlers: one for average speed and one for peek speed.
     static constexpr Float64 default_burst_seconds = 1.0;
     Float64 max_speed = 0; // Zero means unlimited
     Float64 max_burst = 0; // default is `default_burst_seconds * max_speed`

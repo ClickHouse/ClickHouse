@@ -48,26 +48,36 @@ void ASTCreateResourceQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSe
         else
             first = false;
 
-        switch (operation.mode)
+        if (operation.mode == AccessMode::Cpu)
         {
-            case AccessMode::Read:
-            {
-                ostr << (format.hilite ? hilite_keyword : "") << "READ ";
-                break;
-            }
-            case AccessMode::Write:
-            {
-                ostr << (format.hilite ? hilite_keyword : "") << "WRITE ";
-                break;
-            }
-        }
-        if (operation.disk)
-        {
-            ostr << "DISK " << (format.hilite ? hilite_none : "");
-            ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(*operation.disk) << (format.hilite ? hilite_none : "");
+            ostr << (format.hilite ? hilite_keyword : "") << "CPU" << (format.hilite ? hilite_none : "");
+            break;
         }
         else
-            ostr << "ANY DISK" << (format.hilite ? hilite_none : "");
+        {
+            switch (operation.mode)
+            {
+                case AccessMode::Read:
+                {
+                    ostr << (format.hilite ? hilite_keyword : "") << "READ ";
+                    break;
+                }
+                case AccessMode::Write:
+                {
+                    ostr << (format.hilite ? hilite_keyword : "") << "WRITE ";
+                    break;
+                }
+                default:
+                    chassert(false);
+            }
+            if (operation.disk)
+            {
+                ostr << "DISK " << (format.hilite ? hilite_none : "");
+                ostr << (format.hilite ? hilite_identifier : "") << backQuoteIfNeed(*operation.disk) << (format.hilite ? hilite_none : "");
+            }
+            else
+                ostr << "ANY DISK" << (format.hilite ? hilite_none : "");
+        }
     }
 
     ostr << ")";

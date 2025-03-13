@@ -11,7 +11,6 @@
 #include <Poco/Util/XMLConfiguration.h>
 
 #include <unordered_map>
-#include <map>
 #include <memory>
 #include <atomic>
 
@@ -87,7 +86,7 @@ public:
                 {
                     auto [request, _] = dequeueRequest();
                     if (request)
-                        execute(request);
+                        request->execute();
                     else
                         has_work = false;
                     while (events.forceProcess())
@@ -240,18 +239,13 @@ private:
             // Dequeue and execute single request
             auto [request, _] = dequeueRequest();
             if (request)
-                execute(request);
+                request->execute();
             else // No more requests -- block until any event happens
                 events.process();
 
             // Process all events before dequeuing to ensure fair competition
             while (events.tryProcess()) {}
         }
-    }
-
-    void execute(ResourceRequest * request)
-    {
-        request->execute();
     }
 
     Resource * current = nullptr; // round-robin pointer

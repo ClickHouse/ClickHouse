@@ -13,7 +13,8 @@ public:
     enum class AccessMode
     {
         Read,
-        Write
+        Write,
+        Cpu,
     };
     struct Operation
     {

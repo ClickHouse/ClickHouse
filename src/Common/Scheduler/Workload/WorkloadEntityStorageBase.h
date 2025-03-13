@@ -117,6 +117,7 @@ private:
     // Validation
     std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources
     String root_name; /// current root workload name
+    String cpu_name; /// current resource name for cpu
 
 protected:
     ContextPtr global_context;

@@ -1,5 +1,4 @@
-#include "Common/Scheduler/IResourceManager.h"
-#include <Common/Scheduler/Nodes/IOResourceManager.h>
+#include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
 
 #include <Common/Scheduler/Nodes/FifoQueue.h>
 #include <Common/Scheduler/Nodes/FairPolicy.h>
@@ -16,7 +15,7 @@
 
 #include <memory>
 #include <mutex>
-#include <map>
+#include <unordered_map>
 
 namespace DB
 {
@@ -40,7 +39,7 @@ namespace
     }
 }
 
-IOResourceManager::NodeInfo::NodeInfo(const ASTPtr & ast, const String & resource_name)
+WorkloadResourceManager::NodeInfo::NodeInfo(const ASTPtr & ast, const String & resource_name)
 {
     auto * create = assert_cast<ASTCreateWorkloadQuery *>(ast.get());
     name = create->getWorkloadName();
@@ -48,19 +47,19 @@ IOResourceManager::NodeInfo::NodeInfo(const ASTPtr & ast, const String & resourc
     settings.updateFromChanges(create->changes, resource_name);
 }
 
-IOResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
+WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
     : resource_entity(resource_entity_)
     , resource_name(getEntityName(resource_entity))
 {
     scheduler.start();
 }
 
-IOResourceManager::Resource::~Resource()
+WorkloadResourceManager::Resource::~Resource()
 {
     scheduler.stop();
 }
 
-void IOResourceManager::Resource::createNode(const NodeInfo & info)
+void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
 {
     if (info.name.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Workload must have a name in resource '{}'",
@@ -99,7 +98,7 @@ void IOResourceManager::Resource::createNode(const NodeInfo & info)
     });
 }
 
-void IOResourceManager::Resource::deleteNode(const NodeInfo & info)
+void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
 {
     if (!node_for_workload.contains(info.name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for removing workload '{}' does not exist in resource '{}'",
@@ -132,7 +131,7 @@ void IOResourceManager::Resource::deleteNode(const NodeInfo & info)
     });
 }
 
-void IOResourceManager::Resource::updateNode(const NodeInfo & old_info, const NodeInfo & new_info)
+void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, const NodeInfo & new_info)
 {
     if (old_info.name != new_info.name)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Updating a name of workload '{}' to '{}' is not allowed in resource '{}'",
@@ -176,7 +175,7 @@ void IOResourceManager::Resource::updateNode(const NodeInfo & old_info, const No
     });
 }
 
-void IOResourceManager::Resource::updateCurrentVersion()
+void WorkloadResourceManager::Resource::updateCurrentVersion()
 {
     auto previous_version = current_version;
 
@@ -185,7 +184,7 @@ void IOResourceManager::Resource::updateCurrentVersion()
     if (root_node)
         root_node->addRawPointerNodes(current_version->nodes);
 
-    // See details in version control section of description in IOResourceManager.h
+    // See details in version control section of description in WorkloadResourceManager.h
     if (previous_version)
     {
         previous_version->newer_version = current_version;
@@ -193,7 +192,7 @@ void IOResourceManager::Resource::updateCurrentVersion()
     }
 }
 
-IOResourceManager::Workload::Workload(IOResourceManager * resource_manager_, const ASTPtr & workload_entity_)
+WorkloadResourceManager::Workload::Workload(WorkloadResourceManager * resource_manager_, const ASTPtr & workload_entity_)
     : resource_manager(resource_manager_)
     , workload_entity(workload_entity_)
 {
@@ -204,12 +203,12 @@ IOResourceManager::Workload::Workload(IOResourceManager * resource_manager_, con
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error in IOResourceManager: {}",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error in WorkloadResourceManager: {}",
             getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 }
 
-IOResourceManager::Workload::~Workload()
+WorkloadResourceManager::Workload::~Workload()
 {
     try
     {
@@ -223,7 +222,7 @@ IOResourceManager::Workload::~Workload()
     }
 }
 
-void IOResourceManager::Workload::updateWorkload(const ASTPtr & new_entity)
+void WorkloadResourceManager::Workload::updateWorkload(const ASTPtr & new_entity)
 {
     try
     {
@@ -233,19 +232,19 @@ void IOResourceManager::Workload::updateWorkload(const ASTPtr & new_entity)
     }
     catch (...)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error in IOResourceManager: {}",
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error in WorkloadResourceManager: {}",
             getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 }
 
-String IOResourceManager::Workload::getParent() const
+String WorkloadResourceManager::Workload::getParent() const
 {
     return assert_cast<ASTCreateWorkloadQuery *>(workload_entity.get())->getWorkloadParent();
 }
 
-IOResourceManager::IOResourceManager(IWorkloadEntityStorage & storage_)
+WorkloadResourceManager::WorkloadResourceManager(IWorkloadEntityStorage & storage_)
     : storage(storage_)
-    , log{getLogger("IOResourceManager")}
+    , log{getLogger("WorkloadResourceManager")}
 {
     subscription = storage.getAllEntitiesAndSubscribe(
         [this] (const std::vector<IWorkloadEntityStorage::Event> & events)
@@ -276,19 +275,19 @@ IOResourceManager::IOResourceManager(IWorkloadEntityStorage & storage_)
         });
 }
 
-IOResourceManager::~IOResourceManager()
+WorkloadResourceManager::~WorkloadResourceManager()
 {
     subscription.reset();
     resources.clear();
     workloads.clear();
 }
 
-void IOResourceManager::updateConfiguration(const Poco::Util::AbstractConfiguration &)
+void WorkloadResourceManager::updateConfiguration(const Poco::Util::AbstractConfiguration &)
 {
     // No-op
 }
 
-void IOResourceManager::createOrUpdateWorkload(const String & workload_name, const ASTPtr & ast)
+void WorkloadResourceManager::createOrUpdateWorkload(const String & workload_name, const ASTPtr & ast)
 {
     std::unique_lock lock{mutex};
     if (auto workload_iter = workloads.find(workload_name); workload_iter != workloads.end())
@@ -297,7 +296,7 @@ void IOResourceManager::createOrUpdateWorkload(const String & workload_name, con
         workloads.emplace(workload_name, std::make_shared<Workload>(this, ast));
 }
 
-void IOResourceManager::deleteWorkload(const String & workload_name)
+void WorkloadResourceManager::deleteWorkload(const String & workload_name)
 {
     std::unique_lock lock{mutex};
     if (auto workload_iter = workloads.find(workload_name); workload_iter != workloads.end())
@@ -309,7 +308,7 @@ void IOResourceManager::deleteWorkload(const String & workload_name)
         LOG_ERROR(log, "Delete workload that doesn't exist: {}", workload_name);
 }
 
-void IOResourceManager::createOrUpdateResource(const String & resource_name, const ASTPtr & ast)
+void WorkloadResourceManager::createOrUpdateResource(const String & resource_name, const ASTPtr & ast)
 {
     std::unique_lock lock{mutex};
     if (auto resource_iter = resources.find(resource_name); resource_iter != resources.end())
@@ -326,7 +325,7 @@ void IOResourceManager::createOrUpdateResource(const String & resource_name, con
     }
 }
 
-void IOResourceManager::deleteResource(const String & resource_name)
+void WorkloadResourceManager::deleteResource(const String & resource_name)
 {
     std::unique_lock lock{mutex};
     if (auto resource_iter = resources.find(resource_name); resource_iter != resources.end())
@@ -337,12 +336,12 @@ void IOResourceManager::deleteResource(const String & resource_name)
         LOG_ERROR(log, "Delete resource that doesn't exist: {}", resource_name);
 }
 
-IOResourceManager::Classifier::Classifier(const ClassifierSettings & settings_)
+WorkloadResourceManager::Classifier::Classifier(const ClassifierSettings & settings_)
     : settings(settings_)
 {
 }
 
-IOResourceManager::Classifier::~Classifier()
+WorkloadResourceManager::Classifier::~Classifier()
 {
     // Detach classifier from all resources in parallel (executed in every scheduler thread)
     std::vector<std::future<void>> futures;
@@ -369,7 +368,7 @@ IOResourceManager::Classifier::~Classifier()
     attachments.clear();
 }
 
-std::future<void> IOResourceManager::Resource::detachClassifier(VersionPtr && version)
+std::future<void> WorkloadResourceManager::Resource::detachClassifier(VersionPtr && version)
 {
     auto detach_promise = std::make_shared<std::promise<void>>(); // event queue task is std::function, which requires copy semanticss
     auto future = detach_promise->get_future();
@@ -391,13 +390,13 @@ std::future<void> IOResourceManager::Resource::detachClassifier(VersionPtr && ve
     return future;
 }
 
-bool IOResourceManager::Classifier::has(const String & resource_name)
+bool WorkloadResourceManager::Classifier::has(const String & resource_name)
 {
     std::unique_lock lock{mutex};
     return attachments.contains(resource_name);
 }
 
-ResourceLink IOResourceManager::Classifier::get(const String & resource_name)
+ResourceLink WorkloadResourceManager::Classifier::get(const String & resource_name)
 {
     std::unique_lock lock{mutex};
     if (auto iter = attachments.find(resource_name); iter != attachments.end())
@@ -413,20 +412,20 @@ ResourceLink IOResourceManager::Classifier::get(const String & resource_name)
     }
 }
 
-void IOResourceManager::Classifier::attach(const ResourcePtr & resource, const VersionPtr & version, ResourceLink link)
+void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, const VersionPtr & version, ResourceLink link)
 {
     std::unique_lock lock{mutex};
     chassert(!attachments.contains(resource->getName()));
     attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = link};
 }
 
-void IOResourceManager::Resource::updateResource(const ASTPtr & new_resource_entity)
+void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resource_entity)
 {
     chassert(getEntityName(new_resource_entity) == resource_name);
     resource_entity = new_resource_entity;
 }
 
-std::future<void> IOResourceManager::Resource::attachClassifier(Classifier & classifier, const String & workload_name)
+std::future<void> WorkloadResourceManager::Resource::attachClassifier(Classifier & classifier, const String & workload_name)
 {
     auto attach_promise = std::make_shared<std::promise<void>>(); // event queue task is std::function, which requires copy semantics
     auto future = attach_promise->get_future();
@@ -457,13 +456,13 @@ std::future<void> IOResourceManager::Resource::attachClassifier(Classifier & cla
     return future;
 }
 
-bool IOResourceManager::hasResource(const String & resource_name) const
+bool WorkloadResourceManager::hasResource(const String & resource_name) const
 {
     std::unique_lock lock{mutex};
     return resources.contains(resource_name);
 }
 
-ClassifierPtr IOResourceManager::acquire(const String & workload_name, const ClassifierSettings & settings)
+ClassifierPtr WorkloadResourceManager::acquire(const String & workload_name, const ClassifierSettings & settings)
 {
     auto classifier = std::make_shared<Classifier>(settings);
 
@@ -487,7 +486,7 @@ ClassifierPtr IOResourceManager::acquire(const String & workload_name, const Cla
     return classifier;
 }
 
-void IOResourceManager::Resource::forEachResourceNode(IResourceManager::VisitorFunc & visitor)
+void WorkloadResourceManager::Resource::forEachResourceNode(IResourceManager::VisitorFunc & visitor)
 {
     executeInSchedulerThread([&, this]
     {
@@ -501,7 +500,7 @@ void IOResourceManager::Resource::forEachResourceNode(IResourceManager::VisitorF
     });
 }
 
-void IOResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)
+void WorkloadResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)
 {
     // Copy resource to avoid holding mutex for a long time
     std::unordered_map<String, ResourcePtr> resources_copy;
@@ -515,7 +514,7 @@ void IOResourceManager::forEachNode(IResourceManager::VisitorFunc visitor)
         resource->forEachResourceNode(visitor);
 }
 
-void IOResourceManager::topologicallySortedWorkloadsImpl(Workload * workload, std::unordered_set<Workload *> & visited, std::vector<Workload *> & sorted_workloads)
+void WorkloadResourceManager::topologicallySortedWorkloadsImpl(Workload * workload, std::unordered_set<Workload *> & visited, std::vector<Workload *> & sorted_workloads)
 {
     if (visited.contains(workload))
         return;
@@ -533,7 +532,7 @@ void IOResourceManager::topologicallySortedWorkloadsImpl(Workload * workload, st
     sorted_workloads.push_back(workload);
 }
 
-std::vector<IOResourceManager::Workload *> IOResourceManager::topologicallySortedWorkloads()
+std::vector<WorkloadResourceManager::Workload *> WorkloadResourceManager::topologicallySortedWorkloads()
 {
     std::vector<Workload *> sorted_workloads;
     std::unordered_set<Workload *> visited;
