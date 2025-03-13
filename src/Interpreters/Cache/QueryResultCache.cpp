@@ -7,10 +7,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTWithAlias.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -22,7 +24,6 @@
 #include <Common/TTLCachePolicy.h>
 #include <Common/formatReadable.h>
 #include <Common/quoteString.h>
-#include "Parsers/ASTSelectQuery.h"
 #include <Core/Settings.h>
 #include <base/defines.h> /// chassert
 
@@ -278,10 +279,8 @@ using RemoveQueryResultCacheSettingsVisitor = InDepthNodeVisitor<RemoveQueryResu
 /// have been parsed already, they are not lost or discarded.
 ASTPtr removeQueryResultCacheSettings(ASTPtr ast)
 {
-    ASTPtr transformed_ast = ast->clone();
-
     RemoveQueryResultCacheSettingsMatcher::Data visitor_data;
-    RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(transformed_ast);
+    RemoveQueryResultCacheSettingsVisitor(visitor_data).visit(ast);
 
     return ast;
 }
@@ -295,15 +294,19 @@ public:
 
     static void visit(ASTPtr & ast, Data &)
     {
-        if (auto * table_expression = ast->as<ASTTableIdentifier>())
+        if (auto * table_identifier = ast->as<ASTTableIdentifier>())
         {
-            if (table_expression->alias.starts_with("__table"))
-                table_expression->setAlias("");
+            if (table_identifier->alias.starts_with("__table"))
+                table_identifier->setAlias("");
         }
         else if (auto * identifier = ast->as<ASTIdentifier>())
         {
             if (identifier->compound() && identifier->name_parts[0].starts_with("__table"))
                 identifier->setShortName(identifier->name_parts[1]);
+        }
+        else if (auto * function = ast->as<ASTFunction>()) {
+            if (function->alias.starts_with("__table"))
+                function->setAlias("");
         }
     }
 };
@@ -412,8 +415,9 @@ QueryResultCache::Key::Key(
     const Settings & settings,
     const String & query_id_,
     std::optional<UUID> user_id_,
-    const std::vector<UUID> & current_user_roles_)
-    : QueryResultCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false)
+    const std::vector<UUID> & current_user_roles_,
+    bool is_subquery_)
+    : QueryResultCache::Key(ast_, current_database, settings, {}, query_id_, user_id_, current_user_roles_, false, std::chrono::system_clock::from_time_t(1), false, is_subquery_)
     /// ^^ dummy values for everything except AST, current database, query_id, user name/roles
 {
 }
