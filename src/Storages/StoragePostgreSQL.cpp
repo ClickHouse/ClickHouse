@@ -415,13 +415,10 @@ public:
         settings.pretty.charset = FormatSettings::Pretty::Charset::ASCII;
 
         if (nested_type->isNullable())
-        {
             nested_type = static_cast<const DataTypeNullable *>(nested_type.get())->getNestedType();
-            const auto nested_name = nested_column.getName();
-            UNUSED(nested_name);
-        }
 
-        /// We need to patch first the nested type in case the the parent is nullable
+        /// We need to patch first the nested type in case the the parent is nullable because
+        /// getDefaultSerialization() takes the serialization used for the nested type
         changeSerializationForPostgreSQLFixedString(nested_column.getPtr(), nested_type);
         const auto serialization = parent_type->getDefaultSerialization();
 
