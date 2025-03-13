@@ -5,6 +5,7 @@ sidebar_label: VIEW
 description: 'Documentation for CREATE VIEW'
 title: 'CREATE VIEW'
 ---
+
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

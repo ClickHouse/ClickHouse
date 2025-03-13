@@ -4,6 +4,7 @@ slug: /operations/system-tables/error_log
 title: 'system.error_log'
 keywords: ['system table', 'error_log']
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>

@@ -4,6 +4,7 @@ slug: /operations/system-tables/errors
 title: 'system.errors'
 keywords: ['system table', 'errors']
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>

@@ -7,6 +7,7 @@ output_format: true
 alias: []
 description: 'Documentation for the CSV format'
 ---
+
 ## Description {#description}
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).

@@ -4,6 +4,7 @@ sidebar_label: 'Profile Guided Optimization (PGO)'
 description: 'Documentation for Profile Guided Optimization'
 title: 'Profile Guided Optimization'
 ---
+
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 # Profile Guided Optimization

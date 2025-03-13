@@ -6,6 +6,7 @@ sidebar_label: 'JSON'
 keywords: [json, data type]
 title: 'JSON Data Type'
 ---
+
 import BetaBadge from '@theme/badges/BetaBadge';
 
 <BetaBadge/>

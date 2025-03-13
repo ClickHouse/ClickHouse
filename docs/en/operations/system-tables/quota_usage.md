@@ -4,6 +4,7 @@ slug: /operations/system-tables/quota_usage
 title: 'system.quota_usage'
 keywords: ['system table', 'quota_usage']
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>

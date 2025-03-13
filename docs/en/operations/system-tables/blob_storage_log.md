@@ -4,6 +4,7 @@ slug: /operations/system-tables/blob_storage_log
 title: 'system.blob_storage_log'
 keywords: ['system table', 'blob_storage_log']
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>

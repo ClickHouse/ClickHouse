@@ -5,6 +5,7 @@ sidebar_position: 54
 sidebar_label: 'Query Profiling'
 title: 'Sampling Query Profiler'
 ---
+
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 # Sampling Query Profiler

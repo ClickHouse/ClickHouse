@@ -4,6 +4,7 @@ slug: /operations/system-tables/trace_log
 title: 'system.trace_log'
 keywords: ['system table', 'trace_log']
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 # system.trace_log
