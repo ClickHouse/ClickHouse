@@ -1,12 +1,12 @@
 #pragma once
 
-#include "Common/Priority.h"
-#include "Common/threadPoolCallbackRunner.h"
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
+#include <Common/Priority.h>
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/threadPoolCallbackRunner.h>
 
 #include <future>
 
@@ -130,8 +130,6 @@ public:
 
                     auto thread_func = [&lhs, &rhs, next_bucket_to_merge, is_cancelled, thread_group = CurrentThread::getGroup()]()
                     {
-                        // ThreadGroupSwitcher switcher(thread_group, "UniqExactMerger");
-
                         while (true)
                         {
                             if (is_cancelled->load(std::memory_order_seq_cst))
