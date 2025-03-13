@@ -120,15 +120,13 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
         local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
 
-    auto cluster = getCluster(local_context);
-    
     if (local_context->getSettingsRef()[Setting::object_storage_stable_cluster_task_distribution])
     {
-        auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator, cluster);
+        auto task_distributor = std::make_shared<StorageObjectStorageStableTaskDistributor>(iterator);
         
         auto callback = std::make_shared<TaskIterator>(
-            [task_distributor](Connection * connection) mutable -> String {
-                return task_distributor->getNextTask(connection);
+            [task_distributor](size_t number_of_current_replica, size_t number_of_replicas) mutable -> String {
+                return task_distributor->getNextTask(number_of_current_replica, number_of_replicas);
             });
         
         return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
@@ -136,7 +134,7 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
     else
     {
         auto callback = std::make_shared<TaskIterator>(
-            [iterator](Connection *) mutable -> String {
+            [iterator](size_t, size_t) mutable -> String {
                 if (auto object_info = iterator->next(0))
                     return object_info->getPath();
                 return "";

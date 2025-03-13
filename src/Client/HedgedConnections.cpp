@@ -457,7 +457,6 @@ Packet HedgedConnections::receivePacketFromReplica(const ReplicaLocation & repli
 {
     ReplicaState & replica = offset_states[replica_location.offset].replicas[replica_location.index];
     Packet packet = std::move(last_received_packet);
-    last_packet_connection = replica.connection
 
     switch (packet.type)
     {

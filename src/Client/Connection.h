@@ -176,9 +176,6 @@ public:
         format_settings = settings;
     }
 
-    String getHost() { return host; }
-    UInt16 getPort() { return port; }
-
 private:
     String host;
     UInt16 port;

@@ -740,7 +740,7 @@ void RemoteQueryExecutor::processReadTaskRequest()
 
     ProfileEvents::increment(ProfileEvents::ReadTaskRequestsReceived);
 
-    auto response = (*extension->task_iterator)(connections->getLastPacketConnection());
+    auto response = (*extension->task_iterator)(extension->replica_info->number_of_current_replica, extension->replica_info->number_of_replicas);
     connections->sendReadTaskResponse(response);
 }
 

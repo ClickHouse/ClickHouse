@@ -183,29 +183,44 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
     auto new_context = updateSettings(context->getSettingsRef());
     const auto & current_settings = new_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
+    size_t replica_index = 0;
+    size_t number_of_replicas = 0;
+    std::vector<IConnectionPool::Entry> try_results;
+
     for (const auto & shard_info : cluster->getShardsInfo())
     {
-        auto try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY);
-        for (auto & try_result : try_results)
+        auto shard_try_results = shard_info.pool->getMany(timeouts, current_settings, PoolMode::GET_MANY);
+        for (auto & try_result : shard_try_results)
         {
-            auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
-                std::vector<IConnectionPool::Entry>{try_result},
-                queryToString(query_to_send),
-                getOutputHeader(),
-                new_context,
-                /*throttler=*/nullptr,
-                scalars,
-                Tables(),
-                processed_stage,
-                extension);
-
-            remote_query_executor->setLogger(log);
-            pipes.emplace_back(std::make_shared<RemoteSource>(
-                remote_query_executor,
-                add_agg_info,
-                current_settings[Setting::async_socket_for_remote],
-                current_settings[Setting::async_query_sending_for_remote]));
+            number_of_replicas++;
+            try_results.emplace_back(std::move(try_result));
         }
+    }
+
+    for (auto & try_result : try_results)
+    {
+        IConnections::ReplicaInfo replica_info{
+            .number_of_current_replica = replica_index++,
+            .number_of_replicas = number_of_replicas,
+        };
+
+        auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(
+            std::vector<IConnectionPool::Entry>{try_result},
+            queryToString(query_to_send),
+            getOutputHeader(),
+            new_context,
+            /*throttler=*/nullptr,
+            scalars,
+            Tables(),
+            processed_stage,
+            RemoteQueryExecutor::Extension{.task_iterator = extension->task_iterator, .replica_info = std::move(replica_info)});
+
+        remote_query_executor->setLogger(log);
+        pipes.emplace_back(std::make_shared<RemoteSource>(
+            remote_query_executor,
+            add_agg_info,
+            current_settings[Setting::async_socket_for_remote],
+            current_settings[Setting::async_query_sending_for_remote]));
     }
 
     auto pipe = Pipe::unitePipes(std::move(pipes));
