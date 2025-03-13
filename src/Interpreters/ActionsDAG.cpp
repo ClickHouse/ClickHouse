@@ -26,7 +26,6 @@
 #include <stack>
 #include <base/sort.h>
 #include <Common/JSONBuilder.h>
-#include <Common/SipHash.h>
 #include <DataTypes/DataTypeSet.h>
 
 #include <absl/container/flat_hash_map.h>
@@ -136,73 +135,6 @@ void ActionsDAG::Node::toTree(JSONBuilder::JSONMap & map) const
         map.add("Compiled", is_function_compiled);
 }
 
-size_t ActionsDAG::Node::getHash() const
-{
-    SipHash hash_state;
-    updateHash(hash_state);
-    return hash_state.get64();
-}
-
-void ActionsDAG::Node::updateHash(SipHash & hash_state) const
-{
-    hash_state.update(type);
-
-    if (!result_name.empty())
-        hash_state.update(result_name);
-
-    if (result_type)
-        hash_state.update(result_type->getName());
-
-    if (function_base)
-        hash_state.update(function_base->getName());
-
-    if (function)
-        hash_state.update(function->getName());
-
-    hash_state.update(is_function_compiled);
-    hash_state.update(is_deterministic_constant);
-
-    if (column)
-        hash_state.update(column->getName());
-
-    for (const auto & child : children)
-        child->updateHash(hash_state);
-}
-
-UInt64 ActionsDAG::getHash() const
-{
-    SipHash hash;
-    updateHash(hash);
-    return hash.get64();
-}
-
-void ActionsDAG::updateHash(SipHash & hash_state) const
-{
-    struct Frame
-    {
-        const ActionsDAG::Node * const node;
-        size_t next_child = 0;
-    };
-
-    std::stack<Frame> stack;
-    for (const auto & node : outputs)
-        stack.push({.node = node});
-
-    while (!stack.empty())
-    {
-        auto & frame = stack.top();
-        if (frame.next_child == frame.node->children.size())
-        {
-            frame.node->updateHash(hash_state);
-            stack.pop();
-        }
-        else
-        {
-            stack.push({.node = frame.node->children[frame.next_child]});
-            ++frame.next_child;
-        }
-    }
-}
 
 ActionsDAG::ActionsDAG(const NamesAndTypesList & inputs_)
 {
@@ -496,18 +428,16 @@ ActionsDAG::NodeRawConstPtrs ActionsDAG::findInOutputs(const Names & names) cons
 
 void ActionsDAG::addOrReplaceInOutputs(const Node & node)
 {
-    bool replaced = false;
     for (auto & output_node : outputs)
     {
         if (output_node->result_name == node.result_name)
         {
             output_node = &node;
-            replaced = true;
+            return;
         }
     }
 
-    if (!replaced)
-        outputs.push_back(&node);
+    outputs.push_back(&node);
 }
 
 NamesAndTypesList ActionsDAG::getRequiredColumns() const
@@ -1924,7 +1854,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
         while (!stack.empty())
         {
-            const auto * cur_node = stack.top().node;
+            auto & cur_node = stack.top().node;
             stack.pop();
 
             for (const auto * child : cur_node->children)
@@ -1947,8 +1877,7 @@ ActionsDAG::SplitResult ActionsDAG::split(std::unordered_set<const Node *> split
 
         while (!stack.empty())
         {
-            /// Copying top frame is important, because we might access it after executing pop().
-            auto cur = stack.top();
+            auto & cur = stack.top();
             auto & cur_data = data[cur.node];
 
             /// At first, visit all children.
@@ -3325,40 +3254,23 @@ static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in)
     }
 }
 
-static void serializeConstant(const IDataType & type, const IColumn & value, WriteBuffer & out, SerializedSetsRegistry & registry)
+static void serialzieConstant(
+    const IDataType & type,
+    const IColumn & value,
+    WriteBuffer & out,
+    SerializedSetsRegistry & registry)
 {
     if (WhichDataType(type).isSet())
     {
-        /// Apparently, it is important whether the set is inside constant column or not.
-        /// If the set was made from tuple, we can apply constant folding.
-        /// Also, constants affect function return type (e.g. for LowCardinality).
-        /// However, we cannot always use constant columns because the sets from subquery are not ready yet.
-        /// So, here we keep this information in the flag.
-        ///
-        /// Technically, this information can be restored from the set type.
-        /// For now, only sets from subqueries are not constants.
-        /// But we cannot get the set type before we deserialize it (this is done after the main plan).
-        /// Also, we cannot serialize sets before the main plan, because they are registered lazily on serialization.
-        bool is_constant = false;
-
         const IColumn * maybe_set = &value;
         if (const auto * column_const = typeid_cast<const ColumnConst *>(maybe_set))
-        {
-            is_constant = true;
             maybe_set = &column_const->getDataColumn();
-        }
 
         const auto * column_set = typeid_cast<const ColumnSet *>(maybe_set);
         if (!column_set)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "ColumnSet is expected for DataTypeSet. Got {}", value.getName());
-
-        UInt8 flags = 0;
-        if (is_constant)
-            flags |= 1;
-
-        writeBinary(flags, out);
 
         auto hash = column_set->getData()->getHash();
         writeBinary(hash, out);
@@ -3393,7 +3305,7 @@ static void serializeConstant(const IDataType & type, const IColumn & value, Wri
         for (const auto & captured_column : captured_columns)
         {
             encodeDataType(captured_column.type, out);
-            serializeConstant(*captured_column.type, *captured_column.column, out, registry);
+            serialzieConstant(*captured_column.type, *captured_column.column, out, registry);
         }
 
         return;
@@ -3417,21 +3329,13 @@ static MutableColumnPtr deserializeConstant(
 {
     if (WhichDataType(type).isSet())
     {
-        UInt8 flags;
-        readBinary(flags, in);
-
-        bool is_constant = flags & 1;
-
         FutureSet::Hash hash;
         readBinary(hash, in);
 
-        auto column_set = ColumnSet::create(1, nullptr);
+        auto column_set = ColumnSet::create(0, nullptr);
         registry.sets[hash].push_back(column_set.get());
 
-        if (!is_constant)
-            return column_set;
-
-        return ColumnConst::create(std::move(column_set), 0);
+        return column_set;
     }
 
     if (WhichDataType(type).isFunction())
@@ -3454,7 +3358,7 @@ static MutableColumnPtr deserializeConstant(
             std::make_shared<LambdaCapture>(std::move(capture)),
             std::make_shared<ExpressionActions>(
                 std::move(capture_dag),
-                ExpressionActionsSettings(context, CompileExpressions::yes)));
+                ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)));
 
         return ColumnFunction::create(1, std::move(function_expression), std::move(captured_columns));
     }
@@ -3487,7 +3391,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
             writeVarUInt(node_to_id.at(child), out);
 
         /// Serialize column if it is present
-        const bool has_column = (node.type != ActionType::INPUT && node.column != nullptr);
+        const bool has_column = node.column != nullptr;
         UInt8 column_flags = 0;
         if (has_column)
         {
@@ -3503,7 +3407,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry)
         writeIntBinary(column_flags, out);
 
         if (has_column)
-            serializeConstant(*node.result_type, *node.column, out, registry);
+            serialzieConstant(*node.result_type, *node.column, out, registry);
 
         if (node.type == ActionType::INPUT)
         {
@@ -3633,7 +3537,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                 node.function_base = std::make_shared<FunctionCapture>(
                     std::make_shared<ExpressionActions>(
                         std::move(capture_dag),
-                        ExpressionActionsSettings(context, CompileExpressions::yes)),
+                        ExpressionActionsSettings::fromContext(context, CompileExpressions::yes)),
                     std::make_shared<LambdaCapture>(std::move(capture)),
                     node.result_type,
                     function_name);
@@ -3657,7 +3561,7 @@ ActionsDAG ActionsDAG::deserialize(ReadBuffer & in, DeserializedSetsRegistry & r
                 if (const auto * rhs_tuple = typeid_cast<const DataTypeTuple *>(rhs_type.get()))
                     rhs_type = std::make_shared<DataTypeTuple>(rhs_tuple->getElements());
 
-                if (!lhs_type->equals(*rhs_type))
+                if (!lhs_type->equals(*lhs_type))
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Deserialized function {} has invalid type. Expected {}, deserialized {}.",
                         function_name,

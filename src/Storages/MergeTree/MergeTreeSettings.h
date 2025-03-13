@@ -92,9 +92,6 @@ struct MergeTreeSettings
     static void checkCanSet(std::string_view name, const Field & value);
     static bool isPartFormatSetting(const String & name);
 
-    /// Cloud only
-    static bool isSMTReadonlySetting(const String & name);
-
 private:
     std::unique_ptr<MergeTreeSettingsImpl> impl;
 };

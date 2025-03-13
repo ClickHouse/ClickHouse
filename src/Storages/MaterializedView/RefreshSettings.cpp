@@ -44,8 +44,6 @@ RefreshSettings::~RefreshSettings() = default;
 
 RefreshSettings & RefreshSettings::operator=(const RefreshSettings & other)
 {
-    if (&other == this)
-        return *this;
     *impl = *other.impl;
     return *this;
 }

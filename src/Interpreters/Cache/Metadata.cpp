@@ -943,7 +943,7 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
 
     LOG_TEST(
         key_metadata->logger(), "Remove from cache. Key: {}, offset: {}, size: {}",
-        getKey(), file_segment->offset(), file_segment->reserved_size.load());
+        getKey(), file_segment->offset(), file_segment->reserved_size);
 
     chassert(can_be_broken || file_segment->assertCorrectnessUnlocked(segment_lock));
 
@@ -998,6 +998,42 @@ KeyMetadata::iterator LockedKey::removeFileSegmentImpl(
     }
 
     return key_metadata->erase(it);
+}
+
+void LockedKey::shrinkFileSegmentToDownloadedSize(
+    size_t offset,
+    const FileSegmentGuard::Lock & segment_lock)
+{
+    /**
+     * In case file was partially downloaded and it's download cannot be continued
+     * because of no space left in cache, we need to be able to cut file segment's size to downloaded_size.
+     */
+
+    auto file_segment_metadata = getByOffset(offset);
+    const auto & file_segment = file_segment_metadata->file_segment;
+    chassert(file_segment->assertCorrectnessUnlocked(segment_lock));
+
+    const size_t downloaded_size = file_segment->getDownloadedSize();
+    if (downloaded_size == file_segment->range().size())
+    {
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Nothing to reduce, file segment fully downloaded: {}",
+            file_segment->getInfoForLogUnlocked(segment_lock));
+    }
+
+    chassert(file_segment->reserved_size >= downloaded_size);
+    int64_t diff = file_segment->reserved_size - downloaded_size;
+
+    file_segment_metadata->file_segment = std::make_shared<FileSegment>(
+        getKey(), offset, downloaded_size, FileSegment::State::DOWNLOADED,
+        CreateFileSegmentSettings(file_segment->getKind()), false,
+        file_segment->cache, key_metadata, file_segment->queue_iterator);
+
+    if (diff)
+        file_segment_metadata->getQueueIterator()->decrementSize(diff);
+
+    chassert(file_segment_metadata->file_segment->assertCorrectnessUnlocked(segment_lock));
 }
 
 bool LockedKey::addToDownloadQueue(size_t offset, const FileSegmentGuard::Lock &)

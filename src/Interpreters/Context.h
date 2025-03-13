@@ -21,9 +21,6 @@
 #include <Parsers/IAST_fwd.h>
 #include <Server/HTTP/HTTPContext.h>
 #include <Storages/IStorage_fwd.h>
-#include <Backups/BackupsInMemoryHolder.h>
-
-#include <Poco/AutoPtr.h>
 
 #include "config.h"
 
@@ -62,7 +59,6 @@ class SystemLogs;
 struct ContextSharedPart;
 class ContextAccess;
 class ContextAccessWrapper;
-class Field;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
 struct SettingsProfilesInfo;
@@ -104,8 +100,7 @@ class Macros;
 struct Progress;
 struct FileProgress;
 class Clusters;
-class QueryResultCache;
-class QueryConditionCache;
+class QueryCache;
 class ISystemLog;
 class QueryLog;
 class QueryMetricLog;
@@ -115,7 +110,6 @@ class PartLog;
 class TextLog;
 class TraceLog;
 class MetricLog;
-class LatencyLog;
 class AsynchronousMetricLog;
 class OpenTelemetrySpanLog;
 class ZooKeeperLog;
@@ -505,8 +499,6 @@ public:
 
         KitchenSink & operator=(const KitchenSink & rhs)
         {
-            if (&rhs == this)
-                return *this;
             analyze_counter = rhs.analyze_counter.load();
             return *this;
         }
@@ -544,8 +536,6 @@ protected:
     MergeTreeTransactionPtr merge_tree_transaction;     /// Current transaction context. Can be inside session or query context.
                                                         /// It's shared with all children contexts.
     MergeTreeTransactionHolder merge_tree_transaction_holder;   /// It will rollback or commit transaction on Context destruction.
-
-    BackupsInMemoryHolder backups_in_memory; /// Backups stored in memory (see "BACKUP ... TO Memory()" statement)
 
     /// Use copy constructor or createGlobal() instead
     ContextData();
@@ -597,50 +587,8 @@ public:
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
-    // Get the disk used by databases to store metadata files.
-    std::shared_ptr<IDisk> getDatabaseDisk() const;
-
-    /// Different kinds of warnings available for use with the `system.warnings` table.
-    /// More can be added as necessary. These are used to track if a warning is already
-    /// present to be able to add, remove or update warnings from the table
-    enum class WarningType
-    {
-        AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
-        AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
-        AVAILABLE_MEMORY_TOO_LOW,
-        DELAY_ACCOUNTING_DISABLED,
-        DB_ORDINARY_DEPRECATED,
-        ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-        LINUX_MAX_PID_TOO_LOW,
-        LINUX_MEMORY_OVERCOMMIT_DISABLED,
-        LINUX_FAST_CLOCK_SOURCE_NOT_USED,
-        LINUX_MAX_THREADS_COUNT_TOO_LOW,
-        LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
-        MAX_ATTACHED_TABLES,
-        MAX_ATTACHED_VIEWS,
-        MAX_ATTACHED_DICTIONARIES,
-        MAX_ATTACHED_DATABASES,
-        MAX_ACTIVE_PARTS,
-        MAX_PENDING_MUTATIONS_EXCEEDS_LIMIT,
-        MAX_NUM_THREADS_LOWER_THAN_LIMIT,
-        OBSOLETE_SETTINGS,
-        PROCESS_USER_MATCHES_DATA_OWNER,
-        RABBITMQ_UNSUPPORTED_COLUMNS,
-        REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
-        SERVER_LOGGING_LEVEL_TEST,
-        SERVER_RUN_UNDER_DEBUGGER,
-        SERVER_BUILT_IN_DEBUG_MODE,
-        SERVER_BUILT_WITH_SANITIZERS,
-        SERVER_BUILT_WITH_COVERAGE,
-        SETTING_ZERO_COPY_REPLICATION_ENABLED,
-        SKIPPING_CONDITION_QUERY,
-        THREAD_FUZZER_IS_ENABLED
-    };
-
-    std::unordered_map<WarningType, PreformattedMessage> getWarnings() const;
-    void addOrUpdateWarningMessage(WarningType warning, const PreformattedMessage & message) const;
-    void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
-    void removeWarningMessage(WarningType warning) const;
+    /// A list of warnings about server configuration to place in `system.warnings` table.
+    Strings getWarnings() const;
 
     VolumePtr getGlobalTemporaryVolume() const; /// TODO: remove, use `getTempDataOnDisk`
 
@@ -656,6 +604,9 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
+
+    void addWarningMessage(const String & msg) const;
+    void addWarningMessageAboutDatabaseOrdinary(const String & database_name) const;
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -766,7 +717,6 @@ public:
     void setClientInterface(ClientInfo::Interface interface);
     void setClientVersion(UInt64 client_version_major, UInt64 client_version_minor, UInt64 client_version_patch, unsigned client_tcp_protocol_version);
     void setClientConnectionId(uint32_t connection_id);
-    void setScriptQueryAndLineNumber(uint32_t query_number, uint32_t line_number);
     void setHTTPClientInfo(const Poco::Net::HTTPRequest & request);
     void setForwardedFor(const String & forwarded_for);
     void setQueryKind(ClientInfo::QueryKind query_kind);
@@ -941,7 +891,7 @@ public:
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     EmbeddedDictionaries & getEmbeddedDictionaries();
-    void tryCreateEmbeddedDictionaries() const;
+    void tryCreateEmbeddedDictionaries(const Poco::Util::AbstractConfiguration & config) const;
     void loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration & config);
     void waitForDictionariesLoad() const;
 
@@ -961,8 +911,6 @@ public:
 
     BackupsWorker & getBackupsWorker() const;
     void waitAllBackupsAndRestores() const;
-    BackupsInMemoryHolder & getBackupsInMemory();
-    const BackupsInMemoryHolder & getBackupsInMemory() const;
 
     /// I/O formats.
     InputFormatPtr getInputFormat(const String & name, ReadBuffer & buf, const Block & sample, UInt64 max_block_size,
@@ -999,11 +947,6 @@ public:
     void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
     void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
     void setMaxPartNumToWarn(size_t max_part_to_warn);
-
-    // Following are based on asynchronous metrics
-    void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
-    size_t getMaxPendingMutationsToWarn() const;
-
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
 
@@ -1130,12 +1073,9 @@ public:
     std::shared_ptr<UncompressedCache> getUncompressedCache() const;
     void clearUncompressedCache() const;
 
-    void setPageCache(
-        size_t default_block_size, size_t default_lookahead_blocks,
-        std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
-        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio);
+    void setPageCache(size_t bytes_per_chunk, size_t bytes_per_mmap, size_t bytes_total, bool use_madv_free, bool use_huge_pages);
     std::shared_ptr<PageCache> getPageCache() const;
-    void clearPageCache() const;
+    void dropPageCache() const;
 
     void setMarkCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updateMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1163,15 +1103,10 @@ public:
     std::shared_ptr<MMappedFileCache> getMMappedFileCache() const;
     void clearMMappedFileCache() const;
 
-    void setQueryResultCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
-    void updateQueryResultCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<QueryResultCache> getQueryResultCache() const;
-    void clearQueryResultCache(const std::optional<String> & tag) const;
-
-    void setQueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
-    void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
-    std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
-    void clearQueryConditionCache() const;
+    void setQueryCache(size_t max_size_in_bytes, size_t max_entries, size_t max_entry_size_in_bytes, size_t max_entry_size_in_rows);
+    void updateQueryCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<QueryCache> getQueryCache() const;
+    void clearQueryCache(const std::optional<String> & tag) const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.
@@ -1244,7 +1179,6 @@ public:
     std::shared_ptr<TraceLog> getTraceLog() const;
     std::shared_ptr<TextLog> getTextLog() const;
     std::shared_ptr<MetricLog> getMetricLog() const;
-    std::shared_ptr<LatencyLog> getLatencyLog() const;
     std::shared_ptr<AsynchronousMetricLog> getAsynchronousMetricLog() const;
     std::shared_ptr<OpenTelemetrySpanLog> getOpenTelemetrySpanLog() const;
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
@@ -1308,9 +1242,6 @@ public:
 
     StoragePolicyPtr getStoragePolicyFromDisk(const String & disk_name) const;
 
-    using StoragePolicyCreator = std::function<StoragePolicyPtr(const StoragePoliciesMap & storage_policies_map)>;
-    StoragePolicyPtr getOrCreateStoragePolicy(const String & name, StoragePolicyCreator creator) const;
-
     /// Get the server uptime in seconds.
     double getUptimeSeconds() const;
 
@@ -1336,7 +1267,6 @@ public:
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
-        EMBEDDED_CLIENT,/// clickhouse-client being run over SSH tunnel
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
         DISKS,          /// clickhouse-disks

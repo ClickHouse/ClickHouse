@@ -7,7 +7,6 @@
 #include <IO/ReadBuffer.h>
 
 #include <cppkafka/cppkafka.h>
-#include <Common/DateLUT.h>
 #include <Common/CurrentMetrics.h>
 
 namespace CurrentMetrics
@@ -26,7 +25,6 @@ namespace DB
 class StorageSystemKafkaConsumers;
 
 using ConsumerPtr = std::shared_ptr<cppkafka::Consumer>;
-using LoggerPtr = std::shared_ptr<Poco::Logger>;
 
 class KafkaConsumer
 {
@@ -34,7 +32,7 @@ public:
     struct ExceptionInfo
     {
         String text;
-        UInt64 timestamp;
+        UInt64 timestamp_usec;
     };
     using ExceptionsBuffer = boost::circular_buffer<ExceptionInfo>;
 
@@ -52,8 +50,8 @@ public:
         Assignments assignments;
         UInt64 last_poll_time;
         UInt64 num_messages_read;
-        UInt64 last_commit_timestamp;
-        UInt64 last_rebalance_timestamp;
+        UInt64 last_commit_timestamp_usec;
+        UInt64 last_rebalance_timestamp_usec;
         UInt64 num_commits;
         UInt64 num_rebalance_assignments;
         UInt64 num_rebalance_revocations;
@@ -122,7 +120,7 @@ public:
     void notInUse()
     {
         in_use = false;
-        last_used_usec = timeInMicroseconds(std::chrono::system_clock::now());
+        last_used_usec = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
     }
 
     // For system.kafka_consumers
@@ -178,11 +176,12 @@ private:
     const size_t EXCEPTIONS_DEPTH = 10;
     ExceptionsBuffer exceptions_buffer;
 
-    std::atomic<UInt64> last_poll_timestamp = 0;
+    std::atomic<UInt64> last_exception_timestamp_usec = 0;
+    std::atomic<UInt64> last_poll_timestamp_usec = 0;
     std::atomic<UInt64> num_messages_read = 0;
-    std::atomic<UInt64> last_commit_timestamp = 0;
+    std::atomic<UInt64> last_commit_timestamp_usec = 0;
     std::atomic<UInt64> num_commits = 0;
-    std::atomic<UInt64> last_rebalance_timestamp = 0;
+    std::atomic<UInt64> last_rebalance_timestamp_usec = 0;
     std::atomic<UInt64> num_rebalance_assignments = 0;
     std::atomic<UInt64> num_rebalance_revocations = 0;
     std::atomic<bool> in_use = false;

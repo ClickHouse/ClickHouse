@@ -13,7 +13,7 @@ INSERT INTO 02186_range_dictionary_source_table VALUES (1, '2020-01-02', '2100-0
 INSERT INTO 02186_range_dictionary_source_table VALUES (1, '2020-01-03', '2100-01-01', 'Value2');
 
 SELECT 'Source table';
-SELECT * FROM 02186_range_dictionary_source_table ORDER BY ALL;
+SELECT * FROM 02186_range_dictionary_source_table;
 
 DROP DICTIONARY IF EXISTS 02186_range_dictionary;
 CREATE DICTIONARY 02186_range_dictionary
@@ -54,7 +54,7 @@ LIFETIME(0);
 
 SELECT 'Dictionary .range_lookup_strategy = max';
 
-SELECT * FROM 02186_range_dictionary ORDER BY ALL;
+SELECT * FROM 02186_range_dictionary;
 
 select dictGet('02186_range_dictionary', 'value', toUInt64(1), toDate('2020-01-01'));
 select dictGet('02186_range_dictionary', 'value', toUInt64(1), toDate('2020-01-02'));

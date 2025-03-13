@@ -1,4 +1,3 @@
-#include <DataTypes/DataTypeTuple.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnFunction.h>
 #include <Columns/ColumnsCommon.h>
@@ -85,32 +84,11 @@ void ColumnFunction::get(size_t n, Field & res) const
     const size_t tuple_size = captured_columns.size();
 
     res = Tuple();
-    Tuple & res_tuple = res.safeGet<Tuple>();
+    Tuple & res_tuple = res.safeGet<Tuple &>();
     res_tuple.reserve(tuple_size);
 
     for (size_t i = 0; i < tuple_size; ++i)
         res_tuple.push_back((*captured_columns[i].column)[n]);
-}
-
-std::pair<String, DataTypePtr> ColumnFunction::getValueNameAndType(size_t n) const
-{
-    size_t size = captured_columns.size();
-
-    String value_name {size > 1 ? "(" : "tuple("};
-    DataTypes element_types;
-    element_types.reserve(size);
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        const auto & [value, type] = captured_columns[i].column->getValueNameAndType(n);
-        element_types.push_back(type);
-        if (i > 0)
-            value_name += ", ";
-        value_name += value;
-    }
-    value_name += ")";
-
-    return {value_name, std::make_shared<DataTypeTuple>(element_types)};
 }
 
 

@@ -3,10 +3,10 @@
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/Kusto/ParserKQLDateTypeTimespan.h>
 #include <boost/lexical_cast.hpp>
-#include <base/EnumReflection.h>
+#include <magic_enum.hpp>
 #include <pcg_random.hpp>
 #include <Poco/String.h>
-
+#include <format>
 #include <numeric>
 #include <stack>
 
@@ -144,8 +144,7 @@ std::vector<std::string> IParserKQLFunction::getArguments(
 
 String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser::Pos & pos)
 {
-    int32_t round_bracket_count = 0;
-    int32_t square_bracket_count = 0;
+    int32_t round_bracket_count = 0, square_bracket_count = 0;
     if (pos->type == TokenType::ClosingRoundBracket || pos->type == TokenType::ClosingSquareBracket)
         return {};
 
@@ -197,7 +196,7 @@ String IParserKQLFunction::getConvertedArgument(const String & fn_name, IParser:
                         array_index += getExpression(pos);
                         ++pos;
                     }
-                    token = fmt::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+                    token = std::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
                 }
                 else
                     token = String(pos->begin, pos->end);
@@ -301,7 +300,7 @@ String IParserKQLFunction::kqlCallToExpression(
             return acc;
         });
 
-    const auto kql_call = fmt::format("{}({})", function_name, params_str);
+    const auto kql_call = std::format("{}({})", function_name, params_str);
     Tokens call_tokens(kql_call.data(), kql_call.data() + kql_call.length(), 0, true);
     IParser::Pos tokens_pos(call_tokens, max_depth, max_backtracks);
     return DB::IParserKQLFunction::getExpression(tokens_pos);
@@ -363,7 +362,7 @@ String IParserKQLFunction::getExpression(IParser::Pos & pos)
             array_index += getExpression(pos);
             ++pos;
         }
-        arg = fmt::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
+        arg = std::format("[ {0} >=0 ? {0} + 1 : {0}]", array_index);
     }
 
     return arg;

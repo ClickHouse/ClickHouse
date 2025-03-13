@@ -195,10 +195,8 @@ public:
         auto minutes = (time % 10'000) / 100;
         auto seconds = time % 100;
 
-        Int64 min_date = 0;
-        Int64 max_date = 0;
-        Int16 min_year;
-        Int16 max_year;
+        Int64 min_date = 0, max_date = 0;
+        Int16 min_year, max_year;
         if (isDate(result_type))
         {
             min_date = date_lut.makeDayNum(1970, 1, 1);
@@ -348,8 +346,8 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::Syntax syntax = "changeYear(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
         FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime.";
-        FunctionDocumentation::Category category = {"Dates and Times"};
-        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .category = category};
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
         factory.registerFunction<FunctionChangeDate<ChangeYearTraits>>(function_documentation);
     }
     {
@@ -357,8 +355,8 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::Syntax syntax = "changeMonth(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
         FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime.";
-        FunctionDocumentation::Category category = {"Dates and Times"};
-        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .category = category};
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
         factory.registerFunction<FunctionChangeDate<ChangeMonthTraits>>(function_documentation);
     }
     {
@@ -366,8 +364,8 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::Syntax syntax = "changeDay(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
         FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime.";
-        FunctionDocumentation::Category category = {"Dates and Times"};
-        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .category = category};
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
         factory.registerFunction<FunctionChangeDate<ChangeDayTraits>>(function_documentation);
     }
     {
@@ -375,8 +373,8 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::Syntax syntax = "changeHour(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
         FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.";
-        FunctionDocumentation::Category category = {"Dates and Times"};
-        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .category = category};
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
         factory.registerFunction<FunctionChangeDate<ChangeHourTraits>>(function_documentation);
     }
     {
@@ -384,8 +382,8 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::Syntax syntax = "changeMinute(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
         FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.";
-        FunctionDocumentation::Category category = {"Dates and Times"};
-        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .category = category};
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
         factory.registerFunction<FunctionChangeDate<ChangeMinuteTraits>>(function_documentation);
     }
     {
@@ -393,8 +391,8 @@ REGISTER_FUNCTION(ChangeDate)
         FunctionDocumentation::Syntax syntax = "changeSecond(date_or_datetime, value);";
         FunctionDocumentation::Arguments arguments = {{"date_or_datetime", "The value to change. Type: Date, Date32, DateTime, or DateTime64"}, {"value", "The new value. Type: [U]Int*"}};
         FunctionDocumentation::ReturnedValue returned_value = "The same type as date_or_datetime. If the input is a Date, return DateTime. If the input is a Date32, return DateTime64.";
-        FunctionDocumentation::Category category = {"Dates and Times"};
-        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .category = category};
+        FunctionDocumentation::Categories categories = {"Dates and Times"};
+        FunctionDocumentation function_documentation = {.description = description, .syntax = syntax, .arguments = arguments, .returned_value = returned_value, .categories = categories};
         factory.registerFunction<FunctionChangeDate<ChangeSecondTraits>>(function_documentation);
     }
 }

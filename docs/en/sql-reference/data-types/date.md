@@ -1,5 +1,5 @@
 ---
-slug: /sql-reference/data-types/date
+slug: /en/sql-reference/data-types/date
 sidebar_position: 12
 sidebar_label: Date
 ---
@@ -46,5 +46,5 @@ SELECT * FROM dt;
 **See Also**
 
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
-- [Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
+- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 - [`DateTime` data type](../../sql-reference/data-types/datetime.md)

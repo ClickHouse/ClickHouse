@@ -1,9 +1,10 @@
 ---
-description:  "The Star Schema Benchmark (SSB) data set and queries"
-slug: /getting-started/example-datasets/star-schema
+slug: /en/getting-started/example-datasets/star-schema
 sidebar_label: Star Schema Benchmark
-title: "Star Schema Benchmark (SSB, 2009)"
+description:  "The Star Schema Benchmark (SSB) data set and queries"
 ---
+
+# Star Schema Benchmark (SSB, 2009)
 
 The Star Schema Benchmark is roughly based on the [TPC-H](tpch.md)'s tables and queries but unlike TPC-H, it uses a star schema layout.
 The bulk of the data sits in a gigantic fact table which is surrounded by multiple small dimension tables.

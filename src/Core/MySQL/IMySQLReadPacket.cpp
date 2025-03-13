@@ -1,4 +1,3 @@
-#include <Common/Exception.h>
 #include <Core/MySQL/IMySQLReadPacket.h>
 #include <IO/MySQLPacketPayloadReadBuffer.h>
 #include <IO/LimitReadBuffer.h>

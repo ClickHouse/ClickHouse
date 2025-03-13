@@ -1,4 +1,3 @@
-#include <Columns/IColumn.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>

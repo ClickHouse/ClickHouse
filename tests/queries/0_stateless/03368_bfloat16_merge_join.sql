@@ -1,3 +1,5 @@
+set allow_experimental_bfloat16_type = 1;
+
 DROP TABLE IF EXISTS t0;
 CREATE TABLE t0 (c0 Float64, c1 BFloat16) ENGINE = MergeTree() PARTITION BY (murmurHash3_64(c0)) PRIMARY KEY (c0);
 SET join_algorithm = 'full_sorting_merge';

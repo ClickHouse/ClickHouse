@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <deque>
 
+#include <fmt/core.h>
 #include <fmt/format.h>
 
 #include <IO/WriteBuffer.h>

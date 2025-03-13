@@ -5,15 +5,13 @@ SCRIPT_PID=$!
 
 # shellcheck disable=SC1091
 source /setup_export_logs.sh
-# shellcheck disable=SC1091
-source /basic_helpers.sh
 
 # fail on errors, verbose and export all env variables
 set -e -x -a
 
-run_with_retry 3 dpkg -i package_folder/clickhouse-common-static_*.deb
-run_with_retry 3 dpkg -i package_folder/clickhouse-server_*.deb
-run_with_retry 3 dpkg -i package_folder/clickhouse-client_*.deb
+dpkg -i package_folder/clickhouse-common-static_*.deb
+dpkg -i package_folder/clickhouse-server_*.deb
+dpkg -i package_folder/clickhouse-client_*.deb
 
 # A directory for cache
 mkdir /dev/shm/clickhouse

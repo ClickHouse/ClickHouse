@@ -5,6 +5,7 @@
 
 #include <Common/logger_useful.h>
 #include <Core/SortCursor.h>
+#include <Formats/TemporaryFileStreamLegacy.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/MergeJoin.h>
@@ -516,7 +517,8 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         size_limits.max_bytes = table_join->defaultMaxBytes();
         if (!size_limits.max_bytes)
             throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                            "No limit for MergeJoin (max_rows_in_join or max_bytes_in_join settings must be set)");
+                            "No limit for MergeJoin (max_rows_in_join, max_bytes_in_join "
+                            "or default_max_bytes_in_join have to be set)");
     }
 
     if (!table_join->oneDisjunct())
@@ -609,7 +611,6 @@ void MergeJoin::mergeInMemoryRightBlocks()
         /*increase_sort_description_compile_attempts=*/false,
         /*max_bytes_before_remerge_*/0,
         /*remerge_lowered_memory_bytes_ratio_*/0,
-        /*min_external_sort_block_bytes_*/0,
         /*max_bytes_before_external_sort_*/0,
         /*tmp_data_*/nullptr,
         /*min_free_disk_space_*/0));
@@ -1047,14 +1048,8 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
     {
         auto load_func = [&]() -> std::shared_ptr<Block>
         {
-            auto input = flushed_right_blocks[pos].getReadStream();
-            auto result = std::make_shared<Block>(input->read());
-            if (Block eof_block = input->read())
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected one block per file, got block {} in file {}",
-                    eof_block.dumpStructure(), flushed_right_blocks[pos].getHolder()->describeFilePath());
-            }
-            return result;
+            TemporaryFileStreamLegacy input(flushed_right_blocks[pos]->getAbsolutePath(), materializeBlock(right_sample_block));
+            return std::make_shared<Block>(input.block_in->read());
         };
 
         return cached_right_blocks->getOrSet(pos, load_func).first;
@@ -1065,8 +1060,9 @@ std::shared_ptr<Block> MergeJoin::loadRightBlock(size_t pos) const
 
 void MergeJoin::initRightTableWriter()
 {
-    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTempDataOnDisk(),
-                    right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge);
+    disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getGlobalTemporaryVolume(),
+                    right_sample_block, right_sort_description, max_rows_in_right_block, max_files_to_merge,
+                    table_join->temporaryFilesCodec());
     disk_writer->addBlocks(right_blocks);
     right_blocks.clear();
 }

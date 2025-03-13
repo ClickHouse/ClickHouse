@@ -19,13 +19,11 @@
 
 #include "MatchGenerator.h"
 
-#include <base/EnumReflection.h>
 #include <Common/Exception.h>
 #include <Common/thread_local_rng.h>
-
 #include <map>
 #include <functional>
-
+#include <magic_enum.hpp>
 
 namespace DB
 {

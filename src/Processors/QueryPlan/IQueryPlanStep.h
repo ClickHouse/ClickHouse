@@ -6,6 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 
+#include <fmt/core.h>
+
 namespace DB
 {
 
@@ -26,8 +28,6 @@ struct QueryPlanSerializationSettings;
 
 using Header = Block;
 using Headers = std::vector<Header>;
-
-struct ExplainPlanOptions;
 
 /// Single step of query plan.
 class IQueryPlanStep
@@ -62,8 +62,6 @@ public:
 
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
-    virtual bool isSerializable() const { return false; }
-
     virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings
@@ -83,9 +81,6 @@ public:
     virtual void describeIndexes(JSONBuilder::JSONMap & /*map*/) const {}
     virtual void describeIndexes(FormatSettings & /*settings*/) const {}
 
-    /// Get description of the distributed plan. Shown in with options `distributed = 1
-    virtual void describeDistributedPlan(FormatSettings & /*settings*/, const ExplainPlanOptions & /*options*/) {}
-
     /// Get description of processors added in current step. Should be called after updatePipeline().
     virtual void describePipeline(FormatSettings & /*settings*/) const {}
 
@@ -97,7 +92,7 @@ public:
 
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
-    String getUniqID() const;
+    String getUniqID() const { return fmt::format("{}_{}", getName(), step_index); }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(Headers input_headers_);

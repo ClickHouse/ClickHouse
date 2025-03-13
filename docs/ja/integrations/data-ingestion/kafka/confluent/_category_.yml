@@ -1,0 +1,8 @@
+position: 1
+label: 'Confluent Platform'
+collapsible: true
+collapsed: true
+link:
+  type: generated-index
+  title: Kafka on Confluent Platform
+  slug: /ja/integrations/kafka/cloud/confluent

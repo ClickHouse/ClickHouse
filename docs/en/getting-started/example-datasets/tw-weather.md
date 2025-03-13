@@ -1,10 +1,11 @@
 ---
-description: "131 million rows of weather observation data for the last 128 yrs"
-slug: /getting-started/example-datasets/tw-weather
+slug: /en/getting-started/example-datasets/tw-weather
 sidebar_label: Taiwan Historical Weather Datasets
 sidebar_position: 1
-title: "Taiwan Historical Weather Datasets"
+description: 131 million rows of weather observation data for the last 128 yrs
 ---
+
+# Taiwan Historical Weather Datasets
 
 This dataset contains historical meteorological observations measurements for the last 128 years. Each row is a measurement for a point in date time and weather station.
 
@@ -20,12 +21,12 @@ The origin of this dataset is available [here](https://github.com/Raingel/histor
     - RH, the relative humidity
     - Other elements where available
 
-## Downloading the data {#downloading-the-data}
+## Downloading the data
 
 - A [pre-processed version](#pre-processed-data) of the data for the ClickHouse, which has been cleaned, re-structured, and enriched. This dataset covers the years from 1896 to 2023.
 - [Download the original raw data](#original-raw-data) and convert to the format required by ClickHouse. Users wanting to add their own columns may wish to explore or complete their approaches.
 
-### Pre-processed data {#pre-processed-data}
+### Pre-processed data
 
 The dataset has also been re-structured from a measurement per line to a row per weather station id and measured date, i.e.
 
@@ -58,11 +59,11 @@ md5sum daily_weather_preprocessed_1896_2023.csv
 # Checksum should be equal to: 1132248c78195c43d93f843753881754
 ```
 
-### Original raw data {#original-raw-data}
+### Original raw data
 
 The following details are about the steps to download the original raw data to transform and convert as you want.
 
-#### Download {#download}
+#### Download
 
 To download the original raw data:
 
@@ -87,7 +88,7 @@ cat *.csv | md5sum
 # Checksum should be equal to: b26db404bf84d4063fac42e576464ce1
 ```
 
-#### Retrieve the Taiwan weather stations {#retrieve-the-taiwan-weather-stations}
+#### Retrieve the Taiwan weather stations
 
 ```bash
 wget -O weather_sta_list.csv https://github.com/Raingel/weather_station_list/raw/main/data/weather_sta_list.csv
@@ -96,7 +97,7 @@ wget -O weather_sta_list.csv https://github.com/Raingel/weather_station_list/raw
 sed -i '1s/^\xEF\xBB\xBF//' weather_sta_list.csv
 ```
 
-## Create table schema {#create-table-schema}
+## Create table schema
 
 Create the MergeTree table in ClickHouse (from the ClickHouse client).
 
@@ -137,9 +138,9 @@ ENGINE = MergeTree
 ORDER BY (MeasuredDate);
 ```
 
-## Inserting into ClickHouse {#inserting-into-clickhouse}
+## Inserting into ClickHouse
 
-### Inserting from local file {#inserting-from-local-file}
+### Inserting from local file
 
 Data can be inserted from a local file as follows (from the ClickHouse client):
 
@@ -159,7 +160,7 @@ Ok.
 Peak memory usage: 583.23 MiB.
 ```
 
-### Inserting from URL {#inserting-from-url}
+### Inserting from URL
 
 ```sql
 INSERT INTO tw_weather_data SELECT *
@@ -168,7 +169,7 @@ FROM url('https://storage.googleapis.com/taiwan-weather-observaiton-datasets/dai
 ```
 To know how to speed this up, please see our blog post on [tuning large data loads](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part2).
 
-## Check data rows and sizes {#check-data-rows-and-sizes}
+## Check data rows and sizes
 
 1. Let's see how many rows are inserted:
 
@@ -199,9 +200,9 @@ WHERE (`table` = 'tw_weather_data') AND active
 └───────────┴───────────────────┘
 ```
 
-## Sample queries {#sample-queries}
+## Sample queries
 
-### Q1: Retrieve the highest dew point temperature for each weather station in the specific year {#q1-retrieve-the-highest-dew-point-temperature-for-each-weather-station-in-the-specific-year}
+### Q1: Retrieve the highest dew point temperature for each weather station in the specific year
 
 ```sql
 SELECT
@@ -247,7 +248,7 @@ GROUP BY StationId
 30 rows in set. Elapsed: 0.045 sec. Processed 6.41 million rows, 187.33 MB (143.92 million rows/s., 4.21 GB/s.)
 ```
 
-### Q2: Raw data fetching with the specific duration time range, fields and weather station {#q2-raw-data-fetching-with-the-specific-duration-time-range-fields-and-weather-station}
+### Q2: Raw data fetching with the specific duration time range, fields and weather station
 
 ```sql
 SELECT
@@ -285,7 +286,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.009 sec. Processed 91.70 thousand rows, 2.33 MB (9.67 million rows/s., 245.31 MB/s.)
 ```
 
-## Credits {#credits}
+## Credits
 
 We would like to acknowledge the efforts of the Central Weather Administration and Agricultural Meteorological Observation Network (Station) of the Council of Agriculture for preparing, cleaning, and distributing this dataset. We appreciate your efforts.
 

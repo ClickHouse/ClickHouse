@@ -19,7 +19,6 @@
 #include <mysqlxx/Transaction.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
-#include <Columns/IColumn.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
@@ -276,7 +275,7 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
 {
     StorageMySQL::Configuration configuration;
 
-    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port", "ssl_ca", "ssl_cert", "ssl_key"};
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"replace_query", "on_duplicate_clause", "addresses_expr", "host", "hostname", "port"};
     auto mysql_settings_names = storage_settings.getAllRegisteredNames();
     for (const auto & name : mysql_settings_names)
         optional_arguments.insert(name);
@@ -307,9 +306,6 @@ StorageMySQL::Configuration StorageMySQL::processNamedCollectionResult(
         configuration.table = named_collection.get<String>("table");
     configuration.replace_query = named_collection.getOrDefault<UInt64>("replace_query", false);
     configuration.on_duplicate_clause = named_collection.getOrDefault<String>("on_duplicate_clause", "");
-    configuration.ssl_ca = named_collection.getOrDefault<String>("ssl_ca", "");
-    configuration.ssl_cert = named_collection.getOrDefault<String>("ssl_cert", "");
-    configuration.ssl_key = named_collection.getOrDefault<String>("ssl_key", "");
 
     storage_settings.loadFromNamedCollection(named_collection);
 
@@ -388,7 +384,6 @@ void registerStorageMySQL(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::MYSQL,
-        .has_builtin_setting_fn = MySQLSettings::hasBuiltin,
     });
 }
 

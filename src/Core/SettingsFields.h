@@ -1,13 +1,13 @@
 #pragma once
 
+#include <chrono>
+#include <string_view>
+#include <optional>
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <base/types.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
-
-#include <chrono>
-#include <string_view>
 
 namespace DB
 {
@@ -31,7 +31,6 @@ template <typename T>
 struct SettingFieldNumber
 {
     using Type = T;
-    using ValueType = T;
 
     Type value;
     bool changed = false;
@@ -71,7 +70,7 @@ template <typename Base>
 struct SettingAutoWrapper
 {
     constexpr static auto keyword = "auto";
-    static bool isAuto(const Field & f) { return f.getType() == Field::Types::String && f.safeGet<String>() == keyword; }
+    static bool isAuto(const Field & f) { return f.getType() == Field::Types::String && f.safeGet<const String &>() == keyword; }
     static bool isAuto(const String & str) { return str == keyword; }
 
     using Type = typename Base::Type;
@@ -126,6 +125,7 @@ struct SettingAutoWrapper
     void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
 
     Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
+    std::optional<Type> get() const { return is_auto ? std::nullopt : std::make_optional(base.value); }
 };
 
 using SettingFieldBoolAuto = SettingAutoWrapper<SettingFieldBool>;
@@ -145,8 +145,6 @@ struct SettingFieldMaxThreads
     bool is_auto;
     UInt64 value;
     bool changed = false;
-
-    using ValueType = UInt64;
 
     explicit SettingFieldMaxThreads(UInt64 x = 0) : is_auto(!x), value(is_auto ? getAuto() : x)  {}
     explicit SettingFieldMaxThreads(const Field & f);
@@ -228,19 +226,18 @@ struct SettingFieldString
 {
     String value;
     bool changed = false;
-    using ValueType = String;
 
     explicit SettingFieldString(std::string_view str = {}) : value(str) {}
     explicit SettingFieldString(const String & str) : SettingFieldString(std::string_view{str}) {}
     explicit SettingFieldString(String && str) : value(std::move(str)) {}
     explicit SettingFieldString(const char * str) : SettingFieldString(std::string_view{str}) {}
-    explicit SettingFieldString(const Field & f) : SettingFieldString(f.safeGet<String>()) {}
+    explicit SettingFieldString(const Field & f) : SettingFieldString(f.safeGet<const String &>()) {}
 
     SettingFieldString & operator =(std::string_view str) { value = str; changed = true; return *this; }
     SettingFieldString & operator =(const String & str) { *this = std::string_view{str}; return *this; }
     SettingFieldString & operator =(String && str) { value = std::move(str); changed = true; return *this; }
     SettingFieldString & operator =(const char * str) { *this = std::string_view{str}; return *this; }
-    SettingFieldString & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
+    SettingFieldString & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
 
     operator const String &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }
@@ -313,7 +310,7 @@ struct SettingFieldURI
     SettingFieldURI & operator =(const Poco::URI & x) { value = x; changed = true; return *this; }
     SettingFieldURI & operator =(const String & str) { *this = Poco::URI{str}; return *this; }
     SettingFieldURI & operator =(const char * str) { *this = Poco::URI{str}; return *this; }
-    SettingFieldURI & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
+    SettingFieldURI & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
 
     operator const Poco::URI &() const { return value; } /// NOLINT
     explicit operator String() const { return toString(); }
@@ -342,16 +339,15 @@ template <typename EnumT, typename Traits>
 struct SettingFieldEnum
 {
     using EnumType = EnumT;
-    using ValueType = EnumT;
 
     EnumType value;
     bool changed = false;
 
     explicit SettingFieldEnum(EnumType x = EnumType{0}) : value(x) {}
-    explicit SettingFieldEnum(const Field & f) : SettingFieldEnum(Traits::fromString(f.safeGet<String>())) {}
+    explicit SettingFieldEnum(const Field & f) : SettingFieldEnum(Traits::fromString(f.safeGet<const String &>())) {}
 
     SettingFieldEnum & operator =(EnumType x) { value = x; changed = true; return *this; }
-    SettingFieldEnum & operator =(const Field & f) { *this = Traits::fromString(f.safeGet<String>()); return *this; }
+    SettingFieldEnum & operator =(const Field & f) { *this = Traits::fromString(f.safeGet<const String &>()); return *this; }
 
     operator EnumType() const { return value; } /// NOLINT
     explicit operator Field() const { return toString(); }
@@ -393,7 +389,7 @@ struct SettingFieldMultiEnum
 
     explicit SettingFieldMultiEnum(ValueType v = ValueType{}) : value{v} {}
     explicit SettingFieldMultiEnum(EnumType e) : value{e} {}
-    explicit SettingFieldMultiEnum(const Field & f) : value(parseValueFromString(f.safeGet<String>())) {}
+    explicit SettingFieldMultiEnum(const Field & f) : value(parseValueFromString(f.safeGet<const String &>())) {}
 
     operator ValueType() const { return value; } /// NOLINT
     explicit operator Field() const { return toString(); }
@@ -406,7 +402,7 @@ struct SettingFieldMultiEnum
     }
 
     SettingFieldMultiEnum & operator= (ValueType x) { changed = true; value = x; return *this; }
-    SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<String>()); return *this; }
+    SettingFieldMultiEnum & operator= (const Field & x) { parseFromString(x.safeGet<const String &>()); return *this; }
 
     String toString() const
     {
@@ -481,13 +477,13 @@ struct SettingFieldTimezone
     explicit SettingFieldTimezone(const String & str) { validateTimezone(str); value = str; }
     explicit SettingFieldTimezone(String && str) { validateTimezone(str); value = std::move(str); }
     explicit SettingFieldTimezone(const char * str) { validateTimezone(str); value = str; }
-    explicit SettingFieldTimezone(const Field & f) { const String & str = f.safeGet<String>(); validateTimezone(str); value = str; }
+    explicit SettingFieldTimezone(const Field & f) { const String & str = f.safeGet<const String &>(); validateTimezone(str); value = str; }
 
     SettingFieldTimezone & operator =(std::string_view str) { validateTimezone(std::string(str)); value = str; changed = true; return *this; }
     SettingFieldTimezone & operator =(const String & str) { *this = std::string_view{str}; return *this; }
     SettingFieldTimezone & operator =(String && str) { validateTimezone(str); value = std::move(str); changed = true; return *this; }
     SettingFieldTimezone & operator =(const char * str) { *this = std::string_view{str}; return *this; }
-    SettingFieldTimezone & operator =(const Field & f) { *this = f.safeGet<String>(); return *this; }
+    SettingFieldTimezone & operator =(const Field & f) { *this = f.safeGet<const String &>(); return *this; }
 
     operator const String &() const { return value; } /// NOLINT
     explicit operator Field() const { return value; }

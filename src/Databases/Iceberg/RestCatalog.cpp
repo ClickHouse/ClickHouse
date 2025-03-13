@@ -18,7 +18,7 @@
 #include <IO/Operators.h>
 #include <Interpreters/Context.h>
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/IcebergMetadata.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
 
@@ -32,6 +32,11 @@ namespace DB::ErrorCodes
     extern const int ICEBERG_CATALOG_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool iceberg_engine_ignore_schema_evolution;
 }
 
 namespace Iceberg
@@ -48,8 +53,7 @@ std::pair<std::string, std::string> parseCatalogCredential(const std::string & c
     /// Parse a string of format "<client_id>:<client_secret>"
     /// into separare strings client_id and client_secret.
 
-    std::string client_id;
-    std::string client_secret;
+    std::string client_id, client_secret;
     if (!catalog_credential.empty())
     {
         auto pos = catalog_credential.find(':');
