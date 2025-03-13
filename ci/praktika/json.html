@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>praktika report</title>
-    <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">
+<!--    <link rel="icon" href="https://w4z3pajszlbkfcw2wcylfei5km0xmwag.lambda-url.us-east-1.on.aws/" type="image/x-icon">-->
     <style>
 
         /* Default (Day Theme) */
@@ -536,9 +536,7 @@
                 if (!link.includes(base_url)) {
                     textLink.textContent = link.split('/').pop();
                 } else {
-                    // it's a link to another report:
-                    const {PR, sha} = getPRandShaFromLink(link)
-                    textLink.textContent = `Report PR#${PR}, sha#${sha.substring(0, 10)}`;
+                    textLink.textContent = "Report";
                 }
                 textLink.classList.add("file-link")
 
@@ -907,13 +905,7 @@
                         // External link: Show file name
                         linkElement.textContent = link.split('/').pop();
                     } else {
-                        // Internal report link: Extract PR and SHA
-                        if (typeof getPRandShaFromLink === "function") {
-                            const { PR, sha } = getPRandShaFromLink(link);
-                            linkElement.textContent = `Report PR#${PR}, sha#${sha.substring(0, 10)}`;
-                        } else {
-                            linkElement.textContent = "Unknown Report Link";
-                        }
+                        linkElement.textContent = "Report";
                     }
                     linksContainer.appendChild(linkElement);
                 });
@@ -1289,6 +1281,51 @@
         }
         init();
     });
+
+    function createFavicon() {
+        const width = 32;
+        const height = 32;
+        const lineColor = "rgb(0, 0, 0)";
+        const lineWidth = 4;
+        const spaceWidth = 3;
+        const lineNumber = 4;
+
+        // Create a canvas
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        // Set transparent background
+        ctx.clearRect(0, 0, width, height);
+
+        // Draw vertical lines
+        let xStart = spaceWidth;
+        for (let i = 0; i < lineNumber; i++) {
+            let yStart = Math.floor(Math.random() * height); // Random Y start position
+
+            ctx.fillStyle = lineColor;
+            for (let y = 0; y < height - spaceWidth; y++) {
+                let yPos = (y + yStart) % height;
+                ctx.fillRect(xStart, yPos, lineWidth, 1); // Draw a 1-pixel high line segment
+            }
+
+            xStart += lineWidth + spaceWidth;
+        }
+
+        // Convert canvas to Data URL (PNG format)
+        const faviconURL = canvas.toDataURL("image/png");
+
+        // Set the favicon dynamically
+        let link = document.querySelector("link[rel='icon']");
+        if (!link) {
+            link = document.createElement("link");
+            link.rel = "icon";
+            document.head.appendChild(link);
+        }
+        link.href = faviconURL;
+    }
+    createFavicon();
 </script>
 </body>
 </html>
