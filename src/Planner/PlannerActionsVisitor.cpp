@@ -34,6 +34,7 @@
 #include <Planner/Utils.h>
 
 #include <Core/Settings.h>
+#include <fmt/format.h>
 
 
 namespace DB
@@ -100,6 +101,8 @@ public:
 
         String result;
         auto node_type = node->getNodeType();
+
+        static size_t correlated_subquery_counter = 0;
 
         switch (node_type)
         {
@@ -185,6 +188,11 @@ public:
                     /// Empty node name is not allowed and leads to logical errors
                     if (result.empty())
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function __actionName is internal nad should not be used directly");
+                    break;
+                }
+                else if (function_node.getFunctionName() == "exists")
+                {
+                    result = fmt::format("exists(subquery_{})", ++correlated_subquery_counter);
                     break;
                 }
 
