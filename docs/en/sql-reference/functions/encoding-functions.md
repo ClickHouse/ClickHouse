@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/encoding-functions
 sidebar_position: 65
 sidebar_label: 'Encoding'
+description: 'Documentation for Encoding Functions'
 ---
 
 # Encoding Functions

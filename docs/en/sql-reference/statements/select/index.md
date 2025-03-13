@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/
 sidebar_position: 32
 sidebar_label: SELECT
+description: 'Documentation for SELECT Query'
 ---
 
 # SELECT Query

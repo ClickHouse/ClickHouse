@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/alter/order-by
 sidebar_position: 41
 sidebar_label: ORDER BY
+description: 'Documentation for Manipulating Key Expressions'
 ---
 
 # Manipulating Key Expressions

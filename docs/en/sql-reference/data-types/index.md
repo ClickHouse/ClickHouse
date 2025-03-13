@@ -3,6 +3,7 @@ slug: /sql-reference/data-types/
 sidebar_label: 'List of data types'
 sidebar_position: 1
 title: 'Data Types in ClickHouse'
+description: 'Documentation for Data Types in ClickHouse'
 ---
 
 # Data Types in ClickHouse

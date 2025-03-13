@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/alter/setting
 sidebar_position: 38
 sidebar_label: SETTING
+description: 'Documentation for Table Settings Manipulations'
 ---
 
 # Table Settings Manipulations

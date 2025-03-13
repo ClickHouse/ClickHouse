@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/watch
 sidebar_position: 53
 sidebar_label: 'WATCH'
+description: 'Documentation for WATCH Statement'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';

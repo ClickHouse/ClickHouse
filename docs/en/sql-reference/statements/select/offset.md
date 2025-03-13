@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/select/offset
 sidebar_label: OFFSET
 title: "OFFSET FETCH Clause"
+description: 'Documentation for Offset'
 ---
 
 `OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.

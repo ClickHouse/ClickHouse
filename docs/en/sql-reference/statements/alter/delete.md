@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/alter/delete
 sidebar_position: 39
 sidebar_label: DELETE
+description: 'Documentation for ALTER TABLE ... DELETE Statement'
 ---
 
 # ALTER TABLE ... DELETE Statement

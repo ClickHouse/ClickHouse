@@ -1,6 +1,7 @@
 ---
 slug: /sql-reference/statements/select/order-by
 sidebar_label: ORDER BY
+description: 'Documentation for ORDER BY Clause'
 ---
 
 # ORDER BY Clause

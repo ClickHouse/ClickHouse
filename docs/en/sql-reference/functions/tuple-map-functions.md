@@ -3,6 +3,7 @@ slug: /sql-reference/functions/tuple-map-functions
 sidebar_position: 120
 sidebar_label: 'Maps'
 title: 'Map Functions'
+description: 'Documentation for Tuple Map Functions'
 ---
 
 ## map {#map}

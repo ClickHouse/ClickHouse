@@ -3,6 +3,7 @@ slug: /sql-reference/statements/alter/sample-by
 sidebar_position: 41
 sidebar_label: SAMPLE BY
 title: "Manipulating Sampling-Key Expressions"
+description: 'Documentation for Manipulating SAMPLE BY expression'
 ---
 
 # Manipulating SAMPLE BY expression

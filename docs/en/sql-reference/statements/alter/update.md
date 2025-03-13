@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/alter/update
 sidebar_position: 40
 sidebar_label: UPDATE
+description: 'Documentation for ALTER TABLE ... UPDATE Statements'
 ---
 
 # ALTER TABLE ... UPDATE Statements

@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/rename
 sidebar_position: 48
 sidebar_label: 'RENAME'
+description: 'Documentation for RENAME Statement'
 ---
 
 # RENAME Statement

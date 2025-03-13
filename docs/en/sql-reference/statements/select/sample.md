@@ -1,6 +1,7 @@
 ---
 slug: /sql-reference/statements/select/sample
 sidebar_label: SAMPLE
+description: 'Documentation for SAMPLE Clause'
 ---
 
 # SAMPLE Clause

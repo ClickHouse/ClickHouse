@@ -3,6 +3,7 @@ slug: /sql-reference/functions
 title: 'Functions'
 title: 'Landing page for Functions'
 sidebar: sqlreference
+description: 'Documentation for Index'
 ---
 
 | Page                                                                | Description                                                                                            |

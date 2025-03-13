@@ -1,6 +1,7 @@
 ---
 slug: /sql-reference/statements/select/limit-by
 sidebar_label: LIMIT BY
+description: 'Documentation for LIMIT BY Clause'
 ---
 
 # LIMIT BY Clause

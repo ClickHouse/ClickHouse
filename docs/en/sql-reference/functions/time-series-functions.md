@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/time-series-functions
 sidebar_position: 172
 sidebar_label: 'Time Series'
+description: 'Documentation for Time Series Functions'
 ---
 
 # Time Series Functions

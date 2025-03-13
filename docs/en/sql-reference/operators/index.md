@@ -3,6 +3,7 @@ slug: /sql-reference/operators/
 sidebar_position: 38
 sidebar_label: 'Operators'
 displayed_sidebar: sqlreference
+description: 'Documentation for Operators'
 ---
 
 # Operators

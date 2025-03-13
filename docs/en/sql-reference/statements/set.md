@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/set
 sidebar_position: 50
 sidebar_label: 'SET'
+description: 'Documentation for SET Statement'
 ---
 
 # SET Statement

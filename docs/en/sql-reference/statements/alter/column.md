@@ -3,6 +3,7 @@ slug: /sql-reference/statements/alter/column
 sidebar_position: 37
 sidebar_label: COLUMN
 title: 'Column Manipulations'
+description: 'Documentation for Column'
 ---
 
 A set of queries that allow changing the table structure.

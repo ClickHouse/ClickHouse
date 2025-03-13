@@ -1,6 +1,7 @@
 ---
 slug: /sql-reference/statements/select/limit
 sidebar_label: LIMIT
+description: 'Documentation for LIMIT Clause'
 ---
 
 # LIMIT Clause

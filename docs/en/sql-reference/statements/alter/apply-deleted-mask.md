@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/alter/apply-deleted-mask
 sidebar_position: 46
 sidebar_label: APPLY DELETED MASK
+description: 'Documentation for Apply mask of deleted rows'
 ---
 
 # Apply mask of deleted rows

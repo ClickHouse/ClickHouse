@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/arithmetic-functions
 sidebar_position: 5
 sidebar_label: 'Arithmetic'
+description: 'Documentation for Arithmetic Functions'
 ---
 
 # Arithmetic Functions

@@ -3,6 +3,7 @@ slug: /sql-reference/statements/alter/role
 sidebar_position: 46
 sidebar_label: ROLE
 title: "ALTER ROLE"
+description: 'Documentation for Role'
 ---
 
 Changes roles.

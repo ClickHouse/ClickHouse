@@ -3,6 +3,7 @@ slug: /sql-reference/statements/create/quota
 sidebar_position: 42
 sidebar_label: QUOTA
 title: "CREATE QUOTA"
+description: 'Documentation for Quota'
 ---
 
 Creates a [quota](../../../guides/sre/user-management/index.md#quotas-management) that can be assigned to a user or a role.

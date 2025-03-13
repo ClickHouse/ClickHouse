@@ -3,6 +3,7 @@ slug: /sql-reference/statements/alter/projection
 sidebar_position: 49
 sidebar_label: PROJECTION
 title: "Projections"
+description: 'Documentation for Manipulating Projections'
 ---
 
 Projections store data in a format that optimizes query execution, this feature is useful for:

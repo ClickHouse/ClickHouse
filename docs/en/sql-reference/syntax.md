@@ -4,6 +4,7 @@ sidebar_position: 2
 sidebar_label: 'Syntax'
 title: 'Syntax'
 displayed_sidebar: sqlreference
+description: 'Documentation for Syntax'
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 

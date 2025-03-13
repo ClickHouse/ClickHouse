@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/system
 sidebar_position: 36
 sidebar_label: 'SYSTEM'
+description: 'Documentation for SYSTEM Statements'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

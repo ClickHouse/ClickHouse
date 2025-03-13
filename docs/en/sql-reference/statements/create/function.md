@@ -3,6 +3,7 @@ slug: /sql-reference/statements/create/function
 sidebar_position: 38
 sidebar_label: FUNCTION
 title: "CREATE FUNCTION -user defined function (UDF)"
+description: 'Documentation for Function'
 ---
 
 Creates a user defined function (UDF) from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.

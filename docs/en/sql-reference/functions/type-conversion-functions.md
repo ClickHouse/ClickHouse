@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/type-conversion-functions
 sidebar_position: 185
 sidebar_label: 'Type Conversion'
+description: 'Documentation for Type Conversion Functions'
 ---
 
 # Type Conversion Functions

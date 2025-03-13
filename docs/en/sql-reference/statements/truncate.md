@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/truncate
 sidebar_position: 52
 sidebar_label: 'TRUNCATE'
+description: 'Documentation for TRUNCATE Statements'
 ---
 
 # TRUNCATE Statements

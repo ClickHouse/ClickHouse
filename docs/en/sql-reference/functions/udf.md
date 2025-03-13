@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/udf
 sidebar_position: 15
 sidebar_label: 'UDF'
+description: 'Documentation for UDFs User Defined Functions'
 ---
 
 import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';

@@ -2,6 +2,7 @@
 slug: /sql-reference/statements/
 sidebar_position: 1
 sidebar_label: 'List of statements'
+description: 'Documentation for ClickHouse SQL Statements'
 ---
 
 # ClickHouse SQL Statements

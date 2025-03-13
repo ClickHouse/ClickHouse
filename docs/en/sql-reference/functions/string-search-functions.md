@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/string-search-functions
 sidebar_position: 160
 sidebar_label: 'Searching in Strings'
+description: 'Documentation for Functions for Searching in Strings'
 ---
 
 # Functions for Searching in Strings

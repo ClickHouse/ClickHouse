@@ -2,6 +2,7 @@
 slug: /sql-reference/table-functions/
 sidebar_label: Table Functions
 sidebar_position: 1
+description: 'Documentation for Table Functions'
 ---
 
 # Table Functions

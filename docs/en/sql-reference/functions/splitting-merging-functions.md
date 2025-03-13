@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/splitting-merging-functions
 sidebar_position: 165
 sidebar_label: 'Splitting Strings'
+description: 'Documentation for Functions for Splitting Strings'
 ---
 
 # Functions for Splitting Strings

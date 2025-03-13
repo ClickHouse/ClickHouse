@@ -4,6 +4,7 @@ sidebar_position: 36
 sidebar_label: TABLE
 title: "CREATE TABLE"
 keywords: [compression, codec, schema, DDL]
+description: 'Documentation for Table'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

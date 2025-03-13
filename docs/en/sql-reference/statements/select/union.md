@@ -1,6 +1,7 @@
 ---
 slug: /sql-reference/statements/select/union
 sidebar_label: UNION
+description: 'Documentation for UNION Clause'
 ---
 
 # UNION Clause

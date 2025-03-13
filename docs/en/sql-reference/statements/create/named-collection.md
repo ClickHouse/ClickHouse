@@ -1,6 +1,7 @@
 ---
 slug: /sql-reference/statements/create/named-collection
 sidebar_label: NAMED COLLECTION
+description: 'Documentation for CREATE NAMED COLLECTION'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

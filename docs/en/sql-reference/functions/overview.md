@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/overview
 sidebar_position: 1
 sidebar_label: Overview
+description: 'Documentation for Regular Functions'
 ---
 
 # Regular Functions

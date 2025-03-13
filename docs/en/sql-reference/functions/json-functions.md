@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/json-functions
 sidebar_position: 105
 sidebar_label: 'JSON'
+description: 'Documentation for Json Functions'
 ---
 
 There are two sets of functions to parse JSON:

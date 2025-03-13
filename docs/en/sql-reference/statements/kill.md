@@ -3,6 +3,7 @@ slug: /sql-reference/statements/kill
 sidebar_position: 46
 sidebar_label: 'KILL'
 title: 'KILL Statements'
+description: 'Documentation for Kill'
 ---
 
 There are two kinds of kill statements: to kill a query and to kill a mutation

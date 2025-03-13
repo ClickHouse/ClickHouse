@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/geo/geohash
 sidebar_label: Geohash
 title: "Functions for Working with Geohash"
+description: 'Documentation for Geohash'
 ---
 
 ## Geohash {#geohash}

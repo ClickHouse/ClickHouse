@@ -2,6 +2,7 @@
 slug: /sql-reference/functions/math-functions
 sidebar_position: 125
 sidebar_label: 'Mathematical'
+description: 'Documentation for Mathematical Functions'
 ---
 
 # Mathematical Functions

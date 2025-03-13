@@ -1,6 +1,7 @@
 ---
 slug: /sql-reference/statements/select/except
 sidebar_label: EXCEPT
+description: 'Documentation for EXCEPT Clause'
 ---
 
 # EXCEPT Clause
