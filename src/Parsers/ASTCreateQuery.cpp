@@ -579,6 +579,13 @@ bool ASTCreateQuery::isParameterizedView() const
     return false;
 }
 
+NameToNameMap ASTCreateQuery::getQueryParameters() const
+{
+    if (!select || !isParameterizedView())
+        return {};
+
+    return select->getQueryParameters();
+}
 
 void ASTCreateQuery::generateRandomUUIDs()
 {
