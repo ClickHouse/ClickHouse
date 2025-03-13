@@ -52,7 +52,7 @@ struct SettingFieldNumber
     explicit SettingFieldNumber(Type x = 0)
     {
         validateFloatingPointSettingValue(x);
-        value = ;
+        value = x;
     }
     explicit SettingFieldNumber(const Field & f);
 
