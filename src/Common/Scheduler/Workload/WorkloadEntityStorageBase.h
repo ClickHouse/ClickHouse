@@ -48,6 +48,8 @@ public:
     scope_guard getAllEntitiesAndSubscribe(
         const OnChangedHandler & handler) override;
 
+    String getCpuResourceName() override;
+
 protected:
     enum class OperationResult
     {

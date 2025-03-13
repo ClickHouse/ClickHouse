@@ -57,12 +57,30 @@ CpuSlotsAllocation::CpuSlotsAllocation(SlotCount min_, SlotCount max_, ResourceL
     , max(max_)
     , link(link_)
     , noncompeting(link ? min : max)
-    , allocated(link ? min : max)
     , requests(max - min)
+    , allocated(link ? min : max)
 {
     for (CpuSlotRequest & request : requests)
         request.allocation = this;
-    schedule();
+    schedule(false);
+}
+
+CpuSlotsAllocation::~CpuSlotsAllocation()
+{
+    if (link)
+    {
+        std::unique_lock lock{schedule_mutex};
+        if (allocated < max)
+        {
+            bool canceled = link.queue->cancelRequest(&requests[allocated]);
+            if (!canceled)
+            {
+                // Request was not canceled, it means it is currently processed by the scheduler thread, we have to wait
+                allocated = max; // to prevent enqueueing of the next request - see schedule()
+                schedule_cv.wait(lock, [this] { return allocated == max + 1; });
+            }
+        }
+    }
 }
 
 [[nodiscard]] AcquiredSlotPtr CpuSlotsAllocation::tryAcquire()
@@ -73,7 +91,7 @@ CpuSlotsAllocation::CpuSlotsAllocation(SlotCount min_, SlotCount max_, ResourceL
     {
         if (value == exception_value)
         {
-            std::scoped_lock lock{exception_mutex};
+            std::scoped_lock lock{schedule_mutex};
             throw Exception(ErrorCodes::RESOURCE_ACCESS_DENIED, "CPU Resource request failed: {}", getExceptionMessage(exception, /* with_stacktrace = */ false));
         }
 
@@ -103,25 +121,30 @@ CpuSlotsAllocation::CpuSlotsAllocation(SlotCount min_, SlotCount max_, ResourceL
 void CpuSlotsAllocation::grant()
 {
     granted++;
-    allocated++;
-    schedule();
+    schedule(true);
 }
 
 void CpuSlotsAllocation::failed(const std::exception_ptr & ptr)
 {
-    std::scoped_lock lock{exception_mutex};
+    std::scoped_lock lock{schedule_mutex};
     exception = ptr;
     noncompeting.store(exception_value);
+    allocated = max + 1;
+    schedule_cv.notify_one();
 }
 
-void CpuSlotsAllocation::schedule()
+void CpuSlotsAllocation::schedule(bool next)
 {
-    // It is called from the scheduler thread (or ctor) so there may not be concurrent calls and the following code is thread-safe
+    std::scoped_lock lock{schedule_mutex};
+    if (next)
+        allocated++;
     if (allocated < max)
     {
         chassert(link);
-        link.queue->enqueueRequest(&requests[allocated]);
+        link.queue->enqueueRequest(&requests[allocated - min]);
     }
+    if (allocated > max)
+        schedule_cv.notify_one(); // notify waiting destructor
 }
 
 }

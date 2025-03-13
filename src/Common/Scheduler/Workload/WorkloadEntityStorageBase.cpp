@@ -547,6 +547,12 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
     return result;
 }
 
+String WorkloadEntityStorageBase::getCpuResourceName()
+{
+    std::lock_guard lock{mutex};
+    return cpu_name;
+}
+
 void WorkloadEntityStorageBase::unlockAndNotify(
     std::unique_lock<std::recursive_mutex> & lock,
     std::vector<Event> tx)
