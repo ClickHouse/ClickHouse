@@ -37,4 +37,4 @@ private:
     LoggerPtr log = getLogger("StorageObjectStorageStableTaskDistributor");
 };
 
-} 
+}
