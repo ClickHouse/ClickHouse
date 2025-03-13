@@ -4,8 +4,8 @@
     <name>executable_complex</name>
     <source>
         <executable>
-            <format>JSONEachRow</format>
-            <command>awk '{ print "{\"x\":" $1 ",\"y\":" $2 ",\"a\":" ($1+$2) ",\"b\":" ($1*$2) "}"}'</command>
+            <format>TabSeparated</format>
+            <command>awk -F'\t' '{print $1"\t"$2"\t"$1+$2"\t"$1*$2}'</command>
         </executable>
     </source>
     <lifetime>0</lifetime>
@@ -42,8 +42,8 @@
     <name>executable_simple</name>
     <source>
         <executable>
-            <format>JSONEachRow</format>
-            <command>awk '{ print "{\"x\":" $1 ",\"a\":" ($1+$1) ",\"b\":" ($1*$1) "}"}'</command>
+            <format>TabSeparated</format>
+            <command>awk -F'\t' '{print $1"\t"$1+$1"\t"$1*$1}'</command>
         </executable>
     </source>
     <lifetime>0</lifetime>
@@ -73,8 +73,8 @@
     <name>executable_complex_direct</name>
     <source>
         <executable>
-            <format>JSONEachRow</format>
-            <command>awk '{ print "{\"x\":" $1 ",\"y\":" $2 ",\"a\":" ($1+$2) ",\"b\":" ($1*$2) "}"}'</command>
+            <format>TabSeparated</format>
+            <command>awk -F'\t' '{print $1"\t"$2"\t"$1+$2"\t"$1*$2}'</command>
         </executable>
     </source>
     <lifetime>0</lifetime>
