@@ -1,6 +1,8 @@
 ---
 slug: /sql-reference/window-functions/percent_rank
 sidebar_label: 'percent_rank'
+description: 'Documentation for the percent_rank window function'
+title: 'percent_rank'
 sidebar_position: 8
 ---
 

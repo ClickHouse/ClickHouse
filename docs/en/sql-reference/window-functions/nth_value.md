@@ -2,6 +2,8 @@
 slug: /sql-reference/window-functions/nth_value
 sidebar_label: 'nth_value'
 sidebar_position: 5
+title: 'nth_value'
+description: 'Documentation for the nth_value window function'
 ---
 
 # nth_value

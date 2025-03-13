@@ -1,6 +1,7 @@
 ---
 slug: /sql-reference/window-functions/dense_rank
 sidebar_label: 'dense_rank'
+deacription: 'Documentation for the dense_rank window function'
 sidebar_position: 7
 ---
 

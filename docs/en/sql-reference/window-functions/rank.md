@@ -1,6 +1,7 @@
 ---
 slug: /sql-reference/window-functions/rank
 sidebar_label: 'rank'
+description: 'Documentation for the rank window function'
 sidebar_position: 6
 ---
 

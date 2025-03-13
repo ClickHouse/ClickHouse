@@ -2,6 +2,8 @@
 slug: /sql-reference/window-functions/leadInFrame
 sidebar_label: 'leadInFrame'
 sidebar_position: 10
+title: 'leadInFrame'
+description: 'Documentation for the leadInFrame window function'
 ---
 
 # leadInFrame

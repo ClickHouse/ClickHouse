@@ -3,7 +3,7 @@ slug: /sql-reference/aggregate-functions/reference/studentttest
 sidebar_position: 194
 sidebar_label: 'studentTTest'
 title: 'studentTTest'
-description: 'Applies Student's t-test to samples from two populations.'
+description: 'Applies the student t-test to samples from two populations.'
 ---
 
 # studentTTest

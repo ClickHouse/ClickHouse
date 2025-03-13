@@ -2,6 +2,8 @@
 slug: /sql-reference/window-functions/row_number
 sidebar_label: 'row_number'
 sidebar_position: 2
+description: 'Documentation for the row_number window function'
+title: 'row_number'
 ---
 
 # row_number
