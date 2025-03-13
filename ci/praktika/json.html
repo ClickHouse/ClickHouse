@@ -793,7 +793,7 @@
     }
 
     function populateTableRows(tbody, results, nest_level) {
-        const currentUrl = new URL(window.location.href);  // Get the current URL
+        const currentUrl = new URL(window.location.href);
 
         // Clear existing rows if re-rendering (used in sorting)
         tbody.innerHTML = '';
@@ -811,18 +811,20 @@
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
-                    row.dataset.status = value.toLowerCase();
-                    if (result.info && result.info.trim() !== "") {
+                    row.dataset.status = value ? value.toLowerCase() : "";
+                    if ((result.info && result.info.trim() !== "") || (Array.isArray(result.links) && result.links.length > 0)) {
                         span.style.cursor = "pointer";
-                        span.addEventListener('click', () => toggleInfoRow(row, result.info));
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info, result.links));
                     }
                     td.appendChild(span);
 
-                    // // Click event to toggle the info row
-                    // span.addEventListener('click', () => toggleInfoRow(row, result.info));
                 } else if (column === 'name') {
-                    const statusValue = row.dataset.status;
-                    if (["pending", "skipped", "running"].includes(statusValue)) {
+                    const statusValue = result["status"] ? result["status"].toLowerCase() : "";
+
+                    if (
+                        (nest_level === 1 && ["pending", "skipped", "running"].includes(statusValue)) ||
+                        (nest_level > 1 && (!Array.isArray(result.results) || result.results.length === 0))
+                    ) {
                         // If status is pending, just show plain text
                         const span = document.createElement('span');
                         span.textContent = value;
@@ -831,20 +833,24 @@
                         td.appendChild(span);
                     } else {
                         // Create a link for the name field
-                        const link = document.createElement('a');
                         const newUrl = new URL(currentUrl);
                         newUrl.searchParams.set(`name_${nest_level}`, value);
+
+                        const link = document.createElement('a');
                         link.href = newUrl.toString();
                         link.textContent = value;
                         td.classList.add('name-column');
                         td.appendChild(link);
                     }
+
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
+
                 } else if (column === 'duration') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatDuration(value) : '';
+
                 } else if (column === 'info') {
                     td.textContent = value && value.includes('\n') ? '↵' : (value || '');
                     td.classList.add('info-column');
@@ -860,8 +866,8 @@
     /**
      * Toggles an additional row below the clicked row to display the "info" text.
      */
-    function toggleInfoRow(row, infoText) {
-        if (!infoText) return; // Do nothing if there's no info
+    function toggleInfoRow(row, infoText, links = []) {
+        if (!infoText && links.length === 0) return;
 
         let nextRow = row.nextElementSibling;
 
@@ -875,12 +881,45 @@
 
             const infoCell = document.createElement('td');
             infoCell.colSpan = row.children.length; // Make it span the full width
-
-            infoCell.innerHTML = '<pre></pre>';
-            // Append content securely, without interpreting HTML tags.
-            infoCell.firstChild.textContent = infoText;
-
             infoCell.classList.add('info-text');
+
+            if (infoText) {
+                let content = document.createElement('div');
+                infoCell.innerHTML = '<pre></pre>';
+                // Append content securely, without interpreting HTML tags.
+                infoCell.firstChild.textContent = infoText;
+                infoCell.appendChild(content);
+            }
+
+            // If there are links, create a list of links
+            if (Array.isArray(links) && links.length > 0) {
+                const linksContainer = document.createElement('div');
+                linksContainer.classList.add('file-link');
+                let base_url = window.location.origin + window.location.pathname;
+
+                links.forEach(link => {
+                    let linkElement = document.createElement('a');
+                    linkElement.href = link;
+                    linkElement.target = "_blank"; // Open in a new tab
+                    linkElement.style.display = "block"; // Each link on a new line
+
+                    if (!link.includes(base_url)) {
+                        // External link: Show file name
+                        linkElement.textContent = link.split('/').pop();
+                    } else {
+                        // Internal report link: Extract PR and SHA
+                        if (typeof getPRandShaFromLink === "function") {
+                            const { PR, sha } = getPRandShaFromLink(link);
+                            linkElement.textContent = `Report PR#${PR}, sha#${sha.substring(0, 10)}`;
+                        } else {
+                            linkElement.textContent = "Unknown Report Link";
+                        }
+                    }
+                    linksContainer.appendChild(linkElement);
+                });
+
+                infoCell.appendChild(linksContainer);
+            }
 
             infoRow.appendChild(infoCell);
             row.parentNode.insertBefore(infoRow, row.nextSibling); // Insert below the clicked row
