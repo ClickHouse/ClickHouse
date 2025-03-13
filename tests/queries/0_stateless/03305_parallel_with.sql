@@ -65,9 +65,9 @@ INSERT INTO table3 SELECT number, 'test' FROM numbers(30, 3)
 PARALLEL WITH
 DROP TABLE table3; -- { serverError UNKNOWN_TABLE }
 
-INSERT INTO table3 SELECT number, 'test' FROM numbers(30, 3)
+DROP TABLE table3
 PARALLEL WITH
-DROP TABLE table3; -- { serverError UNKNOWN_TABLE }
+DROP VIEW IF EXISTS mv_table3; -- { serverError UNKNOWN_TABLE }
 
 SELECT 'tables exist:';
 EXISTS TABLE table1;
@@ -75,4 +75,4 @@ EXISTS TABLE table2;
 EXISTS TABLE table3;
 EXISTS TABLE table3;
 
-DROP VIEW IF EXISTS mv_table3
+
