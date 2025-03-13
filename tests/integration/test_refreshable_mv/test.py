@@ -221,6 +221,36 @@ def test_refreshable_mv_in_system_db(started_cluster):
     node1.query("drop table system.a")
 
 
+def test_refreshable_mv_target_in_another_db(started_cluster):
+    for node in nodes:
+        node.query(
+            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+        )
+        node.query(
+            "create database re_dest engine = Replicated('/test/re_dest', 'shard1', '{replica}');"
+        )
+
+    # Point view to a table in another database
+    node1.query("create table re_dest.dest_table (x Int64) engine ReplicatedMergeTree order by x")
+    node1.query(
+        "create materialized view re.rmv_to_re_dest refresh every 1 second to re_dest.dest_table as select number*15 as x from numbers(2)"
+    )
+    node1.query("system sync database replica re")
+    node1.query("system sync database replica re_dest")
+    for node in nodes:
+        node.query("system wait view re.rmv_to_re_dest")
+        assert node.query("select * from re_dest.dest_table order by all") == "0\n15\n"
+        assert (
+            node.query(
+                "select database, view, last_success_time != 0, last_refresh_time != 0, last_refresh_replica in ('1','2'), exception from system.view_refreshes"
+            )
+            == "re\trmv_to_re_dest\t1\t1\t1\t\n"
+        )
+    for node in nodes:
+        node.query("drop database re sync")
+        node.query("drop database re_dest sync")
+
+
 def test_refresh_vs_shutdown_smoke(started_cluster):
     for node in nodes:
         node.query(

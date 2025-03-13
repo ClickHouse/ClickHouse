@@ -514,7 +514,7 @@ bool DatabaseReplicatedDDLWorker::canRemoveQueueEntry(const String & entry_name,
 bool DatabaseReplicatedDDLWorker::checkParentTableExists(const UUID & uuid) const
 {
     auto [db, table] = DatabaseCatalog::instance().tryGetByUUID(uuid);
-    return db.get() == database && table != nullptr && !table->is_dropped.load() && !table->is_detached.load();
+    return table != nullptr && !table->is_dropped.load() && !table->is_detached.load();
 }
 
 void DatabaseReplicatedDDLWorker::initializeLogPointer(const String & processed_entry_name)
