@@ -3,7 +3,7 @@ slug: /sql-reference/data-types/object-data-type
 description: 'Documentation for deprecated Object data type in ClickHouse'
 sidebar_position: 26
 sidebar_label: 'Object Data Type'
-keywords: [object, data type]
+keywords: ['object', 'data type']
 title: 'Object Data Type '
 ---
 

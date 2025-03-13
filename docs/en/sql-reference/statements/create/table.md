@@ -3,7 +3,7 @@ slug: /sql-reference/statements/create/table
 sidebar_position: 36
 sidebar_label: TABLE
 title: "CREATE TABLE"
-keywords: [compression, codec, schema, DDL]
+keywords: ['compression', 'codec', 'schema', 'DDL']
 description: 'Documentation for Table'
 ---
 
