@@ -3,7 +3,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTSubquery.h>
 #include <Common/quoteString.h>
 

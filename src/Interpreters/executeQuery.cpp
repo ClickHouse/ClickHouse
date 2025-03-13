@@ -35,7 +35,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>

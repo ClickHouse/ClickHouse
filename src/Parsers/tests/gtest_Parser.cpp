@@ -8,7 +8,6 @@
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -61,9 +60,7 @@ TEST_P(ParserTest, parseQuery)
             {
                 ASTPtr ast_clone = ast->clone();
                 {
-                    WriteBufferFromOwnString buf;
-                    formatAST(*ast_clone, buf, false, false);
-                    String formatted_ast = buf.str();
+                    String formatted_ast = ast_clone->formatWithSecretsMultiLine();
                     EXPECT_EQ(expected_ast, formatted_ast);
                 }
 
@@ -77,9 +74,7 @@ TEST_P(ParserTest, parseQuery)
                 }
 
                 {
-                    WriteBufferFromOwnString buf;
-                    formatAST(*ast_clone, buf, false, false);
-                    String formatted_ast = buf.str();
+                    String formatted_ast = ast_clone->formatWithSecretsOneLine();
                     EXPECT_EQ(expected_ast, formatted_ast);
                 }
             }
@@ -92,9 +87,7 @@ TEST_P(ParserTest, parseQuery)
                 }
                 else
                 {
-                    WriteBufferFromOwnString buf;
-                    formatAST(*ast->clone(), buf, false, false);
-                    String formatted_ast = buf.str();
+                    String formatted_ast = ast->clone()->formatWithSecretsOneLine();
                     EXPECT_TRUE(re2::RE2::FullMatch(formatted_ast, expected_ast));
                 }
             }

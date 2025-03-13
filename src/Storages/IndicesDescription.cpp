@@ -8,7 +8,6 @@
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/extractKeyExpressionList.h>
 

@@ -12,7 +12,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/formatAST.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>

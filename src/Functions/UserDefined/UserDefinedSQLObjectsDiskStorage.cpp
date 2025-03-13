@@ -18,8 +18,8 @@
 
 #include <Interpreters/Context.h>
 
+#include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
 
 #include <Poco/DirectoryIterator.h>
@@ -209,7 +209,7 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     }
 
     WriteBufferFromOwnString create_statement_buf;
-    formatAST(*create_object_query, create_statement_buf, false);
+    writeString(create_object_query->formatWithSecretsOneLine(), create_statement_buf);
     writeChar('\n', create_statement_buf);
     String create_statement = create_statement_buf.str();
 

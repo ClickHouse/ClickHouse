@@ -34,7 +34,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -350,7 +349,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         create.if_not_exists = false;
 
         WriteBufferFromOwnString statement_buf;
-        formatAST(create, statement_buf, false);
+        writeString(create.formatWithSecretsOneLine(), statement_buf);
         writeChar('\n', statement_buf);
         String statement = statement_buf.str();
 
@@ -1444,10 +1443,10 @@ void InterpreterCreateQuery::assertOrSetUUID(ASTCreateQuery & create, const Data
                             "3. ATTACH {} {} FROM '/path/to/data/' <table definition>;\n"
                             "4. ATTACH {} {} UUID '<uuid>' <table definition>;",
                             kind_upper,
-                            kind_upper, create.table,
-                            kind_upper, create.table,
-                            kind_upper, create.table,
-                            kind_upper, create.table);
+                            kind_upper, create.table->formatForErrorMessage(),
+                            kind_upper, create.table->formatForErrorMessage(),
+                            kind_upper, create.table->formatForErrorMessage(),
+                            kind_upper, create.table->formatForErrorMessage());
         }
 
         create.generateRandomUUIDs();

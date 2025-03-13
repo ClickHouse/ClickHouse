@@ -11,7 +11,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/KeyDescription.h>

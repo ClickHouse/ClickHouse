@@ -29,7 +29,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTWatchQuery.h>
-#include <Parsers/formatAST.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>

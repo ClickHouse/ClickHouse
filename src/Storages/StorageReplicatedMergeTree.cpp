@@ -70,7 +70,6 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseReplicated.h>
 
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTFunction.h>

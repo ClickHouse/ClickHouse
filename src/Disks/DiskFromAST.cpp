@@ -4,7 +4,6 @@
 #include <Common/SipHash.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>

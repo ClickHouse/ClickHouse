@@ -3,7 +3,6 @@
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
 #include <Parsers/ParserCreateWorkloadEntity.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/sleep.h>
 #include <Common/Exception.h>

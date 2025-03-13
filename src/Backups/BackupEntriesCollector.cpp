@@ -11,7 +11,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Storages/IStorage.h>
 #include <Storages/MergeTree/extractZooKeeperPathFromReplicatedTableDef.h>
 #include <base/chrono_io.h>

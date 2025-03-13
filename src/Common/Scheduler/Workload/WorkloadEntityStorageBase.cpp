@@ -6,8 +6,8 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
 #include <Parsers/ASTCreateResourceQuery.h>
-#include <Parsers/formatAST.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <boost/container/flat_set.hpp>
 #include <boost/range/algorithm/copy.hpp>
@@ -764,8 +764,8 @@ String WorkloadEntityStorageBase::serializeAllEntities(std::optional<Event> chan
     WriteBufferFromOwnString buf;
     for (const auto & event : ordered_entities)
     {
-        formatAST(*event.entity, buf, false, true);
-        buf.write(";\n", 2);
+        writeString(event.entity->formatWithSecretsOneLine(), buf);
+        writeString(";\n", buf);
     }
     return buf.str();
 }

@@ -25,7 +25,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
 
 #include <Processors/ISource.h>
 #include <Processors/Sinks/SinkToStorage.h>

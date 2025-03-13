@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/Context.h>

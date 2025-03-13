@@ -13,7 +13,6 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControl.h>
 #include <Access/EnabledQuota.h>

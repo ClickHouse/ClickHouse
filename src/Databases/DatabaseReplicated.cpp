@@ -32,7 +32,6 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>

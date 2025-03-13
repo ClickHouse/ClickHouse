@@ -29,7 +29,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>

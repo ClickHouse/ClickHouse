@@ -11,7 +11,6 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
-#include <Parsers/formatAST.h>
 #include <boost/range/algorithm/sort.hpp>
 
 

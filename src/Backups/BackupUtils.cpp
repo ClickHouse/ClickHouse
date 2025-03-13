@@ -3,7 +3,6 @@
 #include <Access/Common/AccessRightsElement.h>
 #include <Databases/DDLRenamingVisitor.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Common/setThreadName.h>
 

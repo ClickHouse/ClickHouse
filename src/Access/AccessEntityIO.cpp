@@ -23,7 +23,6 @@
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -47,8 +46,8 @@ String serializeAccessEntity(const IAccessEntity & entity)
     WriteBufferFromOwnString buf;
     for (const ASTPtr & query : queries)
     {
-        formatAST(*query, buf, false, true);
-        buf.write(";\n", 2);
+        writeString(query->formatWithSecretsOneLine(), buf);
+        writeString(";\n", buf);
     }
     return buf.str();
 }

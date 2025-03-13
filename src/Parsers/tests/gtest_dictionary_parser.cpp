@@ -8,7 +8,6 @@
 #include <Parsers/ParserDropQuery.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/types.h>
 

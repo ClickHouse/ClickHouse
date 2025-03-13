@@ -1,7 +1,6 @@
 #include <Backups/RestoreCoordinationLocal.h>
 
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
 

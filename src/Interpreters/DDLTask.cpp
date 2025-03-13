@@ -14,7 +14,6 @@
 #include <Common/logger_useful.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 

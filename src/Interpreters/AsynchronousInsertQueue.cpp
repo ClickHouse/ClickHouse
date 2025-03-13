@@ -19,7 +19,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>

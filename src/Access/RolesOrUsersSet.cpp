@@ -1,6 +1,5 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
-#include <Parsers/formatAST.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Access/Role.h>

@@ -1,7 +1,6 @@
 #include <Interpreters/applyTableOverride.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
 
 #include <iostream>
 #include <gtest/gtest.h>

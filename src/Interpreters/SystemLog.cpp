@@ -41,7 +41,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>

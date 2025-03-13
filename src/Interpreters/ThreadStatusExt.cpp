@@ -8,7 +8,6 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/TraceCollector.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>

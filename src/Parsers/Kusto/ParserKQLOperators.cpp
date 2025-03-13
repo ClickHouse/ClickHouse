@@ -6,7 +6,6 @@
 #include <Parsers/Kusto/Utilities.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/formatAST.h>
 
 
 namespace DB

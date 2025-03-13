@@ -11,7 +11,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Storages/AlterCommands.h>

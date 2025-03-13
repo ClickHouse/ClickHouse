@@ -17,7 +17,6 @@
 #include <Storages/MutationCommands.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
-#include <Parsers/formatAST.h>
 #include <base/sort.h>
 #include <cassert>
 #include <ranges>
@@ -2374,12 +2373,10 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
 
         for (const MutationCommand & command : entry.commands)
         {
-            WriteBufferFromOwnString buf;
-            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.znode_name,
-                buf.str(),
+                command.ast->formatWithSecretsOneLine(),
                 entry.create_time,
                 entry.block_numbers,
                 parts_to_mutate,

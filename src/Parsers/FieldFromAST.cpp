@@ -1,5 +1,4 @@
 #include <Parsers/FieldFromAST.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>

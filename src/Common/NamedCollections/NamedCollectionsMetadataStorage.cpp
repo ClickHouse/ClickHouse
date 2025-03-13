@@ -9,7 +9,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <base/sort.h>
 #include <boost/algorithm/hex.hpp>

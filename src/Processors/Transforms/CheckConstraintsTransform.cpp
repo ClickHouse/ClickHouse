@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Parsers/formatAST.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>

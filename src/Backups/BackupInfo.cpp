@@ -4,7 +4,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 
 

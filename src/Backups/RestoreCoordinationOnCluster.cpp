@@ -5,7 +5,6 @@
 #include <Backups/RestoreCoordinationOnCluster.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/CreateQueryUUIDs.h>
-#include <Parsers/formatAST.h>
 #include <Functions/UserDefined/UserDefinedSQLObjectType.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/escapeForFileName.h>
