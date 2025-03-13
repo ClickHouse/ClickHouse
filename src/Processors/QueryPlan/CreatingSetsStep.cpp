@@ -49,8 +49,7 @@ CreatingSetStep::CreatingSetStep(
 
 void CreatingSetStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    pipeline.addCreatingSetsTransform(getOutputHeader(), std::move(set_and_key), std::move(external_table), network_transfer_limits,
-        context ? context->getPreparedSetsCache() : nullptr);
+    pipeline.addCreatingSetsTransform(getOutputHeader(), std::move(set_and_key), std::move(external_table), network_transfer_limits, context->getPreparedSetsCache());
 }
 
 void CreatingSetStep::updateOutputHeader()
