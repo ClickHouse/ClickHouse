@@ -2,7 +2,7 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Common/CollectionOfDerived.h>
-#include <Columns/IColumn.h>
+#include <Core/Types_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 #include <memory>
@@ -158,21 +158,23 @@ public:
 
 using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
 
-class IMergeTreeDataPart;
-
-/// The query condition cache needs to know the mark ranges of which part the chunk data comes from.
+/// Lineage information: from which table, part and mark range does the chunk come from?
+/// This information is needed by the query condition cache.
 class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
 {
 public:
-    MarkRangesInfo(std::shared_ptr<const IMergeTreeDataPart> data_part_, MarkRanges mark_ranges_)
-        : data_part(data_part_)
+    MarkRangesInfo(UUID table_uuid_, const String & part_name_, size_t marks_count_, bool has_final_mark_, MarkRanges mark_ranges_)
+        : table_uuid(table_uuid_)
+        , part_name(part_name_)
+        , marks_count(marks_count_)
+        , has_final_mark(has_final_mark_)
         , mark_ranges(std::move(mark_ranges_))
     {}
 
-    std::shared_ptr<const IMergeTreeDataPart> getDataPart() const { return data_part; }
-    const MarkRanges & getMarkRanges() const { return mark_ranges; }
-private:
-    std::shared_ptr<const IMergeTreeDataPart> data_part;
+    UUID table_uuid;
+    String part_name;
+    size_t marks_count;
+    bool has_final_mark;
     MarkRanges mark_ranges;
 };
 
