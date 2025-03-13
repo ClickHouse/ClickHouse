@@ -522,6 +522,9 @@ KafkaProducers
 KafkaWrites
 Kahan
 Kaser
+Keccak
+blockchains
+keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
@@ -1754,6 +1757,7 @@ enum's
 enums
 erfc
 errorCodeToName
+estimateCompressionRatio
 etag
 evalMLMethod
 exFAT

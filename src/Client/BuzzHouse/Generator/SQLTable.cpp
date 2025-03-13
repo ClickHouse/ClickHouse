@@ -160,10 +160,10 @@ void StatementGenerator::addTableRelation(RandomGenerator & rg, const bool allow
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_path"}));
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"_file"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
             if (t.isS3Engine())
             {
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_size"}));
-                rel.cols.emplace_back(SQLRelationCol(rel_name, {"_time"}));
                 rel.cols.emplace_back(SQLRelationCol(rel_name, {"_etag"}));
             }
         }
@@ -724,11 +724,8 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     }
 }
 
-const DB::Strings & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
-
 void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b, const bool add_pkey, TableEngine * te)
 {
-    SettingValues * svs = nullptr;
     const bool has_tables = collectionHas<SQLTable>(hasTableOrView<SQLTable>(b));
     const bool has_views = collectionHas<SQLView>(hasTableOrView<SQLView>(b));
 
@@ -888,6 +885,8 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             te->add_params()->set_in_out(b.file_format);
             if (rg.nextSmallNumber() < 4)
             {
+                static const DB::Strings & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
+
                 b.file_comp = rg.pickRandomlyFromVector(s3_compress);
                 te->add_params()->set_svalue(b.file_comp);
             }
@@ -945,35 +944,25 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
     }
     if (te->has_engine())
     {
-        const auto & tsettings = allTableSettings.at(b.teng);
+        SettingValues * svs = nullptr;
+        const auto & engineSettings = allTableSettings.at(b.teng);
 
-        if (!tsettings.empty() && rg.nextSmallNumber() < 5)
+        if (!engineSettings.empty() && rg.nextSmallNumber() < 5)
         {
-            svs = te->mutable_settings();
-            generateSettingValues(rg, tsettings, svs);
+            /// Add table engine settings
+            svs = svs ? svs : te->mutable_settings();
+            generateSettingValues(rg, engineSettings, svs);
         }
-        if (b.isMergeTreeFamily() || b.isAnyS3Engine() || b.toption.has_value())
+        if (rg.nextSmallNumber() < 4)
         {
-            if (!svs)
-            {
-                svs = te->mutable_settings();
-            }
-            if (b.isMergeTreeFamily())
-            {
-                SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
-
-                sv->set_property("allow_nullable_key");
-                sv->set_value("1");
-
-                if (!b.hasClickHousePeer())
-                {
-                    SetValue * sv2 = svs->add_other_values();
-
-                    sv2->set_property("allow_experimental_reverse_key");
-                    sv2->set_value("1");
-                }
-            }
-            else if (b.isAnyS3Engine())
+            /// Add server settings
+            svs = svs ? svs : te->mutable_settings();
+            generateSettingValues(rg, serverSettings, svs);
+        }
+        if (b.isAnyS3Engine() || (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared))
+        {
+            svs = svs ? svs : te->mutable_settings();
+            if (b.isAnyS3Engine())
             {
                 SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
 
@@ -987,7 +976,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
                     sv2->set_value(rg.nextBool() ? "'ordered'" : "'unordered'");
                 }
             }
-            if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared)
+            else if (b.toption.has_value() && b.toption.value() == TableEngineOption::TShared)
             {
                 /// Requires keeper storage
                 bool found = false;
@@ -1013,10 +1002,16 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
         }
     }
     /// Shared and Replicated MergeTree are to be used with cluster
-    /// If the database already has a cluster, don't set on the table
-    if (!fc.clusters.empty() && (!b.db || !b.db->cluster.has_value()) && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
+    if (!fc.clusters.empty() && rg.nextSmallNumber() < (b.toption.has_value() ? 9 : 5))
     {
-        b.cluster = rg.pickRandomlyFromVector(fc.clusters);
+        if (b.db && b.db->cluster.has_value() && rg.nextSmallNumber() < 9)
+        {
+            b.cluster = b.db->cluster;
+        }
+        else
+        {
+            b.cluster = rg.pickRandomlyFromVector(fc.clusters);
+        }
     }
 }
 
