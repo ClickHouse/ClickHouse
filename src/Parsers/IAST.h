@@ -287,7 +287,6 @@ public:
         bool one_line,
         bool show_secrets,
         bool print_pretty_type_names,
-        bool hilite,
         IdentifierQuotingRule identifier_quoting_rule,
         IdentifierQuotingStyle identifier_quoting_style) const;
 

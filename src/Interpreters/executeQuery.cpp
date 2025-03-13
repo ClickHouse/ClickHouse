@@ -965,7 +965,6 @@ static BlockIO executeQueryImpl(
                     /*one_line=*/true,
                     /*show_secrets=*/true,
                     /*print_pretty_type_names=*/false,
-                    /*hilite=*/false,
                     /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
                     /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 
@@ -1001,7 +1000,6 @@ static BlockIO executeQueryImpl(
                     /*one_line=*/true,
                     /*show_secrets=*/true,
                     /*print_pretty_type_names=*/false,
-                    /*hilite=*/false,
                     /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
                     /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 

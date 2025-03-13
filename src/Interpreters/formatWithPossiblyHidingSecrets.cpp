@@ -25,7 +25,6 @@ String format(const SecretHidingFormatSettings & settings)
         settings.one_line,
         show_secrets,
         settings.ctx->getSettingsRef()[Setting::print_pretty_type_names],
-        /*hilite=*/false,
         settings.ctx->getSettingsRef()[Setting::show_create_query_identifier_quoting_rule],
         settings.ctx->getSettingsRef()[Setting::show_create_query_identifier_quoting_style]);
 }

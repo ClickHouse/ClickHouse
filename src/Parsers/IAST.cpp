@@ -175,7 +175,6 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     bool one_line,
     bool show_secrets,
     bool print_pretty_type_names,
-    bool hilite,
     IdentifierQuotingRule identifier_quoting_rule,
     IdentifierQuotingStyle identifier_quoting_style) const
 {
@@ -185,7 +184,6 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     settings.print_pretty_type_names = print_pretty_type_names;
     settings.identifier_quoting_rule = identifier_quoting_rule;
     settings.identifier_quoting_style = identifier_quoting_style;
-    settings.hilite = hilite;
     format(buf, settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
 }
@@ -197,7 +195,6 @@ String IAST::formatForLogging(size_t max_length) const
         /*one_line=*/true,
         /*show_secrets=*/false,
         /*print_pretty_type_names=*/false,
-        /*hilite=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 }
@@ -209,7 +206,6 @@ String IAST::formatForErrorMessage() const
         /*one_line=*/true,
         /*show_secrets=*/false,
         /*print_pretty_type_names=*/false,
-        /*hilite=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 }
@@ -221,7 +217,6 @@ String IAST::formatWithSecretsOneLine() const
         /*one_line=*/true,
         /*show_secrets=*/true,
         /*print_pretty_type_names=*/false,
-        /*hilite=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 }
@@ -233,7 +228,6 @@ String IAST::formatWithSecretsMultiLine() const
         /*one_line=*/false,
         /*show_secrets=*/true,
         /*print_pretty_type_names=*/false,
-        /*hilite=*/false,
         /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
         /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 }
