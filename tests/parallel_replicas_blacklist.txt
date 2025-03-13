@@ -242,6 +242,7 @@
 01710_projection_analysis_reuse_partition
 01710_projections_in_distributed_query
 03290_force_normal_projection
+03261_projection_mask
 
     WINDOW VIEW
 01047_window_view_parser_inner_table
