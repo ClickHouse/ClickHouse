@@ -683,6 +683,50 @@ void Pipe::addChains(std::vector<Chain> chains)
     max_parallel_streams = std::max(max_parallel_streams, max_parallel_streams_for_chains);
 }
 
+void Pipe::addSplitResizeTransform(size_t num_streams, size_t groups, bool strict)
+{
+    /// The caller guarantees that the numbers of input/output ports are divisible by the number of groups.
+    const size_t num_inputs = numOutputPorts() / groups;
+    const size_t num_outputs = num_streams / groups;
+    OutputPortRawPtrs resize_output_ports(num_streams);
+
+    for (size_t i = 0; i < groups; ++i)
+    {
+        size_t next_input = i * num_inputs;
+        size_t next_output = i * num_outputs;
+
+        ProcessorPtr resize;
+        if (strict)
+            resize = std::make_shared<StrictResizeProcessor>(getHeader(), num_inputs, num_outputs);
+        else
+            resize = std::make_shared<ResizeProcessor>(getHeader(), num_inputs, num_outputs);
+
+        for (auto & input : resize->getInputs())
+        {
+            connect(*output_ports[next_input], input);
+            ++next_input;
+        }
+
+        for (auto & output : resize->getOutputs())
+        {
+            resize_output_ports[next_output] = &output;
+            ++next_output;
+        }
+
+        if (collected_processors)
+            collected_processors->emplace_back(resize);
+        processors->emplace_back(std::move(resize));
+    }
+
+    output_ports = std::move(resize_output_ports);
+
+    header = output_ports.front()->getHeader();
+    for (size_t i = 1; i < output_ports.size(); ++i)
+        assertBlocksHaveEqualStructure(header, output_ports[i]->getHeader(), "Pipes");
+
+    max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
+}
+
 void Pipe::resize(size_t num_streams, bool strict)
 {
     if (output_ports.empty())
@@ -697,6 +741,31 @@ void Pipe::resize(size_t num_streams, bool strict)
     /// which doesn't make sense for 1-1 scenario
     if (numOutputPorts() == 1 && num_streams == 1)
         return;
+
+    /// Performance bottleneck identified: Severe lock contention for ExecutingGraph::Node::status_mutex.
+    /// Issues observed:
+    /// 1. Increased latency of ExecutingGraph::updateNode, lengthening overall query latency.
+    /// 2. Unnecessary CPU cycle consumption in native_queued_spin_lock_slowpath (kernel).
+    /// 3. Decreased CPU utilization.
+    ///
+    /// Proposed solution: Split ResizeProcessor when multiple threads are allocated to execute a query.
+    /// Benefits:
+    /// 1. Mitigates lock contention.
+    /// 2. Maintains ResizeProcessor's benefit of balancing data flow among multiple streams.
+    {
+        constexpr size_t RESIZE_SPLIT_THRESHOLD = 24;
+        size_t groups = 2;
+
+        while (!(num_streams % groups) && !(numOutputPorts() % groups) && num_streams / groups >= RESIZE_SPLIT_THRESHOLD)
+            groups <<= 1;
+        groups >>= 1;
+
+        if (groups > 1)
+        {
+            addSplitResizeTransform(num_streams, groups, strict);
+            return;
+        }
+    }
 
     ProcessorPtr resize;
 
