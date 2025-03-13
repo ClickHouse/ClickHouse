@@ -81,7 +81,7 @@ SETTINGS enable_parallel_replicas = 1, enable_analyzer=1;
 
 SELECT '=============== QUERIES EXECUTED BY PARALLEL INNER QUERY ALONE ===============';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 -- There should be 4 queries. The main query as received by the initiator and the 3 equal queries sent to each replica
 SELECT is_initial_query, count() as c, replaceRegexpAll(query, '_data_(\d+)_(\d+)', '_data_') as query
 FROM system.query_log
@@ -216,7 +216,7 @@ GROUP BY value1, value2
 ORDER BY value1, value2
 SETTINGS enable_parallel_replicas = 1, enable_analyzer=1;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 -- There should be 7 queries. The main query as received by the initiator, the 3 equal queries to execute the subquery
 -- in the inner join and the 3 queries executing the whole query (but replacing the subquery with a temp table)

@@ -92,10 +92,6 @@ namespace ServerSetting
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
-    extern const ServerSettingsString skipping_index_cache_policy;
-    extern const ServerSettingsUInt64 skipping_index_cache_size;
-    extern const ServerSettingsUInt64 skipping_index_cache_max_entries;
-    extern const ServerSettingsDouble skipping_index_cache_size_ratio;
     extern const ServerSettingsUInt64 io_thread_pool_queue_size;
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
@@ -813,17 +809,6 @@ void LocalServer::processConfig()
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
-    String skipping_index_cache_policy = server_settings[ServerSetting::skipping_index_cache_policy];
-    size_t skipping_index_cache_size = server_settings[ServerSetting::skipping_index_cache_size];
-    size_t skipping_index_cache_max_count = server_settings[ServerSetting::skipping_index_cache_max_entries];
-    double skipping_index_cache_size_ratio = server_settings[ServerSetting::skipping_index_cache_size_ratio];
-    if (skipping_index_cache_size > max_cache_size)
-    {
-        skipping_index_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered skipping index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(skipping_index_cache_size));
-    }
-    global_context->setSkippingIndexCache(skipping_index_cache_policy, skipping_index_cache_size, skipping_index_cache_max_count, skipping_index_cache_size_ratio);
-
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -848,6 +833,9 @@ void LocalServer::processConfig()
 
     /// Initialize a dummy query condition cache.
     global_context->setQueryConditionCache(DEFAULT_QUERY_CONDITION_CACHE_POLICY, 0, 0);
+
+    /// Initialize a dummy query result cache.
+    global_context->setQueryResultCache(0, 0, 0, 0);
 
     /// Initialize allowed tiers
     global_context->getAccessControl().setAllowTierSettings(server_settings[ServerSetting::allow_feature_tier]);
@@ -875,6 +863,8 @@ void LocalServer::processConfig()
     DatabaseCatalog::instance().initializeAndLoadTemporaryDatabase();
 
     std::string default_database = server_settings[ServerSetting::default_database];
+    if (default_database.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     {
         DatabasePtr database = createClickHouseLocalDatabaseOverlay(default_database, global_context);
         if (UUID uuid = database->getUUID(); uuid != UUIDHelpers::Nil)

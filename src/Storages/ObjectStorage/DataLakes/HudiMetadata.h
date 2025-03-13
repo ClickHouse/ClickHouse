@@ -43,10 +43,7 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
-        ContextPtr local_context,
-        bool);
-
-    void updateConfiguration(ConfigurationPtr config) { configuration = config; }
+        ContextPtr local_context);
 
 private:
     const ObjectStoragePtr object_storage;

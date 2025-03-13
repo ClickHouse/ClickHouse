@@ -94,6 +94,7 @@ class JobConfigs:
             BuildTypes.ARM_RELEASE,
             BuildTypes.ARM_ASAN,
             BuildTypes.AMD_TIDY,
+            BuildTypes.FUZZERS,
         ],
         provides=[
             [
@@ -143,6 +144,7 @@ class JobConfigs:
                 ArtifactNames.DEB_ARM_ASAN,
             ],
             [ArtifactNames.CH_TIDY_BIN],
+            [],  # no need for fuzzers artifacts in normal pr run
         ],
         runs_on=[
             RunnerLabels.BUILDER_AMD,
@@ -155,6 +157,7 @@ class JobConfigs:
             RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_AMD,
+            RunnerLabels.BUILDER_ARM,  # fuzzers
         ],
     )
     special_build_jobs = Job.Config(
@@ -473,6 +476,7 @@ class JobConfigs:
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./tests/queries/0_stateless/",
+                "./tests/ci/stress.py",
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",

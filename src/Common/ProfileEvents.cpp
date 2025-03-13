@@ -85,6 +85,8 @@
     M(DataLakeMetadataCacheWeightLost, "Approximate number of bytes evicted from the datalake metadata cache.", ValueType::Number) \
     M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
+    M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(CreatedReadBufferOrdinary, "Number of times ordinary read buffer was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIO, "Number of times a read buffer with O_DIRECT was created for reading data (while choosing among other read methods).", ValueType::Number) \
     M(CreatedReadBufferDirectIOFailed, "Number of times a read buffer with O_DIRECT was attempted to be created for reading data (while choosing among other read methods), but the OS did not allow it (due to lack of filesystem support or other reasons) and we fallen back to the ordinary reading method.", ValueType::Number) \
@@ -595,6 +597,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadRun, "Number of times background thread executed free space keeping job", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, "Time for which background thread executed free space keeping job", ValueType::Milliseconds) \
+    M(FilesystemCacheFailedEvictionCandidates, "Number of file segments which unexpectedly failed to be evicted during dynamic filesystem cache eviction", ValueType::Number) \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer", ValueType::Number) \
     M(RemoteFSPrefetches, "Number of prefetches made with asynchronous reading from remote filesystem", ValueType::Number) \
@@ -956,6 +959,7 @@ The server successfully detected this situation and will download merged part fr
     M(ConcurrencyControlSlotsGranted, "Number of CPU slot granted according to guarantee of 1 thread per query and for queries with setting 'use_concurrency_control' = 0", ValueType::Number) \
     M(ConcurrencyControlSlotsDelayed, "Number of CPU slot not granted initially and required to wait for a free CPU slot", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquired, "Total number of CPU slot acquired", ValueType::Number) \
+    M(ConcurrencyControlSlotsAcquiredNonCompeting, "Total number of noncompeting CPU slot acquired", ValueType::Number) \
     M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
     \
     M(SharedDatabaseCatalogFailedToApplyState, "Number of failures to apply new state in SharedDatabaseCatalog", ValueType::Number) \
@@ -971,6 +975,7 @@ The server successfully detected this situation and will download merged part fr
     M(ParquetFetchWaitTimeMicroseconds, "Time of waiting fetching parquet data", ValueType::Microseconds) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
+    M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
 
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

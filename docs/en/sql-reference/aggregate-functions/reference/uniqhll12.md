@@ -33,11 +33,12 @@ Function:
 
 - Provides the determinate result (it does not depend on the query processing order).
 
-We do not recommend using this function. In most cases, use the [uniq](/sql-reference/aggregate-functions/reference/uniq) or [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined) function.
+
+We do not recommend using this function. In most cases, use the [uniq](/sql-reference/aggregate-functions/reference/uniq) or [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined) function.
 
 **See Also**
 
 - [uniq](/sql-reference/aggregate-functions/reference/uniq)
-- [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
+- [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined)
 - [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)
-- [uniqTheta](../../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)
+- [uniqTheta](/sql-reference/aggregate-functions/reference/uniqthetasketch)
