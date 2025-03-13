@@ -17,6 +17,7 @@
     <structure>
         <key>
             <attribute>
+                <name>x</name>
                 <type>UInt64</type>
             </attribute>
             <attribute>
