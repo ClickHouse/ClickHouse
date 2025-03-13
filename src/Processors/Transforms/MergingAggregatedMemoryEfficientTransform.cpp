@@ -7,14 +7,6 @@
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/Pipe.h>
 
-namespace CurrentMetrics
-{
-extern const Metric TemporaryFilesForAggregation;
-extern const Metric AggregatorThreads;
-extern const Metric AggregatorThreadsActive;
-extern const Metric AggregatorThreadsScheduled;
-}
-
 namespace DB
 {
 namespace ErrorCodes
@@ -323,14 +315,7 @@ void GroupingAggregatedTransform::work()
 
 MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(
     AggregatingTransformParamsPtr params_, const SortDescription & required_sort_description_)
-    : ISimpleTransform({}, params_->getHeader(), false)
-    , params(std::move(params_))
-    , required_sort_description(required_sort_description_)
-    , thread_pool{
-          CurrentMetrics::AggregatorThreads,
-          CurrentMetrics::AggregatorThreadsActive,
-          CurrentMetrics::AggregatorThreadsScheduled,
-          params->params.max_threads}
+    : ISimpleTransform({}, params_->getHeader(), false), params(std::move(params_)), required_sort_description(required_sort_description_)
 {
     setInputNotNeededAfterRead(true);
 }
@@ -378,7 +363,7 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     res_info->chunk_num = chunks_to_merge->chunk_num;
     chunk.getChunkInfos().add(std::move(res_info));
 
-    auto block = params->aggregator.mergeBlocks(blocks_list, params->final, thread_pool, is_cancelled);
+    auto block = params->aggregator.mergeBlocks(blocks_list, params->final, is_cancelled);
 
     if (!required_sort_description.empty())
         sortBlock(block, required_sort_description);
