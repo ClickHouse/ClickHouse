@@ -656,6 +656,10 @@ Text to represent true bool value in TSV/CSV/Vertical/Pretty formats.
 Text to represent false bool value in TSV/CSV/Vertical/Pretty formats.
 )", 0) \
     \
+    DECLARE(Bool, allow_special_bool_values_inside_variant, false, R"(
+Allows to parse Bool values inside Variant type from special text bool values like "on", "off", "enable", "disable", etc.
+)", 0) \
+    \
     DECLARE(Bool, input_format_values_interpret_expressions, true, R"(
 For Values format: if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.
 )", 0) \
