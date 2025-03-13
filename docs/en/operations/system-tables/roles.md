@@ -1,7 +1,7 @@
 ---
 description: "System table containing information about configured roles."
-slug: /en/operations/system-tables/roles
-title: "roles"
+slug: /operations/system-tables/roles
+title: "system.roles"
 keywords: ["system table", "roles"]
 ---
 
@@ -15,4 +15,4 @@ Columns:
 
 ## See Also {#see-also}
 
-- [SHOW ROLES](../../sql-reference/statements/show.md#show-roles-statement)
+- [SHOW ROLES](/sql-reference/statements/show#show-roles)

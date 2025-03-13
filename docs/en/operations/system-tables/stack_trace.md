@@ -1,11 +1,11 @@
 ---
 description: "System table which contains stack traces of all server threads. Allows developers to introspect the server state."
-slug: /en/operations/system-tables/stack_trace
-title: "stack_trace"
+slug: /operations/system-tables/stack_trace
+title: "system.stack_trace"
 keywords: ["system table", "stack_trace"]
 ---
 
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 
@@ -21,7 +21,7 @@ Columns:
 - `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — A [stack trace](https://en.wikipedia.org/wiki/Stack_trace) which represents a list of physical addresses where the called methods are stored.
 
 :::tip
-Check out the Knowledge Base for some handy queries, including [how to see what threads are currently running](/docs/knowledgebase/find-expensive-queries) and [useful queries for troubleshooting](/docs/knowledgebase/useful-queries-for-troubleshooting).
+Check out the Knowledge Base for some handy queries, including [how to see what threads are currently running](/knowledgebase/find-expensive-queries) and [useful queries for troubleshooting](/knowledgebase/useful-queries-for-troubleshooting).
 :::
 
 **Example**
@@ -98,5 +98,5 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 
 - [Introspection Functions](../../sql-reference/functions/introspection.md) — Which introspection functions are available and how to use them.
 - [system.trace_log](../system-tables/trace_log.md) — Contains stack traces collected by the sampling query profiler.
-- [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — Description and usage example of the `arrayMap` function.
-- [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — Description and usage example of the `arrayFilter` function.
+- [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) — Description and usage example of the `arrayMap` function.
+- [arrayFilter](/sql-reference/functions/array-functions#arrayfilterfunc-arr1-) — Description and usage example of the `arrayFilter` function.

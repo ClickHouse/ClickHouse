@@ -10,33 +10,33 @@ slug: /zh/operations/system-tables/query_views_log
 1.  在 [query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log) 部分配置参数.
 2.  设置 [log_query_views](../../operations/settings/settings.md#settings-log-query-views) 为 1.
 
-数据的刷新周期是在[query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log)服务器设置部分的 `flush_interval_milliseconds` 参数中设置的. 要强制刷新，请使用[SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs)查询.
+数据的刷新周期是在[query_views_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-query_views_log)服务器设置部分的 `flush_interval_milliseconds` 参数中设置的. 要强制刷新，请使用[SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs)查询.
 
 ClickHouse不会自动从表中删除数据. 详见 [Introduction](../../operations/system-tables/index.md#system-tables-introduction).
 
-您可以使用[log_queries_probability](../../operations/settings/settings.md#log-queries-probability)设置来减少在 `query_views_log` 表中注册的查询数量.
+您可以使用[log_queries_probability](/operations/settings/settings#log_queries_probability))设置来减少在 `query_views_log` 表中注册的查询数量.
 
 列信息:
 
 -   `event_date` ([Date](../../sql-reference/data-types/date.md)) — 视图的最后一个事件发生的日期.
 -   `event_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — 视图完成执行的日期和时间.
 -   `event_time_microseconds` ([DateTime](../../sql-reference/data-types/datetime.md)) — 视图以微秒精度完成执行的日期和时间.
--   `view_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 视图执行的持续时间(各阶段之和), 以毫秒为单位.
+-   `view_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 视图执行的持续时间(各阶段之和), 以毫秒为单位.
 -   `initial_query_id` ([String](../../sql-reference/data-types/string.md)) — 初始查询的ID (用于分布式查询执行).
 -   `view_name` ([String](../../sql-reference/data-types/string.md)) — 视图名称.
 -   `view_uuid` ([UUID](../../sql-reference/data-types/uuid.md)) — 视图的UUID.
 -   `view_type` ([Enum8](../../sql-reference/data-types/enum.md)) — 视图类型. 值:
-    -   `'Default' = 1` — [Default views](../../sql-reference/statements/create/view.md#normal). 不应该出现在日志中.
-    -   `'Materialized' = 2` — [Materialized views](../../sql-reference/statements/create/view.md#materialized).
+    -   `'Default' = 1` — [Default views](/sql-reference/statements/create/view#normal-view). 不应该出现在日志中.
+    -   `'Materialized' = 2` — [Materialized views](/sql-reference/statements/create/view#materialized-view).
     -   `'Live' = 3` — [Live views](../../sql-reference/statements/create/view.md#live-view).
 -   `view_query` ([String](../../sql-reference/data-types/string.md)) — 视图执行的查询.
 -   `view_target` ([String](../../sql-reference/data-types/string.md)) — 视图目标表的名称.
--   `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 读行数.
--   `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 读字节数.
--   `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 写入行数.
--   `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 写入字节数.
+-   `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 读行数.
+-   `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 读字节数.
+-   `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 写入行数.
+-   `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — 写入字节数.
 -   `peak_memory_usage` ([Int64](../../sql-reference/data-types/int-uint.md)) — 在此视图上下文中, 已分配内存和已释放内存之间的最大差值.
--   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents度量不同的指标. 它们的描述可以在表 [system.events](../../operations/system-tables/events.md#system_tables-events) 中找到.
+-   `ProfileEvents` ([Map(String, UInt64)](../../sql-reference/data-types/array.md)) — ProfileEvents度量不同的指标. 它们的描述可以在表 [system.events](/operations/system-tables/events) 中找到.
 -   `status` ([Enum8](../../sql-reference/data-types/enum.md)) — 视图状态. 值:
     -   `'QueryStart' = 1` — 成功启动视图执行. 不应该出现.
     -   `'QueryFinish' = 2` — 视图执行成功结束.
@@ -83,5 +83,5 @@ stack_trace:
 
 **另请参阅**
 
--   [system.query_log](../../operations/system-tables/query_log.md#system_tables-query_log) — 包含查询执行的常用信息的 `query_log`系统表的描述.
--   [system.query_thread_log](../../operations/system-tables/query_thread_log.md#system_tables-query_thread_log) — 包含关于每个查询执行线程的信息.
+-   [system.query_log](/operations/system-tables/query_log) — 包含查询执行的常用信息的 `query_log`系统表的描述.
+-   [system.query_thread_log](/operations/system-tables/query_thread_log) — 包含关于每个查询执行线程的信息.

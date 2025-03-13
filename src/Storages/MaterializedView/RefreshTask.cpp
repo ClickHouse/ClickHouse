@@ -10,7 +10,10 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
+#include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/executeQuery.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -136,7 +139,9 @@ void RefreshTask::startup()
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
-    refresh_task->schedule();
+
+    std::lock_guard guard(mutex);
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::shutdown()
@@ -222,7 +227,7 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         /// Update dependency graph.
         set_handle.changeDependencies(deps);
 
-        refresh_task->schedule();
+        scheduleRefresh(guard);
         scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
 
         refresh_settings = {};
@@ -245,7 +250,7 @@ void RefreshTask::start()
     if (!std::exchange(scheduling.stop_requested, false))
         return;
     scheduling.unexpected_error = std::nullopt;
-    refresh_task->schedule();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::stop()
@@ -254,7 +259,7 @@ void RefreshTask::stop()
     if (std::exchange(scheduling.stop_requested, true))
         return;
     interruptExecution();
-    refresh_task->schedule();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::run()
@@ -262,14 +267,14 @@ void RefreshTask::run()
     std::lock_guard guard(mutex);
     if (std::exchange(scheduling.out_of_schedule_refresh_requested, true))
         return;
-    refresh_task->schedule();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::cancel()
 {
     std::lock_guard guard(mutex);
     interruptExecution();
-    refresh_task->schedule();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::wait()
@@ -343,7 +348,7 @@ void RefreshTask::notify()
     if (view && view->getContext()->getRefreshSet().refreshesStopped())
         interruptExecution();
     scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
-    refresh_task->schedule();
+    scheduleRefresh(guard);
 }
 
 void RefreshTask::setFakeTime(std::optional<Int64> t)
@@ -526,6 +531,7 @@ void RefreshTask::refreshTask()
         scheduling.unexpected_error = getCurrentExceptionMessage(true);
         coordination.watches->should_reread_znodes.store(true);
         coordination.running_znode_exists = false;
+        setState(RefreshState::Scheduling, lock);
         refresh_task->schedule();
         lock.unlock();
 
@@ -638,7 +644,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(bool append, int32_t roo
             if (execution.interrupt_execution.load())
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh cancelled");
 
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, pipeline, /*pulling_pipeline*/ false, query_span, QueryCacheUsage::None, /*internal*/ false);
+            logQueryFinish(*query_log_elem, refresh_context, refresh_query, pipeline, /*pulling_pipeline*/ false, query_span, QueryResultCacheUsage::None, /*internal*/ false);
             query_log_elem = std::nullopt;
             query_span = nullptr;
             process_list_entry.reset(); // otherwise it needs to be alive for logQueryException
@@ -788,6 +794,13 @@ RefreshTask::determineNextRefreshTime(std::chrono::sys_seconds now)
     znode.last_attempt_succeeded = false;
 
     return {when, timeslot, znode};
+}
+
+void RefreshTask::scheduleRefresh(std::lock_guard<std::mutex> &)
+{
+    if (state != RefreshState::Running)
+        state = RefreshState::Scheduling;
+    refresh_task->schedule();
 }
 
 void RefreshTask::setState(RefreshState s, std::unique_lock<std::mutex> & lock)

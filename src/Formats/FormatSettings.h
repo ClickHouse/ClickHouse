@@ -127,6 +127,7 @@ struct FormatSettings
         bool decode_types_in_binary_format = false;
         bool read_json_as_string = false;
         bool write_json_as_string = false;
+        bool read_bool_field_as_int = false;
     } binary{};
 
     struct

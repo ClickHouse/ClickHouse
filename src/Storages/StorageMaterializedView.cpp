@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/executeQuery.h>
 
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
@@ -150,7 +151,7 @@ StorageMaterializedView::StorageMaterializedView(
         auto max_materialized_views_count_for_table = getContext()->getServerSettings()[ServerSetting::max_materialized_views_count_for_table];
         if (max_materialized_views_count_for_table && select_table_dependent_views.size() >= max_materialized_views_count_for_table)
             throw Exception(ErrorCodes::TOO_MANY_MATERIALIZED_VIEWS,
-                            "Too many materialized views, maximum: {}", max_materialized_views_count_for_table);
+                            "Too many materialized views, maximum: {}", max_materialized_views_count_for_table.value);
     }
 
     storage_metadata.setSelectQuery(select);

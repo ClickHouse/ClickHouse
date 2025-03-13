@@ -3,6 +3,7 @@
 #include <DataTypes/DataTypeMap.h>
 
 #include <Common/StringUtils.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
@@ -41,11 +42,11 @@ static IColumn & extractNestedColumn(IColumn & column)
 
 void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & map = field.safeGet<const Map &>();
+    const auto & map = field.safeGet<Map>();
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
-        const auto & tuple = elem.safeGet<const Tuple>();
+        const auto & tuple = elem.safeGet<Tuple>();
         assert(tuple.size() == 2);
         key->serializeBinary(tuple[0], ostr, settings);
         value->serializeBinary(tuple[1], ostr, settings);
@@ -64,7 +65,7 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
             size,
             settings.binary.max_binary_string_size);
     field = Map();
-    Map & map = field.safeGet<Map &>();
+    Map & map = field.safeGet<Map>();
     map.reserve(size);
     for (size_t i = 0; i < size; ++i)
     {

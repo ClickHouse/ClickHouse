@@ -14,7 +14,8 @@
 #include <IO/Archives/IArchiveWriter.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/Archives/createArchiveWriter.h>
-#include <IO/ConcatSeekableReadBuffer.h>
+#include <IO/ConcatReadBufferFromFile.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
@@ -583,6 +584,11 @@ void BackupImpl::removeLockFile()
         writer->removeFile(lock_file_name);
 }
 
+bool BackupImpl::directoryExists(const String & directory) const
+{
+    return !listFiles(directory, true /*recursive*/).empty();
+}
+
 Strings BackupImpl::listFiles(const String & directory, bool recursive) const
 {
     if (open_mode == OpenMode::WRITE)
@@ -681,28 +687,20 @@ SizeAndChecksum BackupImpl::getFileSizeAndChecksum(const String & file_name) con
     return it->second;
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const String & file_name) const
+std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFile(const String & file_name) const
 {
     return readFile(getFileSizeAndChecksum(file_name));
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) const
+std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFile(const SizeAndChecksum & size_and_checksum) const
 {
     return readFileImpl(size_and_checksum, /* read_encrypted= */ false);
 }
 
-std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
+std::unique_ptr<ReadBufferFromFileBase> BackupImpl::readFileImpl(const SizeAndChecksum & size_and_checksum, bool read_encrypted) const
 {
     if (open_mode == OpenMode::WRITE)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The backup file should not be opened for writing. Something is wrong internally");
-
-    if (size_and_checksum.first == 0)
-    {
-        /// Entry's data is empty.
-        std::lock_guard lock{mutex};
-        ++num_read_files;
-        return std::make_unique<ReadBufferFromMemory>(static_cast<char *>(nullptr), 0);
-    }
 
     BackupFileInfo info;
     {
@@ -719,6 +717,14 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
         info = it->second;
     }
 
+    if (info.size == 0)
+    {
+        /// Entry's data is empty.
+        std::lock_guard lock{mutex};
+        ++num_read_files;
+        return std::make_unique<ReadBufferFromOutsideMemoryFile>(info.data_file_name, std::string_view{});
+    }
+
     if (info.encrypted_by_disk != read_encrypted)
     {
         throw Exception(
@@ -727,8 +733,8 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
             info.data_file_name);
     }
 
-    std::unique_ptr<SeekableReadBuffer> read_buffer;
-    std::unique_ptr<SeekableReadBuffer> base_read_buffer;
+    std::unique_ptr<ReadBufferFromFileBase> read_buffer;
+    std::unique_ptr<ReadBufferFromFileBase> base_read_buffer;
 
     if (info.size > info.base_size)
     {
@@ -782,8 +788,8 @@ std::unique_ptr<SeekableReadBuffer> BackupImpl::readFileImpl(const SizeAndChecks
 
     /// The beginning of the data comes from the base backup,
     /// and the ending comes from this backup.
-    return std::make_unique<ConcatSeekableReadBuffer>(
-        std::move(base_read_buffer), info.base_size, std::move(read_buffer), info.size - info.base_size);
+    return std::make_unique<ConcatReadBufferFromFile>(
+        info.data_file_name, std::move(base_read_buffer), info.base_size, std::move(read_buffer), info.size - info.base_size);
 }
 
 size_t BackupImpl::copyFileToDisk(const String & file_name,

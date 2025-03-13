@@ -9,9 +9,9 @@
 
 #include <Common/config_version.h>
 
-#include <format>
-#include <unistd.h>
 #include <boost/algorithm/string/trim.hpp>
+#include <fmt/format.h>
+#include <unistd.h>
 
 
 namespace DB
@@ -143,6 +143,17 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
         writeVarUInt(script_query_number, out);
         writeVarUInt(script_line_number, out);
     }
+
+    if (server_protocol_revision >= DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+    {
+        if (!jwt.empty())
+        {
+            writeBinary(static_cast<UInt8>(1), out);
+            writeBinary(jwt, out);
+        }
+        else
+            writeBinary(static_cast<UInt8>(0), out);
+    }
 }
 
 
@@ -239,6 +250,14 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
         readVarUInt(script_query_number, in);
         readVarUInt(script_line_number, in);
     }
+
+    if (client_protocol_revision >= DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+    {
+        UInt8 have_jwt = 0;
+        readBinary(have_jwt, in);
+        if (have_jwt)
+            readBinary(jwt, in);
+    }
 }
 
 
@@ -263,7 +282,7 @@ bool ClientInfo::clientVersionEquals(const ClientInfo & other, bool compare_patc
 
 String ClientInfo::getVersionStr() const
 {
-    return std::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
+    return fmt::format("{}.{}.{} ({})", client_version_major, client_version_minor, client_version_patch, client_tcp_protocol_version);
 }
 
 void ClientInfo::fillOSUserHostNameAndVersionInfo()
@@ -306,7 +325,7 @@ String toString(ClientInfo::Interface interface)
             return "BACKGROUND";
     }
 
-    return std::format("Unknown server interface ({}).", static_cast<int>(interface));
+    return fmt::format("Unknown server interface ({}).", static_cast<int>(interface));
 }
 
 void ClientInfo::setFromHTTPRequest(const Poco::Net::HTTPRequest & request)
