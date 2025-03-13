@@ -16,7 +16,7 @@ namespace Setting
 
 StoragePtr TableFunctionFileCluster::getStorage(
     const String & /*source*/, const String & /*format_*/, const ColumnsDescription & columns, ContextPtr context,
-    const std::string & table_name, const String & /*compression_method_*/) const
+    const std::string & table_name, const String & /*compression_method_*/, bool /*is_insert_query*/) const
 {
     StoragePtr storage;
 
