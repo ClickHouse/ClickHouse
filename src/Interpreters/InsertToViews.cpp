@@ -1,5 +1,4 @@
 #include <functional>
-#include <stack>
 #include <vector>
 #include <Interpreters/InsertToViews.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -110,6 +109,7 @@ namespace Setting
     extern const SettingsBool log_profile_events;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool use_async_executor_for_materialized_views;
+    extern const SettingsBool materialized_views_ignore_errors;
 }
 
 namespace MergeTreeSetting
@@ -125,7 +125,6 @@ namespace ErrorCodes
 }
 
 
-/// Insert into LiveView.
 class PushingToLiveViewSink final : public SinkToStorage
 {
 public:
@@ -154,7 +153,7 @@ private:
     ContextPtr context;
 };
 
-/// Insert into WindowView.
+
 class PushingToWindowViewSink final : public SinkToStorage
 {
 public:
@@ -183,6 +182,28 @@ private:
     ContextPtr context;
 };
 
+
+class BeginingViewsTransform final : public ISimpleTransform
+{
+public:
+    explicit BeginingViewsTransform(Block header)
+        : ISimpleTransform(header, header, false)
+    {}
+
+    String getName() const override { return "BeginingViewsTransform"; }
+
+    void transform(Chunk &) override { /* no op */ }
+
+    struct ExternalException
+    {
+        std::exception_ptr origin_exception;
+    };
+
+    void transform(std::exception_ptr & e) override
+    {
+        e = std::make_exception_ptr(ExternalException{e});
+    }
+};
 
 class FinalizingViewsTransform final : public IProcessor
 {
@@ -219,7 +240,7 @@ public:
 
         if (statuses.empty())
         {
-            if (first_exception)
+            if (first_exception && !views_manager->materialized_views_ignore_errors)
                 output.pushException(first_exception);
 
             output.finish();
@@ -255,11 +276,28 @@ public:
                 continue;
             }
 
+            auto [is_external, original_exception] = unwrapExternalException(data.exception);
+
+            if (is_external)
+            {
+                output.pushException(original_exception);
+                return Status::PortFull;
+            }
+
             if (!first_exception)
                 first_exception = data.exception;
 
             if (!statuses[pos].exception)
                 statuses[pos].exception = data.exception;
+
+            if (!views_manager->materialized_views_ignore_errors)
+            {
+                return Status::Ready;
+            }
+            else
+            {
+                ++num_finished;
+            }
 
             return Status::Ready;
         }
@@ -274,7 +312,16 @@ public:
     {
         for (auto & status : statuses)
         {
-            views_manager->logQueryView(status.view_id, status.exception);
+            if (status.exception)
+                status.exception = addStorageToException(status.exception, status.view_id);
+
+            if (status.exception && views_manager->materialized_views_ignore_errors)
+                tryLogException(status.exception, getLogger("PushingToViews"), "Cannot push to the storage, ignoring the error");
+
+            if (status.is_finished)
+                views_manager->logQueryView(status.view_id, status.exception);
+            else
+                views_manager->logQueryView(status.view_id, addStorageToException(first_exception, status.view_id));
         }
 
         statuses.clear();
@@ -290,6 +337,39 @@ private:
         bool is_finished = false;
         std::exception_ptr exception;
     };
+
+    static std::pair<bool, std::exception_ptr> unwrapExternalException(std::exception_ptr & e)
+    {
+        try
+        {
+            std::rethrow_exception(e);
+        }
+        catch (BeginingViewsTransform::ExternalException & e)
+        {
+            return {true, e.origin_exception};
+        }
+        catch (...)
+        {
+            return {false, e};
+        }
+    }
+
+    static std::exception_ptr addStorageToException(std::exception_ptr ptr, const StorageID & storage)
+    {
+        try
+        {
+            std::rethrow_exception(ptr);
+        }
+        catch (DB::Exception & exception)
+        {
+            exception.addMessage("while pushing to view {}", storage.getNameForLogs());
+            return std::current_exception();
+        }
+        catch (...)
+        {
+            return std::current_exception();
+        }
+    }
 
     OutputPort & output;
 
@@ -452,6 +532,8 @@ ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, 
 
     const ASTInsertQuery * as_insert_query = init_query->as<ASTInsertQuery>();
     insert_null_as_default = as_insert_query && as_insert_query->select && init_context->getSettingsRef()[Setting::insert_null_as_default];
+
+    materialized_views_ignore_errors = init_context->getSettingsRef()[Setting::materialized_views_ignore_errors];
 
     buildRelaitions();
 }
@@ -1058,7 +1140,7 @@ Chain ViewsManager::createPostSink(StorageIDPrivate view_id, size_t level) const
     auto inner_table = inner_tables.at(view_id);
     LOG_DEBUG(logger, "createPostSink: {} ({})", view_id, inner_table);
 
-    auto & dependent_views_ids = dependent_views.at(view_id);
+    const auto & dependent_views_ids = dependent_views.at(view_id);
     LOG_DEBUG(logger, "createPostSink: {} ({}) dependencies {}" , view_id, inner_table, dependent_views_ids.size());
     if (dependent_views_ids.empty())
         return {};
@@ -1069,14 +1151,15 @@ Chain ViewsManager::createPostSink(StorageIDPrivate view_id, size_t level) const
     std::vector<Block> output_view_chains_headers;
     output_view_chains_headers.reserve(dependent_views_ids.size());
 
-    for (auto & child_view_id : dependent_views_ids)
+    for (const auto & child_view_id : dependent_views_ids)
     {
         LOG_DEBUG(logger, "createPostSink: {} --> {}", view_id, child_view_id);
 
         ProfileEvents::increment(ProfileEvents::InsertQueriesWithSubqueries);
         ProfileEvents::increment(ProfileEvents::QueriesWithSubqueries);
 
-        Chain chain;
+        auto chain = Chain(std::make_shared<BeginingViewsTransform>(input_headers.at(child_view_id)));
+
         {
             auto tmp = createSelect(child_view_id);
             LOG_DEBUG(logger, "createPostSink: {} ({}) --> {},"

@@ -8,6 +8,9 @@
 namespace DB
 {
 
+class ViewsManager;
+using ViewsManagerConstPtr = std::shared_ptr<const ViewsManager>;
+
 /// Has one unconnected input port and one unconnected output port.
 /// There may be other ports on the processors, but they must all be connected.
 /// The unconnected input must be on the first processor, output - on the last.
@@ -54,7 +57,7 @@ public:
     void addTableLock(TableLockHolder lock) { holder.table_locks.emplace_back(std::move(lock)); }
     void addStorageHolder(StoragePtr storage) { holder.storage_holders.emplace_back(std::move(storage)); }
     void addInterpreterContext(ContextPtr context) { holder.interpreter_context.emplace_back(std::move(context)); }
-    void addViewsManager(std::shared_ptr<ViewsManager> view_manager) { holder.views_holder.emplace_back(std::move(view_manager)); }
+    void addViewsManager(ViewsManagerConstPtr view_manager) { holder.views_holder.emplace_back(std::move(view_manager)); }
 
 
     void attachResources(QueryPlanResourceHolder holder_)

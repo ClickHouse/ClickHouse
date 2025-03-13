@@ -93,17 +93,16 @@ private:
     using MapIdViewType = std::map<StorageIDPrivate, QueryViewsLogElement::ViewType>;
 
 public:
-    using Ptr = std::shared_ptr<ViewsManager>;
     using ConstPtr = std::shared_ptr<const ViewsManager>;
 
     template <class... Args>
-    static Ptr create(Args &&... args)
+    static ConstPtr create(Args &&... args)
     {
         struct MakeSharedEnabler : public ViewsManager
         {
             explicit MakeSharedEnabler(Args &&... args) : ViewsManager(std::forward<Args>(args)...) {}
         };
-        return std::make_shared<MakeSharedEnabler>(std::forward<Args>(args)...);
+        return std::make_shared<const MakeSharedEnabler>(std::forward<Args>(args)...);
     }
 
     Chain createPreSink() const;
@@ -148,10 +147,12 @@ private:
     MapIdBlock select_headers;
     MapIdThreadGroup thread_groups;
 
+    LoggerPtr logger;
+
+public:
     bool deduplicate_blocks_in_dependent_materialized_views = false;
     bool insert_null_as_default = false;
-
-    LoggerPtr logger;
+    bool materialized_views_ignore_errors = false;
 };
 
 
