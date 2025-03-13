@@ -61,6 +61,36 @@ class JobConfigs:
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         provides=[ArtifactNames.FAST_TEST],
     )
+    tidy_build_jobs = Job.Config(
+        name=JobNames.BUILD,
+        runs_on=["..."],
+        # requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
+        command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./src",
+                "./contrib/",
+                "./CMakeLists.txt",
+                "./PreLoad.cmake",
+                "./cmake",
+                "./base",
+                "./programs",
+                "./docker/packager/packager",
+                "./rust",
+                "./tests/ci/build_check.py",
+                "./tests/performance",
+            ],
+            with_git_submodules=True,
+        ),
+    ).parametrize(
+        parameter=[
+            BuildTypes.AMD_TIDY,
+        ],
+        provides=[[]],  # [ArtifactNames.CH_TIDY_BIN],
+        runs_on=[
+            RunnerLabels.BUILDER_AMD,
+        ],
+    )
     build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["...from params..."],
@@ -93,7 +123,6 @@ class JobConfigs:
             BuildTypes.AMD_BINARY,
             BuildTypes.ARM_RELEASE,
             BuildTypes.ARM_ASAN,
-            BuildTypes.AMD_TIDY,
         ],
         provides=[
             [
@@ -142,7 +171,6 @@ class JobConfigs:
                 ArtifactNames.CH_ARM_ASAN,
                 ArtifactNames.DEB_ARM_ASAN,
             ],
-            [ArtifactNames.CH_TIDY_BIN],
         ],
         runs_on=[
             RunnerLabels.BUILDER_AMD,
@@ -154,7 +182,6 @@ class JobConfigs:
             RunnerLabels.BUILDER_AMD,
             RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
-            RunnerLabels.BUILDER_AMD,
         ],
     )
     special_build_jobs = Job.Config(
@@ -315,7 +342,7 @@ class JobConfigs:
     )
     functional_tests_jobs_coverage = Job.Config(
         name=JobNames.STATELESS,
-        runs_on=RunnerLabels.FUNC_TESTER_AMD,
+        runs_on=RunnerLabels.FUNC_TESTER_ARM,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[

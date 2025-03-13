@@ -20,8 +20,15 @@ workflow = Workflow.Config(
         JobConfigs.style_check,
         JobConfigs.docs_job,
         JobConfigs.fast_test,
+        *JobConfigs.tidy_build_jobs,
         *[
-            job.set_dependency([JobNames.STYLE_CHECK, JobNames.FAST_TEST])
+            job.set_dependency(
+                [
+                    JobNames.STYLE_CHECK,
+                    JobNames.FAST_TEST,
+                    JobConfigs.tidy_build_jobs[0].name,
+                ]
+            )
             for job in JobConfigs.build_jobs
         ],
         *[
