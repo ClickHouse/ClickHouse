@@ -70,6 +70,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
             {"use_query_condition_cache", false, false, "New setting."},
+            {"iceberg_timestamp_ms", 0, 0, "New setting."},
+            {"iceberg_snapshot_id", 0, 0, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
