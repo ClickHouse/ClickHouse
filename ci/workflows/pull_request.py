@@ -15,8 +15,6 @@ workflow = Workflow.Config(
     event=Workflow.Event.PULL_REQUEST,
     base_branches=[BASE_BRANCH],
     jobs=[
-        # JobConfigs.docker_build_arm,
-        # JobConfigs.docker_build_amd,
         JobConfigs.style_check,
         JobConfigs.docs_job,
         JobConfigs.fast_test,

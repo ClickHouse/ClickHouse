@@ -183,10 +183,16 @@ DOCKERS = [
     # ),
     Docker.Config(
         name="clickhouse/integration-test",
-        path="./ci/docker/integration/integration-test",
+        path="./docker/test/integration/base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
+    # Docker.Config(
+    #     name="clickhouse/integration-test",
+    #     path="./ci/docker/integration/integration-test",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./docker/test/integration/runner",
