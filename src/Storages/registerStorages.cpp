@@ -149,7 +149,7 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
     registerStorageHudi(factory);
     registerStorageS3Queue(factory);
 
-    #if USE_PARQUET && USE_DELTA_KERNEL_RS
+    #if USE_PARQUET
     registerStorageDeltaLake(factory);
     #endif
 

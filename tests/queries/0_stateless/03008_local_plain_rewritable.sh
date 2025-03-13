@@ -16,7 +16,7 @@ settings disk = disk(
     type = object_storage,
     object_storage_type = local,
     metadata_type = plain_rewritable,
-    path = 'disks/local_plain_rewritable/')
+    path = '/var/lib/clickhouse/disks/local_plain_rewritable/')
 "
 
 ${CLICKHOUSE_CLIENT} -m --query "

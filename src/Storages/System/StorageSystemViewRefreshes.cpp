@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 

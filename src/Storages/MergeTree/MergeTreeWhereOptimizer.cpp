@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -186,12 +185,6 @@ static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & colu
 
     auto function_node = node.toFunctionNode();
     size_t arguments_size = function_node.getArgumentsSize();
-
-    /// Do not account arguments of function "indexHint"
-    /// because they won't be read from table.
-    if (function_node.getFunctionName() == "indexHint")
-        return;
-
     for (size_t i = 0; i < arguments_size; ++i)
     {
         auto function_argument = function_node.getArgumentAt(i);
@@ -550,6 +543,10 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         /// disallow GLOBAL IN, GLOBAL NOT IN
         /// TODO why?
         if (function_name == "globalIn" || function_name == "globalNotIn")
+            return true;
+
+        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
+        if (function_name == "indexHint")
             return true;
 
         size_t arguments_size = function_node.getArgumentsSize();

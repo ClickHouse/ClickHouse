@@ -85,7 +85,6 @@ void registerInputFormatForm(FormatFactory & factory);
 void registerOutputFormatPretty(FormatFactory & factory);
 void registerOutputFormatVertical(FormatFactory & factory);
 void registerOutputFormatJSONEachRowWithProgress(FormatFactory & factory);
-void registerOutputFormatJSONCompactEachRowWithProgress(FormatFactory & factory);
 void registerOutputFormatXML(FormatFactory & factory);
 void registerOutputFormatODBCDriver2(FormatFactory & factory);
 void registerOutputFormatNull(FormatFactory & factory);
@@ -230,7 +229,6 @@ void registerFormats()
     registerOutputFormatPretty(factory);
     registerOutputFormatVertical(factory);
     registerOutputFormatJSONEachRowWithProgress(factory);
-    registerOutputFormatJSONCompactEachRowWithProgress(factory);
     registerOutputFormatXML(factory);
     registerOutputFormatODBCDriver2(factory);
     registerOutputFormatNull(factory);

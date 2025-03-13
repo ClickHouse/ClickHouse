@@ -1,7 +1,7 @@
 ---
-title: Pretty
-slug: /interfaces/formats/Pretty
-keywords: [Pretty]
+title : Pretty
+slug : /en/interfaces/formats/Pretty
+keywords : [Pretty]
 input_format: false
 output_format: true
 alias: []
@@ -13,7 +13,7 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 |-------|---------|-------|
 | ✗     | ✔       |       |
 
-## Description {#description}
+## Description
 
 The `Pretty` format outputs data as Unicode-art tables, 
 using ANSI-escape sequences for displaying colors in the terminal.
@@ -21,9 +21,9 @@ A full grid of the table is drawn, and each row occupies two lines in the termin
 Each result block is output as a separate table. 
 This is necessary so that blocks can be output without buffering results (buffering would be necessary to pre-calculate the visible width of all the values).
 
-[NULL](/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
+[NULL](/docs/en/sql-reference/syntax.md) is output as `ᴺᵁᴸᴸ`.
 
-## Example Usage {#example-usage}
+## Example Usage
 
 Example (shown for the [`PrettyCompact`](./PrettyCompact.md) format):
 
@@ -50,13 +50,13 @@ SELECT 'String with \'quotes\' and \t character' AS Escaping_test
 ```
 
 To avoid dumping too much data to the terminal, only the first `10,000` rows are printed. 
-If the number of rows is greater than or equal to `10,000`, the message "Showed first 10 000" is printed.
+If the number of rows is greater than or equal to `10,000`, the message “Showed first 10 000” is printed.
 
 :::note
 This format is only appropriate for outputting a query result, but not for parsing data.
 :::
 
-The Pretty format supports outputting total values (when using `WITH TOTALS`) and extremes (when 'extremes' is set to 1). 
+The Pretty format supports outputting total values (when using `WITH TOTALS`) and extremes (when ‘extremes’ is set to 1). 
 In these cases, total values and extreme values are output after the main data, in separate tables. 
 This is shown in the following example which uses the [`PrettyCompact`](./PrettyCompact.md) format:
 
@@ -92,7 +92,7 @@ Extremes:
 └────────────┴─────────┘
 ```
 
-## Format Settings {#format-settings}
+## Format Settings
 
 <PrettyFormatSettings/>
 

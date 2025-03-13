@@ -1,5 +1,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <IO/Operators.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/WindowTransform.h>

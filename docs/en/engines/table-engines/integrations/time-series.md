@@ -1,11 +1,8 @@
 ---
-slug: /engines/table-engines/special/time_series
+slug: /en/engines/table-engines/special/time_series
 sidebar_position: 60
 sidebar_label: TimeSeries
-title: "TimeSeries Engine"
-description: "A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels)."
 ---
-
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
@@ -16,7 +13,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels):
 
-```sql
+```
 metric_name1[tag1=value1, tag2=value2, ...] = {timestamp1: value1, timestamp2: value2, ...}
 metric_name2[...] = ...
 ```
@@ -24,13 +21,13 @@ metric_name2[...] = ...
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the TimeSeries table engine
-with [allow_experimental_time_series_table](/operations/settings/settings#allow_experimental_time_series_table) setting.
+with [allow_experimental_time_series_table](../../../operations/settings/settings.md#allow-experimental-time-series-table) setting.
 Input the command `set allow_experimental_time_series_table = 1`.
 :::
 
 ## Syntax {#syntax}
 
-```sql
+``` sql
 CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [SETTINGS var1=value1, ...]
 [DATA db.data_table_name | DATA ENGINE data_table_engine(arguments)]
@@ -42,7 +39,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
 
 It's easier to start with everything set by default (it's allowed to create a `TimeSeries` table without specifying a list of columns):
 
-```sql
+``` sql
 CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
@@ -153,7 +150,7 @@ Inner target tables have names like `.inner_id.data.xxxxxxxx-xxxx-xxxx-xxxx-xxxx
 `.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 and each target table has columns which is a subset of the columns of the main `TimeSeries` table:
 
-```sql
+``` sql
 CREATE TABLE default.`.inner_id.data.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` UUID,
@@ -164,7 +161,7 @@ ENGINE = MergeTree
 ORDER BY (id, timestamp)
 ```
 
-```sql
+``` sql
 CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
@@ -179,7 +176,7 @@ PRIMARY KEY metric_name
 ORDER BY (metric_name, id)
 ```
 
-```sql
+``` sql
 CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `metric_family_name` String,
@@ -196,7 +193,7 @@ ORDER BY metric_family_name
 You can adjust the types of almost any column of the inner target tables by specifying them explicitly
 while defining the main table. For example,
 
-```sql
+``` sql
 CREATE TABLE my_table
 (
     timestamp DateTime64(6)
@@ -205,7 +202,7 @@ CREATE TABLE my_table
 
 will make the inner [data](#data-table) table store timestamp in microseconds instead of milliseconds:
 
-```sql
+``` sql
 CREATE TABLE default.`.inner_id.data.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` UUID,
@@ -235,12 +232,12 @@ There are two columns containing maps of tags - `tags` and `all_tags`. In this e
 if setting `tags_to_columns` is used. This setting allows to specify that a specific tag should be stored in a separate column instead of storing
 in a map inside the `tags` column:
 
-```sql
+``` sql
 CREATE TABLE my_table ENGINE=TimeSeries SETTINGS = {'instance': 'instance', 'job': 'job'}
 ```
 
 This statement will add columns
-```sql
+```
     `instance` String,
     `job` String
 ```
@@ -266,7 +263,7 @@ to remove duplicates.
 
 Other table engines also can be used for inner target tables if it's specified so:
 
-```sql
+``` sql
 CREATE TABLE my_table ENGINE=TimeSeries
 DATA ENGINE=ReplicatedMergeTree
 TAGS ENGINE=ReplicatedAggregatingMergeTree
@@ -277,7 +274,7 @@ METRICS ENGINE=ReplicatedReplacingMergeTree
 
 It's possible to make a `TimeSeries` table use a manually created table:
 
-```sql
+``` sql
 CREATE TABLE data_for_my_table
 (
     `id` UUID,

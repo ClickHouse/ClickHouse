@@ -1,10 +1,9 @@
 #pragma once
 
-#include <DataTypes/Serializations/ISerialization.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/FormatSettings.h>
+#include <Core/Block.h>
 #include <Processors/Formats/IOutputFormat.h>
-#include <Common/PODArray_fwd.h>
+#include <Formats/FormatSettings.h>
+#include <Formats/FormatFactory.h>
 
 namespace DB
 {

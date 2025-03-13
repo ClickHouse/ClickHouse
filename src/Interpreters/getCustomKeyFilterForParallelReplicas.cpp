@@ -70,7 +70,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt64) max value",
-                    rational_cast<double>(range_upper));
+                    range_upper);
         }
         else if (typeid_cast<const DataTypeUInt32 *>(custom_key_column_type.get()))
         {
@@ -80,7 +80,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt32) max value",
-                    rational_cast<double>(range_upper));
+                    range_upper);
         }
         else if (typeid_cast<const DataTypeUInt16 *>(custom_key_column_type.get()))
         {
@@ -90,7 +90,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt16) max value",
-                    rational_cast<double>(range_upper));
+                    range_upper);
         }
         else if (typeid_cast<const DataTypeUInt8 *>(custom_key_column_type.get()))
         {
@@ -100,7 +100,7 @@ ASTPtr getCustomKeyFilterForParallelReplica(
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Invalid custom key range upper bound: {}. Value must be smaller than custom key column type (UInt8) max value",
-                    rational_cast<double>(range_upper));
+                    range_upper);
         }
     }
 
@@ -114,8 +114,8 @@ ASTPtr getCustomKeyFilterForParallelReplica(
         throw Exception(
             ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid custom key filter range: Range upper bound {} must be larger than range lower bound {}",
-            rational_cast<double>(range_lower),
-            rational_cast<double>(range_upper));
+            range_lower,
+            range_upper);
 
     RelativeSize size_of_universum = range_upper - range_lower;
 

@@ -1,9 +1,7 @@
 ---
-description: "System table which describes the content of the settings profile: constraints, roles and users that the setting applies to, parent settings profiles."
-slug: /operations/system-tables/settings_profile_elements
-title: "system.settings_profile_elements"
-keywords: ["system table", "settings_profile_elements"]
+slug: /en/operations/system-tables/settings_profile_elements
 ---
+# settings_profile_elements
 
 Describes the content of the settings profile:
 

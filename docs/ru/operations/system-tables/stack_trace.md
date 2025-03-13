@@ -11,7 +11,7 @@ slug: /ru/operations/system-tables/stack_trace
 
 -   `thread_name` ([String](../../sql-reference/data-types/string.md)) — имя потока.
 -   `thread_id` ([UInt64](../../sql-reference/data-types/int-uint.md)) — идентификатор потока.
--   `query_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор запроса. Может быть использован для получения подробной информации о выполненном запросе из системной таблицы [query_log](/ru/operations/system-tables/query_log).
+-   `query_id` ([String](../../sql-reference/data-types/string.md)) — идентификатор запроса. Может быть использован для получения подробной информации о выполненном запросе из системной таблицы [query_log](/docs/ru/operations/system-tables/query_log).
 -   `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — [трассировка стека](https://en.wikipedia.org/wiki/Stack_trace). Представляет собой список физических адресов, по которым расположены вызываемые методы.
 
 **Пример**
@@ -87,6 +87,6 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 **Смотрите также**
 
 -   [Функции интроспекции](../../sql-reference/functions/introspection.md) — описание функций интроспекции и примеры использования.
--   [system.trace_log](/operations/system-tables/trace_log) — системная таблица, содержащая трассировки стека, собранные профилировщиком выборочных запросов.
--   [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) — описание и пример использования функции `arrayMap`.
--   [arrayFilter](/sql-reference/functions/array-functions#arrayfilterfunc-arr1-) — описание и пример использования функции `arrayFilter`.
+-   [system.trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) — системная таблица, содержащая трассировки стека, собранные профилировщиком выборочных запросов.
+-   [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — описание и пример использования функции `arrayMap`.
+-   [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — описание и пример использования функции `arrayFilter`.

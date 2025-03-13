@@ -1,7 +1,7 @@
 #include <Analyzer/UnionNode.h>
 
-#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
+#include <Common/FieldVisitorToString.h>
 
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -113,6 +113,32 @@ NamesAndTypes UnionNode::computeProjectionColumns() const
     }
 
     return result_columns;
+}
+
+void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<std::string> & used_projection_columns)
+{
+    if (recursive_cte_table)
+        return;
+
+    auto projection_columns = computeProjectionColumns();
+    size_t projection_columns_size = projection_columns.size();
+    std::unordered_set<size_t> used_projection_column_indexes;
+
+    for (size_t i = 0; i < projection_columns_size; ++i)
+    {
+        const auto & projection_column = projection_columns[i];
+        if (used_projection_columns.contains(projection_column.name))
+            used_projection_column_indexes.insert(i);
+    }
+
+    auto & query_nodes = getQueries().getNodes();
+    for (auto & query_node : query_nodes)
+    {
+        if (auto * query_node_typed = query_node->as<QueryNode>())
+            query_node_typed->removeUnusedProjectionColumns(used_projection_column_indexes);
+        else if (auto * union_node_typed = query_node->as<UnionNode>())
+            union_node_typed->removeUnusedProjectionColumns(used_projection_column_indexes);
+    }
 }
 
 void UnionNode::removeUnusedProjectionColumns(const std::unordered_set<size_t> & used_projection_columns_indexes)

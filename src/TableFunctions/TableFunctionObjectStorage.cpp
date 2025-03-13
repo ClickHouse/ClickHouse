@@ -3,7 +3,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
@@ -73,19 +72,7 @@ void TableFunctionObjectStorage<Definition, Configuration>::parseArguments(const
     if (args_func.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
 
-    settings = std::make_shared<StorageObjectStorageSettings>();
-
     auto & args = args_func.at(0)->children;
-    for (auto * it = args.begin(); it != args.end(); ++it)
-    {
-        ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
-        if (settings_ast)
-        {
-            settings->loadFromQuery(*settings_ast);
-            args.erase(it);
-            break;
-        }
-    }
     parseArgumentsImpl(args, context);
 }
 
@@ -251,7 +238,7 @@ template class TableFunctionObjectStorage<IcebergAzureClusterDefinition, Storage
 template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
 #endif
 
-#if USE_PARQUET && USE_AWS_S3 && USE_DELTA_KERNEL_RS
+#if USE_PARQUET && USE_AWS_S3
 template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
 #endif
 
@@ -304,7 +291,7 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 
 
 #if USE_AWS_S3
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionDeltaLake>(
@@ -335,7 +322,7 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
     registerTableFunctionIceberg(factory);
 #endif
 #if USE_AWS_S3
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
     registerTableFunctionDeltaLake(factory);
 #endif
     registerTableFunctionHudi(factory);

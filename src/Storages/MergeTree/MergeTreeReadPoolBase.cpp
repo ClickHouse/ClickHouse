@@ -1,10 +1,8 @@
 #include <Storages/MergeTree/MergeTreeReadPoolBase.h>
 
 #include <Core/Settings.h>
-#include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 namespace DB
 {
@@ -157,12 +155,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
 
         LoadedMergeTreeDataPartInfoForReader part_info(part_with_ranges.data_part, read_task_info.alter_conversions);
 
-        if (reader_settings.apply_deleted_mask && read_task_info.hasLightweightDelete())
-        {
-            bool remove_filter_column = std::ranges::find(column_names, RowExistsColumn::name) == column_names.end();
-            read_task_info.mutation_steps.push_back(createLightweightDeleteStep(remove_filter_column));
-        }
-
         if (read_task_info.alter_conversions->hasMutations())
         {
             auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
@@ -171,8 +163,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
                 .withSubcolumns();
 
             auto columns_list = storage_snapshot->getColumnsByNames(options, column_names);
-            auto mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list);
-            std::move(mutation_steps.begin(), mutation_steps.end(), std::back_inserter(read_task_info.mutation_steps));
+            read_task_info.mutation_steps = read_task_info.alter_conversions->getMutationSteps(part_info, columns_list);
         }
 
         read_task_info.task_columns = getReadTaskColumns(
@@ -183,7 +174,7 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
             read_task_info.mutation_steps,
             actions_settings,
             reader_settings,
-            /*with_subcolumns=*/ true);
+            /*with_subcolumns=*/true);
 
         read_task_info.const_virtual_fields = shared_virtual_fields;
         read_task_info.const_virtual_fields.emplace("_part_index", read_task_info.part_index_in_query);
@@ -204,8 +195,6 @@ void MergeTreeReadPoolBase::fillPerPartInfos(const Settings & settings)
                 Names(all_column_names.begin(), all_column_names.end()),
                 sample_block);
         }
-
-        read_task_info.deserialization_prefixes_cache = std::make_shared<DeserializationPrefixesCache>();
 
         is_part_on_remote_disk.push_back(part_with_ranges.data_part->isStoredOnRemoteDisk());
         std::tie(read_task_info.min_marks_per_task, read_task_info.approx_size_of_mark)

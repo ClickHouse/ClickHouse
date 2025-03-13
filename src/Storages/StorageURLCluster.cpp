@@ -7,6 +7,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>

@@ -1,10 +1,6 @@
-#include <IO/Operators.h>
-#include <Processors/IProcessor.h>
-#include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Common/CurrentThread.h>
-
-#include <fmt/format.h>
+#include <Processors/IProcessor.h>
+#include <IO/Operators.h>
 
 namespace DB
 {
@@ -149,11 +145,6 @@ void IQueryPlanStep::describePipeline(const Processors & processors, FormatSetti
 void IQueryPlanStep::appendExtraProcessors(const Processors & extra_processors)
 {
     processors.insert(processors.end(), extra_processors.begin(), extra_processors.end());
-}
-
-String IQueryPlanStep::getUniqID() const
-{
-    return fmt::format("{}_{}", getName(), step_index);
 }
 
 void IQueryPlanStep::serialize(Serialization & /*ctx*/) const

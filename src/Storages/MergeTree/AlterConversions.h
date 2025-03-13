@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MergeTree/MergeTreeRangeReader.h>
 
 

@@ -1,14 +1,14 @@
 ---
-slug: /sql-reference/data-types/ipv4
+slug: /en/sql-reference/data-types/ipv4
 sidebar_position: 28
 sidebar_label: IPv4
 ---
 
-## IPv4 {#ipv4}
+## IPv4
 
 IPv4 addresses. Stored in 4 bytes as UInt32.
 
-### Basic Usage {#basic-usage}
+### Basic Usage
 
 ``` sql
 CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY url;

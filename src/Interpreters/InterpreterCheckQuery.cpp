@@ -2,7 +2,6 @@
 #include <Interpreters/InterpreterFactory.h>
 
 #include <memory>
-#include <thread>
 
 #include <Access/Common/AccessFlags.h>
 
@@ -12,7 +11,6 @@
 #include <Common/FailPoint.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
 
 #include <Core/Settings.h>
 
@@ -30,8 +28,6 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-
-#include <QueryPipeline/Pipe.h>
 
 #include <Storages/IStorage.h>
 

@@ -24,18 +24,8 @@ namespace ErrorCodes
 {
     extern const int ABORTED;
     extern const int INVALID_CONFIG_PARAMETER;
-    extern const int NOT_IMPLEMENTED;
 }
 
-void RoundRobinRuntimeQueue::updatePolicy(std::string_view)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
-}
-
-void PriorityRuntimeQueue::updatePolicy(std::string_view)
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method updatePolicy() is not implemented");
-}
 
 template <class Queue>
 MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
@@ -102,7 +92,7 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
 
     if (new_max_tasks_count < max_tasks_count.load(std::memory_order_relaxed))
     {
-        LOG_WARNING(log, "Loaded new max tasks count for {}Executor from top level config, but new value ({}) is not greater than current {}", name, new_max_tasks_count, max_tasks_count.load());
+        LOG_WARNING(log, "Loaded new max tasks count for {}Executor from top level config, but new value ({}) is not greater than current {}", name, new_max_tasks_count, max_tasks_count);
         return;
     }
 

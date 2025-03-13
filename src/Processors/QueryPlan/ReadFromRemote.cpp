@@ -11,7 +11,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -32,7 +31,6 @@
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
-#include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
@@ -40,7 +38,6 @@
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsMiscellaneous.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <fmt/format.h>
 
@@ -58,20 +55,12 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
-    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
 }
 
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_TABLE;
-    extern const int ALL_REPLICAS_ARE_STALE;
-}
-
-namespace FailPoints
-{
-    extern const char use_delayed_remote_source[];
 }
 
 static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
@@ -243,10 +232,7 @@ static ASTPtr tryBuildAdditionalFilterAST(
         if (node->column && isColumnConst(*node->column))
         {
             auto literal = std::make_shared<ASTLiteral>((*node->column)[0]);
-            /// Need to enforce type of the literal, because some type is not comparable to its native type
-            /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
-            auto casted_literal = makeASTFunction("_CAST", literal, std::make_shared<ASTLiteral>(node->result_type->getName()));
-            node_to_ast[node] = std::move(casted_literal);
+            node_to_ast[node] = std::move(literal);
             stack.pop();
             continue;
         }
@@ -445,19 +431,12 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
     if (filter_actions_dag)
         pushed_down_filters = std::make_shared<const ActionsDAG>(filter_actions_dag->clone());
 
-    const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
-    const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
-    if (!storage)
-    {
-        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
-    }
-
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
-            my_stage = stage, my_storage = storage,
+            my_stage = stage, local_delay = shard.local_delay,
             add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
             query_tree = shard.query_tree, planner_context = shard.planner_context,
             pushed_down_filters]() mutable
@@ -493,38 +472,12 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
                 max_remote_delay = std::max(try_result.delay, max_remote_delay);
         }
 
-        bool use_delayed_remote_source = false;
-        fiu_do_on(FailPoints::use_delayed_remote_source,
+        if (try_results.empty() || local_delay < max_remote_delay)
         {
-            use_delayed_remote_source = true;
-        });
+            auto plan = createLocalPlan(
+                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
 
-        if (!use_delayed_remote_source)
-        {
-            const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
-            if (!replicated_storage)
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());
-            }
-            const UInt64 local_delay = replicated_storage->getAbsoluteDelay();
-            const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
-
-            if (try_results.empty() && local_delay >= max_allowed_delay)
-            {
-                throw Exception(
-                    ErrorCodes::ALL_REPLICAS_ARE_STALE,
-                    "Failed to connect to other replicas and the local replica's delay is {} which is higher than max_replica_delay_for_distributed_queries",
-                    local_delay
-                );
-            }
-
-            if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
-            {
-                auto plan = createLocalPlan(
-                    query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
-
-                return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
-            }
+            return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
         }
 
         std::vector<IConnectionPool::Entry> connections;

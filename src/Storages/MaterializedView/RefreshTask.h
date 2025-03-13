@@ -4,7 +4,7 @@
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
 #include <Common/StopToken.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/BackgroundSchedulePool.h>
 
 #include <random>
 
@@ -236,7 +236,7 @@ private:
     RefreshSet::Handle set_handle;
 
     /// Calls refreshTask() from background thread.
-    BackgroundSchedulePoolTaskHolder refresh_task;
+    BackgroundSchedulePool::TaskHolder refresh_task;
 
     CoordinationState coordination;
     ExecutionState execution;
@@ -275,7 +275,6 @@ private:
     void removeRunningZnodeIfMine(std::shared_ptr<zkutil::ZooKeeper> zookeeper);
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
-    void scheduleRefresh(std::lock_guard<std::mutex> & lock);
     void interruptExecution();
     std::chrono::system_clock::time_point currentTime() const;
 };

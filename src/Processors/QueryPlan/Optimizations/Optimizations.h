@@ -3,8 +3,6 @@
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
 
-class SipHash;
-
 namespace DB
 {
 
@@ -128,11 +126,6 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
 bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeDistinctInOrder(QueryPlan::Node & node, QueryPlan::Nodes &);
-void tryUpdateQueryConditionCache(const QueryPlanOptimizationSettings & optimization_settings, const Stack & stack);
-
-// Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
-// Since those hashes are used for join optimization, the calculation performed before join optimization.
-void calculateHashTableCacheKeys(QueryPlan::Node & root);
 
 /// A separate tree traverse to apply sorting properties after *InOrder optimizations.
 void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);

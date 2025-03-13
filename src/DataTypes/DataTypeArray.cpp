@@ -88,7 +88,7 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolum
 
     auto creator = SerializationArray::SubcolumnCreator(data.column ? assert_cast<const ColumnArray &>(*data.column).getOffsetsPtr() : nullptr);
     auto res = std::make_unique<ISerialization::SubstreamData>();
-    res->serialization = creator.create(nested_subcolumn_data->serialization, nested_subcolumn_data->type);
+    res->serialization = creator.create(nested_subcolumn_data->serialization);
     res->type = creator.create(nested_subcolumn_data->type);
     if (data.column)
         res->column = creator.create(nested_subcolumn_data->column);

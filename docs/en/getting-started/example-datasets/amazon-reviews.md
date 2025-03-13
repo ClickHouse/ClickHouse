@@ -1,9 +1,9 @@
 ---
-slug: /getting-started/example-datasets/amazon-reviews
+slug: /en/getting-started/example-datasets/amazon-reviews
 sidebar_label: Amazon customer reviews
-title: Amazon Customer Review
-description: Over 150M customer reviews of Amazon products
 ---
+
+# Amazon customer reviews dataset
 
 This dataset contains over 150M customer reviews of Amazon products. The data is in snappy-compressed Parquet files in AWS S3 that total 49GB in size (compressed). Let's walk through the steps to insert it into ClickHouse.
 
@@ -11,7 +11,6 @@ This dataset contains over 150M customer reviews of Amazon products. The data is
 The queries below were executed on a **Production** instance of [ClickHouse Cloud](https://clickhouse.cloud).
 :::
 
-## Loading the dataset {#loading-the-dataset}
 
 1. Without inserting the data into ClickHouse, we can query it in place. Let's grab some rows, so we can see what they look like:
 
@@ -116,8 +115,6 @@ The original data was about 70G, but compressed in ClickHouse it takes up about 
 │ s3disk    │ 30.05 GiB  │ 70.47 GiB    │       2.35 │ 150957260 │         14 │
 └───────────┴────────────┴──────────────┴────────────┴───────────┴────────────┘
 ```
-
-## Example queries {#example-queries}
 
 7. Let's run some queries...here are the top 10 most-helpful reviews in the dataset:
 
