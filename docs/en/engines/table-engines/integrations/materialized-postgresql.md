@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/materialized-postgresql
+description: 'Creates a ClickHouse table with an initial data dump of a PostgreSQL
+  table and starts the replication process.'
+sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 130
-sidebar_label: MaterializedPostgreSQL
+slug: /engines/table-engines/integrations/materialized-postgresql
 title: 'MaterializedPostgreSQL'
-description: 'Creates a ClickHouse table with an initial data dump of a PostgreSQL table and starts the replication process.'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

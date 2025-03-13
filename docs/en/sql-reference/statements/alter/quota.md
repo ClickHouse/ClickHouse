@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/quota
-sidebar_position: 46
-sidebar_label: QUOTA
-title: "ALTER QUOTA"
 description: 'Documentation for Quota'
+sidebar_label: 'QUOTA'
+sidebar_position: 46
+slug: /sql-reference/statements/alter/quota
+title: 'ALTER QUOTA'
 ---
 
 Changes quotas.

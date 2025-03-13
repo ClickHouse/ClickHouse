@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/statements/create/user
-sidebar_position: 39
-sidebar_label: USER
-title: "CREATE USER"
 description: 'Documentation for User'
+sidebar_label: 'USER'
+sidebar_position: 39
+slug: /sql-reference/statements/create/user
+title: 'CREATE USER'
 ---
 
 Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).

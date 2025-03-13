@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/statements/grant
-sidebar_position: 38
-sidebar_label: 'GRANT'
 description: 'Documentation for GRANT Statement'
+sidebar_label: 'GRANT'
+sidebar_position: 38
+slug: /sql-reference/statements/grant
 title: 'GRANT Statement'
 ---
 

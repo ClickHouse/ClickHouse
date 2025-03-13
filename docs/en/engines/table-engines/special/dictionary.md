@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/special/dictionary
-sidebar_position: 20
+description: 'The `Dictionary` engine displays the dictionary data as a ClickHouse
+  table.'
 sidebar_label: 'Dictionary'
+sidebar_position: 20
+slug: /engines/table-engines/special/dictionary
 title: 'Dictionary Table Engine'
-description: 'The `Dictionary` engine displays the dictionary data as a ClickHouse table.'
 ---
 
 # Dictionary Table Engine

@@ -1,8 +1,8 @@
 ---
-title: 'ParquetMetadata'
-slug: /interfaces/formats/ParquetMetadata
-keywords: ['ParquetMetadata']
 description: 'Documentation for the ParquetMetadata format'
+keywords: ['ParquetMetadata']
+slug: /interfaces/formats/ParquetMetadata
+title: 'ParquetMetadata'
 ---
 
 ## Description {#description}

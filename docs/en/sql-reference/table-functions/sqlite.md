@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/table-functions/sqlite
-sidebar_position: 185
-sidebar_label: sqlite
-title: 'sqlite'
 description: 'Allows to perform queries on data stored in a SQLite database.'
+sidebar_label: 'sqlite'
+sidebar_position: 185
+slug: /sql-reference/table-functions/sqlite
+title: 'sqlite'
 ---
 
 # sqlite Table Function

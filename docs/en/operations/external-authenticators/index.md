@@ -1,10 +1,10 @@
 ---
-slug: /operations/external-authenticators/
 description: 'Overview of external authentication methods supported by ClickHouse'
-sidebar_position: 48
+pagination_next: operations/external-authenticators/kerberos
 sidebar_label: 'External User Authenticators and Directories'
+sidebar_position: 48
+slug: /operations/external-authenticators/
 title: 'External User Authenticators and Directories'
-pagination_next: 'operations/external-authenticators/kerberos'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';

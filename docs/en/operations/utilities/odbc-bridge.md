@@ -1,7 +1,7 @@
 ---
+description: 'Documentation for Odbc Bridge'
 slug: /operations/utilities/odbc-bridge
 title: 'clickhouse-odbc-bridge'
-description: 'Documentation for Odbc Bridge'
 ---
 
 Simple HTTP-server which works like a proxy for ODBC driver. The main motivation

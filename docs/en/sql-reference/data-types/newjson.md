@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/data-types/newjson
-description: 'Documentation for the JSON data type in ClickHouse, which provides native support for working with JSON data'
-sidebar_position: 63
-sidebar_label: 'JSON'
+description: 'Documentation for the JSON data type in ClickHouse, which provides native
+  support for working with JSON data'
 keywords: ['json', 'data type']
+sidebar_label: 'JSON'
+sidebar_position: 63
+slug: /sql-reference/data-types/newjson
 title: 'JSON Data Type'
 ---
 

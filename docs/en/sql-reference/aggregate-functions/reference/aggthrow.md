@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/aggthrow
+description: 'This function can be used for the purpose of testing exception safety.
+  It will throw an exception on creation with the specified probability.'
 sidebar_position: 101
+slug: /sql-reference/aggregate-functions/reference/aggthrow
 title: 'aggThrow'
-description: 'This function can be used for the purpose of testing exception safety. It will throw an exception on creation with the specified probability.'
 ---
 
 # aggThrow

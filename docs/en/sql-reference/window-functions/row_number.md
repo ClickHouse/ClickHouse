@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/window-functions/row_number
+description: 'Documentation for the row_number window function'
 sidebar_label: 'row_number'
 sidebar_position: 2
-description: 'Documentation for the row_number window function'
+slug: /sql-reference/window-functions/row_number
 title: 'row_number'
 ---
 

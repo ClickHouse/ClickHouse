@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/argmax
-sidebar_position: 109
-title: 'argMax'
 description: 'Calculates the `arg` value for a maximum `val` value.'
+sidebar_position: 109
+slug: /sql-reference/aggregate-functions/reference/argmax
+title: 'argMax'
 ---
 
 # argMax

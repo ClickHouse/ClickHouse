@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/statements/set-role
-sidebar_position: 51
-sidebar_label: 'SET ROLE'
-title: 'SET ROLE Statement'
 description: 'Documentation for Set Role'
+sidebar_label: 'SET ROLE'
+sidebar_position: 51
+slug: /sql-reference/statements/set-role
+title: 'SET ROLE Statement'
 ---
 
 Activates roles for the current user.

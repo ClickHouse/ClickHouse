@@ -1,7 +1,7 @@
 ---
-slug: /sql-reference/statements/select/format
-sidebar_label: FORMAT
 description: 'Documentation for FORMAT Clause'
+sidebar_label: 'FORMAT'
+slug: /sql-reference/statements/select/format
 title: 'FORMAT Clause'
 ---
 

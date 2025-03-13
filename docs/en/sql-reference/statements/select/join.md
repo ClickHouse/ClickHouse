@@ -1,7 +1,7 @@
 ---
-slug: /sql-reference/statements/select/join
-sidebar_label: Joining Tables
 description: 'Documentation for JOIN Clause'
+sidebar_label: 'Joining Tables'
+slug: /sql-reference/statements/select/join
 title: 'JOIN Clause'
 ---
 

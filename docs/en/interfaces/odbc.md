@@ -1,9 +1,9 @@
 ---
+description: 'Documentation for the ClickHouse ODBC driver'
+sidebar_label: 'ODBC Driver'
+sidebar_position: 35
 slug: /interfaces/odbc
 title: 'ODBC Driver'
-description: 'Documentation for the ClickHouse ODBC driver'
-sidebar_position: 35
-sidebar_label: 'ODBC Driver'
 ---
 
 # ODBC Driver

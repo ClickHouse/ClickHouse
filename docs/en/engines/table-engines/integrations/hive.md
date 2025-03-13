@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/hive
-sidebar_position: 84
+description: 'The Hive engine allows you to perform `SELECT` queries on HDFS Hive
+  table.'
 sidebar_label: 'Hive'
+sidebar_position: 84
+slug: /engines/table-engines/integrations/hive
 title: 'Hive'
-description: 'The Hive engine allows you to perform `SELECT` queries on HDFS Hive table.'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

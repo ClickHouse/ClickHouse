@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/statements/alter/order-by
-sidebar_position: 41
-sidebar_label: ORDER BY
 description: 'Documentation for Manipulating Key Expressions'
+sidebar_label: 'ORDER BY'
+sidebar_position: 41
+slug: /sql-reference/statements/alter/order-by
 title: 'Manipulating Key Expressions'
 ---
 

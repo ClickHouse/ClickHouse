@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/hudi
-sidebar_position: 86
+description: 'This engine provides a read-only integration with existing Apache Hudi
+  tables in Amazon S3.'
 sidebar_label: 'Hudi'
+sidebar_position: 86
+slug: /engines/table-engines/integrations/hudi
 title: 'Hudi Table Engine'
-description: 'This engine provides a read-only integration with existing Apache Hudi tables in Amazon S3.'
 ---
 
 # Hudi Table Engine

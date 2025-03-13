@@ -1,9 +1,9 @@
 ---
+description: 'Page detailing the ClickHouse query analyzer'
+keywords: ['analyzer']
+sidebar_label: 'Analyzer'
 slug: /operations/analyzer
 title: 'Analyzer'
-description: 'Page detailing the ClickHouse query analyzer'
-sidebar_label: 'Analyzer'
-keywords: ['analyzer']
 ---
 
 # Analyzer

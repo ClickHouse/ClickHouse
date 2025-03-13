@@ -1,9 +1,11 @@
 ---
-slug: /engines/database-engines/replicated
-sidebar_position: 30
+description: 'The engine is based on the Atomic engine. It supports replication of
+  metadata via DDL log being written to ZooKeeper and executed on all of the replicas
+  for a given database.'
 sidebar_label: 'Replicated'
+sidebar_position: 30
+slug: /engines/database-engines/replicated
 title: 'Replicated'
-description: 'The engine is based on the Atomic engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.'
 ---
 
 # Replicated

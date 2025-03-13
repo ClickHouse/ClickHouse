@@ -1,7 +1,7 @@
 ---
-slug: /sql-reference/statements/select/with
-sidebar_label: WITH
 description: 'Documentation for WITH Clause'
+sidebar_label: 'WITH'
+slug: /sql-reference/statements/select/with
 title: 'WITH Clause'
 ---
 

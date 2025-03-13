@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/operators/
-sidebar_position: 38
-sidebar_label: 'Operators'
-displayed_sidebar: sqlreference
 description: 'Documentation for Operators'
+displayed_sidebar: sqlreference
+sidebar_label: 'Operators'
+sidebar_position: 38
+slug: /sql-reference/operators/
 title: 'Operators'
 ---
 

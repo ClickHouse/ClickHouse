@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/special/null
+description: 'When writing to a `Null` table, data is ignored. When reading from a
+  `Null` table, the response is empty.'
+sidebar_label: 'Null'
 sidebar_position: 50
-sidebar_label:  'Null'
+slug: /engines/table-engines/special/null
 title: 'Null Table Engine'
-description: 'When writing to a `Null` table, data is ignored. When reading from a `Null` table, the response is empty.'
 ---
 
 # Null Table Engine

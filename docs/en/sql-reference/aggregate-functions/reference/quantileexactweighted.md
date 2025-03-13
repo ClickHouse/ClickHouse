@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileexactweighted
+description: 'Exactly computes the quantile of a numeric data sequence, taking into
+  account the weight of each element.'
 sidebar_position: 174
+slug: /sql-reference/aggregate-functions/reference/quantileexactweighted
 title: 'quantileExactWeighted'
-description: 'Exactly computes the quantile of a numeric data sequence, taking into account the weight of each element.'
 ---
 
 # quantileExactWeighted

@@ -1,8 +1,8 @@
 ---
-slug: /engines/table-engines/log-family/
-sidebar_position: 20
-sidebar_label: 'Log Family'
 description: 'Documentation for Log Engine Family'
+sidebar_label: 'Log Family'
+sidebar_position: 20
+slug: /engines/table-engines/log-family/
 title: 'Log Engine Family'
 ---
 

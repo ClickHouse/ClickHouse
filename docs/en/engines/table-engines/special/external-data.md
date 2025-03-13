@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/special/external-data
-sidebar_position: 130
+description: 'ClickHouse allows sending a server the data that is needed for processing
+  a query, together with a `SELECT` query. This data is put in a temporary table and
+  can be used in the query (for example, in `IN` operators).'
 sidebar_label: 'External Data'
+sidebar_position: 130
+slug: /engines/table-engines/special/external-data
 title: 'External Data for Query Processing'
-description: 'ClickHouse allows sending a server the data that is needed for processing a query, together with a `SELECT` query. This data is put in a temporary table and can be used in the query (for example, in `IN` operators).'
 ---
 
 # External Data for Query Processing

@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/groupbitxor
-sidebar_position: 153
-title: 'groupBitXor'
 description: 'Applies bit-wise `XOR` for series of numbers.'
+sidebar_position: 153
+slug: /sql-reference/aggregate-functions/reference/groupbitxor
+title: 'groupBitXor'
 ---
 
 # groupBitXor

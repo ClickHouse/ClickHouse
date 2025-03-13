@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/statements/alter/view
-sidebar_position: 50
-sidebar_label: VIEW
 description: 'Documentation for ALTER TABLE ... MODIFY QUERY Statement'
+sidebar_label: 'VIEW'
+sidebar_position: 50
+slug: /sql-reference/statements/alter/view
 title: 'ALTER TABLE ... MODIFY QUERY Statement'
 ---
 

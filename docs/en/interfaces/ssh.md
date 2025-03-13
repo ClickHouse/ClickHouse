@@ -1,10 +1,10 @@
 ---
+description: 'Documentation for the SSH interface in ClickHouse'
+keywords: ['client', 'ssh', 'putty']
+sidebar_label: 'SSH Interface'
+sidebar_position: 60
 slug: /interfaces/ssh
 title: 'SSH Interface'
-description: 'Documentation for the SSH interface in ClickHouse'
-sidebar_position: 60
-sidebar_label: 'SSH Interface'
-keywords: ['client', 'ssh', 'putty']
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

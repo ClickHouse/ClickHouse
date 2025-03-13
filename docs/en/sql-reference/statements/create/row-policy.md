@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/statements/create/row-policy
-sidebar_position: 41
-sidebar_label: ROW POLICY
-title: "CREATE ROW POLICY"
 description: 'Documentation for Row Policy'
+sidebar_label: 'ROW POLICY'
+sidebar_position: 41
+slug: /sql-reference/statements/create/row-policy
+title: 'CREATE ROW POLICY'
 ---
 
 Creates a [row policy](../../../guides/sre/user-management/index.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.

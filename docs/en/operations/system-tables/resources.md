@@ -1,8 +1,9 @@
 ---
-description: 'System table containing information about resources residing on the local server with one row for every resource.'
+description: 'System table containing information about resources residing on the
+  local server with one row for every resource.'
+keywords: ['system table', 'resources']
 slug: /operations/system-tables/resources
 title: 'system.system.resources'
-keywords: ['system table', 'resources']
 ---
 
 # system.system.resources

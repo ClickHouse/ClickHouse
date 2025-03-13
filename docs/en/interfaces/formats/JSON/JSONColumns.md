@@ -1,11 +1,11 @@
 ---
-title: 'JSONColumns'
-slug: /interfaces/formats/JSONColumns
-keywords: ['JSONColumns']
-input_format: true
-output_format: true
 alias: []
 description: 'Documentation for the JSONColumns format'
+input_format: true
+keywords: ['JSONColumns']
+output_format: true
+slug: /interfaces/formats/JSONColumns
+title: 'JSONColumns'
 ---
 
 | Input | Output | Alias |

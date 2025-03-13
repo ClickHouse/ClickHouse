@@ -1,7 +1,7 @@
 ---
 description: 'The Star Schema Benchmark (SSB) data set and queries'
-slug: /getting-started/example-datasets/star-schema
 sidebar_label: 'Star Schema Benchmark'
+slug: /getting-started/example-datasets/star-schema
 title: 'Star Schema Benchmark (SSB, 2009)'
 ---
 

@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/special/join
-sidebar_position: 70
-sidebar_label: 'Join'
-title: 'Join Table Engine'
 description: 'Optional prepared data structure for usage in JOIN operations.'
+sidebar_label: 'Join'
+sidebar_position: 70
+slug: /engines/table-engines/special/join
+title: 'Join Table Engine'
 ---
 
 # Join Table Engine

@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions/comparison-functions
-sidebar_position: 35
-sidebar_label: 'Comparison'
 description: 'Documentation for Comparison Functions'
+sidebar_label: 'Comparison'
+sidebar_position: 35
+slug: /sql-reference/functions/comparison-functions
 title: 'Comparison Functions'
 ---
 

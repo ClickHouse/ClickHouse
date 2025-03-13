@@ -1,9 +1,9 @@
 ---
+description: 'Guide for building ClickHouse from source for the s390x architecture'
+sidebar_label: 'Build on Linux for s390x (zLinux)'
+sidebar_position: 30
 slug: /development/build-cross-s390x
 title: 'Build on Linux for s390x (zLinux)'
-description: 'Guide for building ClickHouse from source for the s390x architecture'
-sidebar_position: 30
-sidebar_label: 'Build on Linux for s390x (zLinux)'
 ---
 
 # Build on Linux for s390x (zLinux)

@@ -1,9 +1,9 @@
 ---
+description: 'Overview of the ClickHouse continuous integration system'
+sidebar_label: 'Continuous Integration (CI)'
+sidebar_position: 55
 slug: /development/continuous-integration
 title: 'Continuous Integration (CI)'
-description: 'Overview of the ClickHouse continuous integration system'
-sidebar_position: 55
-sidebar_label: 'Continuous Integration (CI)'
 ---
 
 # Continuous Integration (CI)

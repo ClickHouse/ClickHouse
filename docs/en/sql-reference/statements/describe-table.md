@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/statements/describe-table
-sidebar_position: 42
-sidebar_label: 'DESCRIBE TABLE'
-title: 'DESCRIBE TABLE'
 description: 'Documentation for Describe Table'
+sidebar_label: 'DESCRIBE TABLE'
+sidebar_position: 42
+slug: /sql-reference/statements/describe-table
+title: 'DESCRIBE TABLE'
 ---
 
 Returns information about table columns.

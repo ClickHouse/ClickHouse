@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions/overview
-sidebar_position: 1
-sidebar_label: Overview
 description: 'Documentation for Regular Functions'
+sidebar_label: 'Overview'
+sidebar_position: 1
+slug: /sql-reference/functions/overview
 title: 'Regular Functions'
 ---
 

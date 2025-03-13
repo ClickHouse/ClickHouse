@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions/conditional-functions
-sidebar_position: 40
-sidebar_label: 'Conditional'
 description: 'Documentation for Conditional Functions'
+sidebar_label: 'Conditional'
+sidebar_position: 40
+slug: /sql-reference/functions/conditional-functions
 title: 'Conditional Functions'
 ---
 

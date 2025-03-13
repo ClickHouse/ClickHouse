@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/groupconcat
-sidebar_position: 363
+description: 'Calculates a concatenated string from a group of strings, optionally
+  separated by a delimiter, and optionally limited by a maximum number of elements.'
 sidebar_label: 'groupConcat'
+sidebar_position: 363
+slug: /sql-reference/aggregate-functions/reference/groupconcat
 title: 'groupConcat'
-description: 'Calculates a concatenated string from a group of strings, optionally separated by a delimiter, and optionally limited by a maximum number of elements.'
 ---
 
 Calculates a concatenated string from a group of strings, optionally separated by a delimiter, and optionally limited by a maximum number of elements.

@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileexact
+description: 'quantileExact, quantileExactLow, quantileExactHigh, quantileExactExclusive,
+  quantileExactInclusive functions'
 sidebar_position: 173
+slug: /sql-reference/aggregate-functions/reference/quantileexact
 title: 'quantileExact Functions'
-description: 'quantileExact, quantileExactLow, quantileExactHigh, quantileExactExclusive, quantileExactInclusive functions'
 ---
 
 # quantileExact Functions

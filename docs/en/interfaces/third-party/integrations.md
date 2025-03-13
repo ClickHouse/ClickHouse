@@ -1,8 +1,9 @@
 ---
-slug: /interfaces/third-party/integrations
-description: 'Documentation on integrating ClickHouse with various third-party systems and tools'
-sidebar_position: 27
+description: 'Documentation on integrating ClickHouse with various third-party systems
+  and tools'
 sidebar_label: 'Integrations'
+sidebar_position: 27
+slug: /interfaces/third-party/integrations
 title: 'Integration Libraries from Third-party Developers'
 ---
 

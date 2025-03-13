@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/integrations/kafka
-sidebar_position: 110
+description: 'The Kafka engine works with Apache Kafka and lets you publish or subscribe
+  to data flows, organize fault-tolerant storage, and process streams as they become
+  available.'
 sidebar_label: 'Kafka'
+sidebar_position: 110
+slug: /engines/table-engines/integrations/kafka
 title: 'Kafka'
-description: 'The Kafka engine works with Apache Kafka and lets you publish or subscribe to data flows, organize fault-tolerant storage, and process streams as they become available.'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

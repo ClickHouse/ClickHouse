@@ -1,7 +1,7 @@
 ---
-slug: /sql-reference/statements/select/qualify
-sidebar_label: QUALIFY
 description: 'Documentation for QUALIFY Clause'
+sidebar_label: 'QUALIFY'
+slug: /sql-reference/statements/select/qualify
 title: 'QUALIFY Clause'
 ---
 

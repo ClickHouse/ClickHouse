@@ -1,9 +1,9 @@
 ---
+description: 'Step-by-step guide for building ClickHouse from source on Linux systems'
+sidebar_label: 'Build on Linux'
+sidebar_position: 10
 slug: /development/build
 title: 'How to Build ClickHouse on Linux'
-description: 'Step-by-step guide for building ClickHouse from source on Linux systems'
-sidebar_position: 10
-sidebar_label: 'Build on Linux'
 ---
 
 # How to Build ClickHouse on Linux

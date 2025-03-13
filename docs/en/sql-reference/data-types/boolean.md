@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/data-types/boolean
 description: 'Documentation for the Boolean data type in ClickHouse'
-sidebar_position: 33
 sidebar_label: 'Boolean'
+sidebar_position: 33
+slug: /sql-reference/data-types/boolean
 title: 'Bool'
 ---
 

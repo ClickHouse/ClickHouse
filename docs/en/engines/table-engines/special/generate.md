@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/special/generate
-sidebar_position: 140
+description: 'The GenerateRandom table engine produces random data for given table
+  schema.'
 sidebar_label: 'GenerateRandom'
+sidebar_position: 140
+slug: /engines/table-engines/special/generate
 title: 'GenerateRandom Table Engine'
-description: 'The GenerateRandom table engine produces random data for given table schema.'
 ---
 
 The GenerateRandom table engine produces random data for given table schema.

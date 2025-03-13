@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/statements/alter/statistics
-sidebar_position: 45
-sidebar_label: STATISTICS
 description: 'Documentation for Manipulating Column Statistics'
+sidebar_label: 'STATISTICS'
+sidebar_position: 45
+slug: /sql-reference/statements/alter/statistics
 title: 'Manipulating Column Statistics'
 ---
 

@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/statements/alter/setting
-sidebar_position: 38
-sidebar_label: SETTING
 description: 'Documentation for Table Settings Manipulations'
+sidebar_label: 'SETTING'
+sidebar_position: 38
+slug: /sql-reference/statements/alter/setting
 title: 'Table Settings Manipulations'
 ---
 

@@ -1,9 +1,11 @@
 ---
-slug: /sql-reference/table-functions/s3Cluster
+description: 'An extension to the s3 table function, which allows processing files
+  from Amazon S3 and Google Cloud Storage in parallel with many nodes in a specified
+  cluster.'
+sidebar_label: 's3Cluster'
 sidebar_position: 181
-sidebar_label: s3Cluster
+slug: /sql-reference/table-functions/s3Cluster
 title: 's3Cluster'
-description: 'An extension to the s3 table function, which allows processing files from Amazon S3 and Google Cloud Storage in parallel with many nodes in a specified cluster.'
 ---
 
 # s3Cluster Table Function

@@ -1,9 +1,9 @@
 ---
-slug: /engines/database-engines/postgresql
-sidebar_position: 40
-sidebar_label: 'PostgreSQL'
-title: 'PostgreSQL'
 description: 'Allows to connect to databases on a remote PostgreSQL server.'
+sidebar_label: 'PostgreSQL'
+sidebar_position: 40
+slug: /engines/database-engines/postgresql
+title: 'PostgreSQL'
 ---
 
 # PostgreSQL

@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions/other-functions
-sidebar_position: 140
-sidebar_label: 'Other'
 description: 'Documentation for Other Functions'
+sidebar_label: 'Other'
+sidebar_position: 140
+slug: /sql-reference/functions/other-functions
 title: 'Other Functions'
 ---
 

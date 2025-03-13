@@ -1,8 +1,8 @@
 ---
 description: 'System table containing information about quotas.'
+keywords: ['system table', 'quotas', 'quota']
 slug: /operations/system-tables/quotas
 title: 'system.quotas'
-keywords: ['system table', 'quotas', 'quota']
 ---
 
 # system.quotas

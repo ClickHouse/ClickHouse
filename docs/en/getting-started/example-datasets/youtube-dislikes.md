@@ -1,7 +1,7 @@
 ---
 description: 'A collection is dislikes of YouTube videos.'
-slug: /getting-started/example-datasets/youtube-dislikes
 sidebar_label: 'YouTube Dislikes'
+slug: /getting-started/example-datasets/youtube-dislikes
 title: 'YouTube dataset of dislikes'
 ---
 

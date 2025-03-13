@@ -1,8 +1,8 @@
 ---
 description: 'System table used for implementing the `SHOW PROCESSLIST` query.'
+keywords: ['system table', 'processes']
 slug: /operations/system-tables/processes
 title: 'system.processes'
-keywords: ['system table', 'processes']
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

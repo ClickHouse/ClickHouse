@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/hdfsCluster
+description: 'Allows processing files from HDFS in parallel from many nodes in a specified
+  cluster.'
+sidebar_label: 'hdfsCluster'
 sidebar_position: 81
-sidebar_label: hdfsCluster
+slug: /sql-reference/table-functions/hdfsCluster
 title: 'hdfsCluster'
-description: 'Allows processing files from HDFS in parallel from many nodes in a specified cluster.'
 ---
 
 # hdfsCluster Table Function

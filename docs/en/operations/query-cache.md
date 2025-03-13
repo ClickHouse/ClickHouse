@@ -1,9 +1,9 @@
 ---
+description: 'Guide to using and configuring the query cache feature in ClickHouse'
+sidebar_label: 'Query Cache'
+sidebar_position: 65
 slug: /operations/query-cache
 title: 'Query Cache'
-description: 'Guide to using and configuring the query cache feature in ClickHouse'
-sidebar_position: 65
-sidebar_label: 'Query Cache'
 ---
 
 # Query Cache

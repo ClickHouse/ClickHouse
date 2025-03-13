@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/statements/truncate
-sidebar_position: 52
-sidebar_label: 'TRUNCATE'
 description: 'Documentation for TRUNCATE Statements'
+sidebar_label: 'TRUNCATE'
+sidebar_position: 52
+slug: /sql-reference/statements/truncate
 title: 'TRUNCATE Statements'
 ---
 

@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions/machine-learning-functions
-sidebar_position: 115
-sidebar_label: 'Machine Learning'
 description: 'Documentation for Machine Learning Functions'
+sidebar_label: 'Machine Learning'
+sidebar_position: 115
+slug: /sql-reference/functions/machine-learning-functions
 title: 'Machine Learning Functions'
 ---
 

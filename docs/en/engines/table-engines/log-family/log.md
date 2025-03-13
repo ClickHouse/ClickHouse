@@ -1,8 +1,8 @@
 ---
+description: 'Documentation for Log'
 slug: /engines/table-engines/log-family/log
 toc_priority: 33
 toc_title: Log
-description: 'Documentation for Log'
 ---
 
 # Log

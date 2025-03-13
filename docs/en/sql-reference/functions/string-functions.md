@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions/string-functions
-sidebar_position: 170
-sidebar_label: 'Strings'
 description: 'Documentation for Functions for Working with Strings'
+sidebar_label: 'Strings'
+sidebar_position: 170
+slug: /sql-reference/functions/string-functions
 title: 'Functions for Working with Strings'
 ---
 

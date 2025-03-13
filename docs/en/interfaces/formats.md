@@ -1,9 +1,9 @@
 ---
-slug: /interfaces/formats
-sidebar_position: 21
-sidebar_label: 'View all formats...'
-title: 'Formats for input and output data'
 description: 'Overview of supported data formats for input and output in ClickHouse'
+sidebar_label: 'View all formats...'
+sidebar_position: 21
+slug: /interfaces/formats
+title: 'Formats for input and output data'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

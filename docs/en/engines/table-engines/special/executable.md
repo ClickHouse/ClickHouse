@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/special/executable
-sidebar_position: 40
+description: 'The `Executable` and `ExecutablePool` table engines allow you to define
+  a table whose rows are generated from a script that you define (by writing rows
+  to **stdout**).'
 sidebar_label: 'Executable'
+sidebar_position: 40
+slug: /engines/table-engines/special/executable
 title: 'Executable and ExecutablePool Table Engines'
-description: 'The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**).'
 ---
 
 # Executable and ExecutablePool Table Engines

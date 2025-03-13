@@ -1,9 +1,10 @@
 ---
-slug: /operations/configuration-files
-sidebar_position: 50
+description: 'This page explains how ClickHouse server can be configured with configuration
+  files in XML or YAML syntax.'
 sidebar_label: 'Configuration Files'
+sidebar_position: 50
+slug: /operations/configuration-files
 title: 'Configuration Files'
-description: 'This page explains how ClickHouse server can be configured with configuration files in XML or YAML syntax.'
 ---
 
 :::note

@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/sqlite
+description: 'The engine allows to import and export data to SQLite and supports queries
+  to SQLite tables directly from ClickHouse.'
+sidebar_label: 'SQLite'
 sidebar_position: 185
-sidebar_label: SQLite
+slug: /engines/table-engines/integrations/sqlite
 title: 'SQLite'
-description: 'The engine allows to import and export data to SQLite and supports queries to SQLite tables directly from ClickHouse.'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

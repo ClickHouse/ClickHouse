@@ -1,8 +1,8 @@
 ---
-title: 'PostgreSQLWire'
-slug: /interfaces/formats/PostgreSQLWire
-keywords: ['PostgreSQLWire']
 description: 'Documentation for the PostgreSQLWire format'
+keywords: ['PostgreSQLWire']
+slug: /interfaces/formats/PostgreSQLWire
+title: 'PostgreSQLWire'
 ---
 
 ## Description {#description}

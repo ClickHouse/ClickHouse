@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions/array-functions
-sidebar_position: 10
-sidebar_label: 'Arrays'
 description: 'Documentation for Array Functions'
+sidebar_label: 'Arrays'
+sidebar_position: 10
+slug: /sql-reference/functions/array-functions
 title: 'Array Functions'
 ---
 

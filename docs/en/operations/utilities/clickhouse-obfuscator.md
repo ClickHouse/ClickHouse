@@ -1,7 +1,7 @@
 ---
-slug: /operations/utilities/clickhouse-obfuscator
-title: 'clickhouse-obfuscator' 
 description: 'Documentation for Clickhouse Obfuscator'
+slug: /operations/utilities/clickhouse-obfuscator
+title: 'clickhouse-obfuscator'
 ---
 
 A simple tool for table data obfuscation.

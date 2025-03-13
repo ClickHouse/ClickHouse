@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/data-types/array
 description: 'Documentation for the Array data type in ClickHouse'
-sidebar_position: 32
 sidebar_label: 'Array(T)'
+sidebar_position: 32
+slug: /sql-reference/data-types/array
 title: 'Array(T)'
 ---
 

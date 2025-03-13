@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/data-types/ipv4
 description: 'Documentation for the IPv4 data type in ClickHouse'
-sidebar_position: 28
 sidebar_label: 'IPv4'
+sidebar_position: 28
+slug: /sql-reference/data-types/ipv4
 title: 'IPv4'
 ---
 

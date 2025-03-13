@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/statements/alter/ttl
-sidebar_position: 44
-sidebar_label: TTL
 description: 'Documentation for Manipulations with Table TTL'
+sidebar_label: 'TTL'
+sidebar_position: 44
+slug: /sql-reference/statements/alter/ttl
 title: 'Manipulations with Table TTL'
 ---
 

@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions/introspection
-sidebar_position: 100
-sidebar_label: 'Introspection'
 description: 'Documentation for Introspection Functions'
+sidebar_label: 'Introspection'
+sidebar_position: 100
+slug: /sql-reference/functions/introspection
 title: 'Introspection Functions'
 ---
 

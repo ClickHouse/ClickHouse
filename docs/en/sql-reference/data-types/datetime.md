@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/data-types/datetime
-description: 'Documentation for the DateTime data type in ClickHouse, which stores timestamps with second precision'
-sidebar_position: 16
+description: 'Documentation for the DateTime data type in ClickHouse, which stores
+  timestamps with second precision'
 sidebar_label: 'DateTime'
+sidebar_position: 16
+slug: /sql-reference/data-types/datetime
 title: 'DateTime'
 ---
 

@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/special/set
-sidebar_position: 60
+description: 'A data set that is always in RAM. It is intended for use on the right
+  side of the `IN` operator.'
 sidebar_label: 'Set'
+sidebar_position: 60
+slug: /engines/table-engines/special/set
 title: 'Set Table Engine'
-description: 'A data set that is always in RAM. It is intended for use on the right side of the `IN` operator.'
 ---
 
 # Set Table Engine

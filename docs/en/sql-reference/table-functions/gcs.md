@@ -1,10 +1,11 @@
 ---
-slug: /sql-reference/table-functions/gcs
-sidebar_position: 70
-sidebar_label: gcs
+description: 'Provides a table-like interface to `SELECT` and `INSERT` data from Google
+  Cloud Storage. Requires the `Storage Object User` IAM role.'
 keywords: ['gcs', 'bucket']
+sidebar_label: 'gcs'
+sidebar_position: 70
+slug: /sql-reference/table-functions/gcs
 title: 'gcs'
-description: 'Provides a table-like interface to `SELECT` and `INSERT` data from Google Cloud Storage. Requires the `Storage Object User` IAM role.'
 ---
 
 # gcs Table Function

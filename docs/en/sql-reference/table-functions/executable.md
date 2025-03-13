@@ -1,10 +1,12 @@
 ---
-slug: /engines/table-functions/executable
-sidebar_position: 50
-sidebar_label:  executable
+description: 'The `executable` table function creates a table based on the output
+  of a user-defined function (UDF) that you define in a script that outputs rows to
+  **stdout**.'
 keywords: ['udf', 'user defined function', 'clickhouse', 'executable', 'table', 'function']
+sidebar_label: 'executable'
+sidebar_position: 50
+slug: /engines/table-functions/executable
 title: 'executable'
-description: 'The `executable` table function creates a table based on the output of a user-defined function (UDF) that you define in a script that outputs rows to **stdout**.'
 ---
 
 # executable Table Function for UDFs

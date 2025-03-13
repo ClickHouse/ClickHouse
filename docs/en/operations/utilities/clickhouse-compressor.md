@@ -1,7 +1,7 @@
 ---
+description: 'Documentation for Clickhouse Compressor'
 slug: /operations/utilities/clickhouse-compressor
 title: 'clickhouse-compressor'
-description: 'Documentation for Clickhouse Compressor'
 ---
 
 Simple program for data compression and decompression.

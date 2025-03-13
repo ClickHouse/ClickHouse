@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/statements/drop
-sidebar_position: 44
-sidebar_label: 'DROP'
 description: 'Documentation for DROP Statements'
+sidebar_label: 'DROP'
+sidebar_position: 44
+slug: /sql-reference/statements/drop
 title: 'DROP Statements'
 ---
 

@@ -1,8 +1,8 @@
 ---
-slug: /operations/allocation-profiling
-title: 'Allocation profiling'
 description: 'Page detailing allocation profiling in ClickHouse'
 sidebar_label: 'Allocation profiling'
+slug: /operations/allocation-profiling
+title: 'Allocation profiling'
 ---
 
 import Tabs from '@theme/Tabs';

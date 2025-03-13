@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions/geo/polygons
-sidebar_label: Polygons
-title: "Functions for Working with Polygons"
 description: 'Documentation for Polygon'
+sidebar_label: 'Polygons'
+slug: /sql-reference/functions/geo/polygons
+title: 'Functions for Working with Polygons'
 ---
 
 ## WKT {#wkt}

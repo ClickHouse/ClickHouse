@@ -1,7 +1,8 @@
 ---
+description: 'Documentation for the IN operators excluding NOT IN, GLOBAL IN and GLOBAL
+  NOT IN operators which are covered separately'
 slug: /sql-reference/operators/in
 title: 'IN Operators'
-description: 'Documentation for the IN operators excluding NOT IN, GLOBAL IN and GLOBAL NOT IN operators which are covered separately'
 ---
 
 # IN Operators

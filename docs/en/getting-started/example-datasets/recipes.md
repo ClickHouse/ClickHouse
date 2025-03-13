@@ -1,7 +1,7 @@
 ---
 description: 'The RecipeNLG dataset, containing 2.2 million recipes'
-slug: /getting-started/example-datasets/recipes
 sidebar_label: 'Recipes Dataset'
+slug: /getting-started/example-datasets/recipes
 title: 'Recipes Dataset'
 ---
 

@@ -1,8 +1,8 @@
 ---
-title: 'RawBLOB'
-slug: /interfaces/formats/RawBLOB
-keywords: ['RawBLOB']
 description: 'Documentation for the RawBLOB format'
+keywords: ['RawBLOB']
+slug: /interfaces/formats/RawBLOB
+title: 'RawBLOB'
 ---
 
 ## Description {#description}

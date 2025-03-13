@@ -1,8 +1,8 @@
 ---
-slug: /interfaces/third-party/gui
 description: 'List of third-party GUI tools and applications for working with ClickHouse'
-sidebar_position: 28
 sidebar_label: 'Visual Interfaces'
+sidebar_position: 28
+slug: /interfaces/third-party/gui
 title: 'Visual Interfaces from Third-party Developers'
 ---
 

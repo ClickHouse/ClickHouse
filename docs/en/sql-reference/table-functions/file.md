@@ -1,9 +1,12 @@
 ---
-slug: /sql-reference/table-functions/file
+description: 'A table engine which provides a table-like interface to SELECT from
+  and INSERT into files, similar to the s3 table function. Use `file()` when working
+  with local files, and `s3()` when working with buckets in object storage such as
+  S3, GCS, or MinIO.'
+sidebar_label: 'file'
 sidebar_position: 60
-sidebar_label: file
+slug: /sql-reference/table-functions/file
 title: 'file'
-description: 'A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the s3 table function. Use `file()` when working with local files, and `s3()` when working with buckets in object storage such as S3, GCS, or MinIO.'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

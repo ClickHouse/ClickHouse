@@ -1,9 +1,9 @@
 ---
+description: 'Guide to testing ClickHouse and running the test suite'
+sidebar_label: 'Testing'
+sidebar_position: 40
 slug: /development/tests
 title: 'Testing ClickHouse'
-description: 'Guide to testing ClickHouse and running the test suite'
-sidebar_position: 40
-sidebar_label: 'Testing'
 ---
 
 # Testing ClickHouse

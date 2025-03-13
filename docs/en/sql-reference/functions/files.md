@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions/files
-sidebar_position: 75
-sidebar_label: 'Files'
 description: 'Documentation for Files'
+sidebar_label: 'Files'
+sidebar_position: 75
+slug: /sql-reference/functions/files
 title: 'Files'
 ---
 

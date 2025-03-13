@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/timeSeriesData
+description: 'timeSeriesData returns the data table used by table `db_name.time_series_table`
+  whose table engine is TimeSeries.'
+sidebar_label: 'timeSeriesData'
 sidebar_position: 145
-sidebar_label: timeSeriesData
+slug: /sql-reference/table-functions/timeSeriesData
 title: 'timeSeriesData'
-description: 'timeSeriesData returns the data table used by table `db_name.time_series_table` whose table engine is TimeSeries.'
 ---
 
 # timeSeriesData Table Function

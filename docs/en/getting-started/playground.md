@@ -1,9 +1,10 @@
 ---
+description: 'The ClickHouse Playground allows people to experiment with ClickHouse
+  by running queries instantly, without setting up their server or cluster.'
+keywords: ['clickhouse', 'playground', 'getting', 'started', 'docs']
+sidebar_label: 'ClickHouse Playground'
 slug: /getting-started/playground
 title: 'ClickHouse Playground'
-description: 'The ClickHouse Playground allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.'
-sidebar_label: 'ClickHouse Playground'
-keywords: ['clickhouse', 'playground', 'getting', 'started', 'docs']
 ---
 
 # ClickHouse Playground

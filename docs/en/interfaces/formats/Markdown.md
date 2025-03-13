@@ -1,8 +1,8 @@
 ---
-title: 'Markdown'
-slug: /interfaces/formats/Markdown
-keywords: ['Markdown']
 description: 'Documentation for the Markdown format'
+keywords: ['Markdown']
+slug: /interfaces/formats/Markdown
+title: 'Markdown'
 ---
 
 ## Description {#description}

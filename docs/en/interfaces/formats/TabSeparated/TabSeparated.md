@@ -1,11 +1,12 @@
 ---
-title: 'TabSeparated'
-slug: /interfaces/formats/TabSeparated
-keywords: ['TabSeparated', 'TSV']
-input_format: true
-output_format: true
-alias: ['TSV']
+alias:
+- TSV
 description: 'Documentation for the TSV format'
+input_format: true
+keywords: ['TabSeparated', 'TSV']
+output_format: true
+slug: /interfaces/formats/TabSeparated
+title: 'TabSeparated'
 ---
 
 | Input | Output | Alias  |

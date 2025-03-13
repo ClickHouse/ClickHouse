@@ -1,7 +1,8 @@
 ---
-description: 'The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic.'
-slug: /getting-started/example-datasets/opensky
+description: 'The data in this dataset is derived and cleaned from the full OpenSky
+  dataset to illustrate the development of air traffic during the COVID-19 pandemic.'
 sidebar_label: 'Air Traffic Data'
+slug: /getting-started/example-datasets/opensky
 title: 'Crowdsourced air traffic data from The OpenSky Network 2020'
 ---
 

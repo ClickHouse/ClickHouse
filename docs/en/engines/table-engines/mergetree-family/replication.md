@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/mergetree-family/replication
-sidebar_position: 20
-sidebar_label: Data Replication
-title: 'Data Replication'
 description: 'Overview of Data Replication in ClickHouse'
+sidebar_label: 'Data Replication'
+sidebar_position: 20
+slug: /engines/table-engines/mergetree-family/replication
+title: 'Data Replication'
 ---
 
 # Data Replication

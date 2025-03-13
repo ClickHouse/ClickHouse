@@ -1,8 +1,8 @@
 ---
 description: 'System table containing information about bucket bounds used by `latency_log`.'
-slug: /operations/system-tables/latency_buckets
-title: "system.latency_buckets"
 keywords: ['system table', 'latency_buckets']
+slug: /operations/system-tables/latency_buckets
+title: 'system.latency_buckets'
 ---
 
 # system.latency_buckets

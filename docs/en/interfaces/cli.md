@@ -1,9 +1,9 @@
 ---
-slug: /interfaces/cli
-sidebar_position: 17
-sidebar_label: 'ClickHouse Client'
-title: 'ClickHouse Client'
 description: 'Documentation for the ClickHouse command-line client interface'
+sidebar_label: 'ClickHouse Client'
+sidebar_position: 17
+slug: /interfaces/cli
+title: 'ClickHouse Client'
 ---
 
 import cloud_connect_button from '@site/static/images/_snippets/cloud-connect-button.png';

@@ -1,7 +1,7 @@
 ---
-sidebar_position: 54
-sidebar_label: 'Profile Guided Optimization (PGO)'
 description: 'Documentation for Profile Guided Optimization'
+sidebar_label: 'Profile Guided Optimization (PGO)'
+sidebar_position: 54
 title: 'Profile Guided Optimization'
 ---
 

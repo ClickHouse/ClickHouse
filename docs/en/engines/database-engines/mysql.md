@@ -1,9 +1,10 @@
 ---
-slug: /engines/database-engines/mysql
-sidebar_position: 50
+description: 'Allows connecting to databases on a remote MySQL server and perform
+  `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.'
 sidebar_label: 'MySQL'
+sidebar_position: 50
+slug: /engines/database-engines/mysql
 title: 'MySQL'
-description: 'Allows connecting to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/hdfs
+description: 'Creates a table from files in HDFS. This table function is similar to
+  the url and file table functions.'
+sidebar_label: 'hdfs'
 sidebar_position: 80
-sidebar_label: hdfs
+slug: /sql-reference/table-functions/hdfs
 title: 'hdfs'
-description: 'Creates a table from files in HDFS. This table function is similar to the url and file table functions.'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

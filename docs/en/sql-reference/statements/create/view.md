@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/statements/create/view
-sidebar_position: 37
-sidebar_label: VIEW
 description: 'Documentation for CREATE VIEW'
+sidebar_label: 'VIEW'
+sidebar_position: 37
+slug: /sql-reference/statements/create/view
 title: 'CREATE VIEW'
 ---
 

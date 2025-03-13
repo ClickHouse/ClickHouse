@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/statements/optimize
-sidebar_position: 47
-sidebar_label: 'OPTIMIZE'
-title: 'OPTIMIZE Statement'
 description: 'Documentation for Optimize'
+sidebar_label: 'OPTIMIZE'
+sidebar_position: 47
+slug: /sql-reference/statements/optimize
+title: 'OPTIMIZE Statement'
 ---
 
 This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/optimize/avoidoptimizefinal)) as its use case is meant for administration, not for daily operations.

@@ -1,7 +1,7 @@
 ---
-slug: /sql-reference/statements/undrop
-sidebar_label: 'UNDROP'
 description: 'Documentation for UNDROP TABLE'
+sidebar_label: 'UNDROP'
+slug: /sql-reference/statements/undrop
 title: 'UNDROP TABLE'
 ---
 

@@ -1,8 +1,8 @@
 ---
-title: 'ODBCDriver2'
-slug: /interfaces/formats/ODBCDriver2
-keywords: ['ODBCDriver2']
 description: 'Documentation for the ODBCDriver2 format'
+keywords: ['ODBCDriver2']
+slug: /interfaces/formats/ODBCDriver2
+title: 'ODBCDriver2'
 ---
 
 ## Description {#description}

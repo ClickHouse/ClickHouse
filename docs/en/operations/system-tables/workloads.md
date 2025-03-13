@@ -1,8 +1,9 @@
 ---
-description: 'System table containing information for workloads residing on the local server.'
+description: 'System table containing information for workloads residing on the local
+  server.'
+keywords: ['system table', 'workloads']
 slug: /operations/system-tables/workloads
 title: 'system.workloads'
-keywords: ['system table', 'workloads']
 ---
 
 # system.workloads

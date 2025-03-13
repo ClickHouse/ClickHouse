@@ -1,8 +1,9 @@
 ---
-description: 'System table containing information about maximums for all intervals of all quotas. Any number of rows or zero can correspond to one quota.'
+description: 'System table containing information about maximums for all intervals
+  of all quotas. Any number of rows or zero can correspond to one quota.'
+keywords: ['system table', 'quota_limits']
 slug: /operations/system-tables/quota_limits
 title: 'system.quota_limits'
-keywords: ['system table', 'quota_limits']
 ---
 
 # system.quota_limits

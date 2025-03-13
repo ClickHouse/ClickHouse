@@ -1,8 +1,8 @@
 ---
-sidebar_label: Query-level Session Settings
-title: Query-level Session Settings
 description: 'Settings at the query-level'
+sidebar_label: 'Query-level Session Settings'
 slug: /operations/settings/query-level
+title: 'Query-level Session Settings'
 ---
 
 There are multiple ways to run statements with specific settings.

@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/statements/alter/update
-sidebar_position: 40
-sidebar_label: UPDATE
 description: 'Documentation for ALTER TABLE ... UPDATE Statements'
+sidebar_label: 'UPDATE'
+sidebar_position: 40
+slug: /sql-reference/statements/alter/update
 title: 'ALTER TABLE ... UPDATE Statements'
 ---
 
