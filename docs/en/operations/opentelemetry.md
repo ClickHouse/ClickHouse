@@ -1,5 +1,6 @@
 ---
 slug: /operations/opentelemetry
+description: 'Guide to using OpenTelemetry for distributed tracing and metrics collection in ClickHouse'
 sidebar_position: 62
 sidebar_label: 'Tracing ClickHouse with OpenTelemetry'
 title: 'Tracing ClickHouse with OpenTelemetry'

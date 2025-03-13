@@ -2,7 +2,7 @@
 slug: /sql-reference/aggregate-functions/reference/theilsu
 sidebar_position: 201
 title: 'theilsU'
-description: 'The `theilsU` function calculates the Theils U uncertainty coefficient, a value that measures the association between two columns in a table.'
+description: 'The `theilsU` function calculates Theils'' U uncertainty coefficient, a value that measures the association between two columns in a table.'
 ---
 
 # theilsU

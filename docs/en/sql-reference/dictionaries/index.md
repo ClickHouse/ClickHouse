@@ -1,6 +1,6 @@
 ---
 slug: /sql-reference/dictionaries
-title: 'Dictioanries'
+title: 'Dictionaries'
 description: 'Overview of external dictionaries functionality in ClickHouse'
 sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35

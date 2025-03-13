@@ -2,7 +2,7 @@
 slug: /sql-reference/aggregate-functions/reference/cramersvbiascorrected
 sidebar_position: 128
 title: 'cramersVBiasCorrected'
-description: 'Calculates Cramers V, but uses a bias correction.'
+description: 'Calculates Cramer''s V, but uses a bias correction.'
 ---
 
 # cramersVBiasCorrected

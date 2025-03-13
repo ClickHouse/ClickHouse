@@ -1,5 +1,6 @@
 ---
 slug: /operations/performance-test
+description: 'Guide to testing and benchmarking hardware performance with ClickHouse'
 sidebar_position: 54
 sidebar_label: 'Testing Hardware'
 title: 'How to Test Your Hardware with ClickHouse'
