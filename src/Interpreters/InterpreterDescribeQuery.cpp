@@ -222,7 +222,7 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
         if (column.default_desc.expression)
         {
             res_columns[i++]->insert(toString(column.default_desc.kind));
-            res_columns[i++]->insert(column.default_desc.expression->formatWithSecretsOneLine());
+            res_columns[i++]->insert(column.default_desc.expression->formatForLogging());
         }
         else
         {
@@ -233,12 +233,12 @@ void InterpreterDescribeQuery::addColumn(const ColumnDescription & column, bool 
         res_columns[i++]->insert(column.comment);
 
         if (column.codec)
-            res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatWithSecretsOneLine());
+            res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
         else
             res_columns[i++]->insertDefault();
 
         if (column.ttl)
-            res_columns[i++]->insert(column.ttl->formatWithSecretsOneLine());
+            res_columns[i++]->insert(column.ttl->formatForLogging());
         else
             res_columns[i++]->insertDefault();
     }
@@ -273,12 +273,12 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insert(column.comment);
 
             if (column.codec && ISerialization::isSpecialCompressionAllowed(path))
-                res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatWithSecretsOneLine());
+                res_columns[i++]->insert(column.codec->as<ASTFunction>()->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();
 
             if (column.ttl)
-                res_columns[i++]->insert(column.ttl->formatWithSecretsOneLine());
+                res_columns[i++]->insert(column.ttl->formatForLogging());
             else
                 res_columns[i++]->insertDefault();
         }

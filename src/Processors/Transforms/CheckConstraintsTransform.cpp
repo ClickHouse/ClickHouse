@@ -79,7 +79,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                         "Constraint expression returns nullable column that contains null value",
                         backQuote(constraint_ptr->name),
                         table_id.getNameForLogs(),
-                        constraint_ptr->expr->formatWithSecretsOneLine());
+                        constraint_ptr->expr->formatForErrorMessage());
 
                 result_column = nested_column;
             }
@@ -122,7 +122,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                     backQuote(constraint_ptr->name),
                     table_id.getNameForLogs(),
                     rows_written + row_idx + 1,
-                    constraint_ptr->expr->formatWithSecretsOneLine(),
+                    constraint_ptr->expr->formatForErrorMessage(),
                     column_values_msg);
             }
         }

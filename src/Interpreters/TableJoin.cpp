@@ -1076,7 +1076,7 @@ void TableJoin::assertHasOneOnExpr() const
         for (const auto & onexpr : clauses)
             text.push_back(onexpr.formatDebug());
         throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Expected to have only one join clause, got {}: [{}], query: '{}'",
-                            clauses.size(), fmt::join(text, " | "), table_join.formatWithSecretsOneLine());
+                            clauses.size(), fmt::join(text, " | "), table_join.formatForErrorMessage());
     }
 }
 

@@ -99,7 +99,7 @@ void StorageSystemPartsColumns::processNextStorage(
         if (column.default_desc.expression)
         {
             column_info.default_kind = toString(column.default_desc.kind);
-            column_info.default_expression = column.default_desc.expression->formatWithSecretsOneLine();
+            column_info.default_expression = column.default_desc.expression->formatForLogging();
         }
 
         columns_info[column.name] = column_info;

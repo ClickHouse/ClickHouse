@@ -151,7 +151,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     auto * create = query_clone->as<ASTCreateQuery>();
 
     if (!create)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatWithSecretsOneLine());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
 
     /// Clean the query from temporary flags.
     cleanupObjectDefinitionFromTemporaryFlags(*create);
@@ -167,7 +167,8 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     WriteBufferFromOwnString statement_buf;
-    writeString(create->formatWithSecretsOneLine(), statement_buf);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     return statement_buf.str();
 }
@@ -890,7 +891,8 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     create->if_not_exists = false;
 
     WriteBufferFromOwnString statement_buf;
-    writeString(create->formatWithSecretsOneLine(), statement_buf);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 

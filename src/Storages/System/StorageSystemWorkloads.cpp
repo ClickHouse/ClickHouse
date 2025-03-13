@@ -29,7 +29,7 @@ void StorageSystemWorkloads::fillData(MutableColumns & res_columns, ContextPtr c
         auto & workload = typeid_cast<ASTCreateWorkloadQuery &>(*ast);
         res_columns[0]->insert(workload_name);
         res_columns[1]->insert(workload.getWorkloadParent());
-        res_columns[2]->insert(ast->formatWithSecretsOneLine());
+        res_columns[2]->insert(ast->formatForLogging());
     }
 }
 

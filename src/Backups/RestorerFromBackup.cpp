@@ -836,8 +836,8 @@ void RestorerFromBackup::checkDatabase(const String & database_name)
                     ErrorCodes::CANNOT_RESTORE_DATABASE,
                     "The database has a different definition: {} "
                     "comparing to its definition in the backup: {}",
-                    existing_database_def->formatWithSecretsOneLine(),
-                    database_def_from_backup->formatWithSecretsOneLine());
+                    existing_database_def->formatForErrorMessage(),
+                    database_def_from_backup->formatForErrorMessage());
             }
         }
     }
@@ -1065,8 +1065,8 @@ void RestorerFromBackup::checkTable(const QualifiedTableName & table_name)
                     ErrorCodes::CANNOT_RESTORE_TABLE,
                     "The table has a different definition: {} "
                     "comparing to its definition in the backup: {}",
-                    existing_table_def->formatWithSecretsOneLine(),
-                    table_def_from_backup->formatWithSecretsOneLine());
+                    existing_table_def->formatForErrorMessage(),
+                    table_def_from_backup->formatForErrorMessage());
             }
         }
     }

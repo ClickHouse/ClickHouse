@@ -54,7 +54,7 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[1]->insert(read_disks);
             res_columns[2]->insert(write_disks);
         }
-        res_columns[3]->insert(ast->formatWithSecretsOneLine());
+        res_columns[3]->insert(ast->formatForLogging());
     }
 }
 

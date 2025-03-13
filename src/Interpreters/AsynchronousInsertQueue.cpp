@@ -1161,7 +1161,7 @@ template <typename E>
 void AsynchronousInsertQueue::finishWithException(
     const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception)
 {
-    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", query->formatWithSecretsOneLine()));
+    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", query->formatForLogging()));
 
     for (const auto & entry : entries)
     {

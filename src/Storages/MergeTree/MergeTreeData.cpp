@@ -3514,7 +3514,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "The following alter commands: '{}' will modify data on disk, "
                             "but setting `allow_non_metadata_alters` is disabled",
-                            mutation_commands.ast()->formatWithSecretsOneLine());
+                            mutation_commands.ast()->formatForErrorMessage());
     }
 
     /// Block the case of alter table add projection for special merge trees.

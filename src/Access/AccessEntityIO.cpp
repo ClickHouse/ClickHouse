@@ -44,10 +44,11 @@ String serializeAccessEntity(const IAccessEntity & entity)
 
     /// Serialize the list of ATTACH queries to a string.
     WriteBufferFromOwnString buf;
+    IAST::FormatSettings format_settings(/*one_line=*/true, /*hilite*/false);
     for (const ASTPtr & query : queries)
     {
-        writeString(query->formatWithSecretsOneLine(), buf);
-        writeString(";\n", buf);
+        query->format(buf, format_settings);
+        buf.write(";\n", 2);
     }
     return buf.str();
 }

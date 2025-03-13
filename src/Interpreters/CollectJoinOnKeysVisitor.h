@@ -73,7 +73,7 @@ public:
         else
         {
             if (ast->children.empty())
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Illegal expression '{}' in JOIN ON section", ast->formatWithSecretsOneLine());
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Illegal expression '{}' in JOIN ON section", ast->formatForErrorMessage());
 
             /// visit children
         }

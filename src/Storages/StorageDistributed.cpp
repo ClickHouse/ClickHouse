@@ -1112,7 +1112,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
                 plan.explainPlan(buf, {});
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Found multiple source steps for query\n{}\nPlan\n{}",
-                    ast->formatWithSecretsOneLine(), buf.str());
+                    ast->formatForErrorMessage(), buf.str());
             }
 
             source = with_filter;

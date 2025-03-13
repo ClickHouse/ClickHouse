@@ -762,10 +762,11 @@ String WorkloadEntityStorageBase::serializeAllEntities(std::optional<Event> chan
     std::unique_lock<std::recursive_mutex> lock;
     auto ordered_entities = orderEntities(entities, change);
     WriteBufferFromOwnString buf;
+    IAST::FormatSettings settings(/*one_line=*/true, /*hilite=*/false);
     for (const auto & event : ordered_entities)
     {
-        writeString(event.entity->formatWithSecretsOneLine(), buf);
-        writeString(";\n", buf);
+        event.entity->format(buf, settings);
+        buf.write(";\n", 2);
     }
     return buf.str();
 }

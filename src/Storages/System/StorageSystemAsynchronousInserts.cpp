@@ -57,7 +57,7 @@ void StorageSystemAsynchronousInserts::fillData(MutableColumns & res_columns, Co
             const auto & insert_query = key.query->as<const ASTInsertQuery &>();
             size_t i = 0;
 
-            res_columns[i++]->insert(insert_query.formatWithSecretsOneLine());
+            res_columns[i++]->insert(insert_query.formatForLogging());
 
             /// If query is "INSERT INTO FUNCTION" then table_id is empty.
             if (insert_query.table_id)

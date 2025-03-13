@@ -266,7 +266,7 @@ ASTPtr CompressionCodecFactory::validateCodecAndGetPreprocessedAST(
         return ast;
     }
 
-    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", ast->formatWithSecretsOneLine());
+    throw Exception(ErrorCodes::UNKNOWN_CODEC, "Unknown codec family: {}", ast->formatForErrorMessage());
 }
 
 

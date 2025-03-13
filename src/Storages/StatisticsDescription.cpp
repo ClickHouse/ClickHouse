@@ -168,7 +168,7 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(c
 {
     const auto & stat_type_list_ast = column.statistics_desc->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", column.formatWithSecretsOneLine());
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", column.formatForErrorMessage());
     ColumnStatisticsDescription stats;
     for (const auto & ast : stat_type_list_ast->children)
     {

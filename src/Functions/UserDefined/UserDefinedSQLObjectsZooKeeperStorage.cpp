@@ -217,7 +217,8 @@ bool UserDefinedSQLObjectsZooKeeperStorage::storeObjectImpl(
     LOG_DEBUG(log, "Storing user-defined object {} at zk path {}", backQuote(object_name), path);
 
     WriteBufferFromOwnString create_statement_buf;
-    writeString(create_object_query->formatWithSecretsOneLine(), create_statement_buf);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite=*/false);
+    create_object_query->format(create_statement_buf, format_settings);
     writeChar('\n', create_statement_buf);
     String create_statement = create_statement_buf.str();
 

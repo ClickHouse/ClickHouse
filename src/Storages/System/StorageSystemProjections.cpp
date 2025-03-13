@@ -148,7 +148,7 @@ protected:
                     // 'query' column
                     if (column_mask[src_index++])
                     {
-                        res_columns[res_index++]->insert(projection.definition_ast->children.at(0)->formatWithSecretsOneLine());
+                        res_columns[res_index++]->insert(projection.definition_ast->children.at(0)->formatForLogging());
                     }
                 }
             }

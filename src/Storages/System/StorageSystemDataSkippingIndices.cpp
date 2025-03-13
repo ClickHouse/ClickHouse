@@ -133,7 +133,7 @@ protected:
                         auto * expression = index.definition_ast->as<ASTIndexDeclaration>();
                         auto index_type = expression ? expression->getType() : nullptr;
                         if (index_type)
-                            res_columns[res_index++]->insert(index_type->formatWithSecretsOneLine());
+                            res_columns[res_index++]->insert(index_type->formatForLogging());
                         else
                             res_columns[res_index++]->insertDefault();
                     }
@@ -141,7 +141,7 @@ protected:
                     if (column_mask[src_index++])
                     {
                         if (auto expression = index.expression_list_ast)
-                            res_columns[res_index++]->insert(expression->formatWithSecretsOneLine());
+                            res_columns[res_index++]->insert(expression->formatForLogging());
                         else
                             res_columns[res_index++]->insertDefault();
                     }
