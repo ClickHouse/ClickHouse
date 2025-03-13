@@ -576,79 +576,7 @@ bool Client::buzzHouse()
         UNUSED(v);
 
         outf << "--Session seed: " << rg.getSeed() << std::endl;
-        DB::Strings defaultSettings
-            = {"engine_file_truncate_on_insert",
-               "allow_aggregate_partitions_independently",
-               "allow_archive_path_syntax",
-               "allow_asynchronous_read_from_io_pool_for_merge_tree",
-               "allow_changing_replica_until_first_data_packet",
-               "allow_create_index_without_type",
-               "allow_custom_error_code_in_throwif",
-               "allow_ddl",
-               "allow_deprecated_database_ordinary",
-               "allow_deprecated_error_prone_window_functions",
-               "allow_deprecated_snowflake_conversion_functions",
-               "allow_deprecated_syntax_for_merge_tree",
-               "allow_distributed_ddl",
-               "allow_drop_detached",
-               "allow_execute_multiif_columnar",
-               "allow_experimental_analyzer",
-               "allow_experimental_codecs",
-               "allow_experimental_database_materialized_mysql",
-               "allow_experimental_database_materialized_postgresql",
-               "allow_experimental_dynamic_type",
-               "allow_experimental_full_text_index",
-               "allow_experimental_funnel_functions",
-               "allow_experimental_hash_functions",
-               "allow_experimental_inverted_index",
-               "allow_experimental_join_right_table_sorting",
-               "allow_experimental_json_type",
-               "allow_experimental_kafka_offsets_storage_in_keeper",
-               "allow_experimental_live_view",
-               "allow_experimental_materialized_postgresql_table",
-               "allow_experimental_nlp_functions",
-               "allow_experimental_parallel_reading_from_replicas",
-               "allow_experimental_query_deduplication",
-               "allow_experimental_shared_set_join",
-               "allow_experimental_statistics",
-               "allow_experimental_time_series_table",
-               "allow_experimental_variant_type",
-               "allow_experimental_vector_similarity_index",
-               "allow_experimental_window_view",
-               "allow_get_client_http_header",
-               "allow_hyperscan",
-               "allow_introspection_functions",
-               "allow_materialized_view_with_bad_select",
-               "allow_named_collection_override_by_default",
-               "allow_non_metadata_alters",
-               "allow_nonconst_timezone_arguments",
-               "allow_nondeterministic_mutations",
-               "allow_nondeterministic_optimize_skip_unused_shards",
-               "allow_prefetched_read_pool_for_local_filesystem",
-               "allow_prefetched_read_pool_for_remote_filesystem",
-               "allow_push_predicate_when_subquery_contains_with",
-               "allow_reorder_prewhere_conditions",
-               "allow_settings_after_format_in_insert",
-               "allow_simdjson",
-               "allow_statistics_optimize",
-               "allow_suspicious_codecs",
-               "allow_suspicious_fixed_string_types",
-               "allow_suspicious_indices",
-               "allow_suspicious_low_cardinality_types",
-               "allow_suspicious_primary_key",
-               "allow_suspicious_ttl_expressions",
-               "allow_suspicious_variant_types",
-               "allow_suspicious_types_in_group_by",
-               "allow_suspicious_types_in_order_by",
-               "allow_unrestricted_reads_from_keeper",
-               "enable_analyzer",
-               "enable_deflate_qpl_codec",
-               "enable_zstd_qat_codec",
-               "type_json_skip_duplicated_paths",
-               "allow_experimental_database_iceberg",
-               "allow_experimental_bfloat16_type",
-               "allow_not_comparable_types_in_order_by",
-               "allow_not_comparable_types_in_comparison_functions"};
+        DB::Strings defaultSettings = {"engine_file_truncate_on_insert"};
         defaultSettings.emplace_back(rg.nextBool() ? "s3_truncate_on_insert" : "s3_create_new_file_on_insert");
 
         full_query.resize(0);
@@ -797,7 +725,7 @@ bool Client::buzzHouse()
 
                     sq4.Clear();
                     full_query.resize(0);
-                    qo.generateImportQuery(gen, t, sq2, sq4);
+                    qo.generateImportQuery(rg, gen, t, sq2, sq4);
                     BuzzHouse::SQLQueryToString(full_query, sq4);
                     outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);

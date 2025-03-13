@@ -43,13 +43,13 @@ void StatementGenerator::generateSettingList(RandomGenerator & rg, const std::un
     {
         const String & next = rg.pickRandomly(settings);
 
-        if (i == 0)
+        if (sl->has_setting())
         {
-            sl->set_setting(next);
+            sl->add_other_settings(next);
         }
         else
         {
-            sl->add_other_settings(next);
+            sl->set_setting(next);
         }
     }
 }
@@ -488,16 +488,14 @@ void StatementGenerator::generateNextOptimizeTable(RandomGenerator & rg, Optimiz
 
         if (noption < 51)
         {
-            ExprColumnList * ecl = noption < 26 ? dde->mutable_col_list() : dde->mutable_ded_star_except();
+            ColumnPathList * clist = noption < 26 ? dde->mutable_col_list() : dde->mutable_ded_star_except();
             flatTableColumnPath(flat_tuple | flat_nested | skip_nested_node, t, [](const SQLColumn &) { return true; });
             const uint32_t ocols
                 = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(this->entries.size()), UINT32_C(4))) + 1;
             std::shuffle(entries.begin(), entries.end(), rg.generator);
             for (uint32_t i = 0; i < ocols; i++)
             {
-                ExprColumn * col = i == 0 ? ecl->mutable_col() : ecl->add_extra_cols();
-
-                columnPathRef(this->entries[i], col->mutable_path());
+                columnPathRef(entries[i], i == 0 ? clist->mutable_col() : clist->add_other_cols());
             }
             entries.clear();
         }
@@ -615,9 +613,13 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescTable *
 
 void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
 {
+    String buf;
     const uint32_t noption = rg.nextLargeNumber();
     ExprSchemaTable * est = ins->mutable_est();
     const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables));
+    std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
+    std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+    std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
 
     if (t.db)
     {
@@ -632,13 +634,9 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
         columnPathRef(entry, ins->add_cols());
     }
 
-    if (noption < 901)
+    if (noption < 801)
     {
-        String buf;
-        std::uniform_int_distribution<uint64_t> rows_dist(fc.min_insert_rows, fc.max_insert_rows);
-        std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
         const uint64_t nrows = rows_dist(rg.generator);
-        InsertStringQuery * iquery = ins->mutable_query();
 
         for (uint64_t i = 0; i < nrows; i++)
         {
@@ -682,27 +680,56 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             }
             buf += ")";
         }
-        iquery->set_query(buf);
-        if (rg.nextSmallNumber() < 3)
-        {
-            generateSettingValues(rg, serverSettings, iquery->mutable_setting_values());
-        }
+        ins->set_query(buf);
     }
     else if (noption < 951)
     {
-        InsertSelect * isel = ins->mutable_insert_select();
+        Select * sel = ins->mutable_select();
 
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        if (rg.nextMediumNumber() < 13)
+        if (noption < 901)
         {
-            this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
+            /// Use generateRandom
+            bool first = true;
+            SelectStatementCore * ssc = sel->mutable_select_core();
+            GenerateRandomFunc * grf = ssc->mutable_from()
+                                           ->mutable_tos()
+                                           ->mutable_join_clause()
+                                           ->mutable_tos()
+                                           ->mutable_joined_table()
+                                           ->mutable_tof()
+                                           ->mutable_tfunc()
+                                           ->mutable_grandom();
+
+            for (const auto & entry : this->entries)
+            {
+                SQLType * tp = entry.getBottomType();
+                const String & bottomName = entry.getBottomName();
+
+                buf += fmt::format(
+                    "{}{} {}{}{}",
+                    first ? "" : ", ",
+                    bottomName,
+                    entry.path.size() > 1 ? "Array(" : "",
+                    tp->typeName(true),
+                    entry.path.size() > 1 ? ")" : "");
+                ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(bottomName);
+                first = false;
+            }
+            grf->set_structure(std::move(buf));
+            grf->set_random_seed(rg.nextRandomUInt64());
+            grf->set_max_string_length(string_length_dist(rg.generator));
+            grf->set_max_array_length(nested_rows_dist(rg.generator));
+            ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rows_dist(rg.generator));
         }
-        generateSelect(
-            rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), isel->mutable_select());
-        this->levels.clear();
-        if (rg.nextSmallNumber() < 3)
+        else
         {
-            generateSettingValues(rg, serverSettings, isel->mutable_setting_values());
+            this->levels[this->current_level] = QueryLevel(this->current_level);
+            if (rg.nextMediumNumber() < 13)
+            {
+                this->addCTEs(rg, std::numeric_limits<uint32_t>::max(), ins->mutable_ctes());
+            }
+            generateSelect(rg, true, false, static_cast<uint32_t>(this->entries.size()), std::numeric_limits<uint32_t>::max(), sel);
+            this->levels.clear();
         }
     }
     else
@@ -737,12 +764,12 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
             }
         }
         this->levels.clear();
-        if (rg.nextSmallNumber() < 3)
-        {
-            generateSettingValues(rg, serverSettings, vs->mutable_setting_values());
-        }
     }
     this->entries.clear();
+    if (rg.nextSmallNumber() < 3)
+    {
+        generateSettingValues(rg, serverSettings, ins->mutable_setting_values());
+    }
 }
 
 void StatementGenerator::generateUptDelWhere(RandomGenerator & rg, const SQLTable & t, Expr * expr)
@@ -976,8 +1003,8 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
             const uint32_t column_remove_property = 2;
             const uint32_t column_modify_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
             const uint32_t column_remove_setting = 2 * static_cast<uint32_t>(!allColumnSettings.at(t.teng).empty());
-            const uint32_t table_modify_setting = 2 * static_cast<uint32_t>(!allTableSettings.at(t.teng).empty());
-            const uint32_t table_remove_setting = 2 * static_cast<uint32_t>(!allTableSettings.at(t.teng).empty());
+            const uint32_t table_modify_setting = 2;
+            const uint32_t table_remove_setting = 2;
             const uint32_t add_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily());
             const uint32_t remove_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
             const uint32_t materialize_projection = 2 * static_cast<uint32_t>(t.isMergeTreeFamily() && !t.projs.empty());
@@ -1386,9 +1413,19 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + 1))
             {
-                const auto & tsettings = allTableSettings.at(t.teng);
+                SettingValues * svs = ati->mutable_table_modify_setting();
+                const auto & engineSettings = allTableSettings.at(t.teng);
 
-                generateSettingValues(rg, tsettings, ati->mutable_table_modify_setting());
+                if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+                {
+                    /// Modify table engine settings
+                    generateSettingValues(rg, engineSettings, svs);
+                }
+                if (!svs->has_set_value() || rg.nextSmallNumber() < 4)
+                {
+                    /// Modify server settings
+                    generateSettingValues(rg, serverSettings, svs);
+                }
             }
             else if (
                 table_remove_setting
@@ -1398,9 +1435,19 @@ void StatementGenerator::generateAlterTable(RandomGenerator & rg, AlterTable * a
                        + mat_stats + add_idx + materialize_idx + clear_idx + drop_idx + column_remove_property + column_modify_setting
                        + column_remove_setting + table_modify_setting + table_remove_setting + 1))
             {
-                const auto & tsettings = allTableSettings.at(t.teng);
+                SettingList * sl = ati->mutable_table_remove_setting();
+                const auto & engineSettings = allTableSettings.at(t.teng);
 
-                generateSettingList(rg, tsettings, ati->mutable_table_remove_setting());
+                if (!engineSettings.empty() && rg.nextSmallNumber() < 9)
+                {
+                    /// Remove table engine settings
+                    generateSettingList(rg, engineSettings, sl);
+                }
+                if (!sl->has_setting() || rg.nextSmallNumber() < 4)
+                {
+                    /// Remove server settings
+                    generateSettingList(rg, serverSettings, sl);
+                }
             }
             else if (
                 add_projection
@@ -3794,14 +3841,14 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
                 {
                     if (val.db && val.db->dname == dname)
                     {
-                        newb.tables[key] = this->tables[key];
+                        newb.tables[key] = val;
                     }
                 }
                 for (const auto & [key, val] : this->views)
                 {
                     if (val.db && val.db->dname == dname)
                     {
-                        newb.views[key] = this->views[key];
+                        newb.views[key] = val;
                     }
                 }
                 newb.databases[dname] = this->databases[dname];
@@ -3814,17 +3861,23 @@ void StatementGenerator::updateGenerator(const SQLQuery & sq, ExternalIntegratio
 
             if (!backup.partition_id.has_value())
             {
-                for (const auto & [key, _] : backup.tables)
+                for (const auto & [key, val] : backup.databases)
                 {
-                    this->tables[key] = backup.tables.at(key);
+                    this->databases[key] = val;
                 }
-                for (const auto & [key, _] : backup.views)
+                for (const auto & [key, val] : backup.tables)
                 {
-                    this->views[key] = backup.views.at(key);
+                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    {
+                        this->tables[key] = val;
+                    }
                 }
-                for (const auto & [key, _] : backup.databases)
+                for (const auto & [key, val] : backup.views)
                 {
-                    this->databases[key] = backup.databases.at(key);
+                    if (!val.db || this->databases.find(val.db->dname) != this->databases.end())
+                    {
+                        this->views[key] = val;
+                    }
                 }
             }
         }

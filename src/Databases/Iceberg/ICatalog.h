@@ -10,6 +10,11 @@ namespace Iceberg
 using StorageType = DB::DatabaseIcebergStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 
+struct DataLakeSpecificMetadata
+{
+    std::string iceberg_metadata_file_location;
+};
+
 /// A class representing table metadata,
 /// which was received from Catalog.
 class TableMetadata
@@ -20,6 +25,7 @@ public:
     TableMetadata & withLocation() { with_location = true; return *this; }
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
+    TableMetadata & withDataLakeSpecificMetadata() { with_datalake_specific_metadata = true; return *this; }
 
     void setLocation(const std::string & location_);
     std::string getLocation() const;
@@ -33,9 +39,13 @@ public:
     void setStorageCredentials(std::shared_ptr<IStorageCredentials> credentials_);
     std::shared_ptr<IStorageCredentials> getStorageCredentials() const;
 
+    void setDataLakeSpecificMetadata(std::optional<DataLakeSpecificMetadata> && metadata);
+    std::optional<DataLakeSpecificMetadata> getDataLakeSpecificMetadata() const;
+
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
     bool requiresCredentials() const { return with_storage_credentials; }
+    bool requiresDataLakeSpecificMetadata() const { return with_datalake_specific_metadata; }
 
     StorageType getStorageType() const;
 
@@ -55,9 +65,13 @@ private:
     /// Storage credentials, which are called "vended credentials".
     std::shared_ptr<IStorageCredentials> storage_credentials;
 
+    /// Specific settings for each data lake.
+    std::optional<DataLakeSpecificMetadata> data_lake_specific_metadata;
+
     bool with_location = false;
     bool with_schema = false;
     bool with_storage_credentials = false;
+    bool with_datalake_specific_metadata = false;
 
     std::string constructLocation(const std::string & endpoint_) const;
 };
