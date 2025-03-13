@@ -436,12 +436,16 @@ private:
 };
 
 
-ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, ContextPtr context)
+ViewsManager::StorageIDPrivate ViewsManager::VisitedPath::empty_id = {};
+
+
+ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, bool async_insert_, ContextPtr context)
     : init_table_id(table->getStorageID())
     , init_storage(table)
     , init_query(query)
     , init_header(std::move(insert_header))
     , init_context(context)
+    , async_insert(async_insert_)
     , logger(getLogger("ViewsManager"))
 {
     deduplicate_blocks_in_dependent_materialized_views = init_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
@@ -620,9 +624,9 @@ void ViewsManager::buildRelaitions()
             Block select_header;
             // Get list of columns we get from select query.
             if (select_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-                select_header = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query, select_context);
+                select_header = InterpreterSelectQueryAnalyzer::getSampleBlock(select_query, select_context, SelectQueryOptions().ignoreAccessCheck());
             else
-                select_header = InterpreterSelectQuery(select_query, select_context, SelectQueryOptions()).getSampleBlock();
+                select_header = InterpreterSelectQuery(select_query, select_context, SelectQueryOptions().ignoreAccessCheck()).getSampleBlock();
 
             select_queries[current] = select_query;
             input_headers[current] = output_headers.at(path.prevParent());
@@ -806,33 +810,11 @@ void ViewsManager::buildRelaitions()
 }
 
 
-Chain ViewsManager::createRetry(Dependencies path)
+Chain ViewsManager::createRetry(VisitedPath path)
 {
-    LOG_DEBUG(logger, "createRetry: {}", path.getLast().inner_id);
+    LOG_DEBUG(logger, "createRetry: {}", path.debugString());
 
-    if (path.getLast().inner_id == init_table_id)
-    {
-        return createPreSink(init_table_id);
-    }
-
-    std::stack<Chain> partial_results;
-    while (!path.empty())
-    {
-        auto [view_id, inner_id] = path.getLast();
-        Chain chain;
-        chain.appendChainNotStrict(createSelect(view_id));
-        chain.appendChainNotStrict(createPreSink(inner_id));
-        partial_results.push(std::move(chain));
-    }
-
-    Chain result;
-    while (!partial_results.empty())
-    {
-        result.appendChainNotStrict(std::move(partial_results.top()));
-        partial_results.pop();
-    }
-
-    return result;
+    return {};
 }
 
 
@@ -858,7 +840,6 @@ Chain ViewsManager::createSelect(StorageIDPrivate view_id) const
     auto inner_table_storage = storages.at(inner_table_id);
     Block select_header = select_headers.at(view_id);
 
-    bool async_insert = false;
     bool no_squash = false;
     bool should_add_squashing = !(insert_context->getSettingsRef()[Setting::distributed_foreground_insert] && inner_table_storage->isRemote()) && !async_insert && !no_squash;
     if (should_add_squashing)
@@ -1016,59 +997,49 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
 
 Chain ViewsManager::createSink(StorageIDPrivate view_id) const
 {
-    auto inner_id = inner_tables.at(view_id);
-    LOG_DEBUG(logger, "createSink: {} ({})", view_id, inner_id);
+    auto inner_table = inner_tables.at(view_id);
+    LOG_DEBUG(logger, "createSink: {} ({})", view_id, inner_table);
+
+    auto storage = storages.at(inner_table);
+
+    IInterpreter::checkStorageSupportsTransactionsIfNeeded(storage, insert_contexts.at(view_id));
 
     Chain chain;
 
-    if (view_id)
+    if (auto * live_view = dynamic_cast<StorageLiveView *>(storage.get()))
     {
-        auto view_storage = storages.at(view_id);
+        auto sink = std::make_shared<PushingToLiveViewSink>(select_headers.at(view_id), *live_view, insert_contexts.at(view_id));
+        sink->setRuntimeData(thread_groups.at(view_id));
+        sink->setViewManager(shared_from_this());
+        chain.addSource(std::move(sink));
+    }
+    else if (auto * window_view = dynamic_cast<StorageWindowView *>(storage.get()))
+    {
+        auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, insert_contexts.at(view_id));
+        sink->setRuntimeData(thread_groups.at(view_id));
+        sink->setViewManager(shared_from_this());
+        chain.addSource(std::move(sink));
+    }
+    else if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get()))
+    {
+        UNREACHABLE();
 
-        IInterpreter::checkStorageSupportsTransactionsIfNeeded(view_storage, insert_contexts.at(view_id));
+        LOG_DEBUG(logger, "createSink: {}, for StorageMaterializedView", view_id.getNameForLogs());
 
-        if (auto * live_view = dynamic_cast<StorageLiveView *>(view_storage.get()))
-        {
-            auto sink = std::make_shared<PushingToLiveViewSink>(select_headers.at(view_id), *live_view, insert_contexts.at(view_id));
-            sink->setRuntimeData(thread_groups.at(view_id));
-            sink->setViewManager(shared_from_this());
-            chain.addSource(std::move(sink));
-        }
-        else if (auto * window_view = dynamic_cast<StorageWindowView *>(view_storage.get()))
-        {
-            auto sink = std::make_shared<PushingToWindowViewSink>(window_view->getInputHeader(), *window_view, insert_contexts.at(view_id));
-            sink->setRuntimeData(thread_groups.at(view_id));
-            sink->setViewManager(shared_from_this());
-            chain.addSource(std::move(sink));
-        }
-        else if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view_storage.get()))
-        {
-            LOG_DEBUG(logger, "createSink: {}, for StorageMaterializedView", view_id.getNameForLogs());
+        auto sink = materialized_view->write(select_queries.at(view_id), metadata_snapshots.at(view_id), insert_contexts.at(view_id), async_insert);
 
-            auto async_insert = false;
-            auto sink = materialized_view->write(select_queries.at(view_id), metadata_snapshots.at(view_id), insert_contexts.at(view_id), async_insert);
+        LOG_DEBUG(logger, "createSink: {}, sink structure: {}", view_id, sink->getHeader().dumpStructure());
 
-            LOG_DEBUG(logger, "createSink: {}, sink structure: {}", view_id, sink->getHeader().dumpStructure());
-
-            sink->setRuntimeData(thread_groups.at(view_id));
-            sink->setViewManager(shared_from_this());
-            chain.addSource(std::move(sink));
-        }
-        else
-        {
-            UNREACHABLE();
-        }
+        sink->setRuntimeData(thread_groups.at(view_id));
+        sink->setViewManager(shared_from_this());
+        chain.addSource(std::move(sink));
     }
     else
     {
-        LOG_DEBUG(logger, "createSink: {}, for not a view", inner_id);
-        chassert(inner_id == init_table_id);
+        LOG_DEBUG(logger, "createSink: {}, for not a view", inner_table);
 
-        IInterpreter::checkStorageSupportsTransactionsIfNeeded(storages.at(inner_id), insert_contexts.at(view_id));
-
-        auto async_insert = false;
-        auto sink = storages.at(inner_id)->write(select_queries.at(view_id), metadata_snapshots.at(inner_id), insert_contexts.at(view_id), async_insert);
-        metadata_snapshots.at(inner_id)->check(sink->getHeader().getColumnsWithTypeAndName());
+        auto sink = storage->write(nullptr, metadata_snapshots.at(inner_table), insert_contexts.at(view_id), async_insert);
+        metadata_snapshots.at(inner_table)->check(sink->getHeader().getColumnsWithTypeAndName());
         sink->setRuntimeData(thread_groups.at(view_id));
         sink->setViewManager(shared_from_this());
         chain.addSource(std::move(sink));
@@ -1076,7 +1047,7 @@ Chain ViewsManager::createSink(StorageIDPrivate view_id) const
 
     chain.addSink(std::make_shared<DeduplicationToken::DefineSourceWithChunkHashTransform>(chain.getOutputHeader()));
 
-    LOG_DEBUG(logger, "createSink: {} ({}) input {}, output {}", view_id, inner_id, chain.getInputHeader().dumpStructure(), chain.getOutputHeader().dumpStructure());
+    LOG_DEBUG(logger, "createSink: {} ({}) input {}, output {}", view_id, inner_table, chain.getInputHeader().dumpStructure(), chain.getOutputHeader().dumpStructure());
 
     return chain;
 }
@@ -1257,4 +1228,22 @@ void ViewsManager::logQueryView(StorageID view_id, std::exception_ptr exception)
     }
 }
 
+void ViewsManager::VisitedPath::pushBack(StorageIDPrivate id)
+{
+    if (visited.contains(id))
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION, "Dependencies of the table {} are cyclic. Cycle is {}", path.front(), fmt::join(path, " :-> "));
+
+    path.push_back(id);
+    visited.insert(id);
+}
+void ViewsManager::VisitedPath::popBack()
+{
+    visited.erase(path.back());
+    path.pop_back();
+}
+String ViewsManager::VisitedPath::debugString() const
+{
+    return fmt::format("{}", fmt::join(path, " :-> "));
+}
 }

@@ -60,11 +60,24 @@ private:
         StorageIDPrivate inner_id;
     };
 
-    struct Dependencies : public std::vector<BundleID>
+    class VisitedPath
     {
-        BundleID & getLast() { return back(); }
-        BundleID & getPrev() { if (size() == 1) return getLast();  return *++rbegin(); }
-        void popBack() { if (size() > 1) pop_back(); pop_back(); }
+        std::vector<StorageIDPrivate> path;
+        std::set<StorageIDPrivate> visited;
+
+        static StorageIDPrivate empty_id;
+
+    public:
+        void pushBack(StorageIDPrivate id);
+        void popBack();
+
+        [[maybe_unused]] bool empty() const { return path.empty(); }
+        const StorageIDPrivate & back() const { return path.back(); }
+        const StorageIDPrivate & current() const { return back(); }
+        const StorageIDPrivate & parent() const { if (path.size() > 1) return *++path.rbegin(); return empty_id; }
+        const StorageIDPrivate & prevParent() const { if (path.size() > 2) return *++++path.rbegin(); return empty_id; }
+        const StorageIDPrivate & prevPrevParent() const { if (path.size() > 3) return *++++++path.rbegin(); return empty_id; }
+        String debugString() const;
     };
 
     using MapIdManyId = std::map<StorageIDPrivate, std::vector<StorageIDPrivate>>;
@@ -92,17 +105,16 @@ public:
         };
         return std::make_shared<MakeSharedEnabler>(std::forward<Args>(args)...);
     }
-    static Ptr create(StorageID table_id, ASTPtr query, Block insert_header, ContextPtr context);
 
     Chain createPreSink() const;
     Chain createSink() const;
     Chain createPostSink() const;
-    Chain createRetry(Dependencies path);
+    Chain createRetry(VisitedPath path);
 
     void logQueryView(StorageID view_id, std::exception_ptr exception) const;
 
 protected:
-    ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, ContextPtr context);
+    ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, bool async_insert_, ContextPtr context);
 
 private:
     void buildRelaitions();
@@ -116,6 +128,7 @@ private:
     ASTPtr init_query;
     Block init_header;
     ContextPtr init_context;
+    bool async_insert;
 
     BundleID root;
 

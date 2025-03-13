@@ -505,7 +505,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         sink_streams_size = 1;
     }
 
-    auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block, getContext());
+    auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block, async_insert, getContext());
 
     std::vector<Chain> presink_chains;
     for (size_t i = 0; i < presink_streams_size; ++i)
@@ -581,7 +581,7 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
 
-    auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block, getContext());
+    auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block, async_insert, getContext());
 
     Chain chain = views_manager->createPreSink();
     if (!no_destination)
