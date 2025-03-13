@@ -36,7 +36,8 @@ extern const int TOO_DEEP_RECURSION;
 
 std::optional<bool> Client::processFuzzingStep(const String & query_to_execute, const ASTPtr & parsed_query, const bool permissive)
 {
-    processParsedSingleQuery(query_to_execute, query_to_execute, parsed_query);
+    bool async_insert = false;
+    processParsedSingleQuery(query_to_execute, parsed_query, async_insert);
 
     const auto * exception = server_exception ? server_exception.get() : client_exception.get();
     // Sometimes you may get TOO_DEEP_RECURSION from the server,
