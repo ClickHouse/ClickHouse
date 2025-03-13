@@ -38,7 +38,6 @@ RUN apt-get update -y \
             jq \
             pv \
             zip \
-            unzip \
             p7zip-full \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
