@@ -179,9 +179,4 @@ bool TableMetadata::hasStorageCredentials() const
     return storage_credentials != nullptr;
 }
 
-DB::StorageObjectStorageSettingsPtr ICatalog::createStorageSettingsFromMetadata(const TableMetadata &) const
-{
-    return std::make_shared<DB::StorageObjectStorageSettings>();
-}
-
 }

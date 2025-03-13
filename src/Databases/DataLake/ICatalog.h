@@ -148,8 +148,6 @@ public:
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
 
-    virtual DB::StorageObjectStorageSettingsPtr createStorageSettingsFromMetadata(const TableMetadata & metadata) const;
-
 protected:
     /// Name of the warehouse,
     /// which is sometimes also called "catalog name".
