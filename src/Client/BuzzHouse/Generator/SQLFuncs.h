@@ -10,15 +10,15 @@ class CHAggregate
 {
 public:
     const bool support_nulls_clause;
-    const uint32_t fnum, min_args, max_args, min_params, max_params;
+    const uint32_t fnum, min_params, max_params, min_args, max_args;
 
     CHAggregate(const uint32_t f, const uint32_t min_p, const uint32_t max_p, const uint32_t min_a, const uint32_t m_args, const bool snc)
         : support_nulls_clause(snc)
         , fnum(f)
-        , min_args(min_a)
-        , max_args(m_args)
         , min_params(min_p)
         , max_params(max_p)
+        , min_args(min_a)
+        , max_args(m_args)
     {
     }
 };
@@ -64,6 +64,7 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCcovarSampMatrix, 0, 0, 1, ulimited_params, false),
     CHAggregate(SQLFunc::FUNCentropy, 0, 0, 1, 1, false),
     CHAggregate(SQLFunc::FUNCexponentialMovingAverage, 1, 1, 2, 2, false),
+    CHAggregate(SQLFunc::FUNCgrouping, 0, 0, 1, ulimited_params, false),
     CHAggregate(SQLFunc::FUNCintervalLengthSum, 0, 0, 2, 2, false),
     CHAggregate(SQLFunc::FUNCmedian, 1, 1, 1, 1, false),
     CHAggregate(SQLFunc::FUNCmedianDeterministic, 1, 1, 2, 2, false),
