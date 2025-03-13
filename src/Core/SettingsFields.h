@@ -30,12 +30,13 @@ class WriteBuffer;
   */
 
 template<typename T>
-void validateFloatingPointSettingValue(T value) {
-    if constexpr (std::is_floating_point_v<T>) {
-        if (!std::isfinite(value)) {
+void validateFloatingPointSettingValue(T value)
+{
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        if (!std::isfinite(value))
             throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
                 "Float setting value must be finite, got {}", value);
-        }
     }
 }
 
