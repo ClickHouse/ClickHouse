@@ -933,7 +933,7 @@ void loadFuzzerServerSettings(const FuzzConfig & fc)
          {"aggregation_in_order_max_block_bytes",
           "cross_join_min_bytes_to_compress",
           "filesystem_prefetch_max_memory_usage",
-          "filesystem_prefetch_min_bytes_for_single_read_task"
+          "filesystem_prefetch_min_bytes_for_single_read_task",
           "filesystem_prefetch_step_bytes",
           "group_by_two_level_threshold_bytes",
           "max_bytes_before_external_group_by",
