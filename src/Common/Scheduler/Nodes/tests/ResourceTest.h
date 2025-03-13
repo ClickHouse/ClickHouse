@@ -156,8 +156,8 @@ public:
 
     // Updates the parent and/or scheduling settings for a specidfied `node`.
     // Unit test implementation must make sure that all needed queues and constraints are not going to be destroyed.
-    // Normally it is the responsibility of IOResourceManager, but we do not use it here, so manual version control is required.
-    // (see IOResourceManager::Resource::updateCurrentVersion() fo details)
+    // Normally it is the responsibility of WorkloadResourceManager, but we do not use it here, so manual version control is required.
+    // (see WorkloadResourceManager::Resource::updateCurrentVersion() fo details)
     void updateUnifiedNode(const UnifiedSchedulerNodePtr & node, const UnifiedSchedulerNodePtr & old_parent, const UnifiedSchedulerNodePtr & new_parent, const SchedulingSettings & new_settings)
     {
         EXPECT_TRUE((old_parent && new_parent) || (!old_parent && !new_parent)); // changing root node is not supported

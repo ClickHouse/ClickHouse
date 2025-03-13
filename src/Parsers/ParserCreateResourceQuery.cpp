@@ -25,25 +25,30 @@ bool parseOneOperation(ASTCreateResourceQuery::Operation & operation, IParser::P
         mode = ASTCreateResourceQuery::AccessMode::Write;
     else if (ParserKeyword(Keyword::READ).ignore(pos, expected))
         mode = ASTCreateResourceQuery::AccessMode::Read;
+    else if (ParserKeyword(Keyword::CPU).ignore(pos, expected))
+        mode = ASTCreateResourceQuery::AccessMode::Cpu;
     else
         return false;
 
-    if (ParserKeyword(Keyword::ANY).ignore(pos, expected))
+    if (mode == ASTCreateResourceQuery::AccessMode::Write || mode == ASTCreateResourceQuery::AccessMode::Read)
     {
-        if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
-            return false;
-    }
-    else
-    {
-        if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
-            return false;
+        if (ParserKeyword(Keyword::ANY).ignore(pos, expected))
+        {
+            if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
+                return false;
+        }
+        else
+        {
+            if (!ParserKeyword(Keyword::DISK).ignore(pos, expected))
+                return false;
 
-        if (!disk_name_p.parse(pos, node, expected))
-            return false;
+            if (!disk_name_p.parse(pos, node, expected))
+                return false;
 
-        disk.emplace();
-        if (!tryGetIdentifierNameInto(node, *disk))
-            return false;
+            disk.emplace();
+            if (!tryGetIdentifierNameInto(node, *disk))
+                return false;
+        }
     }
 
     operation.mode = mode;
