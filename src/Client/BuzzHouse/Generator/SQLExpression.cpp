@@ -581,8 +581,9 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
-        this->levels[this->current_level].inside_aggregate = true;
-        this->levels[this->current_level].allow_window_funcs = false;
+        /// Most of the times disallow nested aggregates, and window functions inside aggregates
+        this->levels[this->current_level].inside_aggregate = rg.nextSmallNumber() < 9;
+        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         if (max_params > 0 && max_params >= agg.min_params)
         {
             std::uniform_int_distribution<uint32_t> nparams(agg.min_params, max_params);
@@ -987,7 +988,8 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
         this->depth++;
-        this->levels[this->current_level].allow_window_funcs = false;
+        /// Most of the times disallow nested window functions
+        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         if (rg.nextSmallNumber() < 7)
         {
             generateFuncCall(rg, false, true, sfc->mutable_agg_func());

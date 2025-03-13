@@ -1,7 +1,8 @@
 from praktika import Artifact, Docker, Job, Secret
 from praktika.utils import MetaClasses, Utils
 
-TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == Settings.TEMP_DIR
+# i.e. "ClickHouse/ci/tmp"
+TEMP_DIR = f"{Utils.cwd()}/ci/tmp"  # == _Settings.TEMP_DIR != env_helper.TEMP_PATH
 
 
 class RunnerLabels:
