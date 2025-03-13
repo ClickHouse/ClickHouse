@@ -6,7 +6,7 @@ from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.jobs.scripts.workflow_hooks.trusted import can_be_trusted
 
 REQUIRED_STATELESS_TESTS_JOB_NAMES = [
-    job.name for job in JobConfigs.functional_tests_jobs_required
+    job.name for job in JobConfigs.functional_tests_jobs_required if "asan" in job.name
 ]
 REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
 

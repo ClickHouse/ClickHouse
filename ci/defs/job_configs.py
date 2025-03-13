@@ -206,7 +206,7 @@ class JobConfigs:
         ),
     ).parametrize(
         parameter=[
-            BuildTypes.ARM_COVERAGE,
+            BuildTypes.AMD_COVERAGE,
             BuildTypes.ARM_BINARY,
             BuildTypes.AMD_DARWIN,
             BuildTypes.ARM_DARWIN,
@@ -221,7 +221,7 @@ class JobConfigs:
             BuildTypes.FUZZERS,
         ],
         provides=[
-            [ArtifactNames.DEB_COV, ArtifactNames.CH_ARM_COV_BIN],
+            [ArtifactNames.DEB_COV, ArtifactNames.CH_COV_BIN],
             [ArtifactNames.CH_ARM_BIN],
             [ArtifactNames.CH_AMD_DARWIN_BIN],
             [ArtifactNames.CH_ARM_DARWIN_BIN],
@@ -236,7 +236,7 @@ class JobConfigs:
             [],  # no need for fuzzers artifacts in normal pr run [ArtifactNames.FUZZERS, ArtifactNames.FUZZERS_CORPUS],
         ],
         runs_on=[
-            RunnerLabels.BUILDER_ARM,  # BuildTypes.AMD_COVERAGE
+            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COVERAGE
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_BINARY
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_DARWIN,
@@ -342,7 +342,7 @@ class JobConfigs:
     )
     functional_tests_jobs_coverage = Job.Config(
         name=JobNames.STATELESS,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
+        runs_on=["..."],
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -358,8 +358,8 @@ class JobConfigs:
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[f"coverage, {i}/6" for i in range(1, 7)],
-        runs_on=[RunnerLabels.FUNC_TESTER_ARM for _ in range(6)],
-        requires=[["Build (arm_coverage)"] for _ in range(6)],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD for _ in range(6)],
+        requires=[["Build (amd_coverage)"] for _ in range(6)],
     )
     functional_tests_jobs_non_required = Job.Config(
         name=JobNames.STATELESS,

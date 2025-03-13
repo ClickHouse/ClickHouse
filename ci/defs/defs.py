@@ -281,7 +281,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_RELEASE = "arm_release"
     ARM_ASAN = "arm_asan"
 
-    ARM_COVERAGE = "arm_coverage"
+    AMD_COVERAGE = "amd_coverage"
     ARM_BINARY = "arm_binary"
     AMD_TIDY = "amd_tidy"
     AMD_DARWIN = "amd_darwin"
@@ -344,7 +344,7 @@ class ArtifactNames:
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
-    CH_ARM_COV_BIN = "CH_COV_BIN"
+    CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BIN = "CH_ARM_BIN"
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
@@ -410,7 +410,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
-            ArtifactNames.CH_ARM_COV_BIN,
+            ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BIN,
             ArtifactNames.CH_TIDY_BIN,
             ArtifactNames.CH_AMD_DARWIN_BIN,
@@ -575,7 +575,7 @@ class Jobs:
             BuildTypes.ARM_RELEASE,
             BuildTypes.ARM_ASAN,
             # special builds
-            BuildTypes.ARM_COVERAGE,
+            BuildTypes.AMD_COVERAGE,
             BuildTypes.ARM_BINARY,
             BuildTypes.AMD_TIDY,
             BuildTypes.AMD_DARWIN,
@@ -636,7 +636,7 @@ class Jobs:
                 ArtifactNames.DEB_ARM_ASAN,
             ],
             # special builds
-            [ArtifactNames.CH_ARM_COV_BIN],
+            [ArtifactNames.CH_COV_BIN],
             [ArtifactNames.CH_ARM_BIN],
             [ArtifactNames.CH_TIDY_BIN],
             [ArtifactNames.CH_AMD_DARWIN_BIN],

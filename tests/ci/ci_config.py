@@ -746,7 +746,7 @@ BUILD_NAMES_MAPPING = {
     "Build (amd_ubsan)": BuildNames.PACKAGE_UBSAN,
     "Build (arm_release)": BuildNames.PACKAGE_AARCH64,
     "Build (arm_asan)": BuildNames.PACKAGE_AARCH64_ASAN,
-    "Build (arm_coverage)": BuildNames.PACKAGE_RELEASE_COVERAGE,
+    "Build (amd_coverage)": BuildNames.PACKAGE_RELEASE_COVERAGE,
     "Build (arm_binary)": BuildNames.BINARY_AARCH64,
     "Build (amd_tidy)": BuildNames.BINARY_TIDY,
     "Build (amd_darwin)": BuildNames.BINARY_DARWIN,
