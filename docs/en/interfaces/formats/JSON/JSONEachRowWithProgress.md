@@ -1,10 +1,11 @@
 ---
 title: 'JSONEachRowWithProgress'
 slug: /interfaces/formats/JSONEachRowWithProgress
-keywords: [JSONEachRowWithProgress]
+keywords: ['JSONEachRowWithProgress']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the JSONEachRowWithProgress format'
 ---
 
 | Input | Output | Alias |

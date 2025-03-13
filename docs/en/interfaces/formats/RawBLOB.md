@@ -2,6 +2,7 @@
 title: 'RawBLOB'
 slug: /interfaces/formats/RawBLOB
 keywords: ['RawBLOB']
+description: 'Documentation for the RawBLOB format'
 ---
 
 ## Description {#description}

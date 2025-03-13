@@ -1,10 +1,11 @@
 ---
 title: 'PrettyCompactNoEscapes'
 slug: /interfaces/formats/PrettyCompactNoEscapes
-keywords: [PrettyCompactNoEscapes]
+keywords: ['PrettyCompactNoEscapes']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the PrettyCompactNoEscapes format'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';

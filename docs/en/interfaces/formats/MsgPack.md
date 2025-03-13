@@ -5,6 +5,7 @@ keywords: ['MsgPack']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the MsgPack format'
 ---
 
 | Input | Output | Alias |

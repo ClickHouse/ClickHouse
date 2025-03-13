@@ -2,6 +2,7 @@
 title: 'Markdown'
 slug: /interfaces/formats/Markdown
 keywords: ['Markdown']
+description: 'Documentation for the Markdown format'
 ---
 
 ## Description {#description}

@@ -5,6 +5,7 @@ keywords: ['DWARF']
 input_format: true
 output_format: false
 alias: []
+description: 'Documentation for the DWARF format'
 ---
 
 | Input | Output  | Alias |

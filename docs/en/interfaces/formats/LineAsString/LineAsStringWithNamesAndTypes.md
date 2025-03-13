@@ -1,10 +1,11 @@
 ---
 title: 'LineAsStringWithNamesAndTypes'
 slug: /interfaces/formats/LineAsStringWithNamesAndTypes
-keywords: [LineAsStringWithNamesAndTypes]
+keywords: ['LineAsStringWithNamesAndTypes']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the LineAsStringWithNamesAndTypes format'
 ---
 
 | Input | Output | Alias |

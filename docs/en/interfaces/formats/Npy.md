@@ -5,6 +5,7 @@ keywords: ['Npy']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the Npy format'
 ---
 
 | Input | Output | Alias |

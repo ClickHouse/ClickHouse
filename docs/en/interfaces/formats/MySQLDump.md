@@ -5,6 +5,7 @@ keywords: ['MySQLDump']
 input_format: true
 output_format: false
 alias: []
+description: 'Documentation for the MySQLDump format'
 ---
 
 | Input | Output  | Alias |

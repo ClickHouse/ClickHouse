@@ -1,10 +1,11 @@
 ---
 title: 'JSONCompactStrings'
 slug: /interfaces/formats/JSONCompactStrings
-keywords: [JSONCompactStrings]
+keywords: ['JSONCompactStrings']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the JSONCompactStrings format'
 ---
 
 | Input | Output | Alias |

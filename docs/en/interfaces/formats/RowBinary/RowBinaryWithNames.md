@@ -1,9 +1,10 @@
 ---
 title: 'RowBinaryWithNames'
 slug: /interfaces/formats/RowBinaryWithNames
-keywords: [RowBinaryWithNames]
+keywords: ['RowBinaryWithNames']
 input_format: true
 output_format: true
+description: 'Documentation for the RowBinaryWithNames format'
 ---
 
 import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'

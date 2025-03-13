@@ -1,10 +1,11 @@
 ---
 title: 'PrettyCompactMonoBlock'
 slug: /interfaces/formats/PrettyCompactMonoBlock
-keywords: [PrettyCompactMonoBlock]
+keywords: ['PrettyCompactMonoBlock']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the PrettyCompactMonoBlock format'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';

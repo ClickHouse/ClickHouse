@@ -1,10 +1,11 @@
 ---
 title: 'Parquet'
 slug: /interfaces/formats/Parquet
-keywords: [Parquet]
+keywords: ['Parquet']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the Parquet format'
 ---
 
 | Input | Output | Alias |

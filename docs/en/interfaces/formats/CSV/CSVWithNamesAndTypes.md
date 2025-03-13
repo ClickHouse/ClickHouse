@@ -1,10 +1,11 @@
 ---
 title: 'CSVWithNamesAndTypes'
 slug: /interfaces/formats/CSVWithNamesAndTypes
-keywords: [CSVWithNamesAndTypes]
+keywords: ['CSVWithNamesAndTypes']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the CSVWithNamesAndTypes format'
 ---
 
 | Input | Output | Alias |

@@ -5,6 +5,7 @@ keywords: ['SQLInsert']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the SQLInsert format'
 ---
 
 | Input | Output | Alias |

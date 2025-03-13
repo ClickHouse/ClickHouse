@@ -1,10 +1,11 @@
 ---
 title: 'TabSeparatedRawWithNamesAndTypes'
 slug: /interfaces/formats/TabSeparatedRawWithNamesAndTypes
-keywords: [TabSeparatedRawWithNamesAndTypes, TSVRawWithNamesAndTypes, RawWithNamesAndTypes]
+keywords: ['TabSeparatedRawWithNamesAndTypes', 'TSVRawWithNamesAndTypes', 'RawWithNamesAndTypes']
 input_format: true
 output_format: true
 alias: ['TSVRawWithNamesAndTypes', 'RawWithNamesAndTypes']
+description: 'Documentation for the TabSeparatedRawWithNamesAndTypes format'
 ---
 
 | Input | Output | Alias                                             |

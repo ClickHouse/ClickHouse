@@ -1,10 +1,11 @@
 ---
 title: 'TabSeparatedWithNames'
 slug: /interfaces/formats/TabSeparatedWithNames
-keywords: [TabSeparatedWithNames]
+keywords: ['TabSeparatedWithNames']
 input_format: true
 output_format: true
 alias: ['TSVWithNames']
+description: 'Documentation for the TabSeparatedWithNames format'
 ---
 
 | Input | Output | Alias                          |

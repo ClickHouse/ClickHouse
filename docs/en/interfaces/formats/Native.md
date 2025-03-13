@@ -5,6 +5,7 @@ keywords: ['Native']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the Native format'
 ---
 
 | Input | Output | Alias |

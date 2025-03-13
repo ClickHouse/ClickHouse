@@ -5,6 +5,7 @@ keywords: ['XML']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the XML format'
 ---
 
 | Input | Output | Alias |

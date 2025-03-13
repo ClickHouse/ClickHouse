@@ -1,10 +1,11 @@
 ---
 title: 'PrettyNoEscapesMonoBlock'
 slug: /interfaces/formats/PrettyNoEscapesMonoBlock
-keywords: [PrettyNoEscapesMonoBlock]
+keywords: ['PrettyNoEscapesMonoBlock']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the PrettyNoEscapesMonoBlock format'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';

@@ -1,10 +1,11 @@
 ---
 title: 'JSONStringsEachRow'
 slug: /interfaces/formats/JSONStringsEachRow
-keywords: [JSONStringsEachRow]
+keywords: ['JSONStringsEachRow']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the JSONStringsEachRow format'
 ---
 
 | Input | Output | Alias |

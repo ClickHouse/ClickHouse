@@ -1,10 +1,11 @@
 ---
 title: 'RowBinaryWithDefaults'
 slug: /interfaces/formats/RowBinaryWithDefaults
-keywords: [RowBinaryWithDefaults]
+keywords: ['RowBinaryWithDefaults']
 input_format: true
 output_format: false
 alias: []
+description: 'Documentation for the RowBinaryWithDefaults format'
 ---
 
 import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'

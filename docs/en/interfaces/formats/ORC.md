@@ -5,6 +5,7 @@ keywords: ['ORC']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the ORC format'
 ---
 
 | Input | Output | Alias |

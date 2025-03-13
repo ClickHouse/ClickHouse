@@ -1,10 +1,11 @@
 ---
 title: 'PrettySpaceNoEscapes'
 slug: /interfaces/formats/PrettySpaceNoEscapes
-keywords: [PrettySpaceNoEscapes]
+keywords: ['PrettySpaceNoEscapes']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the PrettySpaceNoEscapes format'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';

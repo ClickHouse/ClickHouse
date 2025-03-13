@@ -1,10 +1,11 @@
 ---
 title: 'JSONCompact'
 slug: /interfaces/formats/JSONCompact
-keywords: [JSONCompact]
+keywords: ['JSONCompact']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the JSONCompact format'
 ---
 
 | Input | Output | Alias |

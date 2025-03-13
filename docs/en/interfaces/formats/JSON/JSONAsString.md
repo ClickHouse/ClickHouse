@@ -1,10 +1,11 @@
 ---
 title: 'JSONAsString'
 slug: /interfaces/formats/JSONAsString
-keywords: [JSONAsString]
+keywords: ['JSONAsString']
 input_format: true
 output_format: false
 alias: []
+description: 'Documentation for the JSONAsString format'
 ---
 
 | Input | Output  | Alias |

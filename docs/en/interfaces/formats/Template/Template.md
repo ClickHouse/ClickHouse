@@ -1,10 +1,11 @@
 ---
 title: 'Template'
 slug: /interfaces/formats/Template
-keywords: [Template]
+keywords: ['Template']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the Template format'
 ---
 
 | Input | Output | Alias |

@@ -2,6 +2,7 @@
 title: 'HiveText'
 slug: /interfaces/formats/HiveText
 keywords: ['HiveText']
+description: 'Documentation for the HiveText format'
 ---
 
 ## Description {#description}

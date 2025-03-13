@@ -1,12 +1,12 @@
 ---
 title: 'CSV'
 slug: /interfaces/formats/CSV
-keywords: [CSV]
+keywords: ['CSV']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the format'
 ---
-
 ## Description {#description}
 
 Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).

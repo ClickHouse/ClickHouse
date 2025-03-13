@@ -1,7 +1,8 @@
 ---
 title: 'CustomSeparatedIgnoreSpacesWithNamesAndTypes'
 slug: /interfaces/formats/CustomSeparatedIgnoreSpacesWithNamesAndTypes
-keywords: [CustomSeparatedIgnoreSpacesWithNamesAndTypes]
+keywords: ['CustomSeparatedIgnoreSpacesWithNamesAndTypes']
+description: 'Documentation for the format CustomSeparatedIgnoreSpacesWithNamesAndTypes'
 ---
 
 ## Description {#description}

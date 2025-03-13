@@ -2,7 +2,7 @@
 description: 'System table containing a list of database engines supported by the server.'
 slug: /operations/system-tables/database_engines
 title: 'system.database_engines'
-keywords: ["system table", "database_engines"]
+keywords: ['system table', 'database_engines']
 ---
 
 Contains the list of database engines supported by the server.

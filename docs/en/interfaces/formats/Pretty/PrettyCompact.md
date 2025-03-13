@@ -1,10 +1,11 @@
 ---
 title: 'PrettyCompact'
 slug: /interfaces/formats/PrettyCompact
-keywords: [PrettyCompact]
+keywords: ['PrettyCompact']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the PrettyCompact format'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';

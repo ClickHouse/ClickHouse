@@ -1,12 +1,12 @@
 ---
 title: 'Arrow'
 slug: /interfaces/formats/Arrow
-keywords: [Arrow]
+keywords: ['Arrow']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the format'
 ---
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |

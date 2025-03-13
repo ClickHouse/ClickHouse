@@ -5,6 +5,7 @@ keywords: ['Vertical']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the Vertical format'
 ---
 
 | Input | Output | Alias |

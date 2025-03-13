@@ -1,10 +1,11 @@
 ---
 title: 'TabSeparatedRaw'
 slug: /interfaces/formats/TabSeparatedRaw
-keywords: [TabSeparatedRaw]
+keywords: ['TabSeparatedRaw']
 input_format: true
 output_format: true
 alias: ['TSVRaw', 'Raw']
+description: 'Documentation for the TabSeparatedRaw format'
 ---
 
 | Input | Output | Alias           |

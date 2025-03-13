@@ -1,10 +1,11 @@
 ---
 title: 'JSONCompactColumns'
 slug: /interfaces/formats/JSONCompactColumns
-keywords: [JSONCompactColumns]
+keywords: ['JSONCompactColumns']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the JSONCompactColumns format'
 ---
 
 | Input | Output | Alias |

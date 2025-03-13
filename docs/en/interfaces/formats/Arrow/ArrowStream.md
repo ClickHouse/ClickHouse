@@ -1,12 +1,12 @@
 ---
 title: 'ArrowStream'
 slug: /interfaces/formats/ArrowStream
-keywords: [ArrowStream]
+keywords: ['ArrowStream']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the format'
 ---
-
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |

@@ -5,6 +5,7 @@ keywords: ['Prometheus']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the Prometheus format'
 ---
 
 | Input | Output | Alias |

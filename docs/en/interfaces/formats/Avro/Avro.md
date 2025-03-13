@@ -1,12 +1,12 @@
 ---
 title: 'Avro'
 slug: /interfaces/formats/Avro
-keywords: [Avro]
+keywords: ['Avro']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the format'
 ---
-
 import DataTypesMatching from './_snippets/data-types-matching.md'
 
 | Input | Output | Alias |

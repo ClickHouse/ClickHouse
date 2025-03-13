@@ -1,10 +1,11 @@
 ---
 title: 'CustomSeparated'
 slug: /interfaces/formats/CustomSeparated
-keywords: [CustomSeparated]
+keywords: ['CustomSeparated']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for the CustomSeparated format'
 ---
 
 | Input | Output | Alias |

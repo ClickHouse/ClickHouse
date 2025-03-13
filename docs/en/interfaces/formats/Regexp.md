@@ -5,6 +5,7 @@ keywords: ['Regexp']
 input_format: true
 output_format: false
 alias: []
+description: 'Documentation for the Regexp format'
 ---
 
 | Input | Output | Alias |

@@ -5,6 +5,7 @@ keywords: ['Null']
 input_format: false
 output_format: true
 alias: []
+description: 'Documentation for the Null format'
 ---
 
 | Input | Output | Alias |
