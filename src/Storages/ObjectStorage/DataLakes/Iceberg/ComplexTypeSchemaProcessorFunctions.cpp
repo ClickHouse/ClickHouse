@@ -446,13 +446,10 @@ void ExecutableEvolutionFunction::lazyInitialize() const
         old_json->isObject("type") && old_json->getObject("type")->getValue<std::string>("type") == "list"
         && old_json->getObject("type")->isObject("element"))
     {
-        if (field->getObject("type")->isObject("element"))
-        {
-            auto subfields = field->getObject("type")->getObject("element");
-            auto old_subfields = old_json->getObject("type")->getObject("element");
+        auto subfields = field->getObject("type")->getObject("element");
+        auto old_subfields = old_json->getObject("type")->getObject("element");
 
-            walk_stack.push({makeArrayFromObject(old_subfields), makeArrayFromObject(subfields), {}, false});
-        }
+        walk_stack.push({makeArrayFromObject(old_subfields), makeArrayFromObject(subfields), {}, false});
     }
 
     std::map<size_t, std::vector<std::shared_ptr<IIcebergSchemaTransform>>> per_layer_transforms;
@@ -588,8 +585,8 @@ void ExecutableEvolutionFunction::lazyInitialize() const
         }
     }
 
-    for (int height = static_cast<Int32>(per_layer_transforms.rbegin()->first); height >= 0; --height)
-        for (const auto & transform : per_layer_transforms[height])
+    for (auto it = per_layer_transforms.rbegin(); it != per_layer_transforms.rend(); ++it)
+        for (const auto & transform : it->second)
             transforms.push_back(transform);
 }
 
