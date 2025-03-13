@@ -959,7 +959,7 @@ void StorageObjectStorageQueue::alter(
             changed_settings.push_back(setting);
         }
 
-        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatWithSecretsOneLine());
+        LOG_TEST(log, "New settings: {}", new_metadata.settings_changes->formatForLogging());
 
         /// Alter settings which are stored in keeper.
         files_metadata->alterSettings(changed_settings, local_context);

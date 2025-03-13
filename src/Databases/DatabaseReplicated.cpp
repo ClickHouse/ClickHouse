@@ -804,7 +804,7 @@ void DatabaseReplicated::dumpLocalTablesForDebugOnly(const ContextPtr & local_co
     {
         auto ast_ptr = tryGetCreateTableQuery(table_name, local_context);
         if (ast_ptr)
-            LOG_DEBUG(log, "[local] Table {} create query is {}", table_name, ast_ptr->formatWithSecretsOneLine());
+            LOG_DEBUG(log, "[local] Table {} create query is {}", table_name, ast_ptr->formatForLogging());
         else
             LOG_DEBUG(log, "[local] Table {} has no create query", table_name);
     }
@@ -819,7 +819,7 @@ void DatabaseReplicated::dumpTablesInZooKeeperForDebugOnly() const
         auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_table_query);
         if (query_ast)
         {
-            LOG_DEBUG(log, "[zookeeper] Table {} create query is {}", table_name, query_ast->formatWithSecretsOneLine());
+            LOG_DEBUG(log, "[zookeeper] Table {} create query is {}", table_name, query_ast->formatForLogging());
         }
         else
         {
@@ -854,15 +854,15 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
             }
             else if (local_ast_ptr != nullptr && zk_ast_ptr != nullptr && local_ast_ptr->formatWithSecretsOneLine() != zk_ast_ptr->formatWithSecretsOneLine())
             {
-                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper {}", table_name, local_ast_ptr->formatWithSecretsOneLine(), zk_ast_ptr->formatWithSecretsOneLine());
+                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper {}", table_name, local_ast_ptr->formatForLogging(), zk_ast_ptr->formatForLogging());
             }
             else if (local_ast_ptr == nullptr)
             {
-                LOG_ERROR(log, "AST differs for table {}, local nullptr, in zookeeper {}", table_name, zk_ast_ptr->formatWithSecretsOneLine());
+                LOG_ERROR(log, "AST differs for table {}, local nullptr, in zookeeper {}", table_name, zk_ast_ptr->formatForLogging());
             }
             else if (zk_ast_ptr == nullptr)
             {
-                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper nullptr", table_name, local_ast_ptr->formatWithSecretsOneLine());
+                LOG_ERROR(log, "AST differs for table {}, local {}, in zookeeper nullptr", table_name, local_ast_ptr->formatForLogging());
             }
             else
             {
@@ -874,7 +874,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
             if (local_ast_ptr == nullptr)
                 LOG_ERROR(log, "Table {} exists locally, but missing in ZK", table_name);
             else
-                LOG_ERROR(log, "Table {} exists locally with AST {}, but missing in ZK", table_name, local_ast_ptr->formatWithSecretsOneLine());
+                LOG_ERROR(log, "Table {} exists locally with AST {}, but missing in ZK", table_name, local_ast_ptr->formatForLogging());
         }
     }
     for (const auto & [table_name, table_metadata] : table_name_to_metadata_in_zk)
@@ -883,7 +883,7 @@ void DatabaseReplicated::tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnl
         {
             auto zk_ast_ptr = parseQueryFromMetadataInZooKeeper(table_name, table_metadata);
             if (zk_ast_ptr == nullptr)
-                LOG_ERROR(log, "Table {} exists in ZK with AST {}, but missing locally", table_name, zk_ast_ptr->formatWithSecretsOneLine());
+                LOG_ERROR(log, "Table {} exists in ZK with AST {}, but missing locally", table_name, zk_ast_ptr->formatForLogging());
             else
                 LOG_ERROR(log, "Table {} exists in ZK, but missing locally", table_name);
         }
@@ -1470,7 +1470,7 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
                 }
 
                 auto query_ast = parseQueryFromMetadataInZooKeeper(table_name, create_query_string);
-                LOG_INFO(log, "Executing {}", query_ast->formatWithSecretsOneLine());
+                LOG_INFO(log, "Executing {}", query_ast->formatForLogging());
                 auto create_query_context = make_query_context();
                 InterpreterCreateQuery(query_ast, create_query_context).execute();
             };

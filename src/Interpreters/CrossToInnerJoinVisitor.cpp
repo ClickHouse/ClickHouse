@@ -248,7 +248,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
                 ASTPtr on_expr = makeOnExpression(expr_it->second);
                 if (rewritten = joined.rewriteCrossToInner(on_expr); rewritten)
                 {
-                    LOG_DEBUG(getLogger("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, joined.tableJoin()->formatWithSecretsOneLine());
+                    LOG_DEBUG(getLogger("CrossToInnerJoin"), "Rewritten '{}' to '{}'", query_before, joined.tableJoin()->formatForLogging());
                 }
             }
 

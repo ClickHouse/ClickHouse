@@ -1024,7 +1024,7 @@ void TableJoin::addJoinCondition(const ASTPtr & ast, bool is_left)
 {
     auto & cond_ast = is_left ? clauses.back().on_filter_condition_left : clauses.back().on_filter_condition_right;
     LOG_TRACE(getLogger("TableJoin"), "Adding join condition for {} table: {} -> {}",
-              (is_left ? "left" : "right"), ast ? ast->formatWithSecretsOneLine() : "NULL", cond_ast ? cond_ast->formatWithSecretsOneLine() : "NULL");
+              (is_left ? "left" : "right"), ast ? ast->formatForLogging() : "NULL", cond_ast ? cond_ast->formatForLogging() : "NULL");
     addJoinConditionWithAnd(cond_ast, ast);
 }
 

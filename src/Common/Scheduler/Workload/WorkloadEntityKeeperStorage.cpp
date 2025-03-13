@@ -254,7 +254,7 @@ void WorkloadEntityKeeperStorage::refreshEntities(const zkutil::ZooKeeperPtr & z
     std::vector<std::pair<String, ASTPtr>> new_entities;
     for (const auto & query : queries)
     {
-        LOG_TRACE(log, "Read keeper entity definition: {}", query->formatWithSecretsOneLine());
+        LOG_TRACE(log, "Read keeper entity definition: {}", query->formatForLogging());
         if (auto * create_workload_query = query->as<ASTCreateWorkloadQuery>())
             new_entities.emplace_back(create_workload_query->getWorkloadName(), query);
         else if (auto * create_resource_query = query->as<ASTCreateResourceQuery>())
