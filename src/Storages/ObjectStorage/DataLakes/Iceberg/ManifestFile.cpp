@@ -181,14 +181,14 @@ ManifestFileContentImpl::ManifestFileContentImpl(
         if (partition_ast == nullptr)
             continue;
 
-        partition_key_ast->arguments->children.push_back(partition_ast);
+        partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
         partition_columns_description.emplace_back(numeric_column_name, removeNullable(current_column.type));
         partition_columns.push_back(removeNullable(big_partition_tuple->getColumnPtr(i)));
         this->partition_column_ids.push_back(source_id);
     }
 
     if (!partition_column_ids.empty())
-        this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(partition_key_ast, ColumnsDescription(partition_columns_description), context));
+        this->partition_key_description.emplace(DB::KeyDescription::getKeyFromAST(std::move(partition_key_ast), ColumnsDescription(partition_columns_description), context));
 
     std::optional<const ColumnNullable *> sequence_number_column = std::nullopt;
     if (format_version_ > 1)

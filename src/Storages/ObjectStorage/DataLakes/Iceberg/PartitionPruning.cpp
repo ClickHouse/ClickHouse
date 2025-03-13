@@ -24,25 +24,21 @@ namespace Iceberg
 
 DB::ASTPtr getASTFromTransform(const String & transform_name, const String & column_name)
 {
-    std::shared_ptr<DB::ASTFunction> function = std::make_shared<ASTFunction>();
-    function->arguments = std::make_shared<DB::ASTExpressionList>();
-    function->children.push_back(function->arguments);
-
     if (transform_name == "year" || transform_name == "years")
     {
-        function->name = "toYearNumSinceEpoch";
+        return makeASTFunction("toYearNumSinceEpoch", std::make_shared<DB::ASTIdentifier>(column_name));
     }
     else if (transform_name == "month" || transform_name == "months")
     {
-        function->name = "toMonthNumSinceEpoch";
+        return makeASTFunction("toMonthNumSinceEpoch", std::make_shared<DB::ASTIdentifier>(column_name));
     }
     else if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
     {
-        function->name = "toRelativeDayNum";
+        return makeASTFunction("toRelativeDayNum", std::make_shared<DB::ASTIdentifier>(column_name));
     }
     else if (transform_name == "hour" || transform_name == "hours")
     {
-        function->name = "toRelativeHourNum";
+        return makeASTFunction("toRelativeHourNum", std::make_shared<DB::ASTIdentifier>(column_name));
     }
     else if (transform_name == "identity")
     {
@@ -50,25 +46,21 @@ DB::ASTPtr getASTFromTransform(const String & transform_name, const String & col
     }
     else if (transform_name.starts_with("truncate"))
     {
-        function->name = "icebergTruncate";
         auto argument_start = transform_name.find('[');
         auto argument_width = transform_name.length() - 2 - argument_start;
         std::string width = transform_name.substr(argument_start + 1, argument_width);
         size_t truncate_width = DB::parse<size_t>(width);
-        function->arguments->children.push_back(std::make_shared<DB::ASTLiteral>(truncate_width));
+
+        return makeASTFunction("icebergTruncate", std::make_shared<DB::ASTLiteral>(truncate_width), std::make_shared<DB::ASTIdentifier>(column_name));
     }
     else if (transform_name == "void")
     {
-        function->name = "tuple";
-        return function;
+        return makeASTFunction("tuple");
     }
     else
     {
         return nullptr;
     }
-
-    function->arguments->children.push_back(std::make_shared<DB::ASTIdentifier>(column_name));
-    return function;
 }
 
 std::unique_ptr<DB::ActionsDAG> PartitionPruner::transformFilterDagForManifest(const DB::ActionsDAG * source_dag, Int32 manifest_schema_id, const std::vector<Int32> & partition_column_ids) const

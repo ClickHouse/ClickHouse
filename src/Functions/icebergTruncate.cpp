@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -23,14 +24,11 @@ namespace
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
 class FunctionIcebergTruncate : public IFunction
 {
-private:
-    ContextPtr context;
 
 public:
     static inline const char * name = "icebergTruncate";
 
-    explicit FunctionIcebergTruncate(ContextPtr context_)
-        : context(context_)
+    explicit FunctionIcebergTruncate(ContextPtr)
     {
     }
 
@@ -58,6 +56,15 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        /// You may ask, why use global context and not the context provided
+        /// in create/Contrustor? Two reasons:
+        /// 1. We need context only to access global functions factory, that is why global context is the most suitable
+        /// 2. It's terribly unsafe to store ContextPtr inside function because function object is so low-level
+        /// that it can be stored in multiple other objects which itself stored in global context.
+        /// Very common example ContextPtr->Storage->KeyDescription->Expressions->Function->ContextPtr oops
+        /// here we have a loop and memory leak.
+        auto context = Context::getGlobalContextInstance();
+
         if (arguments.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Incorrect number of arguments: expected 2 arguments");
 
@@ -105,7 +112,6 @@ public:
     }
 
     bool hasInformationAboutMonotonicity() const override { return true; }
-
     Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override { return { .is_monotonic = true, .is_always_monotonic = true }; }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
@@ -114,6 +120,7 @@ public:
         if (value <= 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function icebergTruncate accept only positive width");
 
+        auto context = Context::getGlobalContextInstance();
         WhichDataType which_truncate(arguments[1].type);
         if (which_truncate.isStringOrFixedString())
         {
@@ -177,7 +184,7 @@ public:
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 };
 
-REGISTER_FUNCTION(icebergTruncate)
+REGISTER_FUNCTION(IcebergTruncate)
 {
     FunctionDocumentation::Description description = R"(Implements logic of iceberg truncate truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
     FunctionDocumentation::Syntax syntax = "icebergTruncate(N, value)";
