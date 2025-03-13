@@ -273,6 +273,7 @@ function run_tests
     export CLICKHOUSE_CONFIG="$FASTTEST_DATA/config.xml"
     export CLICKHOUSE_USER_FILES="$FASTTEST_DATA/user_files"
     export CLICKHOUSE_SCHEMA_FILES="$FASTTEST_DATA/format_schemas"
+    export CLICKHOUSE_DISKS_FILES="$FASTTEST_DATA/disks"
 
     local test_opts=(
         --hung-check
