@@ -88,7 +88,7 @@ trap cleanup EXIT;
 cleanup;
 setup;
 
-test --parallel_view_processing 0;
-test --parallel_view_processing 1;
+test --materialized_views_ignore_errors=1 --parallel_view_processing 0;
+test --materialized_views_ignore_errors=1 --parallel_view_processing 1;
 
 exit 0

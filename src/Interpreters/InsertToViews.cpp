@@ -44,6 +44,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <magic_enum.hpp>
 #include <Common/ProfileEvents.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/logger_useful.h>
@@ -254,10 +255,12 @@ public:
             auto pos = i;
             ++i;
 
+            auto & status = statuses[pos];
+
             if (input.isFinished())
             {
                 ++num_finished;
-                statuses[pos].is_finished = true;
+                status.is_finished = true;
                 continue;
             }
 
@@ -270,11 +273,8 @@ public:
             if (!data.exception)
                 continue;
 
-            if (statuses[pos].exception)
-            {
-                ++num_finished;
+            if (status.exception)
                 continue;
-            }
 
             auto [is_external, original_exception] = unwrapExternalException(data.exception);
 
@@ -284,22 +284,20 @@ public:
                 return Status::PortFull;
             }
 
+            if (!status.exception)
+                status.exception = addStorageToException(data.exception, status.view_id);
             if (!first_exception)
-                first_exception = data.exception;
+                first_exception = status.exception;
 
-            if (!statuses[pos].exception)
-                statuses[pos].exception = data.exception;
+
 
             if (!views_manager->materialized_views_ignore_errors)
             {
                 return Status::Ready;
             }
-            else
-            {
-                ++num_finished;
-            }
 
-            return Status::Ready;
+            input.setNeeded();
+            return Status::NeedData;
         }
 
         if (num_finished == inputs.size())
@@ -312,16 +310,13 @@ public:
     {
         for (auto & status : statuses)
         {
-            if (status.exception)
-                status.exception = addStorageToException(status.exception, status.view_id);
-
             if (status.exception && views_manager->materialized_views_ignore_errors)
-                tryLogException(status.exception, getLogger("PushingToViews"), "Cannot push to the storage, ignoring the error");
+                tryLogException(status.exception, getLogger("FinalizingViewsTransform"), "Cannot push to the storage, ignoring the error");
 
             if (status.is_finished)
                 views_manager->logQueryView(status.view_id, status.exception);
             else
-                views_manager->logQueryView(status.view_id, addStorageToException(first_exception, status.view_id));
+                views_manager->logQueryView(status.view_id, first_exception);
         }
 
         statuses.clear();
@@ -1241,17 +1236,25 @@ void ViewsManager::logQueryView(StorageID view_id, std::exception_ptr exception)
     LOG_DEBUG(logger, "logQueryView {}", view_id);
 
     const auto & settings = init_context->getSettingsRef();
-    auto event_status = exception ? QueryViewsLogElement::ViewStatus::EXCEPTION_WHILE_PROCESSING : QueryViewsLogElement::ViewStatus::QUERY_FINISH;
-
-    if (event_status < settings[Setting::log_queries_min_type])
-        return;
-
     if (!view_id || !settings[Setting::log_queries] || !settings[Setting::log_query_views])
+    {
+        LOG_DEBUG(logger, "logQueryView {} not addedd, basic", view_id);
         return;
+    }
+
+    auto event_status = exception ? QueryViewsLogElement::ViewStatus::EXCEPTION_WHILE_PROCESSING : QueryViewsLogElement::ViewStatus::QUERY_FINISH;
+    if (event_status < settings[Setting::log_queries_min_type])
+    {
+        LOG_DEBUG(logger, "logQueryView {} not addedd, event_status {}", view_id, event_status);
+        return;
+    }
 
     auto thread_group = thread_groups.at(view_id);
     if (!thread_group)
+    {
+        LOG_DEBUG(logger, "logQueryView {} not addedd, no group", view_id);
         return;
+    }
 
     UInt64 elapsed_ms = thread_group->getThreadsTotalElapsedMs();
 

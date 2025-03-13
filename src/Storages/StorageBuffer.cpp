@@ -37,6 +37,7 @@
 #include <base/getThreadId.h>
 #include <base/range.h>
 #include <boost/range/algorithm_ext/erase.hpp>
+#include "Common/ThreadStatus.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
@@ -1089,13 +1090,18 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 
 void StorageBuffer::backgroundFlush()
 {
-    try
     {
-        flushAllBuffers(true);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        auto thread_group = ThreadGroup::createForBackgroundProcess(getContext());
+        ThreadGroupSwitcher group_switcher(thread_group, "BufferBgrFlush");
+
+        try
+        {
+            flushAllBuffers(true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     }
 
     reschedule();
