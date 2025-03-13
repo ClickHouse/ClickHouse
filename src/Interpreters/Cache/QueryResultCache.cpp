@@ -304,7 +304,8 @@ public:
             if (identifier->compound() && identifier->name_parts[0].starts_with("__table"))
                 identifier->setShortName(identifier->name_parts[1]);
         }
-        else if (auto * function = ast->as<ASTFunction>()) {
+        else if (auto * function = ast->as<ASTFunction>())
+        {
             if (function->alias.starts_with("__table"))
                 function->setAlias("");
         }
