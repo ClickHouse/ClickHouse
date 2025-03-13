@@ -29,6 +29,16 @@ class WriteBuffer;
   *  and the remote server will use its default value.
   */
 
+template<typename T>
+void validateFloatingPointSettingValue(T value) {
+    if constexpr (std::is_floating_point_v<T>) {
+        if (!std::isfinite(value)) {
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
+                "Float setting value must be finite, got {}", value);
+        }
+    }
+}
+
 template <typename T>
 struct SettingFieldNumber
 {
@@ -40,24 +50,14 @@ struct SettingFieldNumber
 
     explicit SettingFieldNumber(Type x = 0)
     {
-        if constexpr (std::is_floating_point_v<T>)
-        {
-            if (!std::isfinite(x))
-                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                                "Float setting value must be finite, got {}", x);
-        }
+        validateFloatingPointSettingValue(value);
         value = x;
     }
     explicit SettingFieldNumber(const Field & f);
 
     SettingFieldNumber & operator=(Type x)
     {
-        if constexpr (std::is_floating_point_v<T>)
-        {
-            if (!std::isfinite(x))
-                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                                "Float setting value must be finite, got {}", x);
-        }
+        validateFloatingPointSettingValue(x);
         value = x;
         changed = true;
         return *this;

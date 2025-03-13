@@ -47,12 +47,7 @@ namespace
         else
         {
             T value = parseWithSizeSuffix<T>(str);
-            if constexpr (std::is_floating_point_v<T>)
-            {
-                if (!std::isfinite(value))
-                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                                    "Float setting value must be finite, got {}", value);
-            }
+            validateFloatingPointSettingValue(value);
             return value;
         }
     }
@@ -70,10 +65,7 @@ namespace
             if (!accurate::convertNumeric(f.safeGet<UInt64>(), result))
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
                                 "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
-            if constexpr (std::is_floating_point_v<T>)
-                if (!std::isfinite(result))
-                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                                    "Float setting value must be finite, got {}", result);
+            validateFloatingPointSettingValue(result);
             return result;
         }
         if (f.getType() == Field::Types::Int64)
@@ -82,10 +74,7 @@ namespace
             if (!accurate::convertNumeric(f.safeGet<Int64>(), result))
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
                                 "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
-            if constexpr (std::is_floating_point_v<T>)
-                if (!std::isfinite(result))
-                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                                    "Float setting value must be finite, got {}", result);
+            validateFloatingPointSettingValue(result);
             return result;
         }
         if (f.getType() == Field::Types::Bool)
@@ -95,18 +84,22 @@ namespace
         if (f.getType() == Field::Types::Float64)
         {
             Float64 x = f.safeGet<Float64>();
+            validateFloatingPointSettingValue(x);
             if constexpr (std::is_floating_point_v<T>)
             {
-                if (!std::isfinite(x))
-                    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                                    "Float setting value must be finite, got {}", x);
                 return T(x);
             }
             else
             {
                 if (!isFinite(x))
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
-                                    "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+                {
+                    /// Conversion of infinite values to integer is undefined.
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
+                }
+                if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
+                {
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
+                }
                 return T(x);
             }
         }
