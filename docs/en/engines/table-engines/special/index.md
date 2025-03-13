@@ -2,6 +2,7 @@
 slug: /engines/table-engines/special/
 sidebar_position: 50
 sidebar_label: 'Special'
+description: 'Documentation for Special Table Engines'
 ---
 
 # Special Table Engines

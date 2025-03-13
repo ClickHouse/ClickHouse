@@ -1,6 +1,7 @@
 ---
 slug: /operations/utilities/backupview
 title: 'clickhouse_backupview'
+description: 'Documentation for clickhouse_backupview {#clickhouse_backupview}'
 ---
 
 # clickhouse_backupview {#clickhouse_backupview}

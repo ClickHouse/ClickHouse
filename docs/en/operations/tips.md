@@ -3,6 +3,7 @@ slug: /operations/tips
 sidebar_position: 58
 sidebar_label: 'Usage Recommendations'
 title: 'Usage Recommendations'
+description: 'Documentation for http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_automated.md';

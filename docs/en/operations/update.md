@@ -2,6 +2,7 @@
 slug: /operations/update
 sidebar_title: Self-managed Upgrade
 title: 'Self-managed Upgrade'
+description: 'Documentation for Update'
 ---
 
 ## ClickHouse upgrade overview {#clickhouse-upgrade-overview}

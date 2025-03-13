@@ -2,6 +2,7 @@
 slug: /engines/table-engines/log-family/
 sidebar_position: 20
 sidebar_label: 'Log Family'
+description: 'Documentation for Log Engine Family'
 ---
 
 # Log Engine Family

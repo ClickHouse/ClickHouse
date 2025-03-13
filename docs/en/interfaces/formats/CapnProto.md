@@ -5,6 +5,7 @@ keywords: ['CapnProto']
 input_format: true
 output_format: true
 alias: []
+description: 'Documentation for Capnproto'
 ---
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 

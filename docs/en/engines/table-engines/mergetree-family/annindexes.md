@@ -4,6 +4,7 @@ sidebar_label: Vector Similarity Indexes
 title: 'Approximate Nearest Neighbor Search with Vector Similarity Indexes'
 keywords: [vector-similarity search, text search, ann, indices, index, nearest neighbour]
 title: 'Approximate Nearest Neighbor Search with Vector Similarity Indexes'
+description: 'Documentation for Approximate Nearest Neighbor Search with Vector Similarity Indexes'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

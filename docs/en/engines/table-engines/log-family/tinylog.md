@@ -2,6 +2,7 @@
 slug: /engines/table-engines/log-family/tinylog
 toc_priority: 34
 toc_title: TinyLog
+description: 'Documentation for TinyLog'
 ---
 
 # TinyLog
