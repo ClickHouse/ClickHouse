@@ -3,6 +3,14 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Columns/ColumnNullable.h>
 
+namespace CurrentMetrics
+{
+extern const Metric TemporaryFilesForAggregation;
+extern const Metric AggregatorThreads;
+extern const Metric AggregatorThreadsActive;
+extern const Metric AggregatorThreadsScheduled;
+}
+
 namespace DB
 {
 
@@ -57,8 +65,14 @@ Chunk GroupByModifierTransform::merge(Chunks && chunks, bool is_input, bool fina
     for (auto & chunk : chunks)
         blocks.emplace_back(header.cloneWithColumns(chunk.detachColumns()));
 
+    ThreadPool thread_pool{
+        CurrentMetrics::AggregatorThreads,
+        CurrentMetrics::AggregatorThreadsActive,
+        CurrentMetrics::AggregatorThreadsScheduled,
+        params->params.max_threads};
+
     auto & aggregator = is_input ? params->aggregator : *output_aggregator;
-    auto current_block = aggregator.mergeBlocks(blocks, final, is_cancelled);
+    auto current_block = aggregator.mergeBlocks(blocks, final, thread_pool, is_cancelled);
     auto num_rows = current_block.rows();
     return Chunk(current_block.getColumns(), num_rows);
 }

@@ -263,7 +263,7 @@ public:
     /// Precondition: for all blocks block.info.is_overflows flag must be the same.
     /// (either all blocks are from overflow data or none blocks are).
     /// The resulting block has the same value of is_overflows flag.
-    Block mergeBlocks(BlocksList & blocks, bool final, std::atomic<bool> & is_cancelled);
+    Block mergeBlocks(BlocksList & blocks, bool final, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled);
 
     /** Split block with partially-aggregated data to many blocks, as if two-level method of aggregation was used.
       * This is needed to simplify merging of that data with other results, that are already two-level.
@@ -532,6 +532,8 @@ private:
         size_t row_begin,
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys) const;
 
     /// `arena_for_keys` used to store serialized aggregation keys (in methods like `serialized`) to save some space.
@@ -545,6 +547,8 @@ private:
         AggregateDataPtr overflow_row,
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys = nullptr) const;
 
     template <typename Method, typename Table>
@@ -559,6 +563,8 @@ private:
         size_t row_end,
         const AggregateColumnsConstData & aggregate_columns_data,
         const ColumnRawPtrs & key_columns,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
