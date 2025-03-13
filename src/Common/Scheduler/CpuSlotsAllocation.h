@@ -1,7 +1,5 @@
 #pragma once
 
-#include <atomic>
-#include <mutex>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 
@@ -9,6 +7,10 @@
 #include <Common/Scheduler/ResourceRequest.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ISlotControl.h>
+
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
 
 namespace DB
 {
@@ -48,14 +50,11 @@ private:
 class CpuSlotsAllocation final : public ISlotAllocation
 {
 public:
-    CpuSlotsAllocation(SlotCount min_, SlotCount max, ResourceLink link);
+    CpuSlotsAllocation(SlotCount min_, SlotCount max_, ResourceLink link);
     ~CpuSlotsAllocation() override;
 
     // Take one already granted slot if available. Lock-free iff there is no granted slot.
     [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
-
-    SlotCount grantedCount() const override;
-    SlotCount allocatedCount() const override;
 
 private:
     friend class CpuSlotRequest; // for grant() and failed()
@@ -67,7 +66,7 @@ private:
     void failed(const std::exception_ptr & ptr);
 
     // Enqueue resource request if necessary
-    void schedule();
+    void schedule(bool next);
 
     const SlotCount min; // Count first `min` slots as NOT taking part in competition
     const SlotCount max;
@@ -78,15 +77,15 @@ private:
     std::atomic<SlotCount> granted{0}; // allocated competing slots, but not yet acquired
     std::atomic<size_t> last_request_index{0};
 
-    // Field that can be only accessed from the scheduler thread (and ctor/dtor)
-    SlotCount allocated; // total allocated slots including already released
-
     // Requests per every slot
     // NOTE: it should not be reallocated after initialization because AcquiredCpuSlot holds raw pointer
     std::vector<CpuSlotRequest> requests;
 
-    std::mutex exception_mutex;
+    // Field that require sync with the scheduler thread
+    std::mutex schedule_mutex;
+    std::condition_variable schedule_cv;
     std::exception_ptr exception;
+    SlotCount allocated; // total allocated slots including already released
 };
 
 }

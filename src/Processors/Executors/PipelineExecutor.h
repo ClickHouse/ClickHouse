@@ -4,7 +4,7 @@
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
 #include <Common/ThreadPool_fwd.h>
-#include <Common/ConcurrencyControl.h>
+#include <Common/ISlotControl.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
 #include <deque>
