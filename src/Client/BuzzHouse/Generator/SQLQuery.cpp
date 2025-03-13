@@ -293,11 +293,10 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
     }
 }
 
-bool StatementGenerator::joinedTableOrFunction(
-    RandomGenerator & rg, const String & rel_name, const uint32_t allowed_clauses, const bool under_remote, TableOrFunction * tof)
+template <bool RequireMergeTree>
+auto StatementGenerator::getQueryTableLambda()
 {
-    bool set_final = false;
-    const auto has_table_lambda = [&](const SQLTable & tt)
+    return [&](const SQLTable & tt)
     {
         return tt.isAttached()
             /* When comparing query success results, don't use tables from other RDBMS, SQL is very undefined */
@@ -305,11 +304,22 @@ bool StatementGenerator::joinedTableOrFunction(
             /* When a query is going to be compared against another ClickHouse server, make sure all tables exist in that server */
             && (this->peer_query != PeerQuery::ClickHouseOnly || tt.hasClickHousePeer())
             /* Don't use tables backing not deterministic views in query oracles */
-            && (tt.is_deterministic || this->allow_not_deterministic);
+            && (tt.is_deterministic || this->allow_not_deterministic)
+            /* May require MergeTree table */
+            && (!RequireMergeTree || tt.isMergeTreeFamily());
     };
+}
+
+bool StatementGenerator::joinedTableOrFunction(
+    RandomGenerator & rg, const String & rel_name, const uint32_t allowed_clauses, const bool under_remote, TableOrFunction * tof)
+{
+    bool set_final = false;
+    const auto has_table_lambda = getQueryTableLambda<false>();
+    const auto has_mergetree_table_lambda = getQueryTableLambda<true>();
     const auto has_view_lambda
         = [&](const SQLView & vv) { return vv.isAttached() && (vv.is_deterministic || this->allow_not_deterministic); };
     const bool has_table = collectionHas<SQLTable>(has_table_lambda);
+    const bool has_mergetree_table = collectionHas<SQLTable>(has_mergetree_table_lambda);
     const bool has_view = collectionHas<SQLView>(has_view_lambda);
     const bool can_recurse = this->depth < this->fc.max_depth && this->width < this->fc.max_width;
 
@@ -323,10 +333,11 @@ bool StatementGenerator::joinedTableOrFunction(
     const uint32_t merge_udf = 2 * static_cast<uint32_t>(this->allow_engine_udf);
     const uint32_t cluster_udf
         = 5 * static_cast<uint32_t>(!fc.clusters.empty() && this->allow_engine_udf && (can_recurse || has_table || has_view));
-    const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_table && this->allow_engine_udf);
+    const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
+    const uint32_t values = 2 * static_cast<uint32_t>(can_recurse);
     const uint32_t prob_space = derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf
-        + cluster_udf + merge_index_udf + loop_udf;
+        + cluster_udf + merge_index_udf + loop_udf + values;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -448,6 +459,9 @@ bool StatementGenerator::joinedTableOrFunction(
             levels_backup[entry.first] = entry.second;
         }
         this->levels.clear();
+
+        this->current_level++;
+        this->levels[this->current_level] = QueryLevel(this->current_level);
         if (val == GenerateSeriesFunc_GSName::GenerateSeriesFunc_GSName_numbers)
         {
             if (noption < 4)
@@ -506,12 +520,16 @@ bool StatementGenerator::joinedTableOrFunction(
                 }
             }
         }
+        limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
+        this->levels.erase(this->current_level);
+        this->ctes.erase(this->current_level);
+        this->current_level--;
+
         for (const auto & entry : levels_backup)
         {
             this->levels[entry.first] = entry.second;
         }
 
-        limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
         rel.cols.emplace_back(SQLRelationCol(rel_name, {cname}));
         this->levels[this->current_level].rels.emplace_back(rel);
     }
@@ -613,7 +631,7 @@ bool StatementGenerator::joinedTableOrFunction(
         SQLRelation rel(rel_name);
         TableFunction * tf = tof->mutable_tfunc();
         MergeTreeIndexFunc * mtudf = tf->mutable_mtindex();
-        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_table_lambda));
+        const SQLTable & t = rg.pickRandomlyFromVector(filterCollection<SQLTable>(has_mergetree_table_lambda));
 
         mtudf->set_mdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
         mtudf->set_mtable("t" + std::to_string(t.tname));
@@ -637,6 +655,52 @@ bool StatementGenerator::joinedTableOrFunction(
         auto u = joinedTableOrFunction(rg, rel_name, allowed_clauses, true, tof->mutable_tfunc()->mutable_loop());
         UNUSED(u);
         this->depth--;
+    }
+    else if (
+        values
+        && nopt
+            < (derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values + 1))
+    {
+        SQLRelation rel(rel_name);
+        std::unordered_map<uint32_t, QueryLevel> levels_backup;
+        const uint32_t ncols = std::min<uint32_t>(this->fc.max_width - this->width, (rg.nextSmallNumber() % 3) + UINT32_C(1));
+        const uint32_t nrows = (rg.nextSmallNumber() % 3) + UINT32_C(1);
+        ValuesStatement * vs = tof->mutable_tfunc()->mutable_values();
+
+        for (const auto & entry : this->levels)
+        {
+            levels_backup[entry.first] = entry.second;
+        }
+        this->levels.clear();
+
+        this->current_level++;
+        this->levels[this->current_level] = QueryLevel(this->current_level);
+        for (uint32_t i = 0; i < nrows; i++)
+        {
+            ExprList * elist = i == 0 ? vs->mutable_expr_list() : vs->add_extra_expr_lists();
+
+            for (uint32_t j = 0; j < ncols; j++)
+            {
+                this->width++;
+                generateExpression(rg, j == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
+            }
+            this->width -= ncols;
+        }
+        this->levels.erase(this->current_level);
+        this->ctes.erase(this->current_level);
+        this->current_level--;
+
+        for (const auto & entry : levels_backup)
+        {
+            this->levels[entry.first] = entry.second;
+        }
+
+        for (uint32_t i = 0; i < ncols; i++)
+        {
+            rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i + 1)}));
+        }
+        this->levels[this->current_level].rels.emplace_back(rel);
     }
     else
     {
@@ -776,7 +840,9 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
         const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+        /// Most of the times disallow aggregates and window functions inside predicates
+        this->levels[this->current_level].allow_aggregates = rg.nextSmallNumber() < 3;
+        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         generateExpression(rg, jc->mutable_on_expr());
         this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
@@ -946,7 +1012,7 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
         }
         this->width -= nclauses;
     }
-    else if (noption < 10)
+    else if (noption < 9)
     {
         /// Predicate
         generatePredicate(rg, expr);
@@ -1026,7 +1092,7 @@ void StatementGenerator::generateGroupByExpr(
 {
     const uint32_t next_option = rg.nextSmallNumber();
 
-    if (!available_cols.empty() && (enforce_having || next_option < 9))
+    if (!available_cols.empty() && (enforce_having || next_option < 8))
     {
         const SQLRelationCol & rel_col = available_cols[offset];
         ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
@@ -1041,7 +1107,7 @@ void StatementGenerator::generateGroupByExpr(
         addColNestedAccess(rg, ecol, 6);
         gcols.emplace_back(GroupCol(rel_col, expr));
     }
-    else if (ncols && next_option < 10)
+    else if (ncols && next_option < 9)
     {
         LiteralValue * lv = expr->mutable_lit_val();
 
@@ -1202,11 +1268,11 @@ void StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t nc
             const uint32_t next_option = rg.nextSmallNumber();
 
             this->width++;
-            if (!available_cols.empty() && next_option < 9)
+            if (!available_cols.empty() && next_option < 7)
             {
                 refColumn(rg, available_cols[i], expr);
             }
-            else if (ncols && next_option < 10)
+            else if (ncols && next_option < 9)
             {
                 LiteralValue * lv = expr->mutable_lit_val();
 
@@ -1444,7 +1510,9 @@ void StatementGenerator::generateSelect(
         const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
-        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = false;
+        /// Most of the times disallow aggregates and window functions inside predicates
+        this->levels[this->current_level].allow_aggregates = rg.nextSmallNumber() < 3;
+        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextSmallNumber() < 2)
         {
             generateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());
