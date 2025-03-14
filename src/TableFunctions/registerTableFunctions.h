@@ -24,7 +24,7 @@ void registerTableFunctionGenerate(TableFunctionFactory & factory);
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 #endif
 #if USE_YTSAURUS
-void registerTableFunctionYtsaurus(TableFunctionFactory & factory);
+void registerTableFunctionYTsaurus(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);

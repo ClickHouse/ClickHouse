@@ -4,7 +4,7 @@
 
 #if USE_YTSAURUS
 
-#include "YtsaurusQueries.h"
+#include "YTsaurusQueries.h"
 
 #include <Core/Types.h>
 #include <IO/ReadBuffer.h>
@@ -27,15 +27,14 @@ namespace ytsaurus
 const uint16_t DEFAULT_PROXY_PORT = 80;
 
 
-
-enum class YtsaurusNodeType : uint8_t
+enum class YTsaurusNodeType : uint8_t
 {
     STATIC_TABLE = 0,
-    DYNAMIC_TABLE, 
+    DYNAMIC_TABLE,
     ANOTHER,
 };
 
-class YtsaurusClient : private boost::noncopyable
+class YTsaurusClient : private boost::noncopyable
 {
 public:
 
@@ -46,18 +45,18 @@ public:
         String api_version = "v3";
     };
 
-    explicit YtsaurusClient(const ConnectionInfo & connection_info_, size_t num_tries = 3);
+    explicit YTsaurusClient(const ConnectionInfo & connection_info_, size_t num_tries = 3);
 
     const ConnectionInfo & getConnectionInfo() { return connection_info; }
     DB::ReadBufferPtr readTable(const String & path);
 
-    YtsaurusNodeType getNodeType(const String & path);
+    YTsaurusNodeType getNodeType(const String & path);
 
 private:
 
-    YtsaurusNodeType getNodeTypeFromAttributes(const Poco::JSON::Object::Ptr json_ptr);
+    YTsaurusNodeType getNodeTypeFromAttributes(Poco::JSON::Object::Ptr json_ptr);
 
-    DB::ReadBufferPtr execQuery(const YtsaurusQueryPtr query);
+    DB::ReadBufferPtr execQuery(YTsaurusQueryPtr query);
 
     ConnectionInfo connection_info;
     [[maybe_unused]] size_t num_tries;
@@ -65,7 +64,7 @@ private:
     LoggerPtr log;
 };
 
-using YtsaurusClientPtr = std::unique_ptr<YtsaurusClient>;
+using YTsaurusClientPtr = std::unique_ptr<YTsaurusClient>;
 
 }
 

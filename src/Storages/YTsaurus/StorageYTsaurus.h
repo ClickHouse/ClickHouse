@@ -11,7 +11,7 @@
 namespace DB
 {
 
-struct YtsaurusStorageConfiguration
+struct YTsaurusStorageConfiguration
 {
     String base_uri;
     String path;
@@ -22,19 +22,19 @@ struct YtsaurusStorageConfiguration
  *  Read only.
  *  One stream only.
  */
-class StorageYtsaurus final : public IStorage
+class StorageYTsaurus final : public IStorage
 {
 public:
-    static YtsaurusStorageConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
+    static YTsaurusStorageConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
 
-    StorageYtsaurus(
+    StorageYTsaurus(
         const StorageID & table_id_,
-        const YtsaurusStorageConfiguration configuration_,
+        YTsaurusStorageConfiguration configuration_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment);
 
-    std::string getName() const override { return "Ytsaurus"; }
+    std::string getName() const override { return "YTsaurus"; }
     bool isRemote() const override { return true; }
 
     Pipe read(
@@ -47,7 +47,7 @@ public:
         size_t num_streams) override;
 
 private:
-    const YtsaurusStorageConfiguration configuration;
+    const YTsaurusStorageConfiguration configuration;
     LoggerPtr log;
 };
 

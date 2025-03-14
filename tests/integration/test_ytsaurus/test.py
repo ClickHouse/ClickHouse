@@ -87,7 +87,7 @@ def test_yt_simple_table_engine(started_cluster):
     yt.create_table("//tmp/table", '{"a":"10","b":"20"}\n{"a":"20","b":"40"}')
 
     instance.query(
-        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=Ytsaurus('{YT_URI}', '//tmp/table', '{YT_DEFAULT_TOKEN}')"
+        f"CREATE TABLE yt_test(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/table', '{YT_DEFAULT_TOKEN}')"
     )
 
     assert instance.query("SELECT * FROM yt_test") == "10\t20\n20\t40\n"
@@ -204,7 +204,7 @@ def test_ytsaurus_types(
     yt.create_table(table_path, yt_data_json, schema={column_name: yt_data_type})
 
     instance.query(
-        f"CREATE TABLE yt_test(a {ch_column_type}) ENGINE=Ytsaurus('{YT_URI}', '{table_path}', '{YT_DEFAULT_TOKEN}')"
+        f"CREATE TABLE yt_test(a {ch_column_type}) ENGINE=YTsaurus('{YT_URI}', '{table_path}', '{YT_DEFAULT_TOKEN}')"
     )
     assert instance.query("SELECT a FROM yt_test") == f"{ch_data_expected}\n"
     instance.query("DROP TABLE yt_test")
@@ -218,22 +218,22 @@ def test_ytsaurus_multiple_tables(started_cluster):
 
     instance.query("CREATE DATABASE db")
     instance.query(
-        f"CREATE TABLE db.good(a Int32, b Int32) ENGINE=Ytsaurus('{YT_URI}', '//tmp/table', '{YT_DEFAULT_TOKEN}')"
+        f"CREATE TABLE db.good(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/table', '{YT_DEFAULT_TOKEN}')"
     )
     instance.query(
-        f"CREATE TABLE db.bad(a Int32, b Int32) ENGINE=Ytsaurus('{YT_URI}', '//tmp/table', 'IncorrectToken')"
+        f"CREATE TABLE db.bad(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/table', 'IncorrectToken')"
     )
 
     instance.query("SELECT * FROM db.good")
     instance.query_and_get_error("SELECT * FROM db.bad")
 
     instance.query(
-        f"CREATE TABLE db.good2(a Int32, b Int32) ENGINE=Ytsaurus('{YT_URI}', '//tmp/table', '{YT_DEFAULT_TOKEN}')"
+        f"CREATE TABLE db.good2(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/table', '{YT_DEFAULT_TOKEN}')"
     )
     instance.query("Select * from db.good2")
 
     instance.query(
-        f"CREATE TABLE db.bad2(a Int32, b Int32) ENGINE=Ytsaurus('{YT_URI}', '//tmp/table', 'IncorrectToken')"
+        f"CREATE TABLE db.bad2(a Int32, b Int32) ENGINE=YTsaurus('{YT_URI}', '//tmp/table', 'IncorrectToken')"
     )
     instance.query_and_get_error("select * from db.bad2")
     instance.query("select * from db.good2")

@@ -4,14 +4,14 @@
 
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/StorageFactory.h>
-#include <Storages/Ytsaurus/StorageYtsaurus.h>
+#include <Storages/YTsaurus/StorageYTsaurus.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/ErrorCodes.h>
 #include <Core/Settings.h>
-#include <Processors/Sources/YtsaurusSource.h>
-#include <Core/Ytsaurus/YtsaurusClient.h>
+#include <Processors/Sources/YTsaurusSource.h>
+#include <Core/YTsaurus/YTsaurusClient.h>
 #include <Interpreters/evaluateConstantExpression.h>
-
+#include <QueryPipeline/Pipe.h>
 
 namespace DB
 {
@@ -28,9 +28,9 @@ namespace Setting
 }
 
 
-StorageYtsaurus::StorageYtsaurus(
+StorageYTsaurus::StorageYTsaurus(
     const StorageID & table_id_,
-    YtsaurusStorageConfiguration configuration_,
+    YTsaurusStorageConfiguration configuration_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment)
@@ -45,7 +45,7 @@ StorageYtsaurus::StorageYtsaurus(
     setInMemoryMetadata(storage_metadata);
 }
 
-Pipe StorageYtsaurus::read(
+Pipe StorageYTsaurus::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
@@ -63,17 +63,17 @@ Pipe StorageYtsaurus::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    ytsaurus::YtsaurusClient::ConnectionInfo connection_info{.base_uri = configuration.base_uri, .auth_token = configuration.auth_token};
-    ytsaurus::YtsaurusClientPtr client = std::make_unique<ytsaurus::YtsaurusClient>(connection_info);
+    ytsaurus::YTsaurusClient::ConnectionInfo connection_info{.base_uri = configuration.base_uri, .auth_token = configuration.auth_token};
+    ytsaurus::YTsaurusClientPtr client = std::make_unique<ytsaurus::YTsaurusClient>(connection_info);
 
-    auto ptr = YtsaurusSourceFactory::createSource(std::move(client), configuration.path, sample_block, max_block_size);
+    auto ptr = YTsaurusSourceFactory::createSource(std::move(client), configuration.path, sample_block, max_block_size);
 
     return Pipe(ptr);
 }
 
-YtsaurusStorageConfiguration StorageYtsaurus::getConfiguration(ASTs engine_args, ContextPtr context)
+YTsaurusStorageConfiguration StorageYTsaurus::getConfiguration(ASTs engine_args, ContextPtr context)
 {
-    YtsaurusStorageConfiguration configuration;
+    YTsaurusStorageConfiguration configuration;
     for (auto & engine_arg : engine_args)
         engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, context);
     if (engine_args.size() == 3)
@@ -84,20 +84,20 @@ YtsaurusStorageConfiguration StorageYtsaurus::getConfiguration(ASTs engine_args,
     }
     else
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Incorrect Ytsarurus table schema. Expected Ytsaurus(<base_url>, <yt_path>, <auth_token>)");
+                            "Incorrect Ytsarurus table schema. Expected YTsaurus(<base_url>, <yt_path>, <auth_token>)");
     return configuration;
 }
 
-void registerStorageYtsaurus(StorageFactory & factory)
+void registerStorageYTsaurus(StorageFactory & factory)
 {
-    factory.registerStorage("Ytsaurus", [](const StorageFactory::Arguments & args)
+    factory.registerStorage("YTsaurus", [](const StorageFactory::Arguments & args)
     {
         if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_ytsaurus_table_engine])
-            throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine Ytsaurus is experimental."
+            throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine YTsaurus is experimental."
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
-        return std::make_shared<StorageYtsaurus>(
+        return std::make_shared<StorageYTsaurus>(
             args.table_id,
-            StorageYtsaurus::getConfiguration(args.engine_args, args.getLocalContext()),
+            StorageYTsaurus::getConfiguration(args.engine_args, args.getLocalContext()),
             args.columns,
             args.constraints,
             args.comment);
