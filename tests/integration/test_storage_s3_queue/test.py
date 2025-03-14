@@ -324,6 +324,7 @@ def create_table(
     expect_error=False,
     database_name="default",
     no_settings=False,
+    extra_credentials="",
 ):
     auth_params = ",".join(auth)
     bucket = started_cluster.minio_bucket if bucket is None else bucket
@@ -339,10 +340,17 @@ def create_table(
 
     settings.update(additional_settings)
 
+    if len(extra_credentials) > 0:
+        extra_credentials = ", " + extra_credentials
+    if len(auth_params) > 0:
+        auth_params = ", " + auth_params
+
     engine_def = None
     if engine_name == "S3Queue":
         url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{files_path}/"
-        engine_def = f"{engine_name}('{url}', {auth_params}, {file_format})"
+        engine_def = (
+            f"{engine_name}('{url}' {auth_params}, {file_format} {extra_credentials})"
+        )
     else:
         engine_def = f"{engine_name}('{started_cluster.env_variables['AZURITE_CONNECTION_STRING']}', '{started_cluster.azurite_container}', '{files_path}/', 'CSV')"
 
