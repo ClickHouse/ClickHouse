@@ -4740,7 +4740,7 @@ Possible values:
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert OUTER JOIN to INNER JOIN if filter after JOIN always filters default values
 )", 0) \
-    DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
+    DECLARE(Bool, query_plan_convert_join_to_in, true, R"(
 Allow to convert JOIN to subquery with IN if output columns tied to only one table
 )", 0) \
     DECLARE(Bool, query_plan_optimize_prewhere, true, R"(
