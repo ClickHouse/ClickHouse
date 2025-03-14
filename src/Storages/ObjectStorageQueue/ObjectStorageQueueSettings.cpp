@@ -166,4 +166,8 @@ Field ObjectStorageQueueSettings::get(const std::string & name)
     return impl->get(name);
 }
 
+bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
+{
+    return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
+}
 }

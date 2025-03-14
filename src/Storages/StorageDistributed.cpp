@@ -1983,6 +1983,7 @@ void registerStorageDistributed(StorageFactory & factory)
         .supports_parallel_insert = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::REMOTE,
+        .has_builtin_setting_fn = DistributedSettings::hasBuiltin,
     });
 }
 

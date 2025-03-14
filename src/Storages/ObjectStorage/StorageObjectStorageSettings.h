@@ -58,6 +58,8 @@ struct StorageObjectStorageSettings
 
     Field get(const std::string & name);
 
+    static bool hasBuiltin(std::string_view name);
+
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;
 };

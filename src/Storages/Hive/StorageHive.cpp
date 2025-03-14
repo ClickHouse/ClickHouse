@@ -1123,6 +1123,7 @@ void registerStorageHive(StorageFactory & factory)
             .supports_settings = true,
             .supports_sort_order = true,
             .source_access_type = AccessType::HIVE,
+            .has_builtin_setting_fn = HiveSettings::hasBuiltin,
         });
 }
 

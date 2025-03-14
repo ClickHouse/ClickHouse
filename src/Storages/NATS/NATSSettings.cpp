@@ -126,4 +126,9 @@ SettingsChanges NATSSettings::getFormatSettings() const
 
     return values;
 }
+
+bool NATSSettings::hasBuiltin(std::string_view name)
+{
+    return NATSSettingsImpl::hasBuiltin(name);
+}
 }

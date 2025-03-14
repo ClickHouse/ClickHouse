@@ -2125,6 +2125,7 @@ void registerStorageFile(StorageFactory & factory)
         .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::FILE,
+        .has_builtin_setting_fn = Settings::hasBuiltin,
     };
 
     factory.registerStorage(
