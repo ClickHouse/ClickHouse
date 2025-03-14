@@ -89,15 +89,13 @@ public:
 
             /// If we have a DateTime64 or Date32 as an input, it can be negative.
             /// In this case, we should provide the corresponding return type, which supports negative values.
-            if (isDateTime64(arguments[1].type))
+            if (isDateTime64(arguments[1].type) || isDate32(arguments[1].type))
             {
                 if (result_type == ResultType::Date)
                     result_type = Date32;
                 else if (result_type == ResultType::DateTime)
                     result_type = DateTime64;
             }
-            if (isDate32(arguments[1].type))
-                result_type = Date32;
         };
 
         auto check_timezone_argument = [&] {
