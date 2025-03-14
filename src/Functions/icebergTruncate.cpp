@@ -118,7 +118,7 @@ public:
     {
         auto value = (*arguments[0].column)[0].safeGet<Int64>();
         if (value <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function icebergTruncate accept only positive width");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function icebergTruncate accepts only positive width");
 
         auto context = Context::getGlobalContextInstance();
         WhichDataType which_truncate(arguments[1].type);
