@@ -12,9 +12,19 @@ from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_queue_common import run_query, random_str, generate_random_files, put_s3_file_content, put_azure_file_content, create_table, create_mv, generate_random_string, add_instances
+from helpers.s3_queue_common import (
+    run_query,
+    random_str,
+    generate_random_files,
+    put_s3_file_content,
+    put_azure_file_content,
+    create_table,
+    create_mv,
+    generate_random_string,
+)
 
 AVAILABLE_MODES = ["unordered", "ordered"]
+
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
@@ -46,7 +56,61 @@ def s3_queue_setup_teardown(started_cluster):
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        add_instances(cluster)
+        cluster.add_instance(
+            "instance",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance2",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance_24.5",
+            with_zookeeper=True,
+            image="clickhouse/clickhouse-server",
+            tag="24.5",
+            stay_alive=True,
+            user_configs=[
+                "configs/users.xml",
+            ],
+            main_configs=[
+                "configs/s3queue_log.xml",
+                "configs/remote_servers_245.xml",
+            ],
+            with_installed_binary=True,
+        )
+        cluster.add_instance(
+            "instance2_24.5",
+            with_zookeeper=True,
+            keeper_required_feature_flags=["create_if_not_exists"],
+            image="clickhouse/clickhouse-server",
+            tag="24.5",
+            stay_alive=True,
+            user_configs=[
+                "configs/users.xml",
+            ],
+            main_configs=[
+                "configs/s3queue_log.xml",
+                "configs/remote_servers_245.xml",
+            ],
+            with_installed_binary=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -58,7 +122,7 @@ def started_cluster():
 
 
 def test_upgrade_3(started_cluster):
-    node = started_cluster.instances["instance2_24.5"]
+    node = started_cluster.instances["instance_24.5"]
     assert "24.5" in node.query("select version()").strip()
 
     table_name = f"test_upgrade_3_{uuid.uuid4().hex[:8]}"
@@ -144,8 +208,8 @@ def test_upgrade_3(started_cluster):
 
 @pytest.mark.parametrize("setting_prefix", ["", "s3queue_"])
 def test_migration(started_cluster, setting_prefix):
-    node1 = started_cluster.instances["instance3_24.5"]
-    node2 = started_cluster.instances["instance4_24.5"]
+    node1 = started_cluster.instances["instance_24.5"]
+    node2 = started_cluster.instances["instance2_24.5"]
 
     for node in [node1, node2]:
         if "24.5" not in node.query("select version()").strip():
@@ -324,8 +388,8 @@ def test_migration(started_cluster, setting_prefix):
 
 @pytest.mark.parametrize("mode", ["unordered", "ordered"])
 def test_filtering_files(started_cluster, mode):
-    node1 = started_cluster.instances["node1"]
-    node2 = started_cluster.instances["node2"]
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
 
     table_name = f"test_replicated_{mode}_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
@@ -531,7 +595,10 @@ def test_failure_in_the_middle(started_cluster):
         "unordered",
         files_path,
         format=format,
-        additional_settings={"keeper_path": keeper_path, "s3queue_loading_retries": 10000},
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 10000,
+        },
     )
     values = []
     num_rows = 1000000
