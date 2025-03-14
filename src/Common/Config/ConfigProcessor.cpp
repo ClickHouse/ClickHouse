@@ -872,7 +872,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
 }
 
-XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
+XMLDocumentPtr ConfigProcessor::hideElements(const XMLDocumentPtr & xml_tree)
 {
     /// Create a copy of XML Document because hiding elements from preprocessed_xml document
     /// also influences on configuration which has a pointer to preprocessed_xml document.
