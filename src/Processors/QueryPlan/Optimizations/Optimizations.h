@@ -16,7 +16,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 /// Third pass is used to apply filters such as key conditions and skip indexes to the storages that support them.
 /// After that it add CreateSetsStep for the subqueries that has not be used in the filters.
-void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
+void addStepsToBuildSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes);
 
 /// Optimization (first pass) is a function applied to QueryPlan::Node.
 /// It can read and update subtree of specified node.
@@ -30,6 +30,8 @@ struct Optimization
     struct ExtraSettings
     {
         size_t max_limit_for_ann_queries;
+        size_t use_index_for_in_with_subqueries_max_values;
+        SizeLimits network_transfer_limits;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);
@@ -139,7 +141,7 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 std::optional<String> optimizeUseAggregateProjections(QueryPlan::Node & node, QueryPlan::Nodes & nodes, bool allow_implicit_projections);
 std::optional<String> optimizeUseNormalProjections(Stack & stack, QueryPlan::Nodes & nodes);
 
-bool addPlansForSets(QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
+bool addPlansForSets(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan & plan, QueryPlan::Node & node, QueryPlan::Nodes & nodes);
 
 /// Enable memory bound merging of aggregation states for remote queries
 /// in case it was enabled for local plan

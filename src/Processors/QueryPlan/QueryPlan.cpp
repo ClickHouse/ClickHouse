@@ -489,7 +489,7 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
         QueryPlanOptimizations::optimizeTreeFirstPass(optimization_settings, *root, nodes);
         QueryPlanOptimizations::optimizeTreeSecondPass(optimization_settings, *root, nodes);
         if (optimization_settings.build_sets)
-            QueryPlanOptimizations::addStepsToBuildSets(*this, *root, nodes);
+            QueryPlanOptimizations::addStepsToBuildSets(optimization_settings, *this, *root, nodes);
     }
     catch (Exception & e)
     {
@@ -548,6 +548,38 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
         columns[index++]->insert(counter.second->rows);
         columns[index++]->insert(counter.second->marks);
     }
+}
+
+QueryPlan QueryPlan::extractSubplan(Node * root, Nodes & nodes)
+{
+    std::unordered_set<Node *> used;
+    std::stack<Node *> stack;
+
+    stack.push(root);
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+
+        for (auto * child : node->children)
+            if (!used.emplace(child).second)
+                stack.push(child);
+    }
+
+    QueryPlan new_plan;
+    new_plan.root = root;
+
+    auto it = nodes.begin();
+    while (it != nodes.end())
+    {
+        auto curr = it;
+        ++it;
+
+        if (used.contains(&*it))
+            new_plan.nodes.splice(new_plan.nodes.end(), nodes, curr);
+    }
+
+    return new_plan;
 }
 
 std::pair<QueryPlan::Nodes, QueryPlanResourceHolder> QueryPlan::detachNodesAndResources(QueryPlan && plan)

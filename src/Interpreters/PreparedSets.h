@@ -25,6 +25,9 @@ struct SetKeyColumns;
 class IQueryTreeNode;
 using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
 
+class PreparedSetsCache;
+using PreparedSetsCachePtr = std::shared_ptr<PreparedSetsCache>;
+
 struct Settings;
 
 /// This is a structure for prepared sets cache.
@@ -145,9 +148,9 @@ public:
         SizeLimits size_limits,
         size_t max_size_for_index);
 
-    FutureSetFromSubquery(
-        Hash hash_,
-        const ColumnsWithTypeAndName & header);
+    // FutureSetFromSubquery(
+    //     Hash hash_,
+    //     const ColumnsWithTypeAndName & header);
 
     ~FutureSetFromSubquery() override;
 
@@ -157,8 +160,10 @@ public:
     ASTPtr getSourceAST() const override { return ast; }
     SetPtr buildOrderedSetInplace(const ContextPtr & context) override;
 
-    std::unique_ptr<QueryPlan> build(const ContextPtr & context);
-    std::unique_ptr<IQueryPlanStep> build(const Header & input_header);
+    std::unique_ptr<QueryPlan> build(
+        const SizeLimits & network_transfer_limits,
+        const PreparedSetsCachePtr & prepared_sets_cache);
+    // std::unique_ptr<IQueryPlanStep> build(const Header & input_header);
     void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }

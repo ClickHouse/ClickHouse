@@ -337,7 +337,8 @@ static ASTPtr tryBuildAdditionalFilterAST(
             if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
             {
                 auto future_set = col_set->getData();
-                if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get());
+                    set_from_subquery && set_from_subquery->getSourceAST())
                 {
                     const auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
 

@@ -168,17 +168,17 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
 }
 
-FutureSetFromSubquery::FutureSetFromSubquery(
-    Hash hash_,
-    const ColumnsWithTypeAndName & header)
-    : hash(hash_)
-{
-    set_and_key = std::make_shared<SetAndKey>();
-    set_and_key->key = PreparedSets::toString(hash_, {});
+// FutureSetFromSubquery::FutureSetFromSubquery(
+//     Hash hash_,
+//     const ColumnsWithTypeAndName & header)
+//     : hash(hash_)
+// {
+//     set_and_key = std::make_shared<SetAndKey>();
+//     set_and_key->key = PreparedSets::toString(hash_, {});
 
-    set_and_key->set = std::make_shared<Set>(SizeLimits(), 0, false);
-    set_and_key->set->setHeader(header);
-}
+//     set_and_key->set = std::make_shared<Set>(SizeLimits(), 0, false);
+//     set_and_key->set->setHeader(header);
+// }
 
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
 
@@ -205,12 +205,12 @@ DataTypes FutureSetFromSubquery::getTypes() const
 
 FutureSet::Hash FutureSetFromSubquery::getHash() const { return hash; }
 
-std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & context)
+std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & network_transfer_limits, const PreparedSetsCachePtr & prepared_sets_cache)
 {
     if (set_and_key->set->isCreated())
         return nullptr;
 
-    const auto & settings = context->getSettingsRef();
+    //const auto & settings = context->getSettingsRef();
 
     auto plan = std::move(source);
 
@@ -221,34 +221,40 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const ContextPtr & conte
         plan->getCurrentHeader(),
         set_and_key,
         external_table,
-        SizeLimits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]),
-        context);
+        network_transfer_limits,
+        prepared_sets_cache);
+        //SizeLimits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]),
+        //context);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
     return plan;
 }
 
-std::unique_ptr<IQueryPlanStep> FutureSetFromSubquery::build(const Header & input_header)
-{
-    if (set_and_key->set->isCreated())
-        return nullptr;
+// std::unique_ptr<IQueryPlanStep> FutureSetFromSubquery::build(const Header & input_header)
+// {
+//     if (set_and_key->set->isCreated())
+//         return nullptr;
 
-    auto creating_set = std::make_unique<CreatingSetStep>(
-        input_header,
-        set_and_key,
-        nullptr,
-        SizeLimits(),
-        nullptr);
-    creating_set->setStepDescription("Create set for subquery");
-    return creating_set;
-}
+//     auto creating_set = std::make_unique<CreatingSetStep>(
+//         input_header,
+//         set_and_key,
+//         nullptr,
+//         SizeLimits(),
+//         nullptr);
+//     creating_set->setStepDescription("Create set for subquery");
+//     return creating_set;
+// }
 
 void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 {
     if (external_table_set)
         external_table_set->buildSetInplace(context);
 
-    auto plan = build(context);
+    const auto & settings = context->getSettingsRef();
+    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+    auto prepared_sets_cache = context->getPreparedSetsCache();
+
+    auto plan = build(network_transfer_limits, prepared_sets_cache);
 
     if (!plan)
         return;
@@ -284,7 +290,11 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         }
     }
 
-    auto plan = build(context);
+    const auto & settings = context->getSettingsRef();
+    SizeLimits network_transfer_limits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]);
+    auto prepared_sets_cache = context->getPreparedSetsCache();
+
+    auto plan = build(network_transfer_limits, prepared_sets_cache);
     if (!plan)
         return nullptr;
 

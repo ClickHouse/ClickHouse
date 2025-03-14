@@ -41,6 +41,10 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
+    extern const SettingsOverflowMode transfer_overflow_mode;
+    extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
 }
 
 namespace ServerSetting
@@ -52,7 +56,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     const Settings & from,
     UInt64 max_entries_for_hash_table_stats_,
     String initial_query_id_,
-    ExpressionActionsSettings actions_settings_)
+    ExpressionActionsSettings actions_settings_,
+    PreparedSetsCachePtr prepared_sets_cache_)
 {
     optimize_plan = from[Setting::query_plan_enable_optimizations];
     max_optimizations_to_apply = from[Setting::query_plan_max_optimizations_to_apply];
@@ -88,6 +93,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
 
+    network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
+    use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
+    prepared_sets_cache = std::move(prepared_sets_cache_);
+
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class
     keep_logical_steps = false;
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
@@ -102,7 +111,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
-    : QueryPlanOptimizationSettings(from->getSettingsRef(), from->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats], from->getInitialQueryId(), ExpressionActionsSettings(from))
+    : QueryPlanOptimizationSettings(
+        from->getSettingsRef(),
+        from->getServerSettings()[ServerSetting::max_entries_for_hash_table_stats],
+        from->getInitialQueryId(),
+        ExpressionActionsSettings(from),
+        from->getPreparedSetsCache())
 {
 }
 

@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
@@ -13,6 +14,7 @@
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/tuple.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/TableJoin.h>
 
 
 namespace DB::Setting
@@ -21,151 +23,393 @@ namespace DB::Setting
     extern const SettingsUInt64 use_index_for_in_with_subqueries_max_values;
 }
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace DB::QueryPlanOptimizations
 {
 
-static bool findReadingStep(QueryPlan::Node & node)
+// static bool findReadingStep(QueryPlan::Node & node)
+// {
+//     IQueryPlanStep * step = node.step.get();
+//     if (typeid_cast<ReadFromMergeTree *>(step))
+//         return true;
+
+//     if (node.children.size() != 1)
+//         return false;
+
+//     if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
+//         return findReadingStep(*node.children.front());
+
+//     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
+//         return findReadingStep(*node.children.front());
+
+//     return false;
+// }
+
+FutureSet::Hash generateRandomHash()
 {
-    IQueryPlanStep * step = node.step.get();
-    if (typeid_cast<ReadFromMergeTree *>(step))
-        return true;
+    auto uuid = UUIDHelpers::generateV4();
+    FutureSet::Hash hash;
+    hash.low64 = UUIDHelpers::getLowBytes(uuid);
+    hash.high64 = UUIDHelpers::getHighBytes(uuid);
+    return hash;
+}
 
-    if (node.children.size() != 1)
-        return false;
-
-    if (typeid_cast<ExpressionStep *>(step) || typeid_cast<FilterStep *>(step) || typeid_cast<ArrayJoinStep *>(step))
-        return findReadingStep(*node.children.front());
-
-    if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
-        return findReadingStep(*node.children.front());
+bool hasAnyInSet(const Header & header, NameSet & set)
+{
+    for (const auto & column : header)
+        if (set.contains(column.name))
+            return true;
 
     return false;
 }
 
-size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
+// std::unordered_set<std::string_view> findUnusedInputs(const ActionsDAG & dag)
+// {
+//     std::unordered_set<const ActionsDAG::Node *> used;
+//     std::stack<const ActionsDAG::Node *> stack;
+//     for (const auto * output : dag.getOutputs())
+//     {
+//         if (!used.emplace(output).second)
+//             continue;
+
+//         stack.push(output);
+//         while (!stack.empty())
+//         {
+//             const auto * node = stack.top();
+//             stack.pop();
+
+//             for (const auto * child : node->children)
+//                 if (!used.emplace(child).second)
+//                     stack.push(child);
+//         }
+//     }
+
+//     std::unordered_set<std::string_view> names;
+//     for (const auto * input : dag.getInputs())
+//         if (used.contains(input))
+//             names.insert(input->result_name);
+
+//     return names;
+// }
+
+// ActionsDAG dropInputs(const ActionsDAG & dag, const Header & inputs)
+// {
+//    std::unordered_set<const ActionsDAG::Node *> split_nodes;
+//     for (const auto * input : dag.getInputs())
+//         if (inputs.findByName(input->result_name))
+//             split_nodes.insert(input);
+
+//     return dag.split(split_nodes).second;
+// }
+
+struct InConversion
 {
-    auto & parent = parent_node->step;
-    auto * join = typeid_cast<JoinStepLogical *>(parent.get());
-    if (!join)
-        return 0;
-    const auto & join_algorithms = join->getJoinSettings().join_algorithms;
-    for (const auto & join_algorithm : join_algorithms)
-    {
-        if (join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH)
-            return 0;
-    }
-    const auto & join_info = join->getJoinInfo();
-    if (join_info.strictness != JoinStrictness::All)
-        return 0;
-    if (!isInner(join_info.kind))
-        return 0;
+    ActionsDAG dag;
+    std::shared_ptr<FutureSetFromSubquery> set;
+};
 
-    const auto & left_input_header = join->getInputHeaders().front();
-    const auto & right_input_header = join->getInputHeaders().back();
-    const auto & output_header = join->getOutputHeader();
+struct NamePair
+{
+    std::string_view lhs_name;
+    std::string_view rhs_name;
+};
 
-    for (const auto & column_with_type_and_name : output_header)
-    {
-        const auto & column_name = column_with_type_and_name.name;
-        bool left = left_input_header.has(column_name);
-        bool right = right_input_header.has(column_name);
+using NamePairs = std::vector<NamePair>;
 
-        /// All come from left side?
-        if (!(left && !right))
-            return 0;
+InConversion buildInConversion(
+    const Header & header,
+    const NamePairs & name_pairs,
+    std::unique_ptr<QueryPlan> in_source,
+    bool transform_null_in,
+    SizeLimits size_limits,
+    size_t max_size_for_index)
+{
+    ActionsDAG lhs_dag(header.getColumnsWithTypeAndName());
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
+    for (const auto & output : lhs_dag.getOutputs())
+        lhs_outputs.emplace(output->result_name, output);
 
-        /// Check in and out type
-        if (!left_input_header.getByName(column_name).type->equals(*column_with_type_and_name.type))
-            return 0;
-    }
+    ActionsDAG rhs_dag(in_source->getCurrentHeader().getColumnsWithTypeAndName());
+    std::unordered_map<std::string_view, const ActionsDAG::Node *> rhs_outputs;
+    for (const auto & output : rhs_dag.getOutputs())
+        rhs_outputs.emplace(output->result_name, output);
 
-    if (join_info.expression.condition.predicates.empty())
-        return 0;
-
-    /// Steps like ReadFromSystemColumns would build set in place, different from here, so return.
-    /// TODO: might have stricter filter
-    if (!findReadingStep(*parent_node->children.front()))
-        return 0;
-
-    /// dag used by In and Filter
-    const Header & left_header = parent_node->children.front()->step->getOutputHeader();
-    const Header & right_header = parent_node->children.back()->step->getOutputHeader();
-    std::optional<ActionsDAG> dag = ActionsDAG(left_header.getColumnsWithTypeAndName());
-
-    std::unordered_map<std::string_view, const ActionsDAG::Node *> outputs;
-    for (const auto & output : dag->getOutputs())
-        outputs.emplace(output->result_name, output);
+    rhs_dag.getOutputs().clear();
 
     std::vector<const ActionsDAG::Node *> left_columns;
-    Header right_predicate_header;
-    for (const auto & predicate : join_info.expression.condition.predicates)
+    for (const auto & name_pair : name_pairs)
     {
-        auto it = outputs.find(predicate.left_node.getColumn().name);
-        if (it == outputs.end())
-            return 0;
+        auto it = lhs_outputs.find(name_pair.lhs_name);
+        if (it == lhs_outputs.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find left key {} in JOIN step", name_pair.lhs_name);
         left_columns.push_back(it->second);
 
-        const auto * right_column = right_header.findByName(predicate.right_node.getColumn().name);
-        if (!right_column)
-            return 0;
-        /// column in predicate is null, so get column here
-        right_predicate_header.insert(*right_column);
+        auto jt = rhs_outputs.find(name_pair.rhs_name);
+        if (jt == rhs_outputs.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find left key {} in JOIN step", name_pair.lhs_name);
+        rhs_dag.getOutputs().push_back(jt->second);
     }
+
+    auto rhs_expression = std::make_unique<ExpressionStep>(in_source->getCurrentHeader(), std::move(rhs_dag));
+    rhs_expression->setStepDescription("JOIN keys");
+    in_source->addStep(std::move(rhs_expression));
 
     /// left parameter of IN function
     FunctionOverloadResolverPtr func_tuple_builder =
         std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
     const ActionsDAG::Node * in_lhs_arg = left_columns.size() == 1 ?
         left_columns.front() :
-        &dag->addFunction(func_tuple_builder, std::move(left_columns), {});
+        &lhs_dag.addFunction(func_tuple_builder, std::move(left_columns), {});
 
     /// right parameter of IN function
     auto future_set = std::make_shared<FutureSetFromSubquery>(
-        CityHash_v1_0_2::uint128(),
-        right_predicate_header.getColumnsWithTypeAndName());
+        generateRandomHash(),
+        nullptr,
+        std::move(in_source),
+        nullptr,
+        nullptr,
+        transform_null_in,
+        size_limits,
+        max_size_for_index);
 
     chassert(future_set->get() == nullptr);
     ColumnPtr set_col = ColumnSet::create(1, future_set);
     const ActionsDAG::Node * in_rhs_arg =
-        &dag->addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
+        &lhs_dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
 
     /// IN function
     auto func_in = FunctionFactory::instance().get("in", nullptr);
-    const auto & in_node = dag->addFunction(func_in, {in_lhs_arg, in_rhs_arg}, "");
-    dag->getOutputs().push_back(&in_node);
+    const auto & in_node = lhs_dag.addFunction(func_in, {in_lhs_arg, in_rhs_arg}, "");
+    lhs_dag.getOutputs().insert(lhs_dag.getOutputs().begin(), &in_node);
 
-    /// Attach IN to FilterStep
-    auto filter_step = std::make_unique<FilterStep>(left_header,
-        std::move(*dag),
-        in_node.result_name,
-        false);
-    filter_step->setStepDescription("WHERE");
+    return {std::move(lhs_dag), std::move(future_set)};
+}
 
-    /// CreatingSetsStep as root
-    Headers input_headers{output_header};
-    auto creating_sets_step = std::make_unique<CreatingSetsStep>(input_headers);
-    creating_sets_step->setStepDescription("Create sets before main query execution");
+size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+{
+    auto & parent = parent_node->step;
 
-    /// creating_set_step as right subtree
-    auto creating_set_step = future_set->build(right_predicate_header);
+    if (parent_node->children.size() != 2)
+        return 0;
 
-    /// Modify the plan tree
-    QueryPlan::Node * left_tree = parent_node->children[0];
-    QueryPlan::Node * right_tree = parent_node->children[1];
-    parent_node->children.clear();
-    parent_node->step = std::move(creating_sets_step);
+    auto * join = typeid_cast<JoinStepLogical *>(parent.get());
+    if (!join)
+        return 0;
 
-    auto & filter_node = nodes.emplace_back();
-    filter_node.step = std::move(filter_step);
-    filter_node.children.push_back(left_tree);
-    parent_node->children.push_back(&filter_node);
+    /// Let's support only hash algorithm, because full sorting join may be more memory efficient than IN.
+    const auto & join_algorithms = join->getJoinSettings().join_algorithms;
+    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH) &&
+        !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
+        return 0;
 
-    auto & creating_set_node = nodes.emplace_back();
-    creating_set_node.step = std::move(creating_set_step);
-    creating_set_node.children.push_back(right_tree);
-    parent_node->children.push_back(&creating_set_node);
+    const auto & join_info = join->getJoinInfo();
 
-    return 1;
+    /// Let's allow Strictness::All with a wrong result for now.
+    if (join_info.strictness != JoinStrictness::Any && join_info.strictness != JoinStrictness::All)
+        return 0;
+
+    if (!isInner(join_info.kind) && !isLeft(join_info.kind) && !isRight(join_info.kind))
+        return 0;
+
+    /// Do not support many condition for now.
+    if (!join_info.expression.disjunctive_conditions.empty())
+        return 0;
+
+    /// Only equality expressions are supported.
+    {
+        if (join_info.expression.condition.predicates.empty())
+            return 0;
+
+        if (!join_info.expression.condition.residual_conditions.empty())
+            return 0;
+
+        for (const auto & predicate : join_info.expression.condition.predicates)
+            if (predicate.op != PredicateOperator::Equals)
+                return 0;
+    }
+
+    const auto & required_output_columns = join->getRequiredOutpurColumns();
+    NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
+
+    const auto & join_expression_actions = join->getExpressionActions();
+    //auto unused_columns = findUnusedInputs(*join_expression_actions.post_join_actions);
+
+    const auto & left_input_header = join->getInputHeaders().front();
+    const auto & right_input_header = join->getInputHeaders().back();
+
+    /// Apply pre-join actions to input headers before checking for required columns.
+    // auto left_header = join_expression_actions.left_pre_join_actions->updateHeader(left_input_header);
+    // auto right_header = join_expression_actions.right_pre_join_actions->updateHeader(right_input_header);
+
+    QueryPlan::Node * lhs_in_node;
+    QueryPlan::Node * rhs_in_node;
+    NamePairs name_pairs;
+
+    bool build_set_from_feft_part = false;
+
+    if (isInnerOrLeft(join_info.kind) && !hasAnyInSet(right_input_header, required_output_columns_set))
+    {
+        /// Transform right to IN
+    }
+    else if (isInnerOrRight(join_info.kind) && !hasAnyInSet(left_input_header, required_output_columns_set))
+    {
+        /// Transform left to IN
+        build_set_from_feft_part = true;
+    }
+    else
+        return 0;
+
+    JoinActionRef unused_post_filter(nullptr);
+    join->appendRequiredOutputsToActions(unused_post_filter);
+
+    lhs_in_node = makeExpressionNodeOnTopOf(parent_node->children.at(0), std::move(*join_expression_actions.left_pre_join_actions), {}, nodes);
+    rhs_in_node = makeExpressionNodeOnTopOf(parent_node->children.at(1), std::move(*join_expression_actions.right_pre_join_actions), {}, nodes);
+
+    if (build_set_from_feft_part)
+        std::swap(lhs_in_node, rhs_in_node);
+
+    name_pairs.reserve(join_info.expression.condition.predicates.size());
+    for (const auto & predicate : join_info.expression.condition.predicates)
+    {
+        name_pairs.push_back(NamePair{predicate.left_node.getColumnName(), predicate.right_node.getColumnName()});
+        if (build_set_from_feft_part)
+            std::swap(name_pairs.back().lhs_name, name_pairs.back().rhs_name);
+    }
+
+    /// Join equality does not match Nulls.
+    /// In case we support NullSafeEquals, we should set transform_null_in = true.
+    /// But it would require proper support for sets with multiple keys.
+    bool transform_null_in = false;
+
+    auto in_conversion = buildInConversion(
+        lhs_in_node->step->getOutputHeader(),
+        name_pairs,
+        std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes)),
+        transform_null_in,
+        settings.network_transfer_limits,
+        settings.use_index_for_in_with_subqueries_max_values);
+
+    auto filter_name = in_conversion.dag.getOutputs().front()->result_name;
+    lhs_in_node = makeExpressionNodeOnTopOf(lhs_in_node, std::move(in_conversion.dag), filter_name, nodes);
+
+    //auto post_actions = dropInputs(*join_expression_actions.post_join_actions, right_header);
+    lhs_in_node = makeExpressionNodeOnTopOf(lhs_in_node, std::move(*join_expression_actions.post_join_actions), {}, nodes);
+
+    auto creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(
+        lhs_in_node->step->getOutputHeader(),
+        PreparedSets::Subqueries{std::move(in_conversion.set)},
+        settings.network_transfer_limits,
+        nullptr);
+
+    creating_sets_step->setStepDescription("Create sets after JOIN -> IN optimiation");
+    parent = std::move(creating_sets_step);
+    parent_node->children = {lhs_in_node};
+
+    /// JoinLogical is replaced to [Expression(left_pre_join_actions), Expression(IN), Expression(post_join_actions), DelayedCreatingSets]
+    return 4;
+
+    // for (const auto & column_with_type_and_name : output_header)
+    // {
+    //     const auto & column_name = column_with_type_and_name.name;
+    //     bool left = left_input_header.has(column_name);
+    //     bool right = right_input_header.has(column_name);
+
+    //     /// All come from left side?
+    //     if (!(left && !right))
+    //         return 0;
+
+    //     /// Check in and out type
+    //     if (!left_input_header.getByName(column_name).type->equals(*column_with_type_and_name.type))
+    //         return 0;
+    // }
+
+
+    /// Steps like ReadFromSystemColumns would build set in place, different from here, so return.
+    /// TODO: might have stricter filter
+    // if (!findReadingStep(*parent_node->children.front()))
+    //     return 0;
+
+    // /// dag used by In and Filter
+    // const Header & left_header = parent_node->children.front()->step->getOutputHeader();
+    // const Header & right_header = parent_node->children.back()->step->getOutputHeader();
+    // std::optional<ActionsDAG> dag = ActionsDAG(left_header.getColumnsWithTypeAndName());
+
+    // std::unordered_map<std::string_view, const ActionsDAG::Node *> outputs;
+    // for (const auto & output : dag->getOutputs())
+    //     outputs.emplace(output->result_name, output);
+
+    // std::vector<const ActionsDAG::Node *> left_columns;
+    // Header right_predicate_header;
+    // for (const auto & predicate : join_info.expression.condition.predicates)
+    // {
+    //     auto it = outputs.find(predicate.left_node.getColumn().name);
+    //     if (it == outputs.end())
+    //         return 0;
+    //     left_columns.push_back(it->second);
+
+    //     const auto * right_column = right_header.findByName(predicate.right_node.getColumn().name);
+    //     if (!right_column)
+    //         return 0;
+    //     /// column in predicate is null, so get column here
+    //     right_predicate_header.insert(*right_column);
+    // }
+
+    // /// left parameter of IN function
+    // FunctionOverloadResolverPtr func_tuple_builder =
+    //     std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionTuple>());
+    // const ActionsDAG::Node * in_lhs_arg = left_columns.size() == 1 ?
+    //     left_columns.front() :
+    //     &dag->addFunction(func_tuple_builder, std::move(left_columns), {});
+
+    // /// right parameter of IN function
+    // auto future_set = std::make_shared<FutureSetFromSubquery>(
+    //     CityHash_v1_0_2::uint128(),
+    //     right_predicate_header.getColumnsWithTypeAndName());
+
+    // chassert(future_set->get() == nullptr);
+    // ColumnPtr set_col = ColumnSet::create(1, future_set);
+    // const ActionsDAG::Node * in_rhs_arg =
+    //     &dag->addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});
+
+    // /// IN function
+    // auto func_in = FunctionFactory::instance().get("in", nullptr);
+    // const auto & in_node = dag->addFunction(func_in, {in_lhs_arg, in_rhs_arg}, "");
+    // dag->getOutputs().push_back(&in_node);
+
+    // /// Attach IN to FilterStep
+    // auto filter_step = std::make_unique<FilterStep>(left_header,
+    //     std::move(*dag),
+    //     in_node.result_name,
+    //     false);
+    // filter_step->setStepDescription("WHERE");
+
+    // /// CreatingSetsStep as root
+    // Headers input_headers{output_header};
+    // auto creating_sets_step = std::make_unique<CreatingSetsStep>(input_headers);
+    // creating_sets_step->setStepDescription("Create sets before main query execution");
+
+    // /// creating_set_step as right subtree
+    // auto creating_set_step = future_set->build(right_predicate_header);
+
+    // /// Modify the plan tree
+    // QueryPlan::Node * left_tree = parent_node->children[0];
+    // QueryPlan::Node * right_tree = parent_node->children[1];
+    // parent_node->children.clear();
+    // parent_node->step = std::move(creating_sets_step);
+
+    // auto & filter_node = nodes.emplace_back();
+    // filter_node.step = std::move(filter_step);
+    // filter_node.children.push_back(left_tree);
+    // parent_node->children.push_back(&filter_node);
+
+    // auto & creating_set_node = nodes.emplace_back();
+    // creating_set_node.step = std::move(creating_set_step);
+    // creating_set_node.children.push_back(right_tree);
+    // parent_node->children.push_back(&creating_set_node);
 }
 
 }
