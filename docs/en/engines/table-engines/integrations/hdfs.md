@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/integrations/hdfs
+description: 'This engine provides integration with the Apache Hadoop ecosystem by
+  allowing to manage data on HDFS via ClickHouse. This engine is similar to the File
+  and URL engines, but provides Hadoop-specific features.'
+sidebar_label: 'HDFS'
 sidebar_position: 80
-sidebar_label: HDFS
-title: "HDFS"
-description: "This engine provides integration with the Apache Hadoop ecosystem by allowing to manage data on HDFS via ClickHouse. This engine is similar to the File and URL engines, but provides Hadoop-specific features."
+slug: /engines/table-engines/integrations/hdfs
+title: 'HDFS'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

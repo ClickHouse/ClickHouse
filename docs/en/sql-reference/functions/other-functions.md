@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/other-functions
+description: 'Documentation for Other Functions'
+sidebar_label: 'Other'
 sidebar_position: 140
-sidebar_label: Other
+slug: /sql-reference/functions/other-functions
+title: 'Other Functions'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

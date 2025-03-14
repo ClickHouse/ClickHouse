@@ -1,7 +1,8 @@
 ---
-title: HiveText
+description: 'Documentation for the HiveText format'
+keywords: ['HiveText']
 slug: /interfaces/formats/HiveText
-keywords: [HiveText]
+title: 'HiveText'
 ---
 
 ## Description {#description}

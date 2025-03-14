@@ -1,10 +1,11 @@
 ---
-title: SQLInsert
-slug: /interfaces/formats/SQLInsert
-keywords: [SQLInsert]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the SQLInsert format'
+input_format: false
+keywords: ['SQLInsert']
+output_format: true
+slug: /interfaces/formats/SQLInsert
+title: 'SQLInsert'
 ---
 
 | Input | Output | Alias |

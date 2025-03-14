@@ -2,8 +2,8 @@
 slug: /sql-reference/table-functions/format
 sidebar_position: 65
 sidebar_label: format
-title: "format"
-description: "Parses data from arguments according to specified input format. If structure argument is not specified, it's extracted from the data."
+title: 'format'
+description: 'Parses data from arguments according to specified input format. If structure argument is not specified, it''s extracted from the data.'
 ---
 
 # format Table Function

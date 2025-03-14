@@ -1,10 +1,11 @@
 ---
-title: JSON
-slug: /interfaces/formats/JSON
-keywords: [JSON]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the JSON format'
+input_format: true
+keywords: ['JSON']
+output_format: true
+slug: /interfaces/formats/JSON
+title: 'JSON'
 ---
 
 | Input | Output | Alias |
