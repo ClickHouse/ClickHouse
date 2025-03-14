@@ -94,7 +94,7 @@ public:
             size += sizeof(*current_snapshot);
         if (cached_unprunned_files_for_current_snapshot.has_value())
         {
-            size += sizeof(*cached_unprunned_files_for_current_snapshot);
+            size += sizeof(Strings);
             for (const String & str: *cached_unprunned_files_for_current_snapshot)
                 size += str.size();
         }
