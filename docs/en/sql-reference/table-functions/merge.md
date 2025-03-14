@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/merge
+description: 'Creates a temporary Merge table. The table structure is taken from the
+  first table encountered that matches the regular expression.'
+sidebar_label: 'merge'
 sidebar_position: 130
-sidebar_label: merge
-title: "merge"
-description: "Creates a temporary Merge table. The table structure is taken from the first table encountered that matches the regular expression."
+slug: /sql-reference/table-functions/merge
+title: 'merge'
 ---
 
 # merge Table Function

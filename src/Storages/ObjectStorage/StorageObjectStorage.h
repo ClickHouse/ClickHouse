@@ -18,6 +18,7 @@ class ReadBufferIterator;
 class SchemaCache;
 class NamedCollection;
 struct StorageObjectStorageSettings;
+using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
 namespace ErrorCodes
 {
@@ -168,11 +169,11 @@ public:
     using Paths = std::vector<Path>;
 
     static void initialize(
-        Configuration & configuration,
+        Configuration & configuration_to_initialize,
         ASTs & engine_args,
         ContextPtr local_context,
         bool with_table_structure,
-        StorageObjectStorageSettings * settings);
+        StorageObjectStorageSettingsPtr settings);
 
     /// Storage type: s3, hdfs, azure, local.
     virtual ObjectStorageType getType() const = 0;
@@ -253,6 +254,7 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
 
+    const StorageObjectStorageSettings & getSettingsRef() const;
 
 protected:
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
@@ -262,8 +264,7 @@ protected:
 
     bool initialized = false;
 
-    bool allow_dynamic_metadata_for_data_lakes = false;
-    bool allow_experimental_delta_kernel_rs = false;
+    StorageObjectStorageSettingsPtr storage_settings;
 };
 
 }

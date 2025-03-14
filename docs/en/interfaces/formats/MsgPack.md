@@ -1,10 +1,11 @@
 ---
-title: MsgPack
-slug: /interfaces/formats/MsgPack
-keywords: [MsgPack]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the MsgPack format'
+input_format: true
+keywords: ['MsgPack']
+output_format: true
+slug: /interfaces/formats/MsgPack
+title: 'MsgPack'
 ---
 
 | Input | Output | Alias |

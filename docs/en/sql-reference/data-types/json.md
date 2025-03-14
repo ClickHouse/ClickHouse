@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/data-types/object-data-type
+description: 'Documentation for deprecated Object data type in ClickHouse'
+keywords: ['object', 'data type']
+sidebar_label: 'Object Data Type'
 sidebar_position: 26
-sidebar_label: Object Data Type
-keywords: [object, data type]
+slug: /sql-reference/data-types/object-data-type
+title: 'Object Data Type '
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';

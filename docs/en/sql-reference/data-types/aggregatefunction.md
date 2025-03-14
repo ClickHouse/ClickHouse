@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/data-types/aggregatefunction
-sidebar_position: 46
-sidebar_label: AggregateFunction
+description: 'Documentation for the AggregateFunction data type in ClickHouse, which
+  stores intermediate states of aggregate functions'
 keywords: ['AggregateFunction', 'Type']
+sidebar_label: 'AggregateFunction'
+sidebar_position: 46
+sidebar_label: 'AggregateFunction'
 ---
 
 # AggregateFunction Type
@@ -45,14 +47,6 @@ CREATE TABLE t
     column3 AggregateFunction(quantiles(0.5, 0.9), UInt64)
 ) ENGINE = ...
 ```
-
-## Supported functions {#supported-functions}
-
-The following aggregate functions are supported for use with `AggregateState` in ClickHouse:
-
-- [uniq](/sql-reference/aggregate-functions/reference/uniq)
-- anyIf ([any](/sql-reference/aggregate-functions/reference/any)+[If](/sql-reference/aggregate-functions/combinators#-if))
-- [quantiles](../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)
 
 ## Usage {#usage}
 

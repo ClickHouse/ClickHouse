@@ -1,10 +1,11 @@
 ---
+description: 'Quickly find search terms in text.'
+keywords: ['full-text search', 'text search', 'index', 'indices']
+sidebar_label: 'Full-text Indexes'
 slug: /engines/table-engines/mergetree-family/invertedindexes
-sidebar_label: Full-text Indexes
-description: Quickly find search terms in text.
-keywords: [full-text search, text search, index, indices]
-title: "Full-text Search using Full-text Indexes"
+title: 'Full-text Search using Full-text Indexes'
 ---
+
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 

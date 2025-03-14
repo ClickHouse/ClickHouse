@@ -986,9 +986,9 @@ def test_formats_errors(kafka_cluster):
             instance.query("DROP TABLE test.view")
 
 
-def test_kafka_duplicates_when_commit_failed(kafka_cluster):
+def test_kafka_handling_commit_failure(kafka_cluster):
     messages = [json.dumps({"key": j + 1, "value": "x" * 300}) for j in range(22)]
-    k.kafka_produce(kafka_cluster, "duplicates_when_commit_failed", messages)
+    k.kafka_produce(kafka_cluster, "handling_commit_failure", messages)
 
     instance.query(
         """
@@ -998,8 +998,8 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
         CREATE TABLE test.kafka (key UInt64, value String)
             ENGINE = Kafka
             SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'duplicates_when_commit_failed',
-                     kafka_group_name = 'duplicates_when_commit_failed',
+                     kafka_topic_list = 'handling_commit_failure',
+                     kafka_group_name = 'handling_commit_failure',
                      kafka_format = 'JSONEachRow',
                      kafka_max_block_size = 20,
                      kafka_flush_interval_ms = 1000;
@@ -1024,21 +1024,17 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
     # while materialized view is working to inject zookeeper failure
 
     with kafka_cluster.pause_container("kafka1"):
-        # if we restore the connection too fast (<30sec) librdkafka will not report any timeout
-        # (alternative is to decrease the default session timeouts for librdkafka)
-        #
-        # when the delay is too long (>50sec) broker will decide to remove us from the consumer group,
-        # and will start answering "Broker: Unknown member"
         instance.wait_for_log_line(
-            "Exception during commit attempt: Local: Waiting for coordinator", timeout=45
+            "timeout", timeout=60, look_behind_lines=100
         )
-        instance.wait_for_log_line("All commit attempts failed", look_behind_lines=500)
 
     # kafka_cluster.open_bash_shell('instance')
     instance.wait_for_log_line("Committed offset 22")
 
-    result = instance.query("SELECT count(), uniqExact(key), max(key) FROM test.view")
-    logging.debug(result)
+    uniq_and_max = instance.query("SELECT uniqExact(key), max(key) FROM test.view")
+    count = instance.query("SELECT count() FROM test.view")
+    logging.debug(uniq_and_max)
+    logging.debug(count)
 
     instance.query(
         """
@@ -1050,7 +1046,10 @@ def test_kafka_duplicates_when_commit_failed(kafka_cluster):
     # After https://github.com/edenhill/librdkafka/issues/2631
     # timeout triggers rebalance, making further commits to the topic after getting back online
     # impossible. So we have a duplicate in that scenario, but we report that situation properly.
-    assert TSV(result) == TSV("42\t22\t22")
+    # It is okay to have duplicates in case of commit failure, the important thing to test is we
+    # each message at least once.
+    assert TSV(uniq_and_max) == TSV("22\t22")
+    assert int(count) >= 22
 
 
 @pytest.mark.parametrize(

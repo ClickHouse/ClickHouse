@@ -1,10 +1,11 @@
 ---
-title: Protobuf
-slug: /interfaces/formats/Protobuf
-keywords: [Protobuf]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the Protobuf format'
+input_format: true
+keywords: ['Protobuf']
+output_format: true
+slug: /interfaces/formats/Protobuf
+title: 'Protobuf'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

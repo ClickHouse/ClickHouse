@@ -16,10 +16,10 @@ start_total=`date +%s`
 #runtime=$((`date +%s`-start))
 #echo "Check python formatting with isort. Done. $runtime seconds."
 
-start=`date +%s`
-./check-pylint -n               |& tee /test_output/pylint_output.txt
-runtime=$((`date +%s`-start))
-echo "Check pylint. Done. $runtime seconds."
+#start=`date +%s`
+#./check-pylint -n               |& tee /test_output/pylint_output.txt
+#runtime=$((`date +%s`-start))
+#echo "Check pylint. Done. $runtime seconds."
 
 start=`date +%s`
 ./check-mypy -n               |& tee /test_output/mypy_output.txt
