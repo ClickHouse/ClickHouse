@@ -16,7 +16,7 @@
 namespace DB
 {
 
-void TextLogSink::log(const ExtendedLogMessage & msg, bool send_to_text_log)
+void TextLogSink::log(const ExtendedLogMessage & msg, [[maybe_unused]] bool send_to_text_log)
 {
     LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 

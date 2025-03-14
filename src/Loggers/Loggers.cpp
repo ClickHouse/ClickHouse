@@ -17,6 +17,7 @@
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include "IO/WriteBufferFromString.h"
 
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
@@ -178,7 +179,6 @@ public:
         : StreamSink{streamToString(stream), nullptr}
         , enable_colors(enable_colors_)
     {
-        assert((stream == "stdout") || (stream == "stderr"));
     }
 
     ~ConsoleSink() override = default;
@@ -216,9 +216,16 @@ public:
             return;
         }
 
+        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+        std::string colored_log;
+        /// reset color takes 7 bytes
+        /// color can be at most 19 bytes
+        colored_log.resize(log_statement.size() + 5 * 26);
+        DB::WriteBufferFromString buf(colored_log);
         auto write_string = [&](std::string_view str)
         {
-            safe_fwrite(str.data(), sizeof(char), str.size(), _file);
+            buf.write(str.data(), str.size());
+            //safe_fwrite(str.data(), sizeof(char), str.size(), _file);
         };
 
         std::string_view reset_color = resetColor();
@@ -241,11 +248,14 @@ public:
 
         auto query_id_end = log_statement.find('}');
         auto query_id_str = log_statement.substr(0, query_id_end);
-        auto query_id_color = setColor(std::hash<std::string_view>()(query_id_str));
-        write_string(query_id_color);
-        write_string(query_id_str);
-        write_string(reset_color);
-        log_statement.remove_prefix(query_id_str.size());
+        if (!query_id_str.empty())
+        {
+            auto query_id_color = setColor(std::hash<std::string_view>()(query_id_str));
+            write_string(query_id_color);
+            write_string(query_id_str);
+            write_string(reset_color);
+            log_statement.remove_prefix(query_id_str.size());
+        }
 
         auto priority_start = log_statement.find('<') + 1;
         write_string(log_statement.substr(0, priority_start));
@@ -268,6 +278,10 @@ public:
         write_string(reset_color);
         log_statement.remove_prefix(logger_name_str.size());
 
+        write_string(log_statement);
+
+        buf.finalize();
+
         // Write record to file
         StreamSink::write_log(
             log_metadata,
@@ -281,7 +295,7 @@ public:
             log_level_short_code,
             named_args,
             log_message,
-            log_statement);
+            colored_log);
     }
 private:
     std::string_view getLogLevelColor(std::string_view log_level_short_code)
@@ -604,6 +618,12 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     time_t now = std::time({});
 
+    bool use_json_format = config.getString("logger.formatting.type", "") == "json";
+    if (use_json_format)
+        Logger::setFormatter(std::make_unique<OwnJSONPatternFormatter>(config));
+    else
+        Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
+
     const auto log_path_prop = config.getString("logger.log", "");
     if (!log_path_prop.empty())
     {
@@ -699,7 +719,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     if (config.getBool("logger.console", false)
         || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
     {
-        bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
+        bool color_enabled = !use_json_format && config.getBool("logger.color_terminal", color_logs_by_default);
 
         auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
         auto console_log_level = DB::parseQuillLogLevel(console_log_level_string);
