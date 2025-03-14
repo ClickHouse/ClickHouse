@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/simpleaggregatefunction
+description: 'Documentation for the SimpleAggregateFunction data type'
+sidebar_label: 'SimpleAggregateFunction'
 sidebar_position: 48
-sidebar_label: SimpleAggregateFunction
+slug: /sql-reference/data-types/simpleaggregatefunction
+title: 'SimpleAggregateFunction Type'
 ---
 
 # SimpleAggregateFunction Type

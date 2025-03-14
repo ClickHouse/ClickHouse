@@ -1,10 +1,11 @@
 ---
-title: ORC
-slug: /interfaces/formats/ORC
-keywords: [ORC]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the ORC format'
+input_format: true
+keywords: ['ORC']
+output_format: true
+slug: /interfaces/formats/ORC
+title: 'ORC'
 ---
 
 | Input | Output | Alias |

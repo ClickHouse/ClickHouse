@@ -1,9 +1,9 @@
 ---
 slug: /sql-reference/table-functions/generate_series
 sidebar_position: 146
-sidebar_label: generate_series
-title: "generate_series (generateSeries)"
-description: "Returns a table with the single 'generate_series' column (UInt64) that contains integers from start to stop inclusively."
+sidebar_label: 'generate_series'
+title: 'generate_series (generateSeries)'
+description: 'Returns a table with the single `generate_series` column (UInt64) that contains integers from start to stop inclusively.'
 ---
 
 # generate_series (generateSeries) Table Function

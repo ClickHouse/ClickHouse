@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/date-time-functions
+description: 'Documentation for Functions for Working with Dates and Times'
+sidebar_label: 'Dates and Times'
 sidebar_position: 45
-sidebar_label: Dates and Times
+slug: /sql-reference/functions/date-time-functions
+title: 'Functions for Working with Dates and Times'
 ---
 
 # Functions for Working with Dates and Times

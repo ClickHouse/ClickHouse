@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletdigestweighted
+description: 'Computes an approximate quantile of a numeric data sequence using the
+  t-digest algorithm.'
 sidebar_position: 179
-title: "quantileTDigestWeighted"
-description: "Computes an approximate quantile of a numeric data sequence using the t-digest algorithm."
+slug: /sql-reference/aggregate-functions/reference/quantiletdigestweighted
+title: 'quantileTDigestWeighted'
 ---
 
 # quantileTDigestWeighted
