@@ -684,6 +684,7 @@ Nambiar
 Namenode
 NamesAndTypesList
 Nano
+Neovim
 Nesterov
 NetworkReceive
 NetworkReceiveBytes
