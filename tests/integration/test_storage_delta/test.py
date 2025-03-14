@@ -43,8 +43,26 @@ from helpers.s3_tools import (
     upload_directory,
 )
 from helpers.test_tools import TSV
+from helpers.mock_servers import start_mock_servers
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+METADATA_SERVER_HOSTNAME = "resolver"
+METADATA_SERVER_PORT = 8080
+
+
+def start_metadata_server(cluster):
+    script_dir = os.path.join(os.path.dirname(__file__), "metadata_servers")
+    start_mock_servers(
+        cluster,
+        script_dir,
+        [
+            (
+                "server_with_session_tokens.py",
+                METADATA_SERVER_HOSTNAME,
+                METADATA_SERVER_PORT,
+            )
+        ],
+    )
 
 
 def get_spark():
@@ -93,11 +111,35 @@ def started_cluster():
             stay_alive=True,
             with_zookeeper=True,
         )
+        cluster.add_instance(
+            "node_with_session_token",
+            with_minio=True,
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/use_environment_credentials.xml",
+            ],
+            env_variables={
+                "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}",
+            },
+        )
+        cluster.add_instance(
+            "node_with_environment_credentials",
+            with_minio=True,
+            main_configs=[
+                "configs/config.d/named_collections.xml",
+                "configs/config.d/use_environment_credentials.xml",
+            ],
+            env_variables={
+                "AWS_ACCESS_KEY_ID": "minio",
+                "AWS_SECRET_ACCESS_KEY": "minio123",
+            },
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
 
         prepare_s3_bucket(cluster)
+        start_metadata_server(cluster)
 
         cluster.spark_session = get_spark()
 
@@ -159,7 +201,7 @@ def create_delta_table(node, table_name, bucket="root", use_delta_kernel=False):
 
 
 def create_initial_data_file(
-    cluster, node, query, table_name, compression_method="none"
+    cluster, node, query, table_name, compression_method="none", node_name="node1"
 ):
     node.query(
         f"""
@@ -171,7 +213,7 @@ def create_initial_data_file(
         FORMAT Parquet"""
     )
     user_files_path = os.path.join(
-        SCRIPT_DIR, f"{cluster.instances_dir_name}/node1/database/user_files"
+        SCRIPT_DIR, f"{cluster.instances_dir_name}/{node_name}/database/user_files"
     )
     result_path = f"{user_files_path}/{table_name}.parquet"
     return result_path
@@ -471,7 +513,9 @@ def test_restart_broken(started_cluster, use_delta_kernel):
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    create_delta_table(instance, TABLE_NAME, bucket=bucket, use_delta_kernel=use_delta_kernel)
+    create_delta_table(
+        instance, TABLE_NAME, bucket=bucket, use_delta_kernel=use_delta_kernel
+    )
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
 
     s3_objects = list_s3_objects(minio_client, bucket, prefix="")
@@ -886,7 +930,9 @@ def test_filesystem_cache(started_cluster, storage_type, use_delta_kernel):
 
     write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
     upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    create_delta_table(instance, TABLE_NAME, bucket=bucket, use_delta_kernel=use_delta_kernel)
+    create_delta_table(
+        instance, TABLE_NAME, bucket=bucket, use_delta_kernel=use_delta_kernel
+    )
 
     query_id = f"{TABLE_NAME}-{uuid.uuid4()}"
     instance.query(
@@ -1023,3 +1069,84 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
         assert "123456" not in node2.query(
             f"SELECT * FROM system.zookeeper WHERE path = '{replica_path}'"
         )
+
+
+def test_session_token(started_cluster):
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    TABLE_NAME = randomize_table_name("test_session_token")
+    bucket = started_cluster.minio_bucket
+
+    if not minio_client.bucket_exists(bucket):
+        minio_client.make_bucket(bucket)
+
+    node_name = "node_with_environment_credentials"
+    instance = started_cluster.instances[node_name]
+    parquet_data_path = create_initial_data_file(
+        started_cluster,
+        instance,
+        "SELECT toUInt64(number), toString(number) FROM numbers(100)",
+        TABLE_NAME,
+        node_name=node_name,
+    )
+
+    write_delta_from_file(spark, parquet_data_path, f"/{TABLE_NAME}")
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+
+    assert 0 < int(
+        instance.query(
+            f"""
+    SELECT count() FROM deltaLake(
+        'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/',
+        SETTINGS allow_experimental_delta_kernel_rs=1)
+    """
+        )
+    )
+
+    instance2 = started_cluster.instances["node1"]
+
+    assert 0 < int(
+        instance2.query(
+            f"""
+    SELECT count() FROM deltaLake(
+        'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/', 'minio', 'minio123',
+        SETTINGS allow_experimental_delta_kernel_rs=1)
+    """
+        )
+    )
+
+    assert (
+        "Received DeltaLake kernel error ReqwestError: Error interacting with object store"
+        in instance2.query_and_get_error(
+            f"""
+    SELECT count() FROM deltaLake(
+        'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/', 'minio', 'minio123', 'fake-token',
+        SETTINGS allow_experimental_delta_kernel_rs=1)
+    """
+        )
+    )
+
+    instance3 = started_cluster.instances["node_with_session_token"]
+
+    assert 0 < int(
+        instance3.query(
+            f"""
+       SELECT count() FROM deltaLake(
+           'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/',
+           SETTINGS allow_experimental_delta_kernel_rs=1)
+       """
+        )
+    )
+
+    #expected_logs = [
+    #    "Calling EC2MetadataService to get token",
+    #    "Calling EC2MetadataService resource, /latest/meta-data/iam/security-credentials with token returned profile string myrole",
+    #    "Calling EC2MetadataService resource resolver:8080/latest/meta-data/iam/security-credentials/myrole with token",
+    #    "Successfully pulled credentials from EC2MetadataService with access key",
+    #]
+
+    #instance3.query("SYSTEM FLUSH LOGS")
+    #for expected_msg in expected_logs:
+    #    assert instance3.contains_in_log(
+    #        "AWSEC2InstanceProfileConfigLoader: " + expected_msg
+    #    )
