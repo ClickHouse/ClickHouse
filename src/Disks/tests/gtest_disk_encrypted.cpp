@@ -452,7 +452,7 @@ TEST_F(DiskEncryptedTest, LocalBlobs)
 {
     getContext().context->setServerSetting("storage_metadata_write_full_object_key", true);
 
-    auto object_storage = std::make_shared<LocalObjectStorage>(fs::path{getDirectory()} / "local_blobs");
+    auto object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings(fs::path{getDirectory()} / "local_blobs", false));
     auto metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
     auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/");
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
