@@ -358,6 +358,10 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DDL query was cancelled");
             }
 
+            if (database->is_recovering)
+                throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "This database replica is recovering "
+                                                                         "and temporarily cannot execute DDL queries, try another replica");
+
             return current_task == entry_name;
         });
 

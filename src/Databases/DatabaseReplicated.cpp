@@ -1186,6 +1186,8 @@ void DatabaseReplicated::recoverLostReplica(const ZooKeeperPtr & current_zookeep
     is_recovering = true;
     SCOPE_EXIT({ is_recovering = false; });
 
+    ddl_worker->notifyCurrentTaskChange();
+
     /// Let's compare local (possibly outdated) metadata with (most actual) metadata stored in ZooKeeper
     /// and try to update the set of local tables.
     /// We could drop all local tables and create the new ones just like it's new replica.

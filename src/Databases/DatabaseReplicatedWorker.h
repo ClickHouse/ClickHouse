@@ -45,6 +45,8 @@ public:
         queue_updated_event->set();
     }
 
+    void notifyCurrentTaskChange() { wait_current_task_change.notify_all(); }
+
 private:
     bool initializeMainThread() override;
     void initializeReplication() override;
