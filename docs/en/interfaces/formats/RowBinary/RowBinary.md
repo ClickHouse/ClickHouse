@@ -1,10 +1,11 @@
 ---
-title: RowBinary
-slug: /interfaces/formats/RowBinary
-keywords: [RowBinary]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the RowBinary format'
+input_format: true
+keywords: ['RowBinary']
+output_format: true
+slug: /interfaces/formats/RowBinary
+title: 'RowBinary'
 ---
 
 import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'

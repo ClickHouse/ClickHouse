@@ -1,10 +1,11 @@
 ---
-title: Form
-slug: /interfaces/formats/Form
-keywords: [Form]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the Form format'
+input_format: true
+keywords: ['Form']
+output_format: false
+slug: /interfaces/formats/Form
+title: 'Form'
 ---
 
 | Input | Output | Alias |

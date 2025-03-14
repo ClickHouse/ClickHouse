@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/create/quota
+description: 'Documentation for Quota'
+sidebar_label: 'QUOTA'
 sidebar_position: 42
-sidebar_label: QUOTA
-title: "CREATE QUOTA"
+slug: /sql-reference/statements/create/quota
+title: 'CREATE QUOTA'
 ---
 
 Creates a [quota](../../../guides/sre/user-management/index.md#quotas-management) that can be assigned to a user or a role.

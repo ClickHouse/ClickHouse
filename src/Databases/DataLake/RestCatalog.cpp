@@ -1,8 +1,8 @@
 #include "config.h"
 
 #if USE_AVRO
-#include <Databases/Iceberg/RestCatalog.h>
-#include <Databases/Iceberg/StorageCredentials.h>
+#include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/StorageCredentials.h>
 
 #include <base/find_symbols.h>
 #include <Core/Settings.h>
@@ -29,12 +29,12 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int ICEBERG_CATALOG_ERROR;
+    extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Iceberg
+namespace DataLake
 {
 
 static constexpr auto CONFIG_ENDPOINT = "config";
@@ -417,7 +417,7 @@ RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_name
             "Code: {}, status: {}, message: {}",
             e.code(), e.getHTTPStatus(), e.displayText());
 
-        throw DB::Exception(DB::ErrorCodes::ICEBERG_CATALOG_ERROR, "{}", message);
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", message);
     }
 }
 
@@ -540,7 +540,7 @@ void RestCatalog::getTableMetadata(
     TableMetadata & result) const
 {
     if (!getTableMetadataImpl(namespace_name, table_name, result))
-        throw DB::Exception(DB::ErrorCodes::ICEBERG_CATALOG_ERROR, "No response from iceberg catalog");
+        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from iceberg catalog");
 }
 
 bool RestCatalog::getTableMetadataImpl(
@@ -591,9 +591,16 @@ bool RestCatalog::getTableMetadataImpl(
     std::string location;
     if (result.requiresLocation())
     {
-        location = metadata_object->get("location").extract<String>();
-        result.setLocation(location);
-        LOG_TEST(log, "Location for table {}: {}", table_name, location);
+        if (metadata_object->has("location"))
+        {
+            location = metadata_object->get("location").extract<String>();
+            result.setLocation(location);
+            LOG_TEST(log, "Location for table {}: {}", table_name, location);
+        }
+        else
+        {
+            result.setTableIsNotReadable(fmt::format("Cannot read table {}, because no 'location' in response", table_name));
+        }
     }
 
     if (result.requiresSchema())
@@ -605,7 +612,7 @@ bool RestCatalog::getTableMetadataImpl(
         result.setSchema(*schema);
     }
 
-    if (result.requiresCredentials() && object->has("config"))
+    if (result.isDefaultReadableTable() && result.requiresCredentials() && object->has("config"))
     {
         auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
         if (!config_object)
@@ -642,6 +649,15 @@ bool RestCatalog::getTableMetadataImpl(
             }
             default:
                 break;
+        }
+    }
+
+    if (result.requiresDataLakeSpecificProperties())
+    {
+        if (object->has("metadata-location") && !object->get("metadata-location").isEmpty())
+        {
+            auto metadata_location = object->get("metadata-location").extract<String>();
+            result.setDataLakeSpecificProperties(DataLakeSpecificProperties{ .iceberg_metadata_file_location = metadata_location });
         }
     }
 

@@ -1,9 +1,10 @@
 ---
-slug: /engines/database-engines/backup
+description: 'Allows to instantly attach table/database from backups in read-only
+  mode.'
+sidebar_label: 'Backup'
 sidebar_position: 60
-sidebar_label: Backup
-title: "Backup"
-description: "Allows to instantly attach table/database from backups in read-only mode."
+slug: /engines/database-engines/backup
+title: 'Backup'
 ---
 
 # Backup

@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/string-replace-functions
+description: 'Documentation for Functions for Replacing in Strings'
+sidebar_label: 'Replacing in Strings'
 sidebar_position: 150
-sidebar_label: Replacing in Strings
+slug: /sql-reference/functions/string-replace-functions
+title: 'Functions for Replacing in Strings'
 ---
 
 # Functions for Replacing in Strings

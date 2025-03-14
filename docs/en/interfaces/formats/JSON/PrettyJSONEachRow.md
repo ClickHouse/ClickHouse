@@ -1,10 +1,13 @@
 ---
-title: PrettyJSONEachRow
-slug: /interfaces/formats/PrettyJSONEachRow
-keywords: [PrettyJSONEachRow, PrettyJSONLines, PrettyNDJSON]
+alias:
+- PrettyJSONLines
+- PrettyNDJSON
+description: 'Documentation for the PrettyJSONLines format'
 input_format: false
+keywords: ['PrettyJSONEachRow', 'PrettyJSONLines', 'PrettyNDJSON']
 output_format: true
-alias: ['PrettyJSONLines', 'PrettyNDJSON']
+slug: /interfaces/formats/PrettyJSONEachRow
+title: 'PrettyJSONEachRow'
 ---
 
 | Input | Output | Alias                             |
