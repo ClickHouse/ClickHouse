@@ -510,6 +510,9 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
     if (!select && !external_tables.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
 
+    if (isEmbeeddedClient() && !external_tables.empty())
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External tables are not allowed in embedded more");
+
     std::vector<ExternalTableDataPtr> data;
     for (auto & table : external_tables)
         data.emplace_back(table.getData(client_context));
