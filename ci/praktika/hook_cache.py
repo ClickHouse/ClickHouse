@@ -34,11 +34,13 @@ class CacheRunnerHooks:
                 artifact_digest_map[job.name] = digest
         for job in workflow.jobs:
             digests_combined_list = []
-            if job.requires and job.digest_config:
-                # include digest of required artifact to the job digest, so that they affect job state
-                for artifact_name in job.requires:
-                    if artifact_name in artifact_digest_map:
-                        digests_combined_list.append(artifact_digest_map[artifact_name])
+            # Should digest depend on required job artifacts?
+            # Remove the code below and related variables: artifact_digest_map, if not?
+            # if job.requires and job.digest_config:
+            #     # include digest of required artifact to the job digest, so that they affect job state
+            #     for artifact_name in job.requires:
+            #         if artifact_name in artifact_digest_map:
+            #             digests_combined_list.append(artifact_digest_map[artifact_name])
             digests_combined_list.append(job_digest_map[job.name])
             final_digest = "-".join(digests_combined_list)
             workflow_config.digest_jobs[job.name] = final_digest
