@@ -9,7 +9,7 @@ title: 'Composable Protocols'
 
 # Composable Protocols
 
-## Overview
+## Overview {#overview}
 
 Composable protocols allow more flexible configuration of TCP access to the 
 ClickHouse server. This configuration can co-exist alongside, or replace, 
