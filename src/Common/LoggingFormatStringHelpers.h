@@ -241,17 +241,14 @@ class LogFrequencyLimiterImpl
 public:
     LogFrequencyLimiterImpl(LoggerPtr logger_, time_t min_interval_s_) : logger(std::move(logger_)), min_interval_s(min_interval_s_) {}
 
-    LogFrequencyLimiterImpl * operator->() { return this; }
-    bool is(Poco::Message::Priority priority) { return logger->is(priority); }
-    LogFrequencyLimiterImpl * getChannel() {return this; }
-    const String & name() const { return logger->name(); }
+    std::string_view getName() const { return logger->getName(); }
 
-    void log(Poco::Message & message);
+    bool shouldLogMessage(Poco::Message & message);
 
     /// Clears messages that were logged last time more than too_old_threshold_s seconds ago
     static void cleanup(time_t too_old_threshold_s = 600);
 
-    LoggerPtr getLogger() { return logger; }
+    LoggerPtr getLogger() const { return logger; }
 };
 
 /// This wrapper helps to avoid too noisy log messages from similar objects.
@@ -279,14 +276,10 @@ class LogSeriesLimiter
 public:
     LogSeriesLimiter(LoggerPtr logger_, size_t allowed_count_, time_t interval_s_);
 
-    LogSeriesLimiter * operator->() { return this; }
-    bool is(Poco::Message::Priority priority) { return logger->is(priority); }
-    LogSeriesLimiter * getChannel() {return this; }
-    const String & name() const { return logger->name(); }
+    bool shouldLogMessage(Poco::Message & message);
+    std::string_view getName() const { return logger->getName(); }
 
-    void log(Poco::Message & message);
-
-    LoggerPtr getLogger() { return logger; }
+    LoggerPtr getLogger() const { return logger; }
 };
 
 /// This wrapper is useful to save formatted message into a String before sending it to a logger
@@ -299,21 +292,11 @@ class LogToStrImpl
 public:
     LogToStrImpl(String & out_str_, LoggerPtr logger_) : out_str(out_str_), logger(std::move(logger_)) {}
     LogToStrImpl(String & out_str_, LogFrequencyLimiterImpl && maybe_nested_)
-        : out_str(out_str_), logger(maybe_nested_->getLogger()), maybe_nested(std::move(maybe_nested_)) {}
+        : out_str(out_str_), logger(maybe_nested_.getLogger()), maybe_nested(std::move(maybe_nested_)) {}
 
-    LogToStrImpl * operator->() { return this; }
-    bool is(Poco::Message::Priority priority) { propagate_to_actual_log &= logger->is(priority); return true; }
-    LogToStrImpl * getChannel() {return this; }
-    const String & name() const { return logger->name(); }
+    std::string_view getName() const { return logger->getName(); }
 
-    void log(Poco::Message & message)
-    {
-        out_str = message.getText();
-        if (!propagate_to_actual_log)
-            return;
-        if (maybe_nested)
-            maybe_nested->log(message);
-        else if (auto * channel = logger->getChannel())
-            channel->log(message);
-    }
+    LoggerPtr getLogger() const { return logger; }
+
+    bool shouldLogMessage(Poco::Message & message);
 };

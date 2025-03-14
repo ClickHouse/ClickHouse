@@ -30,7 +30,7 @@ public:
 
 private:
     IServer & server;
-    Poco::Logger * log;
+    LoggerPtr log;
     ::ssh::SSHSession session;
     unsigned int max_auth_attempts;
     unsigned int auth_timeout_seconds;

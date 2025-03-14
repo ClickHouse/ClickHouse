@@ -67,7 +67,7 @@ bool ConfigProcessor::isPreprocessedFile(const std::string & path)
 ConfigProcessor::ConfigProcessor(
     const std::string & path_,
     bool throw_on_bad_incl_,
-    bool log_to_console,
+    bool /*log_to_console*/,
     const Substitutions & substitutions_)
     : path(path_)
     , throw_on_bad_incl(throw_on_bad_incl_)
@@ -78,15 +78,7 @@ ConfigProcessor::ConfigProcessor(
     , name_pool(new Poco::XML::NamePool(65521))
     , dom_parser(name_pool)
 {
-    if (log_to_console && !hasLogger("ConfigProcessor"))
-    {
-        channel_ptr = new Poco::ConsoleChannel;
-        log = createLogger("ConfigProcessor", channel_ptr.get(), Poco::Message::PRIO_TRACE);
-    }
-    else
-    {
-        log = getLogger("ConfigProcessor");
-    }
+    log = getLogger("ConfigProcessor");
 }
 
 static std::unordered_map<std::string, std::string_view> embedded_configs;
@@ -880,7 +872,7 @@ ConfigProcessor::LoadedConfig ConfigProcessor::loadConfigWithZooKeeperIncludes(
     return LoadedConfig{configuration, has_zk_includes, !processed_successfully, config_xml, path};
 }
 
-XMLDocumentPtr ConfigProcessor::hideElements(XMLDocumentPtr xml_tree)
+XMLDocumentPtr ConfigProcessor::hideElements(const XMLDocumentPtr & xml_tree)
 {
     /// Create a copy of XML Document because hiding elements from preprocessed_xml document
     /// also influences on configuration which has a pointer to preprocessed_xml document.

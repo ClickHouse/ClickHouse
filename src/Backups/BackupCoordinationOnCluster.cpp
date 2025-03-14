@@ -155,7 +155,7 @@ namespace
 Strings BackupCoordinationOnCluster::excludeInitiator(const Strings & all_hosts)
 {
     Strings all_hosts_without_initiator = all_hosts;
-    bool has_initiator = (std::erase(all_hosts_without_initiator, kInitiator) > 0);
+    [[maybe_unused]] bool has_initiator = (std::erase(all_hosts_without_initiator, kInitiator) > 0);
     chassert(has_initiator);
     return all_hosts_without_initiator;
 }

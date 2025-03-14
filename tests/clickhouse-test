@@ -3110,7 +3110,7 @@ def reportLogStats(args):
               'Database {} doesn''t exist', 'Dictionary ({}) not found', 'Unknown table function {}',
               'Unknown format {}', 'Unknown explain kind ''{}''', 'Unknown setting {}', 'Unknown input format {}',
               'Unknown identifier: ''{}''', 'User name is empty', 'Expected function, got: {}',
-              'Attempt to read after eof', 'String size is too big ({}), maximum: {}'
+              'Attempt to read after eof', 'String size is too big ({}), maximum: {}', 'starting up'
         ) AS known_short_messages
         SELECT count() AS c, message_format_string, substr(any(toValidUTF8(message)), 1, 120),
             min(if(length(regexpExtract(toValidUTF8(message), '(.*)\\([A-Z0-9_]+\\)')) as prefix_len > 0, prefix_len, length(toValidUTF8(message))) - 26 AS length_without_exception_boilerplate) AS min_length_without_exception_boilerplate

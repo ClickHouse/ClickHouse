@@ -220,9 +220,9 @@ void PostgreSQLHandler::run()
             }
         }
     }
-    catch (const Poco::Exception &exc)
+    catch (const Poco::Exception &)
     {
-        log->log(exc);
+        tryLogCurrentException(log);
     }
 
 }

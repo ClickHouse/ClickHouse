@@ -48,7 +48,7 @@ private:
     UInt32 cur_page_values = 0;
     bool reading_low_cardinality = false;
 
-    Poco::Logger * log;
+    LoggerPtr log;
 
     void resetColumn(UInt64 rows_num);
     void degradeDictionary();

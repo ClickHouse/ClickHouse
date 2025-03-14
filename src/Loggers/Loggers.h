@@ -13,6 +13,8 @@ namespace Poco::Util
     class AbstractConfiguration;
 }
 
+class RotatingFileSink;
+
 class Loggers
 {
 public:
@@ -29,8 +31,9 @@ protected:
     virtual bool allowTextLog() const { return true; }
 
 private:
-    Poco::AutoPtr<Poco::FileChannel> log_file;
-    Poco::AutoPtr<Poco::FileChannel> error_log_file;
+    std::shared_ptr<RotatingFileSink> log_file;
+    std::shared_ptr<RotatingFileSink> error_log_file;
+
     Poco::AutoPtr<Poco::Channel> syslog_channel;
 
     /// Previous value of logger element in config. It is used to reinitialize loggers whenever the value changed.
