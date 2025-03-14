@@ -544,7 +544,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
 
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
         /// Glue catalog is one per region, so it's fully identified by aws keys and region
-        /// There is no URL you need to provide in costructor, even if we would want it
+        /// There is no URL you need to provide in constructor, even if we would want it
         ///  will be something like https://aws.amazon.com.
         ///
         ///  NOTE: it's still possible to provide endpoint argument for Glue. It's used for fake
