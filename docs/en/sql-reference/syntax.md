@@ -1,6 +1,6 @@
 ---
 description: 'Documentation for Syntax'
-displayed_sidebar: sqlreference
+displayed_sidebar: 'sqlreference'
 sidebar_label: 'Syntax'
 sidebar_position: 2
 slug: /sql-reference/syntax
@@ -352,7 +352,7 @@ For example, the expression
 
 is transformed to 
 
-```
+```text
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 

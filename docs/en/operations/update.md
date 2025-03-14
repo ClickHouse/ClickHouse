@@ -1,6 +1,6 @@
 ---
 description: 'Documentation for Update'
-sidebar_title: Self-managed Upgrade
+sidebar_title: 'Self-managed Upgrade'
 slug: /operations/update
 title: 'Self-managed Upgrade'
 ---
