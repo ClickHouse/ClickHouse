@@ -41,8 +41,8 @@ public:
     }
 
     static DataLakeMetadataPtr create(
-        ObjectStoragePtr object_storage,
-        ConfigurationObserverPtr configuration,
+        ObjectStoragePtr object_storage_,
+        ConfigurationObserverPtr configuration_,
         ContextPtr local_context);
 
 private:

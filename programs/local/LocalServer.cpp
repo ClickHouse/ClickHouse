@@ -817,9 +817,6 @@ void LocalServer::processConfig()
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
-    /// Initialize a dummy query cache.
-    global_context->setQueryCache(0, 0, 0, 0);
-
     String datalake_metadata_cache_policy = server_settings[ServerSetting::datalake_metadata_cache_policy];
     size_t datalake_metadata_cache_size = server_settings[ServerSetting::datalake_metadata_cache_size];
     size_t datalake_metadata_cache_max_entries = server_settings[ServerSetting::datalake_metadata_cache_max_entries];

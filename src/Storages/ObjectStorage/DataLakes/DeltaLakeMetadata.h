@@ -56,18 +56,8 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
-        ContextPtr local_context)
-    {
-#if USE_DELTA_KERNEL_RS
-        auto configuration_ptr = configuration.lock();
-        if (configuration_ptr->getSettingsRef()[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs])
-            return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
-        else
-            return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-#else
-        return std::make_unique<DeltaLakeMetadata>(object_storage, configuration, local_context);
-#endif
-    }
+        ContextPtr local_context);
+
 
     size_t getMemoryBytes() const override
     {

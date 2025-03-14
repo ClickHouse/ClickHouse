@@ -97,7 +97,6 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
-class SkippingIndexCache;
 class DataLakeMetadataCache;
 class ProcessList;
 class QueryStatus;
