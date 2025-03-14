@@ -13,8 +13,6 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <fmt/ranges.h>
 
-#include <fmt/ranges.h>
-
 namespace DB::ErrorCodes
 {
     extern const int DATALAKE_DATABASE_ERROR;

@@ -34,11 +34,6 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace DB::StorageObjectStorageSetting
-{
-    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
-}
-
 namespace DataLake
 {
 

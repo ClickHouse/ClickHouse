@@ -24,13 +24,11 @@ class TableMetadata
 public:
     TableMetadata() = default;
 
-    TableMetadata & withLightweight() { with_lightweight = true; return *this; }
     TableMetadata & withLocation() { with_location = true; return *this; }
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
     TableMetadata & withDataLakeSpecificProperties() { with_datalake_specific_metadata = true; return *this; }
 
-    bool isLightweight() const;
     bool hasLocation() const;
     bool hasSchema() const;
     bool hasStorageCredentials() const;
@@ -99,7 +97,6 @@ private:
     bool is_default_readable_table = true;
 
     bool with_location = false;
-    bool with_lightweight = false;
     bool with_schema = false;
     bool with_storage_credentials = false;
     bool with_datalake_specific_metadata = false;
@@ -149,8 +146,6 @@ public:
     /// Get storage type, where Iceberg tables' data is stored.
     /// E.g. one of S3, Azure, Local, HDFS.
     virtual std::optional<StorageType> getStorageType() const = 0;
-
-    virtual DB::StorageObjectStorageSettingsPtr createStorageSettingsFromMetadata(const TableMetadata & metadata) const;
 
 protected:
     /// Name of the warehouse,

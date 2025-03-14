@@ -96,7 +96,7 @@ std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
-    if (endpoint_.empty() && !isLightweight())
+    if (endpoint_.empty())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Passed endpoint is empty");
 
     return constructLocation(endpoint_);
@@ -112,11 +112,6 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_) cons
         return std::filesystem::path(location) / path / "";
     else
         return std::filesystem::path(location) / bucket / path / "";
-}
-
-bool TableMetadata::isLightweight() const
-{
-    return with_lightweight;
 }
 
 void TableMetadata::setEndpoint(const std::string & endpoint_)

@@ -28,15 +28,15 @@ public:
 
     DB::Names getTables() const override;
 
-    bool existsTable(const std::string & schema_name, const std::string & table_name) const override;
+    bool existsTable(const std::string & database_name, const std::string & table_name) const override;
 
     void getTableMetadata(
-        const std::string & schema_name,
+        const std::string & database_name,
         const std::string & table_name,
         TableMetadata & result) const override;
 
     bool tryGetTableMetadata(
-        const std::string & schema_name,
+        const std::string & database_name,
         const std::string & table_name,
         TableMetadata & result) const override;
 

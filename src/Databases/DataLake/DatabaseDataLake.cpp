@@ -106,7 +106,7 @@ void DatabaseDataLake::validateSettings()
     {
         if (settings[DatabaseDataLakeSetting::region].value.empty())
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for catalog glue. "
+                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for Glue Catalog. "
                 "Please specify 'SETTINGS region=<region_name>' in the CREATE DATABASE query");
     }
     else if (settings[DatabaseDataLakeSetting::warehouse].value.empty())

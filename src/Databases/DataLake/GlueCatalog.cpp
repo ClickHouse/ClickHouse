@@ -178,6 +178,8 @@ GlueCatalog::GlueCatalog(
         Aws::Auth::AWSCredentials fake_credentials_for_fake_catalog;
         if (credentials.IsEmpty())
         {
+            /// You can specify any key for fake moto glue, it's just important
+            /// for it not to be empty.
             fake_credentials_for_fake_catalog.SetAWSAccessKeyId("testing");
             fake_credentials_for_fake_catalog.SetAWSSecretKey("testing");
         }
@@ -290,10 +292,10 @@ DB::Names GlueCatalog::getTables() const
     return result;
 }
 
-bool GlueCatalog::existsTable(const std::string & schema_name, const std::string & table_name) const
+bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
 {
     Aws::Glue::Model::GetTableRequest request;
-    request.SetDatabaseName(schema_name);
+    request.SetDatabaseName(database_name);
     request.SetName(table_name);
 
     auto outcome = glue_client->GetTable(request);
@@ -301,21 +303,21 @@ bool GlueCatalog::existsTable(const std::string & schema_name, const std::string
 }
 
 bool GlueCatalog::tryGetTableMetadata(
-    const std::string & schema_name,
+    const std::string & database_name,
     const std::string & table_name,
     TableMetadata & result) const
 {
-    getTableMetadata(schema_name, table_name, result);
+    getTableMetadata(database_name, table_name, result);
     return true;
 }
 
 void GlueCatalog::getTableMetadata(
-    const std::string & schema_name,
+    const std::string & database_name,
     const std::string & table_name,
     TableMetadata & result) const
 {
     Aws::Glue::Model::GetTableRequest request;
-    request.SetDatabaseName(schema_name);
+    request.SetDatabaseName(database_name);
     request.SetName(table_name);
 
     auto outcome = glue_client->GetTable(request);
@@ -339,7 +341,7 @@ void GlueCatalog::getTableMetadata(
 
             result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has {}. " \
                    "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have table_type == '{}'",
-                   schema_name + "." + table_name, message_part, "ICEBERG"));
+                   database_name + "." + table_name, message_part, "ICEBERG"));
         }
 
         if (result.requiresSchema())
@@ -371,7 +373,7 @@ void GlueCatalog::getTableMetadata(
             {
                  result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has no metadata_location. " \
                      "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have 'metadata_location' in table parameters",
-                     schema_name + "." + table_name));
+                     database_name + "." + table_name));
             }
         }
     }
@@ -380,7 +382,7 @@ void GlueCatalog::getTableMetadata(
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
             "Exception calling GetTable for table {}: {}",
-            schema_name + "." + table_name, outcome.GetError().GetMessage());
+            database_name + "." + table_name, outcome.GetError().GetMessage());
     }
 }
 
@@ -391,7 +393,6 @@ void GlueCatalog::setCredentials(TableMetadata & metadata) const
     if (storage_type == StorageType::S3)
     {
         auto creds = std::make_shared<S3Credentials>(credentials.GetAWSAccessKeyId(), credentials.GetAWSSecretKey(), credentials.GetSessionToken());
-        creds->setRegion(region);
         metadata.setStorageCredentials(creds);
     }
     else
