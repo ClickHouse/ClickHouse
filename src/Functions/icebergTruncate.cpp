@@ -57,7 +57,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// You may ask, why use global context and not the context provided
-        /// in create/Contrustor? Two reasons:
+        /// in create/Constructor? Two reasons:
         /// 1. We need context only to access global functions factory, that is why global context is the most suitable
         /// 2. It's terribly unsafe to store ContextPtr inside function because function object is so low-level
         /// that it can be stored in multiple other objects which itself stored in global context.
