@@ -200,6 +200,12 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
+        name="clickhouse/integration-test-with-unity-catalog",
+        path="docker/test/integration/clickhouse_with_unity_catalog",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
         name="clickhouse/integration-helper",
         path="./docker/test/integration/helper_container",
         platforms=Docker.Platforms.arm_amd,
