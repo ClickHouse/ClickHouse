@@ -4,6 +4,7 @@ description: 'Overview of third-party tools, libraries and integrations availabl
 sidebar_position: 24
 slug: /interfaces/third-party/
 toc_folder_title: 'Third-Party'
+title: 'Third-Party Interfaces'
 ---
 
 # Third-Party Interfaces
