@@ -331,24 +331,15 @@ void GlueCatalog::getTableMetadata(
 
         if (table_type != "ICEBERG")
         {
-            if (!result.isLightweight())
-            {
-                std::string message_part;
-                if (!table_type.empty())
-                    message_part = "unsupported table_type '" + table_type + "'";
-                else
-                    message_part = "no table_type";
+            std::string message_part;
+            if (!table_type.empty())
+                message_part = "unsupported table_type '" + table_type + "'";
+            else
+                message_part = "no table_type";
 
-                throw DB::Exception(
-                        DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it has {}. " \
-                       "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have table_type == '{}'",
-                       schema_name + "." + table_name, message_part, "ICEBERG");
-            }
-            result.setDefaultReadableTable(false);
-        }
-        else
-        {
-            result.setDefaultReadableTable(true);
+            result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has {}. " \
+                   "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have table_type == '{}'",
+                   schema_name + "." + table_name, message_part, "ICEBERG"));
         }
 
         if (result.requiresSchema())
@@ -369,19 +360,18 @@ void GlueCatalog::getTableMetadata(
             setCredentials(result);
         }
 
-        if (result.requiresDataLakeSpecificMetadata())
+        if (result.requiresDataLakeSpecificProperties())
         {
             const auto & table_params = table_outcome.GetParameters();
             if (table_params.contains("metadata_location"))
             {
-                result.setDataLakeSpecificMetadata(DataLakeSpecificMetadata{.iceberg_metadata_file_location = table_params.at("metadata_location")});
+                result.setDataLakeSpecificProperties(DataLakeSpecificProperties{.iceberg_metadata_file_location = table_params.at("metadata_location")});
             }
-            else if (!result.isLightweight())
+            else
             {
-                 throw DB::Exception(
-                        DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Cannot read table `{}` because it has no metadata_location. " \
-                       "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have 'metadata_location' in table parameters",
-                       schema_name + "." + table_name);
+                 result.setTableIsNotReadable(fmt::format("Cannot read table `{}` because it has no metadata_location. " \
+                     "It means that it's unreadable with Glue catalog in ClickHouse, readable tables must have 'metadata_location' in table parameters",
+                     schema_name + "." + table_name));
             }
         }
     }
@@ -420,33 +410,6 @@ bool GlueCatalog::empty() const
             return false;
     }
     return true;
-}
-
-
-DB::StorageObjectStorageSettingsPtr GlueCatalog::createStorageSettingsFromMetadata(const TableMetadata & metadata) const
-{
-    auto storage_settings = std::make_shared<DB::StorageObjectStorageSettings>();
-    if (auto table_specific_metadata = metadata.getDataLakeSpecificMetadata(); table_specific_metadata.has_value())
-    {
-        auto metadata_location = table_specific_metadata->iceberg_metadata_file_location;
-        if (!metadata_location.empty())
-        {
-            auto location = metadata.getLocation();
-            if (metadata_location.starts_with(location))
-            {
-                LOG_DEBUG(log, "Metadata location {}, location {} position {}", metadata_location, location, metadata_location[location.size()]);
-                size_t remove_slash = 0;
-                if (metadata_location[location.size()] == '/')
-                    remove_slash = 1;
-                metadata_location = metadata_location.substr(location.size() + remove_slash);
-            }
-
-        }
-
-        (*storage_settings)[DB::StorageObjectStorageSetting::iceberg_metadata_file_path] = metadata_location;
-    }
-
-    return storage_settings;
 }
 
 }
