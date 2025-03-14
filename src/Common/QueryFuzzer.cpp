@@ -34,9 +34,8 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserDataType.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/ParserQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
-
 #include <pcg_random.hpp>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -2174,11 +2173,7 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     if (out_stream)
     {
         *out_stream << std::endl;
-
-        WriteBufferFromOStream ast_buf(*out_stream, 4096);
-        formatAST(*ast, ast_buf, false /*highlight*/);
-        ast_buf.finalize();
-        *out_stream << std::endl << std::endl;
+        *out_stream << ast->formatWithSecretsOneLine() << std::endl << std::endl;
     }
 }
 
