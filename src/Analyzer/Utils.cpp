@@ -24,6 +24,8 @@
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnNullable.h>
 
+#include <Common/FieldVisitorToString.h>
+
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Functions/FunctionHelpers.h>
