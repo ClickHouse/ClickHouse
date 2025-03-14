@@ -54,6 +54,8 @@ public:
         , max_data_part_size(max_data_part_size_)
         , perform_ttl_move_on_insert(perform_ttl_move_on_insert_)
         , load_balancing(load_balancing_)
+        , max_wait_after_move_ms(0)
+        , min_wait_after_move_ms(0)
     {
     }
 
@@ -103,6 +105,11 @@ public:
     /// - ROUND_ROBIN
     /// - LEAST_USED
     const VolumeLoadBalancing load_balancing;
+    /// Waiting period after moving a part to the volume before making it active.
+    /// Actual value is picked randomly between min and max.
+    /// It makes sense for storages not providing strong read-after-write guarantee.
+    const UInt64 max_wait_after_move_ms;
+    const UInt64 min_wait_after_move_ms;
 };
 
 }
