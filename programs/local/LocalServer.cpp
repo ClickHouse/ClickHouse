@@ -677,7 +677,7 @@ void LocalServer::processConfig()
                     || getClientConfiguration().has("log-level")
                     || getClientConfiguration().has("logger.log"));
 
-    auto level = getClientConfiguration().getString("log-level", "trace");
+    auto level = getClientConfiguration().getString("log-level", getClientConfiguration().getString("send_logs_level", "trace"));
 
     if (getClientConfiguration().has("server_logs_file"))
     {
