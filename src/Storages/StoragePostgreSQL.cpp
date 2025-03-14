@@ -14,11 +14,15 @@
 #include <Core/Settings.h>
 #include <Core/PostgreSQL/PoolWithFailover.h>
 
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/Serializations/SerializationFixedString.h>
 
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
@@ -68,6 +72,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
@@ -216,6 +221,63 @@ void StoragePostgreSQL::read(
     query_plan.addStep(std::move(reading));
 }
 
+class SerializationPostgreSQLFixedString : public SerializationFixedString
+{
+private:
+    size_t size;
+
+public:
+    explicit SerializationPostgreSQLFixedString(size_t n_) : SerializationFixedString(n_), size(n_) {}
+
+    void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
+    {
+        const auto * nested_column = &column;
+        if (column.isNullable())
+        {
+            const auto * column_nullable = assert_cast<const ColumnNullable *>(&column);
+            nested_column = &column_nullable->getNestedColumn();
+        }
+
+        const auto column_type = nested_column->getDataType();
+        const char * data = nullptr;
+        if (isFixedString(column_type))
+        {
+            data = reinterpret_cast<const char *>(
+                &assert_cast<const ColumnFixedString *>(nested_column)->getChars()[size * row_num]);
+        }
+        else if (isString(column_type))
+            data = assert_cast<const ColumnString &>(column).getDataAt(row_num).data;
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't serialize type {} as a FixedString", nested_column->getName());
+
+        /// Write only the amount of UTF-8 characters actually used. PostgreSQL complains if we pass
+        /// any \0 because it doesn't interpret them as valid UTF-8.
+        auto write_size = size;
+        for (size_t i = 0; i < size; ++i)
+        {
+            if (data[i] == 0)
+            {
+                write_size = i;
+                break;
+            }
+        }
+        writeString(data, write_size, ostr);
+    }
+};
+
+static void changeSerializationForPostgreSQLFixedString(const ColumnPtr & column, DataTypePtr & data_type)
+{
+    /// pqxx throws an error when trying to ingest fixed-size strings padded with \0:
+    /// pqxx::data_exception: Failure during '[END COPY]': ERROR:  invalid byte sequence for encoding "UTF8": 0x00
+    auto non_nullable_type = removeNullable(data_type);
+    auto non_nullable_column = removeNullable(column);
+    if (isFixedString(non_nullable_type) && !data_type->getCustomSerialization())
+    {
+        auto n = assert_cast<const DataTypeFixedString &>(*non_nullable_type).getN();
+        auto custom_desc = std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(fmt::format("FixedString({})", n)), std::make_shared<SerializationPostgreSQLFixedString>(n));
+        DataTypeFactory::instance().setCustom(data_type, std::move(custom_desc));
+    }
+}
 
 class PostgreSQLSink : public SinkToStorage
 {
@@ -261,7 +323,7 @@ public:
         const auto columns = block.getColumns();
         const size_t num_rows = block.rows();
         const size_t num_cols = block.columns();
-        const auto data_types = block.getDataTypes();
+        auto data_types = block.getDataTypes();
 
         /// std::optional lets libpqxx to know if value is NULL
         std::vector<std::optional<std::string>> row(num_cols);
@@ -284,6 +346,7 @@ public:
                     }
                     else
                     {
+                        changeSerializationForPostgreSQLFixedString(columns[j], data_types[j]);
                         data_types[j]->getDefaultSerialization()->serializeText(*columns[j], i, ostr, FormatSettings{});
                     }
 
@@ -346,13 +409,18 @@ public:
         array_column->insert(array_field);
 
         const IColumn & nested_column = array_column->getData();
-        const auto serialization = nested_type->getDefaultSerialization();
+        const auto parent_type = nested_type;
 
         FormatSettings settings;
         settings.pretty.charset = FormatSettings::Pretty::Charset::ASCII;
 
         if (nested_type->isNullable())
             nested_type = static_cast<const DataTypeNullable *>(nested_type.get())->getNestedType();
+
+        /// We need to patch first the nested type in case the the parent is nullable because
+        /// getDefaultSerialization() takes the serialization used for the nested type
+        changeSerializationForPostgreSQLFixedString(nested_column.getPtr(), nested_type);
+        const auto serialization = parent_type->getDefaultSerialization();
 
         writeChar('{', ostr);
         for (size_t i = 0, size = array_field.size(); i < size; ++i)
