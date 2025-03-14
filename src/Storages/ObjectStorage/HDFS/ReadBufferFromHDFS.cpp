@@ -197,7 +197,7 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         size_t read_until_position_,
         bool use_external_buffer_,
         std::optional<size_t> file_size_)
-    : ReadBufferFromFileBase()
+    : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0)
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(
                hdfs_uri_, hdfs_file_path_, config_, read_settings_, read_until_position_, use_external_buffer_, file_size_))
     , use_external_buffer(use_external_buffer_)
