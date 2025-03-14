@@ -131,6 +131,11 @@
         Description: minmax GRANULARITY 2
         Parts: 1/2
         Granules: 3/6
+      Skip
+        Name: t_set
+        Description: set GRANULARITY 2
+        Parts: 1/1
+        Granules: 2/3
 -----------------
               "Node Type": "ReadFromMergeTree",
               "Node Id": "ReadFromMergeTree_0",
@@ -168,6 +173,15 @@
                   "Selected Parts": 1,
                   "Initial Granules": 6,
                   "Selected Granules": 3
+                },
+                {
+                  "Type": "Skip",
+                  "Name": "t_set",
+                  "Description": "set GRANULARITY 2",
+                  "Initial Parts": 1,
+                  "Selected Parts": 1,
+                  "Initial Granules": 3,
+                  "Selected Granules": 2
                 }
               ]
             }
