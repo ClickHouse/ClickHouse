@@ -12,6 +12,7 @@ from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.config_cluster import minio_secret_key
 from helpers.s3_queue_common import (
     run_query,
     random_str,
@@ -24,7 +25,7 @@ from helpers.s3_queue_common import (
 )
 
 AVAILABLE_MODES = ["unordered", "ordered"]
-DEFAULT_AUTH = ["'minio'", "'minio123'"]
+DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
 NO_AUTH = ["NOSIGN"]
 
 

@@ -8,8 +8,9 @@ import uuid
 from multiprocessing.dummy import Pool
 import pytest
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.config_cluster import minio_secret_key
 
-DEFAULT_AUTH = ["'minio'", "'minio123'"]
+DEFAULT_AUTH = ["'minio'", f"'{minio_secret_key}'"]
 NO_AUTH = ["NOSIGN"]
 
 
