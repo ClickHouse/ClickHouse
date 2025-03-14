@@ -29,6 +29,10 @@
             font-family: 'Source Code Pro', monospace, sans-serif;
             letter-spacing: -0.5px;
             --header-background-color: #f4f4f4;
+            --link-color: blue;
+            --link-hover-color: darkblue;
+            --file-link-color: blue;
+            --file-link-hover-color: darkblue;
         }
 
         body.night-theme {
@@ -39,78 +43,57 @@
             --pending-bar-color: #595801;
             --skipped-bar-color: #575757;
             --table-border-color: #444;
+            --link-color: #ffea00;
+            --link-hover-color: #ffaa00;
+            --file-link-color: #007efc;
+            --file-link-hover-color: #004d9a;
         }
 
-        /* Default (Day Theme) - No Change */
-        a {
-            color: blue;
+        .name-column a {
+            color: var(--link-color);
             text-decoration: none;
         }
 
-        a:hover {
-            color: darkblue;
-        }
-
-        /* Dark Theme - Only Changes Link Colors */
-        body.night-theme a {
-            color: #ffea00; /* Yellow for better contrast */
-        }
-
-        body.night-theme a:hover {
-            color: #ffaa00; /* Slightly darker yellow */
-        }
-
-        #info-container {
-            margin-left: calc(var(--status-width) + 20px);
-            margin-bottom: 10px;
-            background-color: var(--tile-background);
-            padding: 10px;
-            text-align: left;
+        .name-column a:hover {
+            color: var(--link-hover-color);
         }
 
         #status-container {
             position: fixed;
             top: 0;
-            bottom: 0;
+            bottom: 40px;
             left: 0;
             width: var(--status-width);
             background-color: var(--tile-background);
-            padding: 20px;
+            padding-left: 15px;
+            padding-right: 15px;
             box-sizing: border-box;
             font-size: 18px;
             margin: 0;
             overflow-y: auto;
-            margin-bottom: 40px;
         }
-
-        #status-container a {
-            color: #007bff;
-            text-decoration: underline;
+        .file-link {
+            color: var(--file-link-color);
             font-weight: bold;
-            cursor: pointer;
-            display: inline-block;
-            margin-top: 5px;
-            margin-left: 10px;
-            padding: 2px 0;
             font-size: 0.7em;
             font-family: 'Roboto Condensed', sans-serif;
             font-stretch: ultra-condensed;
-
-            max-width: 270px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+            cursor: pointer;
+            display: inline-block;
+            margin-top: 5px;
+            text-decoration: none;
         }
 
-        #status-container a:hover {
-            color: #0056b3;
+        .file-link:hover {
+            color: var(--file-link-hover-color);
             text-decoration: none;
         }
 
         .key-value-pair {
             display: flex;               /* Enable Flexbox for alignment */
             justify-content: space-between; /* Distribute space between key and value */
-            margin-bottom: 20px;         /* Add space between each pair */
+            padding-bottom: 15px;
+            padding-top: 15px;
         }
 
         .json-key {
@@ -120,13 +103,25 @@
         .json-value {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
+        }
+        .external-link {
+            color: var(--file-link-color);
+            font-size: 18px;
+            font-family: 'Source Code Pro', monospace, sans-serif;
+            cursor: pointer;
+            display: inline-block;
+            text-decoration: none;
+        }
+
+        .external-link:hover {
+            color: var(--file-link-hover-color);
+            text-decoration: underline;
         }
         .json-value-small {
             font-weight: normal;
             font-family: 'Source Code Pro', monospace, sans-serif;
-            letter-spacing: -0.5px;
             font-size: 0.75rem;
+            justify-content: left;
         }
         .dropdown-value {
             width: 100px;
@@ -141,20 +136,34 @@
 
         #result-container {
             background-color: var(--tile-background);
-            margin-left: calc(var(--status-width) + 20px);
+            position: fixed;
+            top: 0;
+            bottom: 40px;
+            left: calc(var(--status-width) + 10px); /* Align with status container */
+            right: 0; /* Stretch to the right edge */
+
             padding: 0;
             box-sizing: border-box;
-            text-align: center;
             font-size: 18px;
             font-weight: normal;
-            flex-grow: 1;
-            margin-bottom: 40px;
-            overflow-x: auto;
+
+            overflow: auto;
             white-space: nowrap;
         }
 
-        #footer {
+        .info-text {
+            white-space: normal; /* Allow text to wrap */
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            max-width: 100%; /* Prevent overflow */
+        }
+        #info-content {
+            text-align: left;
             padding: 10px;
+        }
+
+        #footer {
+            padding: 5px;
             position: fixed;
             bottom: 0;
             left: 0;
@@ -176,7 +185,6 @@
             flex-grow: 1; /* Takes up all the available space */
         }
 
-        /* make some space around '/' in the navigation line */
         #footer .left span.separator {
             margin-left: 5px;
             margin-right: 5px;
@@ -215,42 +223,20 @@
             text-decoration: underline;
         }
 
-        #links {
-            margin-top: 10px;
-            padding: 15px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            background-color: #f9f9f9;
-        }
-
-        #links a {
-            display: block;
-            margin-bottom: 5px;
-            padding: 5px 10px;
-            background-color: #D5D5D5;
-            color: black;
-            text-decoration: none;
-            border-radius: 5px;
-        }
-
-        #links a:hover {
-            background-color: #D5D5D5;
-        }
-
         table {
-            width: 100%;
+            table-layout: auto;
+            width: auto;
             border-collapse: collapse;
         }
 
         th.name-column, td.name-column {
-            min-width: 350px;
+            width: auto;
         }
 
         th.status-column, td.status-column {
-            max-width: 100px; /* Set the maximum width for the column */
+            width: 80px;
             white-space: nowrap; /* Prevent text from wrapping */
             overflow: hidden; /* Hide the overflowed text */
-            text-overflow: ellipsis; /* Show ellipsis (...) for overflowed text */
         }
 
         th.time-column, td.time-column {
@@ -310,7 +296,6 @@
     </style>
 </head>
 <body>
-<div id="info-container"></div>
 <div id="status-container"></div>
 <div id="result-container"></div>
 
@@ -401,7 +386,15 @@
         return 'status-other';
     }
 
-    function addKeyValueToStatus(key, value, options = null) {
+    function addInfoLineToStatus(info) {
+        const statusContainer = document.getElementById('status-container');
+        const line = document.createElement('div');
+        line.className = 'json-value-small';
+        line.textContent = info;
+        statusContainer.appendChild(line);
+    }
+
+    function addKeyValueToStatus(key, value, options = null, optionValues = null, link = null) {
         const statusContainer = document.getElementById('status-container');
 
         let keyValuePair = document.createElement('div');
@@ -418,16 +411,15 @@
             valueElement = document.createElement('select');
             valueElement.className = 'dropdown-value';
 
-            options.forEach(optionValue => {
+            options.forEach((optionTextContent, i) => {
                 const option = document.createElement('option');
-                option.value = optionValue;
-                option.textContent = optionValue.slice(0, 10);
+                option.value = optionValues?.[i] ?? optionTextContent;
+                option.textContent = optionTextContent;
 
                 // Set the initially selected option
-                if (optionValue === value) {
+                if (option.value === value) {
                     option.selected = true;
                 }
-
                 valueElement.appendChild(option);
             });
 
@@ -437,14 +429,19 @@
                 updateUrlParameter(key, selectedValue);
             });
         } else {
-            // Create a simple text display if no options are provided
-            valueElement = document.createElement('div');
-            if (key !== "") {
-                valueElement.className = "json-value";
+            if (link) {
+                // Create clickable link if `link` is provided
+                valueElement = document.createElement('a');
+                valueElement.href = link;
+                valueElement.className = "external-link";
+                valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
+                valueElement.target = "_blank"; // Open in a new tab
             } else {
-                valueElement.className = "json-value-small";
+                // Create a simple text display if no options or link are provided
+                valueElement = document.createElement('div');
+                valueElement.className = "json-value";
+                valueElement.textContent = value || 'N/A';
             }
-            valueElement.textContent = value || 'N/A'; // Display 'N/A' if value is null
         }
 
         keyValuePair.appendChild(keyElement);
@@ -487,6 +484,7 @@
                     const {PR, sha} = getPRandShaFromLink(link)
                     textLink.textContent = `Report PR#${PR}, sha#${sha.substring(0, 10)}`;
                 }
+                textLink.classList.add("file-link")
 
                 textLink.target = '_blank';
                 statusContainer.appendChild(textLink);
@@ -697,12 +695,13 @@
     }
 
     // Define the fixed columns globally, so both functions can use it
-    const columns = ['name', 'status', 'start_time', 'duration', 'info'];
+    const columns = ['status', 'name', 'start_time', 'duration'];
+    // const columns = ['status', 'name', 'start_time', 'duration', 'info'];
 
     const columnSymbols = {
         // name: '🗂️',
         // status: '✅',
-        start_time: 'ts',
+        start_time: 'start',
         duration: 'dur',
         // info: '📝',
         files: '📎'
@@ -727,7 +726,7 @@
             thead.appendChild(headerRow);
 
             // Create table rows
-            populateTableRows(tbody, results, columns, nest_level);
+            populateTableRows(tbody, results, nest_level);
 
             table.appendChild(thead);
             table.appendChild(tbody);
@@ -737,7 +736,7 @@
         return null;
     }
 
-    function populateTableRows(tbody, results, columns, nest_level) {
+    function populateTableRows(tbody, results, nest_level) {
         const currentUrl = new URL(window.location.href);  // Get the current URL
 
         // Clear existing rows if re-rendering (used in sorting)
@@ -750,22 +749,29 @@
                 const td = document.createElement('td');
                 const value = result[column];
 
-                if (column === 'name') {
-                    // Create a link for the name field, using name_X
-                    const link = document.createElement('a');
-                    const newUrl = new URL(currentUrl); // Create a fresh copy of the URL for each row
-                    newUrl.searchParams.set(`name_${nest_level}`, value); // Use backticks for string interpolation
-                    link.href = newUrl.toString();
-                    link.textContent = value;
-                    td.classList.add('name-column');
-                    td.appendChild(link);
-                } else if (column === 'status') {
-                    // Apply status formatting
+                if (column === 'status') {
+                    // Apply status formatting and make it clickable
                     const span = document.createElement('span');
                     span.className = getStatusClass(value);
                     span.textContent = value;
                     td.classList.add('status-column');
+                    if (result.info && result.info.trim() !== "") {
+                        span.style.cursor = "pointer";
+                        span.addEventListener('click', () => toggleInfoRow(row, result.info));
+                    }
                     td.appendChild(span);
+
+                    // // Click event to toggle the info row
+                    // span.addEventListener('click', () => toggleInfoRow(row, result.info));
+                } else if (column === 'name') {
+                    // Create a link for the name field, using name_X
+                    const link = document.createElement('a');
+                    const newUrl = new URL(currentUrl);
+                    newUrl.searchParams.set(`name_${nest_level}`, value);
+                    link.href = newUrl.toString();
+                    link.textContent = value;
+                    td.classList.add('name-column');
+                    td.appendChild(link);
                 } else if (column === 'start_time') {
                     td.classList.add('time-column');
                     td.textContent = value ? formatTimestamp(value, false) : '';
@@ -782,6 +788,32 @@
 
             tbody.appendChild(row);
         });
+    }
+
+    /**
+     * Toggles an additional row below the clicked row to display the "info" text.
+     */
+    function toggleInfoRow(row, infoText) {
+        if (!infoText) return; // Do nothing if there's no info
+
+        let nextRow = row.nextElementSibling;
+
+        // Check if the next row is already an "info" row
+        if (nextRow && nextRow.classList.contains('info-row')) {
+            nextRow.remove(); // If it's there, remove it
+        } else {
+            // Otherwise, create a new row for the info text
+            const infoRow = document.createElement('tr');
+            infoRow.classList.add('info-row');
+
+            const infoCell = document.createElement('td');
+            infoCell.colSpan = row.children.length; // Make it span the full width
+            infoCell.innerHTML = infoText.replace(/\n/g, '<br>'); // Preserve line breaks
+            infoCell.classList.add('info-text');
+
+            infoRow.appendChild(infoCell);
+            row.parentNode.insertBefore(infoRow, row.nextSibling); // Insert below the clicked row
+        }
     }
 
     function sortTable(results, column, key, tbody, nest_level, columns) {
@@ -807,7 +839,7 @@
         tbody.innerHTML = '';
 
         // Re-populate the table with sorted data
-        populateTableRows(tbody, results, columns, nest_level);
+        populateTableRows(tbody, results, nest_level);
     }
 
     async function fetchJson(path, lastModifiedTime = null, eTag = null) {
@@ -970,30 +1002,49 @@
             }
             i++;
         }
-        // Result table
+
         const resultsDiv = document.getElementById('result-container');
+        const textDiv = document.createElement('div');
+        textDiv.id = 'info-content';
+        textDiv.innerHTML = (result.info || '').replace(/\n/g, '<br>');
+        resultsDiv.appendChild(textDiv);
+
         const resultsData = result.results;
         if (Array.isArray(resultsData) && resultsData.length > 0) {
             const table = createResultsTable(resultsData, i);
             if (table) {
-                resultsDiv.appendChild(table);
+                resultsDiv.appendChild(table); // Appends table correctly
             }
         }
         // Status and info
         if (PR > 0) {
-            addKeyValueToStatus("PR", PR);
+            addKeyValueToStatus("PR", PR, null, null, runtimeCache.prLink);
         }
-        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1) || sha) : sha;
-        addKeyValueToStatus("sha", sha || "latest", runtimeCache.commits.concat(["latest"]));
-        addKeyValueToStatus("", current_sha);
+        let current_sha = sha === "latest" ? (runtimeCache.commits.at(-1).sha || sha) : sha;
+        const shaSelectorText = [];
+        const shaSelectorValues = [];
+
+        runtimeCache.commits.forEach(({ sha, message }) => {
+            const shortSha = (sha || "").substring(0, 8);
+            shaSelectorText.push(message ? `${shortSha}: ${message}` : shortSha);
+            shaSelectorValues.push(sha);
+        });
+        shaSelectorText.push("latest");
+        shaSelectorValues.push("latest");
+        addKeyValueToStatus("sha", sha || "latest", shaSelectorText, shaSelectorValues);
+
+        if (PR > 0) {
+            const { pr_title, git_branch } = runtimeCache.json0?.ext || {};
+            if (pr_title) addInfoLineToStatus(pr_title);
+            if (git_branch) addInfoLineToStatus(git_branch);
+        }
+        addInfoLineToStatus(current_sha);
         addStatusToStatus(result.status, result.start_time, result.duration);
         if (nameParams.length > 1) {
             addFileButtonToStatus('files', result.links);
         } else {
             addTimeTraceWidget(result.results)
         }
-        const infoElement = document.getElementById('info-container');
-        infoElement.innerHTML = (result.info || '').replace(/\n/g, '<br>');
     }
 
     async function fetchData(PR, REF, sha, nameParams) {
@@ -1004,7 +1055,7 @@
                 .replace(/_+$/, '');
         }
 
-        const baseUrl = window.location.origin + window.location.pathname.replace('/json.html', '');
+        const baseUrl = window.location.origin + window.location.pathname.split('/').slice(0, -1).join('/');
         let suffix = '';
 
         if (PR) {
@@ -1016,37 +1067,42 @@
         let hasNewData = false;
 
         if (!runtimeCache.commits || sha === 'latest') {
-            const { data, updated } = await fetchJson(
-                `${baseUrl}/${suffix}/commits.json`,
-            );
+            const { data, updated } = await fetchJson(`${baseUrl}/${suffix}/commits.json`);
             if (updated) {
-                runtimeCache.commits = data ? data.map(item => item.sha) : [];
+                runtimeCache.commits = data ? data : [];
                 hasNewData = true;
             }
         }
 
-        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1] : sha;
-        if (nameParams.length > 1) {
-            const task = normalizeTaskName(nameParams[1]);
-            const path = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task}.json`;
-            const { data, updated } = await fetchJson(path);
+        const shaToLoad = (sha === 'latest') ? runtimeCache.commits[runtimeCache.commits.length - 1]?.sha : sha;
 
+        const fetchTasks = [];
+        if (nameParams.length > 1) {
+            const task1 = normalizeTaskName(nameParams[1]);
+            const path1 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task1}.json`;
+            fetchTasks.push(fetchJson(path1));
+        }
+
+        const task0 = normalizeTaskName(nameParams[0]);
+        const path0 = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task0}.json`;
+        fetchTasks.push(fetchJson(path0));
+
+        // Run fetchJson calls in parallel
+        const results = await Promise.all(fetchTasks);
+
+        if (nameParams.length > 1) {
+            const { data, updated } = results[0]; // First request result
             if (updated) {
                 runtimeCache.json1 = data;
                 hasNewData = true;
             }
         }
 
-        {
-            const task = normalizeTaskName(nameParams[0]);
-            const path = `${baseUrl}/${suffix}/${encodeURIComponent(shaToLoad)}/result_${task}.json`;
-
-            const { data, updated } = await fetchJson(path);
-            if (updated) {
-                runtimeCache.json0 = data;
-                hasNewData = true;
-                data.links.forEach(storeLink);
-            }
+        const { data, updated } = results[fetchTasks.length - 1]; // Last request result (always task0)
+        if (updated) {
+            runtimeCache.json0 = data;
+            hasNewData = true;
+            data.links.forEach(storeLink);
         }
 
         return hasNewData;
@@ -1056,7 +1112,6 @@
         function clearPage() {
             // Clear the main content areas
             // document.getElementById('content').innerHTML = '';
-            document.getElementById('info-container').innerHTML = '';
             document.getElementById('result-container').innerHTML = '';
             document.getElementById('status-container').innerHTML = '';
         }
@@ -1067,7 +1122,22 @@
             }
         }
         setInterval(checkForUpdates, 30000);
-        checkForUpdates();
+    }
+
+    function updatePageTitle(PR, REF, sha, nameParams) {
+        let title = "";
+        if (Array.isArray(nameParams) && nameParams.length > 0) {
+            title += ` ${nameParams[0]}`;
+        }
+        if (Array.isArray(nameParams) && nameParams.length > 1) {
+            title += `/${nameParams[1]}`;
+        }
+        if (PR > 0) {
+            title += `, PR#${PR}`;
+        } else {
+            title += `, sha#${sha.substring(0, 8)}`;
+        }
+        document.title = title.trim();
     }
 
     async function init() {
@@ -1087,9 +1157,15 @@
         await fetchData(PR, REF, sha, nameParams);
         await renderResults(PR, sha, nameParams);
         renderFooter(nameParams)
+        updatePageTitle(PR, REF, sha, nameParams)
 
-        if (runtimeCache.json0?.status === "running" || runtimeCache.json0?.status === "pending") {
-            console.log("autoreload started")
+        if (
+            (nameParams?.length === 1 &&
+                ["running", "pending"].includes(runtimeCache?.json0?.status)) ||
+            (nameParams?.length === 2 &&
+                (["running", "pending"].includes(runtimeCache?.json1?.status) || runtimeCache?.json1 == null))
+        ) {
+            console.log("Auto-reload started");
             startAutoRefresh(PR, REF, sha, nameParams);
         }
     }

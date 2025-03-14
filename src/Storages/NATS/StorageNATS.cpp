@@ -5,6 +5,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -29,6 +30,7 @@
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 
+#include <Poco/Util/AbstractConfiguration.h>
 #include <openssl/ssl.h>
 
 namespace DB

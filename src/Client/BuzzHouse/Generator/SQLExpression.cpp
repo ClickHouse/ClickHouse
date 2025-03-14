@@ -337,21 +337,31 @@ void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
     }
 }
 
-void StatementGenerator::generateSubquery(RandomGenerator & rg, Select * sel)
+void StatementGenerator::generateSubquery(RandomGenerator & rg, ExplainQuery * eq)
 {
-    const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
-    const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
-    const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
+    if (rg.nextMediumNumber() < 6)
+    {
+        prepareNextExplain(rg, eq);
+    }
+    else
+    {
+        const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
+        const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
+        const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
-    this->levels[this->current_level].inside_aggregate = false;
-    this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
-    this->current_level++;
-    this->levels[this->current_level] = QueryLevel(this->current_level);
-    this->generateSelect(rg, true, false, 1, std::numeric_limits<uint32_t>::max(), sel);
-    this->current_level--;
-    this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
-    this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
-    this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
+        this->levels[this->current_level].inside_aggregate = false;
+        this->levels[this->current_level].allow_aggregates = this->levels[this->current_level].allow_window_funcs = true;
+
+        this->current_level++;
+        this->levels[this->current_level] = QueryLevel(this->current_level);
+        this->generateSelect(
+            rg, true, false, 1, std::numeric_limits<uint32_t>::max(), eq->mutable_inner_query()->mutable_select()->mutable_sel());
+        this->current_level--;
+
+        this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
+        this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
+        this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
+    }
 }
 
 void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
@@ -429,7 +439,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             }
             if (rg.nextBool())
             {
-                this->generateSubquery(rg, ein->mutable_sel());
+                generateSubquery(rg, ein->mutable_sel());
             }
             else
             {
@@ -452,7 +462,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             this->depth++;
             this->generateExpression(rg, eany->mutable_expr());
             this->width++;
-            this->generateSubquery(rg, eany->mutable_sel());
+            generateSubquery(rg, eany->mutable_sel());
             this->width--;
             this->depth--;
         }
@@ -473,7 +483,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
 
             exists->set_not_(rg.nextBool());
             this->depth++;
-            this->generateSubquery(rg, exists->mutable_select());
+            generateSubquery(rg, exists->mutable_select());
             this->depth--;
         }
         else if (this->fc.max_width > this->width + 1 && noption < 901)
@@ -643,7 +653,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         this->levels[this->current_level].inside_aggregate = prev_inside_aggregate;
         this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
 
-        func_call->set_distinct(agg.support_distinct && func_call->args_size() == 1 && rg.nextBool());
+        func_call->set_distinct(func_call->args_size() > 0 && rg.nextSmallNumber() < 4);
         if (agg.support_nulls_clause && rg.nextSmallNumber() < 7)
         {
             func_call->set_fnulls(rg.nextBool() ? FuncNulls::NRESPECT : FuncNulls::NIGNORE);
@@ -716,7 +726,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
 void StatementGenerator::generateTableFuncCall(RandomGenerator & rg, SQLTableFuncCall * tfunc_call)
 {
     const size_t funcs_size = CHTableFuncs.size();
-    std::uniform_int_distribution<uint32_t> next_dist(0, funcs_size - 1);
+    std::uniform_int_distribution<size_t> next_dist(0, funcs_size - 1);
     const CHFunction & func = CHTableFuncs[next_dist(rg.generator)];
     const uint32_t func_max_args = std::min(func.max_args, UINT32_C(5));
     uint32_t generated_params = 0;
@@ -790,7 +800,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         expr = eca->mutable_expr();
     }
 
-    if (noption < (this->inside_projection ? 76 : 151))
+    if (noption < (this->inside_projection ? 76 : 101))
     {
         generateLiteralValue(rg, expr);
     }
@@ -892,7 +902,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
     else if (this->allow_subqueries && noption < 651)
     {
         this->depth++;
-        this->generateSubquery(rg, expr->mutable_comp_expr()->mutable_subquery());
+        generateSubquery(rg, expr->mutable_comp_expr()->mutable_subquery());
         this->depth--;
     }
     else if (this->fc.max_width > this->width + 1 && noption < 701)

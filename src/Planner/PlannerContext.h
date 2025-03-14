@@ -4,7 +4,6 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/Set.h>
 #include <Interpreters/PreparedSets.h>
 
 #include <Planner/TableExpressionData.h>

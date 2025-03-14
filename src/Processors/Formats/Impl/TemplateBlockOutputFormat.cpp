@@ -4,6 +4,7 @@
 #include <Columns/IColumn.h>
 #include <IO/WriteHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Processors/Port.h>
 
 
 namespace DB

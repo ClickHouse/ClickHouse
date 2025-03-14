@@ -1008,7 +1008,8 @@ void ExpressionActionsChain::addStep(NameSet non_constant_inputs)
         if (column.column && isColumnConst(*column.column) && non_constant_inputs.contains(column.name))
             column.column = nullptr;
 
-    steps.push_back(std::make_unique<ExpressionActionsStep>(std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
+    steps.push_back(std::make_unique<ExpressionActionsChainSteps::ExpressionActionsStep>(
+        std::make_shared<ActionsAndProjectInputsFlag>(ActionsDAG(columns), false)));
 }
 
 void ExpressionActionsChain::finalize()
@@ -1052,6 +1053,18 @@ void ExpressionActionsChain::finalize()
     }
 }
 
+ExpressionActionsChainSteps::ExpressionActionsStep * ExpressionActionsChain::getLastExpressionStep(bool allow_empty)
+{
+    if (steps.empty())
+    {
+        if (allow_empty)
+            return {};
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty ExpressionActionsChain");
+    }
+
+    return typeid_cast<ExpressionActionsChainSteps::ExpressionActionsStep *>(steps.back().get());
+}
+
 std::string ExpressionActionsChain::dumpChain() const
 {
     WriteBufferFromOwnString ss;
@@ -1068,7 +1081,7 @@ std::string ExpressionActionsChain::dumpChain() const
     return ss.str();
 }
 
-ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_)
+ExpressionActionsChainSteps::ArrayJoinStep::ArrayJoinStep(const Names & array_join_columns_, ColumnsWithTypeAndName required_columns_)
     : Step({})
     , array_join_columns(array_join_columns_.begin(), array_join_columns_.end())
     , result_columns(std::move(required_columns_))
@@ -1087,7 +1100,7 @@ ExpressionActionsChain::ArrayJoinStep::ArrayJoinStep(const Names & array_join_co
     }
 }
 
-void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_output_)
+void ExpressionActionsChainSteps::ArrayJoinStep::finalize(const NameSet & required_output_)
 {
     NamesAndTypesList new_required_columns;
     ColumnsWithTypeAndName new_result_columns;
@@ -1107,7 +1120,7 @@ void ExpressionActionsChain::ArrayJoinStep::finalize(const NameSet & required_ou
     std::swap(result_columns, new_result_columns);
 }
 
-ExpressionActionsChain::JoinStep::JoinStep(
+ExpressionActionsChainSteps::JoinStep::JoinStep(
     std::shared_ptr<TableJoin> analyzed_join_,
     JoinPtr join_,
     const ColumnsWithTypeAndName & required_columns_)
@@ -1122,7 +1135,7 @@ ExpressionActionsChain::JoinStep::JoinStep(
     analyzed_join->addJoinedColumnsAndCorrectTypes(result_columns, true);
 }
 
-void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_)
+void ExpressionActionsChainSteps::JoinStep::finalize(const NameSet & required_output_)
 {
     /// We need to update required and result columns by removing unused ones.
     NamesAndTypesList new_required_columns;
@@ -1157,12 +1170,12 @@ void ExpressionActionsChain::JoinStep::finalize(const NameSet & required_output_
     std::swap(result_columns, new_result_columns);
 }
 
-ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions()
+ActionsAndProjectInputsFlagPtr & ExpressionActionsChainSteps::Step::actions()
 {
     return typeid_cast<ExpressionActionsStep &>(*this).actions_and_flags;
 }
 
-const ActionsAndProjectInputsFlagPtr & ExpressionActionsChain::Step::actions() const
+const ActionsAndProjectInputsFlagPtr & ExpressionActionsChainSteps::Step::actions() const
 {
     return typeid_cast<const ExpressionActionsStep &>(*this).actions_and_flags;
 }

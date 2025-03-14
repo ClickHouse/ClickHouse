@@ -94,7 +94,7 @@ ColumnsDescription StorageSystemDictionaries::getColumnsDescription()
         {"loading_start_time", std::make_shared<DataTypeDateTime>(), "Start time for loading the dictionary."},
         {"last_successful_update_time", std::make_shared<DataTypeDateTime>(), "End time for loading or updating the dictionary. Helps to monitor some troubles with dictionary sources and investigate the causes."},
         {"loading_duration", std::make_shared<DataTypeFloat32>(), "Duration of a dictionary loading."},
-        {"last_exception", std::make_shared<DataTypeString>(), "Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created."},
+        {"last_exception", std::make_shared<DataTypeString>(), "Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created."},
         {"comment", std::make_shared<DataTypeString>(), "Text of the comment to dictionary."}
     };
 }

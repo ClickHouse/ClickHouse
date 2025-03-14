@@ -1,9 +1,15 @@
+#include <Common/Exception.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferWrapperBase.h>
 
-
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int CANNOT_READ_ALL_DATA;
+}
 
 namespace
 {
@@ -36,6 +42,18 @@ namespace
     };
 }
 
+void ReadBuffer::readStrict(char * to, size_t n)
+{
+    auto read_bytes = read(to, n);
+    if (n != read_bytes)
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+                        "Cannot read all data. Bytes read: {}. Bytes expected: {}.", read_bytes, std::to_string(n));
+}
+
+void ReadBuffer::throwReadAfterEOF()
+{
+    throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof");
+}
 
 std::unique_ptr<ReadBuffer> wrapReadBufferReference(ReadBuffer & ref)
 {

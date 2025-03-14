@@ -10,6 +10,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace FileCacheSetting
+{
+    extern const FileCacheSettingsString path;
+}
+
 FileCacheFactory::FileCacheData::FileCacheData(
     FileCachePtr cache_,
     const FileCacheSettings & settings_,
@@ -26,10 +31,10 @@ FileCacheSettings FileCacheFactory::FileCacheData::getSettings() const
     return settings;
 }
 
-void FileCacheFactory::FileCacheData::setSettings(const FileCacheSettings & new_settings)
+void FileCacheFactory::FileCacheData::setSettings(FileCacheSettings && new_settings)
 {
     std::lock_guard lock(settings_mutex);
-    settings = new_settings;
+    settings = std::move(new_settings);
 }
 
 FileCacheFactory & FileCacheFactory::instance()
@@ -63,7 +68,7 @@ FileCachePtr FileCacheFactory::getOrCreate(
 
     auto it = std::find_if(caches_by_name.begin(), caches_by_name.end(), [&](const auto & cache_by_name)
     {
-        return cache_by_name.second->getSettings().base_path == file_cache_settings.base_path;
+        return cache_by_name.second->getSettings()[FileCacheSetting::path].value == file_cache_settings[FileCacheSetting::path].value;
     });
 
     if (it == caches_by_name.end())
@@ -109,7 +114,7 @@ FileCachePtr FileCacheFactory::create(
 
     it = std::find_if(caches_by_name.begin(), caches_by_name.end(), [&](const auto & cache_by_name)
     {
-        return cache_by_name.second->getSettings().base_path == file_cache_settings.base_path;
+        return cache_by_name.second->getSettings()[FileCacheSetting::path].value == file_cache_settings[FileCacheSetting::path].value;
     });
 
     if (it == caches_by_name.end())
@@ -186,12 +191,12 @@ void FileCacheFactory::updateSettingsFromConfig(const Poco::Util::AbstractConfig
         {
             /// Settings changes could be partially applied in case of exception,
             /// make sure cache_info->settings show correct state of applied settings.
-            cache_info->setSettings(old_settings);
+            cache_info->setSettings(std::move(old_settings));
             tryLogCurrentException(__PRETTY_FUNCTION__);
             throw;
         }
 
-        cache_info->setSettings(old_settings);
+        cache_info->setSettings(std::move(old_settings));
     }
 }
 

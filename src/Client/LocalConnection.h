@@ -3,7 +3,6 @@
 #include "Connection.h"
 #include <Interpreters/Context.h>
 #include <QueryPipeline/BlockIO.h>
-#include <IO/TimeoutSetter.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Storages/ColumnsDescription.h>
