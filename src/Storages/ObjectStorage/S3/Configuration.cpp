@@ -13,6 +13,8 @@
 #include <Disks/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Disks/ObjectStorages/S3/diskSettings.h>
 
+#include <Interpreters/evaluateConstantExpression.h>
+
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -45,6 +47,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString secret_access_key;
     extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsBool use_environment_credentials;
+    extern const S3AuthSettingsString role_arn;
 }
 
 namespace ErrorCodes
@@ -109,6 +112,7 @@ StorageS3Configuration::StorageS3Configuration(const StorageS3Configuration & ot
     url = other.url;
     static_configuration = other.static_configuration;
     headers_from_ast = other.headers_from_ast;
+    extra_credentials_from_ast = other.extra_credentials_from_ast;
     keys = other.keys;
 }
 
@@ -190,8 +194,66 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     keys = {url.key};
 }
 
+void StorageS3Configuration::extractExtraCreds(ASTs & args, ContextPtr context)
+{
+    ASTs::iterator extra_creds_it = args.end();
+
+    for (auto * arg_it = args.begin(); arg_it != args.end(); ++arg_it)
+    {
+        const auto * extra_creds_ast_function = (*arg_it)->as<ASTFunction>();
+        if (extra_creds_ast_function && extra_creds_ast_function->name == "extra_credentials")
+        {
+            if (extra_creds_it != args.end())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "S3 table function can have only one extra_credentials argument");
+
+            const auto * extra_creds_function_args_expr = assert_cast<const ASTExpressionList *>(extra_creds_ast_function->arguments.get());
+            auto extra_creds_function_args = extra_creds_function_args_expr->children;
+
+            for (auto & extra_cred_arg : extra_creds_function_args)
+            {
+                const auto * extra_cred_ast = extra_cred_arg->as<ASTFunction>();
+                if (!extra_cred_ast || extra_cred_ast->name != "equals")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "extra_credentials argument is incorrect: shall be key=value");
+
+                const auto * extra_cred_args_expr = assert_cast<const ASTExpressionList *>(extra_cred_ast->arguments.get());
+                auto extra_cred_args = extra_cred_args_expr->children;
+                if (extra_cred_args.size() != 2)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "extra_credentials argument is incorrect: expected 2 arguments, got {}",
+                        extra_cred_args.size());
+
+                auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(extra_cred_args[0], context);
+                auto arg_name_value = ast_literal->as<ASTLiteral>()->value;
+                if (arg_name_value.getType() != Field::Types::Which::String)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as extra_credentials name");
+                auto arg_name = arg_name_value.safeGet<String>();
+
+                ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(extra_cred_args[1], context);
+                auto arg_value = ast_literal->as<ASTLiteral>()->value;
+                if (arg_value.getType() != Field::Types::Which::String)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as extra_credentials value");
+
+                extra_credentials_from_ast.emplace_back(arg_name, arg_value.safeGet<String>());
+            }
+
+            extra_creds_it = arg_it;
+            continue;
+        }
+    }
+
+    /// To avoid making unnecessary changes and avoid potential conflicts in future,
+    /// simply remove the "extra" argument after processing if it exists.
+    if (extra_creds_it != args.end())
+        args.erase(extra_creds_it);
+}
+
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
+    extractExtraCreds(args, context);
+
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
 
     if (count == 0 || count > getMaxNumberOfArguments(with_structure))
@@ -388,6 +450,14 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 
     if (no_sign_request)
         auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;
+
+    if (!extra_credentials_from_ast.empty())
+    {
+        auto role_arn_it = std::find_if(extra_credentials_from_ast.begin(), extra_credentials_from_ast.end(),
+                                        [](const HTTPHeaderEntry & entry) { return entry.name == "role_arn"; });
+        if (role_arn_it != extra_credentials_from_ast.end())
+            auth_settings[S3AuthSetting::role_arn] = role_arn_it->value;
+    }
 
     static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
     auth_settings[S3AuthSetting::no_sign_request] = no_sign_request;

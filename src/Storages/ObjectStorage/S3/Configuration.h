@@ -37,7 +37,7 @@ public:
         " - url, access_key_id, secret_access_key, session_token, format, structure\n"
         " - url, access_key_id, secret_access_key, format, structure, compression_method\n"
         " - url, access_key_id, secret_access_key, session_token, format, structure, compression_method\n"
-        "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+        "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`) and extra credentials for role assumption (`extra_credentials(role_arn=value, role_session_name=value)`)";
 
     /// All possible signatures for S3 storage without structure argument (for example for S3 table engine).
     static constexpr auto max_number_of_arguments_without_structure = 6;
@@ -54,7 +54,7 @@ public:
         " - url, access_key_id, secret_access_key, session_token, format\n"
         " - url, access_key_id, secret_access_key, format, compression_method\n"
         " - url, access_key_id, secret_access_key, session_token, format, compression_method\n"
-        "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`)";
+        "All signatures supports optional headers (specified as `headers('name'='value', 'name2'='value2')`) and extra credentials for role assumption (`extra_credentials(role_arn=value, role_session_name=value)`)";
 
     StorageS3Configuration() = default;
     StorageS3Configuration(const StorageS3Configuration & other);
@@ -98,6 +98,7 @@ public:
         bool with_structure) override;
 
 private:
+    void extractExtraCreds(ASTs & args, ContextPtr context);
     void fromNamedCollection(const NamedCollection & collection, ContextPtr context) override;
     void fromAST(ASTs & args, ContextPtr context, bool with_structure) override;
 
@@ -107,6 +108,8 @@ private:
     S3::S3AuthSettings auth_settings;
     S3::S3RequestSettings request_settings;
     HTTPHeaderEntries headers_from_ast; /// Headers from ast is a part of static configuration.
+    HTTPHeaderEntries extra_credentials_from_ast; /// Avoid duplicated entities: HTTPHeaderEntry structure matches our needs here, use it.
+
     /// If s3 configuration was passed from ast, then it is static.
     /// If from config - it can be changed with config reload.
     bool static_configuration = true;

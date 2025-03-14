@@ -39,6 +39,9 @@ namespace S3
 #    include <aws/core/utils/UUID.h>
 #    include <aws/core/http/HttpClientFactory.h>
 
+#    include <aws/sts/STSClient.h>
+#    include <aws/identity-management/auth/STSAssumeRoleCredentialsProvider.h>
+
 #    include <aws/core/utils/HashingUtils.h>
 #    include <aws/core/platform/FileSystem.h>
 
@@ -689,7 +692,19 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
     /// because it's manually defined by the user
     if (!credentials.IsEmpty())
     {
-        AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
+        if (credentials_configuration.role_arn.empty())
+            AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
+        else
+        {
+            AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
+                credentials_configuration.role_arn,
+                /* sessionName */ Aws::String(),
+                /* externalId */ Aws::String(),
+                /* loadFrequency */ Aws::Auth::DEFAULT_CREDS_LOAD_FREQ_SECONDS,
+                std::make_shared<Aws::STS::STSClient>(credentials)
+                )
+            );
+        }
         return;
     }
 
