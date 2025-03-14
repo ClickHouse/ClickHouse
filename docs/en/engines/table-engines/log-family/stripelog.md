@@ -1,7 +1,8 @@
 ---
+description: 'Documentation for StripeLog'
 slug: /engines/table-engines/log-family/stripelog
 toc_priority: 32
-toc_title: StripeLog
+toc_title: 'StripeLog'
 ---
 
 # StripeLog

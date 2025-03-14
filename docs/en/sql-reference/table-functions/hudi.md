@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/hudi
+description: 'Provides a read-only table-like interface to Apache Hudi tables in Amazon
+  S3.'
+sidebar_label: 'hudi'
 sidebar_position: 85
-sidebar_label: hudi
-title: "hudi"
-description: "Provides a read-only table-like interface to Apache Hudi tables in Amazon S3."
+slug: /sql-reference/table-functions/hudi
+title: 'hudi'
 ---
 
 # hudi Table Function

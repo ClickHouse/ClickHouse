@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/delete
+description: 'Documentation for ALTER TABLE ... DELETE Statement'
+sidebar_label: 'DELETE'
 sidebar_position: 39
-sidebar_label: DELETE
+slug: /sql-reference/statements/alter/delete
+title: 'ALTER TABLE ... DELETE Statement'
 ---
 
 # ALTER TABLE ... DELETE Statement

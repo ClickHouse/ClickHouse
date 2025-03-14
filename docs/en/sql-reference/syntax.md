@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/syntax
+description: 'Documentation for Syntax'
+displayed_sidebar: 'sqlreference'
+sidebar_label: 'Syntax'
 sidebar_position: 2
-sidebar_label: Syntax
-title: Syntax
-displayed_sidebar: sqlreference
+slug: /sql-reference/syntax
+title: 'Syntax'
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 

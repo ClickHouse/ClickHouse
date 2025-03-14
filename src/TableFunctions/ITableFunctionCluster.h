@@ -2,6 +2,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
@@ -24,15 +25,25 @@ class ITableFunctionCluster : public Base
 public:
     String getName() const override = 0;
 
-    static void updateStructureAndFormatArgumentsIfNeeded(ASTs & args, const String & structure_, const String & format_, const ContextPtr & context)
+    static void updateStructureAndFormatArgumentsIfNeeded(ASTFunction * table_function, const String & structure_, const String & format_, const ContextPtr & context)
     {
+        auto * expression_list = table_function->arguments->as<ASTExpressionList>();
+        ASTs args = expression_list->children;
+
         if (args.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected empty list of arguments for {}Cluster table function", Base::name);
 
-        ASTPtr cluster_name_arg = args.front();
-        args.erase(args.begin());
-        Base::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context, /*with_structure=*/true);
-        args.insert(args.begin(), cluster_name_arg);
+        if (table_function->name == Base::name)
+            Base::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context, /*with_structure=*/true);
+        else if (table_function->name == fmt::format("{}Cluster", Base::name))
+        {
+            ASTPtr cluster_name_arg = args.front();
+            args.erase(args.begin());
+            Base::updateStructureAndFormatArgumentsIfNeeded(args, structure_, format_, context, /*with_structure=*/true);
+            args.insert(args.begin(), cluster_name_arg);
+        }
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected table function name: {}", table_function->name);
     }
 
     bool canBeUsedToCreateTable() const override { return false; }

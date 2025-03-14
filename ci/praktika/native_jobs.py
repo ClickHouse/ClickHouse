@@ -426,16 +426,22 @@ def _finish_workflow(workflow, job_name):
     ready_for_merge_status = Result.Status.SUCCESS
     ready_for_merge_description = ""
     failed_results = []
+    skipped_results = []
 
     if results and any(not result.is_ok() for result in results):
         failed_results.append("Workflow Post Hook")
 
     for result in workflow_result.results:
-        if result.name == job_name or result.status in (
-            Result.Status.SUCCESS,
-            Result.Status.SKIPPED,
-        ):
+        if result.name == job_name:
             continue
+        if result.status == Result.Status.SUCCESS:
+            continue
+        if result.status == Result.Status.SKIPPED:
+            if ResultInfo.SKIPPED_DUE_TO_PREVIOUS_FAILURE in result.info:
+                skipped_results.append(result.name)
+            else:
+                # legally skipped job
+                continue
         if not result.is_completed():
             print(
                 f"ERROR: not finished job [{result.name}] in the workflow - set status to error"
@@ -453,13 +459,15 @@ def _finish_workflow(workflow, job_name):
             )
             failed_results.append(result.name)
 
-    if failed_results:
+    if failed_results or skipped_results:
         ready_for_merge_status = Result.Status.FAILED
         failed_jobs_csv = ",".join(failed_results)
-        if len(failed_jobs_csv) < 80:
+        if failed_jobs_csv and len(failed_jobs_csv) < 80:
             ready_for_merge_description = f"Failed: {failed_jobs_csv}"
         else:
-            ready_for_merge_description = f"Failed: {len(failed_results)} required jobs"
+            ready_for_merge_description = f"Failed: {len(failed_results)} jobs"
+        if skipped_results:
+            ready_for_merge_description += f", Skipped: {len(skipped_results)} of them"
 
     if workflow.enable_merge_ready_status:
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()

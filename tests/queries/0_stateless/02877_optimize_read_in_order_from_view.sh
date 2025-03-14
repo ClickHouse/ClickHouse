@@ -20,7 +20,7 @@ query_id=${CLICKHOUSE_DATABASE}_optimize_read_in_order_from_view_$RANDOM$RANDOM
 
 $CLICKHOUSE_CLIENT -q "$query" --query_id="$query_id" --log_queries=1 --optimize_read_in_order=1
 
-$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS"
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 read_rows=$($CLICKHOUSE_CLIENT -q "SELECT read_rows FROM system.query_log WHERE current_database = currentDatabase() AND query_id='${query_id}' AND type='QueryFinish'")
 
