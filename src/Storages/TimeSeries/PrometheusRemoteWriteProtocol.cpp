@@ -5,6 +5,7 @@
 
 #include <algorithm>
 
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>

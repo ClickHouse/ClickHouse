@@ -121,7 +121,7 @@ def create_clickhouse_iceberg_database(
     started_cluster, node, name, additional_settings={}
 ):
     settings = {
-        "catalog_type": "iceberg_rest",
+        "catalog_type": "rest",
         "warehouse": "demo",
         "storage_endpoint": "http://minio:9000/warehouse",
     }
@@ -345,3 +345,40 @@ def test_hide_sensitive_info(started_cluster):
         additional_settings={"auth_header": "SECRET_2"},
     )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
+
+def test_tables_with_same_location(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_tables_with_same_location_{uuid.uuid4()}"
+    namespace = f"{test_ref}_namespace"
+    catalog = load_catalog_impl(started_cluster)
+
+    table_name = f"{test_ref}_table"
+    table_name_2 = f"{test_ref}_table_2"
+
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name)
+    table_2 = create_table(catalog, namespace, table_name_2)
+
+    def record(key):
+        return {
+            "datetime": datetime.now(),
+            "symbol": str(key),
+            "bid": round(random.uniform(100, 200), 2),
+            "ask": round(random.uniform(200, 300), 2),
+            "details": {"created_by": "Alice Smith"},
+        }
+
+    data = [record('aaa') for _ in range(3)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    data = [record('bbb') for _ in range(3)]
+    df = pa.Table.from_pylist(data)
+    table_2.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    assert 'aaa\naaa\naaa' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
+    assert 'bbb\nbbb\nbbb' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name_2}`").strip()

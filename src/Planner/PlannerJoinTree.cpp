@@ -75,7 +75,9 @@
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 
+#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+
 #include <ranges>
 
 namespace DB
@@ -1414,7 +1416,9 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     trySetStorageInTableJoin(right_table_expression, table_join);
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
-    auto join_algorithm = chooseJoinAlgorithm(table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), std::move(hash_table_stat_cache_key));
+    const auto cache_key_for_parallel_hash = calculateCacheKey(table_join, hash_table_stat_cache_key);
+    auto join_algorithm = chooseJoinAlgorithm(
+        table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), cache_key_for_parallel_hash);
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();
@@ -1528,7 +1532,8 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             false /*optimize_read_in_order*/,
             true /*optimize_skip_unused_shards*/);
 
-        join_step->swap_join_tables = settings[Setting::query_plan_join_swap_table].get();
+        auto setting_swap = settings[Setting::query_plan_join_swap_table];
+        join_step->swap_join_tables = setting_swap.is_auto ? std::nullopt : std::make_optional(setting_swap.base);
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 
@@ -2054,9 +2059,8 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     join_step_logical->setPreparedJoinStorage(
         tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context));
-    join_step_logical->setHashTableCacheKey(preCalculateCacheKey(join_node.getRightTableExpression(), select_query_info));
 
-    auto & join_expression_actions = join_step_logical->getExpressionActions();
+    const auto & join_expression_actions = join_step_logical->getExpressionActions();
     appendSetsFromActionsDAG(*join_expression_actions.left_pre_join_actions, left_join_tree_query_plan.useful_sets);
     appendSetsFromActionsDAG(*join_expression_actions.post_join_actions, left_join_tree_query_plan.useful_sets);
     appendSetsFromActionsDAG(*join_expression_actions.right_pre_join_actions, right_join_tree_query_plan.useful_sets);

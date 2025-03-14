@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/encoding-functions
+description: 'Documentation for Encoding Functions'
+sidebar_label: 'Encoding'
 sidebar_position: 65
-sidebar_label: Encoding
+slug: /sql-reference/functions/encoding-functions
+title: 'Encoding Functions'
 ---
 
 # Encoding Functions

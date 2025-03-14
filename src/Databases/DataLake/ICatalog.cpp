@@ -156,12 +156,12 @@ std::shared_ptr<IStorageCredentials> TableMetadata::getStorageCredentials() cons
     return storage_credentials;
 }
 
-void TableMetadata::setDataLakeSpecificMetadata(std::optional<DataLakeSpecificMetadata> && metadata)
+void TableMetadata::setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata)
 {
     data_lake_specific_metadata = metadata;
 }
 
-std::optional<DataLakeSpecificMetadata> TableMetadata::getDataLakeSpecificMetadata() const
+std::optional<DataLakeSpecificProperties> TableMetadata::getDataLakeSpecificProperties() const
 {
     return data_lake_specific_metadata;
 }
@@ -182,11 +182,6 @@ bool TableMetadata::hasSchema() const
 bool TableMetadata::hasStorageCredentials() const
 {
     return storage_credentials != nullptr;
-}
-
-DB::StorageObjectStorageSettingsPtr ICatalog::createStorageSettingsFromMetadata(const TableMetadata &) const
-{
-    return std::make_shared<DB::StorageObjectStorageSettings>();
 }
 
 }

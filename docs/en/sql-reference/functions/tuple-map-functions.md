@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/functions/tuple-map-functions
+description: 'Documentation for Tuple Map Functions'
+sidebar_label: 'Maps'
 sidebar_position: 120
-sidebar_label: Maps
-title: Map Functions
+slug: /sql-reference/functions/tuple-map-functions
+title: 'Map Functions'
 ---
 
 ## map {#map}

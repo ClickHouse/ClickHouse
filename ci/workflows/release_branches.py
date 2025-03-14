@@ -9,7 +9,7 @@ workflow = Workflow.Config(
     event=Workflow.Event.PUSH,
     branches=["2[1-9].[1-9][0-9]", "2[1-9].[1-9]"],
     jobs=[
-        *[job for job in JobConfigs.build_jobs if "tidy" not in job.name],
+        *JobConfigs.build_jobs,
         *[
             job
             for job in JobConfigs.special_build_jobs

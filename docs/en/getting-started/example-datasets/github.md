@@ -1,9 +1,10 @@
 ---
-description: "Dataset containing all of the commits and changes for the ClickHouse repository"
-slug: /getting-started/example-datasets/github
-sidebar_label: Github Repo
+description: 'Dataset containing all of the commits and changes for the ClickHouse
+  repository'
+sidebar_label: 'Github Repo'
 sidebar_position: 1
-title: "Writing Queries in ClickHouse using GitHub Data"
+slug: /getting-started/example-datasets/github
+title: 'Writing Queries in ClickHouse using GitHub Data'
 ---
 
 This dataset contains all of the commits and changes for the ClickHouse repository. It can be generated using the native `git-import` tool distributed with ClickHouse.

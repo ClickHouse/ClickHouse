@@ -12,7 +12,7 @@ namespace DataLake
 using StorageType = DB::DatabaseDataLakeStorageType;
 StorageType parseStorageTypeFromLocation(const std::string & location);
 
-struct DataLakeSpecificMetadata
+struct DataLakeSpecificProperties
 {
     std::string iceberg_metadata_file_location;
 };
@@ -28,13 +28,13 @@ public:
     TableMetadata & withLocation() { with_location = true; return *this; }
     TableMetadata & withSchema() { with_schema = true; return *this; }
     TableMetadata & withStorageCredentials() { with_storage_credentials = true; return *this; }
-    TableMetadata & withDataLakeSpecificMetadata() { with_datalake_specific_metadata = true; return *this; }
+    TableMetadata & withDataLakeSpecificProperties() { with_datalake_specific_metadata = true; return *this; }
 
     bool isLightweight() const;
     bool hasLocation() const;
     bool hasSchema() const;
     bool hasStorageCredentials() const;
-    bool hasDataLakeSpecificMetadata() const;
+    bool hasDataLakeSpecificProperties() const;
 
     void setLocation(const std::string & location_);
     std::string getLocation() const;
@@ -49,19 +49,31 @@ public:
     void setStorageCredentials(std::shared_ptr<IStorageCredentials> credentials_);
     std::shared_ptr<IStorageCredentials> getStorageCredentials() const;
 
-    void setDataLakeSpecificMetadata(std::optional<DataLakeSpecificMetadata> && metadata);
-    std::optional<DataLakeSpecificMetadata> getDataLakeSpecificMetadata() const;
+    void setDataLakeSpecificProperties(std::optional<DataLakeSpecificProperties> && metadata);
+    std::optional<DataLakeSpecificProperties> getDataLakeSpecificProperties() const;
 
-    bool requiresLightweight() const { return with_lightweight; }
     bool requiresLocation() const { return with_location; }
     bool requiresSchema() const { return with_schema; }
     bool requiresCredentials() const { return with_storage_credentials; }
-    bool requiresDataLakeSpecificMetadata() const { return with_datalake_specific_metadata; }
+    bool requiresDataLakeSpecificProperties() const { return with_datalake_specific_metadata; }
 
     StorageType getStorageType() const;
 
-    void setDefaultReadableTable(bool value) { is_default_readable_table = value; }
+    /// Some catalogs (Unity or Glue) may store not only Iceberg/DeltaLake tables but other kinds of "tables"
+    /// as simple files or some in-memory tables, or even DataLake tables but in some private storages.
+    /// ClickHouse can see these tables via catalog, but obviously cannot read them.
+    /// So we use these methods to identify such tables and show them in SHOW TABLES and
+    /// SHOW CREATE TABLE queries.
+    void setTableIsNotReadable(const std::string & reason)
+    {
+        if (is_default_readable_table)
+        {
+            is_default_readable_table = false;
+            reason_why_table_is_not_readable = reason;
+        }
+    }
     bool isDefaultReadableTable() const { return is_default_readable_table; }
+    std::string getReasonWhyTableIsUnreadable() const { return reason_why_table_is_not_readable; }
 
 private:
     /// Starts with s3://, file://, etc.
@@ -80,7 +92,9 @@ private:
     std::shared_ptr<IStorageCredentials> storage_credentials;
 
     /// Specific settings for iceberg and datalake
-    std::optional<DataLakeSpecificMetadata> data_lake_specific_metadata;
+    std::optional<DataLakeSpecificProperties> data_lake_specific_metadata;
+
+    std::string reason_why_table_is_not_readable;
 
     bool is_default_readable_table = true;
 

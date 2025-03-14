@@ -54,11 +54,16 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool use_hive_partitioning;
 }
+namespace StorageObjectStorageSetting
+{
+    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+}
 
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int DATALAKE_DATABASE_ERROR;
 }
 
 namespace
@@ -270,7 +275,6 @@ std::string DatabaseDataLake::getStorageEndpointForTable(const DataLake::TableMe
         return table_metadata.getLocation();
     else
         return table_metadata.getLocationWithEndpoint(endpoint_from_settings);
-
 }
 
 bool DatabaseDataLake::empty() const
@@ -292,9 +296,7 @@ StoragePtr DatabaseDataLake::tryGetTable(const String & name, ContextPtr context
 StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr context_, bool lightweight) const
 {
     auto catalog = getCatalog();
-    auto table_metadata = DataLake::TableMetadata().withSchema().withLocation();
-    if (lightweight)
-        table_metadata = table_metadata.withLightweight();
+    auto table_metadata = DataLake::TableMetadata().withSchema().withLocation().withDataLakeSpecificProperties();
 
     const bool with_vended_credentials = settings[DatabaseDataLakeSetting::vended_credentials].value;
     if (with_vended_credentials)
@@ -306,6 +308,11 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
         return nullptr;
+
+    if (!lightweight && !table_metadata.isDefaultReadableTable())
+    {
+        throw Exception::createRuntime(ErrorCodes::DATALAKE_DATABASE_ERROR, table_metadata.getReasonWhyTableIsUnreadable());
+    }
 
     /// Take database engine definition AST as base.
     ASTStorage * storage = table_engine_definition->as<ASTStorage>();
@@ -366,7 +373,23 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
 
     const auto configuration = getConfiguration(storage_type);
 
-    auto storage_settings = catalog->createStorageSettingsFromMetadata(table_metadata);
+    auto storage_settings = std::make_shared<StorageObjectStorageSettings>();
+    if (auto table_specific_properties = table_metadata.getDataLakeSpecificProperties();
+        table_specific_properties.has_value())
+    {
+        auto metadata_location = table_specific_properties->iceberg_metadata_file_location;
+        if (!metadata_location.empty())
+        {
+            const auto data_location = table_metadata.getLocation();
+            if (metadata_location.starts_with(data_location))
+            {
+                size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
+                metadata_location = metadata_location.substr(data_location.size() + remove_slash);
+            }
+        }
+
+        (*storage_settings)[DB::StorageObjectStorageSetting::iceberg_metadata_file_path] = metadata_location;
+    }
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);
@@ -451,7 +474,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     bool /* throw_on_error */) const
 {
     auto catalog = getCatalog();
-    auto table_metadata = DataLake::TableMetadata().withLightweight().withLocation().withSchema();
+    auto table_metadata = DataLake::TableMetadata().withLocation().withSchema();
 
     const auto [namespace_name, table_name] = parseTableName(name);
     catalog->getTableMetadata(namespace_name, table_name, table_metadata);

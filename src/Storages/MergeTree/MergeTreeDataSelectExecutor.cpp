@@ -24,6 +24,7 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Processors/ConcatProcessor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -662,10 +663,10 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     struct IndexStat
     {
-        std::atomic<size_t> total_granules = 0;
-        std::atomic<size_t> granules_dropped = 0;
-        std::atomic<size_t> total_parts = 0;
-        std::atomic<size_t> parts_dropped = 0;
+        std::atomic<size_t> total_granules{0};
+        std::atomic<size_t> granules_dropped{0};
+        std::atomic<size_t> total_parts{0};
+        std::atomic<size_t> parts_dropped{0};
     };
 
     std::vector<IndexStat> useful_indices_stat(skip_indexes.useful_indices.size());
@@ -680,7 +681,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     {
         auto mark_cache = context->getIndexMarkCache();
         auto uncompressed_cache = context->getIndexUncompressedCache();
-        auto skipping_index_cache = context->getSkippingIndexCache();
 
         auto query_status = context->getProcessListElement();
 
@@ -738,7 +738,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     reader_settings,
                     mark_cache.get(),
                     uncompressed_cache.get(),
-                    skipping_index_cache.get(),
                     log);
 
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -760,7 +759,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     indices_and_condition.indices, indices_and_condition.condition,
                     part, ranges.ranges,
                     settings, reader_settings,
-                    mark_cache.get(), uncompressed_cache.get(), skipping_index_cache.get(), log);
+                    mark_cache.get(), uncompressed_cache.get(), log);
 
                 stat.total_granules.fetch_add(total_granules, std::memory_order_relaxed);
                 stat.granules_dropped.fetch_add(total_granules - ranges.ranges.getNumberOfMarks(), std::memory_order_relaxed);
@@ -899,28 +898,29 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     LoggerPtr log)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::use_query_condition_cache] || !settings[Setting::allow_experimental_analyzer] ||
-        (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag))
+    if (!settings[Setting::use_query_condition_cache]
+            || !settings[Setting::allow_experimental_analyzer]
+            || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag))
         return;
 
     QueryConditionCachePtr query_condition_cache = context->getQueryConditionCache();
 
-    struct Stat
+    struct Stats
     {
-        size_t total_granules{0};
-        size_t granules_dropped{0};
+        size_t total_granules = 0;
+        size_t granules_dropped = 0;
     };
 
-    auto drop_mark_ranges =[&](const ActionsDAG::Node * dag) -> Stat
+    auto drop_mark_ranges =[&](const ActionsDAG::Node * dag)
     {
         size_t condition_hash = dag->getHash();
-        Stat stat;
+        Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
             auto & part_with_ranges = *it;
-            stat.total_granules += part_with_ranges.getMarksCount();
+            stats.total_granules += part_with_ranges.getMarksCount();
 
-            auto & data_part = part_with_ranges.data_part;
+            const auto & data_part = part_with_ranges.data_part;
             auto storage_id = data_part->storage.getStorageID();
             auto matching_marks_opt = query_condition_cache->read(storage_id.uuid, data_part->name, condition_hash);
             if (!matching_marks_opt)
@@ -931,14 +931,14 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
             auto & matching_marks = *matching_marks_opt;
             MarkRanges ranges;
-            for (auto & mark_range : part_with_ranges.ranges)
+            for (const auto & mark_range : part_with_ranges.ranges)
             {
                 size_t begin = mark_range.begin;
                 for (size_t mark_it = begin; mark_it < mark_range.end; ++mark_it)
                 {
                     if (!matching_marks[mark_it])
                     {
-                        ++stat.granules_dropped;
+                        ++stats.granules_dropped;
                         if (mark_it == begin)
                             ++begin;
                         else
@@ -964,7 +964,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             }
         }
 
-        return stat;
+        return stats;
     };
 
     if (const auto & prewhere_info = select_query_info.prewhere_info)
@@ -973,8 +973,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         {
             if (dag->result_name == prewhere_info->prewhere_column_name)
             {
-                auto stat = drop_mark_ranges(dag);
-                LOG_DEBUG(log, "PREWHERE contition {} by query condition cache has dropped {}/{} granules.", prewhere_info->prewhere_column_name, stat.granules_dropped, stat.total_granules);
+                auto stats = drop_mark_ranges(dag);
+                LOG_DEBUG(log,
+                        "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
+                        stats.granules_dropped,
+                        stats.total_granules,
+                        prewhere_info->prewhere_column_name);
                 break;
             }
         }
@@ -983,8 +987,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * dag = filter_actions_dag->getOutputs().front();
-        auto stat = drop_mark_ranges(dag);
-        LOG_DEBUG(log, "WHERE condition {} by query condition cache has dropped {}/{} granules.", filter_actions_dag->getOutputs().front()->result_name, stat.granules_dropped, stat.total_granules);
+        auto stats = drop_mark_ranges(dag);
+        LOG_DEBUG(log,
+                "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
+                stats.granules_dropped,
+                stats.total_granules,
+                filter_actions_dag->getOutputs().front()->result_name);
     }
 }
 
@@ -1475,7 +1483,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    SkippingIndexCache * skipping_index_cache,
     LoggerPtr log)
 {
     if (!index_helper->getDeserializedFormat(part->getDataPartStorage(), index_helper->getFileName()))
@@ -1511,7 +1518,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
         index_ranges,
         mark_cache,
         uncompressed_cache,
-        skipping_index_cache,
         reader_settings);
 
     MarkRanges res;
@@ -1529,10 +1535,13 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     {
         const MarkRange & index_range = index_ranges[i];
 
+        if (last_index_mark != index_range.begin || !granule)
+            reader.seek(index_range.begin);
+
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
-                granule = reader.read(index_mark);
+                reader.read(granule);
 
             if (index_helper->isVectorSimilarityIndex())
             {
@@ -1594,7 +1603,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
     const MergeTreeReaderSettings & reader_settings,
     MarkCache * mark_cache,
     UncompressedCache * uncompressed_cache,
-    SkippingIndexCache * skipping_index_cache,
     LoggerPtr log)
 {
     for (const auto & index_helper : indices)
@@ -1637,7 +1645,6 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
                 index_ranges,
                 mark_cache,
                 uncompressed_cache,
-                skipping_index_cache,
                 reader_settings));
     }
 
@@ -1654,13 +1661,17 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingMergedIndex(
             range.begin / index_granularity,
             (range.end + index_granularity - 1) / index_granularity);
 
+        if (last_index_mark != index_range.begin || !granules_filled)
+            for (auto & reader : readers)
+                reader->seek(index_range.begin);
+
         for (size_t index_mark = index_range.begin; index_mark < index_range.end; ++index_mark)
         {
             if (index_mark != index_range.begin || !granules_filled || last_index_mark != index_range.begin)
             {
                 for (size_t i = 0; i < readers.size(); ++i)
                 {
-                    granules[i] = readers[i]->read(index_mark);
+                    readers[i]->read(granules[i]);
                     granules_filled = true;
                 }
             }

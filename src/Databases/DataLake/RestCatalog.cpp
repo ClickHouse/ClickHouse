@@ -602,9 +602,9 @@ bool RestCatalog::getTableMetadataImpl(
             result.setLocation(location);
             LOG_TEST(log, "Location for table {}: {}", table_name, location);
         }
-        else if (!result.isLightweight())
+        else
         {
-            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No location in response");
+            result.setTableIsNotReadable(fmt::format("Cannot read table {}, because no 'location' in response", table_name));
         }
     }
 
@@ -617,7 +617,7 @@ bool RestCatalog::getTableMetadataImpl(
         result.setSchema(*schema);
     }
 
-    if (result.requiresCredentials() && object->has("config"))
+    if (result.isDefaultReadableTable() && result.requiresCredentials() && object->has("config"))
     {
         auto config_object = object->get("config").extract<Poco::JSON::Object::Ptr>();
         if (!config_object)
@@ -657,12 +657,12 @@ bool RestCatalog::getTableMetadataImpl(
         }
     }
 
-    if (result.requiresDataLakeSpecificMetadata())
+    if (result.requiresDataLakeSpecificProperties())
     {
         if (object->has("metadata-location") && !object->get("metadata-location").isEmpty())
         {
             auto metadata_location = object->get("metadata-location").extract<String>();
-            result.setDataLakeSpecificMetadata(DataLakeSpecificMetadata{.iceberg_metadata_file_location = metadata_location});
+            result.setDataLakeSpecificProperties(DataLakeSpecificProperties{ .iceberg_metadata_file_location = metadata_location });
         }
     }
 
