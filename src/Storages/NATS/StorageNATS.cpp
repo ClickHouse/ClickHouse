@@ -792,6 +792,7 @@ void registerStorageNATS(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .source_access_type = AccessType::NATS,
+            .has_builtin_setting_fn = NATSSettings::hasBuiltin,
         });
 }
 

@@ -73,4 +73,8 @@ Field StorageObjectStorageSettings::get(const std::string & name)
     return impl->get(name);
 }
 
+bool StorageObjectStorageSettings::hasBuiltin(std::string_view name)
+{
+    return StorageObjectStorageSettingsImpl::hasBuiltin(name);
+}
 }
