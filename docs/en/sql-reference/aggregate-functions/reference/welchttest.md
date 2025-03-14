@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/welchttest
+description: 'Applies Welch''s t-test to samples from two populations.'
+sidebar_label: 'welchTTest'
 sidebar_position: 214
-sidebar_label: welchTTest
-title: "welchTTest"
-description: "Applies Welch's t-test to samples from two populations."
+slug: /sql-reference/aggregate-functions/reference/welchttest
+title: 'welchTTest'
 ---
 
 # welchTTest
