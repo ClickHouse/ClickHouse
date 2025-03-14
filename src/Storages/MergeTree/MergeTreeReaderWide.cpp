@@ -498,7 +498,8 @@ void MergeTreeReaderWide::readData(
 
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
-        bool was_prefetched = prefetched_streams.contains(*IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums()));
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, data_part_info_for_read->getChecksums());
+        bool was_prefetched = stream_name && prefetched_streams.contains(*stream_name);
         bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks;
 
         return getStream(
