@@ -1,7 +1,5 @@
 ---
-alias:
-- PrettyJSONLines
-- PrettyNDJSON
+alias: ['PrettyJSONLines', 'PrettyNDJSON']
 description: 'Documentation for the PrettyJSONLines format'
 input_format: false
 keywords: ['PrettyJSONEachRow', 'PrettyJSONLines', 'PrettyNDJSON']
