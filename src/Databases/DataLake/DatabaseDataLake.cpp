@@ -302,8 +302,6 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     if (with_vended_credentials)
         table_metadata = table_metadata.withStorageCredentials();
 
-    table_metadata = table_metadata.withDataLakeSpecificMetadata();
-
     auto [namespace_name, table_name] = parseTableName(name);
 
     if (!catalog->tryGetTableMetadata(namespace_name, table_name, table_metadata))
