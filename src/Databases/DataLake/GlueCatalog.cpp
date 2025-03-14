@@ -407,7 +407,7 @@ bool GlueCatalog::empty() const
     auto all_databases = getDatabases("");
     for (const auto & db : all_databases)
     {
-        if (!getTablesForDatabase(db, 1).empty())
+        if (!getTablesForDatabase(db, /* limit = */ 1).empty())
             return false;
     }
     return true;

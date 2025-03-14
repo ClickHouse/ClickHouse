@@ -543,9 +543,18 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_settings.loadFromQuery(*database_engine_define);
 
         auto catalog_type = database_settings[DB::DatabaseDataLakeSetting::catalog_type].value;
+        /// Glue catalog is one per region, so it's fully identified by aws keys and region
+        /// There is no URL you need to provide in costructor, even if we would want it
+        ///  will be something like https://aws.amazon.com.
+        ///
+        ///  NOTE: it's still possible to provide endpoint argument for Glue. It's used for fake
+        ///  mock glue catalog in tests only.
+        bool requires_arguments = catalog_type != DatabaseDataLakeCatalogType::GLUE;
+
         const ASTFunction * function_define = database_engine_define->engine;
+
         ASTs engine_args;
-        if (!function_define->arguments && catalog_type != DatabaseDataLakeCatalogType::GLUE)
+        if (requires_arguments && !function_define->arguments)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
         }
@@ -553,7 +562,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         if (function_define->arguments)
         {
             engine_args = function_define->arguments->children;
-            if (engine_args.empty() && catalog_type != DatabaseDataLakeCatalogType::GLUE)
+            if (requires_arguments && engine_args.empty())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
         }
 

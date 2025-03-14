@@ -42,6 +42,7 @@ public:
 
     std::optional<StorageType> getStorageType() const override
     {
+        /// Glue catalog is AWS service, so it supports only data in S3
         return StorageType::S3;
     }
 
