@@ -52,7 +52,8 @@ namespace DB
 {
 namespace Setting
 {
-extern const SettingsBool analyze_index_with_space_filling_curves;
+    extern const SettingsBool analyze_index_with_space_filling_curves;
+    extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
 }
 
 namespace ErrorCodes
@@ -855,6 +856,8 @@ KeyCondition::KeyCondition(
     : key_expr(key_expr_)
     , key_subexpr_names(getAllSubexpressionNames(*key_expr))
     , single_point(single_point_)
+    , date_time_overflow_behavior_ignore(
+          context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -1063,6 +1066,24 @@ bool applyFunctionChainToColumn(
     return true;
 }
 
+bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const
+{
+    if (date_time_overflow_behavior_ignore && func.getName() == "toDateTime")
+    {
+        const IDataType * type = &arg_type;
+        if (const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(type))
+            type = lowcard_type->getDictionaryType().get();
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type))
+            type = nullable_type->getNestedType().get();
+
+        /// toDateTime(date) may overflow, breaking monotonicity.
+        if (isDateOrDate32(type))
+            return false;
+    }
+
+    return true;
+}
+
 bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
     const RPNBuilderTreeNode & node,
     size_t & out_key_column_num,
@@ -1088,9 +1109,12 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
         out_key_column_num,
         out_key_column_type,
         transform_functions,
-        [](const IFunctionBase & func, const IDataType & type)
+        [this](const IFunctionBase & func, const IDataType & type)
         {
             if (!func.hasInformationAboutMonotonicity())
+                return false;
+
+            if (!isFunctionReallyMonotonic(func, type))
                 return false;
 
             /// Range is irrelevant in this case.
@@ -1584,6 +1608,9 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
         if (!func || !func->isDeterministicInScopeOfQuery() || (!assume_function_monotonicity && !func->hasInformationAboutMonotonicity()))
             return false;
 
+        if (!isFunctionReallyMonotonic(*func, *key_column_type))
+            return false;
+
         key_column_type = func->getResultType();
         if (kind == FunctionWithOptionalConstArg::Kind::NO_CONST)
             out_functions_chain.push_back(func);
@@ -1796,10 +1823,7 @@ bool KeyCondition::extractMonotonicFunctionsChainFromKey(
                     {
                         const auto & arg_types = func_base->getArgumentTypes();
                         if (!arg_types.empty() && isStringOrFixedString(arg_types[0]))
-                        {
                             func_name = func_name + "OrNull";
-                        }
-
                     }
 
                     auto func_builder = FunctionFactory::instance().tryGet(func_name, context);

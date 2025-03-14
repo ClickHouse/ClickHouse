@@ -1,10 +1,14 @@
 ---
-description: "System table containing metrics which can be calculated instantly, or have a current value."
+description: 'System table containing metrics which can be calculated instantly, or
+  have a current value.'
+keywords: ['system table', 'metrics']
 slug: /operations/system-tables/metrics
-title: "system.metrics"
-keywords: ["system table", "metrics"]
+title: 'system.metrics'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.metrics
 
 <SystemTableCloud/>
 
@@ -754,5 +758,5 @@ Value of soft limit on number of CPU slots.
 
 - [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
 - [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
-- [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
+- [system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
 - [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

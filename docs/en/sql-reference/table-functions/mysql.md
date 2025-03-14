@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/mysql
+description: 'Allows `SELECT` and `INSERT` queries to be performed on data that are
+  stored on a remote MySQL server.'
+sidebar_label: 'mysql'
 sidebar_position: 137
-sidebar_label: mysql
-title: "mysql"
-description: "Allows `SELECT` and `INSERT` queries to be performed on data that are stored on a remote MySQL server."
+slug: /sql-reference/table-functions/mysql
+title: 'mysql'
 ---
 
 # mysql Table Function
@@ -146,7 +147,7 @@ WHERE id > (SELECT max(id) from mysql_copy);
 **See Also**
 
 - [The 'MySQL' table engine](../../engines/table-engines/integrations/mysql.md)
-- [Using MySQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)
+- [Using MySQL as a dictionary source](/sql-reference/dictionaries#mysql)
 - [mysql_datatypes_support_level](operations/settings/settings.md#mysql_datatypes_support_level)
 - [mysql_map_fixed_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
 - [mysql_map_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)

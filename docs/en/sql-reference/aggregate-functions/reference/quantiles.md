@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiles
+description: 'quantiles, quantilesExactExclusive, quantilesExactInclusive, quantilesGK'
 sidebar_position: 177
-title: "quantiles Functions"
-description: "quantiles, quantilesExactExclusive, quantilesExactInclusive, quantilesGK"
+slug: /sql-reference/aggregate-functions/reference/quantiles
+title: 'quantiles Functions'
 ---
 
 # quantiles Functions
@@ -31,7 +31,7 @@ quantilesExactExclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
@@ -83,7 +83,7 @@ quantilesExactInclusive(level1, level2, ...)(expr)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 

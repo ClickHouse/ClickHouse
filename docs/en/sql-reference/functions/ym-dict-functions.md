@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/ym-dict-functions
+description: 'Documentation for Functions for Working with Embedded Dictionaries'
+sidebar_label: 'Embedded Dictionaries'
 sidebar_position: 60
-sidebar_label: Embedded Dictionaries
+slug: /sql-reference/functions/ym-dict-functions
+title: 'Functions for Working with Embedded Dictionaries'
 ---
 
 # Functions for Working with Embedded Dictionaries
@@ -25,7 +27,7 @@ The 'clickhouse-server' config specifies the file with the regional hierarchy:
 Besides this file, it also searches for files nearby that have the `_` symbol and any suffix appended to the name (before the file extension).
 For example, it will also find the file `/opt/geo/regions_hierarchy_ua.txt`, if present. Here `ua` is called the dictionary key. For a dictionary without a suffix, the key is an empty string.
 
-All the dictionaries are re-loaded during runtime (once every certain number of seconds, as defined in the [`builtin_dictionaries_reload_interval`](../../operations/server-configuration-parameters/settings#builtin-dictionaries-reload-interval) config parameter, or once an hour by default). However, the list of available dictionaries is defined once, when the server starts.
+All the dictionaries are re-loaded during runtime (once every certain number of seconds, as defined in the [`builtin_dictionaries_reload_interval`](/operations/server-configuration-parameters/settings#builtin_dictionaries_reload_interval) config parameter, or once an hour by default). However, the list of available dictionaries is defined once, when the server starts.
 
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 

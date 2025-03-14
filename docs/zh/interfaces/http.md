@@ -420,7 +420,7 @@ $ curl -v 'http://localhost:8123/predefined_query'
 
 `query` 是一个预定义的`predefined_query_handler`查询，它由ClickHouse在匹配HTTP请求并返回查询结果时执行。这是一个必须的配置。
 
-以下是定义的[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_final_threads`设置， 然后查询系统表以检查这些设置是否设置成功。
+以下是定义的[max_threads](/operations/settings/settings#max_threads)和`max_final_threads`设置， 然后查询系统表以检查这些设置是否设置成功。
 
 示例:
 
@@ -461,7 +461,7 @@ max_threads	1
 
 ClickHouse提取并执行与HTTP请求URL中的`query_param_name`值对应的值。`query_param_name`的默认值是`/query`。这是一个可选的配置。如果配置文件中没有定义，则不会传入参数。
 
-为了试验这个功能，示例定义了[max_threads](../operations/settings/settings.md#settings-max_threads)和`max_final_threads`，`queries`设置是否成功的值。
+为了试验这个功能，示例定义了[max_threads](/operations/settings/settings#max_threads)和`max_final_threads`，`queries`设置是否成功的值。
 
 示例:
 
