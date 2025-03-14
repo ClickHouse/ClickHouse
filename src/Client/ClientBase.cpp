@@ -978,8 +978,8 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     // So it's easier to just pass a descriptor, without the terminal name.
     if (isEmbeeddedClient())
     {
-         tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stdout_fd, buf_size);
-         return;
+        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stdout_fd, buf_size);
+        return;
     }
 
     static constexpr auto tty_file_name = "/dev/tty";
@@ -1033,6 +1033,9 @@ void ClientBase::initKeystrokeInterceptor()
     {
         keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(stdin_fd, error_stream);
         keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
+
+        if (isEmbeeddedClient())
+            keystroke_interceptor->registerCallback(0x03, [this]() { tryStopQuery(); });
     }
 }
 
@@ -1537,7 +1540,7 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (getName() == "local" || server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
+    if (getName() == "local" || isEmbeeddedClient() || server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);

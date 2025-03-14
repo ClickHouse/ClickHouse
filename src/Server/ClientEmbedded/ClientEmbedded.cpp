@@ -193,9 +193,7 @@ try
 
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(getClientConfiguration().getString("progress-table", "default")));
-
-    /// TODO: Support progress table.
-    /// initKeystrokeInterceptor();
+    initKeystrokeInterceptor();
 
     client_context = session->sessionContext();
     initClientContext();
