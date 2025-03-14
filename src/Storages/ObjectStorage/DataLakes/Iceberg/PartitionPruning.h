@@ -17,7 +17,7 @@ namespace Iceberg
 struct ManifestFileEntry;
 class ManifestFileContent;
 
-DB::ASTPtr getASTFromTransform(const String & transform_name, const String & column_name);
+DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
 
 /// Prune specific data files based on manifest content
 class PartitionPruner

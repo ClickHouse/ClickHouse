@@ -22,40 +22,49 @@ using namespace DB;
 namespace Iceberg
 {
 
-DB::ASTPtr getASTFromTransform(const String & transform_name, const String & column_name)
+DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name)
 {
+    std::string transform_name = Poco::toLower(transform_name_src);
+
     if (transform_name == "year" || transform_name == "years")
-    {
         return makeASTFunction("toYearNumSinceEpoch", std::make_shared<DB::ASTIdentifier>(column_name));
-    }
-    else if (transform_name == "month" || transform_name == "months")
-    {
+
+    if (transform_name == "month" || transform_name == "months")
         return makeASTFunction("toMonthNumSinceEpoch", std::make_shared<DB::ASTIdentifier>(column_name));
-    }
-    else if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
-    {
+
+    if (transform_name == "day" || transform_name == "date" || transform_name == "days" || transform_name == "dates")
         return makeASTFunction("toRelativeDayNum", std::make_shared<DB::ASTIdentifier>(column_name));
-    }
-    else if (transform_name == "hour" || transform_name == "hours")
-    {
+
+    if (transform_name == "hour" || transform_name == "hours")
         return makeASTFunction("toRelativeHourNum", std::make_shared<DB::ASTIdentifier>(column_name));
-    }
-    else if (transform_name == "identity")
-    {
+
+    if (transform_name == "identity")
         return std::make_shared<ASTIdentifier>(column_name);
-    }
-    else if (transform_name.starts_with("truncate"))
+
+    if (transform_name == "void")
+        return makeASTFunction("tuple");
+
+    if (transform_name.starts_with("truncate"))
     {
+        /// should look like transform[N]
+
+        if (transform_name.back() != ']')
+            return nullptr;
+
         auto argument_start = transform_name.find('[');
+
+        if (argument_start == std::string::npos)
+            return nullptr;
+
         auto argument_width = transform_name.length() - 2 - argument_start;
         std::string width = transform_name.substr(argument_start + 1, argument_width);
-        size_t truncate_width = DB::parse<size_t>(width);
+        size_t truncate_width;
+        bool parsed = DB::tryParse<size_t>(truncate_width, width);
+
+        if (!parsed)
+            return nullptr;
 
         return makeASTFunction("icebergTruncate", std::make_shared<DB::ASTLiteral>(truncate_width), std::make_shared<DB::ASTIdentifier>(column_name));
-    }
-    else if (transform_name == "void")
-    {
-        return makeASTFunction("tuple");
     }
     else
     {
