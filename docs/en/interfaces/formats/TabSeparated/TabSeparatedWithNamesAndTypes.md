@@ -1,7 +1,8 @@
 ---
-title: TabSeparatedWithNamesAndTypes
+description: 'Documentation for the TabSeparatedWithNamesAndTypes format'
+keywords: ['TabSeparatedWithNamesAndTypes']
 slug: /interfaces/formats/TabSeparatedWithNamesAndTypes
-keywords: [TabSeparatedWithNamesAndTypes]
+title: 'TabSeparatedWithNamesAndTypes'
 ---
 
 | Input | Output | Alias                                          |

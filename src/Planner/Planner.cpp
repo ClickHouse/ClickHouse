@@ -708,7 +708,7 @@ void addSortingStep(QueryPlan & query_plan,
 {
     const auto & sort_description = query_analysis_result.sort_description;
     const auto & query_context = planner_context->getQueryContext();
-    SortingStep::Settings sort_settings(*query_context);
+    SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
     auto sorting_step = std::make_unique<SortingStep>(
         query_plan.getCurrentHeader(),
@@ -1038,7 +1038,7 @@ void addWindowSteps(QueryPlan & query_plan,
         }
         if (need_sort)
         {
-            SortingStep::Settings sort_settings(*query_context);
+            SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),

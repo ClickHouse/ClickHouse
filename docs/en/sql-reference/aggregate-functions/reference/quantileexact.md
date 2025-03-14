@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileexact
+description: 'quantileExact, quantileExactLow, quantileExactHigh, quantileExactExclusive,
+  quantileExactInclusive functions'
 sidebar_position: 173
-title: "quantileExact Functions"
-description: "quantileExact, quantileExactLow, quantileExactHigh, quantileExactExclusive, quantileExactInclusive functions"
+slug: /sql-reference/aggregate-functions/reference/quantileexact
+title: 'quantileExact Functions'
 ---
 
 # quantileExact Functions
@@ -91,7 +92,7 @@ SELECT quantileExactLow(0.1)(number) FROM numbers(10)
 └───────────────────────────────┘
 ```
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](/ru/sql-reference/aggregate-functions/reference/quantiles) function.
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles) function.
 
 **Syntax**
 

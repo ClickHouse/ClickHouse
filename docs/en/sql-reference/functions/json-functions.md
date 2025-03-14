@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/json-functions
+description: 'Documentation for Json Functions'
+sidebar_label: 'JSON'
 sidebar_position: 105
-sidebar_label: JSON
+slug: /sql-reference/functions/json-functions
+title: 'JSON Functions'
 ---
 
 There are two sets of functions to parse JSON:
@@ -35,6 +37,7 @@ Alias: `visitParamHas`.
 
 - `json` — The JSON in which the field is searched for. [String](/sql-reference/data-types/string)
 - `field_name` — The name of the field to search for. [String literal](/sql-reference/syntax#string)
+
 
 **Returned value**
 

@@ -1,9 +1,12 @@
 ---
-sidebar_label: "Distributed"
+description: 'Tables with Distributed engine do not store any data of their own, but
+  allow distributed query processing on multiple servers. Reading is automatically
+  parallelized. During a read, the table indexes on remote servers are used, if there
+  are any.'
+sidebar_label: 'Distributed'
 sidebar_position: 10
-title: "Distributed Table Engine"
-description: "Tables with Distributed engine do not store any data of their own, but allow distributed query processing on multiple servers. Reading is automatically parallelized. During a read, the table indexes on remote servers are used, if there are any."
 slug: /engines/table-engines/special/distributed
+title: 'Distributed Table Engine'
 ---
 
 # Distributed Table Engine

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/ExpressionActionsSettings.h>
 
 #include <cstddef>
 
@@ -13,8 +14,9 @@ struct QueryPlanOptimizationSettings
 {
     explicit QueryPlanOptimizationSettings(
         const Settings & from,
-        UInt64 max_entries_for_hash_table_stats,
-        String initial_query_id);
+        UInt64 max_entries_for_hash_table_stats_,
+        String initial_query_id_,
+        ExpressionActionsSettings actions_settings_);
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
@@ -59,6 +61,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_sorting_by_input_stream_properties;
     bool aggregation_in_order;
     bool optimize_projection;
+    bool use_query_condition_cache = false;
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
@@ -77,6 +80,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_entries_for_hash_table_stats;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout;
+    ExpressionActionsSettings actions_settings;
 
     /// Please, avoid using this
     ///
@@ -88,8 +92,6 @@ struct QueryPlanOptimizationSettings
 
     bool keep_logical_steps;
 
-    /// If query condition cache is enabled, the query condition cache needs to be updated in the WHERE stage.
-    bool use_query_condition_cache = false;
     bool is_explain;
 };
 

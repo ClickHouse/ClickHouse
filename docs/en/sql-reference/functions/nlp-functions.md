@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/nlp-functions
+description: 'Documentation for Natural Language Processing (NLP) Functions'
+sidebar_label: 'NLP'
 sidebar_position: 130
-sidebar_label: NLP
+slug: /sql-reference/functions/nlp-functions
+title: 'Natural Language Processing (NLP) Functions'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -253,7 +255,7 @@ lemmatize('language', word)
 *Arguments*
 
 - `language` — Language which rules will be applied. [String](/sql-reference/data-types/string).
-- `word` — Word that needs to be lemmatized. Must be lowercase. [String](../d/sql-reference/data-types/string).
+- `word` — Word that needs to be lemmatized. Must be lowercase. [String](/sql-reference/data-types/string).
 
 *Examples*
 

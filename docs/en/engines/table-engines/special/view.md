@@ -1,9 +1,12 @@
 ---
-slug: /engines/table-engines/special/view
+description: 'Used for implementing views (for more information, see the `CREATE VIEW
+  query`). It does not store data, but only stores the specified `SELECT` query. When
+  reading from a table, it runs this query (and deletes all unnecessary columns from
+  the query).'
+sidebar_label: 'View'
 sidebar_position: 90
-sidebar_label:  View
-title: "View Table Engine"
-description: "Used for implementing views (for more information, see the `CREATE VIEW query`). It does not store data, but only stores the specified `SELECT` query. When reading from a table, it runs this query (and deletes all unnecessary columns from the query)."
+slug: /engines/table-engines/special/view
+title: 'View Table Engine'
 ---
 
 # View Table Engine

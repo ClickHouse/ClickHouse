@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/ext-dict-functions
+description: 'Documentation for Functions for Working with Dictionaries'
+sidebar_label: 'Dictionaries'
 sidebar_position: 50
-sidebar_label: Dictionaries
+slug: /sql-reference/functions/ext-dict-functions
+title: 'Functions for Working with Dictionaries'
 ---
 
 # Functions for Working with Dictionaries
@@ -25,9 +27,9 @@ dictGetOrNull('dict_name', attr_name, id_expr)
 **Arguments**
 
 - `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
-- `attr_names` — Name of the column of the dictionary, [String literal](/sql-reference/syntax#string), or tuple of column names, [Tuple](../data-types/tuple.md)([String literal](/sql-reference/syntax#string)).
+- `attr_names` — Name of the column of the dictionary, [String literal](/sql-reference/syntax#string), or tuple of column names, [Tuple](/sql-reference/data-types/tuple)([String literal](/sql-reference/syntax#string).
 - `id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning dictionary key-type value or [Tuple](../data-types/tuple.md)-type value depending on the dictionary configuration.
-- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](/sql-reference/syntax#expressions) or [Tuple](../data-types/tuple.md)([Expression](../../sql-reference/syntax.md#syntax-expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
+- `default_value_expr` — Values returned if the dictionary does not contain a row with the `id_expr` key. [Expression](/sql-reference/syntax#expressions) or [Tuple](../data-types/tuple.md)([Expression](/sql-reference/syntax#expressions)), returning the value (or values) in the data types configured for the `attr_names` attribute.
 
 **Returned value**
 
@@ -409,8 +411,8 @@ dictGetAll('dict_name', attr_names, id_expr[, limit])
 **Arguments**
 
 - `dict_name` — Name of the dictionary. [String literal](/sql-reference/syntax#string).
-- `attr_names` — Name of the column of the dictionary, [String literal](/sql-reference/syntax#string), or tuple of column names, [Tuple](../data-types/tuple.md)([String literal](/sql-reference/syntax#string)).
-- `id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning array of dictionary key-type value or [Tuple](../data-types/tuple.md)-type value depending on the dictionary configuration.
+- `attr_names` — Name of the column of the dictionary, [String literal](/sql-reference/syntax#string), or tuple of column names, [Tuple](/sql-reference/data-types/tuple)([String literal](/sql-reference/syntax#string)).
+- `id_expr` — Key value. [Expression](/sql-reference/syntax#expressions) returning array of dictionary key-type value or [Tuple](/sql-reference/data-types/tuple)-type value depending on the dictionary configuration.
 - `limit` - Maximum length for each value array returned. When truncating, child nodes are given precedence over parent nodes, and otherwise the defined list order for the regexp tree dictionary is respected. If unspecified, array length is unlimited.
 
 **Returned value**

@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletdigest
+description: 'Computes an approximate quantile of a numeric data sequence using the
+  t-digest algorithm.'
 sidebar_position: 178
-title: "quantileTDigest"
-description: "Computes an approximate quantile of a numeric data sequence using the t-digest algorithm."
+slug: /sql-reference/aggregate-functions/reference/quantiletdigest
+title: 'quantileTDigest'
 ---
 
 # quantileTDigest
@@ -11,7 +12,7 @@ Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a 
 
 Memory consumption is `log(n)`, where `n` is a number of values. The result depends on the order of running the query, and is nondeterministic.
 
-The performance of the function is lower than performance of [quantile](/sql-reference/aggregate-functions/reference/quantile) or [quantileTiming](../../../sql-reference/aggregate-functions/reference/quantiletiming.md#quantiletiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
+The performance of the function is lower than performance of [quantile](/sql-reference/aggregate-functions/reference/quantile) or [quantileTiming](/sql-reference/aggregate-functions/reference/quantiletiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles) function.
 
