@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for JOIN Clause'
+sidebar_label: 'Joining Tables'
 slug: /sql-reference/statements/select/join
-sidebar_label: Joining Tables
+title: 'JOIN Clause'
 ---
 
 # JOIN Clause
@@ -61,7 +63,6 @@ The behavior of ClickHouse server for `ANY JOIN` operations depends on the [any_
 - [join_algorithm](../../../operations/settings/settings.md#join_algorithm)
 - [join_any_take_last_row](../../../operations/settings/settings.md#join_any_take_last_row)
 - [join_use_nulls](../../../operations/settings/settings.md#join_use_nulls)
-- [partial_merge_join_optimizations](../../../operations/settings/settings.md#partial_merge_join_optimizations)
 - [partial_merge_join_rows_in_right_blocks](../../../operations/settings/settings.md#partial_merge_join_rows_in_right_blocks)
 - [join_on_disk_max_files_to_merge](../../../operations/settings/settings.md#join_on_disk_max_files_to_merge)
 - [any_join_distinct_right_table_keys](../../../operations/settings/settings.md#any_join_distinct_right_table_keys)

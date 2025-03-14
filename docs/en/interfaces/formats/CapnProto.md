@@ -1,11 +1,13 @@
 ---
-title: CapnProto
-slug: /interfaces/formats/CapnProto
-keywords: [CapnProto]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for Capnproto'
+input_format: true
+keywords: ['CapnProto']
+output_format: true
+slug: /interfaces/formats/CapnProto
+title: 'CapnProto'
 ---
+
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>

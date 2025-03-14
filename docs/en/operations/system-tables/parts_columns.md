@@ -1,9 +1,12 @@
 ---
-description: "System table containing information about parts and columns of MergeTree tables."
+description: 'System table containing information about parts and columns of MergeTree
+  tables.'
+keywords: ['system table', 'parts_columns']
 slug: /operations/system-tables/parts_columns
-title: "system.parts_columns"
-keywords: ["system table", "parts_columns"]
+title: 'system.parts_columns'
 ---
+
+# system.parts_columns
 
 Contains information about parts and columns of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 

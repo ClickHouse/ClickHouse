@@ -8,6 +8,7 @@
 #include <IO/CompressionMethod.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/formatAST.h>
@@ -32,6 +33,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 #include <filesystem>
+
+#include <fmt/ranges.h>
 
 namespace fs = std::filesystem;
 
@@ -142,7 +145,7 @@ namespace
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "Setting `cleanup_interval_min_ms` ({}) must be less or equal to `cleanup_interval_max_ms` ({})",
-                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms], queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms]);
+                            queue_settings[ObjectStorageQueueSetting::cleanup_interval_min_ms].value, queue_settings[ObjectStorageQueueSetting::cleanup_interval_max_ms].value);
         }
     }
 

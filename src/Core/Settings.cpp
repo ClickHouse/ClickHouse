@@ -1,3 +1,4 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/BaseSettings.h>
@@ -435,8 +436,10 @@ Maximum number of files that could be returned in batch by ListObject request
 Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
 
 Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
+- 0 — `INSERT` query creates a new file or fail if file exists and s3_create_new_file_on_insert is not set.
 - 1 — `INSERT` query replaces existing content of the file with the new data.
+
+See more details [here](/integrations/s3#inserting-data).
 )", 0) \
     DECLARE(Bool, azure_truncate_on_insert, false, R"(
 Enables or disables truncate before insert in azure engine tables.
@@ -447,8 +450,10 @@ Enables or disables creating a new file on each insert in s3 engine tables. If e
 initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query creates a new file.
+- 0 — `INSERT` query creates a new file or fail if file exists and s3_truncate_on_insert is not set.
+- 1 — `INSERT` query creates a new file on each insert using suffix (from the second one) if s3_truncate_on_insert is not set.
+
+See more details [here](/integrations/s3#inserting-data).
 )", 0) \
     DECLARE(Bool, s3_skip_empty_files, true, R"(
 Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
@@ -1301,7 +1306,7 @@ Possible values:
     DECLARE(UInt64, merge_tree_max_bytes_to_use_cache, (192 * 10 * 1024 * 1024), R"(
 If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md/#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -4092,7 +4097,7 @@ SETTINGS index_granularity = 8192 │
 ```
 )", 0) \
     DECLARE(Bool, asterisk_include_materialized_columns, false, R"(
-Include [MATERIALIZED](/sql-reference/statements/create/table#materialized) columns for wildcard query (`SELECT *`).
+Include [MATERIALIZED](/sql-reference/statements/create/view#materialized-view) columns for wildcard query (`SELECT *`).
 
 Possible values:
 
@@ -4168,7 +4173,7 @@ Result:
 └─────────────┘
 ```
 
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md/#materialized) behaviour.
+Note that this setting influences [Materialized view](/sql-reference/statements/create/view#materialized-view) behaviour.
 )", 0) \
     DECLARE(Bool, optimize_use_projections, true, R"(
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md/#projections) optimization when processing `SELECT` queries.
@@ -4288,7 +4293,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(QueryCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryCacheNondeterministicFunctionHandling::Throw, R"(
+    DECLARE(QueryResultCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryResultCacheNondeterministicFunctionHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
 Possible values:
@@ -4297,7 +4302,7 @@ Possible values:
 - `'save'` - Cache the query result.
 - `'ignore'` - Don't cache the query result and don't throw an exception.
 )", 0) \
-    DECLARE(QueryCacheSystemTableHandling, query_cache_system_table_handling, QueryCacheSystemTableHandling::Throw, R"(
+    DECLARE(QueryResultCacheSystemTableHandling, query_cache_system_table_handling, QueryResultCacheSystemTableHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
 
 Possible values:
@@ -5059,6 +5064,9 @@ Wait time to lock cache for space reservation for temporary data in filesystem c
     DECLARE(Bool, use_page_cache_for_disks_without_file_cache, false, R"(
 Use userspace page cache for remote disks that don't have filesystem cache enabled.
 )", 0) \
+    DECLARE(Bool, use_page_cache_with_distributed_cache, false, R"(
+Use userspace page cache when distributed cache is used.
+)", 0) \
     DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
 Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
 )", 0) \
@@ -5315,7 +5323,7 @@ Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket 
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only has an effect in ClickHouse Cloud. Discard connection if some data is unread.
 )", 0) \
-    DECLARE(Bool, distributed_cache_min_bytes_for_seek, 0, R"(
+    DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
@@ -5816,11 +5824,12 @@ Build local plan for local replica
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", BETA) \
-    \
     DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
 The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
-    \
+    DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
+Replace table function engines with their -Cluster alternatives
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
 )", IMPORTANT) ALIAS(enable_analyzer) \
@@ -6086,7 +6095,10 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
-Allow experimental database engine Iceberg
+Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_unity_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
 Enable Kusto Query Language (KQL) - an alternative to SQL.

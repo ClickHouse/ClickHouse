@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/math-functions
+description: 'Documentation for Mathematical Functions'
+sidebar_label: 'Mathematical'
 sidebar_position: 125
-sidebar_label: Mathematical
+slug: /sql-reference/functions/math-functions
+title: 'Mathematical Functions'
 ---
 
 # Mathematical Functions
@@ -456,7 +458,7 @@ cosh(x)
 
 - Values from the interval: $1 \le cosh(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -490,7 +492,7 @@ acosh(x)
 
 - The angle, in radians. Values from the interval: $0 \le acosh(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -524,7 +526,7 @@ sinh(x)
 
 - Values from the interval: $-\infty \lt sinh(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -558,7 +560,7 @@ asinh(x)
 
 - The angle, in radians. Values from the interval: $-\infty \lt asinh(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -591,7 +593,7 @@ tanh(x)
 
 - Values from the interval: $-1 \lt tanh(x) \lt 1$.
 
-Type: [Float*](../data-types/float.md#float32-float64).
+Type: [Float*](/sql-reference/data-types/float).
 
 **Example**
 
@@ -623,7 +625,7 @@ atanh(x)
 
 - The angle, in radians. Values from the interval: $-\infty \lt atanh(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -658,7 +660,7 @@ atan2(y, x)
 
 - The angle `θ` such that $-\pi \lt 0 \le \pi$, in radians.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -693,7 +695,7 @@ hypot(x, y)
 
 - The length of the hypotenuse of a right-angle triangle.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -727,7 +729,7 @@ log1p(x)
 
 - Values from the interval: $-\infty < log1p(x) \lt +\infty$.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -859,7 +861,7 @@ degrees(x)
 
 **Returned value**
 
-- Value in degrees. [Float64](../data-types/float.md#float32-float64).
+- Value in degrees. [Float64](/sql-reference/data-types/float).
 
 **Example**
 
@@ -893,7 +895,7 @@ radians(x)
 
 - Value in radians.
 
-Type: [Float64](../data-types/float.md#float32-float64).
+Type: [Float64](/sql-reference/data-types/float).
 
 **Example**
 

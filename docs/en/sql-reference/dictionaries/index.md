@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/dictionaries
-sidebar_label: Defining Dictionaries
+description: 'Overview of external dictionaries functionality in ClickHouse'
+sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35
+slug: /sql-reference/dictionaries
+title: 'Dictionaries'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
@@ -36,7 +38,7 @@ The configuration of dictionaries can be located in one or more xml-files. The p
 
 Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries_lazy_load](../../operations/server-configuration-parameters/settings.md#dictionaries_lazy_load) setting.
 
-The [dictionaries](../../operations/system-tables/dictionaries.md#system_tables-dictionaries) system table contains information about dictionaries configured at server. For each dictionary you can find there:
+The [dictionaries](/operations/system-tables/dictionaries) system table contains information about dictionaries configured at server. For each dictionary you can find there:
 
 - Status of the dictionary.
 - Configuration parameters.
@@ -1126,13 +1128,13 @@ SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
 Setting fields:
 
 - `path` – The absolute path to the file.
-- `format` – The file format. All the formats described in [Formats](../../interfaces/formats.md#formats) are supported.
+- `format` – The file format. All the formats described in [Formats](/sql-reference/formats) are supported.
 
 When a dictionary with source `FILE` is created via DDL command (`CREATE DICTIONARY ...`), the source file needs to be located in the `user_files` directory to prevent DB users from accessing arbitrary files on the ClickHouse node.
 
 **See Also**
 
-- [Dictionary function](../../sql-reference/table-functions/dictionary.md#dictionary-function)
+- [Dictionary function](/sql-reference/table-functions/dictionary)
 
 ### Executable File {#executable-file}
 
@@ -1153,7 +1155,7 @@ Example of settings:
 Setting fields:
 
 - `command` — The absolute path to the executable file, or the file name (if the command's directory is in the `PATH`).
-- `format` — The file format. All the formats described in [Formats](../../interfaces/formats.md#formats) are supported.
+- `format` — The file format. All the formats described in [Formats](/sql-reference/formats) are supported.
 - `command_termination_timeout` — The executable script should contain a main read-write loop. After the dictionary is destroyed, the pipe is closed, and the executable file will have `command_termination_timeout` seconds to shutdown before ClickHouse will send a SIGTERM signal to the child process. `command_termination_timeout` is specified in seconds. Default value is 10. Optional parameter.
 - `command_read_timeout` - Timeout for reading data from command stdout in milliseconds. Default value 10000. Optional parameter.
 - `command_write_timeout` - Timeout for writing data to command stdin in milliseconds. Default value 10000. Optional parameter.
@@ -1186,7 +1188,7 @@ Example of settings:
 Setting fields:
 
 - `command` — The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
-- `format` — The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
+- `format` — The file format. All the formats described in "[Formats](/sql-reference/formats)" are supported.
 - `pool_size` — Size of pool. If 0 is specified as `pool_size` then there is no pool size restrictions. Default value is `16`.
 - `command_termination_timeout` — executable script should contain main read-write loop. After dictionary is destroyed, pipe is closed, and executable file will have `command_termination_timeout` seconds to shutdown, before ClickHouse will send SIGTERM signal to child process. Specified in seconds. Default value is 10. Optional parameter.
 - `max_command_execution_time` — Maximum executable script command execution time for processing block of data. Specified in seconds. Default value is 10. Optional parameter.
@@ -1239,7 +1241,7 @@ In order for ClickHouse to access an HTTPS resource, you must [configure openSSL
 Setting fields:
 
 - `url` – The source URL.
-- `format` – The file format. All the formats described in "[Formats](../../interfaces/formats.md#formats)" are supported.
+- `format` – The file format. All the formats described in "[Formats](/sql-reference/formats)" are supported.
 - `credentials` – Basic HTTP authentication. Optional parameter.
 - `user` – Username required for the authentication.
 - `password` – Password required for the authentication.
@@ -2175,7 +2177,7 @@ Example of a polygon dictionary configuration:
 </dictionary>
 ```
 
-The corresponding [DDL-query](../../sql-reference/statements/create/dictionary.md#create-dictionary-query):
+The corresponding [DDL-query](/sql-reference/statements/create/dictionary):
 ``` sql
 CREATE DICTIONARY polygon_dict_name (
     key Array(Array(Array(Array(Float64)))),

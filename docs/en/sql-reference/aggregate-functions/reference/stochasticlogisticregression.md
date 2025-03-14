@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/stochasticlogisticregression
+description: 'This function implements stochastic logistic regression. It can be used
+  for binary classification problem, supports the same custom parameters as stochasticLinearRegression
+  and works the same way.'
 sidebar_position: 193
-title: "stochasticLogisticRegression"
-description: "This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way."
+slug: /sql-reference/aggregate-functions/reference/stochasticlogisticregression
+title: 'stochasticLogisticRegression'
 ---
 
 # stochasticLogisticRegression
@@ -54,5 +56,5 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 **See Also**
 
-- [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlinearregression)
+- [stochasticLinearRegression](/sql-reference/aggregate-functions/reference/stochasticlogisticregression)
 - [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)

@@ -1,10 +1,14 @@
 ---
-description: "System table containing formation about global settings for the server, which are specified in `config.xml`."
+description: 'System table containing formation about global settings for the server,
+  which are specified in `config.xml`.'
+keywords: ['system table', 'server_settings']
 slug: /operations/system-tables/server_settings
-title: "system.server_settings"
-keywords: ["system table", "server_settings"]
+title: 'system.server_settings'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.server_settings
 
 <SystemTableCloud/>
 

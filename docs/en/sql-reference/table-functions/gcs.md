@@ -1,10 +1,11 @@
 ---
-slug: /sql-reference/table-functions/gcs
+description: 'Provides a table-like interface to `SELECT` and `INSERT` data from Google
+  Cloud Storage. Requires the `Storage Object User` IAM role.'
+keywords: ['gcs', 'bucket']
+sidebar_label: 'gcs'
 sidebar_position: 70
-sidebar_label: gcs
-keywords: [gcs, bucket]
-title: "gcs"
-description: "Provides a table-like interface to `SELECT` and `INSERT` data from Google Cloud Storage. Requires the `Storage Object User` IAM role."
+slug: /sql-reference/table-functions/gcs
+title: 'gcs'
 ---
 
 # gcs Table Function
@@ -39,7 +40,7 @@ The GCS Table Function integrates with Google Cloud Storage by using the GCS XML
   :::
 - `NOSIGN` — If this keyword is provided in place of credentials, all the requests will not be signed.
 - `hmac_key` and `hmac_secret` — Keys that specify credentials to use with given endpoint. Optional.
-- `format` — The [format](../../interfaces/formats.md#formats) of the file.
+- `format` — The [format](/sql-reference/formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 - `compression_method` — Parameter is optional. Supported values: `none`, `gzip` or `gz`, `brotli` or `br`, `xz` or `LZMA`, `zstd` or `zst`. By default, it will autodetect compression method by file extension.
 

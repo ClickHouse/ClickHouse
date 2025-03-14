@@ -54,6 +54,8 @@
 #include <memory>
 #include <unordered_map>
 
+#include <fmt/ranges.h>
+
 #include "config.h"
 
 using namespace DB;
@@ -858,7 +860,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         = settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability];
     std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
 
-    /// When query condition cache is enabled, split ranges into intersecting will cause incorrect results and intersecting needs to be avoided.
     if (read_type != ReadType::ParallelReplicas &&
         num_streams > 1 &&
         read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0 &&
@@ -866,7 +867,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         !isQueryWithFinal() &&
         data.merging_params.is_deleted_column.empty() &&
         !prewhere_info &&
-        !reader_settings.use_query_condition_cache)
+        !reader_settings.use_query_condition_cache) /// the query condition cache produces incorrect results with intersecting ranges
     {
         NameSet column_names_set(column_names.begin(), column_names.end());
         Names in_order_column_names_to_read(column_names);
@@ -1938,7 +1939,7 @@ bool ReadFromMergeTree::requestOutputEachPartitionThroughSeparatePort()
             "max_number_of_partitions_for_independent_aggregation (current value is {}) or set "
             "force_aggregate_partitions_independently to suppress this check",
             partitions_cnt,
-            settings[Setting::max_number_of_partitions_for_independent_aggregation]);
+            settings[Setting::max_number_of_partitions_for_independent_aggregation].value);
         return false;
     }
 
@@ -2126,7 +2127,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);
 
-    /// When the query condition cache is enabled, the complete Mark needs to be read every time. When both where and prewhere are null, it is disabled.
+    /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
     if (reader_settings.use_query_condition_cache && !query_info.prewhere_info && !query_info.filter_actions_dag)
         reader_settings.use_query_condition_cache = false;
 

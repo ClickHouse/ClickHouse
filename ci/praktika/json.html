@@ -808,7 +808,11 @@
 
             const infoCell = document.createElement('td');
             infoCell.colSpan = row.children.length; // Make it span the full width
-            infoCell.innerHTML = infoText.replace(/\n/g, '<br>'); // Preserve line breaks
+
+            infoCell.innerHTML = '<pre></pre>';
+            // Append content securely, without interpreting HTML tags.
+            infoCell.firstChild.textContent = infoText;
+
             infoCell.classList.add('info-text');
 
             infoRow.appendChild(infoCell);
