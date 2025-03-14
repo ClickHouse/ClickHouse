@@ -36,6 +36,7 @@
 #include <quill/sinks/ConsoleSink.h>
 #include <quill/sinks/FileSink.h>
 #include <quill/sinks/StreamSink.h>
+#include <base/terminalColors.h>
 
 #ifndef WITHOUT_TEXT_LOG
     #include <Interpreters/TextLog.h>
@@ -154,6 +155,160 @@ size_t getLogFileMaxSize(const std::string & max_size_str)
 }
 
 }
+
+class ConsoleSink : public quill::StreamSink
+{
+public:
+    enum class Stream
+    {
+        STDOUT,
+        STDERR,
+    };
+
+    constexpr std::string_view streamToString(Stream stream)
+    {
+        switch (stream)
+        {
+            case Stream::STDOUT: return "stdout";
+            case Stream::STDERR: return "stderr";
+        }
+    }
+
+    explicit ConsoleSink(Stream stream, bool enable_colors_)
+        : StreamSink{streamToString(stream), nullptr}
+        , enable_colors(enable_colors_)
+    {
+        assert((stream == "stdout") || (stream == "stderr"));
+    }
+
+    ~ConsoleSink() override = default;
+
+    QUILL_ATTRIBUTE_HOT void write_log(
+        quill::MacroMetadata const * log_metadata,
+        uint64_t log_timestamp,
+        std::string_view thread_id,
+        std::string_view thread_name,
+        std::string const & process_id,
+        std::string_view logger_name,
+        quill::LogLevel log_level,
+        std::string_view log_level_description,
+        std::string_view log_level_short_code,
+        std::vector<std::pair<std::string, std::string>> const * named_args,
+        std::string_view log_message,
+        std::string_view log_statement) override
+    {
+        if (!enable_colors)
+        {
+            // Write record to file
+            StreamSink::write_log(
+                log_metadata,
+                log_timestamp,
+                thread_id,
+                thread_name,
+                process_id,
+                logger_name,
+                log_level,
+                log_level_description,
+                log_level_short_code,
+                named_args,
+                log_message,
+                log_statement);
+            return;
+        }
+
+        auto write_string = [&](std::string_view str)
+        {
+            safe_fwrite(str.data(), sizeof(char), str.size(), _file);
+        };
+
+        std::string_view reset_color = resetColor();
+
+        size_t thread_id_start = log_statement.find('[') + 2;
+        write_string(log_statement.substr(0, thread_id_start));
+        log_statement.remove_prefix(thread_id_start);
+
+        size_t thread_id_end = log_statement.find(' ');
+        auto thread_id_str = log_statement.substr(0, thread_id_end);
+        auto thread_id_color = setColor(std::hash<std::string_view>()(thread_id_str));
+        write_string(thread_id_color);
+        write_string(thread_id_str);
+        write_string(reset_color);
+        log_statement.remove_prefix(thread_id_str.size());
+
+        auto query_id_start = log_statement.find('{') + 1;
+        write_string(log_statement.substr(0, query_id_start));
+        log_statement.remove_prefix(query_id_start);
+
+        auto query_id_end = log_statement.find('}');
+        auto query_id_str = log_statement.substr(0, query_id_end);
+        auto query_id_color = setColor(std::hash<std::string_view>()(query_id_str));
+        write_string(query_id_color);
+        write_string(query_id_str);
+        write_string(reset_color);
+        log_statement.remove_prefix(query_id_str.size());
+
+        auto priority_start = log_statement.find('<') + 1;
+        write_string(log_statement.substr(0, priority_start));
+        log_statement.remove_prefix(priority_start);
+
+        auto level_end = log_statement.find('>');
+        auto level_str = log_statement.substr(0, level_end);
+        auto level_color = getLogLevelColor(log_level_short_code);
+        write_string(level_color);
+        write_string(level_str);
+        write_string(reset_color);
+        write_string("> ");
+        log_statement.remove_prefix(level_str.size() + 2);
+
+        auto logger_name_end = log_statement.find(": ");
+        auto logger_name_str = log_statement.substr(0, logger_name_end);
+        auto logger_name_color = setColor(std::hash<std::string_view>()(logger_name_str));
+        write_string(logger_name_color);
+        write_string(logger_name_str);
+        write_string(reset_color);
+        log_statement.remove_prefix(logger_name_str.size());
+
+        // Write record to file
+        StreamSink::write_log(
+            log_metadata,
+            log_timestamp,
+            thread_id,
+            thread_name,
+            process_id,
+            logger_name,
+            log_level,
+            log_level_description,
+            log_level_short_code,
+            named_args,
+            log_message,
+            log_statement);
+    }
+private:
+    std::string_view getLogLevelColor(std::string_view log_level_short_code)
+    {
+        if (log_level_short_code == "C")
+            return "\033[1;41m";
+
+        if (log_level_short_code == "E")
+            return "\033[1;31m";
+
+        if (log_level_short_code == "W")
+            return "\033[0;31m";
+
+        if (log_level_short_code == "I")
+            return "\033[1m";
+
+        if (log_level_short_code == "D")
+            return "";
+
+        if (log_level_short_code == "T1")
+            return "\033[2m";
+
+        return "";
+    }
+
+    bool enable_colors = false;
+};
 
 
 class RotatingFileSink : public quill::FileSink
@@ -539,15 +694,17 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
     // }
 
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
-    // bool color_logs_by_default = isatty(STDERR_FILENO);
+    bool color_logs_by_default = isatty(STDERR_FILENO);
 
     if (config.getBool("logger.console", false)
         || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
     {
+        bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
+
         auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
         auto console_log_level = DB::parseQuillLogLevel(console_log_level_string);
         min_log_level = std::min(console_log_level, min_log_level);
-        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink", quill::ConsoleSink::ColourMode::Never, /*stream=*/"stderr"));
+        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<ConsoleSink>("ConsoleSink", ConsoleSink::Stream::STDERR, color_enabled));
         sink->set_log_level_filter(console_log_level);
     }
 

@@ -91,12 +91,20 @@ LoggerPtr getLogger(std::string name, const char * component_name)
     }
 
     return std::make_shared<Logger>(std::move(name), logger);
-
 }
 
 LoggerPtr createLogger(const std::string & name, std::vector<std::shared_ptr<quill::Sink>> sinks)
 {
-    return std::make_shared<Logger>(name, quill::Frontend::create_or_get_logger(name, sinks, quill::PatternFormatterOptions{"%(message)"}));
+    return std::make_shared<Logger>(
+        name,
+        quill::Frontend::create_or_get_logger(
+            name,
+            sinks,
+            quill::PatternFormatterOptions{
+                "%(message)",
+                /*timestamp_pattern=*/"",
+                /*timestamp_timezone=*/quill::Timezone::LocalTime,
+                /*add_metadata_to_multi_line_logs=*/false}));
 }
 
 QuillLoggerPtr getQuillLogger(const std::string & name)
