@@ -93,6 +93,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
             /// Release closed. Please use 25.4
             {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
+            {"allow_experimental_ytsaurus_table_engine", false, false, "New setting."},
+            {"allow_experimental_ytsaurus_table_function", false, false, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {

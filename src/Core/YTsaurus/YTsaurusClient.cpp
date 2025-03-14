@@ -2,7 +2,7 @@
 
 #if USE_YTSAURUS
 
-#include "YtsaurusClient.h"
+#include "YTsaurusClient.h"
 
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadHelpers.h>
@@ -24,35 +24,35 @@ namespace ErrorCodes
 namespace ytsaurus
 {
 
-YtsaurusClient::YtsaurusClient(const ConnectionInfo & connection_info_, size_t num_tries_)
-    : connection_info(connection_info_), num_tries(num_tries_), log(getLogger("YtsaurusClient"))
+YTsaurusClient::YTsaurusClient(const ConnectionInfo & connection_info_, size_t num_tries_)
+    : connection_info(connection_info_), num_tries(num_tries_), log(getLogger("YTsaurusClient"))
 {
 }
 
 
-DB::ReadBufferPtr YtsaurusClient::readTable(const String & path)
+DB::ReadBufferPtr YTsaurusClient::readTable(const String & path)
 {
-    YtsaurusQueryPtr read_table_query(new YtsaurusReadTableQuery(path));
+    YTsaurusQueryPtr read_table_query(new YTsaurusReadTableQuery(path));
     return execQuery(read_table_query);
 }
 
-YtsaurusNodeType YtsaurusClient::getNodeType(const String & path)
+YTsaurusNodeType YTsaurusClient::getNodeType(const String & path)
 {
     String attributes_path = path + "/@";
-    YtsaurusQueryPtr get_query(new YtsaurusGetQuery(std::move(attributes_path)));
+    YTsaurusQueryPtr get_query(new YTsaurusGetQuery(attributes_path));
     auto buf = execQuery(get_query);
-    
+
     String json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr json_ptr = json.extract<Poco::JSON::Object::Ptr>();
+    const Poco::JSON::Object::Ptr & json_ptr = json.extract<Poco::JSON::Object::Ptr>();
     return getNodeTypeFromAttributes(json_ptr);
 }
 
 
-YtsaurusNodeType YtsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Object::Ptr json_ptr)
+YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Object::Ptr json_ptr)
 {
     if (!json_ptr->has("type"))
         throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'type'.");
@@ -62,15 +62,15 @@ YtsaurusNodeType YtsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
         if (!json_ptr->has("dynamic"))
             throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Incorrect json with yt attributes, no field 'dynamic'.");
 
-        return json_ptr->getValue<bool>("dynamic") ? YtsaurusNodeType::DYNAMIC_TABLE : YtsaurusNodeType::STATIC_TABLE;
+        return json_ptr->getValue<bool>("dynamic") ? YTsaurusNodeType::DYNAMIC_TABLE : YTsaurusNodeType::STATIC_TABLE;
     }
     else
     {
-        return YtsaurusNodeType::ANOTHER;
+        return YTsaurusNodeType::ANOTHER;
     }
 }
 
-DB::ReadBufferPtr YtsaurusClient::execQuery(const YtsaurusQueryPtr query)
+DB::ReadBufferPtr YTsaurusClient::execQuery(const YTsaurusQueryPtr query)
 {
     Poco::URI uri(connection_info.base_uri.c_str());
     uri.setPath(fmt::format("/api/{}/{}", connection_info.api_version, query->getQueryName()));

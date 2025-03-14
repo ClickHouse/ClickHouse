@@ -66,7 +66,7 @@ void registerTableFunctions()
     registerDataLakeClusterTableFunctions(factory);
 
 #if USE_YTSAURUS
-    registerTableFunctionYtsaurus(factory);
+    registerTableFunctionYTsaurus(factory);
 #endif
 
 }

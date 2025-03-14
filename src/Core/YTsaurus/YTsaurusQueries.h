@@ -16,16 +16,16 @@ struct QueryParameter
 using QueryParameters = std::vector<QueryParameter>;
 
 
-struct IYtsaurusQuery
+struct IYTsaurusQuery
 {
     virtual String getQueryName() const = 0;
     virtual QueryParameters getQueryParameters() const = 0;
-    virtual ~IYtsaurusQuery() = default;
+    virtual ~IYTsaurusQuery() = default;
 };
 
-struct YtsaurusReadTableQuery : public IYtsaurusQuery
+struct YTsaurusReadTableQuery : public IYTsaurusQuery
 {
-    YtsaurusReadTableQuery(const String& path_) : path(path_) {}
+    explicit YTsaurusReadTableQuery(const String& path_) : path(path_) {}
 
     String getQueryName() const override
     {
@@ -40,9 +40,9 @@ struct YtsaurusReadTableQuery : public IYtsaurusQuery
 };
 
 
-struct YtsaurusGetQuery : public IYtsaurusQuery
-{   
-    YtsaurusGetQuery(const String& path_) : path(path_) {}
+struct YTsaurusGetQuery : public IYTsaurusQuery
+{
+    explicit YTsaurusGetQuery(const String& path_) : path(path_) {}
 
     String getQueryName() const override
     {
@@ -56,7 +56,7 @@ struct YtsaurusGetQuery : public IYtsaurusQuery
     String path;
 };
 
-using YtsaurusQueryPtr = std::shared_ptr<IYtsaurusQuery>;
+using YTsaurusQueryPtr = std::shared_ptr<IYTsaurusQuery>;
 
 }
 #endif
