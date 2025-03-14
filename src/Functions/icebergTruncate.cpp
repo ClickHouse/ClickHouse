@@ -57,7 +57,7 @@ public:
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
         /// You may ask, why use global context and not the context provided
-        /// in create/Contrustor? Two reasons:
+        /// in create/Constructor? Two reasons:
         /// 1. We need context only to access global functions factory, that is why global context is the most suitable
         /// 2. It's terribly unsafe to store ContextPtr inside function because function object is so low-level
         /// that it can be stored in multiple other objects which itself stored in global context.
@@ -118,7 +118,7 @@ public:
     {
         auto value = (*arguments[0].column)[0].safeGet<Int64>();
         if (value <= 0)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function icebergTruncate accept only positive width");
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function icebergTruncate accepts only positive width");
 
         auto context = Context::getGlobalContextInstance();
         WhichDataType which_truncate(arguments[1].type);
@@ -186,7 +186,7 @@ public:
 
 REGISTER_FUNCTION(IcebergTruncate)
 {
-    FunctionDocumentation::Description description = R"(Implements logic of iceberg truncate truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
+    FunctionDocumentation::Description description = R"(Implements logic of iceberg truncate transform: https://iceberg.apache.org/spec/#truncate-transform-details.)";
     FunctionDocumentation::Syntax syntax = "icebergTruncate(N, value)";
     FunctionDocumentation::Arguments arguments = {{"value", "String, integer or Decimal value."}};
     FunctionDocumentation::ReturnedValue returned_value = "The same type as argument";
