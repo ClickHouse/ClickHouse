@@ -53,9 +53,9 @@ int SSHChannel::read(void * dest, uint32_t count, int is_stderr)
     return ssh_channel_read(channel.get(), dest, count, is_stderr);
 }
 
-int SSHChannel::readTimeout(void * dest, uint32_t count, int isStderr, int timeout)
+int SSHChannel::readTimeout(void * dest, uint32_t count, int is_stderr, int timeout)
 {
-    return ssh_channel_read_timeout(channel.get(), dest, count, isStderr, timeout);
+    return ssh_channel_read_timeout(channel.get(), dest, count, is_stderr, timeout);
 }
 
 int SSHChannel::write(const void * data, uint32_t len)
