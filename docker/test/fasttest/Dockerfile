@@ -15,7 +15,6 @@ RUN apt-get update \
         lld-${LLVM_VERSION} \
         llvm-${LLVM_VERSION}-dev \
         lsof \
-        ninja-build \
         odbcinst \
         psmisc \
         python3 \
@@ -23,6 +22,7 @@ RUN apt-get update \
         unixodbc \
         pv \
         jq \
+        unzip \
         zstd \
         --yes --no-install-recommends \
     && apt-get clean \
@@ -30,6 +30,18 @@ RUN apt-get update \
     && groupadd --system --gid 1000 clickhouse \
     && useradd --system --gid 1000 --uid 1000 -m clickhouse
 # ^ For some reason, groupadd and useradd are needed for tests with 'expect', but I don't know, why.
+
+# Install a newer ninja directly (We need 1.11 at least to support C++ modules)
+ARG NINJA_VERSION=1.12.1
+RUN mkdir /tmp/ninja \
+    && cd /tmp/ninja \
+    && curl -L https://github.com/ninja-build/ninja/archive/refs/tags/v$NINJA_VERSION.zip -o ninja.zip \
+    && unzip ninja.zip \
+    && cd ninja-$NINJA_VERSION \
+    && ./configure.py --bootstrap \
+    && cp ninja /usr/bin/ninja \
+    && cd / \
+    && rm -rf /tmp/ninja
 
 COPY requirements.txt /
 RUN pip3 install --no-cache-dir -r /requirements.txt
@@ -40,14 +52,14 @@ RUN ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/ld.lld
 # https://salsa.debian.org/pkg-llvm-team/llvm-toolchain/-/commit/992e52c0b156a5ba9c6a8a54f8c4857ddd3d371d
 RUN sed -i '/_IMPORT_CHECK_FILES_FOR_\(mlir-\|llvm-bolt\|merge-fdata\|MLIR\)/ {s|^|#|}' /usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMExports-*.cmake
 
-ARG CCACHE_VERSION=4.6.1
+ARG CCACHE_VERSION=4.10.1
 RUN mkdir /tmp/ccache \
     && cd /tmp/ccache \
     && curl -L \
         -O https://github.com/ccache/ccache/releases/download/v$CCACHE_VERSION/ccache-$CCACHE_VERSION.tar.xz \
         -O https://github.com/ccache/ccache/releases/download/v$CCACHE_VERSION/ccache-$CCACHE_VERSION.tar.xz.asc \
     && gpg --recv-keys --keyserver hkps://keyserver.ubuntu.com 5A939A71A46792CF57866A51996DDA075594ADB8 \
-    && gpg --verify ccache-4.6.1.tar.xz.asc \
+    && gpg --verify ccache-$CCACHE_VERSION.tar.xz.asc \
     && tar xf ccache-$CCACHE_VERSION.tar.xz \
     && cd /tmp/ccache/ccache-$CCACHE_VERSION \
     && cmake -DCMAKE_INSTALL_PREFIX=/usr \
@@ -57,7 +69,7 @@ RUN mkdir /tmp/ccache \
         -Wno-dev \
         -B build \
         -S . \
-    && make VERBOSE=1 -C build \
+    && make VERBOSE=1 -C build -j \
     && make install -C build \
     && cd / \
     && rm -rf /tmp/ccache
