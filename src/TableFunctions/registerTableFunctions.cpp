@@ -69,7 +69,7 @@ void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]
     registerDataLakeClusterTableFunctions(factory);
 
 #if USE_YTSAURUS
-    registerTableFunctionYtsaurus(factory);
+    registerTableFunctionYTsaurus(factory);
 #endif
 
 }
