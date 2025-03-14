@@ -484,7 +484,7 @@ public:
     /// for that queue might change in future, and `request->constraints` might reference nodes not in
     /// the initial set of nodes returned by `addRawPointerNodes()`. To avoid destruction of such additional nodes
     /// classifier must (indirectly) hold nodes return by `addRawPointerNodes()` for all future versions of
-    /// all unified nodes. Such a version control is done by `IOResourceManager`.
+    /// all unified nodes. Such a version control is done by `WorkloadResourceManager`.
     void addRawPointerNodes(std::vector<SchedulerNodePtr> & nodes)
     {
         // NOTE: `impl.throttler` could be skipped, because ThrottlerConstraint does not call `request->addConstraint()`

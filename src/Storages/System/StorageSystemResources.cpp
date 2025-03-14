@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Parsers/queryToString.h>
 #include <Storages/System/StorageSystemResources.h>
@@ -17,6 +18,7 @@ ColumnsDescription StorageSystemResources::getColumnsDescription()
         {"name", std::make_shared<DataTypeString>(), "The name of the resource."},
         {"read_disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of disk names that uses this resource for read operations."},
         {"write_disks", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The list of disk names that uses this resource for write operations."},
+        {"cpu", std::make_shared<DataTypeUInt8>(), "The resource is used to manage access to CPU."},
         {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the resource."},
     };
 }
@@ -36,6 +38,7 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
         {
             Array read_disks;
             Array write_disks;
+            bool cpu = false;
             for (const auto & [mode, disk] : resource.operations)
             {
                 switch (mode)
@@ -50,12 +53,18 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
                         write_disks.emplace_back(disk ? *disk : "ANY");
                         break;
                     }
+                    case DB::ASTCreateResourceQuery::AccessMode::Cpu:
+                    {
+                        cpu = true;
+                        break;
+                    }
                 }
             }
             res_columns[1]->insert(read_disks);
             res_columns[2]->insert(write_disks);
+            res_columns[3]->insert(cpu);
         }
-        res_columns[3]->insert(queryToString(ast));
+        res_columns[4]->insert(queryToString(ast));
     }
 }
 

@@ -87,9 +87,6 @@ public:
         // Take one already granted slot if available. Lock-free iff there is no granted slot.
         [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
 
-        SlotCount grantedCount() const override;
-        SlotCount allocatedCount() const override;
-
     private:
         friend struct Slot; // for release()
         friend class ConcurrencyControlRoundRobinScheduler; // for grant(), free() and ctor
@@ -177,9 +174,6 @@ public:
 
         // Take one already granted slot if available. Lock-free iff there is no granted slot.
         [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
-
-        SlotCount grantedCount() const override;
-        SlotCount allocatedCount() const override;
 
     private:
         friend struct Slot; // for release()

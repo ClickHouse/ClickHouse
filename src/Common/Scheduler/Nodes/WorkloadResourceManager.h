@@ -33,10 +33,7 @@ namespace DB
  * When a RESOURCE is created (dropped) a corresponding scheduler nodes hierarchy is created (destroyed).
  * After DROP RESOURCE parts of hierarchy might be kept alive while at least one query uses it.
  *
- * Manager is specific to IO only because it create scheduler node hierarchies for RESOURCEs having
- * WRITE DISK and/or READ DISK definitions. CPU and memory resources are managed separately.
- *
- * Classifiers are used (1) to access IO resources and (2) to keep shared ownership of scheduling nodes.
+ * Classifiers are used (1) to access resources and (2) to keep shared ownership of scheduling nodes.
  * This allows `ResourceRequest` and `ResourceLink` to hold raw pointers as long as
  * `ClassifierPtr` is acquired and held.
  *
@@ -106,10 +103,10 @@ namespace DB
  *
  * === SYNCHRONIZATION ===
  * List of related sync primitives and their roles:
- * IOResourceManager::mutex
+ * WorkloadResourceManager::mutex
  *  - protects resource manager data structures - resource and workloads
  *  - serialize control thread actions
- * IOResourceManager::Resource::scheduler->event_queue
+ * WorkloadResourceManager::Resource::scheduler->event_queue
  *  - serializes scheduler hierarchy events
  *  - events are created in control and query threads
  *  - all events are processed by specific scheduler thread
@@ -119,11 +116,11 @@ namespace DB
  *  - serializes query and scheduler threads on specific node accesses
  *  - resource request processing: enqueueRequest(), dequeueRequest() and finishRequest()
  */
-class IOResourceManager : public IResourceManager
+class WorkloadResourceManager : public IResourceManager
 {
 public:
-    explicit IOResourceManager(IWorkloadEntityStorage & storage_);
-    ~IOResourceManager() override;
+    explicit WorkloadResourceManager(IWorkloadEntityStorage & storage_);
+    ~WorkloadResourceManager() override;
     void updateConfiguration(const Poco::Util::AbstractConfiguration & config) override;
     bool hasResource(const String & resource_name) const override;
     ClassifierPtr acquire(const String & workload_name, const ClassifierSettings & settings) override;
@@ -184,7 +181,7 @@ private:
         std::future<void> detachClassifier(VersionPtr && version);
 
         /// Introspection
-        void forEachResourceNode(IOResourceManager::VisitorFunc & visitor);
+        void forEachResourceNode(WorkloadResourceManager::VisitorFunc & visitor);
 
     private:
         void updateCurrentVersion();
@@ -222,10 +219,10 @@ private:
 
     struct Workload : boost::noncopyable
     {
-        IOResourceManager * resource_manager;
+        WorkloadResourceManager * resource_manager;
         ASTPtr workload_entity;
 
-        Workload(IOResourceManager * resource_manager_, const ASTPtr & workload_entity_);
+        Workload(WorkloadResourceManager * resource_manager_, const ASTPtr & workload_entity_);
         ~Workload();
 
         void updateWorkload(const ASTPtr & new_entity);
@@ -250,7 +247,7 @@ private:
 
     private:
         const ClassifierSettings settings;
-        IOResourceManager * resource_manager;
+        WorkloadResourceManager * resource_manager;
         std::mutex mutex;
         struct Attachment
         {

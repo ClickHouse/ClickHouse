@@ -1,8 +1,11 @@
 #include <IO/WriteBufferFromString.h>
-#include "Common/ISlotControl.h"
 #include <Common/ThreadPool.h>
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/ConcurrencyControl.h>
+#include <Common/Scheduler/CpuSlotsAllocation.h>
+#include <Common/Scheduler/IResourceManager.h>
+#include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Processors/Executors/PipelineExecutor.h>
@@ -357,12 +360,25 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
 
     if (concurrency_control)
     {
-        /// Allocate CPU slots from concurrency control
+        ResourceLink link;
+        auto query_context = CurrentThread::getQueryContext();
+        if (query_context)
+        {
+            String resource_name = query_context->getWorkloadEntityStorage().getCpuResourceName();
+            if (!resource_name.empty())
+            {
+                link = query_context->getWorkloadClassifier()->get(resource_name);
+            }
+        }
+
         constexpr size_t min_threads = 1uz; // Number of threads that should be granted to every query no matter how many threads are already running in other queries
-        cpu_slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
-#ifndef NDEBUG
-        LOG_TEST(log, "Allocate CPU slots. min: {}, max: {}, granted: {}", min_threads, num_threads, cpu_slots->grantedCount());
-#endif
+
+        if (link)
+            /// Allocate CPU slots through resource scheduler
+            cpu_slots = std::make_shared<CpuSlotsAllocation>(min_threads, num_threads, link);
+        else
+            /// Allocate CPU slots from concurrency control
+            cpu_slots = ConcurrencyControl::instance().allocate(min_threads, num_threads);
     }
     else
     {
