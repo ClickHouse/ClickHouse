@@ -45,10 +45,6 @@ INSTALL_PYTHON_REQS_FOR_NATIVE_JOBS = ""
 
 DISABLED_WORKFLOWS = [
     "new_pull_request.py",
-    "master.py",
-    "merge_queue.py",
-    "backport_branches.py",
-    "release_branches.py",
 ]
 PYTHONPATHS = ""
 DEFAULT_LOCAL_TEST_WORKFLOW = "PRNEW"

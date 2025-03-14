@@ -106,8 +106,10 @@ def _update_workflow_artifacts(workflow):
 
 
 def _update_workflow_with_native_jobs(workflow):
-    if workflow.dockers:
+    if workflow.dockers and not workflow.disable_dockers_build:
         from .native_jobs import _docker_build_arm_linux_job, _docker_build_job
+
+        workflow.jobs = [copy.deepcopy(j) for j in workflow.jobs]
 
         enable_arm_linux = True
         if Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB:
