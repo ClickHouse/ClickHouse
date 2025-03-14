@@ -1,4 +1,5 @@
 import logging
+import os
 import random
 import string
 import time
@@ -242,6 +243,95 @@ def test_drop_table(cluster):
         "select count(n), sum(n) from test_drop_table"
     )
     node.query("drop table test_drop_table sync")
+
+
+def test_drop_detached_part_with_try_n_suffix(cluster):
+    node1 = cluster.instances["node1"]
+    node1.query(
+        """
+        CREATE TABLE drop_detached_part_with_tryn_suffix (n Int)
+        ENGINE=ReplicatedMergeTree('/test/drop_detached_part_with_tryn_suffix', '{replica}')
+        ORDER BY n
+        SETTINGS storage_policy='s3'
+        """
+    )
+    node1.query(
+        "INSERT INTO drop_detached_part_with_tryn_suffix VALUES (1),(42)"
+    )  # will create all_0_0_0
+
+    assert (
+        node1.query(
+            "SELECT name FROM system.parts where table='drop_detached_part_with_tryn_suffix' ORDER BY name"
+        )
+        == "all_0_0_0\n"
+    )
+
+    node1.query(
+        "ALTER TABLE drop_detached_part_with_tryn_suffix DETACH PART 'all_0_0_0' SETTINGS mutations_sync = 1"
+    )
+
+    detached_part_path = node1.query(
+        "SELECT path FROM system.detached_parts WHERE table='drop_detached_part_with_tryn_suffix'"
+    )
+    assert detached_part_path.count("\n") == 1
+    detached_part_path = detached_part_path.strip()
+    detached_path = os.path.dirname(detached_part_path)
+
+    for prefix in ["", "covered-by-broken_"]:
+        node1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"mkdir {detached_path}/{prefix}all_0_0_0_try1",
+            ],
+            privileged=True,
+        )
+
+        node1.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"cp -al {detached_path}/all_0_0_0/* {detached_path}/{prefix}all_0_0_0_try1/",
+            ],
+            privileged=True,
+        )
+
+    assert (
+        node1.query(
+            "SELECT name FROM system.detached_parts WHERE table='drop_detached_part_with_tryn_suffix' ORDER BY name"
+        )
+        == "all_0_0_0\nall_0_0_0_try1\ncovered-by-broken_all_0_0_0_try1\n"
+    )
+
+    node1.query(
+        "ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'covered-by-broken_all_0_0_0_try1' SETTINGS mutations_sync = 1, allow_drop_detached = 1"
+    )
+    assert (
+        node1.query(
+            "SELECT name FROM system.detached_parts WHERE table='drop_detached_part_with_tryn_suffix' ORDER BY name"
+        )
+        == "all_0_0_0\nall_0_0_0_try1\n"
+    )
+
+    node1.query(
+        "ALTER TABLE drop_detached_part_with_tryn_suffix DROP DETACHED PART 'all_0_0_0_try1' SETTINGS mutations_sync = 1, allow_drop_detached = 1"
+    )
+    assert (
+        node1.query(
+            "SELECT name FROM system.detached_parts WHERE table='drop_detached_part_with_tryn_suffix' ORDER BY name"
+        )
+        == "all_0_0_0\n"
+    )
+
+    node1.query(
+        "ALTER TABLE drop_detached_part_with_tryn_suffix ATTACH PART 'all_0_0_0' SETTINGS mutations_sync = 1"
+    )
+    assert (
+        node1.query("SELECT n FROM drop_detached_part_with_tryn_suffix ORDER BY n")
+        == "1\n42\n"
+    )
+
+    node1.query("DROP TABLE drop_detached_part_with_tryn_suffix")
 
 
 def test_s3_check_restore(cluster):

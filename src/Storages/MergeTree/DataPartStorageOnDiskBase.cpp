@@ -134,7 +134,7 @@ String DataPartStorageOnDiskBase::getPartDirForPrefix(const String & prefix, boo
         res += part_dir;
 
     if (try_no)
-        res += "_try" + DB::toString(try_no);
+        res += DetachedPartInfo::TRY_N_SUFFIX + DB::toString(try_no);
 
     return res;
 }

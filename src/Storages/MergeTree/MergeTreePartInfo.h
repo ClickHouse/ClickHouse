@@ -189,6 +189,8 @@ struct DetachedPartInfo : public MergeTreePartInfo
         "broken-from-backup",
     });
 
+    inline static const std::string TRY_N_SUFFIX = "_try";
+
     /// NOTE: It may parse part info incorrectly.
     /// For example, if prefix contains '_' or if DETACH_REASONS doesn't contain prefix.
     // This method has different semantics with MergeTreePartInfo::tryParsePartName.
