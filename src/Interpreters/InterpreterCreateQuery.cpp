@@ -1930,6 +1930,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
     else
     {
+        // LOG_DEBUG(&Poco::Logger::get("StorageFactory"), "create: {}", create);
         res = StorageFactory::instance().get(create,
             data_path,
             getContext(),
@@ -2299,29 +2300,51 @@ BlockIO InterpreterCreateQuery::execute()
     FunctionNameNormalizer::visit(query_ptr.get());
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
+    LOG_DEBUG(&Poco::Logger::get("InterpreterCreateQuery::execute"), "create.storage is not null: {}", create.storage != nullptr);
+
+    if (create.storage)
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("InterpreterCreateQuery::execute"),
+            "create.storage->settings is not null: {}",
+            create.storage->settings != nullptr);
+
+        if (create.storage->settings)
+        {
+            LOG_DEBUG(
+                &Poco::Logger::get("InterpreterCreateQuery::execute"),
+                "create.storage->settings->changes.size(): {}",
+                create.storage->settings->changes.size());
+
+            for (const auto & change : create.storage->settings->changes)
+            {
+                LOG_DEBUG(
+                    &Poco::Logger::get("InterpreterCreateQuery::execute"), "change.name: {}, change.value: {}", change.name, change.value);
+            }
+        }
+    }
+
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
 
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
             return executeQueryOnCluster(create);
     }
 
-    getContext()->checkAccess(getRequiredAccess());
+        getContext()->checkAccess(getRequiredAccess());
 
-    ASTQueryWithOutput::resetOutputASTIfExist(create);
+        ASTQueryWithOutput::resetOutputASTIfExist(create);
 
-    /// CREATE|ATTACH DATABASE
-    if (is_create_database)
-        return createDatabase(create);
-    return createTable(create);
+        /// CREATE|ATTACH DATABASE
+        if (is_create_database)
+            return createDatabase(create);
+        return createTable(create);
 }
 
 
