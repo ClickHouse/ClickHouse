@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/mergetree-family/custom-partitioning-key
+description: 'Learn how to add a custom partitioning key to MergeTree tables.'
+sidebar_label: 'Custom Partitioning Key'
 sidebar_position: 30
-sidebar_label: Custom Partitioning Key
-title: "Custom Partitioning Key"
-description: "Learn how to add a custom partitioning key to MergeTree tables."
+slug: /engines/table-engines/mergetree-family/custom-partitioning-key
+title: 'Custom Partitioning Key'
 ---
 
 # Custom Partitioning Key
@@ -14,7 +14,7 @@ In most cases you do not need a partition key, and in most other cases you do no
 You should never use too granular of partitioning. Don't partition your data by client identifiers or names. Instead, make a client identifier or name the first column in the ORDER BY expression.
 :::
 
-Partitioning is available for the [MergeTree family tables](../../../engines/table-engines/mergetree-family/mergetree.md), including [replicated tables](../../../engines/table-engines/mergetree-family/replication.md) and [materialized views](../../../sql-reference/statements/create/view.md#materialized-view).
+Partitioning is available for the [MergeTree family tables](../../../engines/table-engines/mergetree-family/mergetree.md), including [replicated tables](../../../engines/table-engines/mergetree-family/replication.md) and [materialized views](/sql-reference/statements/create/view#materialized-view).
 
 A partition is a logical combination of records in a table by a specified criterion. You can set a partition by an arbitrary criterion, such as by month, by day, or by event type. Each partition is stored separately to simplify manipulations of this data. When accessing the data, ClickHouse uses the smallest subset of partitions possible. Partitions improve performance for queries containing a partitioning key because ClickHouse will filter for that partition before selecting the parts and granules within the partition.
 

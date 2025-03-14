@@ -1,9 +1,12 @@
 ---
-description: "System table containing metadata of each table that the server knows about."
+description: 'System table containing metadata of each table that the server knows
+  about.'
+keywords: ['system table', 'tables']
 slug: /operations/system-tables/tables
-title: "system.tables"
-keywords: ["system table", "tables"]
+title: 'system.tables'
 ---
+
+# system.tables
 
 Contains metadata of each table that the server knows about.
 
@@ -33,7 +36,7 @@ Columns:
 
 - `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database dependencies.
 
-- `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([materialized views](../../sql-reference/statements/create/view.md#materialized-view) the current table).
+- `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([materialized views](/sql-reference/statements/create/view#materialized-view) the current table).
 
 - `create_table_query` ([String](../../sql-reference/data-types/string.md)) - The query that was used to create the table.
 

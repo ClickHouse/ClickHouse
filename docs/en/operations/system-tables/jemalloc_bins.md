@@ -1,9 +1,11 @@
 ---
-description: "System table containing information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas."
+description: 'System table containing information about memory allocations done via
+  jemalloc allocator in different size classes (bins) aggregated from all arenas.'
+keywords: ['system table', 'jemalloc_bins']
 slug: /operations/system-tables/jemalloc_bins
-title: "system.jemalloc_bins"
-keywords: ["system table", "jemalloc_bins"]
+title: 'system.jemalloc_bins'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>

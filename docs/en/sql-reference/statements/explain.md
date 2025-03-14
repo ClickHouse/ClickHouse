@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/explain
+description: 'Documentation for Explain'
+sidebar_label: 'EXPLAIN'
 sidebar_position: 39
-sidebar_label: EXPLAIN
-title: "EXPLAIN Statement"
+slug: /sql-reference/statements/explain
+title: 'EXPLAIN Statement'
 ---
 
 Shows the execution plan of a statement.
@@ -418,7 +419,7 @@ ExpressionTransform
 ```
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
-Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) family. 
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family. 
 
 **Example**
 

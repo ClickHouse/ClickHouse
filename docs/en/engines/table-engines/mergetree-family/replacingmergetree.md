@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/mergetree-family/replacingmergetree
+description: 'differs from MergeTree in that it removes duplicate entries with the
+  same sorting key value (`ORDER BY` table section, not `PRIMARY KEY`).'
+sidebar_label: 'ReplacingMergeTree'
 sidebar_position: 40
-sidebar_label:  ReplacingMergeTree
-title: "ReplacingMergeTree"
-description: "differs from MergeTree in that it removes duplicate entries with the same sorting key value (`ORDER BY` table section, not `PRIMARY KEY`)."
+slug: /engines/table-engines/mergetree-family/replacingmergetree
+title: 'ReplacingMergeTree'
 ---
 
 # ReplacingMergeTree
@@ -103,10 +104,17 @@ SELECT * FROM mySecondReplacingMT FINAL;
 :::note
 `is_deleted` can only be enabled when `ver` is used.
 
-The row is deleted only when `OPTIMIZE ... FINAL CLEANUP`. This `CLEANUP` special keyword is not allowed by default unless `allow_experimental_replacing_merge_with_cleanup` MergeTree setting is enabled.
+No matter the operation on the data, the version should be increased. If two inserted rows have the same version number, the last inserted row is kept.
 
-No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
+By default, ClickHouse will keep the last row for a key even if that row is a delete row. This is so that any future rows with lower versions can
+be safely inserted and the delete row will still be applied.
 
+To permanently drop such delete rows, enable the table setting `allow_experimental_replacing_merge_with_cleanup` and either:
+
+1. Set the table settings `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`, `min_age_to_force_merge_on_partition_only` and `min_age_to_force_merge_seconds`. If all parts in a partition are older than `min_age_to_force_merge_seconds`, ClickHouse will merge them
+all into a single part and remove any delete rows.
+
+2. Manually run `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
 :::
 
 Example:

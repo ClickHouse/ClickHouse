@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/operators/
-sidebar_position: 38
-sidebar_label: Operators
+description: 'Documentation for Operators'
 displayed_sidebar: sqlreference
+sidebar_label: 'Operators'
+sidebar_position: 38
+slug: /sql-reference/operators/
+title: 'Operators'
 ---
 
 # Operators
@@ -25,7 +27,7 @@ For tuple negation: [tupleNegate](../../sql-reference/functions/tuple-functions.
 
 `a * b` – The `multiply (a, b)` function.
 
-For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](../../sql-reference/functions/tuple-functions.md#dotproduct).
+For multiplying tuple by number: [tupleMultiplyByNumber](../../sql-reference/functions/tuple-functions.md#tuplemultiplybynumber), for scalar product: [dotProduct](/sql-reference/functions/array-functions#arraydotproduct).
 
 `a / b` – The `divide(a, b)` function.
 
@@ -285,19 +287,19 @@ SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 6
 **See Also**
 
 - [Interval](../../sql-reference/data-types/special-data-types/interval.md) data type
-- [toInterval](../../sql-reference/functions/type-conversion-functions.md#function-tointerval) type conversion functions
+- [toInterval](/sql-reference/functions/type-conversion-functions#tointervalyear) type conversion functions
 
 ## Logical AND Operator {#logical-and-operator}
 
-Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](../../sql-reference/functions/logical-functions.md#logical-and-function).
+Syntax `SELECT a AND b` — calculates logical conjunction of `a` and `b` with the function [and](/sql-reference/functions/logical-functions#and).
 
 ## Logical OR Operator {#logical-or-operator}
 
-Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with the function [or](../../sql-reference/functions/logical-functions.md#logical-or-function).
+Syntax `SELECT a OR b` — calculates logical disjunction of `a` and `b` with the function [or](/sql-reference/functions/logical-functions#or).
 
 ## Logical Negation Operator {#logical-negation-operator}
 
-Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](../../sql-reference/functions/logical-functions.md#logical-not-function).
+Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [not](/sql-reference/functions/logical-functions#not).
 
 ## Conditional Operator {#conditional-operator}
 
@@ -305,7 +307,7 @@ Syntax `SELECT NOT a` — calculates logical negation of `a` with the function [
 
 Note:
 
-The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](../../sql-reference/functions/array-join.md#functions_arrayjoin) function, each row will be replicated regardless of the "a" condition.
+The conditional operator calculates the values of b and c, then checks whether condition a is met, and then returns the corresponding value. If `b` or `C` is an [arrayJoin()](/sql-reference/functions/array-join) function, each row will be replicated regardless of the "a" condition.
 
 ## Conditional Expression {#conditional-expression}
 
@@ -359,7 +361,7 @@ ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
     - `0` otherwise.
 - For other values, the `IS NULL` operator always returns `0`.
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NULL FROM table` transforms to `SELECT n.null FROM TABLE`.
 
 <!-- -->
 
@@ -392,4 +394,4 @@ SELECT * FROM t_null WHERE y IS NOT NULL
 └───┴───┘
 ```
 
-Can be optimized by enabling the [optimize_functions_to_subcolumns](../../operations/settings/settings.md#optimize-functions-to-subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.
+Can be optimized by enabling the [optimize_functions_to_subcolumns](/operations/settings/settings#optimize_functions_to_subcolumns) setting. With `optimize_functions_to_subcolumns = 1` the function reads only [null](../../sql-reference/data-types/nullable.md#finding-null) subcolumn instead of reading and processing the whole column data. The query `SELECT n IS NOT NULL FROM table` transforms to `SELECT NOT n.null FROM TABLE`.

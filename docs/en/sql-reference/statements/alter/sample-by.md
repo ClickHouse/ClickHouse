@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/sample-by
+description: 'Documentation for Manipulating SAMPLE BY expression'
+sidebar_label: 'SAMPLE BY'
 sidebar_position: 41
-sidebar_label: SAMPLE BY
-title: "Manipulating Sampling-Key Expressions"
+slug: /sql-reference/statements/alter/sample-by
+title: 'Manipulating Sampling-Key Expressions'
 ---
 
 # Manipulating SAMPLE BY expression

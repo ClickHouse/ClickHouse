@@ -1,10 +1,14 @@
 ---
-description: "System table containing information about executed queries, for example, start time, duration of processing, error messages."
+description: 'System table containing information about executed queries, for example,
+  start time, duration of processing, error messages.'
+keywords: ['system table', 'query_log']
 slug: /operations/system-tables/query_log
-title: "system.query_log"
-keywords: ["system table", "query_log"]
+title: 'system.query_log'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.query_log
 
 <SystemTableCloud/>
 
@@ -16,9 +20,9 @@ This table does not contain the ingested data for `INSERT` queries.
 
 You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) section of the server configuration.
 
-You can disable queries logging by setting [log_queries = 0](../../operations/settings/settings.md#log-queries). We do not recommend to turn off logging because information in this table is important for solving issues.
+You can disable queries logging by setting [log_queries = 0](/operations/settings/settings#log_queries). We do not recommend to turn off logging because information in this table is important for solving issues.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](../../sql-reference/statements/system.md#query_language-system-flush_logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](/operations/system-tables/overview#system-tables-introduction) for more details.
 
@@ -33,9 +37,9 @@ Each query creates one or two rows in the `query_log` table, depending on the st
 2.  If an error occurred during query processing, two events with the `QueryStart` and `ExceptionWhileProcessing` types are created.
 3.  If an error occurred before launching the query, a single event with the `ExceptionBeforeStart` type is created.
 
-You can use the [log_queries_probability](../../operations/settings/settings.md#log-queries-probability) setting to reduce the number of queries, registered in the `query_log` table.
+You can use the [log_queries_probability](/operations/settings/settings#log_queries_probability)) setting to reduce the number of queries, registered in the `query_log` table.
 
-You can use the [log_formatted_queries](../../operations/settings/settings.md#log-formatted-queries) setting to log formatted queries to the `formatted_query` column.
+You can use the [log_formatted_queries](/operations/settings/settings#log_formatted_queries)) setting to log formatted queries to the `formatted_query` column.
 
 Columns:
 
@@ -50,18 +54,18 @@ Columns:
 - `event_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Query starting time with microseconds precision.
 - `query_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time of query execution.
 - `query_start_time_microseconds` ([DateTime64](../../sql-reference/data-types/datetime64.md)) — Start time of query execution with microsecond precision.
-- `query_duration_ms` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Duration of query execution in milliseconds.
-- `read_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it's `read_rows` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
-- `read_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it's `read_bytes` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
-- `written_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
-- `written_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — For `INSERT` queries, the number of written bytes (uncompressed). For other queries, the column value is 0.
-- `result_rows` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of rows in a result of the `SELECT` query, or a number of rows in the `INSERT` query.
-- `result_bytes` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — RAM volume in bytes used to store a query result.
-- `memory_usage` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Memory consumption by the query.
+- `query_duration_ms` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Duration of query execution in milliseconds.
+- `read_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total number of rows read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_rows` includes the total number of rows read at all replicas. Each replica sends it's `read_rows` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
+- `read_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Total number of bytes read from all tables and table functions participated in query. It includes usual subqueries, subqueries for `IN` and `JOIN`. For distributed queries `read_bytes` includes the total number of rows read at all replicas. Each replica sends it's `read_bytes` value, and the server-initiator of the query summarizes all received and local values. The cache volumes do not affect this value.
+- `written_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
+- `written_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — For `INSERT` queries, the number of written bytes (uncompressed). For other queries, the column value is 0.
+- `result_rows` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of rows in a result of the `SELECT` query, or a number of rows in the `INSERT` query.
+- `result_bytes` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — RAM volume in bytes used to store a query result.
+- `memory_usage` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Memory consumption by the query.
 - `current_database` ([String](../../sql-reference/data-types/string.md)) — Name of the current database.
 - `query` ([String](../../sql-reference/data-types/string.md)) — Query string.
 - `formatted_query` ([String](../../sql-reference/data-types/string.md)) — Formatted query string.
-- `normalized_query_hash` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — A numeric hash value, such as it is identical for queries differ only by values of literals.
+- `normalized_query_hash` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — A numeric hash value, such as it is identical for queries differ only by values of literals.
 - `query_kind` ([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md)) — Type of the query.
 - `databases` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the databases present in the query.
 - `tables` ([Array](../../sql-reference/data-types/array.md)([LowCardinality(String)](../../sql-reference/data-types/lowcardinality.md))) — Names of the tables present in the query.

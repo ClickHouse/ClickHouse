@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/nlp-functions
+description: 'Documentation for Natural Language Processing (NLP) Functions'
+sidebar_label: 'NLP'
 sidebar_position: 130
-sidebar_label: NLP
+slug: /sql-reference/functions/nlp-functions
+title: 'Natural Language Processing (NLP) Functions'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -28,7 +30,7 @@ detectCharset('text_to_be_analyzed')
 
 *Arguments*
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -64,7 +66,7 @@ detectLanguage('text_to_be_analyzed')
 
 *Arguments*
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -102,7 +104,7 @@ detectLanguageMixed('text_to_be_analyzed')
 
 *Arguments*
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -138,7 +140,7 @@ detectProgrammingLanguage('source_code')
 
 *Arguments*
 
-- `source_code` — String representation of the source code to analyze. [String](../data-types/string.md#string).
+- `source_code` — String representation of the source code to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -173,7 +175,7 @@ detectLanguageUnknown('text_to_be_analyzed')
 
 *Arguments*
 
-- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](../data-types/string.md#string).
+- `text_to_be_analyzed` — A collection (or sentences) of strings to analyze. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -217,7 +219,7 @@ detectTonality(text)
 
 *Arguments*
 
-- `text` — The text to be analyzed. [String](../data-types/string.md#string).
+- `text` — The text to be analyzed. [String](/sql-reference/data-types/string).
 
 *Returned value*
 
@@ -252,8 +254,8 @@ lemmatize('language', word)
 
 *Arguments*
 
-- `language` — Language which rules will be applied. [String](../data-types/string.md#string).
-- `word` — Word that needs to be lemmatized. Must be lowercase. [String](../data-types/string.md#string).
+- `language` — Language which rules will be applied. [String](/sql-reference/data-types/string).
+- `word` — Word that needs to be lemmatized. Must be lowercase. [String](/sql-reference/data-types/string).
 
 *Examples*
 
@@ -300,7 +302,7 @@ stem('language', word)
 *Arguments*
 
 - `language` — Language which rules will be applied. Use the two letter [ISO 639-1 code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
-- `word` — word that needs to be stemmed. Must be in lowercase. [String](../data-types/string.md#string).
+- `word` — word that needs to be stemmed. Must be in lowercase. [String](/sql-reference/data-types/string).
 
 *Examples*
 
@@ -369,8 +371,8 @@ synonyms('extension_name', word)
 
 *Arguments*
 
-- `extension_name` — Name of the extension in which search will be performed. [String](../data-types/string.md#string).
-- `word` — Word that will be searched in extension. [String](../data-types/string.md#string).
+- `extension_name` — Name of the extension in which search will be performed. [String](/sql-reference/data-types/string).
+- `word` — Word that will be searched in extension. [String](/sql-reference/data-types/string).
 
 *Examples*
 
