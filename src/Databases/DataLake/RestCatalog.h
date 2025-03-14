@@ -54,8 +54,6 @@ public:
     {
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
-
-    DB::StorageObjectStorageSettingsPtr createStorageSettingsFromMetadata(const TableMetadata & metadata) const override;
 private:
     struct Config
     {
