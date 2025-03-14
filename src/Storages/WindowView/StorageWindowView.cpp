@@ -48,6 +48,7 @@
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
