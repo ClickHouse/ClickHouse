@@ -1,7 +1,10 @@
 ---
+description: 'Documentation for the HTTP interface in ClickHouse, which provides REST
+  API access to ClickHouse from any platform and programming language'
+sidebar_label: 'HTTP Interface'
+sidebar_position: 15
 slug: /interfaces/http
-sidebar_position: 19
-sidebar_label: HTTP Interface
+title: 'HTTP Interface'
 ---
 
 import PlayUI from '@site/static/images/play.png';

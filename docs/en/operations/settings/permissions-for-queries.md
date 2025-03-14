@@ -1,9 +1,9 @@
 ---
-slug: /operations/settings/permissions-for-queries
+description: 'Settings for query permissions.'
+sidebar_label: 'Permissions for Queries'
 sidebar_position: 58
-sidebar_label: Permissions for Queries
-title: "Permissions for Queries"
-description: "Settings for query permissions."
+slug: /operations/settings/permissions-for-queries
+title: 'Permissions for Queries'
 ---
 
 # Permissions for Queries

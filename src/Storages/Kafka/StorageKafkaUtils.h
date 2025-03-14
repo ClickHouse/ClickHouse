@@ -35,6 +35,12 @@ String getDefaultClientId(const StorageID & table_id);
 
 using ErrorHandler = std::function<void(const cppkafka::Error &)>;
 
+void consumerGracefulStop(
+    cppkafka::Consumer & consumer,
+    std::chrono::milliseconds drain_timeout,
+    const LoggerPtr & log,
+    ErrorHandler error_handler = [](const cppkafka::Error & /*err*/) {});
+
 void drainConsumer(
     cppkafka::Consumer & consumer,
     std::chrono::milliseconds drain_timeout,
@@ -42,7 +48,7 @@ void drainConsumer(
     ErrorHandler error_handler = [](const cppkafka::Error & /*err*/) {});
 
 using Messages = std::vector<cppkafka::Message>;
-void eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler = [](const cppkafka::Error & /*err*/) {});
+size_t eraseMessageErrors(Messages & messages, const LoggerPtr & log, ErrorHandler error_handler = [](const cppkafka::Error & /*err*/) {});
 
 SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const String & schema_name);
 
