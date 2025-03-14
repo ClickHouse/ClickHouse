@@ -2,6 +2,10 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
+#include "Processors/Chunk.h"
+
 namespace DB
 {
 
@@ -33,6 +37,7 @@ String SourceFromSingleChunk::getName() const
 
 Chunk SourceFromSingleChunk::generate()
 {
+    LOG_DEBUG(getLogger("SourceFromSingleChunk"), "generate rows {} structure {}", chunk.getNumRows(), chunk.dumpStructure());
     return std::move(chunk);
 }
 
