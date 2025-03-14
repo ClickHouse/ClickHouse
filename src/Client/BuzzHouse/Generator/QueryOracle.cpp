@@ -182,7 +182,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     std::error_code ec;
     Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
-    SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
+    SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
     OutFormat outf = rg.pickKeyRandomlyFromMap(out_in);
 
@@ -193,17 +193,19 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     }
     ff->set_path(nfile.generic_string());
 
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         SQLType * tp = entry.getBottomType();
 
         buf += fmt::format(
-            "{}{} {}{}",
+            "{}{} {}{}{}{}",
             first ? "" : ", ",
             entry.getBottomName(),
+            entry.path.size() > 1 ? "Array(" : "",
             tp->typeName(true),
-            entry.nullable.has_value() ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
+            entry.path.size() > 1 ? ")" : "",
+            (entry.path.size() == 1 && entry.nullable.has_value()) ? (entry.nullable.value() ? " NULL" : " NOT NULL") : "");
         gen.columnPathRef(entry, sel->add_result_columns()->mutable_etc()->mutable_col()->mutable_path());
         /// ArrowStream doesn't support UUID
         if (outf == OutFormat::OUT_ArrowStream && tp->getTypeClass() == SQLTypeClass::UUID)
@@ -244,37 +246,48 @@ void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
 }
 
-void QueryOracle::generateImportQuery(StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
+void QueryOracle::generateImportQuery(
+    RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, const SQLQuery & sq2, SQLQuery & sq4)
 {
     Insert * ins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = ins->mutable_insert_file();
     const FileFunc & ff = sq2.explain().inner_query().insert().tfunction().file();
     ExprSchemaTable * est = ins->mutable_est();
+    const OutFormat & outf = ff.outformat();
 
     if (t.db)
     {
         est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
     }
     est->mutable_table()->set_table("t" + std::to_string(t.tname));
-    gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+    gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
         gen.columnPathRef(entry, ins->add_cols());
     }
     gen.entries.clear();
     iff->set_path(ff.path());
-    iff->set_format(out_in.at(ff.outformat()));
+    iff->set_format(out_in.at(outf));
     if (ff.has_fcomp())
     {
         iff->set_fcomp(ff.fcomp());
     }
-    if (iff->format() == IN_CSV)
+    if (outf == OutFormat::OUT_CSV || outf == OutFormat::OUT_Parquet)
     {
-        SettingValues * vals = iff->mutable_settings();
-        SetValue * sv = vals->mutable_set_value();
+        SetValue * sv = ins->mutable_setting_values()->mutable_set_value();
 
-        sv->set_property("input_format_csv_detect_header");
-        sv->set_value("0");
+        if (outf == OutFormat::OUT_CSV)
+        {
+            /// The oracle expects to read all the lines from the file
+            sv->set_property("input_format_csv_detect_header");
+            sv->set_value("0");
+        }
+        else
+        {
+            /// Use available Parquet readers
+            sv->set_property("input_format_parquet_use_native_reader");
+            sv->set_value(rg.nextBool() ? "1" : "0");
+        }
     }
 }
 
@@ -347,7 +360,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     std::error_code ec;
     bool explain = false;
     Select * sel = nullptr;
-    InsertSelect * insel = nullptr;
+    Insert * ins = nullptr;
     const uint32_t ncols = (rg.nextMediumNumber() % 5) + UINT32_C(1);
 
     peer_query = pq;
@@ -367,7 +380,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     }
     else
     {
-        Insert * ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
+        ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tfunction()->mutable_file();
 
         if (!std::filesystem::remove(qfile, ec) && ec)
@@ -376,8 +389,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
         }
         ff->set_path(qfile.generic_string());
         ff->set_outformat(OutFormat::OUT_CSV);
-        insel = ins->mutable_insert_select();
-        sel = insel->mutable_select();
+        sel = ins->mutable_select();
     }
 
     gen.setAllowNotDetermistic(false);
@@ -423,8 +435,8 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     if (!measure_performance && !explain && !global_aggregate)
     {
         /// If not global aggregate, use ORDER BY clause
-        Select * osel = insel->release_select();
-        SelectStatementCore * nsel = insel->mutable_select()->mutable_select_core();
+        Select * osel = ins->release_select();
+        SelectStatementCore * nsel = ins->mutable_select()->mutable_select_core();
         nsel->mutable_from()
             ->mutable_tos()
             ->mutable_join_clause()
@@ -612,7 +624,7 @@ void QueryOracle::replaceQueryWithTablePeers(
 
     sq2.CopyFrom(sq1);
     Select & nsel = const_cast<Select &>(
-        measure_performance ? sq2.explain().inner_query().select().sel() : sq2.explain().inner_query().insert().insert_select().select());
+        measure_performance ? sq2.explain().inner_query().select().sel() : sq2.explain().inner_query().insert().select());
     /// Replace references
     findTablesWithPeersAndReplace(rg, nsel, gen, peer_query != PeerQuery::ClickHouseOnly);
     if (peer_query == PeerQuery::ClickHouseOnly && !measure_performance)
@@ -632,7 +644,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         SQLQuery next;
         const SQLTable & t = gen.tables.at(entry);
         Insert * ins = next.mutable_explain()->mutable_inner_query()->mutable_insert();
-        SelectStatementCore * sel = ins->mutable_insert_select()->mutable_select()->mutable_select_core();
+        SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
 
         // Then insert the data
         gen.setTableRemote(rg, false, t, ins->mutable_tfunction());
@@ -644,7 +656,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         }
         est->mutable_table()->set_table("t" + std::to_string(t.tname));
         jtf->set_final(t.supportsFinal());
-        gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
+        gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)
         {
             gen.columnPathRef(colRef, ins->add_cols());

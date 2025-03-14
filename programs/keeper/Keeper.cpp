@@ -366,7 +366,7 @@ try
     std::filesystem::create_directories(path);
 
     /// Check that the process user id matches the owner of the data.
-    assertProcessUserMatchesDataOwner(path, [&](const std::string & message){ LOG_WARNING(log, fmt::runtime(message)); });
+    assertProcessUserMatchesDataOwner(path, [&](const PreformattedMessage & message){ LOG_WARNING(log, fmt::runtime(message.text)); });
 
     DB::ServerUUID::load(path + "/uuid", log);
 

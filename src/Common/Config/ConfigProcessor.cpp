@@ -30,7 +30,6 @@
 #include <fstream>
 
 #if USE_SSL
-#include <format>
 #include <IO/BufferWithOwnMemory.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionCodecEncrypted.h>

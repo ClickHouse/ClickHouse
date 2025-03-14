@@ -375,3 +375,6 @@
 [submodule "contrib/quill"]
 	path = contrib/quill
 	url = https://github.com/ClickHouse/quill.git
+[submodule "contrib/SHA3IUF"]
+	path = contrib/SHA3IUF
+	url = https://github.com/brainhub/SHA3IUF.git
