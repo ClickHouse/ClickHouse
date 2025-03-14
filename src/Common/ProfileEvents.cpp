@@ -75,6 +75,8 @@
     M(SkippingIndexCacheWeightLost, "Approximate number of bytes evicted from the secondary index cache.", ValueType::Number) \
     M(QueryCacheHits, "Number of times a query result has been found in the query cache (and query computation was avoided). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
     M(QueryCacheMisses, "Number of times a query result has not been found in the query cache (and required query computation). Only updated for SELECT queries with SETTING use_query_cache = 1.", ValueType::Number) \
+    M(QueryConditionCacheHits, "Number of times an entry has been found in the query condition cache (and reading of marks can be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
+    M(QueryConditionCacheMisses, "Number of times an entry has not been found in the query condition cache (and reading of mark cannot be skipped). Only updated for SELECT queries with SETTING use_query_condition_cache = 1.", ValueType::Number) \
     /* Each page cache chunk access increments exactly one of the following 5 PageCacheChunk* counters. */ \
     /* Something like hit rate: (PageCacheChunkShared + PageCacheChunkDataHits) / [sum of all 5]. */ \
     M(PageCacheChunkMisses, "Number of times a chunk has not been found in the userspace page cache.", ValueType::Number) \
@@ -771,6 +773,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(BackupsOpenedForRead, "Number of backups opened for reading", ValueType::Number) \
     M(BackupsOpenedForWrite, "Number of backups opened for writing", ValueType::Number) \
+    M(BackupsOpenedForUnlock, "Number of backups opened for unlocking", ValueType::Number) \
     M(BackupReadMetadataMicroseconds, "Time spent reading backup metadata from .backup file", ValueType::Microseconds) \
     M(BackupWriteMetadataMicroseconds, "Time spent writing backup metadata to .backup file", ValueType::Microseconds) \
     M(BackupEntriesCollectorMicroseconds, "Time spent making backup entries", ValueType::Microseconds) \
@@ -834,6 +837,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(DistrCacheRangeResetBackward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheRangeResetForward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
+    M(DistrCacheReconnectsAfterTimeout, "Distributed Cache server event. The number of reconnects after timeout", ValueType::Number) \
     \
     M(DistrCacheOpenedConnections, "Distributed Cache connection event. The number of open connections to distributed cache", ValueType::Number) \
     M(DistrCacheReusedConnections, "Distributed Cache connection event. The number of reused connections to distributed cache", ValueType::Number) \
@@ -900,6 +904,20 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeCondemnedPartsKillRequest, "How many ZooKeeper requests were used to remove condemned parts", ValueType::Number) \
     M(SharedMergeTreeCondemnedPartsLockConfict, "How many times we failed to acquite lock because of conflict", ValueType::Number) \
     M(SharedMergeTreeCondemnedPartsRemoved, "How many condemned parts were removed", ValueType::Number) \
+    M(SharedMergeTreeMergeSelectingTaskMicroseconds, "Merge selecting task microseconds for SMT", ValueType::Number) \
+    M(SharedMergeTreeOptimizeAsync, "Asynchronous OPTIMIZE queries executed", ValueType::Number) \
+    M(SharedMergeTreeOptimizeSync, "Synchronous OPTIMIZE queries executed", ValueType::Number) \
+    M(SharedMergeTreeScheduleDataProcessingJob, "How many times scheduleDataProcessingJob called/", ValueType::Number) \
+    M(SharedMergeTreeScheduleDataProcessingJobNothingToScheduled, "How many times scheduleDataProcessingJob called but nothing to do", ValueType::Number) \
+    M(SharedMergeTreeScheduleDataProcessingJobMicroseconds, "scheduleDataProcessingJob execute time", ValueType::Number) \
+    M(SharedMergeTreeHandleBlockingParts, "How many blocking parts to handle in scheduleDataProcessingJob", ValueType::Number) \
+    M(SharedMergeTreeHandleBlockingPartsMicroseconds, "Time of handling blocking parts in scheduleDataProcessingJob ", ValueType::Number) \
+    M(SharedMergeTreeHandleFetchPartsMicroseconds, "Time of handling fetched parts in scheduleDataProcessingJob", ValueType::Number) \
+    M(SharedMergeTreeHandleOutdatedParts, "How many outdated parts to handle in scheduleDataProcessingJob", ValueType::Number) \
+    M(SharedMergeTreeHandleOutdatedPartsMicroseconds, "Time of handling outdated parts in scheduleDataProcessingJob", ValueType::Number) \
+    M(SharedMergeTreeGetPartsBatchToLoadMicroseconds, "Time of getPartsBatchToLoad in scheduleDataProcessingJob", ValueType::Number) \
+    M(SharedMergeTreeTryUpdateDiskMetadataCacheForPartMicroseconds, "Time of tryUpdateDiskMetadataCacheForPart in scheduleDataProcessingJob", ValueType::Number) \
+    M(SharedMergeTreeLoadChecksumAndIndexesMicroseconds, "Time of loadColumnsChecksumsIndexes only for SharedMergeTree", ValueType::Number) \
     M(KeeperLogsEntryReadFromLatestCache, "Number of log entries in Keeper being read from latest logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromCommitCache, "Number of log entries in Keeper being read from commit logs cache", ValueType::Number) \
     M(KeeperLogsEntryReadFromFile, "Number of log entries in Keeper being read directly from the changelog file", ValueType::Number) \

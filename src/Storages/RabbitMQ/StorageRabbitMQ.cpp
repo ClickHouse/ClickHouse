@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -37,6 +38,8 @@
 #include <Common/RemoteHostFilter.h>
 
 #include <base/range.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
 
 namespace DB
 {

@@ -1,7 +1,9 @@
 #pragma once
+
+#include <atomic>
+#include <mutex>
 #include <unordered_map>
 #include <base/types.h>
-#include <mutex>
 
 namespace DB
 {

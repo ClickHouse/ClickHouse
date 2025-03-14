@@ -1,7 +1,9 @@
 ---
-slug: /en/operations/system-tables/quotas
+description: "System table containing information about quotas."
+slug: /operations/system-tables/quotas
+title: "system.quotas"
+keywords: ["system table", "quotas", "quota"]
 ---
-# quotas
 
 Contains information about [quotas](../../operations/system-tables/quotas.md).
 
@@ -17,7 +19,7 @@ Columns:
     - `['user_name', 'client_key']` — Connections with the same `client_key` share the same quota. If a key isn't provided by a client, the quota is tracked for `user_name`.
     - `['client_key', 'ip_address']` — Connections with the same `client_key` share the same quota. If a key isn't provided by a client, the quota is tracked for `ip_address`.
 - `durations` ([Array](../../sql-reference/data-types/array.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — Time interval lengths in seconds.
-- `apply_to_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Logical value. It shows which users the quota is applied to. Values:
+- `apply_to_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Logical value. It shows which users the quota is applied to. Values:
     - `0` — The quota applies to users specify in the `apply_to_list`.
     - `1` — The quota applies to all users except those listed in `apply_to_except`.
 - `apply_to_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — List of user names/[roles](../../guides/sre/user-management/index.md#role-management) that the quota should be applied to.

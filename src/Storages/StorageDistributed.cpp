@@ -7,6 +7,7 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
@@ -65,6 +66,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterInsertQuery.h>
@@ -107,6 +109,9 @@
 #include <memory>
 #include <filesystem>
 #include <cassert>
+
+#include <boost/algorithm/string/find_iterator.hpp>
+#include <boost/algorithm/string/finder.hpp>
 
 
 namespace fs = std::filesystem;
