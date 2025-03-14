@@ -5,19 +5,12 @@
 #include <base/types.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
-#include <IO/WriteHelpers.h>
 
 #include <chrono>
 #include <string_view>
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_PARSE_NUMBER;
-}
-
 class ReadBuffer;
 class WriteBuffer;
 
@@ -29,17 +22,6 @@ class WriteBuffer;
   *  and the remote server will use its default value.
   */
 
-template<typename T>
-void validateFloatingPointSettingValue(T value)
-{
-    if constexpr (std::is_floating_point_v<T>)
-    {
-        if (!std::isfinite(value))
-            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
-                "Float setting value must be finite, got {}", value);
-    }
-}
-
 template <typename T>
 struct SettingFieldNumber
 {
@@ -49,20 +31,10 @@ struct SettingFieldNumber
     Type value;
     bool changed = false;
 
-    explicit SettingFieldNumber(Type x = 0)
-    {
-        validateFloatingPointSettingValue(x);
-        value = x;
-    }
+    explicit SettingFieldNumber(Type x = 0);
     explicit SettingFieldNumber(const Field & f);
 
-    SettingFieldNumber & operator=(Type x)
-    {
-        validateFloatingPointSettingValue(x);
-        value = x;
-        changed = true;
-        return *this;
-    }
+    SettingFieldNumber & operator=(Type x);
     SettingFieldNumber & operator=(const Field & f);
 
     operator Type() const { return value; } /// NOLINT
@@ -297,8 +269,6 @@ public:
     void writeBinary(WriteBuffer & out) const;
     void readBinary(ReadBuffer & in);
 };
-
-#undef NORETURN
 
 struct SettingFieldChar
 {
