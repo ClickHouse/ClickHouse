@@ -47,3 +47,4 @@
 - test_user_ip_restrictions/
 - test_zookeeper_config_load_balancing/
 - test_zookeeper_fallback_session/
+- test_storage_s3_queue/
