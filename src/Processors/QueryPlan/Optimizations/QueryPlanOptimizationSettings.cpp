@@ -8,6 +8,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_aggregate_partitions_independently;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool force_optimize_projection;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -30,13 +31,14 @@ namespace Setting
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
     extern const SettingsBool query_plan_reuse_storage_ordering_for_window_functions;
-    extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsBool query_plan_split_filter;
     extern const SettingsBool query_plan_try_use_vector_search;
+    extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBoolAuto query_plan_join_swap_table;
+    extern const SettingsMaxThreads max_threads;
+    extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_limit_for_ann_queries;
-    extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool allow_experimental_analyzer;
@@ -83,6 +85,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     optimize_projection = from[Setting::optimize_use_projections];
+    use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
@@ -95,7 +98,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class
     keep_logical_steps = false;
-    use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     is_explain = false;
 
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;

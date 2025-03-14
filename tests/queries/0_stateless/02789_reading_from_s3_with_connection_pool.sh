@@ -42,8 +42,9 @@ done
 while true
 do
     query_id=$(${CLICKHOUSE_CLIENT} -q "
-    create table mut (n int, m int, k int) engine=ReplicatedMergeTree('/test/02441/{database}/mut', '1') order by n;
+    create table if not exists mut (n int, m int, k int) engine=ReplicatedMergeTree('/test/02441/{database}/mut', '1') order by n;
     set insert_keeper_fault_injection_probability=0;
+    set parallel_replicas_for_cluster_engines=0;
     insert into mut values (1, 2, 3), (10, 20, 30);
 
     system stop merges mut;

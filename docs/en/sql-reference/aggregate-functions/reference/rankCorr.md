@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/rankCorr
+description: 'Computes a rank correlation coefficient.'
 sidebar_position: 182
-title: "rankCorr"
-description: "Computes a rank correlation coefficient."
+slug: /sql-reference/aggregate-functions/reference/rankCorr
+title: 'rankCorr'
 ---
 
 # rankCorr
