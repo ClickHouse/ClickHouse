@@ -43,7 +43,7 @@
     <source>
         <executable>
             <format>TabSeparated</format>
-            <command>awk -F'\t' '{print $1"\t"$1+$1"\t"$1*$1}'</command>
+            <command>awk -F'\t' '{printf "%s\t%.0f\t%.0f\n", $1, $1+$1, $1*$1}'</command>
         </executable>
     </source>
     <lifetime>0</lifetime>
