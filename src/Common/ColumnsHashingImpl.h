@@ -191,12 +191,17 @@ public:
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool) {
+        return emplaceKey(data, row, pool, 9223372036854775807ll);
+    }
+
     // 72610: data -- мап (или сет)
     // 72610: по row достается key_holder (указатель на ключ?) из выкачанных с диска данных
     // 72610: вызывается emplaceImpl, которая возвращает результат попытки вставки ключа в мап
     // 72610: если ключ не нужен благодаря оптимизации, корректно ли вернуть EmplaceResult(false)?
     template <typename Data>
-    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool, size_t limit_length = 9223372036854775807ll)
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool, size_t limit_length)
     {
         std::cout << "@@@@@@@@@@@@@@@@@ emplaceKey2 called" << std::endl;
         if constexpr (nullable)
