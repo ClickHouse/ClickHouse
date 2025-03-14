@@ -37,5 +37,6 @@ inline static constexpr uint64_t DEFAULT_RETRY_ATTEMPTS = 100;
 
 inline static constexpr std::string_view DEFAULT_ALLOW_NATIVE_COPY = "auto";
 inline static constexpr bool DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD = false;
-
+inline static constexpr uint64_t DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD_MAX_ATTEMPTS = 1;
+inline static constexpr uint64_t DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD_INITIAL_BACKOFF_MS = 100;
 }

@@ -49,6 +49,16 @@ void checkObjectExists(
     const String & version_id = {},
     std::string_view description = {});
 
+/// Check object after upload
+void checkObjectAfterUpload(
+    const S3::Client & client,
+    const String & bucket,
+    const String & key,
+    const S3RequestSettings & settings,
+    const LoggerPtr & log,
+    std::optional<size_t> expected_size = {},
+    const String & version_id = {});
+
 bool isNotFoundError(Aws::S3::S3Errors error);
 
 }
