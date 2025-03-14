@@ -23,7 +23,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int DATABASE_ACCESS_DENIED;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
