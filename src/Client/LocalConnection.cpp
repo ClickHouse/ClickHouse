@@ -441,6 +441,23 @@ bool LocalConnection::poll(size_t)
         return true;
     }
 
+    // pushing executors have to be finished before the final stats are sent
+    if (state->is_finished)
+    {
+        if (state->executor)
+        {
+            // no op
+        }
+        else if (state->pushing_async_executor)
+        {
+            state->pushing_async_executor->finish();
+        }
+        else if (state->pushing_executor)
+        {
+            state->pushing_executor->finish();
+        }
+    }
+
     if (state->is_finished && !state->sent_totals)
     {
         state->sent_totals = true;
@@ -489,7 +506,7 @@ bool LocalConnection::poll(size_t)
     {
         state->sent_profile_events = true;
 
-        if (send_profile_events && state->executor)
+        if (send_profile_events && (state->executor || state->pushing_async_executor || state->pushing_executor))
         {
             sendProfileEvents();
             return true;
