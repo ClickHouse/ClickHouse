@@ -6,6 +6,7 @@
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
+#include <Common/ProxyConfigurationResolverProvider.h>
 
 #include <thread>
 
@@ -66,7 +67,12 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     connection_timeouts.withConnectionTimeout(std::max<Poco::Timespan>(settings[Setting::http_connection_timeout], Poco::Timespan(20, 0)));
     connection_timeouts.withReceiveTimeout(std::max<Poco::Timespan>(settings[Setting::http_receive_timeout], Poco::Timespan(20, 0)));
 
+    auto proxy_protocol = ProxyConfiguration::protocolFromString(uri.getScheme());
+    auto proxy_resolver = ProxyConfigurationResolverProvider::get(proxy_protocol, context->getConfigRef());
+    auto proxy_configuration = proxy_resolver->resolve();
+
     auto res = BuilderRWBufferFromHTTP(uri)
+                   .withProxy(proxy_configuration)
                    .withConnectionGroup(HTTPConnectionGroupType::DISK)
                    .withSettings(read_settings)
                    .withTimeouts(connection_timeouts)
