@@ -1094,6 +1094,869 @@ def test_evolved_schema_simple(
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("is_table_function", [False, True])
+def test_tuple_evolved_simple(
+    started_cluster, format_version, storage_type, is_table_function
+):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_my_evolved_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+    execute_spark_query(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+            a int NOT NULL,
+            b struct<a: float, b: string>,
+            c struct<c : int, d: int>
+        )
+        USING iceberg 
+        OPTIONS ('format-version'='2')
+    """)
+
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1, named_struct('a', 1.23, 'b', 'ABBA'), named_struct('c', 1, 'd', 2))")
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN b.a TO e")
+
+    table_creation_expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=is_table_function,
+        allow_dynamic_metadata_for_data_lakes=True,
+    )
+
+    table_select_expression = (
+        TABLE_NAME if not is_table_function else table_creation_expression
+    )
+
+    if not is_table_function:
+        instance.query(table_creation_expression)
+
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    e Nullable(Float32),\\n    b Nullable(String))'],
+            ['c', 'Tuple(\\n    c Nullable(Int32),\\n    d Nullable(Int32))']
+        ],
+        [
+            ['1', "(1.23,'ABBA')", '(1,2)']
+        ],
+    )
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} ALTER COLUMN c.d TYPE long;")
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    e Nullable(Float32),\\n    b Nullable(String))'],
+            ['c', 'Tuple(\\n    c Nullable(Int32),\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(1.23,'ABBA')", '(1,2)']
+        ],
+    )
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN c.c")
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    e Nullable(Float32),\\n    b Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(1.23,'ABBA')", '(2)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMN b.g int;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    e Nullable(Float32),\\n    b Nullable(String),\\n    g Nullable(Int32))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(1.23,'ABBA',NULL)", '(2)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b.g FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    g Nullable(Int32),\\n    e Nullable(Float32),\\n    b Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(NULL,1.23,'ABBA')", '(2)']
+        ],
+    )
+
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (2, named_struct('g', 5, 'e', 1.23, 'b', 'BACCARA'), named_struct('d', 3))")
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    g Nullable(Int32),\\n    e Nullable(Float32),\\n    b Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(NULL,1.23,'ABBA')", '(2)'],
+            ['2', "(5,1.23,'BACCARA')", '(3)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN b.g TO a;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(Int32),\\n    e Nullable(Float32),\\n    b Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(NULL,1.23,'ABBA')", '(2)'],
+            ['2', "(5,1.23,'BACCARA')", '(3)']
+        ],
+    )
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN b.a")
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    e Nullable(Float32),\\n    b Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(1.23,'ABBA')", '(2)'],
+            ['2', "(1.23,'BACCARA')", '(3)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN b.b TO a;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    e Nullable(Float32),\\n    a Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(1.23,'ABBA')", '(2)'],
+            ['2', "(1.23,'BACCARA')", '(3)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN b.e TO b;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    b Nullable(Float32),\\n    a Nullable(String))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "(1.23,'ABBA')", '(2)'],
+            ['2', "(1.23,'BACCARA')", '(3)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b.a FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(String),\\n    b Nullable(Float32))'],
+            ['c', 'Tuple(\\n    d Nullable(Int64))']
+        ],
+        [
+            ['1', "('ABBA',1.23)", '(2)'],
+            ['2', "('BACCARA',1.23)", '(3)']
+        ],
+    )
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_array_evolved_with_struct(
+    started_cluster, format_version, storage_type
+):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_array_evolved_with_struct_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(
+        f"""
+            DROP TABLE IF EXISTS {TABLE_NAME};
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME}   (
+                address ARRAY<STRUCT<
+                    city: STRING,
+                    zip: INT
+                >>,
+                values ARRAY<INT>
+            )
+            USING iceberg
+            OPTIONS ('format-version'='{format_version}')
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(named_struct('name', 'Singapore', 'zip', 12345), named_struct('name', 'Moscow', 'zip', 54321)), ARRAY(1,2));
+        """
+    )
+
+    table_function = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster, table_function=True
+    )
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMNS ( address.element.foo INT );
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    city Nullable(String),\\n    zip Nullable(Int32),\\n    foo Nullable(Int32)))'],
+            ['values', 'Array(Nullable(Int32))']
+        ],
+        [
+            ["[('Singapore',12345,NULL),('Moscow',54321,NULL)]", '[1,2]']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN address.element.city;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    zip Nullable(Int32),\\n    foo Nullable(Int32)))'],
+            ['values', 'Array(Nullable(Int32))']
+        ],
+        [
+            ["[(12345,NULL),(54321,NULL)]", '[1,2]']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN address.element.foo FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    foo Nullable(Int32),\\n    zip Nullable(Int32)))'],
+            ['values', 'Array(Nullable(Int32))']
+        ],
+        [
+            ["[(NULL,12345),(NULL,54321)]", '[1,2]']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN address.element.foo TO city;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    city Nullable(Int32),\\n    zip Nullable(Int32)))'],
+            ['values', 'Array(Nullable(Int32))']
+        ],
+        [
+            ["[(NULL,12345),(NULL,54321)]", '[1,2]']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN address TO bee;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['bee', 'Array(Tuple(\\n    city Nullable(Int32),\\n    zip Nullable(Int32)))'],
+            ['values', 'Array(Nullable(Int32))']
+        ],
+        [
+            ["[(NULL,12345),(NULL,54321)]", '[1,2]']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN values TO fee;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['bee', 'Array(Tuple(\\n    city Nullable(Int32),\\n    zip Nullable(Int32)))'],
+            ['fee', 'Array(Nullable(Int32))']
+        ],
+        [
+            ["[(NULL,12345),(NULL,54321)]", '[1,2]']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN fee.element TYPE long;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['bee', 'Array(Tuple(\\n    city Nullable(Int32),\\n    zip Nullable(Int32)))'],
+            ['fee', 'Array(Nullable(Int64))']
+        ],
+        [
+            ["[(NULL,12345),(NULL,54321)]", '[1,2]']
+        ],
+    )
+    return
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN fee FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['fee', 'Array(Nullable(Int64))'],
+            ['bee', 'Array(Tuple(\\n    city Nullable(Int32),\\n    zip Nullable(Int32)))']
+        ],
+        [
+            ['[1,2]', "[(NULL,12345),(NULL,54321)]"]
+        ],
+    )
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_array_evolved_nested(
+    started_cluster, format_version, storage_type
+):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_array_evolved_nested_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(
+        f"""
+            DROP TABLE IF EXISTS {TABLE_NAME};
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            CREATE TABLE {TABLE_NAME}   (
+                address ARRAY<STRUCT<
+                    city: STRUCT<
+                        foo: STRING,
+                        bar: INT
+                    >,
+                    zip: ARRAY<INT>
+                >>
+            )
+            USING iceberg
+            OPTIONS ('format-version'='{format_version}')
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(named_struct('city', named_struct('foo', 'some_value', 'bar', 40), 'zip', ARRAY(41,42)), named_struct('city', named_struct('foo', 'some_value2', 'bar', 1), 'zip', ARRAY(2,3,4))));
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMNS ( address.element.zap INT );
+        """
+    )
+
+    table_function = get_creation_expression(
+        storage_type, TABLE_NAME, started_cluster, table_function=True
+    )
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    city Tuple(\\n        foo Nullable(String),\\n        bar Nullable(Int32)),\\n    zip Array(Nullable(Int32)),\\n    zap Nullable(Int32)))']
+        ],
+        [
+            ["[(('some_value',40),[41,42],NULL),(('some_value2',1),[2,3,4],NULL)]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN address.element.zip.element TYPE long;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    city Tuple(\\n        foo Nullable(String),\\n        bar Nullable(Int32)),\\n    zip Array(Nullable(Int64)),\\n    zap Nullable(Int32)))']
+        ],
+        [
+            ["[(('some_value',40),[41,42],NULL),(('some_value2',1),[2,3,4],NULL)]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN address.element.zip FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        foo Nullable(String),\\n        bar Nullable(Int32)),\\n    zap Nullable(Int32)))']
+        ],
+        [
+            ["[([41,42],('some_value',40),NULL),([2,3,4],('some_value2',1),NULL)]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN address.element.city.foo;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        bar Nullable(Int32)),\\n    zap Nullable(Int32)))']
+        ],
+        [
+            ["[([41,42],(40),NULL),([2,3,4],(1),NULL)]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN address.element.zap FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        bar Nullable(Int32))))']
+        ],
+        [
+            ["[(NULL,[41,42],(40)),(NULL,[2,3,4],(1))]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMNS ( address.element.city.newbar INT );
+        """
+    )
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        bar Nullable(Int32),\\n        newbar Nullable(Int32))))']
+        ],
+        [
+            ["[(NULL,[41,42],(40,NULL)),(NULL,[2,3,4],(1,NULL))]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMNS ( address.element.new_tuple struct<new_tuple_elem:INT, new_tuple_elem2:INT> );
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        bar Nullable(Int32),\\n        newbar Nullable(Int32)),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
+        ],
+        [
+            ["[(NULL,[41,42],(40,NULL),(NULL,NULL)),(NULL,[2,3,4],(1,NULL),(NULL,NULL))]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN address.element.city.newbar FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        newbar Nullable(Int32),\\n        bar Nullable(Int32)),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
+        ],
+        [
+            ["[(NULL,[41,42],(NULL,40),(NULL,NULL)),(NULL,[2,3,4],(NULL,1),(NULL,NULL))]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN address.element.city FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    city Tuple(\\n        newbar Nullable(Int32),\\n        bar Nullable(Int32)),\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
+        ],
+        [
+            ["[((NULL,40),NULL,[41,42],(NULL,NULL)),((NULL,1),NULL,[2,3,4],(NULL,NULL))]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN address.element.city.bar;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    city Tuple(\\n        newbar Nullable(Int32)),\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
+        ],
+        [
+            ["[((NULL),NULL,[41,42],(NULL,NULL)),((NULL),NULL,[2,3,4],(NULL,NULL))]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN address.element.zip;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    city Tuple(\\n        newbar Nullable(Int32)),\\n    zap Nullable(Int32),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
+        ],
+        [
+            ["[((NULL),NULL,(NULL,NULL)),((NULL),NULL,(NULL,NULL))]"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN address.element.city;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Array(Tuple(\\n    zap Nullable(Int32),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
+        ],
+        [
+            ["[(NULL,(NULL,NULL)),(NULL,(NULL,NULL))]"]
+        ],
+    )
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+@pytest.mark.parametrize("is_table_function", [False, True])
+def test_tuple_evolved_nested(
+    started_cluster, format_version, storage_type, is_table_function
+):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_tuple_evolved_nested_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+    execute_spark_query(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+            a int NOT NULL,
+            b struct<a: float, b: struct<na: float, nb: string>>,
+            c struct<c : int, d: int>
+        )
+        USING iceberg 
+        OPTIONS ('format-version'='2')
+    """)
+
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (1, named_struct('a', 1.23, 'b', named_struct('na', 4.56, 'nb', 'BACCARA')), named_struct('c', 1, 'd', 2))")
+
+    table_creation_expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=is_table_function,
+        allow_dynamic_metadata_for_data_lakes=True,
+    )
+
+    table_select_expression = (
+        TABLE_NAME if not is_table_function else table_creation_expression
+    )
+
+    if not is_table_function:
+        instance.query(table_creation_expression)
+
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(Float32),\\n    b Tuple(\\n        na Nullable(Float32),\\n        nb Nullable(String)))'],
+            ['c', 'Tuple(\\n    c Nullable(Int32),\\n    d Nullable(Int32))']
+        ],
+        [
+            ['1', "(1.23,(4.56,'BACCARA'))", '(1,2)']
+        ],
+    )
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN b.b.na TO e")
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(Float32),\\n    b Tuple(\\n        e Nullable(Float32),\\n        nb Nullable(String)))'],
+            ['c', 'Tuple(\\n    c Nullable(Int32),\\n    d Nullable(Int32))']
+        ],
+        [
+            ['1', "(1.23,(4.56,'BACCARA'))", '(1,2)']
+        ],
+    )
+
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} ALTER COLUMN b.b.e TYPE double;")
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(Float32),\\n    b Tuple(\\n        e Nullable(Float64),\\n        nb Nullable(String)))'],
+            ['c', 'Tuple(\\n    c Nullable(Int32),\\n    d Nullable(Int32))']
+        ],
+        [
+            ['1', "(1.23,(4.559999942779541,'BACCARA'))", '(1,2)']
+        ],
+    )
+    execute_spark_query(f"ALTER TABLE {TABLE_NAME} DROP COLUMN b.b.nb")
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(Float32),\\n    b Tuple(\\n        e Nullable(Float64)))'],
+            ['c', 'Tuple(\\n    c Nullable(Int32),\\n    d Nullable(Int32))']
+        ],
+        [
+            ['1', "(1.23,(4.559999942779541))", '(1,2)']
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMN b.b.nc int;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(Float32),\\n    b Tuple(\\n        e Nullable(Float64),\\n        nc Nullable(Int32)))'],
+            ['c', 'Tuple(\\n    c Nullable(Int32),\\n    d Nullable(Int32))']
+        ],
+        [
+            ['1', "(1.23,(4.559999942779541,NULL))", '(1,2)']
+        ],
+    )
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b.b.nc FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['a', 'Int32'], 
+            ['b', 'Tuple(\\n    a Nullable(Float32),\\n    b Tuple(\\n        nc Nullable(Int32),\\n        e Nullable(Float64)))'],
+            ['c', 'Tuple(\\n    c Nullable(Int32),\\n    d Nullable(Int32))']
+        ],
+        [
+            ['1', "(1.23,(NULL,4.559999942779541))", '(1,2)']
+        ],
+    )
+
+
+@pytest.mark.parametrize("format_version", ["1", "2"])
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
 def test_not_evolved_schema(started_cluster, format_version, storage_type):
     instance = started_cluster.instances["node1"]
     spark = started_cluster.spark_session
@@ -1446,8 +2309,10 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
             CREATE TABLE {TABLE_NAME}   (
                 address STRUCT<
                     house_number : DOUBLE,
-                    city: STRING,
-                    zip: INT
+                    city: STRUCT<
+                        name: STRING,
+                        zip: INT
+                    >
                 >,
                 animals ARRAY<INT>
             )
@@ -1458,7 +2323,7 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
 
     execute_spark_query(
         f"""
-            INSERT INTO {TABLE_NAME} VALUES (named_struct('house_number', 3, 'city', 'Singapore', 'zip', 12345), ARRAY(4, 7));
+            INSERT INTO {TABLE_NAME} VALUES (named_struct('house_number', 3, 'city', named_struct('name', 'Singapore', 'zip', 12345)), ARRAY(4, 7));
         """
     )
 
@@ -1471,9 +2336,19 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
         """
     )
 
-    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY ALL")
-
-    assert "UNSUPPORTED_METHOD" in error
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 
+             'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)),\\n    appartment Nullable(Int32))'],
+            ['animals',
+                'Array(Nullable(Int32))'],
+        ],
+        [
+            ["(3,('Singapore',12345),NULL)", '[4,7]']
+        ],
+    )
 
     execute_spark_query(
         f"""
@@ -1485,13 +2360,11 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
         instance,
         table_function,
         [
-            [
-                "address",
-                "Tuple(\\n    house_number Nullable(Float64),\\n    city Nullable(String),\\n    zip Nullable(Int32))",
-            ],
+            ['address', 
+             'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)))'],
             ["animals", "Array(Nullable(Int32))"],
         ],
-        [["(3,'Singapore',12345)", "[4,7]"]],
+        [["(3,('Singapore',12345))", "[4,7]"]],
     )
 
     execute_spark_query(
@@ -1500,9 +2373,86 @@ def test_evolved_schema_complex(started_cluster, format_version, storage_type):
         """
     )
 
-    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY ALL")
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)))'],
+            ['animals',
+                'Array(Nullable(Int64))'],
+        ],
+        [
+           ["(3,('Singapore',12345))", '[4,7]']
+        ]
+    )
 
-    assert "UNSUPPORTED_METHOD" in error
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMNS ( map_column Map<INT, INT> );
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (named_struct('house_number', 4, 'city', named_struct('name', 'Moscow', 'zip', 54321)), ARRAY(4, 7), MAP(1, 2));
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)))'],
+            ['animals',
+                'Array(Nullable(Int64))'],
+            ['map_column', 'Map(Int32, Nullable(Int32))']
+        ],
+        [
+           ["(3,('Singapore',12345))", '[4,7]', '{}'],
+           ["(4,('Moscow',54321))", '[4,7]', '{1:2}'],
+        ]
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN map_column TO col_to_del;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)))'],
+            ['animals',
+                'Array(Nullable(Int64))'],
+            ['col_to_del', 'Map(Int32, Nullable(Int32))']
+        ],
+        [
+           ["(3,('Singapore',12345))", '[4,7]', '{}'],
+           ["(4,('Moscow',54321))", '[4,7]', '{1:2}'],
+        ]
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN col_to_del;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_function,
+        [
+            ['address', 'Tuple(\\n    house_number Nullable(Float64),\\n    city Tuple(\\n        name Nullable(String),\\n        zip Nullable(Int32)))'],
+            ['animals',
+                'Array(Nullable(Int64))']
+        ],
+        [
+           ["(3,('Singapore',12345))", '[4,7]'],
+           ["(4,('Moscow',54321))", '[4,7]'],
+        ]
+    )
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
