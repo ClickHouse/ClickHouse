@@ -1,4 +1,6 @@
 51
-1
+SELECT ceil(avg(number)) AS `ceil(avg(number))` FROM numbers(1, 100) SETTINGS use_query_cache = true, query_cache_for_subqueries = true	2f7dd94e-5cb6-4147-94d9-b4f5531c560b	1	256		0	0	1	2025-03-14 14:13:31	14775115553124236740
 51
+SELECT ceil(avg(number)) AS `ceil(avg(number))` FROM numbers(1, 100) SETTINGS use_query_cache = true, query_cache_for_subqueries = true	2f7dd94e-5cb6-4147-94d9-b4f5531c560b	1	256		0	0	1	2025-03-14 14:13:31	14775115553124236740
+SELECT `ceil(avg(number))` AS `ceil(avg(number))` FROM (SELECT ceil(avg(number)) AS `ceil(avg(number))` FROM numbers(1, 100)) AS __table1 SETTINGS use_query_cache = true, query_cache_for_subqueries = true	236ff099-89a9-4146-8811-de9d6f3dca9d	1	256		0	0	1	2025-03-14 14:13:31	5695801029285126339
 1
