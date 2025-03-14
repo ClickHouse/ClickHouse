@@ -189,6 +189,11 @@ InConversion buildInConversion(
     return {std::move(lhs_dag), std::move(future_set)};
 }
 
+bool isJoinConstant(const std::string & name)
+{
+    return name == "__lhs_const" || name == "__rhs_const";
+}
+
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
@@ -228,8 +233,14 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
             return 0;
 
         for (const auto & predicate : join_info.expression.condition.predicates)
+        {
             if (predicate.op != PredicateOperator::Equals)
                 return 0;
+
+            /// Looks like filter-push-down works incorrectly if we have a FilterDAG like `__lhs_const IN set` befire JOIN
+            if (isJoinConstant(predicate.left_node.getColumnName()) || isJoinConstant(predicate.right_node.getColumnName()))
+                return 0;
+        }
     }
 
     const auto & required_output_columns = join->getRequiredOutpurColumns();
@@ -265,6 +276,13 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     JoinActionRef unused_post_filter(nullptr);
     join->appendRequiredOutputsToActions(unused_post_filter);
+
+    // {
+    //     WriteBufferFromOwnString buf;
+    //     IQueryPlanStep::FormatSettings s{.out=buf, .write_header=true};
+    //     join->describeActions(s);
+    //     std::cerr << buf.stringView() << std::endl;
+    // }
 
     lhs_in_node = makeExpressionNodeOnTopOf(parent_node->children.at(0), std::move(*join_expression_actions.left_pre_join_actions), {}, nodes);
     rhs_in_node = makeExpressionNodeOnTopOf(parent_node->children.at(1), std::move(*join_expression_actions.right_pre_join_actions), {}, nodes);
