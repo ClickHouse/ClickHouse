@@ -13,7 +13,7 @@ import TabItem from '@theme/TabItem';
 
 This section contains descriptions of server settings that cannot be changed at the session or query level. These settings are stored in the `config.xml` file on the ClickHouse server. For more information on configuration files in ClickHouse see ["Configuration Files"](/docs/en/operations/configuration-files).
 
-Other settings are described in the “[Settings](../../operations/settings/index.md#session-settings-intro)” section. 
+Other settings are described in the “[Settings](../../operations/settings/index.md#session-settings-intro)” section.
 Before studying the settings, we recommend to read the [Configuration files](../../operations/configuration-files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
 
 ## allow_use_jemalloc_memory
@@ -121,7 +121,7 @@ Default: `16`
 
 ## background_merges_mutations_concurrency_ratio
 
-Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently. 
+Sets a ratio between the number of threads and the number of background merges and mutations that can be executed concurrently.
 
 For example, if the ratio equals to 2 and [`background_pool_size`](#background_pool_size) is set to 16 then ClickHouse can execute 32 background merges concurrently. This is possible, because background operations could be suspended and postponed. This is needed to give small merges more execution priority.
 
@@ -290,7 +290,7 @@ Default: `SLRU`
 
 ## index_mark_cache_size
 
-Maximum size of cache for index marks.
+Size of cache for index marks.
 
 :::note
 
@@ -305,7 +305,7 @@ Default: `0`
 
 ## index_mark_cache_size_ratio
 
-The size of the protected queue (in case of SLRU policy) in the index mark cache relative to the cache's total size.
+The size of the protected queue in the index mark cache relative to the cache's total size.
 
 Type: Double
 
@@ -321,7 +321,7 @@ Default: `SLRU`
 
 ## index_uncompressed_cache_size
 
-Maximum size of cache for uncompressed blocks of `MergeTree` indices.
+Size of cache for uncompressed blocks of `MergeTree` indices.
 
 :::note
 A value of `0` means disabled.
@@ -335,49 +335,13 @@ Default: `0`
 
 ## index_uncompressed_cache_size_ratio
 
-The size of the protected queue (in case of SLRU policy) in the index uncompressed cache relative to the cache's total size.
+The size of the protected queue in the index uncompressed cache relative to the cache's total size.
 
 Type: Double
 
 Default: `0.5`
 
-## skipping_index_cache_policy
-
-Skipping index cache policy name.
-
-Type: String
-
-Default: SLRU
-
-## skipping_index_cache_size
-
-Size of cache for skipping indexes. Zero means disabled.
-
-:::note
-This setting can be modified at runtime and will take effect immediately.
-:::
-
-Type: UInt64
-
-Default: 5368709120 (= 5 GiB)
-
-## skipping_index_cache_size_ratio
-
-The size of the protected queue (in case of SLRU policy) in the skipping index cache relative to the cache's total size.
-
-Type: Double
-
-Default: 0.5
-
-## skipping_index_cache_max_entries
-
-The maximum number of entries in the skipping index cache.
-
-Type: UInt64
-
-Default: 10000000
-
-## io_thread_pool_queue_size
+## io_thread_pool_queue_size {#io_thread_pool_queue_size}
 
 The maximum number of jobs that can be scheduled on the IO Thread pool.
 
@@ -411,7 +375,7 @@ Default: `5368709120`
 
 ## mark_cache_size_ratio
 
-The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.
+The size of the protected queue in the mark cache relative to the cache's total size.
 
 Type: Double
 
@@ -443,11 +407,11 @@ Default: `1000`
 
 ## max_concurrent_queries
 
-Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered. 
+Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
-See also: 
+See also:
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
-- [`max_concurrent_select_queries`](#max_concurrent_select_queries) 
+- [`max_concurrent_select_queries`](#max_concurrent_select_queries)
 - [`max_concurrent_queries_for_all_users`](/docs/en/operations/settings/settings/#max_concurrent_queries_for_all_users)
 
 :::note
@@ -478,7 +442,7 @@ Default: `0`
 
 ## max_concurrent_select_queries
 
-Limit on total number of concurrently select queries. 
+Limit on total number of concurrently select queries.
 
 :::note
 
@@ -494,12 +458,12 @@ Default: `0`
 ## max_waiting_queries
 
 Limit on total number of concurrently waiting queries.
-Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](#async_load_databases). 
+Execution of a waiting query is blocked while required tables are loading asynchronously (see [`async_load_databases`](#async_load_databases).
 
 :::note
 Waiting queries are not counted when limits controlled by the following settings are checked:
 
-- [`max_concurrent_queries`](#max_concurrent_queries) 
+- [`max_concurrent_queries`](#max_concurrent_queries)
 - [`max_concurrent_insert_queries`](#max_concurrent_insert_queries)
 - [`max_concurrent_select_queries`](#max_concurrent_select_queries)
 - [`max_concurrent_queries_for_user`](/docs/en/operations/settings/settings#max_concurrent_select_queries)
@@ -659,7 +623,7 @@ Interval in seconds during which the server's maximum allowed memory consumption
 
 To disable the cgroup observer, set this value to `0`.
 
-see settings: 
+see settings:
 - [`cgroup_memory_watcher_hard_limit_ratio`](#cgroup_memory_watcher_hard_limit_ratio)
 - [`cgroup_memory_watcher_soft_limit_ratio`](#cgroup_memory_watcher_soft_limit_ratio).
 
@@ -763,7 +727,7 @@ Default: `100000`
 
 ## max_table_num_to_throw
 
-If number of tables is greater than this value, server will throw an exception. 
+If number of tables is greater than this value, server will throw an exception.
 
 The following tables are not counted:
 - view
@@ -792,7 +756,7 @@ Default: `0`
 
 ## max_replicated_table_num_to_throw
 
-If the number of replicated tables is greater than this value, the server will throw an exception. 
+If the number of replicated tables is greater than this value, the server will throw an exception.
 
 Only counts tables for database engines:
 - Atomic
@@ -924,7 +888,7 @@ Default: `10000`
 
 ## mmap_cache_size
 
-Sets the cache size (in bytes) for mapped files. This setting allows avoiding frequent open/close calls (which are very expensive due to consequent page faults), and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files). 
+Sets the cache size (in bytes) for mapped files. This setting allows avoiding frequent open/close calls (which are very expensive due to consequent page faults), and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files).
 
 The amount of data in mapped files can be monitored in the following system tables with the following metrics:
 
@@ -1104,7 +1068,7 @@ Default: `SLRU`
 
 ## uncompressed_cache_size
 
-Maximum cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
+Cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option use_uncompressed_cache is enabled.
 
@@ -1122,7 +1086,7 @@ Default: `0`
 
 ## uncompressed_cache_size_ratio
 
-The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.
+The size of the protected queue in the uncompressed cache relative to the cache's total size.
 
 Type: Double
 
@@ -1401,7 +1365,7 @@ Default: `16`
 ## database_catalog_unused_dir_cleanup_period_sec
 
 Parameter of a task that cleans up garbage from `store/` directory.
-Sets scheduling period of the task. 
+Sets scheduling period of the task.
 
 :::note
 A value of `0` means "never". The default value corresponds to 1 day.
@@ -1566,7 +1530,82 @@ For more details, see [GraphiteMergeTree](../../engines/table-engines/mergetree-
 </graphite_rollup_example>
 ```
 
-## http_port/https_port
+## google_protos_path {#google_protos_path}
+
+Defines a directory containing proto files for Protobuf types.
+
+Example:
+
+```xml
+<google_protos_path>/usr/share/clickhouse/protos/</google_protos_path>
+```
+
+## http_handlers {#http_handlers}
+
+Allows using custom HTTP handlers.
+To add a new http handler simply add a new `<rule>`.
+Rules are checked from top to bottom as defined,
+and the first match will run the handler.
+
+The following settings can be configured by sub-tags:
+
+| Sub-tags             | Definition                                                                                                                                        |
+|----------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| `url`                | To match the request URL, you can use the 'regex:' prefix to use regex match (optional)                                                           |
+| `methods`            | To match request methods, you can use commas to separate multiple method matches (optional)                                                       |
+| `headers`            | To match request headers, match each child element (child element name is header name), you can use 'regex:' prefix to use regex match (optional) |
+| `handler`            | The request handler                                                                                                                               |
+| `empty_query_string` | Check that there is no query string in the URL                                                                                                    |
+
+`handler` contains the following settings, which can be configured by sub-tags:
+
+| Sub-tags           | Definition                                                                                                                                                            |
+|--------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `url`              | A location for redirect                                                                                                                                               |
+| `type`             | Supported types: static, dynamic_query_handler, predefined_query_handler, redirect                                                                                    |
+| `status`           | Use with static type, response status code                                                                                                                            |
+| `query_param_name` | Use with dynamic_query_handler type, extracts and executes the value corresponding to the `<query_param_name>` value in HTTP request params                             |
+| `query`            | Use with predefined_query_handler type, executes query when the handler is called                                                                                     |
+| `content_type`     | Use with static type, response content-type                                                                                                                           |
+| `response_content` | Use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client |
+
+Along with a list of rules, you can specify `<defaults/>` which specifies to enable all the default handlers.
+
+Example:
+
+```xml
+<http_handlers>
+    <rule>
+        <url>/</url>
+        <methods>POST,GET</methods>
+        <headers><pragma>no-cache</pragma></headers>
+        <handler>
+            <type>dynamic_query_handler</type>
+            <query_param_name>query</query_param_name>
+        </handler>
+    </rule>
+
+    <rule>
+        <url>/predefined_query</url>
+        <methods>POST,GET</methods>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT * FROM system.settings</query>
+        </handler>
+    </rule>
+
+    <rule>
+        <handler>
+            <type>static</type>
+            <status>200</status>
+            <content_type>text/plain; charset=UTF-8</content_type>
+            <response_content>config://http_server_default_response</response_content>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+## http_port/https_port {#http_porthttps_port}
 
 The port for connecting to the server over HTTP(s).
 
@@ -1594,7 +1633,37 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-## hsts_max_age
+## http_options_response {#http_options_response}
+
+Used to add headers to the response in an `OPTIONS` HTTP request.
+The `OPTIONS` method is used when making CORS preflight requests.
+
+For more information, see [OPTIONS](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/OPTIONS).
+
+Example:
+
+```xml
+<http_options_response>
+        <header>
+            <name>Access-Control-Allow-Origin</name>
+            <value>*</value>
+        </header>
+        <header>
+            <name>Access-Control-Allow-Headers</name>
+            <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
+        </header>
+        <header>
+            <name>Access-Control-Allow-Methods</name>
+            <value>POST, GET, OPTIONS</value>
+        </header>
+        <header>
+            <name>Access-Control-Max-Age</name>
+            <value>86400</value>
+        </header>
+    </http_options_response>
+```
+
+## hsts_max_age {#hsts_max_age}
 
 Expired time for HSTS in seconds.
 
@@ -1610,7 +1679,7 @@ A value of `0` means ClickHouse disables HSTS. If you set a positive number, the
 
 ## mlock_executable
 
-Perform `mlockall` after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load. 
+Perform `mlockall` after startup to lower first queries latency and to prevent clickhouse executable from being paged out under high IO load.
 
 :::note
 Enabling this option is recommended but will lead to increased startup time for up to a few seconds.
@@ -1772,7 +1841,73 @@ Maximal number of requests through a single keep-alive connection until it will 
 <max_keep_alive_requests>10</max_keep_alive_requests>
 ```
 
-## listen_host
+## ldap_servers {#ldap_servers}
+
+List LDAP servers with their connection parameters here to:
+- use them as authenticators for dedicated local users, who have an 'ldap' authentication mechanism specified instead of 'password'
+- use them as remote user directories.
+
+The following settings can be configured by sub-tags:
+
+| Setting                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                              |
+|--------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `host`                         | LDAP server hostname or IP, this parameter is mandatory and cannot be empty.                                                                                                                                                                                                                                                                                                                                                             |
+| `port`                         | LDAP server port, default is 636 if `enable_tls` is set to true, `389` otherwise.                                                                                                                                                                                                                                                                                                                                                        |
+| `bind_dn`                      | Template used to construct the DN to bind to. The resulting DN will be constructed by replacing all `\{user_name\}` substrings of the template with the actual user name during each authentication attempt.                                                                                                                                                                                                                               |
+| `user_dn_detection`            | Section with LDAP search parameters for detecting the actual user DN of the bound user. This is mainly used in search filters for further role mapping when the server is Active Directory. The resulting user DN will be used when replacing `\{user_dn\}` substrings wherever they are allowed. By default, user DN is set equal to bind DN, but once search is performed, it will be updated with to the actual detected user DN value. |
+| `verification_cooldown`        | A period of time, in seconds, after a successful bind attempt, during which a user will be assumed to be successfully authenticated for all consecutive requests without contacting the LDAP server. Specify `0` (the default) to disable caching and force contacting the LDAP server for each authentication request.                                                                                                                  |
+| `enable_tls`                   | Flag to trigger use of secure connection to the LDAP server. Specify `no` for plain text (`ldap://`) protocol (not recommended). Specify `yes` for LDAP over SSL/TLS (`ldaps://`) protocol (recommended, the default). Specify `starttls` for legacy StartTLS protocol (plain text (`ldap://`) protocol, upgraded to TLS).                                                                                                               |
+| `tls_minimum_protocol_version` | The minimum protocol version of SSL/TLS. Accepted values are: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (the default).                                                                                                                                                                                                                                                                                                                |
+| `tls_require_cert`             | SSL/TLS peer certificate verification behavior. Accepted values are: `never`, `allow`, `try`, `demand` (the default).                                                                                                                                                                                                                                                                                                                    |
+| `tls_cert_file`                | path to certificate file.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `tls_key_file`                 | path to certificate key file.                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `tls_ca_cert_file`             | path to CA certificate file.                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `tls_ca_cert_dir`              | path to the directory containing CA certificates.                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tls_cipher_suite`             | allowed cipher suite (in OpenSSL notation).                                                                                                                                                                                                                                                                                                                                                                                              |
+
+Setting `user_dn_detection` can be configured with sub-tags:
+
+| Setting         | Description                                                                                                                                                                                                                                                                                                                                    |
+|-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `base_dn`       | template used to construct the base DN for the LDAP search. The resulting DN will be constructed by replacing all `\{user_name\}` and '\{bind_dn\}' substrings of the template with the actual user name and bind DN during the LDAP search.                                                                                                       |
+| `scope`         | scope of the LDAP search. Accepted values are: `base`, `one_level`, `children`, `subtree` (the default).                                                                                                                                                                                                                                       |
+| `search_filter` | template used to construct the search filter for the LDAP search. The resulting filter will be constructed by replacing all `\{user_name\}`, `\{bind_dn\}`, and `\{base_dn\}` substrings of the template with the actual user name, bind DN, and base DN during the LDAP search. Note, that the special characters must be escaped properly in XML.  |
+
+Example:
+
+```xml
+<my_ldap_server>
+    <host>localhost</host>
+    <port>636</port>
+    <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
+    <verification_cooldown>300</verification_cooldown>
+    <enable_tls>yes</enable_tls>
+    <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
+    <tls_require_cert>demand</tls_require_cert>
+    <tls_cert_file>/path/to/tls_cert_file</tls_cert_file>
+    <tls_key_file>/path/to/tls_key_file</tls_key_file>
+    <tls_ca_cert_file>/path/to/tls_ca_cert_file</tls_ca_cert_file>
+    <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
+    <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
+</my_ldap_server>
+```
+
+Example (typical Active Directory with configured user DN detection for further role mapping):
+
+```xml
+<my_ad_server>
+    <host>localhost</host>
+    <port>389</port>
+    <bind_dn>EXAMPLE\{user_name}</bind_dn>
+    <user_dn_detection>
+        <base_dn>CN=Users,DC=example,DC=com</base_dn>
+        <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+    </user_dn_detection>
+    <enable_tls>no</enable_tls>
+</my_ad_server>
+```
+
+## listen_host {#listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -1841,7 +1976,7 @@ The location and format of log messages.
 | `stream_compress`         | Compress log messages using LZ4. Set to `1` or `true` to enable.                                                                                                                    |
 | `console`                 | Do not write log messages to log files, instead print them in the console. Set to `1` or `true` to enable. Default is `1` if Clickhouse does not run in daemon mode, `0` otherwise. |
 | `console_log_level`       | Log level for console output. Defaults to `level`.                                                                                                                                  |
-| `formatting`              | Log format for console output. Currently, only `json` is supported                                                                                                                  | 
+| `formatting`              | Log format for console output. Currently, only `json` is supported                                                                                                                  |
 | `use_syslog`              | Also forward log output to syslog.                                                                                                                                                  |
 | `syslog_level`            | Log level for logging to syslog.                                                                                                                                                    |
 | `message_regexp`          | Only log messages that match this regular expression. Defaults to `""`, indicating no filtering.                                                                                    |
@@ -1982,7 +2117,7 @@ Keys for `<syslog>`:
 
 **Log formats**
 
-You can specify the log format that will be outputted in the console log. Currently, only JSON is supported. 
+You can specify the log format that will be outputted in the console log. Currently, only JSON is supported.
 
 **Example**
 
@@ -2061,7 +2196,110 @@ Keys:
 </send_crash_reports>
 ```
 
-## macros
+## ssh_server {#ssh_server}
+
+The public part of the host key will be written to the known_hosts file
+on the SSH client side on the first connect.
+
+Host Key Configurations are inactive by default.
+Uncomment the host key configurations, and provide the path to the respective ssh key to active them:
+
+Example:
+
+```xml
+<ssh_server>
+    <host_rsa_key>path_to_the_ssh_key</host_rsa_key>
+    <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key>
+    <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key>
+</ssh_server>
+```
+
+## tcp_ssh_port {#tcp_ssh_port}
+
+Port for the SSH server which allows the user to connect and execute queries in an interactive fashion using the embedded client over the PTY.
+
+Example:
+
+```xml
+<tcp_ssh_port>9022</tcp_ssh_port>
+```
+
+## storage_configuration {#storage_configuration}
+
+Allows for multi-disk configuration of storage.
+
+Storage configuration follows the structure:
+
+```xml
+<storage_configuration>
+    <disks>
+        <!-- configuration -->
+    </disks>
+    <policies>
+        <!-- configuration -->
+    </policies>
+</storage_configuration>
+```
+
+### Configuration of disks {#configuration-of-disks}
+
+Configuration of `disks` follows the structure given below:
+
+```xml
+<storage_configuration>
+    <disks>
+        <disk_name_1>
+            <path>/mnt/fast_ssd/clickhouse/</path>
+        </disk_name_1>
+        <disk_name_2>
+            <path>/mnt/hdd1/clickhouse/</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_2>
+        <disk_name_3>
+            <path>/mnt/hdd2/clickhouse/</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_3>
+        ...
+    </disks>
+</storage_configuration>
+```
+
+The sub-tags above define the following settings for `disks`:
+
+| Setting                 | Description                                                                                           |
+|-------------------------|-------------------------------------------------------------------------------------------------------|
+| `<disk_name_N>`         | The name of the disk, which should be unique.                                                         |
+| `path`                  | The path to which server data will be stored (`data` and `shadow` catalogues). It should end with `/` |
+| `keep_free_space_bytes` | Size of the reserved free space on disk.                                                              |
+
+:::note
+The order of the disks does not matter.
+:::
+
+### Configuration of policies {#configuration-of-policies}
+
+The sub-tags above define the following settings for `policies`:
+
+| Setting                      | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `policy_name_N`              | Name of the policy. Policy names must be unique.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `volume_name_N`              | The volume name. Volume names must be unique.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `disk`                       | The disk located inside the volume.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `max_data_part_size_bytes`   | The maximum size of a chunk of data that can reside on any of the disks in this volume. If the merge results in a chunk size expected to be larger than max_data_part_size_bytes, the chunk will be written to the next volume. Basically this feature allows you to store new / small chunks on a hot (SSD) volume and move them to a cold (HDD) volume when they reach a large size. Do not use this option if the policy has only one volume.                                                                 |
+| `move_factor`                | The share of available free space on the volume. If the space becomes less, the data will start transferring to the next volume, if there is one. For transfer, chunks are sorted by size from larger to smaller (descending) and chunks whose total size is sufficient to meet the `move_factor` condition are selected, if the total size of all chunks is insufficient, all chunks will be moved.                                                                                                             |
+| `perform_ttl_move_on_insert` | Disables moving data with expired TTL on insertion. By default (if enabled), if we insert a piece of data that has already expired according to the move on life rule, it is immediately moved to the volume / disk specified in the move rule. This can significantly slow down insertion in case the target volume / disk is slow (e.g. S3). If disabled, the expired portion of the data is written to the default volume and then immediately moved to the volume specified in the rule for the expired TTL. |
+| `load_balancing`             | Disk balancing policy, `round_robin` or `least_used`.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `least_used_ttl_ms`          | Sets the timeout (in milliseconds) to update the available space on all disks (`0` - always update, `-1` - never update, default value is `60000`). Note, if the disk is only used by ClickHouse and will not be subject to file system resizing on the fly, you can use the `-1` value. In all other cases this is not recommended, as it will eventually lead to incorrect space allocation.                                                                                                                   |
+| `prefer_not_to_merge`        | Disables merging parts of the data on this volume. Note: this is potentially harmful and can cause slowdown. When this setting is enabled (don't do this), merging data on this volume is prohibited (which is bad). This allows control of how ClickHouse interacts with slow disks. We recommend not to use this at all.                                                                                                                                                                                       |
+| `volume_priority`            | Defines the priority (order) in which volumes are filled. The smaller the value, the higher the priority. The parameter values must be natural numbers and cover the range from 1 to N (N is the largest parameter value specified) with no gaps.                                                                                                                                                                                                                                                                |
+
+For the `volume_priority`:
+- If all volumes have this parameter, they are prioritized in the specified order.
+- If only _some_ volumes have it, volumes that do not have it have the lowest priority. Those that do have it are prioritized according to the tag value, the priority of the rest is determined by the order of description in the configuration file relative to each other.
+- If _no_ volumes are given this parameter, their order is determined by the order of the description in the configuration file.
+- The priority of volumes may not be identical.
+
+## macros {#macros}
 
 Parameter substitutions for replicated tables.
 
@@ -2094,7 +2332,23 @@ Type: String
 
 Default: ""
 
-## max_open_files
+## remap_executable {#remap_executable}
+
+Setting to reallocate memory for machine code ("text") using huge pages.
+
+Default: `false`
+
+:::note
+This feature is highly experimental.
+:::
+
+Example:
+
+```xml
+<remap_executable>false</remap_executable>
+```
+
+## max_open_files {#max_open_files}
 
 The maximum number of open files.
 
@@ -2108,7 +2362,19 @@ We recommend using this option in macOS since the `getrlimit()` function returns
 <max_open_files>262144</max_open_files>
 ```
 
-## max_table_size_to_drop
+## max_session_timeout {#max_session_timeout}
+
+Maximum session timeout, in seconds.
+
+Default: `3600`
+
+Example:
+
+```xml
+<max_session_timeout>3600</max_session_timeout>
+```
+
+## max_table_size_to_drop {#max_table_size_to_drop}
 
 Restriction on deleting tables.
 
@@ -2130,12 +2396,12 @@ Default: 50 GB.
 
 ## background_pool_size
 
-Sets the number of threads performing background merges and mutations for tables with MergeTree engines. 
+Sets the number of threads performing background merges and mutations for tables with MergeTree engines.
 
 :::note
-- This setting could also be applied at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start. 
-- You can only increase the number of threads at runtime. 
-- To lower the number of threads you have to restart the server. 
+- This setting could also be applied at server startup from the `default` profile configuration for backward compatibility at the ClickHouse server start.
+- You can only increase the number of threads at runtime.
+- To lower the number of threads you have to restart the server.
 - By adjusting this setting, you manage CPU and disk load.
 :::
 
@@ -2294,7 +2560,32 @@ For more information, see the MergeTreeSettings.h header file.
 </replicated_merge_tree>
 ```
 
-## openSSL
+## opentelemetry_span_log {#opentelemetry_span_log}
+
+Settings for the [`opentelemetry_span_log`](../system-tables/opentelemetry_span_log.md) system table.
+
+<SystemLogParameters/>
+
+Example:
+
+```xml
+<opentelemetry_span_log>
+    <engine>
+        engine MergeTree
+        partition by toYYYYMM(finish_date)
+        order by (finish_date, finish_time_us, trace_id)
+    </engine>
+    <database>system</database>
+    <table>opentelemetry_span_log</table>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</opentelemetry_span_log>
+```
+
+## openSSL {#openssl}
 
 SSL client/server configuration.
 
@@ -2372,10 +2663,10 @@ Use the following parameters to configure logging:
 | `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` defined. |                     |
 | `flush_interval_milliseconds`      | Interval for flushing data from the buffer in memory to the table.                                                                                                                                          |                     |
 | `max_size_rows`                    | Maximal size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk.                                                                                                 | `1048576`           |
-| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              | 
+| `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                            | `8192`              |
 | `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                       | `max_size_rows / 2` |
 | `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash.                                                                                                                                    | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     | 
+| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                      |                     |
 | `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                         |                     |
 
 **Example**
@@ -2558,7 +2849,7 @@ Use the following parameters to configure logging:
 | Parameter                          | Description                                                                                                                                                                                                     | Default Value       |
 |------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
 | `database`                         | Name of the database.                                                                                                                                                                                           |                     |
-| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                         |                     | 
+| `table`                            | Name of the system table the queries will be logged in.                                                                                                                                                         |                     |
 | `partition_by`                     | [Custom partitioning key](../../engines/table-engines/mergetree-family/custom-partitioning-key.md) for a system table. Can't be used if `engine` is defined.                                                                                                                        |                     |
 | `order_by`                         | [Custom sorting key](../../engines/table-engines/mergetree-family/mergetree.md#order_by) for a system table. Can't be used if `engine` is defined.                                                                                                                             |                     |
 | `engine`                           | [MergeTree Engine Definition](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table) for a system table. Can't be used if `partition_by` or `order_by` are defined. |                     |
@@ -2567,7 +2858,7 @@ Use the following parameters to configure logging:
 | `reserved_size_rows`               | Pre-allocated memory size in lines for the logs.                                                                                                                                                                | `8192`              |
 | `buffer_size_rows_flush_threshold` | Lines amount threshold, reaching it launches flushing logs to the disk in background.                                                                                                                           | `max_size_rows / 2` |
 | `flush_on_crash`                   | Indication whether logs should be dumped to the disk in case of a crash                                                                                                                                         | `false`             |
-| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                          |                     |                                                                                                                                         
+| `storage_policy`                   | Name of storage policy to use for the table (optional)                                                                                                                                                          |                     |
 | `settings`                         | [Additional parameters](../../engines/table-engines/mergetree-family/mergetree.md/#settings) that control the behavior of the MergeTree (optional).                                                             |                     |
 
 If the table does not exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
@@ -2776,11 +3067,26 @@ The default server configuration file `config.xml` contains the following settin
 </crash_log>
 ```
 
-## backup_log
+## custom_cached_disks_base_directory {#custom_cached_disks_base_directory}
 
-Settings for the [backup_log](../../operations/system-tables/backup_log.md) system table for logging `BACKUP` and `RESTORE` operations.
+This setting specifies the cache path for custom (created from SQL) cached disks.
+which is used if the former one is absent.
+The filesystem cache setting path must lie inside that directory,
+otherwise an exception will be thrown preventing the disk from being created.
 
-Parameters:
+:::note
+This will not affect disks created on an older version for which the server was upgraded.
+In this case, an exception will not be thrown, to allow the server to successfully start.
+:::
+
+Example:
+
+```xml
+<custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
+```
+
+## backup_log {#backup_log}
+
 
 
 | Parameter                          | Description                                                                                                                                                                                                 | Default Value       |
@@ -2816,11 +3122,25 @@ Parameters:
 </clickhouse>
 ```
 
-## query_masking_rules
+## blog_storage_log {#blog_storage_log}
 
-Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
-[`system.query_log`](/docs/en/operations/system-tables/query_log), [`system.text_log`](/docs/en/operations/system-tables/text_log), [`system.processes`](/docs/en/operations/system-tables/processes) tables, and in logs sent to the client. That allows preventing
-sensitive data leakage from SQL queries such as names, emails, personal identifiers or credit card numbers to logs.
+Settings for the [`blob_storage_log`](../system-tables/blob_storage_log.md) system table.
+<SystemLogParameters/>
+
+Example:
+
+```xml
+<blob_storage_log>
+    <database>system</database
+    <table>blob_storage_log</table
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds
+    <ttl>event_date + INTERVAL 30 DAY</ttl>
+</blob_storage_log>
+```
+
+## query_masking_rules {#query_masking_rules}
+
 
 **Example**
 
@@ -2873,7 +3193,26 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 
 ## timezone
 
-The server’s time zone.
+List of hosts which are allowed to be used in URL-related storage engines and table functions.
+
+When adding a host with the `\<host\>` xml tag:
+- it should be specified exactly as in the URL, as the name is checked before DNS resolution. For example: `<host>clickhouse.com</host>`
+- if the port is explicitly specified in the URL, then host:port is checked as a whole. For example: `<host>clickhouse.com:80</host>`
+- if the host is specified without a port, then any port of the host is allowed. For example: if `<host>clickhouse.com</host>` is specified then `clickhouse.com:20` (FTP), `clickhouse.com:80` (HTTP), `clickhouse.com:443` (HTTPS) etc are allowed.
+- if the host is specified as an IP address, then it is checked as specified in the URL. For example: `[2a02:6b8:a::a]`.
+- if there are redirects and support for redirects is enabled, then every redirect (the location field) is checked.
+
+For example:
+
+```sql
+<remote_url_allow_hosts>
+    <host>clickhouse.com</host>
+</remote_url_allow_hosts>
+```
+
+## timezone {#timezone}
+
+The server's time zone.
 
 Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
 
@@ -3003,7 +3342,62 @@ Path to the file that contains:
 <users_config>users.xml</users_config>
 ```
 
-## wait_dictionaries_load_at_startup
+## validate_tcp_client_information {#validate_tcp_client_information}
+
+Determines whether validation of client information is enabled when a query packet is received.
+
+By default, it is `false`:
+
+```xml
+<validate_tcp_client_information>false</validate_tcp_client_information>
+```
+
+## access_control_improvements {#access_control_improvements}
+
+Settings for optional improvements in the access control system.
+
+| Setting                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Default |
+|-------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| `users_without_row_policies_can_read_rows`      | Sets whether users without permissive row policies can still read rows using a `SELECT` query. For example, if there are two users A and B and a row policy is defined only for A, then if this setting is true, user B will see all rows. If this setting is false, user B will see no rows.                                                                                                                                                                                                                    | `true`  |
+| `on_cluster_queries_require_cluster_grant`      | Sets whether `ON CLUSTER` queries require the `CLUSTER` grant.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `true`  |
+| `select_from_system_db_requires_grant`          | Sets whether `SELECT * FROM system.<table>` requires any grants and can be executed by any user. If set to true then this query requires `GRANT SELECT ON system.<table>` just as for non-system tables. Exceptions: a few system tables (`tables`, `columns`, `databases`, and some constant tables like `one`, `contributors`) are still accessible for everyone; and if there is a `SHOW` privilege (e.g. `SHOW USERS`) granted then the corresponding system table (i.e. `system.users`) will be accessible. | `true`  |
+| `select_from_information_schema_requires_grant` | Sets whether `SELECT * FROM information_schema.<table>` requires any grants and can be executed by any user. If set to true, then this query requires `GRANT SELECT ON information_schema.<table>`, just as for ordinary tables.                                                                                                                                                                                                                                                                                 | `true`  |
+| `settings_constraints_replace_previous`         | Sets whether a constraint in a settings profile for some setting will cancel actions of the previous constraint (defined in other profiles) for that setting, including fields which are not set by the new constraint. It also enables the `changeable_in_readonly` constraint type.                                                                                                                                                                                                                            | `true`  |
+| `table_engines_require_grant`                   | Sets whether creating a table with a specific table engine requires a grant.                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false` |
+| `role_cache_expiration_time_seconds`            | Sets the number of seconds since last access, that a role is stored in the Role Cache.                                                                                                                                                                                                                                                                                                                                                                                                                           | `600`   |
+
+Example:
+
+```xml
+<access_control_improvements>
+    <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
+    <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
+    <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
+    <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
+    <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+    <table_engines_require_grant>false</table_engines_require_grant>
+    <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+</access_control_improvements>
+```
+
+## s3queue_log {#s3queue_log}
+
+Settings for the `s3queue_log` system table.
+
+<SystemLogParameters/>
+
+The default settings are:
+
+```xml
+<s3queue_log>
+    <database>system</database>
+    <table>s3queue_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</s3queue_log>
+```
+
+## wait_dictionaries_load_at_startup {#wait_dictionaries_load_at_startup}
 
 This setting allows to specify behavior if `dictionaries_lazy_load` is `false`.
 (If `dictionaries_lazy_load` is `true` this setting doesn't affect anything.)
@@ -3090,7 +3484,7 @@ Storage method for data part headers in ZooKeeper. This setting only applies to 
 
 ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
 
-**For each table** 
+**For each table**
 
 When creating a table, specify the corresponding [engine setting](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-creating-a-table). The behaviour of an existing table with this setting does not change, even if the global setting changes.
 
@@ -3167,7 +3561,60 @@ Type: String
 
 Default: `/var/lib/clickhouse/access/`.
 
-## user_directories
+## allow_plaintext_password {#allow_plaintext_password}
+
+Sets whether plaintext-password types (insecure) are allowed or not.
+
+Default: `1` (authType plaintext_password is allowed)
+
+```xml
+<allow_plaintext_password>1</allow_plaintext_password>
+```
+
+## allow_no_password {#allow_no_password}
+
+Sets whether an insecure password type of no_password is allowed or not.
+
+Default: `1` (authType no_password is allowed)
+
+```xml
+<allow_no_password>1</allow_no_password>
+```
+
+## allow_implicit_no_password {#allow_implicit_no_password}
+
+Forbids creating a user with no password unless 'IDENTIFIED WITH no_password' is explicitly specified.
+
+Default: `1`
+
+```xml
+<allow_implicit_no_password>1</allow_implicit_no_password>
+```
+## default_session_timeout {#default_session_timeout}
+
+Default session timeout, in seconds.
+
+Default: `60`
+
+```xml
+<default_session_timeout>60</default_session_timeout>
+```
+
+## default_password_type {#default_password_type}
+
+Sets the password type to be automatically set for in queries like `CREATE USER u IDENTIFIED BY 'p'`.
+
+Accepted values are:
+- `plaintext_password`
+- `sha256_password`
+- `double_sha1_password`
+- `bcrypt_password`
+
+```xml
+<default_password_type>sha256_password</default_password_type>
+```
+
+## user_directories {#user_directories}
 
 Section of the configuration file that contains settings:
 - Path to configuration file with predefined users.
@@ -3225,7 +3672,23 @@ To add an LDAP server as a remote user directory of users that are not defined l
 </ldap>
 ```
 
-## total_memory_profiler_step
+## top_level_domains_list {#top_level_domains_list}
+
+Defines a list of custom top level domains to add where each entry is, of the format `<name>/path/to/file</name>`.
+
+For example:
+
+```xml
+<top_level_domains_lists>
+    <public_suffix_list>/path/to/public_suffix_list.dat</public_suffix_list>
+</top_level_domains_lists>
+```
+
+See also:
+- function [`cutToFirstSignificantSubdomainCustom`](../../sql-reference/functions/url-functions.md/#cuttofirstsignificantsubdomaincustom) and variations thereof,
+which accepts a custom TLD list name, returning the part of the domain that includes top-level subdomains up to the first significant subdomain.
+
+## total_memory_profiler_step {#total_memory_profiler_step}
 
 Sets the memory size (in bytes) for a stack trace at every peak allocation step. The data is stored in the [system.trace_log](../../operations/system-tables/trace_log.md) system table with `query_id` equal to an empty string.
 
@@ -3274,7 +3737,7 @@ Default: `0`
 
 Define proxy servers for HTTP and HTTPS requests, currently supported by S3 storage, S3 table functions, and URL functions.
 
-There are three ways to define proxy servers: 
+There are three ways to define proxy servers:
 - environment variables
 - proxy lists
 - remote proxy resolvers.
@@ -3557,7 +4020,7 @@ Changing this setting does not affect existing users. Create/alter authenticatio
 Non authentication create/alter queries will succeed.
 
 :::note
-A value of `0` means unlimited. 
+A value of `0` means unlimited.
 :::
 
 Type: UInt64
