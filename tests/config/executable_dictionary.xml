@@ -74,7 +74,7 @@
     <source>
         <executable>
             <format>TabSeparated</format>
-            <command>awk -F'\t' '{print $1"\t"$2"\t"$1+$2"\t"$1*$2}'</command>
+            <command>awk -F'\t' '{printf "%s\t%s\t%.0f\t%.0f\n", $1, $2, $1+$2, $1*$2}'</command>
         </executable>
     </source>
     <lifetime>0</lifetime>
