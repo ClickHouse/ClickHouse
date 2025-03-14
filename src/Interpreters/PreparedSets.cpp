@@ -168,18 +168,6 @@ FutureSetFromSubquery::FutureSetFromSubquery(
     set_and_key->set = std::make_shared<Set>(size_limits, max_size_for_index, transform_null_in);
 }
 
-// FutureSetFromSubquery::FutureSetFromSubquery(
-//     Hash hash_,
-//     const ColumnsWithTypeAndName & header)
-//     : hash(hash_)
-// {
-//     set_and_key = std::make_shared<SetAndKey>();
-//     set_and_key->key = PreparedSets::toString(hash_, {});
-
-//     set_and_key->set = std::make_shared<Set>(SizeLimits(), 0, false);
-//     set_and_key->set->setHeader(header);
-// }
-
 FutureSetFromSubquery::~FutureSetFromSubquery() = default;
 
 SetPtr FutureSetFromSubquery::get() const
@@ -229,21 +217,6 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
     plan->addStep(std::move(creating_set));
     return plan;
 }
-
-// std::unique_ptr<IQueryPlanStep> FutureSetFromSubquery::build(const Header & input_header)
-// {
-//     if (set_and_key->set->isCreated())
-//         return nullptr;
-
-//     auto creating_set = std::make_unique<CreatingSetStep>(
-//         input_header,
-//         set_and_key,
-//         nullptr,
-//         SizeLimits(),
-//         nullptr);
-//     creating_set->setStepDescription("Create set for subquery");
-//     return creating_set;
-// }
 
 void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
 {

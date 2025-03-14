@@ -111,10 +111,6 @@ private:
 
 using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
 
-class Block;
-using Header = Block;
-class IQueryPlanStep;
-
 /// Set from subquery can be filled (by running the subquery) in one of two ways:
 ///  1. During query analysis. Specifically, inside `SourceStepWithFilter::applyFilters()`.
 ///     Useful if the query plan depends on the set contents, e.g. to determine which files to read.
@@ -148,10 +144,6 @@ public:
         SizeLimits size_limits,
         size_t max_size_for_index);
 
-    // FutureSetFromSubquery(
-    //     Hash hash_,
-    //     const ColumnsWithTypeAndName & header);
-
     ~FutureSetFromSubquery() override;
 
     SetPtr get() const override;
@@ -163,7 +155,7 @@ public:
     std::unique_ptr<QueryPlan> build(
         const SizeLimits & network_transfer_limits,
         const PreparedSetsCachePtr & prepared_sets_cache);
-    // std::unique_ptr<IQueryPlanStep> build(const Header & input_header);
+
     void buildSetInplace(const ContextPtr & context);
 
     QueryTreeNodePtr detachQueryTree() { return std::move(query_tree); }

@@ -1,19 +1,21 @@
 #include "UserDefinedSQLFunctionVisitor.h"
 
+#include <stack>
 #include <unordered_map>
 #include <unordered_set>
-#include <stack>
 
-#include <Parsers/ASTAlterQuery.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTCreateFunctionQuery.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTIdentifier.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
-#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/ASTCreateFunctionQuery.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 
 
 namespace DB
@@ -25,7 +27,8 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int UNSUPPORTED_METHOD;
+extern const int BAD_ARGUMENTS;
+extern const int UNSUPPORTED_METHOD;
 }
 
 void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
@@ -99,6 +102,17 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
             create_function_query->getFunctionName(),
             identifiers_raw.size(),
             function_arguments.size());
+
+    for (auto & arg : function_arguments)
+    {
+        if (arg->as<ASTAsterisk>() || arg->as<ASTQualifiedAsterisk>() || arg->as<ASTColumnsRegexpMatcher>()
+            || arg->as<ASTColumnsListMatcher>() || arg->as<ASTQualifiedColumnsRegexpMatcher>() || arg->as<ASTQualifiedColumnsListMatcher>())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "It is not possible to replace a variadic argument '{}' in UDF {}",
+                arg->getColumnName(),
+                function.name);
+    }
 
     std::unordered_map<std::string, ASTPtr> identifier_name_to_function_argument;
 

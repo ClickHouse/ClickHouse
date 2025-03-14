@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/
-sidebar_label: Aggregate Functions
+description: 'Documentation for Aggregate Functions'
+sidebar_label: 'Aggregate Functions'
 sidebar_position: 33
+slug: /sql-reference/aggregate-functions/
+title: 'Aggregate Functions'
 ---
 
 # Aggregate Functions
