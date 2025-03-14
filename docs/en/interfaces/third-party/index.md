@@ -3,7 +3,7 @@ description: 'Overview of third-party tools, libraries and integrations availabl
   for ClickHouse'
 sidebar_position: 24
 slug: /interfaces/third-party/
-toc_folder_title: Third-Party
+toc_folder_title: 'Third-Party'
 ---
 
 # Third-Party Interfaces
