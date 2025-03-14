@@ -55,6 +55,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"enable_block_offset_column", CHSetting(trueOrFalse, {}, false)},
     {"enable_index_granularity_compression", CHSetting(trueOrFalse, {}, false)},
     {"enable_mixed_granularity_parts", CHSetting(trueOrFalse, {}, false)},
+    {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", CHSetting(trueOrFalse, {}, false)},
     {"enable_vertical_merge_algorithm", CHSetting(trueOrFalse, {}, false)},
     {"enforce_index_structure_match_on_partition_manipulation", CHSetting(trueOrFalse, {}, false)},
     {"exclude_deleted_rows_for_part_size_in_merge", CHSetting(trueOrFalse, {}, false)},

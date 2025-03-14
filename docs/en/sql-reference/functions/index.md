@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/functions
-title: Functions
-description: Landing page for Functions
+description: 'Documentation for Index'
 sidebar: sqlreference
+slug: /sql-reference/functions
+title: 'Landing page for Functions'
 ---
 
 | Page                                                                | Description                                                                                            |

@@ -1,8 +1,9 @@
 ---
-slug: /operations/named-collections
+description: 'Documentation for Named collections'
+sidebar_label: 'Named collections'
 sidebar_position: 69
-sidebar_label: "Named collections"
-title: "Named collections"
+slug: /operations/named-collections
+title: 'Named collections'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
