@@ -11,7 +11,7 @@ COPY --from=clickhouse/cctools:d9e3596e706b /cctools /cctools
 ENV RUSTUP_HOME=/rust/rustup
 ENV CARGO_HOME=/rust/cargo
 ENV PATH="/rust/cargo/bin:${PATH}"
-ENV RUSTUP_VERSION=1.27.0
+ENV RUSTUP_VERSION=1.28.1
 
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "x86_64" ]; then \
