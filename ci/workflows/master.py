@@ -4,8 +4,8 @@ from ci.defs.defs import BASE_BRANCH, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.workflows.pull_request import (
-    REQUIRED_STATELESS_TESTS_JOB_NAMES,
     REGULAR_BUILD_NAMES,
+    REQUIRED_STATELESS_TESTS_JOB_NAMES,
 )
 
 workflow = Workflow.Config(
