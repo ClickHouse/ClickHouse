@@ -1992,8 +1992,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         }
     }
 
-    bool is_initial = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
-    if (!internal && is_initial)
+    bool is_initial_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
+    if (!internal && is_initial_query)
         throwIfTooManyEntities(create, res);
 
     database->createTable(getContext(), create.getTable(), res, query_ptr);
