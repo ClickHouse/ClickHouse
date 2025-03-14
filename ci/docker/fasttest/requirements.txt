@@ -3,4 +3,4 @@ numpy==1.26.4
 requests==2.32.3
 pandas==1.5.3
 scipy==1.12.0
-urllib3==1.26.5
+urllib3==1.26.19
