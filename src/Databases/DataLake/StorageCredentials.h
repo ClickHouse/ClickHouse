@@ -8,7 +8,7 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-namespace Iceberg
+namespace DataLake
 {
 
 class IStorageCredentials
