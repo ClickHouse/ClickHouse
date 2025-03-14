@@ -686,6 +686,9 @@ void Pipe::addChains(std::vector<Chain> chains)
 void Pipe::addSplitResizeTransform(size_t num_streams, size_t groups, bool strict)
 {
     /// The caller guarantees that the numbers of input/output ports are divisible by the number of groups.
+    assert(numOutputPorts() % groups == 0);
+    assert(num_streams % groups == 0);
+
     const size_t num_inputs = numOutputPorts() / groups;
     const size_t num_outputs = num_streams / groups;
     OutputPortRawPtrs resize_output_ports(num_streams);
