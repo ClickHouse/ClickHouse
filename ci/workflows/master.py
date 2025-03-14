@@ -1,11 +1,11 @@
 from praktika import Workflow
 
-from ci.defs.defs import BASE_BRANCH, SECRETS, ArtifactConfigs
+from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 from ci.workflows.pull_request import (
-    REQUIRED_STATELESS_TESTS_JOB_NAMES,
     REGULAR_BUILD_NAMES,
+    REQUIRED_STATELESS_TESTS_JOB_NAMES,
 )
 
 workflow = Workflow.Config(
@@ -56,7 +56,8 @@ workflow = Workflow.Config(
         *ArtifactConfigs.performance_packages,
         *ArtifactConfigs.performance_reports,
     ],
-    # dockers=DOCKERS,
+    dockers=DOCKERS,
+    disable_dockers_build=True,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,
