@@ -27,6 +27,7 @@
 
 #include <IO/S3/Credentials.h>
 #include <IO/S3/Client.h>
+#include <IO/S3Settings.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
@@ -41,6 +42,8 @@ namespace DB::Setting
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool enable_s3_requests_logging;
+    extern const SettingsUInt64 s3_connect_timeout_ms;
+    extern const SettingsUInt64 s3_request_timeout_ms;
 }
 
 namespace DB::StorageObjectStorageSetting
@@ -165,8 +168,8 @@ GlueCatalog::GlueCatalog(
 
     Aws::Glue::GlueClientConfiguration client_configuration;
     client_configuration.maxConnections = static_cast<unsigned>(global_settings[DB::Setting::s3_max_connections]);
-    client_configuration.connectTimeoutMs = 10 * 1000;
-    client_configuration.requestTimeoutMs = 30 * 1000;
+    client_configuration.connectTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_connect_timeout_ms]);
+    client_configuration.requestTimeoutMs = static_cast<unsigned>(global_settings[DB::Setting::s3_request_timeout_ms]);
     client_configuration.region = region;
     auto endpoint_provider = std::make_shared<Aws::Glue::GlueEndpointProvider>();
 
