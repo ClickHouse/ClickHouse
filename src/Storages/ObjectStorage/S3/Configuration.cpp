@@ -115,6 +115,11 @@ StorageS3Configuration::StorageS3Configuration(const StorageS3Configuration & ot
 StorageObjectStorage::QuerySettings StorageS3Configuration::getQuerySettings(const ContextPtr & context) const
 {
     const auto & settings = context->getSettingsRef();
+    LOG_DEBUG(
+        &Poco::Logger::get("StorageS3Configuration"),
+        "getQuerySettings: truncate_on_insert: {}, create_new_file_on_insert: {}",
+        settings[Setting::s3_truncate_on_insert],
+        settings[Setting::s3_create_new_file_on_insert]);
     return StorageObjectStorage::QuerySettings{
         .truncate_on_insert = settings[Setting::s3_truncate_on_insert],
         .create_new_file_on_insert = settings[Setting::s3_create_new_file_on_insert],
@@ -192,6 +197,17 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
 void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_structure)
 {
     size_t count = StorageURL::evalArgsAndCollectHeaders(args, headers_from_ast, context);
+
+    LOG_DEBUG(
+        &Poco::Logger::get("fromASG"),
+        "s3_truncate_on_insert changed: {}, s3_truncate_on_insert setting: {}, s3_create_new_file_on_insert changed: {}, "
+        "s3_create_new_file_on_insert setting: {}",
+        context->getSettingsRef()[Setting::s3_truncate_on_insert].changed,
+        context->getSettingsRef()[Setting::s3_truncate_on_insert],
+        context->getSettingsRef()[Setting::s3_create_new_file_on_insert].changed,
+        context->getSettingsRef()[Setting::s3_create_new_file_on_insert]);
+
+    LOG_DEBUG(&Poco::Logger::get("StorageS3Configuration"), "fromAST: count: {}, with_structure: {}", count, with_structure);
 
     if (count == 0 || count > getMaxNumberOfArguments(with_structure))
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,

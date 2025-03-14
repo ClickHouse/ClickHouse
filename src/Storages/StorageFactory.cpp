@@ -1,12 +1,13 @@
-#include <Storages/StorageFactory.h>
-#include <Interpreters/Context.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Storages/StorageFactory.h>
+#include "Common/logger_useful.h"
+#include <Common/Exception.h>
+#include <Common/StringUtils.h>
 
 namespace DB
 {
@@ -72,6 +73,23 @@ StoragePtr StorageFactory::get(
     String name, comment;
 
     ASTStorage * storage_def = query.storage;
+
+    LOG_DEBUG(&Poco::Logger::get("StorageFactory::Get"), "storage_def {}", storage_def != nullptr);
+
+    if (storage_def)
+    {
+        LOG_DEBUG(&Poco::Logger::get("StorageFactory::Get"), "storage_def->settings {}", storage_def->settings != nullptr);
+        if (storage_def->settings)
+        {
+            LOG_DEBUG(&Poco::Logger::get("StorageFactory::Get"), "storage_def->setting size: {}", storage_def->settings->changes.size());
+
+            for (const auto & change : storage_def->settings->changes)
+            {
+                LOG_DEBUG(&Poco::Logger::get("StorageFactory::Get"), "Applying change: {} = {}", change.name, change.value);
+            }
+        }
+    }
+
 
     bool has_engine_args = false;
 

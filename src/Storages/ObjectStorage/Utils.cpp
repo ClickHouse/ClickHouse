@@ -17,9 +17,16 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
     const String & key,
     size_t sequence_number)
 {
+    LOG_DEBUG(
+        &Poco::Logger::get("StorageObjectStorage"),
+        "checkAndGetNewFileOnInsertIfNeeded: truncate_on_insert: {}, create_new_file_on_insert: {}",
+        settings.truncate_on_insert,
+        settings.create_new_file_on_insert);
+
     if (settings.truncate_on_insert
         || !object_storage.exists(StoredObject(key)))
         return std::nullopt;
+
 
     if (settings.create_new_file_on_insert)
     {

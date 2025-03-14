@@ -35,6 +35,8 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsBool optimize_count_from_files;
     extern const SettingsBool use_hive_partitioning;
+    extern const SettingsBool s3_truncate_on_insert;
+    extern const SettingsBool s3_create_new_file_on_insert;
 }
 
 namespace ErrorCodes
@@ -133,6 +135,16 @@ StorageObjectStorage::StorageObjectStorage(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
     metadata.setComment(comment);
+
+
+    LOG_DEBUG(
+        &Poco::Logger::get("StorageObjectStorage"),
+        "s3_truncate_on_insert changed: {}, s3_truncate_on_insert setting: {}, s3_create_new_file_on_insert changed: {}, "
+        "s3_create_new_file_on_insert setting: {}",
+        context->getSettingsRef()[Setting::s3_truncate_on_insert].changed,
+        context->getSettingsRef()[Setting::s3_truncate_on_insert],
+        context->getSettingsRef()[Setting::s3_create_new_file_on_insert].changed,
+        context->getSettingsRef()[Setting::s3_create_new_file_on_insert]);
 
     if (sample_path.empty() && context->getSettingsRef()[Setting::use_hive_partitioning])
         sample_path = getPathSample(context);

@@ -29,9 +29,29 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorage::ConfigurationPtr configuration, ContextPtr context)
 {
     auto & engine_args = args.engine_args;
+
+
     if (engine_args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
+    LOG_DEBUG(&Poco::Logger::get("StorageObjectStorageSettings"), "args.storage_def->settings {}", args.storage_def->settings != nullptr);
+
+    std::string stack_trace = StackTrace().toString();
+
+    LOG_DEBUG(&Poco::Logger::get("StorageObjectStorageSettings"), "stack_trace: {}", stack_trace);
+
+    if (args.storage_def->settings)
+    {
+        LOG_DEBUG(
+            &Poco::Logger::get("StorageObjectStorageSettings"),
+            "args.storage_def->setting size: {}",
+            args.storage_def->settings->changes.size());
+
+        for (const auto & change : args.storage_def->settings->changes)
+        {
+            LOG_DEBUG(&Poco::Logger::get("StorageObjectStorageSettings"), "Applying change: {} = {}", change.name, change.value);
+        }
+    }
 
     auto queue_settings = std::make_unique<StorageObjectStorageSettings>();
 

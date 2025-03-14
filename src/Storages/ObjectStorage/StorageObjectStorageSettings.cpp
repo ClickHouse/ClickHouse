@@ -64,7 +64,17 @@ void StorageObjectStorageSettings::loadFromQuery(ASTStorage & storage_def)
 {
     if (storage_def.settings)
     {
-        impl->applyChanges(storage_def.settings->changes);
+        SettingsChanges changes;
+        for (const auto & change : storage_def.settings->changes)
+        {
+            if (change.name != "allow_dynamic_metadata_for_data_lakes")
+            {
+                continue;
+            }
+            changes.insertSetting(change.name, change.value);
+            LOG_DEBUG(&Poco::Logger::get("StorageObjectStorageSettings"), "Applying change: {} = {}", change.name, change.value);
+        }
+        impl->applyChanges(changes);
     }
 }
 

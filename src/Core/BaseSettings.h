@@ -10,6 +10,8 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/SettingsChanges.h>
 
+#include <Common/logger_useful.h>
+
 
 namespace boost::program_options
 {
@@ -319,7 +321,10 @@ template <typename TTraits>
 void BaseSettings<TTraits>::applyChanges(const SettingsChanges & changes)
 {
     for (const auto & change : changes)
+    {
+        LOG_DEBUG(&Poco::Logger::get("BaseSettings"), "Applying change: {} = {}", change.name, change.value);
         applyChange(change);
+    }
 }
 
 template <typename TTraits>
