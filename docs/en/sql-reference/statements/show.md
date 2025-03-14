@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/show
+description: 'Documentation for Show'
+sidebar_label: 'SHOW'
 sidebar_position: 37
-sidebar_label: SHOW
-title: SHOW Statements
+slug: /sql-reference/statements/show
+title: 'SHOW Statements'
 ---
 
 :::note

@@ -1,10 +1,11 @@
 ---
-title: JSONObjectEachRow
-slug: /interfaces/formats/JSONObjectEachRow
-keywords: [JSONObjectEachRow]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the JSONObjectEachRow format'
+input_format: true
+keywords: ['JSONObjectEachRow']
+output_format: true
+slug: /interfaces/formats/JSONObjectEachRow
+title: 'JSONObjectEachRow'
 ---
 
 | Input | Output | Alias |

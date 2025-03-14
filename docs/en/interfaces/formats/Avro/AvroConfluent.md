@@ -1,10 +1,11 @@
 ---
-title: AvroConfluent
-slug: /interfaces/formats/AvroConfluent
-keywords: [AvroConfluent]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the AvroConfluent format'
+input_format: true
+keywords: ['AvroConfluent']
+output_format: false
+slug: /interfaces/formats/AvroConfluent
+title: 'AvroConfluent'
 ---
 
 import DataTypesMatching from './_snippets/data-types-matching.md'

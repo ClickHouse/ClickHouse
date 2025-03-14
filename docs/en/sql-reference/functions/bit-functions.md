@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/bit-functions
+description: 'Documentation for Bit Functions'
+sidebar_label: 'Bit'
 sidebar_position: 20
-sidebar_label: Bit
+slug: /sql-reference/functions/bit-functions
+title: 'Bit Functions'
 ---
 
 # Bit Functions
