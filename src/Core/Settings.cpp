@@ -6095,7 +6095,10 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
-Allow experimental database engine Iceberg
+Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_unity_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
 Enable Kusto Query Language (KQL) - an alternative to SQL.
