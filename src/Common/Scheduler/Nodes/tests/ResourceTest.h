@@ -296,6 +296,7 @@ struct ResourceTestManager : public ResourceTestBase
 {
     ResourceManagerPtr manager;
 
+    std::mutex threads_mutex;
     std::vector<ThreadFromGlobalPool> threads;
     std::barrier<> busy_period;
 
@@ -380,8 +381,16 @@ struct ResourceTestManager : public ResourceTestBase
         wait();
     }
 
+    void wait(size_t thread_id)
+    {
+        std::scoped_lock lock{threads_mutex};
+        if (threads[thread_id].joinable())
+            threads[thread_id].join();
+    }
+
     void wait()
     {
+        std::scoped_lock lock{threads_mutex};
         for (auto & thread : threads)
         {
             if (thread.joinable())
