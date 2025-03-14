@@ -1844,6 +1844,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
+    // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
     auto full_data_path = fs::path{getContext()->getPath()} / data_path;
 
     if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
