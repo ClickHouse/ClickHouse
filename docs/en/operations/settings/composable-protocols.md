@@ -1,9 +1,10 @@
 ---
-slug: /operations/settings/composable-protocols
+description: 'Composable protocols allows more flexible configuration of TCP access
+  to the ClickHouse server.'
+sidebar_label: 'Composable Protocols'
 sidebar_position: 64
-sidebar_label: Composable Protocols
-title: "Composable Protocols"
-description: "Composable protocols allows more flexible configuration of TCP access to the ClickHouse server."
+slug: /operations/settings/composable-protocols
+title: 'Composable Protocols'
 ---
 
 # Composable Protocols

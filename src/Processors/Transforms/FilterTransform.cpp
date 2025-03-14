@@ -8,11 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
-#include <Storages/MergeTree/MergeTreeData.h>
-#include <Processors/IProcessor.h>
 #include <Processors/Chunk.h>
-
-#include <memory>
 
 namespace ProfileEvents
 {

@@ -47,7 +47,7 @@ private:
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
 
-    /// If `condition_hash` is not null, the query condition cache needs to be updated at runtime.
+    /// If 'condition_hash' is set, we need to update the query condition cache at runtime.
     std::optional<size_t> condition_hash;
     std::shared_ptr<QueryConditionCache> query_condition_cache;
     /// Merge mark info from the same part and write them to the query condition cache once.

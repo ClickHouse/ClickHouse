@@ -34,6 +34,5 @@ RUN mkdir /output_path \
 COPY run.sh /run.sh
 COPY --from=htmltest-builder /usr/bin/htmltest /usr/bin/htmltest
 
-# Rebuilt in PR #76583
 ENTRYPOINT ["/run.sh"]
-# Rebuilt in PR #76699
+# Rebuilt Thu 13 Mar 18:53

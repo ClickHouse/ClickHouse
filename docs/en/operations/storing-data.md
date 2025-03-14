@@ -1,8 +1,9 @@
 ---
-slug: /operations/storing-data
+description: 'Documentation for highlight-next-line'
+sidebar_label: 'External Disks for Storing Data'
 sidebar_position: 68
-sidebar_label: "External Disks for Storing Data"
-title: "External Disks for Storing Data"
+slug: /operations/storing-data
+title: 'External Disks for Storing Data'
 ---
 
 Data, processed in ClickHouse, is usually stored in the local file system — on the same machine with the ClickHouse server. That requires large-capacity disks, which can be expensive enough. To avoid that you can store the data remotely. Various storages are supported:

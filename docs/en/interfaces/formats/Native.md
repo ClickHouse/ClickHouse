@@ -1,10 +1,11 @@
 ---
-title: Native
-slug: /interfaces/formats/Native
-keywords: [Native]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the Native format'
+input_format: true
+keywords: ['Native']
+output_format: true
+slug: /interfaces/formats/Native
+title: 'Native'
 ---
 
 | Input | Output | Alias |

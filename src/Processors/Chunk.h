@@ -2,7 +2,7 @@
 
 #include <Columns/IColumn_fwd.h>
 #include <Common/CollectionOfDerived.h>
-#include <Columns/IColumn.h>
+#include <Core/Types_fwd.h>
 #include <Storages/MergeTree/MarkRange.h>
 
 #include <memory>
@@ -158,9 +158,8 @@ public:
 
 using AsyncInsertInfoPtr = std::shared_ptr<AsyncInsertInfo>;
 
-class IMergeTreeDataPart;
-
-/// The query condition cache needs to know the mark ranges of which part the chunk data comes from.
+/// Lineage information: from which table, part and mark range does the chunk come from?
+/// This information is needed by the query condition cache.
 class MarkRangesInfo : public ChunkInfoCloneable<MarkRangesInfo>
 {
 public:
