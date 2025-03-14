@@ -2,6 +2,7 @@
 
 #include <IO/Progress.h>
 #include <Interpreters/ProcessList.h>
+#include "Common/CurrentThread.h"
 #include "Common/Logger.h"
 #include "Common/logger_useful.h"
 #include <Common/ProfileEvents.h>

@@ -189,38 +189,19 @@ Block InterpreterInsertQuery::getSampleBlock(
         names.emplace_back(std::move(current_name));
     }
 
-    return getSampleBlockImpl(names, table, metadata_snapshot, no_destination, allow_materialized);
+    return getSampleBlock(names, table, metadata_snapshot, no_destination, allow_materialized);
 }
 
-std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
-{
-    auto const * insert_query = query_ptr->as<ASTInsertQuery>();
-    if (!insert_query || !insert_query->columns)
-        return std::nullopt;
-
-    auto table = DatabaseCatalog::instance().getTable(getDatabaseTable(), getContext());
-    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query->columns);
-    Names names;
-    names.reserve(columns_ast->children.size());
-    for (const auto & identifier : columns_ast->children)
-    {
-        std::string current_name = identifier->getColumnName();
-        names.emplace_back(std::move(current_name));
-    }
-
-    return names;
-}
-
-Block InterpreterInsertQuery::getSampleBlockImpl(
+Block InterpreterInsertQuery::getSampleBlock(
     const Names & names,
     const StoragePtr & table,
     const StorageMetadataPtr & metadata_snapshot,
-    bool no_destination,
+    bool allow_virtuals,
     bool allow_materialized)
 {
     Block table_sample_physical = metadata_snapshot->getSampleBlock();
     Block table_sample_virtuals;
-    if (no_destination)
+    if (allow_virtuals)
         table_sample_virtuals = table->getVirtualsHeader();
 
     Block table_sample_insertable = metadata_snapshot->getSampleBlockInsertable();
@@ -255,6 +236,25 @@ Block InterpreterInsertQuery::getSampleBlockImpl(
             res.insert(ColumnWithTypeAndName(table_sample_insertable.getByName(current_name).type, current_name));
     }
     return res;
+}
+
+std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
+{
+    auto const * insert_query = query_ptr->as<ASTInsertQuery>();
+    if (!insert_query || !insert_query->columns)
+        return std::nullopt;
+
+    auto table = DatabaseCatalog::instance().getTable(getDatabaseTable(), getContext());
+    const auto columns_ast = processColumnTransformers(getContext()->getCurrentDatabase(), table, table->getInMemoryMetadataPtr(), insert_query->columns);
+    Names names;
+    names.reserve(columns_ast->children.size());
+    for (const auto & identifier : columns_ast->children)
+    {
+        std::string current_name = identifier->getColumnName();
+        names.emplace_back(std::move(current_name));
+    }
+
+    return names;
 }
 
 static bool hasAggregateFunctions(const IAST * ast)
@@ -505,7 +505,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         sink_streams_size = 1;
     }
 
-    auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block, async_insert, getContext());
+    // when insert is initiated from FileLog or similar storages
+    // they are allowed to expose its virtuals colums
+    bool allow_virtuals = no_destination;
+    auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block,
+        async_insert, allow_virtuals, allow_materialized,
+        getContext());
 
     std::vector<Chain> presink_chains;
     for (size_t i = 0; i < presink_streams_size; ++i)
@@ -581,7 +586,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     auto metadata_snapshot = table->getInMemoryMetadataPtr();
     auto query_sample_block = getSampleBlock(query, table, metadata_snapshot, getContext(), no_destination, allow_materialized);
 
-    auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block, async_insert, getContext());
+    // when insert is initiated from FileLog or similar storages
+    // they are allowed to expose its virtuals colums to the dependant views
+    bool allow_virtuals = no_destination;
+    auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block,
+        async_insert, allow_virtuals, allow_materialized,
+        getContext());
 
     Chain chain = views_manager->createPreSink();
     if (!no_destination)

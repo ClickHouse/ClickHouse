@@ -289,8 +289,6 @@ public:
             if (!first_exception)
                 first_exception = status.exception;
 
-
-
             if (!views_manager->materialized_views_ignore_errors)
             {
                 return Status::Ready;
@@ -448,6 +446,7 @@ private:
         }
     };
 
+
     QueryPipeline process(Block data_block, Chunk::ChunkInfoCollection && chunk_infos)
     {
         /// We create a table with the same name as original table and the same alias columns,
@@ -514,13 +513,17 @@ private:
 ViewsManager::StorageIDPrivate ViewsManager::VisitedPath::empty_id = {};
 
 
-ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, bool async_insert_, ContextPtr context)
+ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header,
+    bool async_insert_, bool allow_virtuals_, bool allow_materialized_,
+    ContextPtr context)
     : init_table_id(table->getStorageID())
     , init_storage(table)
     , init_query(query)
     , init_header(std::move(insert_header))
     , init_context(context)
     , async_insert(async_insert_)
+    , allow_virtuals(allow_virtuals_)
+    , allow_materialized(allow_materialized_)
     , logger(getLogger("ViewsManager"))
 {
     deduplicate_blocks_in_dependent_materialized_views = init_context->getSettingsRef()[Setting::deduplicate_blocks_in_dependent_materialized_views];
@@ -558,6 +561,8 @@ Chain ViewsManager::createPostSink() const
 void ViewsManager::buildRelaitions()
 {
     LOG_DEBUG(logger, "buildRelaitions: {}", init_table_id);
+
+    LOG_DEBUG(logger, "init header {}", init_header.dumpStructure());
 
     class VisitedPath
     {
@@ -661,7 +666,6 @@ void ViewsManager::buildRelaitions()
         metadata_snapshots[current] = metadata;
         storage_locks[current] = std::move(lock);
 
-
         if (dynamic_cast<StorageMaterializedView *>(storage.get()))
         {
             if (current == init_table_id)
@@ -673,7 +677,7 @@ void ViewsManager::buildRelaitions()
 
                 input_headers[current] = init_header;
                 select_headers[current] = init_header;
-                output_headers[current] = metadata->getSampleBlock();
+                // output_headers is filled at next call register_path
 
                 thread_groups[current] = CurrentThread::getGroup();
 
@@ -708,6 +712,7 @@ void ViewsManager::buildRelaitions()
             select_queries[current] = select_query;
             input_headers[current] = output_headers.at(path.prevParent());
             select_headers[current] = select_header;
+
             select_contexts[current] = select_context;
             insert_contexts[current] = insert_context;
             // output_headers is filled at next call register_path
@@ -809,7 +814,7 @@ void ViewsManager::buildRelaitions()
 
                 input_headers[{}] = init_header;
                 select_headers[{}] = init_header;
-                output_headers[{}] = metadata->getSampleBlock();
+                output_headers[{}] = InterpreterInsertQuery::getSampleBlock(init_header.getNames(), storage, metadata, allow_virtuals, allow_materialized);
 
                 thread_groups[{}] = CurrentThread::getGroup();
 
@@ -827,7 +832,10 @@ void ViewsManager::buildRelaitions()
             }
 
             const auto & view_id = path.parent();
-            output_headers[view_id] = metadata->getSampleBlock();
+
+            // virtuals are allowed only for the first insertion
+            bool allow_virtuals_ = false;
+            output_headers[view_id] = InterpreterInsertQuery::getSampleBlock(select_headers.at(view_id).getNames(), storage, metadata, allow_virtuals_, allow_materialized);
 
             // TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
             auto view_storage = storages.at(view_id);
@@ -986,22 +994,28 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
     auto metadata = metadata_snapshots.at(table_id);
 
     auto select_header = select_headers.at(view_id);
+    LOG_DEBUG(logger, "createPreSink: {}, table id {} has output_headers {}", view_id, table_id, output_headers.contains(view_id));
+
+    auto output_header = output_headers.at(view_id);
+
     auto insert_context = insert_contexts.at(view_id);
 
     //auto header = InterpreterInsertQuery::getSampleBlock() ;//(const ASTInsertQuery &query, const StoragePtr &table, const StorageMetadataPtr &metadata_snapshot, ContextPtr context_)
-    auto insertion_storage_header = metadata->getSampleBlock();
 
     auto adding_missing_defaults_dag = addMissingDefaults(
         select_header,
-        insertion_storage_header.getNamesAndTypesList(),
+        output_header.getNamesAndTypesList(),
         metadata->getColumns(),
         insert_context,
         insert_null_as_default);
 
-    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(select_header, adding_missing_defaults_dag.getRequiredColumnsNames(), insert_context);
+    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(
+        select_header,
+        adding_missing_defaults_dag.getRequiredColumnsNames(),
+        insert_context);
     auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
 
-    LOG_DEBUG(logger, "createPreSink: {}, transformed header add default {}", view_id, ExpressionTransform::transformHeader(select_header, adding_missing_defaults_actions->getActionsDAG()).dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, transformed select header add default {}", view_id, ExpressionTransform::transformHeader(select_header, adding_missing_defaults_actions->getActionsDAG()).dumpStructure());
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)
@@ -1009,12 +1023,12 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
 
     auto converting = ActionsDAG::makeConvertingActions(
         chain.getOutputHeader().getColumnsWithTypeAndName(),
-        insertion_storage_header.getColumnsWithTypeAndName(),
+        output_header.getColumnsWithTypeAndName(),
         ActionsDAG::MatchColumnsMode::Name);
 
     auto convert_action = std::make_shared<ExpressionActions>(std::move(converting));
 
-    LOG_DEBUG(logger, "createPreSink: {}, transformed header cast types {}", view_id, ExpressionTransform::transformHeader(chain.getOutputHeader(), convert_action->getActionsDAG()).dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, transformed select header cast types {}", view_id, ExpressionTransform::transformHeader(chain.getOutputHeader(), convert_action->getActionsDAG()).dumpStructure());
 
     chain.addSink(std::make_shared<ExpressionTransform>(chain.getOutputHeader(), convert_action));
 
@@ -1045,22 +1059,22 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
         constraints = ConstraintsDescription(constraints_ast);
     }
     if (!constraints.empty())
-        chain.addSink(std::make_shared<CheckConstraintsTransform>(table_id, insertion_storage_header, constraints, insert_context));
+        chain.addSink(std::make_shared<CheckConstraintsTransform>(table_id, output_header, constraints, insert_context));
 
     /// Add transform to check if the sizes of arrays - elements of nested data structures doesn't match.
     /// We have to make this assertion before writing to table, because storage engine may assume that they have equal sizes.
     /// NOTE It'd better to do this check in serialization of nested structures (in place when this assumption is required),
     /// but currently we don't have methods for serialization of nested structures "as a whole".
-    chain.addSink(std::make_shared<NestedElementsValidationTransform>(insertion_storage_header));
+    chain.addSink(std::make_shared<NestedElementsValidationTransform>(output_header));
 
     LOG_DEBUG(logger, "createPreSink: {}, input_header {}", view_id, input_headers.at(view_id).dumpStructure());
     LOG_DEBUG(logger, "createPreSink: {}, select_header {}", view_id, select_header.dumpStructure());
 
-    LOG_DEBUG(logger, "createPreSink: {}, inner_storage_header {}", view_id, insertion_storage_header.dumpStructure());
-    LOG_DEBUG(logger, "createPreSink: {}, output_headers {}", view_id, output_headers.at(view_id).dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, inner_storage_header {}", view_id, metadata->getSampleBlock().dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, output_headers {}", view_id, output_header.dumpStructure());
 
 
-    auto counting = std::make_shared<CountingTransform>(insertion_storage_header, insert_context->getQuota());
+    auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota());
     counting->setProcessListElement(insert_context->getProcessListElement());
     counting->setProgressCallback(insert_context->getProgressCallback());
     counting->setRuntimeData(thread_groups.at(view_id));
@@ -1323,13 +1337,19 @@ void ViewsManager::VisitedPath::pushBack(StorageIDPrivate id)
     path.push_back(id);
     visited.insert(id);
 }
+
+
 void ViewsManager::VisitedPath::popBack()
 {
     visited.erase(path.back());
     path.pop_back();
 }
+
+
 String ViewsManager::VisitedPath::debugString() const
 {
     return fmt::format("{}", fmt::join(path, " :-> "));
 }
+
+
 }

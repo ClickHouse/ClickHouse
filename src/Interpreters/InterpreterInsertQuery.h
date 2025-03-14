@@ -53,6 +53,8 @@ public:
         bool no_destination = false,
         bool allow_materialized = false);
 
+    static Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, bool no_destination, bool allow_materialized);
+
     bool supportsTransactions() const override { return true; }
 
     void addBuffer(std::unique_ptr<ReadBuffer> buffer);
@@ -60,7 +62,6 @@ public:
     bool shouldAddSquashingForStorage(const StoragePtr & table) const;
 
 private:
-    static Block getSampleBlockImpl(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, bool no_destination, bool allow_materialized);
 
     ASTPtr query_ptr;
     const bool allow_materialized;
