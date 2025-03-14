@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/dictionaries
-sidebar_label: Defining Dictionaries
+description: 'Overview of external dictionaries functionality in ClickHouse'
+sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35
+slug: /sql-reference/dictionaries
+title: 'Dictionaries'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';

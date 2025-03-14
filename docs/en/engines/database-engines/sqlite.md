@@ -1,9 +1,10 @@
 ---
-slug: /engines/database-engines/sqlite
+description: 'Allows to connect to SQLite databases and perform `INSERT` and `SELECT`
+  queries to exchange data between ClickHouse and SQLite.'
+sidebar_label: 'SQLite'
 sidebar_position: 55
-sidebar_label: SQLite
-title: "SQLite"
-description: "Allows to connect to SQLite databases and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and SQLite."
+slug: /engines/database-engines/sqlite
+title: 'SQLite'
 ---
 
 # SQLite

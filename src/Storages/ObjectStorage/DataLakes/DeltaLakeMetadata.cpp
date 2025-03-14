@@ -63,6 +63,52 @@ namespace Setting
 extern const SettingsBool use_datalake_metadata_cache;
 }
 
+namespace
+{
+
+DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
+{
+    String type_name = type->getValue<String>("type");
+
+    if (type_name == "struct")
+    {
+        DataTypes element_types;
+        Names element_names;
+        auto fields = type->get("fields").extract<Poco::JSON::Array::Ptr>();
+        element_types.reserve(fields->size());
+        element_names.reserve(fields->size());
+        for (size_t i = 0; i != fields->size(); ++i)
+        {
+            auto field = fields->getObject(static_cast<Int32>(i));
+            element_names.push_back(field->getValue<String>("name"));
+
+            auto is_nullable = field->getValue<bool>("nullable");
+            element_types.push_back(DB::DeltaLakeMetadata::getFieldType(field, "type", is_nullable));
+        }
+
+        return std::make_shared<DataTypeTuple>(element_types, element_names);
+    }
+
+    if (type_name == "array")
+    {
+        bool element_nullable = type->getValue<bool>("containsNull");
+        auto element_type = DB::DeltaLakeMetadata::getFieldType(type, "elementType", element_nullable);
+        return std::make_shared<DataTypeArray>(element_type);
+    }
+
+    if (type_name == "map")
+    {
+        auto key_type = DB::DeltaLakeMetadata::getFieldType(type, "keyType", /* is_nullable */false);
+        bool value_nullable = type->getValue<bool>("valueContainsNull");
+        auto value_type = DB::DeltaLakeMetadata::getFieldType(type, "valueType", value_nullable);
+        return std::make_shared<DataTypeMap>(key_type, value_type);
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
+}
+
+}
+
 struct DeltaLakeMetadataImpl
 {
     using ConfigurationObserverPtr = DeltaLakeMetadata::ConfigurationObserverPtr;
@@ -93,7 +139,7 @@ struct DeltaLakeMetadataImpl
     static constexpr auto deltalake_metadata_directory = "_delta_log";
     static constexpr auto metadata_file_suffix = ".json";
 
-    std::string withPadding(size_t version)
+    std::string withPadding(size_t version) const
     {
         /// File names are zero-padded to 20 digits.
         static constexpr auto padding = 20;
@@ -114,7 +160,8 @@ struct DeltaLakeMetadataImpl
         Strings data_files;
         DeltaLakePartitionColumns partition_columns;
     };
-    DeltaLakeMetadata processMetadataFiles()
+
+    DeltaLakeMetadata processMetadataFiles() const
     {
         auto configuration_ptr = configuration.lock();
         std::set<String> result_files;
@@ -189,7 +236,7 @@ struct DeltaLakeMetadataImpl
         const String & metadata_file_path,
         NamesAndTypesList & file_schema,
         DeltaLakePartitionColumns & file_partition_columns,
-        std::set<String> & result)
+        std::set<String> & result) const
     {
         auto read_settings = context->getReadSettings();
         ObjectInfo object_info(metadata_file_path);
@@ -261,10 +308,11 @@ struct DeltaLakeMetadataImpl
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to extract `add` field");
 
                 auto path = add_object->getValue<String>("path");
-                result.insert(fs::path(configuration_ptr->getPath()) / path);
+                auto full_path = fs::path(configuration_ptr->getPath()) / path;
+                result.insert(full_path);
 
                 auto filename = fs::path(path).filename().string();
-                auto it = file_partition_columns.find(filename);
+                auto it = file_partition_columns.find(full_path);
                 if (it == file_partition_columns.end())
                 {
                     if (add_object->has("partitionValues"))
@@ -275,7 +323,7 @@ struct DeltaLakeMetadataImpl
 
                         if (partition_values->size())
                         {
-                            auto & current_partition_columns = file_partition_columns[filename];
+                            auto & current_partition_columns = file_partition_columns[full_path];
                             for (const auto & partition_name : partition_values->getNames())
                             {
                                 const auto value = partition_values->getValue<String>(partition_name);
@@ -291,7 +339,7 @@ struct DeltaLakeMetadataImpl
                                 LOG_TEST(log, "Partition {} value is {} (data type: {}, file: {})",
                                          partition_name, value, name_and_type->type->getName(), filename);
 
-                                auto field = getFieldValue(value, name_and_type->type);
+                                auto field = DB::DeltaLakeMetadata::getFieldValue(value, name_and_type->type);
                                 current_partition_columns.emplace_back(*name_and_type, field);
                             }
                         }
@@ -310,7 +358,7 @@ struct DeltaLakeMetadataImpl
         }
     }
 
-    NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json)
+    NamesAndTypesList parseMetadata(const Poco::JSON::Object::Ptr & metadata_json) const
     {
         NamesAndTypesList schema;
         const auto fields = metadata_json->get("fields").extract<Poco::JSON::Array::Ptr>();
@@ -331,155 +379,11 @@ struct DeltaLakeMetadataImpl
             LOG_TEST(log, "Found column: {}, type: {}, nullable: {}, physical name: {}",
                         column_name, type, is_nullable, physical_name);
 
-            schema.push_back({physical_name, getFieldType(field, "type", is_nullable)});
+            schema.push_back({physical_name, DB::DeltaLakeMetadata::getFieldType(field, "type", is_nullable)});
         }
         return schema;
     }
 
-    DataTypePtr getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable)
-    {
-        if (field->isObject(type_key))
-            return getComplexTypeFromObject(field->getObject(type_key));
-
-        auto type = field->get(type_key);
-        if (type.isString())
-        {
-            const String & type_name = type.extract<String>();
-            auto data_type = getSimpleTypeByName(type_name);
-            return is_nullable ? makeNullable(data_type) : data_type;
-        }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
-    }
-
-    Field getFieldValue(const String & value, DataTypePtr data_type)
-    {
-        DataTypePtr check_type;
-        if (data_type->isNullable())
-            check_type = static_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
-        else
-            check_type = data_type;
-
-        WhichDataType which(check_type->getTypeId());
-        if (which.isStringOrFixedString())
-            return value;
-        if (isBool(check_type))
-            return parse<bool>(value);
-        if (which.isInt8())
-            return parse<Int8>(value);
-        if (which.isUInt8())
-            return parse<UInt8>(value);
-        if (which.isInt16())
-            return parse<Int16>(value);
-        if (which.isUInt16())
-            return parse<UInt16>(value);
-        if (which.isInt32())
-            return parse<Int32>(value);
-        if (which.isUInt32())
-            return parse<UInt32>(value);
-        if (which.isInt64())
-            return parse<Int64>(value);
-        if (which.isUInt64())
-            return parse<UInt64>(value);
-        if (which.isFloat32())
-            return parse<Float32>(value);
-        if (which.isFloat64())
-            return parse<Float64>(value);
-        if (which.isDate())
-            return UInt16{LocalDate{std::string(value)}.getDayNum()};
-        if (which.isDate32())
-            return Int32{LocalDate{std::string(value)}.getExtenedDayNum()};
-        if (which.isDateTime64())
-        {
-            ReadBufferFromString in(value);
-            DateTime64 time = 0;
-            readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
-            return time;
-        }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type for {}", check_type->getColumnType());
-    }
-
-    DataTypePtr getSimpleTypeByName(const String & type_name)
-    {
-        /// https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types
-
-        if (type_name == "string" || type_name == "binary")
-            return std::make_shared<DataTypeString>();
-        if (type_name == "long")
-            return std::make_shared<DataTypeInt64>();
-        if (type_name == "integer")
-            return std::make_shared<DataTypeInt32>();
-        if (type_name == "short")
-            return std::make_shared<DataTypeInt16>();
-        if (type_name == "byte")
-            return std::make_shared<DataTypeInt8>();
-        if (type_name == "float")
-            return std::make_shared<DataTypeFloat32>();
-        if (type_name == "double")
-            return std::make_shared<DataTypeFloat64>();
-        if (type_name == "boolean")
-            return DataTypeFactory::instance().get("Bool");
-        if (type_name == "date")
-            return std::make_shared<DataTypeDate32>();
-        if (type_name == "timestamp")
-            return std::make_shared<DataTypeDateTime64>(6);
-        if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
-        {
-            ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
-            size_t precision;
-            size_t scale;
-            readIntText(precision, buf);
-            skipWhitespaceIfAny(buf);
-            assertChar(',', buf);
-            skipWhitespaceIfAny(buf);
-            tryReadIntText(scale, buf);
-            return createDecimal<DataTypeDecimal>(precision, scale);
-        }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
-    }
-
-    DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type)
-    {
-        String type_name = type->getValue<String>("type");
-
-        if (type_name == "struct")
-        {
-            DataTypes element_types;
-            Names element_names;
-            auto fields = type->get("fields").extract<Poco::JSON::Array::Ptr>();
-            element_types.reserve(fields->size());
-            element_names.reserve(fields->size());
-            for (size_t i = 0; i != fields->size(); ++i)
-            {
-                auto field = fields->getObject(static_cast<Int32>(i));
-                element_names.push_back(field->getValue<String>("name"));
-
-                auto is_nullable = field->getValue<bool>("nullable");
-                element_types.push_back(getFieldType(field, "type", is_nullable));
-            }
-
-            return std::make_shared<DataTypeTuple>(element_types, element_names);
-        }
-
-        if (type_name == "array")
-        {
-            bool element_nullable = type->getValue<bool>("containsNull");
-            auto element_type = getFieldType(type, "elementType", element_nullable);
-            return std::make_shared<DataTypeArray>(element_type);
-        }
-
-        if (type_name == "map")
-        {
-            auto key_type = getFieldType(type, "keyType", /* is_nullable */false);
-            bool value_nullable = type->getValue<bool>("valueContainsNull");
-            auto value_type = getFieldType(type, "valueType", value_nullable);
-            return std::make_shared<DataTypeMap>(key_type, value_type);
-        }
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
-    }
 
     /**
      * Checkpoints in delta-lake are created each 10 commits by default.
@@ -558,7 +462,7 @@ struct DeltaLakeMetadataImpl
     size_t getCheckpointIfExists(
         std::set<String> & result,
         NamesAndTypesList & file_schema,
-        DeltaLakePartitionColumns & file_partition_columns)
+        DeltaLakePartitionColumns & file_partition_columns) const
     {
         const auto version = readLastCheckpointIfExists();
         if (!version)
@@ -654,7 +558,8 @@ struct DeltaLakeMetadataImpl
                 continue;
 
             auto filename = fs::path(path).filename().string();
-            auto it = file_partition_columns.find(filename);
+            auto full_path = fs::path(configuration_ptr->getPath()) / path;
+            auto it = file_partition_columns.find(full_path);
             if (it == file_partition_columns.end())
             {
                 Field map;
@@ -662,7 +567,7 @@ struct DeltaLakeMetadataImpl
                 auto partition_values_map = map.safeGet<Map>();
                 if (!partition_values_map.empty())
                 {
-                    auto & current_partition_columns = file_partition_columns[filename];
+                    auto & current_partition_columns = file_partition_columns[full_path];
                     for (const auto & map_value : partition_values_map)
                     {
                         const auto tuple = map_value.safeGet<Tuple>();
@@ -676,7 +581,7 @@ struct DeltaLakeMetadataImpl
                                 partition_name, file_schema.toString());
                         }
                         const auto value = tuple[1].safeGet<String>();
-                        auto field = getFieldValue(value, name_and_type->type);
+                        auto field = DB::DeltaLakeMetadata::getFieldValue(value, name_and_type->type);
                         current_partition_columns.emplace_back(std::move(name_and_type.value()), std::move(field));
 
                         LOG_TEST(log, "Partition {} value is {} (for {})", partition_name, value, filename);
@@ -732,6 +637,113 @@ DataLakeMetadataPtr DeltaLakeMetadata::create(
         return metadata_cache->getOrSet(DataLakeMetadataCache::getKey(configuration_ptr), create_metadata);
     }
     return create_metadata();
+}
+
+DataTypePtr DeltaLakeMetadata::getFieldType(const Poco::JSON::Object::Ptr & field, const String & type_key, bool is_nullable)
+{
+     if (field->isObject(type_key))
+          return getComplexTypeFromObject(field->getObject(type_key));
+
+     auto type = field->get(type_key);
+     if (type.isString())
+     {
+         const String & type_name = type.extract<String>();
+         auto data_type = DeltaLakeMetadata::getSimpleTypeByName(type_name);
+         return is_nullable ? makeNullable(data_type) : data_type;
+     }
+
+     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected 'type' field: {}", type.toString());
+
+}
+
+DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
+{
+    /// https://github.com/delta-io/delta/blob/master/PROTOCOL.md#primitive-types
+
+    if (type_name == "string" || type_name == "binary")
+        return std::make_shared<DataTypeString>();
+    if (type_name == "long")
+        return std::make_shared<DataTypeInt64>();
+    if (type_name == "integer")
+        return std::make_shared<DataTypeInt32>();
+    if (type_name == "short")
+        return std::make_shared<DataTypeInt16>();
+    if (type_name == "byte")
+        return std::make_shared<DataTypeInt8>();
+    if (type_name == "float")
+        return std::make_shared<DataTypeFloat32>();
+    if (type_name == "double")
+        return std::make_shared<DataTypeFloat64>();
+    if (type_name == "boolean")
+        return DataTypeFactory::instance().get("Bool");
+    if (type_name == "date")
+        return std::make_shared<DataTypeDate32>();
+    if (type_name == "timestamp")
+        return std::make_shared<DataTypeDateTime64>(6);
+    if (type_name.starts_with("decimal(") && type_name.ends_with(')'))
+    {
+        ReadBufferFromString buf(std::string_view(type_name.begin() + 8, type_name.end() - 1));
+        size_t precision;
+        size_t scale;
+        readIntText(precision, buf);
+        skipWhitespaceIfAny(buf);
+        assertChar(',', buf);
+        skipWhitespaceIfAny(buf);
+        tryReadIntText(scale, buf);
+        return createDecimal<DataTypeDecimal>(precision, scale);
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
+}
+
+
+Field DeltaLakeMetadata::getFieldValue(const String & value, DataTypePtr data_type)
+{
+    DataTypePtr check_type;
+    if (data_type->isNullable())
+        check_type = static_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
+    else
+        check_type = data_type;
+
+    WhichDataType which(check_type->getTypeId());
+    if (which.isStringOrFixedString())
+        return value;
+    if (isBool(check_type))
+        return parse<bool>(value);
+    if (which.isInt8())
+        return parse<Int8>(value);
+    if (which.isUInt8())
+        return parse<UInt8>(value);
+    if (which.isInt16())
+        return parse<Int16>(value);
+    if (which.isUInt16())
+        return parse<UInt16>(value);
+    if (which.isInt32())
+        return parse<Int32>(value);
+    if (which.isUInt32())
+        return parse<UInt32>(value);
+    if (which.isInt64())
+        return parse<Int64>(value);
+    if (which.isUInt64())
+        return parse<UInt64>(value);
+    if (which.isFloat32())
+        return parse<Float32>(value);
+    if (which.isFloat64())
+        return parse<Float64>(value);
+    if (which.isDate())
+        return UInt16{LocalDate{std::string(value)}.getDayNum()};
+    if (which.isDate32())
+        return Int32{LocalDate{std::string(value)}.getExtenedDayNum()};
+
+    if (which.isDateTime64())
+    {
+        ReadBufferFromString in(value);
+        DateTime64 time = 0;
+        readDateTime64Text(time, 6, in, assert_cast<const DataTypeDateTime64 *>(data_type.get())->getTimeZone());
+        return time;
+    }
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type for {}", check_type->getColumnType());
 }
 
 }

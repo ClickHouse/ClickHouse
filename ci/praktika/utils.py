@@ -483,6 +483,7 @@ class Utils:
             ("-", "_"),
             (":", "_"),
             ('"', "_"),
+            ("&", "_"),
         ):
             res = res.replace(*r)
             res = re.sub(r"_+", "_", res)

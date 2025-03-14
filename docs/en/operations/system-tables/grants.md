@@ -1,8 +1,9 @@
 ---
-description: "System table showing which privileges are granted to ClickHouse user accounts."
+description: 'System table showing which privileges are granted to ClickHouse user
+  accounts.'
+keywords: ['system table', 'grants']
 slug: /operations/system-tables/grants
-title: "system.grants"
-keywords: ["system table", "grants"]
+title: 'system.grants'
 ---
 
 Privileges granted to ClickHouse user accounts.

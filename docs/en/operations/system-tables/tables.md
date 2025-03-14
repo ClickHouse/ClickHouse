@@ -1,9 +1,12 @@
 ---
-description: "System table containing metadata of each table that the server knows about."
+description: 'System table containing metadata of each table that the server knows
+  about.'
+keywords: ['system table', 'tables']
 slug: /operations/system-tables/tables
-title: "system.tables"
-keywords: ["system table", "tables"]
+title: 'system.tables'
 ---
+
+# system.tables
 
 Contains metadata of each table that the server knows about.
 

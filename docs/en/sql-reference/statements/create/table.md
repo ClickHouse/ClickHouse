@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/statements/create/table
+description: 'Documentation for Table'
+keywords: ['compression', 'codec', 'schema', 'DDL']
+sidebar_label: 'TABLE'
 sidebar_position: 36
-sidebar_label: TABLE
-title: "CREATE TABLE"
-keywords: [compression, codec, schema, DDL]
+slug: /sql-reference/statements/create/table
+title: 'CREATE TABLE'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
