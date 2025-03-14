@@ -113,7 +113,7 @@ public:
     void logQueryView(StorageID view_id, std::exception_ptr exception) const;
 
 protected:
-    ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, bool async_insert_, bool allow_virtuals_, bool allow_materialized_, ContextPtr context);
+    ViewsManager(StoragePtr table, ASTPtr query, Block insert_header, bool async_insert_, bool skip_destination_table_, bool allow_materialized_, ContextPtr context);
 
 private:
     void buildRelaitions();
@@ -128,7 +128,7 @@ private:
     Block init_header;
     ContextPtr init_context;
     bool async_insert;
-    bool allow_virtuals;
+    bool skip_destination_table;
     bool allow_materialized = false;
 
     BundleID root;

@@ -514,7 +514,7 @@ ViewsManager::StorageIDPrivate ViewsManager::VisitedPath::empty_id = {};
 
 
 ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header,
-    bool async_insert_, bool allow_virtuals_, bool allow_materialized_,
+    bool async_insert_, bool skip_destination_table_, bool allow_materialized_,
     ContextPtr context)
     : init_table_id(table->getStorageID())
     , init_storage(table)
@@ -522,7 +522,7 @@ ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header,
     , init_header(std::move(insert_header))
     , init_context(context)
     , async_insert(async_insert_)
-    , allow_virtuals(allow_virtuals_)
+    , skip_destination_table(skip_destination_table_)
     , allow_materialized(allow_materialized_)
     , logger(getLogger("ViewsManager"))
 {
@@ -539,12 +539,14 @@ ViewsManager::ViewsManager(StoragePtr table, ASTPtr query, Block insert_header,
 
 Chain ViewsManager::createPreSink() const
 {
+    chassert(!skip_destination_table);
     return createPreSink(root.view_id);
 }
 
 
 Chain ViewsManager::createSink() const
 {
+    chassert(!skip_destination_table);
     return createSink(root.view_id);
 }
 
@@ -814,7 +816,7 @@ void ViewsManager::buildRelaitions()
 
                 input_headers[{}] = init_header;
                 select_headers[{}] = init_header;
-                output_headers[{}] = InterpreterInsertQuery::getSampleBlock(init_header.getNames(), storage, metadata, allow_virtuals, allow_materialized);
+                output_headers[{}] = metadata->getSampleBlock(); // InterpreterInsertQuery::getSampleBlockForInsertion(init_header.getNames(), storage, metadata, skip_destination_table, allow_materialized);
 
                 thread_groups[{}] = CurrentThread::getGroup();
 
@@ -834,8 +836,8 @@ void ViewsManager::buildRelaitions()
             const auto & view_id = path.parent();
 
             // virtuals are allowed only for the first insertion
-            bool allow_virtuals_ = false;
-            output_headers[view_id] = InterpreterInsertQuery::getSampleBlock(select_headers.at(view_id).getNames(), storage, metadata, allow_virtuals_, allow_materialized);
+            //bool allow_virtuals_ = false;
+            output_headers[view_id] = metadata->getSampleBlock(); // InterpreterInsertQuery::getSampleBlockForInsertion(select_headers.at(view_id).getNames(), storage, metadata, allow_virtuals_, allow_materialized);
 
             // TODO: remove sql_security_type check after we turn `ignore_empty_sql_security_in_create_view_query=false`
             auto view_storage = storages.at(view_id);
@@ -891,6 +893,15 @@ void ViewsManager::buildRelaitions()
     expand(init_table_id);
 
     chassert(path.empty());
+
+    if (skip_destination_table)
+    {
+        output_headers[root.view_id] = init_header;
+        for (const auto & child_id : dependent_views.at(root.view_id))
+        {
+            input_headers[child_id] = init_header;
+        }
+    }
     LOG_DEBUG(logger, "buildRelaitions2: {}, root is ({}, {})", init_table_id, root.view_id, root.inner_id);
 }
 
@@ -1070,7 +1081,7 @@ Chain ViewsManager::createPreSink(StorageIDPrivate view_id) const
     LOG_DEBUG(logger, "createPreSink: {}, input_header {}", view_id, input_headers.at(view_id).dumpStructure());
     LOG_DEBUG(logger, "createPreSink: {}, select_header {}", view_id, select_header.dumpStructure());
 
-    LOG_DEBUG(logger, "createPreSink: {}, inner_storage_header {}", view_id, metadata->getSampleBlock().dumpStructure());
+    LOG_DEBUG(logger, "createPreSink: {}, metadata_header {}", view_id, metadata->getSampleBlock().dumpStructure());
     LOG_DEBUG(logger, "createPreSink: {}, output_headers {}", view_id, output_header.dumpStructure());
 
 

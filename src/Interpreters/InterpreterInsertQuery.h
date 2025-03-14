@@ -53,7 +53,19 @@ public:
         bool no_destination = false,
         bool allow_materialized = false);
 
-    static Block getSampleBlock(const Names & names, const StoragePtr & table, const StorageMetadataPtr & metadata_snapshot, bool no_destination, bool allow_materialized);
+    static Block getSampleBlock(
+      const Names & names,
+      const StoragePtr & table,
+      const StorageMetadataPtr & metadata_snapshot,
+      bool no_destination,
+      bool allow_materialized);
+
+    // static Block getSampleBlockForInsertion(
+    //   const Names & requested,
+    //   const StoragePtr & table,
+    //   const StorageMetadataPtr & metadata_snapshot,
+    //   bool no_destination,
+    //   bool allow_materialized);
 
     bool supportsTransactions() const override { return true; }
 

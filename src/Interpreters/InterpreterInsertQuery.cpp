@@ -49,6 +49,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/checkStackSize.h>
 #include <Common/ProfileEvents.h>
+#include "Core/Names.h"
 #include <Processors/Sinks/SinkToStorage.h>
 
 #include <memory>
@@ -237,6 +238,24 @@ Block InterpreterInsertQuery::getSampleBlock(
     }
     return res;
 }
+
+// Block InterpreterInsertQuery::getSampleBlockForInsertion(
+//     const Names & requested,
+//     const StoragePtr & table,
+//     const StorageMetadataPtr & metadata_snapshot,
+//     bool allow_virtuals,
+//     bool allow_materialized)
+// {
+//     auto required_names = allow_materialized ? metadata_snapshot->getSampleBlock().getNames() : metadata_snapshot->getSampleBlockNonMaterialized().getNames();
+//     auto uniq = NameSet(required_names.begin(), required_names.end());
+
+//     for (const auto & req : requested)
+//     {
+//         if (uniq.insert(req).second)
+//             required_names.push_back(req);
+//     }
+//     return getSampleBlock(required_names, table, metadata_snapshot, allow_virtuals, allow_materialized);
+// }
 
 std::optional<Names> InterpreterInsertQuery::getInsertColumnNames() const
 {
@@ -493,10 +512,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     ///  * If the table supports parallel inserts, use max_insert_threads for writing to IStorage.
     ///    Otherwise ResizeProcessor them down to 1 stream.
 
-    size_t presink_streams_size = std::max<size_t>(settings[Setting::max_insert_threads], pipeline.getNumStreams());
-    if (settings[Setting::max_insert_threads].changed)
-        presink_streams_size = std::max<size_t>(1, settings[Setting::max_insert_threads]);
-
     size_t sink_streams_size = table->supportsParallelInsert() ? std::max<size_t>(1, settings[Setting::max_insert_threads]) : 1;
 
     size_t views_involved =  table->isView() || !DatabaseCatalog::instance().getDependentViews(table->getStorageID()).empty();
@@ -505,37 +520,10 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
         sink_streams_size = 1;
     }
 
-    // when insert is initiated from FileLog or similar storages
-    // they are allowed to expose its virtuals colums
-    bool allow_virtuals = no_destination;
+    bool skip_destination_table = no_destination;
     auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block,
-        async_insert, allow_virtuals, allow_materialized,
+        async_insert, skip_destination_table, allow_materialized,
         getContext());
-
-    std::vector<Chain> presink_chains;
-    for (size_t i = 0; i < presink_streams_size; ++i)
-    {
-        auto out = views_manager->createPreSink();
-        out.addViewsManager(views_manager);
-        presink_chains.push_back(std::move(out));
-    }
-
-    std::vector<Chain> sink_chains;
-    for (size_t i = 0; i < sink_streams_size; ++i)
-    {
-        Chain out;
-        out.addViewsManager(views_manager);
-
-        if (!no_destination)
-            out.appendChainNotStrict(views_manager->createSink());
-
-        if (!table->noPushingToViews())
-            out.appendChainNotStrict(views_manager->createPostSink());
-
-        sink_chains.push_back(std::move(out));
-    }
-
-    pipeline.resize(presink_chains.size());
 
     if (shouldAddSquashingForStorage(table))
     {
@@ -549,10 +537,23 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
             });
     }
 
-    LOG_DEBUG(getLogger("InterpreterInsertQuery"), "presink_chains");
-    for (auto & chain : presink_chains)
-        pipeline.addResources(chain.detachResources());
-    pipeline.addChains(std::move(presink_chains));
+    std::vector<Chain> sink_chains;
+    for (size_t i = 0; i < sink_streams_size; ++i)
+    {
+        Chain out;
+        out.addViewsManager(views_manager);
+
+        if (!no_destination)
+        {
+            out.appendChainNotStrict(views_manager->createPreSink());
+            out.appendChainNotStrict(views_manager->createSink());
+        }
+
+        if (!table->noPushingToViews())
+            out.appendChainNotStrict(views_manager->createPostSink());
+
+        sink_chains.push_back(std::move(out));
+    }
 
     LOG_DEBUG(getLogger("InterpreterInsertQuery"), "resize");
     pipeline.resize(sink_streams_size);
@@ -588,14 +589,17 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     // when insert is initiated from FileLog or similar storages
     // they are allowed to expose its virtuals colums to the dependant views
-    bool allow_virtuals = no_destination;
+    bool skip_destination_table = no_destination;
     auto views_manager = ViewsManager::create(table, query_ptr, query_sample_block,
-        async_insert, allow_virtuals, allow_materialized,
+        async_insert, skip_destination_table, allow_materialized,
         getContext());
 
-    Chain chain = views_manager->createPreSink();
+    Chain chain;
     if (!no_destination)
+    {
+        chain.appendChainNotStrict(views_manager->createPreSink());
         chain.appendChainNotStrict(views_manager->createSink());
+    }
     chain.appendChainNotStrict(views_manager->createPostSink());
     chain.addViewsManager(views_manager);
 
