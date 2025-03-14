@@ -1,11 +1,17 @@
+#include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
 #include <gtest/gtest.h>
 
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 
+#include <Common/Scheduler/CpuSlotsAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
+#include <base/scope_guard.h>
 
 #include <Interpreters/Context.h>
 
@@ -152,24 +158,39 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
     }
 
     template <class Func>
-    void async(const String & workload, Func func)
+    size_t async(Func func)
     {
-        threads.emplace_back([=, this, func2 = std::move(func)]
+        std::scoped_lock lock{threads_mutex};
+        threads.emplace_back([func2 = std::move(func)] mutable
+        {
+            func2();
+        });
+        return threads.size() - 1;
+    }
+
+    template <class Func>
+    size_t async(const String & workload, Func func)
+    {
+        std::scoped_lock lock{threads_mutex};
+        threads.emplace_back([=, this, func2 = std::move(func)] mutable
         {
             ClassifierPtr classifier = manager->acquire(workload);
             func2(classifier);
         });
+        return threads.size() - 1;
     }
 
     template <class Func>
-    void async(const String & workload, const String & resource, Func func)
+    size_t async(const String & workload, const String & resource, Func func)
     {
-        threads.emplace_back([=, this, func2 = std::move(func)]
+        std::scoped_lock lock{threads_mutex};
+        threads.emplace_back([=, this, func2 = std::move(func)] mutable
         {
             ClassifierPtr classifier = manager->acquire(workload);
             ResourceLink link = classifier->get(resource);
             func2(link);
         });
+        return threads.size() - 1;
     }
 };
 
@@ -225,7 +246,7 @@ TEST(SchedulerWorkloadResourceManager, Fairness)
 
     for (int thread = 0; thread < threads_per_queue; thread++)
     {
-        t.threads.emplace_back([&]
+        t.async([&]
         {
             ClassifierPtr c = t.manager->acquire("A");
             ResourceLink link = c->get("res1");
@@ -240,7 +261,7 @@ TEST(SchedulerWorkloadResourceManager, Fairness)
 
     for (int thread = 0; thread < threads_per_queue; thread++)
     {
-        t.threads.emplace_back([&]
+        t.async([&]
         {
             ClassifierPtr c = t.manager->acquire("B");
             ResourceLink link = c->get("res1");
@@ -332,4 +353,192 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
     sync_after_drop.arrive_and_wait();
 
     t.wait(); // Wait for threads to finish before destructing locals
+}
+
+// It emulates how PipelineExecutor interacts with CPU scheduler
+struct TestQuery {
+    ResourceTest & t;
+    SlotAllocationPtr slots;
+
+    std::mutex mutex;
+    std::condition_variable cv;
+    size_t max_threads = 1;
+    size_t threads_finished = 0;
+    size_t active_threads = 0;
+    size_t last_thread_num = 0;
+    bool query_is_finished;
+    UInt64 work_left = UInt64(-1);
+
+    std::mutex ids_mutex;
+    std::vector<size_t> ids;
+
+    // Number of threads that should be granted to every query no matter how many threads are already running in other queries
+    static constexpr size_t min_threads = 1uz;
+    static constexpr int us_per_work = 10;
+
+    explicit TestQuery(ResourceTest & t_)
+        : t(t_)
+    {}
+
+    ~TestQuery()
+    {
+        finish();
+        while (true) {
+            std::vector<size_t> ids_to_wait;
+            {
+                std::scoped_lock lock{ids_mutex};
+                ids_to_wait.swap(ids);
+            }
+            if (ids_to_wait.empty())
+                break;
+            for (size_t id : ids_to_wait)
+                t.wait(id);
+            // we have to repeat because threads we have just joined could have created new threads in the meantime
+        }
+    }
+
+    void upscaleIfPossible()
+    {
+        while (auto slot = slots->tryAcquire())
+        {
+            size_t id = t.async([this, my_slot = std::move(slot)] mutable
+            {
+                threadFunc(std::move(my_slot));
+            });
+
+            std::scoped_lock lock{ids_mutex};
+            ids.push_back(id);
+        }
+    }
+
+    void finish()
+    {
+        std::unique_lock lock{mutex};
+        query_is_finished = true;
+        cv.notify_all();
+    }
+
+    void finishThread(size_t count = 1)
+    {
+        std::unique_lock lock{mutex};
+        threads_finished = std::min(max_threads, threads_finished + count);
+        cv.notify_all();
+    }
+
+    // Wait until number of active threads is not less than specified
+    void waitActiveThreads(size_t thread_num_to_wait)
+    {
+        std::unique_lock lock{mutex};
+        cv.wait(lock, [=, this] () { return active_threads >= thread_num_to_wait; });
+    }
+
+    // Returns unique thread number
+    size_t onThreadStart()
+    {
+        std::scoped_lock lock{mutex};
+        active_threads++;
+        cv.notify_all();
+        return last_thread_num++;
+    }
+
+    void onThreadStop()
+    {
+        std::scoped_lock lock{mutex};
+        active_threads--;
+    }
+
+    // Returns true iff query should continue execution
+    bool doWork(size_t thread_num)
+    {
+        std::unique_lock lock{mutex};
+
+        // Take one piece of work to do for the next 10 us
+        if (work_left > 0)
+            work_left--;
+
+        // Emulate work with waiting on cv
+        bool timeout = !cv.wait_for(lock, std::chrono::microseconds(us_per_work), [=, this]
+        {
+            return query_is_finished
+                || work_left == 0
+                || (thread_num < threads_finished // When finish not the last thread make sure query will have at least 1 active thread afterwards
+                    && (active_threads > 1 || threads_finished == max_threads));
+        });
+        return timeout;
+    }
+
+    void threadFunc(AcquiredSlotPtr self_slot)
+    {
+        chassert(self_slot);
+
+        size_t thread_num = onThreadStart();
+        SCOPE_EXIT({ onThreadStop(); });
+
+        while (true)
+        {
+            upscaleIfPossible();
+            if (!doWork(thread_num))
+                break;
+        }
+    }
+
+    void start(String workload, size_t max_threads_, UInt64 runtime_us = UInt64(-1))
+    {
+        std::scoped_lock lock{mutex};
+        max_threads = max_threads_;
+        if (runtime_us != UInt64(-1))
+            work_left = runtime_us / us_per_work;
+        t.async(workload, t.storage.getCpuResourceName(), [&] (ResourceLink link)
+        {
+            slots = std::make_shared<CpuSlotsAllocation>(min_threads, max_threads, link);
+            threadFunc(slots->tryAcquire());
+        });
+    }
+};
+
+using TestQueryPtr = std::shared_ptr<TestQuery>;
+
+TEST(SchedulerWorkloadResourceManager, CpuSlotsAllocationRoundRobin)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE cpu (CPU)");
+    t.query("CREATE WORKLOAD all SETTINGS max_requests = 4");
+
+    std::vector<TestQueryPtr> queries;
+    for (int query = 0; query < 2; query++)
+        queries.push_back(std::make_shared<TestQuery>(t));
+
+    // Note that thread with number 0 is noncompeting
+    queries[0]->start("all", 6);
+    // Q0: 0 1 2 3 4; Q1: -
+    queries[0]->waitActiveThreads(5);
+    queries[1]->start("all", 8);
+    queries[0]->finishThread(2);
+    // Q0: 2 3 4; Q1: 0 1
+    queries[1]->waitActiveThreads(2);
+    queries[0]->finishThread(1);
+    // Q0: 3 4 5; Q1: 0 1
+    queries[0]->waitActiveThreads(3);
+    queries[1]->waitActiveThreads(2);
+    queries[0]->finishThread(1);
+    // Q0: 4 5; Q1: 0 1 2
+    queries[1]->waitActiveThreads(3);
+    queries[1]->finishThread(1);
+    // Q0: 4 5; Q1: 1 2
+    queries[1]->waitActiveThreads(2);
+    queries[1]->finishThread(1);
+    // Q0: 4 5; Q1: 2 3
+    queries[1]->waitActiveThreads(2);
+    queries[1]->finishThread(1);
+    // Q0: 4 5; Q1: 3 4
+    queries[1]->waitActiveThreads(2);
+    queries[0]->finishThread(2);
+    // Q0: -; Q1: 3 4 5 6
+    queries[1]->waitActiveThreads(4);
+
+    // Q0 - is done, Q1 still needs 1 query, but we cancel it
+    queries.clear();
+
+    t.wait();
 }
