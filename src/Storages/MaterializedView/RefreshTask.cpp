@@ -225,7 +225,8 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
                 deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
         /// Update dependency graph.
-        set_handle.changeDependencies(deps);
+        if (set_handle)
+            set_handle.changeDependencies(deps);
 
         scheduleRefresh(guard);
         scheduling.dependencies_satisfied_until = std::chrono::sys_seconds(std::chrono::seconds(-1));
