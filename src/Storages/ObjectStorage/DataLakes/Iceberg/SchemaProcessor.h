@@ -99,7 +99,6 @@ private:
         String & current_full_name = default_link,
         bool is_subfield_of_root = false);
 
-
     std::optional<Int32> current_schema_id = 0;
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);

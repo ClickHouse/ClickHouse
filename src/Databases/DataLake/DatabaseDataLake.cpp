@@ -1,4 +1,6 @@
 #include <Databases/DataLake/DatabaseDataLake.h>
+#include "Core/SettingsEnums.h"
+#include "Databases/DataLake/HiveCatalog.h"
 
 #if USE_AVRO && USE_PARQUET
 
@@ -34,6 +36,7 @@ namespace DatabaseDataLakeSetting
 {
     extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
     extern const DatabaseDataLakeSettingsString warehouse;
+    extern const DatabaseDataLakeSettingsString hms_catalog_storage_type;
     extern const DatabaseDataLakeSettingsString catalog_credential;
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
@@ -51,6 +54,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_iceberg;
     extern const SettingsBool allow_experimental_database_unity_catalog;
     extern const SettingsBool allow_experimental_database_glue_catalog;
+    extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool use_hive_partitioning;
 }
 namespace StorageObjectStorageSetting
@@ -144,6 +148,7 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 Context::getGlobalContextInstance());
             break;
         }
+<<<<<<< HEAD
 
         case DB::DatabaseDataLakeCatalogType::GLUE:
         {
@@ -151,6 +156,13 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::aws_access_key_id].value,
                 settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
                 settings[DatabaseDataLakeSetting::region].value,
+=======
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+        {
+            catalog_impl = std::make_shared<DataLake::HiveCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                settings[DatabaseDataLakeSetting::hms_catalog_storage_type].value,
+>>>>>>> 2ca3dda1bee (Start Hive metastore catalog)
                 url,
                 Context::getGlobalContextInstance());
             break;
@@ -166,6 +178,7 @@ std::shared_ptr<StorageObjectStorage::Configuration> DatabaseDataLake::getConfig
     auto catalog = getCatalog();
     switch (catalog->getCatalogType())
     {
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
         {
             switch (type)
@@ -622,6 +635,19 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 }
 
                 engine_func->name = "DeltaLake";
+                break;
+            }
+            case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
+            {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_hms_catalog])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DatabaseDataLake with Icerberg Hive catalog is experimental. "
+                                    "To allow its usage, enable setting allow_experimental_database_hms_catalog");
+                }
+
+                engine_func->name = "Iceberg";
                 break;
             }
         }

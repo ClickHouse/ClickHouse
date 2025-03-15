@@ -6102,6 +6102,8 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
+    DECLARE(Bool, allow_experimental_database_hms_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'hms'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
 Enable Kusto Query Language (KQL) - an alternative to SQL.
