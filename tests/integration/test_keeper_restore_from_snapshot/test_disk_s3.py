@@ -5,6 +5,8 @@ import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+
+# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
     "node1",
     main_configs=[
@@ -14,6 +16,7 @@ node1 = cluster.add_instance(
     ],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 node2 = cluster.add_instance(
     "node2",
@@ -24,6 +27,7 @@ node2 = cluster.add_instance(
     ],
     stay_alive=True,
     with_minio=True,
+    with_remote_database_disk=False,
 )
 node3 = cluster.add_instance(
     "node3",

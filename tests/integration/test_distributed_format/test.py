@@ -22,12 +22,15 @@ cluster_param = pytest.mark.parametrize(
 )
 
 
-def get_dist_path(cluster, table, dist_format):
+def get_dist_path(cluster, node, table, dist_format):
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='test' AND name='{table}'"
+    ).strip()
     if dist_format == 0:
-        return f"/var/lib/clickhouse/data/test/{table}/default@not_existing:9000"
+        return f"{data_path}/default@not_existing:9000"
     if cluster == "test_cluster_internal_replication":
-        return f"/var/lib/clickhouse/data/test/{table}/shard1_all_replicas"
-    return f"/var/lib/clickhouse/data/test/{table}/shard1_replica1"
+        return f"{data_path}/shard1_all_replicas"
+    return f"{data_path}/shard1_replica1"
 
 
 @pytest.fixture(scope="module")
@@ -53,7 +56,7 @@ def test_single_file(started_cluster, cluster):
         settings={"use_compact_format_in_distributed_parts_names": "1"},
     )
 
-    path = get_dist_path(cluster, "distr_1", 1)
+    path = get_dist_path(cluster, node, "distr_1", 1)
     query = f"select * from file('{path}/1.bin', 'Distributed')"
     out = node.exec_in_container(
         ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
@@ -94,7 +97,7 @@ def test_two_files(started_cluster, cluster):
         },
     )
 
-    path = get_dist_path(cluster, "distr_2", 1)
+    path = get_dist_path(cluster, node, "distr_2", 1)
     query = f"select * from file('{path}/{{1,2,3,4}}.bin', 'Distributed') order by x"
     out = node.exec_in_container(
         ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]
@@ -129,7 +132,7 @@ def test_single_file_old(started_cluster, cluster):
         },
     )
 
-    path = get_dist_path(cluster, "distr_3", 0)
+    path = get_dist_path(cluster, node, "distr_3", 0)
     query = f"select * from file('{path}/1.bin', 'Distributed')"
     out = node.exec_in_container(
         ["/usr/bin/clickhouse", "local", "--stacktrace", "-q", query]

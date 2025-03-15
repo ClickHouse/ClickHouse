@@ -15,6 +15,7 @@ node1 = cluster.add_instance(
         "configs/enable_keeper1.xml",
     ],
     macros={"replica": "node1"},
+    with_remote_database_disk=False,
 )
 
 node2 = cluster.add_instance(
@@ -25,12 +26,14 @@ node2 = cluster.add_instance(
         "configs/enable_keeper2.xml",
     ],
     macros={"replica": "node2"},
+    with_remote_database_disk=False,
 )
 
 node3 = cluster.add_instance(
     "node3",
     main_configs=["configs/remote_servers.xml", "configs/enable_keeper3.xml"],
     macros={"replica": "node3"},
+    with_remote_database_disk=False,
 )
 
 

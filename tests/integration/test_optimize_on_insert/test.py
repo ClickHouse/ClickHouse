@@ -6,8 +6,16 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", with_zookeeper=True)
-node2 = cluster.add_instance("node2", with_zookeeper=True)
+node1 = cluster.add_instance(
+    "node1",
+    with_zookeeper=True,
+    with_remote_database_disk=False,
+)
+node2 = cluster.add_instance(
+    "node2",
+    with_zookeeper=True,
+    with_remote_database_disk=False,
+)
 
 
 @pytest.fixture(scope="module")
@@ -22,9 +30,11 @@ def start_cluster():
 
 
 def get_data_files_for_table(node, table_name):
-    raw_output = node.exec_in_container(
-        ["bash", "-c", "ls /var/lib/clickhouse/data/default/{}".format(table_name)]
-    )
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table_name}'"
+    ).strip()
+
+    raw_output = node.exec_in_container(["bash", "-c", f"ls {data_path}"])
     return raw_output.strip().split("\n")
 
 

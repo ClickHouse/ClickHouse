@@ -22,9 +22,10 @@ def start_cluster():
 
 
 def get_compression_codec_byte(node, table_name, part_name, filename):
-    cmd = "tail -c +17 /var/lib/clickhouse/data/default/{}/{}/{}.bin | od -x -N 1 | head -n 1 | awk '{{print $2}}'".format(
-        table_name, part_name, filename
-    )
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table_name}'"
+    ).strip()
+    cmd = f"tail -c +17 {data_path}/{part_name}/{filename}.bin | od -x -N 1 | head -n 1 | awk '{{print $2}}'"
     return node.exec_in_container(["bash", "-c", cmd]).strip()
 
 

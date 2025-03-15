@@ -116,13 +116,15 @@ def test_attach_without_fetching(start_cluster):
     # Replica 2 should also download the data from 1 as the checksums won't match.
     logging.debug("Checking attach with corrupted part data with files missing")
 
+    data_path = node_2.query(
+        "SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='test'"
+    ).strip()
+
     to_delete = node_2.exec_in_container(
         [
             "bash",
             "-c",
-            "cd {p} && ls *.bin".format(
-                p="/var/lib/clickhouse/data/default/test/detached/2_0_0_0"
-            ),
+            f"cd {data_path}detached/2_0_0_0 && ls *.bin",
         ],
         privileged=True,
     )
@@ -132,9 +134,7 @@ def test_attach_without_fetching(start_cluster):
         [
             "bash",
             "-c",
-            "cd {p} && rm -fr *.bin".format(
-                p="/var/lib/clickhouse/data/default/test/detached/2_0_0_0"
-            ),
+            f"cd {data_path}detached/2_0_0_0 && rm -fr *.bin",
         ],
         privileged=True,
     )
@@ -147,9 +147,7 @@ def test_attach_without_fetching(start_cluster):
     # Replica 2 should also download the data from 1 as the checksums won't match.
     print("Checking attach with corrupted part data with all of the files present")
 
-    corrupt_part_data_by_path(
-        node_2, "/var/lib/clickhouse/data/default/test/detached/1_0_0_0"
-    )
+    corrupt_part_data_by_path(node_2, f"{data_path}detached/1_0_0_0")
 
     node_1.query("ALTER TABLE test ATTACH PARTITION 1")
     check_data([node_1, node_2, node_3], detached_parts=[0])

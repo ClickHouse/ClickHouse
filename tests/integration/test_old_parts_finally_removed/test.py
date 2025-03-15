@@ -9,7 +9,10 @@ import helpers.client as client
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance("node1", with_zookeeper=True)
+node1 = cluster.add_instance(
+    "node1",
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -35,11 +38,15 @@ def test_part_finally_removed(started_cluster):
 
     node1.query("OPTIMIZE TABLE drop_outdated_part FINAL")
 
+    data_path = node1.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='drop_outdated_part'"
+    ).strip()
+
     node1.exec_in_container(
         [
             "bash",
             "-c",
-            "chown -R root:root /var/lib/clickhouse/data/default/drop_outdated_part/all_0_0_0",
+            f"chown -R root:root {data_path}/all_0_0_0",
         ],
         privileged=True,
         user="root",
@@ -58,7 +65,7 @@ def test_part_finally_removed(started_cluster):
         [
             "bash",
             "-c",
-            f"chown -R {os.getuid()}:{os.getgid()} /var/lib/clickhouse/data/default/drop_outdated_part/*",
+            f"chown -R {os.getuid()}:{os.getgid()} {data_path}/*",
         ],
         privileged=True,
         user="root",
@@ -75,7 +82,7 @@ def test_part_finally_removed(started_cluster):
                 [
                     "bash",
                     "-c",
-                    "ls /var/lib/clickhouse/data/default/drop_outdated_part | grep '_' | grep 'all'",
+                    f"ls {data_path} | grep '_' | grep 'all'",
                 ],
                 privileged=True,
                 user="root",
