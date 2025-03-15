@@ -1,5 +1,6 @@
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
+#include "Core/Block_fwd.h"
 
 #ifdef OS_LINUX
 #    include <unistd.h>
@@ -891,24 +892,17 @@ void Aggregator::mergeOnBlockSmall(
         result.without_key = place;
     }
 
-    // TODO(nickitat): fix me
-    std::atomic<bool> is_cancelled;
+    std::atomic<bool> is_cancelled{false};
 
     if (false) {} // NOLINT
 #define M(NAME, IS_TWO_LEVEL) \
-    else if (result.type == AggregatedDataVariants::Type::NAME) mergeStreamsImpl( \
-        result.aggregates_pool, \
-        *result.NAME, \
-        result.NAME->data, \
-        result.without_key, \
-        result.consecutive_keys_cache_stats, \
-        /* no_more_keys= */ false, \
-        row_begin, \
-        row_end, \
-        aggregate_columns_data, \
-        key_columns, \
-        is_cancelled, \
-        result.aggregates_pool);
+    else if (result.type == AggregatedDataVariants::Type::NAME) \
+        mergeStreamsImpl(result.aggregates_pool, *result.NAME, result.NAME->data, \
+                         result.without_key, \
+                         result.consecutive_keys_cache_stats, \
+                         /* no_more_keys= */ false, \
+                         row_begin, row_end, \
+                         aggregate_columns_data, key_columns, is_cancelled, result.aggregates_pool);
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -2323,8 +2317,8 @@ Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_variant
 BlocksList Aggregator::prepareBlocksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const
 {
 #define M(NAME) \
-    else if (data_variants.type == AggregatedDataVariants::Type::NAME) return prepareBlocksAndFillTwoLevelImpl( \
-        data_variants, *data_variants.NAME, final);
+    else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
+        return prepareBlocksAndFillTwoLevelImpl(data_variants, *data_variants.NAME, final);
 
     if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
@@ -2368,17 +2362,15 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
 
     /// packaged_task is used to ensure that exceptions are automatically thrown into the main stream.
 
-    std::vector<std::packaged_task<BlocksList()>> tasks(max_threads);
-
-    auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pool, "");
+    std::vector<std::packaged_task<BlocksList()>> tasks;
+    tasks.reserve(max_threads);
 
     try
     {
+        auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pool, "");
         for (size_t thread_id = 0; thread_id < max_threads; ++thread_id)
         {
-            tasks[thread_id] = std::packaged_task<BlocksList()>(
-                [thread_id, &converter] { return converter(thread_id); });
-
+            tasks.emplace_back([thread_id, &converter] { return converter(thread_id); });
             if (use_thread_pool)
                 schedule([&tasks, thread_id] { tasks[thread_id](); }, Priority{});
             else
@@ -2390,7 +2382,6 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevelImpl(AggregatedDataVariants &
         /// If this is not done, then in case of an exception, tasks will be destroyed before the threads are completed, and it will be bad.
         if (use_thread_pool)
             std::ranges::for_each(tasks, [](auto & task) { task.get_future().wait(); });
-
         throw;
     }
 
@@ -2495,12 +2486,7 @@ void NO_INLINE Aggregator::mergeDataNullKey(
 
 template <typename Method, typename Table>
 void NO_INLINE Aggregator::mergeDataImpl(
-    Table & table_dst,
-    Table & table_src,
-    Arena * arena,
-    bool use_compiled_functions [[maybe_unused]],
-    bool prefetch,
-    std::atomic<bool> & is_cancelled) const
+    Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]], bool prefetch, std::atomic<bool> & is_cancelled) const
 {
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
         mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
@@ -2539,13 +2525,7 @@ void NO_INLINE Aggregator::mergeDataImpl(
         {
             if (!is_aggregate_function_compiled[i])
                 aggregate_functions[i]->mergeAndDestroyBatch(
-                    dst_places.data(),
-                    src_places.data(),
-                    dst_places.size(),
-                    offsets_of_aggregate_states[i],
-                    thread_pool,
-                    is_cancelled,
-                    arena);
+                    dst_places.data(), src_places.data(), dst_places.size(), offsets_of_aggregate_states[i], thread_pool, is_cancelled, arena);
         }
 
         return;
@@ -2691,23 +2671,13 @@ void NO_INLINE Aggregator::mergeSingleLevelDataImpl(
             if (compiled_aggregate_functions_holder)
             {
                 mergeDataImpl<Method>(
-                    getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    res->aggregates_pool,
-                    true,
-                    prefetch,
-                    is_cancelled);
+                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, true, prefetch, is_cancelled);
             }
             else
 #endif
             {
                 mergeDataImpl<Method>(
-                    getDataVariant<Method>(*res).data,
-                    getDataVariant<Method>(current).data,
-                    res->aggregates_pool,
-                    false,
-                    prefetch,
-                    is_cancelled);
+                    getDataVariant<Method>(*res).data, getDataVariant<Method>(current).data, res->aggregates_pool, false, prefetch, is_cancelled);
             }
         }
         else if (res->without_key)
@@ -2757,12 +2727,7 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         if (compiled_aggregate_functions_holder)
         {
             mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data.impls[bucket],
-                getDataVariant<Method>(current).data.impls[bucket],
-                arena,
-                true,
-                prefetch,
-                is_cancelled);
+                getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena, true, prefetch, is_cancelled);
         }
         else
 #endif
@@ -2957,16 +2922,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     {
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
         mergeStreamsImplCase(
-            aggregates_pool,
-            state,
-            data,
-            no_more_keys,
-            overflow_row,
-            row_begin,
-            row_end,
-            aggregate_columns_data,
-            is_cancelled,
-            arena_for_keys);
+            aggregates_pool, state, data, no_more_keys, overflow_row, row_begin, row_end, aggregate_columns_data, is_cancelled, arena_for_keys);
 
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
@@ -2974,16 +2930,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     {
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
         mergeStreamsImplCase(
-            aggregates_pool,
-            state,
-            data,
-            no_more_keys,
-            overflow_row,
-            row_begin,
-            row_end,
-            aggregate_columns_data,
-            is_cancelled,
-            arena_for_keys);
+            aggregates_pool, state, data, no_more_keys, overflow_row, row_begin, row_end, aggregate_columns_data, is_cancelled, arena_for_keys);
     }
 }
 
@@ -3147,8 +3094,6 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
     bool has_blocks_with_unknown_bucket = bucket_to_blocks.contains(-1);
 
-    const bool use_thread_pool = max_threads > 1 && total_input_rows > 100000;
-
     /// First, parallel the merge for the individual buckets. Then we continue merge the data not allocated to the buckets.
     if (has_two_level)
     {
@@ -3159,47 +3104,66 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
 
         LOG_TRACE(log, "Merging partially aggregated two-level data.");
 
-        // clang-format off
-        auto merge_bucket = [&bucket_to_blocks, &result, &is_cancelled, this](Int32 bucket, Arena * aggregates_pool)
-        {
-            for (Block & block : bucket_to_blocks[bucket])
-            {
-                /// Copy to avoid race.
-                auto consecutive_keys_cache_stats_copy = result.consecutive_keys_cache_stats;
-            #define M(NAME) \
-                else if (result.type == AggregatedDataVariants::Type::NAME) \
-                    mergeStreamsImpl(std::move(block), aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false, is_cancelled);
+        std::atomic<UInt32> next_bucket_to_merge = 0;
 
-                if (false) {} // NOLINT
-                    APPLY_FOR_VARIANTS_TWO_LEVEL(M)
-            #undef M
-                else
-                    throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+        auto merge_bucket = [&bucket_to_blocks, &result, &is_cancelled, &next_bucket_to_merge, max_bucket, this](Arena * aggregates_pool)
+        {
+            while (true)
+            {
+                const Int32 bucket = next_bucket_to_merge.fetch_add(1);
+
+                if (bucket > max_bucket)
+                    break;
+
+                for (Block & block : bucket_to_blocks[bucket])
+                {
+                    /// Copy to avoid race.
+                    auto consecutive_keys_cache_stats_copy = result.consecutive_keys_cache_stats;
+                #define M(NAME) \
+                    else if (result.type == AggregatedDataVariants::Type::NAME) \
+                        mergeStreamsImpl(std::move(block), aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, consecutive_keys_cache_stats_copy, false, is_cancelled);
+
+                    if (false) {} // NOLINT
+                        APPLY_FOR_VARIANTS_TWO_LEVEL(M)
+                #undef M
+                    else
+                        throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
+                }
             }
         };
 
-        std::vector<std::future<void>> futures;
-        futures.reserve(bucket_to_blocks.size());
-        auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pool, "");
-
-        for (const auto & bucket_blocks : bucket_to_blocks)
-        {
-            const auto bucket = bucket_blocks.first;
-
-            if (bucket == -1)
-                continue;
-
-            result.aggregates_pools.push_back(std::make_shared<Arena>());
-            Arena * aggregates_pool = result.aggregates_pools.back().get();
-
-            if (use_thread_pool)
-                futures.emplace_back(schedule([bucket, &merge_bucket, aggregates_pool]() { merge_bucket(bucket, aggregates_pool); }, Priority{}));
-            else
-                merge_bucket(bucket, aggregates_pool);
-        }
+        /// TODO Make a custom threshold.
+        const bool use_thread_pool = max_threads > 1 && total_input_rows > 100000;
 
         if (use_thread_pool)
-            std::ranges::for_each(futures, [](auto & future) { future.wait(); });
+        {
+            std::vector<std::future<void>> futures;
+            try
+            {
+                auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pool, "");
+                futures.reserve(bucket_to_blocks.size());
+
+                for (size_t i = 0; i < max_threads; ++i)
+                {
+                    result.aggregates_pools.push_back(std::make_shared<Arena>());
+                    Arena * aggregates_pool = result.aggregates_pools.back().get();
+                    futures.emplace_back(schedule([&merge_bucket, aggregates_pool]() { merge_bucket(aggregates_pool); }, Priority{}));
+                }
+
+                std::ranges::for_each(futures, [](auto & future) { future.wait(); });
+            }
+            catch (...)
+            {
+                std::ranges::for_each(futures, [](auto & future) { future.wait(); });
+                throw;
+            }
+        }
+        else
+        {
+            result.aggregates_pools.push_back(std::make_shared<Arena>());
+            Arena * aggregates_pool = result.aggregates_pools.back().get();
+            merge_bucket(aggregates_pool);
+        }
 
         LOG_TRACE(log, "Merged partially aggregated two-level data.");
     }
