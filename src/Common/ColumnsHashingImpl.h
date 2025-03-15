@@ -327,6 +327,18 @@ protected:
             null_map = &checkAndGetColumn<ColumnNullable>(*column).getNullMapColumn();
     }
 
+    template <typename T, typename = void>
+    struct HasBegin : std::false_type {};
+    
+    template <typename T>
+    struct HasBegin<T, std::void_t<decltype(std::declval<const T&>().begin())>> : std::true_type {};
+
+    template <typename T, typename = void>
+    struct HasForEachMapped : std::false_type {};
+    
+    template <typename T>
+    struct HasForEachMapped<T, std::void_t<decltype(std::declval<const T&>().forEachMapped())>> : std::true_type {};
+
     // 72610: key_holder -- указатель на ключ
     // 72610: data -- мап (или сет)
     // 72610: emplaceImpl пытается вставить в мап и возвращает получилось ли и итератор, если да
@@ -378,21 +390,25 @@ protected:
         std::cout << "^^^^^^^^ Type of data: " << typeid(data).name() << std::endl;
 
         if (data.size() >= limit_length + 1) { // TODO do == and assert <=
-        //     data.forEachMapped([](auto el) {
-        //         std::cout << "forEachMapped el: " << el << std::endl;
-        //     });
             std::cout << "data.size() >= limit_length + 1" << std::endl;
-        //     // auto min_key = key_holder;
-        //     // for (const auto& data_it : data) {
-        //     //     (void)data_it;
-        //         // if (data_it.getKey() < min_key) {
-        //         //     min_key = data_it.getKey();
-        //         // }
-        //     // }
-        //     // data.erase(min_key);
-        //     // if (min_key == key_holder) {
-        //     //     return EmplaceResult(false);
-        //     // }
+            if constexpr (HasBegin<Data>::value) {
+                auto min_key = key_holder;
+                (void)min_key;
+                for (const auto& data_it : data) {
+                    (void)data_it;
+                    // if (data_it.getKey() < min_key) {
+                    //     min_key = data_it.getKey();
+                    // }
+                }
+                // data.erase(min_key);
+                // if (min_key == key_holder) {
+                //     return EmplaceResult(false);
+                // }    
+            } else if constexpr(HasForEachMapped<Data>::value) {
+                // data.forEachMapped([](auto el) {
+                //     std::cout << "forEachMapped el: " << el << std::endl;
+                // });
+            }
         }
 
         [[maybe_unused]] Mapped * cached = nullptr;
