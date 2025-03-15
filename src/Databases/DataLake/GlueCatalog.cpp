@@ -265,6 +265,12 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
             LOG_TEST(log, "Success getting table for database '{}', total tables {}", db_name, tables.size());
             for (const auto & table : tables)
             {
+                /// For some reason glue allow to have empty tables
+                /// without any columns. They are also empty in object
+                /// storage, so just ignore them.
+                if (table.GetStorageDescriptor().GetColumns().empty())
+                    continue;
+
                 if (limit != 0 && result.size() >= limit)
                     break;
                 result.push_back(db_name + "." + table.GetName());
@@ -360,7 +366,7 @@ void GlueCatalog::getTableMetadata(
             result.setSchema(schema);
         }
 
-        if (result.requiresCredentials())
+        if (!credentials.IsEmpty())
         {
             setCredentials(result);
         }

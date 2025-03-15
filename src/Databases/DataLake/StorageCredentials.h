@@ -38,7 +38,8 @@ public:
 
         engine_args.push_back(std::make_shared<DB::ASTLiteral>(access_key_id));
         engine_args.push_back(std::make_shared<DB::ASTLiteral>(secret_access_key));
-        engine_args.push_back(std::make_shared<DB::ASTLiteral>(session_token));
+        if (!session_token.empty())
+            engine_args.push_back(std::make_shared<DB::ASTLiteral>(session_token));
     }
 
 private:

@@ -335,22 +335,29 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     /// in CREATE query (e.g. in `args`).
     /// Vended credentials can be disabled in catalog itself,
     /// so we have a separate setting to know whether we should even try to fetch them.
-    if (with_vended_credentials && args.size() == 1)
+    if (args.size() == 1)
     {
-        if (!lightweight)
+        if (table_metadata.hasStorageCredentials())
         {
             LOG_DEBUG(log, "Getting credentials");
             auto storage_credentials = table_metadata.getStorageCredentials();
             if (storage_credentials)
+            {
+                LOG_DEBUG(log, "Has credentials");
                 storage_credentials->addCredentialsToEngineArgs(args);
+            }
+            else
+            {
+                LOG_DEBUG(log, "Has no credentials");
+            }
         }
-    }
-    else if (args.size() == 1)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Either vended credentials need to be enabled "
-            "or storage credentials need to be specified in database engine arguments in CREATE query");
+        else if (!lightweight && table_metadata.requiresCredentials())
+        {
+            throw Exception(
+               ErrorCodes::BAD_ARGUMENTS,
+               "Either vended credentials need to be enabled "
+               "or storage credentials need to be specified in database engine arguments in CREATE query");
+        }
     }
 
     LOG_TEST(log, "Using table endpoint: {}", args[0]->as<ASTLiteral>()->value.safeGet<String>());
