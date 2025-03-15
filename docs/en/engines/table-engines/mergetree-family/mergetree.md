@@ -458,7 +458,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [notEmpty](/sql-reference/functions/array-functions/#notempty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [has](/sql-reference/functions/array-functions#hasarr-elem)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
 | [hasAny](/sql-reference/functions/array-functions#hasany)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
-| [hasAll](/sql-reference/functions/array-functions#hasall)                                         | ✗           | ✗      | ✗          | ✗          | ✔            | ✗         |
+| [hasAll](/sql-reference/functions/array-functions#hasall)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
 | hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
 | hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
 | hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
