@@ -46,6 +46,7 @@ private:
     const Block virtual_header;
 
     NATSConsumerPtr consumer;
+    bool unsubscribe_on_destroy = false;
 
     Poco::Timespan max_execution_time = 0;
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
