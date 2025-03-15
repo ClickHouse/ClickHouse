@@ -30,9 +30,8 @@ class JobConfigs:
     style_check = Job.Config(
         name=JobNames.STYLE_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        requires=[],
-        enable_commit_status=True,
+        command="python3 ./ci/jobs/check_style.py",
+        run_in_docker="clickhouse/style-test",
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
