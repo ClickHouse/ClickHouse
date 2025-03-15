@@ -12,17 +12,24 @@ from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_queue_common import run_query, random_str, generate_random_files, put_s3_file_content, put_azure_file_content, create_table, create_mv, generate_random_string, add_instances
+from helpers.s3_queue_common import (
+    run_query,
+    random_str,
+    generate_random_files,
+    put_s3_file_content,
+    put_azure_file_content,
+    create_table,
+    create_mv,
+    generate_random_string,
+)
 
 AVAILABLE_MODES = ["unordered", "ordered"]
+
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
     instance = started_cluster.instances["instance"]
-    instance_2 = started_cluster.instances["instance2"]
-
     instance.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
-    instance_2.query("DROP DATABASE IF EXISTS default; CREATE DATABASE default;")
 
     minio = started_cluster.minio_client
     objects = list(minio.list_objects(started_cluster.minio_bucket, recursive=True))
@@ -46,7 +53,18 @@ def s3_queue_setup_teardown(started_cluster):
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        add_instances(cluster)
+        cluster.add_instance(
+            "instance",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+            ],
+            stay_alive=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()

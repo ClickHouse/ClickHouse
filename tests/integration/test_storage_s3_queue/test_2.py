@@ -12,9 +12,19 @@ from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_queue_common import run_query, random_str, generate_random_files, put_s3_file_content, put_azure_file_content, create_table, create_mv, generate_random_string, add_instances
+from helpers.s3_queue_common import (
+    run_query,
+    random_str,
+    generate_random_files,
+    put_s3_file_content,
+    put_azure_file_content,
+    create_table,
+    create_mv,
+    generate_random_string,
+)
 
 AVAILABLE_MODES = ["unordered", "ordered"]
+
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
@@ -46,7 +56,31 @@ def s3_queue_setup_teardown(started_cluster):
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        add_instances(cluster)
+        cluster.add_instance(
+            "instance",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance2",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+            stay_alive=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -454,5 +488,3 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
     assert (
         get_count(node, dst_table_name) + get_count(node_2, dst_table_name)
     ) == total_rows
-
-

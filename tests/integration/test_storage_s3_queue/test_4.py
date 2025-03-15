@@ -12,9 +12,19 @@ from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_queue_common import run_query, random_str, generate_random_files, put_s3_file_content, put_azure_file_content, create_table, create_mv, generate_random_string, add_instances
+from helpers.s3_queue_common import (
+    run_query,
+    random_str,
+    generate_random_files,
+    put_s3_file_content,
+    put_azure_file_content,
+    create_table,
+    create_mv,
+    generate_random_string,
+)
 
 AVAILABLE_MODES = ["unordered", "ordered"]
+
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
@@ -46,7 +56,41 @@ def s3_queue_setup_teardown(started_cluster):
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        add_instances(cluster)
+        cluster.add_instance(
+            "instance",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance2",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "node_cloud_mode",
+            with_zookeeper=True,
+            stay_alive=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+            ],
+            user_configs=["configs/cloud_mode.xml"],
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -58,8 +102,8 @@ def started_cluster():
 
 
 def test_replicated(started_cluster):
-    node1 = started_cluster.instances["node1"]
-    node2 = started_cluster.instances["node2"]
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
 
     table_name = f"test_replicated_{uuid.uuid4().hex[:8]}"
     mv_name = f"{table_name}_mv"
@@ -99,7 +143,12 @@ def test_replicated(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
-    create_mv(node1, f"{db_name}.{table_name}", f"{db_name}.{dst_table_name}", mv_name = f"{db_name}.{mv_name}")
+    create_mv(
+        node1,
+        f"{db_name}.{table_name}",
+        f"{db_name}.{dst_table_name}",
+        mv_name=f"{db_name}.{mv_name}",
+    )
 
     def get_count():
         return int(
@@ -144,7 +193,7 @@ def test_bad_settings(started_cluster):
 
 
 def test_processing_threads(started_cluster):
-    node = started_cluster.instances["node1"]
+    node = started_cluster.instances["instance"]
 
     table_name = f"test_processing_threads_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
@@ -197,8 +246,8 @@ def test_processing_threads(started_cluster):
 
 
 def test_alter_settings(started_cluster):
-    node1 = started_cluster.instances["node1"]
-    node2 = started_cluster.instances["node2"]
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
 
     table_name = f"test_alter_settings_{uuid.uuid4().hex[:8]}"
     dst_table_name = f"{table_name}_dst"
@@ -249,7 +298,7 @@ def test_alter_settings(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
-    create_mv(node1, f"r.{table_name}", f"r.{dst_table_name}", mv_name = f"r.{mv_name}")
+    create_mv(node1, f"r.{table_name}", f"r.{dst_table_name}", mv_name=f"r.{mv_name}")
 
     def get_count():
         return int(
@@ -476,8 +525,8 @@ def test_list_and_delete_race(started_cluster):
 
 
 def test_registry(started_cluster):
-    node1 = started_cluster.instances["node1"]
-    node2 = started_cluster.instances["node2"]
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
 
     table_name = f"test_registry_{uuid.uuid4().hex[:8]}"
     db_name = f"db_{table_name}"
@@ -515,7 +564,7 @@ def test_registry(started_cluster):
     ).strip()
     assert uuid1 in str(registry)
 
-    expected = [f"0\\nnode1\\n{uuid1}\\n", f"0\\nnode2\\n{uuid1}\\n"]
+    expected = [f"0\\ninstance\\n{uuid1}\\n", f"0\\ninstance2\\n{uuid1}\\n"]
 
     for elem in expected:
         assert elem in str(registry)
@@ -524,7 +573,12 @@ def test_registry(started_cluster):
         started_cluster, files_path, files_to_generate, start_ind=0, row_num=1
     )
 
-    create_mv(node1, f"{db_name}.{table_name}", f"{db_name}.{dst_table_name}", mv_name = f"{db_name}.{mv_name}")
+    create_mv(
+        node1,
+        f"{db_name}.{table_name}",
+        f"{db_name}.{dst_table_name}",
+        mv_name=f"{db_name}.{mv_name}",
+    )
 
     def get_count():
         return int(
@@ -561,10 +615,10 @@ def test_registry(started_cluster):
     assert uuid2 in str(registry)
 
     expected = [
-        f"0\\nnode1\\n{uuid1}\\n",
-        f"0\\nnode2\\n{uuid1}\\n",
-        f"0\\nnode1\\n{uuid2}\\n",
-        f"0\\nnode2\\n{uuid2}\\n",
+        f"0\\ninstance\\n{uuid1}\\n",
+        f"0\\ninstance2\\n{uuid1}\\n",
+        f"0\\ninstance\\n{uuid2}\\n",
+        f"0\\ninstance2\\n{uuid2}\\n",
     ]
 
     for elem in expected:
@@ -587,8 +641,8 @@ def test_registry(started_cluster):
     assert uuid2 not in str(registry)
 
     expected = [
-        f"0\\nnode1\\n{uuid1}\\n",
-        f"0\\nnode2\\n{uuid1}\\n",
+        f"0\\ninstance\\n{uuid1}\\n",
+        f"0\\ninstance2\\n{uuid1}\\n",
     ]
 
     for elem in expected:
