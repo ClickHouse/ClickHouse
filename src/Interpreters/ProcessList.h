@@ -232,7 +232,7 @@ public:
         progress_in.incrementPiecewiseAtomically(value);
 
         if (priority_handle){
-            UInt64 wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_wait_time_ms].totalMilliseconds();
+            UInt64 wait_time = getContext()->getSettingsRef()[Settings::low_priority_query_wait_time_ms].totalMilliseconds();
             LOG_INFO(getLogger("ProcessList"), "Update the progress with current wait time value{}", wait_time)
             priority_handle->waitIfNeed(std::chrono::milliseconds(wait_time));
         }
@@ -491,14 +491,14 @@ public:
     size_t getMaxInsertQueriesAmount() const
     {
         Lock lock(mutex);
-        LOG_WARNING(getLogger("ProcessList"), "Getting the low priority query wait time  {}", low_priority_query_wait_time_ms_);
+        LOG_WARNING(getLogger("ProcessList"), "Getting the low priority query wait time  {}", low_priority_query_wait_time_ms);
         return max_insert_queries_amount;
     }
 
     void setLowPriorityQueryWaitTimeMs(size_t low_priority_query_wait_time_ms_)
     {
         Lock lock(mutex);
-        LOG_WARNING(getLogger("ProcessList"), "Setting the low priority query wait time to {}", low_priority_query_wait_time_ms_);
+        LOG_WARNING(getLogger("ProcessList"), "Setting the low priority query wait time to {}", low_priority_query_wait_time_ms);
         low_priority_query_wait_time_ms = low_priority_query_wait_time_ms_;
     }
 
