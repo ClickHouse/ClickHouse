@@ -238,7 +238,7 @@ public:
 
         if (priority_handle){
             UInt64 wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_wait_time_ms].totalMilliseconds();
-            LOG_INFO(getLogger("ProcessList"), "Update the progress with current wait time value{}", wait_time)
+            LOG_INFO(getLogger("ProcessList"), "Update the progress with current wait time value{}", wait_time);
             priority_handle->waitIfNeed(std::chrono::milliseconds(wait_time));
         }
 
