@@ -102,6 +102,8 @@ public:
     std::optional<UInt64> totalBytes(const Settings & settings) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;
 
+    RefreshTaskPtr getRefreshTask() const;
+
 private:
     mutable std::mutex target_table_id_mutex;
     /// Will be initialized in constructor

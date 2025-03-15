@@ -851,6 +851,11 @@ std::optional<UInt64> StorageMaterializedView::totalBytesUncompressed(const Sett
     return {};
 }
 
+RefreshTaskPtr StorageMaterializedView::getRefreshTask() const
+{
+    return refresher.ptr;
+}
+
 ActionLock StorageMaterializedView::getActionLock(StorageActionBlockType type)
 {
     if (type == ActionLocks::ViewRefresh && refresher)
