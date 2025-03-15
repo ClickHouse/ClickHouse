@@ -12,11 +12,11 @@ if [[ ${1:-} == "--help" ]] || [[ ${1:-} == "-h" ]]; then
     exit 0
 fi
 
-ROOT_PATH=$(git rev-parse --show-toplevel)
+ROOT_PATH="."
 
 CHECK_LANG=en
 
-ASPELL_IGNORE_PATH="${ROOT_PATH}/utils/check-style/aspell-ignore/${CHECK_LANG}"
+ASPELL_IGNORE_PATH="${ROOT_PATH}/ci/jobs/scripts/check-style/aspell-ignore/${CHECK_LANG}"
 
 # Use this to filter out lines we don't wanna consider in spell-check - slugs, imports
 preprocess_file() {

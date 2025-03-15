@@ -2,7 +2,7 @@
 
 # Check for typos in code.
 
-ROOT_PATH=$(git rev-parse --show-toplevel)
+ROOT_PATH="."
 
 #FIXME: check all (or almost all) repo
 codespell \
