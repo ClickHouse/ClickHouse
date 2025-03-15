@@ -7,23 +7,22 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <Common/VersionNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Formats/FormatFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Progress.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -37,26 +36,31 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <base/defines.h>
+#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Common/Exception.h>
+#include "Common/OpenTelemetryTraceContext.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/Stopwatch.h>
+#include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-#include <base/defines.h>
-#include <base/scope_guard.h>
 
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Columns/ColumnBlob.h>
+#include <Columns/ColumnSparse.h>
+
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
 #if USE_SSL
@@ -116,6 +120,7 @@ namespace Setting
     extern const SettingsSeconds wait_for_async_insert_timeout;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool apply_settings_from_server;
+    extern const SettingsUInt64 parallel_block_marshaling_threads;
 }
 
 namespace ServerSetting
@@ -1233,10 +1238,10 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
         try
         {
+            // TODO(nickitat): increase ConcurrentBoundedQueue size
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
-
                 {
                     std::lock_guard lock(callback_mutex);
                     receivePacketsExpectCancel(state);
@@ -1259,17 +1264,53 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     }
 
                     sendLogs(state);
+                }
+
+                // Block might be empty in case of timeout, i.e. there is no data to process
+                if (block && !state.io.null_format)
+                {
+                    initBlockQueue(state);
+                    while (block && state.block_queue->enqueueForProcessing(block, /*wait=*/false))
+                    {
+                        if (!executor.pull(block, /*milliseconds=*/1))
+                        {
+                            // Both negative outcomes - timeout and end of data - should cause exit from the loop
+                            block = {};
+                        }
+                    }
+
+                    {
+                        std::lock_guard lock(callback_mutex);
+                        Block processed;
+                        // Make only one iteration with `wait=true`, all other on the best-effort basis
+                        while ((processed = state.block_queue->dequeueNextProcessed(/*wait=*/!processed)))
+                        {
+                            OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
+                            sendData(state, processed);
+                        }
+                    }
 
                     if (block)
                     {
-                        if (!state.io.null_format)
-                            sendData(state, block);
+                        // Everything that was possible to push without waiting is pushed. Now we have to push the last block regardless of the queue state
+                        state.block_queue->enqueueForProcessing(block, /*wait=*/true);
                     }
+                }
+            }
+
+            if (state.block_queue)
+            {
+                std::lock_guard lock(callback_mutex);
+                while (Block processed = state.block_queue->dequeueNextProcessed(/*wait=*/false))
+                {
+                    OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
+                    sendData(state, processed);
                 }
             }
         }
         catch (...)
         {
+            // TODO(nickitat): make sure queue threads do not continue to work
             executor.cancel();
             throw;
         }
@@ -2327,6 +2368,30 @@ void TCPHandler::initBlockInput(QueryState & state)
 }
 
 
+CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_settings, Protocol::Compression compression)
+{
+    std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
+    std::optional<int> level;
+    if (method == "ZSTD")
+        level = query_settings[Setting::network_zstd_compression_level];
+
+    if (compression == Protocol::Compression::Enable)
+    {
+        CompressionCodecFactory::instance().validateCodec(
+            method,
+            level,
+            !query_settings[Setting::allow_suspicious_codecs],
+            query_settings[Setting::allow_experimental_codecs],
+            query_settings[Setting::enable_deflate_qpl_codec],
+            query_settings[Setting::enable_zstd_qat_codec]);
+
+        return CompressionCodecFactory::instance().get(method, level);
+    }
+
+    return nullptr;
+}
+
+
 void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
 {
     if (!state.block_out)
@@ -2334,24 +2399,8 @@ void TCPHandler::initBlockOutput(QueryState & state, const Block & block)
         const Settings & query_settings = state.query_context->getSettingsRef();
         if (!state.maybe_compressed_out)
         {
-            std::string method = Poco::toUpper(query_settings[Setting::network_compression_method].toString());
-            std::optional<int> level;
-            if (method == "ZSTD")
-                level = query_settings[Setting::network_zstd_compression_level];
-
-            if (state.compression == Protocol::Compression::Enable)
-            {
-                CompressionCodecFactory::instance().validateCodec(
-                    method,
-                    level,
-                    !query_settings[Setting::allow_suspicious_codecs],
-                    query_settings[Setting::allow_experimental_codecs],
-                    query_settings[Setting::enable_deflate_qpl_codec],
-                    query_settings[Setting::enable_zstd_qat_codec]);
-
-                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(
-                    *out, CompressionCodecFactory::instance().get(method, level));
-            }
+            if (auto codec = getCompressionCodec(query_settings, state.compression))
+                state.maybe_compressed_out = std::make_shared<CompressedWriteBuffer>(*out, codec);
             else
                 state.maybe_compressed_out = out;
         }
@@ -2440,6 +2489,51 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
     }
 }
 
+
+static Block prepare(const Block & block, CompressionCodecPtr codec, UInt64 client_revision, const FormatSettings & format_settings)
+{
+    if (!block || !codec || client_revision < DBMS_MIN_REVISON_WITH_JWT_IN_INTERSERVER)
+        return block;
+
+    Block res;
+    res.info = block.info;
+    for (const auto & elem : block)
+    {
+        ColumnWithTypeAndName column = elem;
+
+        // TODO(nickitat): support Tuple
+        if (!elem.column->isConst()
+            && (!elem.type->haveSubtypes() || elem.type->lowCardinality() || elem.type->isNullable() || isArray(elem.type->getTypeId())))
+        {
+            auto task = [column, codec, client_revision, format_settings](ColumnBlob::Blob & blob)
+            { ColumnBlob::toBlob(blob, column, codec, client_revision, format_settings); };
+            auto col = ColumnBlob::create(std::move(task), column.column);
+            col->convertTo();
+
+            column.column = std::move(col);
+        }
+
+        res.insert(std::move(column));
+    }
+    return res;
+}
+
+void TCPHandler::initBlockQueue(QueryState & state)
+{
+    if (!state.block_queue)
+    {
+        state.block_queue = std::make_unique<BlockQueue>(
+            state.query_context->getSettingsRef()[Setting::parallel_block_marshaling_threads],
+            [this, &state](const Block & block)
+            {
+                return prepare(
+                    block,
+                    getCompressionCodec(state.query_context->getSettingsRef(), state.compression),
+                    client_tcp_protocol_version,
+                    getFormatSettings(state.query_context));
+            });
+    }
+}
 
 void TCPHandler::sendData(QueryState & state, const Block & block)
 {

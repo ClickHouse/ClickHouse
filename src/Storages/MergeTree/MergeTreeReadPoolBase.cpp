@@ -101,8 +101,9 @@ calculateMinMarksPerTask(
             const auto min_bytes_per_task = settings[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
             /// We're taking min here because number of tasks shouldn't be too low - it will make task stealing impossible.
             /// We also create at least two tasks per thread to have something to steal from a slow thread.
-            const auto heuristic_min_marks
-                = std::min<size_t>(pool_settings.sum_marks / pool_settings.threads / 2, min_bytes_per_task / avg_mark_bytes);
+            const auto heuristic_min_marks = std::min<size_t>(
+                pool_settings.sum_marks / (pool_settings.threads * pool_settings.total_query_nodes) / 2,
+                min_bytes_per_task / avg_mark_bytes);
             if (heuristic_min_marks > min_marks_per_task)
             {
                 LOG_TEST(
