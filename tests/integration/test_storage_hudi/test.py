@@ -221,9 +221,9 @@ def test_multiple_hudi_files(started_cluster):
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) == 2
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 200
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS use_datalake_metadata_cache = 0")) == 200
     assert instance.query(
-        f"SELECT a, b FROM {TABLE_NAME} ORDER BY 1"
+        f"SELECT a, b FROM {TABLE_NAME} ORDER BY 1 SETTINGS use_datalake_metadata_cache = 0"
     ) == instance.query("SELECT number, toString(number + 1) FROM numbers(200)")
 
     write_hudi_from_df(
@@ -236,12 +236,12 @@ def test_multiple_hudi_files(started_cluster):
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
     assert len(files) == 3
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS use_datalake_metadata_cache = 0")) == 300
     assert instance.query(
         f"SELECT a, b FROM {TABLE_NAME} ORDER BY 1"
-    ) == instance.query("SELECT number, toString(number + 1) FROM numbers(300)")
+    ) == instance.query("SELECT number, toString(number + 1) FROM numbers(300) SETTINGS use_datalake_metadata_cache = 0")
 
-    assert int(instance.query(f"SELECT b FROM {TABLE_NAME} WHERE a = 100")) == 101
+    assert int(instance.query(f"SELECT b FROM {TABLE_NAME} WHERE a = 100 SETTINGS use_datalake_metadata_cache = 0")) == 101
     write_hudi_from_df(
         spark,
         TABLE_NAME,
@@ -251,8 +251,8 @@ def test_multiple_hudi_files(started_cluster):
     )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
 
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 300
-    assert int(instance.query(f"SELECT b FROM {TABLE_NAME} WHERE a = 100")) == 100
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS use_datalake_metadata_cache = 0")) == 300
+    assert int(instance.query(f"SELECT b FROM {TABLE_NAME} WHERE a = 100 SETTINGS use_datalake_metadata_cache = 0")) == 100
 
     write_hudi_from_df(
         spark,
@@ -262,7 +262,7 @@ def test_multiple_hudi_files(started_cluster):
         mode="append",
     )
     files = upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
-    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1000000
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME} SETTINGS use_datalake_metadata_cache = 0")) == 1000000
 
     shutil.rmtree(f"/{TABLE_NAME}")
     remove_directory(minio_client, bucket, TABLE_NAME)
