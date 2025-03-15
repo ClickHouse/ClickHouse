@@ -95,6 +95,8 @@ public:
     bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
+    const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
+
 private:
     friend class ReadFromStorageKafka;
 

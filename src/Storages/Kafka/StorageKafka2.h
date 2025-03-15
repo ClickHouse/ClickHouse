@@ -97,6 +97,8 @@ public:
     bool supportsDynamicSubcolumns() const override { return true; }
     bool supportsSubcolumns() const override { return true; }
 
+    const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
+
 private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
     using TopicPartitions = KafkaConsumer2::TopicPartitions;

@@ -87,6 +87,12 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
         auto format_if_secret = [&]() -> bool
         {
+            if (change.name.contains("password"))
+            {
+                ostr << " = " << "'[HIDDEN]'";
+                return true;
+            }
+
             CustomType custom;
             if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
             {
