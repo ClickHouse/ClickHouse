@@ -107,8 +107,13 @@ Poco::Util::LayeredConfiguration & ClientEmbedded::getClientConfiguration()
 }
 
 
-int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
+bool ClientEmbedded::isEmbeeddedClient() const
 {
+    return true;
+}
+
+
+int ClientEmbedded::run(const NameToNameMap & envVars, const String & first_query)
 try
 {
     setThreadName("LocalServerPty");
@@ -159,7 +164,7 @@ try
 
     /// Apply settings specified as command line arguments (read environment variables).
     global_context = session->sessionContext();
-    global_context->setApplicationType(Context::ApplicationType::EMBEDDED_CLIENT);
+    global_context->setApplicationType(Context::ApplicationType::SERVER);
     global_context->setSettings(cmd_settings);
 
     is_interactive = stdin_is_a_tty;
@@ -188,9 +193,7 @@ try
 
     initTTYBuffer(toProgressOption(getClientConfiguration().getString("progress", "default")),
         toProgressOption(getClientConfiguration().getString("progress-table", "default")));
-
-    /// TODO: Support progress table.
-    /// initKeystrokeInterceptor();
+    initKeystrokeInterceptor();
 
     client_context = session->sessionContext();
     initClientContext();
@@ -233,7 +236,6 @@ catch (...)
 
     error_stream << getCurrentExceptionMessage(false) << std::endl;
     return getCurrentExceptionCode();
-}
 }
 
 
