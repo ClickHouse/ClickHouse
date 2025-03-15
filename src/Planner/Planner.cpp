@@ -762,16 +762,6 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     if (fill_description.empty())
         return;
 
-    auto sort_description = query_analysis_result.sort_description;
-
-    for (auto it = sort_description.begin(); it != sort_description.end();)
-    {
-        if (header.findByName(it->column_name))
-            ++it;
-        else
-            it = sort_description.erase(it);
-    }
-
     InterpolateDescriptionPtr interpolate_description;
 
     if (query_node.hasInterpolate())
@@ -869,7 +859,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const Settings & settings = query_context->getSettingsRef();
     auto filling_step = std::make_unique<FillingStep>(
         header,
-        sort_description,
+        query_analysis_result.sort_description,
         std::move(fill_description),
         interpolate_description,
         settings[Setting::use_with_fill_by_sorting_prefix]);
