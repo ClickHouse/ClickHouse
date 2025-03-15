@@ -855,7 +855,7 @@ SELECT arrayDotProduct([1, 2, 3], [4, 5, 6]) AS res, toTypeName(res);
 Result:
 
 ```response
-32	UInt16
+32    UInt16
 ```
 
 Query:
@@ -867,7 +867,7 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 Result:
 
 ```response
-32	Float64
+32    Float64
 ```
 
 ## countEqual(arr, x) {#countequalarr-x}

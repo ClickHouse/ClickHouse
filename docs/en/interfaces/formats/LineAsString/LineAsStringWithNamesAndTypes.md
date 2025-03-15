@@ -32,11 +32,11 @@ SELECT * FROM example FORMAT LineAsStringWithNamesAndTypes;
 ```
 
 ```response title="Response"
-name	value
-String	Int32
-John	30
-Jane	25
-Peter	35
+name    value
+String    Int32
+John    30
+Jane    25
+Peter    35
 ```
 
 ## Format Settings {#format-settings}
