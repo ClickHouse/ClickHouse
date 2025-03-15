@@ -7,23 +7,22 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
-#include <Common/VersionNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/ExternalTable.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+#include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
-#include <Formats/FormatFactory.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/Progress.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBuffer.h>
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBuffer.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
@@ -37,29 +36,31 @@
 #include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/StorageReplicatedMergeTree.h>
+#include <base/defines.h>
+#include <base/scope_guard.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
-#include <Common/Exception.h>
+#include "Common/OpenTelemetryTraceContext.h"
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Common/Exception.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Common/Stopwatch.h>
+#include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 #include <Common/thread_local_rng.h>
-#include <base/defines.h>
-#include <base/scope_guard.h>
 
 #include <Columns/ColumnBlob.h>
 #include <Columns/ColumnSparse.h>
 
-#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
+#include <Processors/Executors/PullingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sinks/SinkToStorage.h>
 
 #if USE_SSL
@@ -1283,7 +1284,10 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                         Block processed;
                         // Make only one iteration with `wait=true`, all other on the best-effort basis
                         while ((processed = state.block_queue->dequeueNextProcessed(/*wait=*/!processed)))
+                        {
+                            OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
                             sendData(state, processed);
+                        }
                     }
 
                     if (block)
@@ -1298,7 +1302,10 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             {
                 std::lock_guard lock(callback_mutex);
                 while (Block processed = state.block_queue->dequeueNextProcessed(/*wait=*/false))
+                {
+                    OpenTelemetry::SpanHolder span{"TCPHandler::sendData"};
                     sendData(state, processed);
+                }
             }
         }
         catch (...)
