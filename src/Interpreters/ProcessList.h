@@ -43,6 +43,10 @@ class QueryStatus;
 class ThreadStatus;
 class ProcessListEntry;
 
+namespace Setting
+{
+    extern const SettingsMilliseconds low_priority_query_wait_time_ms;
+}
 
 enum CancelReason
 {
@@ -232,11 +236,10 @@ public:
         progress_in.incrementPiecewiseAtomically(value);
 
         if (priority_handle){
-            UInt64 wait_time = getContext()->getSettingsRef()[Settings::low_priority_query_wait_time_ms].totalMilliseconds();
+            UInt64 wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_wait_time_ms].totalMilliseconds();
             LOG_INFO(getLogger("ProcessList"), "Update the progress with current wait time value{}", wait_time)
             priority_handle->waitIfNeed(std::chrono::milliseconds(wait_time));
         }
-            
 
         return !is_killed.load(std::memory_order_relaxed);
     }
