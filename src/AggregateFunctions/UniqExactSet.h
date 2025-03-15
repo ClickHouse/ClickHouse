@@ -124,6 +124,7 @@ public:
             }
             else
             {
+                std::vector<std::future<void>> futures;
                 try
                 {
                     auto next_bucket_to_merge = std::make_shared<std::atomic_uint32_t>(0);
@@ -143,7 +144,6 @@ public:
                     };
 
                     const auto tasks = std::min<size_t>(thread_pool->getMaxThreads(), rhs.NUM_BUCKETS);
-                    std::vector<std::future<void>> futures;
                     futures.reserve(tasks);
                     auto schedule = threadPoolCallbackRunnerUnsafe<void>(*thread_pool, "UniqExactMerger");
                     for (size_t i = 0; i < tasks; ++i)
@@ -152,7 +152,7 @@ public:
                 }
                 catch (...)
                 {
-                    thread_pool->wait();
+                    std::ranges::for_each(futures, [](auto & future) { future.wait(); });
                     throw;
                 }
             }
