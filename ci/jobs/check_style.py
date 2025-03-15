@@ -193,7 +193,7 @@ def check_repo_submodules():
 
 def check_other():
     res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/checks_to_refactor.sh"
+        "./ci/jobs/scripts/check_style/various_checks.sh"
     )
     if err:
         out += err
@@ -414,4 +414,13 @@ if __name__ == "__main__":
             )
         )
 
-    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+    testname = "Check mypy"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_mypy,
+            )
+        )
+
+    result = Result.create_from(results=results, stopwatch=stop_watch).complete_job()
