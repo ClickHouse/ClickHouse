@@ -5,6 +5,7 @@
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/FieldVisitorToString.h>
+#include "Analyzer/IQueryOrUnionNode.h"
 
 #include <Core/NamesAndTypes.h>
 
@@ -34,7 +35,7 @@ namespace ErrorCodes
 }
 
 QueryNode::QueryNode(ContextMutablePtr context_, SettingsChanges settings_changes_)
-    : IQueryTreeNode(children_size)
+    : IQueryOrUnionNode(children_size)
     , context(std::move(context_))
     , settings_changes(std::move(settings_changes_))
 {
@@ -150,6 +151,15 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
 
     if (!cte_name.empty())
         buffer << ", cte_name: " << cte_name;
+
+    if (isCorrelated())
+    {
+        buffer << ", is_correlated: 1\n" << std::string(indent + 2, ' ') << "CORRELATED COLUMNS\n";
+        for (const auto & correlated_column : getCorrelatedColumns())
+        {
+            correlated_column->dumpTreeImpl(buffer, format_state, indent + 4);
+        }
+    }
 
     if (hasWith())
     {
