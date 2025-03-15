@@ -141,6 +141,16 @@ std::shared_ptr<IStorageCredentials> TableMetadata::getStorageCredentials() cons
     return storage_credentials;
 }
 
+void TableMetadata::setDataLakeSpecificMetadata(std::optional<DataLakeSpecificMetadata> && metadata)
+{
+    data_lake_specific_metadata = metadata;
+}
+
+std::optional<DataLakeSpecificMetadata> TableMetadata::getDataLakeSpecificMetadata() const
+{
+    return data_lake_specific_metadata;
+}
+
 StorageType TableMetadata::getStorageType() const
 {
     return parseStorageTypeFromLocation(location_without_path);

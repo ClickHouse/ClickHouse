@@ -645,6 +645,15 @@ bool RestCatalog::getTableMetadataImpl(
         }
     }
 
+    if (result.requiresDataLakeSpecificMetadata())
+    {
+        if (object->has("metadata-location") && !object->get("metadata-location").isEmpty())
+        {
+            auto metadata_location = object->get("metadata-location").extract<String>();
+            result.setDataLakeSpecificMetadata(DataLakeSpecificMetadata{ .iceberg_metadata_file_location = metadata_location });
+        }
+    }
+
     return true;
 }
 
