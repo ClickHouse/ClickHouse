@@ -938,12 +938,7 @@ def test_recover_staled_replica(started_cluster):
         )
         == f"{test_recover_staled_replica_run}\n"
     )
-    assert (
-        dummy_node.query(
-            "SELECT count() FROM system.tables WHERE database='recover_broken_replicated_tables'"
-        )
-        == f"{test_recover_staled_replica_run}\n"
-    )
+    assert_eq_with_retry(dummy_node, "SELECT count() FROM system.tables WHERE database='recover_broken_replicated_tables'", test_recover_staled_replica_run)
     test_recover_staled_replica_run += 1
 
     print(dummy_node.query("SHOW DATABASES"))

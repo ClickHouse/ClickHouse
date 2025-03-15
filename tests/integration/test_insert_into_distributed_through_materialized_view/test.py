@@ -89,8 +89,7 @@ def test_reconnect(started_cluster):
     with PartitionManager() as pm:
         # Open a connection for insertion.
         instance.query("INSERT INTO local1_source VALUES (1)")
-        time.sleep(1)
-        assert remote.query("SELECT count(*) FROM local1").strip() == "1"
+        assert_eq_with_retry(remote, "SELECT count(*) FROM local1", "1")
 
         # Now break the connection.
         pm.partition_instances(

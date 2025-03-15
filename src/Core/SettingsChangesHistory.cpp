@@ -72,10 +72,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
             {"use_query_condition_cache", false, false, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
+            {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
-            {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
             /// Release closed. Please use 25.3
             {"schema_inference_make_json_columns_nullable", false, false, "Allow to infer Nullable(JSON) during schema inference"},
             {"query_plan_use_new_logical_join_step", false, true, "Enable new step"},
