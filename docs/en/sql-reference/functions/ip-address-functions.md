@@ -411,7 +411,7 @@ Result:
 
 ## toIPv6 {#toipv6}
 
-Converts a string form of IPv6 address to [IPv6](../data-types/ipv6.md) type. If the IPv6 address has an invalid format, returns an empty value.
+Converts a string or a UInt128 form of IPv6 address to [IPv6](../data-types/ipv6.md) type. For strings, if the IPv6 address has an invalid format, returns an empty value.
 Similar to [IPv6StringToNum](#ipv6stringtonum) function, which converts IPv6 address to binary format.
 
 If the input string contains a valid IPv4 address, then the IPv6 equivalent of the IPv4 address is returned.
@@ -420,11 +420,12 @@ If the input string contains a valid IPv4 address, then the IPv6 equivalent of t
 
 ```sql
 toIPv6(string)
+toIPv6(UInt128)
 ```
 
 **Argument**
 
-- `string` — IP address. [String](../data-types/string.md).
+- `string` or `UInt128` — IP address. [String](../data-types/string.md).
 
 **Returned value**
 
