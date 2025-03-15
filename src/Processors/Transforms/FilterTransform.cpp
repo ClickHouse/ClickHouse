@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+#include <Processors/Chunk.h>
 
 namespace ProfileEvents
 {
@@ -110,6 +111,9 @@ IProcessor::Status FilterTransform::prepare()
     if (status != IProcessor::Status::PortFull)
         are_prepared_sets_initialized = true;
 
+    if (status == IProcessor::Status::Finished)
+        writeIntoQueryConditionCache({});
+
     return status;
 }
 
@@ -165,20 +169,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 
     if (constant_filter_description.always_false)
     {
-        if (query_condition_cache)
-        {
-            auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
-            if (!mark_info)
-                return;
-
-            query_condition_cache->write(
-                        mark_info->table_uuid,
-                        mark_info->part_name,
-                        *condition_hash,
-                        mark_info->mark_ranges,
-                        mark_info->marks_count,
-                        mark_info->has_final_mark);
-        }
+        writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
         incrementProfileEvents(0, {});
         return; /// Will finish at next prepare call
     }
@@ -228,20 +219,7 @@ void FilterTransform::doTransform(Chunk & chunk)
     /// If the current block is completely filtered out, let's move on to the next one.
     if (num_filtered_rows == 0)
     {
-        if (query_condition_cache)
-        {
-            auto mark_info = chunk.getChunkInfos().get<MarkRangesInfo>();
-            if (!mark_info)
-                return;
-
-            query_condition_cache->write(
-                        mark_info->table_uuid,
-                        mark_info->part_name,
-                        *condition_hash,
-                        mark_info->mark_ranges,
-                        mark_info->marks_count,
-                        mark_info->has_final_mark);
-        }
+        writeIntoQueryConditionCache(chunk.getChunkInfos().get<MarkRangesInfo>());
         /// SimpleTransform will skip it.
         return;
     }
@@ -276,5 +254,46 @@ void FilterTransform::doTransform(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_filtered_rows);
 }
 
+void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_info)
+{
+    if (!query_condition_cache)
+        return;
+
+    if (!mark_info)
+    {
+        if (!merged_mark_info)
+            return;
+
+        query_condition_cache->write(
+            merged_mark_info->table_uuid,
+            merged_mark_info->part_name,
+            *condition_hash,
+            merged_mark_info->mark_ranges,
+            merged_mark_info->marks_count,
+            merged_mark_info->has_final_mark);
+        merged_mark_info = nullptr;
+        return;
+    }
+
+    if (!merged_mark_info)
+        merged_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
+    else
+    {
+        /// If it is the same part, merge the mark ranges, otherwise update to the query condition cache.
+        if (merged_mark_info->table_uuid != mark_info->table_uuid || merged_mark_info->part_name != mark_info->part_name)
+        {
+            query_condition_cache->write(
+                merged_mark_info->table_uuid,
+                merged_mark_info->part_name,
+                *condition_hash,
+                merged_mark_info->mark_ranges,
+                merged_mark_info->marks_count,
+                merged_mark_info->has_final_mark);
+            merged_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
+        }
+        else
+            merged_mark_info->addMarkRanges(mark_info->mark_ranges);
+    }
+}
 
 }
