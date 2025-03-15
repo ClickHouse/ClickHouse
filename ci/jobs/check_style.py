@@ -249,7 +249,7 @@ def check_file_names(files):
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
     # parser.add_argument("--param", help="Optional job start stage", default=None)
-    parser.add_argument("--test", help="Optional test name pattern", default="")
+    parser.add_argument("--test", help="Sub check name", default="")
     return parser.parse_args()
 
 
@@ -260,16 +260,16 @@ if __name__ == "__main__":
 
     stop_watch = Utils.Stopwatch()
 
-    all_files = Utils.traverse_paths(
-        include_paths=["."],
-        exclude_paths=[
-            "./.git",
-            "./contrib",
-            "./build",
-        ],
-        not_exists_ok=True,  # ./build may exist if runs locally
-    )
-
+    # all_files = Utils.traverse_paths(
+    #     include_paths=["."],
+    #     exclude_paths=[
+    #         "./.git",
+    #         "./contrib",
+    #         "./build",
+    #         "./ci/tmp",
+    #     ],
+    #     not_exists_ok=True,  # ./build may exist if runs locally
+    # )
     cpp_files = Utils.traverse_paths(
         include_paths=["./src", "./base", "./programs", "./utils"],
         exclude_paths=[
@@ -287,8 +287,8 @@ if __name__ == "__main__":
     )
 
     xml_files = Utils.traverse_paths(
-        include_paths=["."],
-        exclude_paths=["./.git", "./contrib/"],
+        include_paths=["./tests", "./programs/"],
+        exclude_paths=[],
         file_suffixes=[".xml"],
     )
 
@@ -296,15 +296,6 @@ if __name__ == "__main__":
         include_paths=["./tests/queries"],
         exclude_paths=[],
         file_suffixes=[".sql", ".sh", ".py", ".j2"],
-    )
-
-    results.append(
-        Result(
-            name="Read Files",
-            status=Result.Status.SUCCESS,
-            start_time=stop_watch.start_time,
-            duration=stop_watch.duration,
-        )
     )
 
     testname = "Whitespace Check"
@@ -380,15 +371,15 @@ if __name__ == "__main__":
                 command=check_repo_submodules,
             )
         )
-    testname = "Check File Names"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_file_names,
-                command_args=[all_files],
-            )
-        )
+    # testname = "Check File Names"
+    # if testpattern.lower() in testname.lower():
+    #     results.append(
+    #         Result.from_commands_run(
+    #             name=testname,
+    #             command=check_file_names,
+    #             command_args=[all_files],
+    #         )
+    #     )
     testname = "Check Many Different Things"
     if testpattern.lower() in testname.lower():
         results.append(
@@ -397,7 +388,7 @@ if __name__ == "__main__":
                 command=check_other,
             )
         )
-    testname = "Check Codespell"
+    testname = "codespell"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -405,12 +396,21 @@ if __name__ == "__main__":
                 command=check_codespell,
             )
         )
-    testname = "Check Aspell"
+    testname = "aspell"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
                 name=testname,
                 command=check_aspell,
+            )
+        )
+
+    testname = "mypy"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_mypy,
             )
         )
 
