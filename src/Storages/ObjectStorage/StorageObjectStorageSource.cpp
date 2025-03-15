@@ -409,7 +409,17 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         if (!object_info->metadata)
         {
             const auto & path = object_info->isArchive() ? object_info->getPathToArchive() : object_info->getPath();
-            object_info->metadata = object_storage->getObjectMetadata(path);
+
+            if (query_settings.ignore_non_existent_file)
+            {
+                auto metadata = object_storage->tryGetObjectMetadata(path);
+                if (!metadata)
+                    return {};
+
+                object_info->metadata = metadaat;
+            }
+            else
+                object_info->metadata = object_storage->getObjectMetadata(path);
         }
     }
     while (query_settings.skip_empty_files && object_info->metadata->size_bytes == 0);
@@ -856,7 +866,8 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
         auto key = keys[current_index];
 
         ObjectMetadata object_metadata{};
-        if (!skip_object_metadata) {
+        if (!skip_object_metadata)
+        {
             if (ignore_non_existent_files)
             {
                 auto metadata = object_storage->tryGetObjectMetadata(key);
