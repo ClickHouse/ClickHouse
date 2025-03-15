@@ -5963,6 +5963,9 @@ Normally this setting should be set in user profile (users.xml or queries like `
 
 Note that initially (24.12) there was a server setting (`send_settings_to_client`), but latter it got replaced with this client setting, for better usability.
 )", 0) \
+    DECLARE(Bool, enable_memory_based_pipeline_throttling, false, R"(
+When enabled, the query pipeline will dynamically disable or re-enable output ports based on the current memory usage. This can help limit concurrency in certain parts of the pipeline to reduce the chances of hitting the memory limit. Note that memory used by aggregations, joins, and other operators outside of chunk flow may still push the query over the limit. This feature does not guarantee no MEMORY_LIMIT_EXCEEDED exceptions, but it attempts to throttle some parts of the pipeline based on in-flight chunk sizes.
+)", 0) \
     \
     /* ####################################################### */ \
     /* ########### START OF EXPERIMENTAL FEATURES ############ */ \
