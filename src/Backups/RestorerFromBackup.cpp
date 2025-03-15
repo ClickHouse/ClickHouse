@@ -21,6 +21,7 @@
 #include <Databases/IDatabase.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageMaterializedView.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/quoteString.h>
 #include <Common/escapeForFileName.h>
@@ -46,6 +47,7 @@ namespace Setting
     extern const SettingsUInt64 backup_restore_keeper_retry_max_backoff_ms;
     extern const SettingsUInt64 backup_restore_keeper_max_retries;
     extern const SettingsSeconds lock_acquire_timeout;
+    extern const SettingsBool stop_refreshable_materialized_views_on_startup;
 }
 
 namespace ErrorCodes
@@ -176,6 +178,8 @@ void RestorerFromBackup::run(Mode mode_)
     setStage(Stage::INSERTING_DATA_TO_TABLES);
     insertDataToTables();
     runDataRestoreTasks();
+
+    startRefreshableMaterializedViews();
 
     /// Restored successfully!
     setStage(Stage::COMPLETED);
@@ -1002,6 +1006,10 @@ void RestorerFromBackup::createTable(const QualifiedTableName & table_name)
         create_query_context->setSetting("keeper_initial_backoff_ms", zookeeper_retries_info.initial_backoff_ms);
         create_query_context->setSetting("keeper_max_backoff_ms", zookeeper_retries_info.max_backoff_ms);
 
+        /// Pause refreshable materialized views until we restored all tables.
+        /// Otherwise we may get errors if a refresh replaces a table while we're restoring it.
+        create_query_context->setSetting("stop_refreshable_materialized_views_on_startup", true);
+
         /// Execute CREATE TABLE query (we call IDatabase::createTableRestoredFromBackup() to allow the database to do some
         /// database-specific things).
         database->createTableRestoredFromBackup(
@@ -1171,6 +1179,25 @@ void RestorerFromBackup::runDataRestoreTasks()
 
         waitFutures();
     }
+}
+
+void RestorerFromBackup::startRefreshableMaterializedViews()
+{
+    if (query_context->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+        return;
+
+    std::vector<RefreshTaskPtr> tasks;
+    {
+        std::lock_guard lock{mutex};
+        for (const auto & [_, info] : table_infos)
+        {
+            if (const auto mv = std::dynamic_pointer_cast<StorageMaterializedView>(info.storage))
+                if (const auto task = mv->getRefreshTask())
+                    tasks.push_back(task);
+        }
+    }
+    for (const auto & task : tasks)
+        task->start();
 }
 
 void RestorerFromBackup::throwTableIsNotEmpty(const StorageID & storage_id)
