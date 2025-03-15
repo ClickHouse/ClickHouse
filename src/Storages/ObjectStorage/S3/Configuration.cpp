@@ -74,7 +74,8 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "max_single_part_upload_size",
     "max_connections",
     "expiration_window_seconds",
-    "no_sign_request"
+    "no_sign_request",
+    "partitioning_style"
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -171,6 +172,8 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
         url = S3::URI(std::filesystem::path(collection.get<String>("url")) / filename, settings[Setting::allow_archive_path_syntax]);
     else
         url = S3::URI(collection.get<String>("url"), settings[Setting::allow_archive_path_syntax]);
+
+    partitioning_style = collection.getOrDefault<String>("partitioning_style", "auto");
 
     auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
