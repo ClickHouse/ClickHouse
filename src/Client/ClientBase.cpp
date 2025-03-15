@@ -1077,18 +1077,6 @@ void ClientBase::updateSuggest(const ASTPtr & ast)
         suggest->addWords(std::move(new_words));
 }
 
-bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const ContextPtr & context)
-{
-    if (!insert_query.data)
-        return false;
-
-    auto settings = context->getSettingsCopy();
-    if (insert_query.settings_ast)
-        settings.applyChanges(insert_query.settings_ast->as<ASTSetQuery>()->changes);
-
-    return !settings[Setting::async_insert];
-}
-
 bool ClientBase::processTextAsSingleQuery(const String & full_query)
 {
     /// Some parts of a query (result output and formatting) are executed
@@ -1101,8 +1089,6 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     if (!parsed_query)
         return false;
 
-    String query_to_execute;
-
     /// Query will be parsed before checking the result because error does not
     /// always means a problem, i.e. if table already exists, and it is no a
     /// huge problem if suggestion will be added even on error, since this is
@@ -1113,19 +1099,9 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
     if (suggest)
         updateSuggest(parsed_query);
 
-    /// An INSERT query may have the data that follows query text.
-    /// Send part of the query without data, because data will be sent separately.
-    /// But for asynchronous inserts we don't extract data, because it's needed
-    /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
-    const auto * insert = parsed_query->as<ASTInsertQuery>();
-    if (insert && isSyncInsertWithData(*insert, client_context))
-        query_to_execute = full_query.substr(0, insert->data - full_query.data());
-    else
-        query_to_execute = full_query;
-
     try
     {
-        processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_queries);
+        processParsedSingleQuery(full_query, parsed_query, echo_queries);
     }
     catch (Exception & e)
     {
@@ -2146,8 +2122,12 @@ void ClientBase::cancelQuery()
     cancelled = true;
 }
 
-void ClientBase::processParsedSingleQuery(const String & full_query, const String & query_to_execute,
-        ASTPtr parsed_query, std::optional<bool> echo_query_, bool report_error)
+void ClientBase::processParsedSingleQuery(
+    const String & full_query,
+    ASTPtr parsed_query,
+    bool & is_async_insert_with_inlined_data,
+    std::optional<bool> echo_query_,
+    bool report_error)
 {
     resetOutput();
     have_error = false;
@@ -2243,7 +2223,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        bool is_async_insert_with_inlined_data = client_context->getSettingsRef()[Setting::async_insert] && insert && insert->hasInlinedData();
+        is_async_insert_with_inlined_data = client_context->getSettingsRef()[Setting::async_insert] && insert && insert->hasInlinedData();
 
         if (is_async_insert_with_inlined_data)
         {
@@ -2254,6 +2234,16 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                     "Processing async inserts with both inlined and external data (from stdin or infile) is not supported");
         }
+
+        String query_to_execute;
+        /// An INSERT query may have the data that follows query text.
+        /// Send part of the query without data, because data will be sent separately.
+        /// But for asynchronous inserts we don't extract data, because it's needed
+        /// to be done on server side in that case (for coalescing the data from multiple inserts on server side).
+        if (insert && !is_async_insert_with_inlined_data)
+            query_to_execute = full_query.substr(0, full_query.length() - (insert->end - insert->data));
+        else
+            query_to_execute = full_query;
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
         if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function))
@@ -2364,7 +2354,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
 
 MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
     const char *& this_query_begin, const char *& this_query_end, const char * all_queries_end,
-    String & query_to_execute, ASTPtr & parsed_query, const String & all_queries_text,
+    ASTPtr & parsed_query,
     std::unique_ptr<Exception> & current_exception)
 {
     if (!is_interactive && cancelled)
@@ -2443,7 +2433,6 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
             insert_ast = explain_ast->getExplainedQuery()->as<ASTInsertQuery>();
         }
     }
-    const char * query_to_execute_end = this_query_end;
     if (insert_ast && insert_ast->data)
     {
         if (insert_ast->format == "Values")
@@ -2480,10 +2469,7 @@ MultiQueryProcessingStage ClientBase::analyzeMultiQueryText(
                 this_query_end = all_queries_end;
         }
         insert_ast->end = this_query_end;
-        query_to_execute_end = isSyncInsertWithData(*insert_ast, client_context) ? insert_ast->data : this_query_end;
     }
-
-    query_to_execute = all_queries_text.substr(this_query_begin - all_queries_text.data(), query_to_execute_end - this_query_begin);
 
     // Try to include the trailing comment with test hints. It is just
     // a guess for now, because we don't yet know where the query ends
@@ -2532,7 +2518,6 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     UInt32 script_line_number = 0;
 
     String full_query; // full_query is the query + inline INSERT data + trailing comments (the latter is our best guess for now).
-    String query_to_execute;
     ASTPtr parsed_query;
     std::unique_ptr<Exception> current_exception;
     size_t retries_count = 0;
@@ -2541,7 +2526,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
     while (true)
     {
         auto stage = analyzeMultiQueryText(this_query_begin, this_query_end, all_queries_end,
-                                           query_to_execute, parsed_query, all_queries_text, current_exception);
+                                           parsed_query, current_exception);
         switch (stage)
         {
             case MultiQueryProcessingStage::QUERIES_END:
@@ -2622,10 +2607,11 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
 
                 // Echo all queries if asked; makes for a more readable reference file.
                 echo_query = test_hint.echoQueries().value_or(echo_query);
+                bool is_async_insert_with_inlined_data = false;
 
                 try
                 {
-                    processParsedSingleQuery(full_query, query_to_execute, parsed_query, echo_query, false);
+                    processParsedSingleQuery(full_query, parsed_query, is_async_insert_with_inlined_data, echo_query, false);
                 }
                 catch (...)
                 {
@@ -2758,7 +2744,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 // , where the inline data is delimited by semicolon and not by a
                 // newline.
                 auto * insert_ast = parsed_query->as<ASTInsertQuery>();
-                if (insert_ast && isSyncInsertWithData(*insert_ast, client_context))
+                if (insert_ast && !is_async_insert_with_inlined_data)
                 {
                     this_query_end = insert_ast->end;
                     adjustQueryEnd(
@@ -2876,6 +2862,9 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
 void ClientBase::applySettingsFromServerIfNeeded()
 {
     const Settings & settings = client_context->getSettingsRef();
+    if (!settings[Setting::apply_settings_from_server])
+        return;
+
     SettingsChanges changes_to_apply;
     for (const SettingChange & change : settings_from_server)
     {
@@ -2885,8 +2874,7 @@ void ClientBase::applySettingsFromServerIfNeeded()
             changes_to_apply.push_back(change);
     }
 
-    if (settings[Setting::apply_settings_from_server])
-        global_context->applySettingsChanges(changes_to_apply);
+    global_context->applySettingsChanges(changes_to_apply);
 }
 
 void ClientBase::startKeystrokeInterceptorIfExists()
