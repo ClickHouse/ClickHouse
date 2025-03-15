@@ -1,6 +1,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
 #include <Core/Settings.h>
+#include <Functions/FunctionFactory.h>
 #include <IO/Operators.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
@@ -1280,7 +1281,7 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
-    RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection)
+    RangesInDataParts && parts_with_ranges, size_t num_streams, Names & origin_column_names, const Names & column_names, std::optional<ActionsDAG> & out_projection)
 {
     const auto & settings = context->getSettingsRef();
     const auto & data_settings = data.getSettings();
@@ -1336,10 +1337,42 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
         /// If do_not_merge_across_partitions_select_final is true and there is only one part in partition
         /// with level > 0 then we won't post-process this part, and if num_streams > 1 we
         /// can use parallel select on such parts.
+
         bool no_merging_final = do_not_merge_across_partitions_select_final &&
             std::distance(parts_to_merge_ranges[range_index], parts_to_merge_ranges[range_index + 1]) == 1 &&
-            parts_to_merge_ranges[range_index]->data_part->info.level > 0 &&
-            data.merging_params.is_deleted_column.empty() && !reader_settings.read_in_order;
+            parts_to_merge_ranges[range_index]->data_part->info.level > 0 && !reader_settings.read_in_order;
+
+        // if do_not_merge_across_partitions_select_final = 1 and the partition contains a single part,
+        // there is no reason to handle `is_deleted` using slow inorder reading. Faster to do it with prewhere
+        if (no_merging_final && !data.merging_params.is_deleted_column.empty())
+        {
+            if (!prewhere_info)
+            {
+                prewhere_info = std::make_shared<PrewhereInfo>();
+            }
+
+            prewhere_info->prewhere_column_name = data.merging_params.is_deleted_column;
+
+            if (std::find(origin_column_names.begin(), origin_column_names.end(), data.merging_params.is_deleted_column) == origin_column_names.end())
+            {
+                origin_column_names.push_back(data.merging_params.is_deleted_column);
+            }
+
+            // Keep rows where is_deleted is False
+            const auto & input = &prewhere_info->prewhere_actions.addInput(data.merging_params.is_deleted_column, std::make_shared<DataTypeUInt8>());
+
+            ActionsDAG::NodeRawConstPtrs children = {input};
+
+            auto not_function = FunctionFactory::instance().get("not", context);
+
+            prewhere_info->prewhere_actions.getOutputs().push_back(
+                &prewhere_info->prewhere_actions.addFunction(
+                    not_function,
+                    std::move(children),
+                    data.merging_params.is_deleted_column
+                    )
+            );
+        }
 
         if (no_merging_final)
         {
