@@ -161,6 +161,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
             /// Release closed. Please use 25.4
+            {"use_local_cache_for_remote_storage", true, false, "Obsolete setting."},
+            {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
