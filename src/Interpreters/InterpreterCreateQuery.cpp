@@ -1843,9 +1843,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
 
     data_path = database->getTableDataPath(create);
-    auto db_disk = getContext()->getDatabaseDisk();
+    // When creating a table, when checking if the data path exists, it should use the local disk to check, not the database disk. Because the database disk stores metadata files only.
+    auto full_data_path = fs::path{getContext()->getPath()} / data_path;
 
-    if (!create.attach && !data_path.empty() && db_disk->existsDirectory(data_path))
+    if (!create.attach && !data_path.empty() && fs::exists(full_data_path))
     {
         if (getContext()->getZooKeeperMetadataTransaction() &&
             !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery() &&
@@ -1860,8 +1861,8 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
             fs::path trash_path = fs::path("trash") / data_path / getHexUIntLowercase(thread_local_rng());
             LOG_WARNING(getLogger("InterpreterCreateQuery"), "Directory for {} data {} already exists. Will move it to {}",
                         Poco::toLower(storage_name), String(data_path), trash_path);
-            db_disk->createDirectories(trash_path.parent_path());
-            db_disk->moveFile(data_path, trash_path);
+            fs::create_directories(trash_path.parent_path());
+            renameNoReplace(full_data_path, trash_path);
         }
         else
         {
