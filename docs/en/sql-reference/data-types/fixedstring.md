@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/fixedstring
+description: 'Documentation for the FixedString data type in ClickHouse'
+sidebar_label: 'FixedString(N)'
 sidebar_position: 10
-sidebar_label: FixedString(N)
+slug: /sql-reference/data-types/fixedstring
+title: 'FixedString(N)'
 ---
 
 # FixedString(N)
@@ -57,4 +59,4 @@ WHERE a = 'b\0'
 
 This behaviour differs from MySQL for the `CHAR` type (where strings are padded with spaces, and the spaces are removed for output).
 
-Note that the length of the `FixedString(N)` value is constant. The [length](../../sql-reference/functions/array-functions.md#array_functions-length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.
+Note that the length of the `FixedString(N)` value is constant. The [length](/sql-reference/functions/array-functions#length) function returns `N` even if the `FixedString(N)` value is filled only with null bytes, but the [empty](../../sql-reference/functions/string-functions.md#empty) function returns `1` in this case.

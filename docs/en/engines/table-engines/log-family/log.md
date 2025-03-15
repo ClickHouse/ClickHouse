@@ -1,7 +1,8 @@
 ---
+description: 'Documentation for Log'
 slug: /engines/table-engines/log-family/log
 toc_priority: 33
-toc_title: Log
+toc_title: 'Log'
 ---
 
 # Log
@@ -23,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Log
 ```
 
-See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 ## Writing the Data {#table_engines-log-writing-the-data}
 

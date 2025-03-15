@@ -1,7 +1,10 @@
 ---
-slug: /sql-reference/data-types/datetime
+description: 'Documentation for the DateTime data type in ClickHouse, which stores
+  timestamps with second precision'
+sidebar_label: 'DateTime'
 sidebar_position: 16
-sidebar_label: DateTime
+slug: /sql-reference/data-types/datetime
+title: 'DateTime'
 ---
 
 # DateTime
@@ -191,5 +194,5 @@ In this case, ClickHouse shifts the non-existent time `2023-03-26 01:30:00` back
 - [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
 - [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
 - [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
-- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
+- [Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
 - [The `Date` data type](../../sql-reference/data-types/date.md)

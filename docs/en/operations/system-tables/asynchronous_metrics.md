@@ -1,10 +1,14 @@
 ---
-description: "System table containing metrics that are calculated periodically in the background. For example, the amount of RAM in use."
+description: 'System table containing metrics that are calculated periodically in
+  the background. For example, the amount of RAM in use.'
+keywords: ['system table', 'asynchronous_metrics']
 slug: /operations/system-tables/asynchronous_metrics
-title: "system.asynchronous_metrics"
-keywords: ["system table", "asynchronous_metrics"]
+title: 'system.asynchronous_metrics'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.asynchronous_metrics
 
 <SystemTableCloud/>
 
@@ -651,6 +655,6 @@ An internal metric of the low-level memory allocator (jemalloc). See https://jem
 **See Also**
 
 - [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.
-- [system.metrics](../../operations/system-tables/metrics.md#system_tables-metrics) — Contains instantly calculated metrics.
-- [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that have occurred.
-- [system.metric_log](../../operations/system-tables/metric_log.md#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.
+- [system.metrics](/operations/system-tables/metrics) — Contains instantly calculated metrics.
+- [system.events](/operations/system-tables/events) — Contains a number of events that have occurred.
+- [system.metric_log](/operations/system-tables/metric_log) — Contains a history of metrics values from tables `system.metrics` and `system.events`.

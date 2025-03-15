@@ -34,7 +34,7 @@
     M(CacheDictionaryUpdateQueueKeys, "Exact number of keys in update queue in CacheDictionaries.") \
     M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
     M(DistributedSend, "Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.") \
-    M(QueryPreempted, "Number of queries that are stopped and waiting due to 'priority' setting.") \
+    M(QueryPreempted, "Number of running tasks which are paused and waiting due to 'priority' setting.") \
     M(TCPConnection, "Number of connections to TCP server (clients with native interface), also included server-server distributed query connections") \
     M(MySQLConnection, "Number of client connections using MySQL protocol") \
     M(HTTPConnection, "Number of connections to HTTP server") \
@@ -304,7 +304,6 @@
     M(FilesystemCacheDelayedCleanupElements, "Filesystem cache elements in background cleanup queue") \
     M(FilesystemCacheHoldFileSegments, "Filesystem cache file segment which are currently hold as unreleasable") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
-    M(SkippingIndexCacheSize, "Size of the skipping index cache in bytes") \
     M(S3Requests, "S3 requests count") \
     M(KeeperAliveConnections, "Number of alive connections") \
     M(KeeperOutstandingRequests, "Number of outstanding requests") \
@@ -356,6 +355,7 @@
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
     \
     M(ConcurrencyControlAcquired, "Total number of acquired CPU slots") \
+    M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
     M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
     \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
@@ -377,6 +377,8 @@
     M(SharedCatalogDropDetachLocalTablesErrors, "Number of errors that occurred when attempting to drop or detach local tables in Shared Catalog.") \
     \
     M(MetadataFromKeeperCacheObjects, "Number of objects in disk metadata cache.") \
+    \
+    M(LicenseRemainingSeconds, "Remaining seconds of the license validity period.") \
     \
     M(StartupScriptsExecutionState, "State of startup scripts execution: 0 = not finished, 1 = success, 2 = failure.") \
     \

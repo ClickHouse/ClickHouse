@@ -1,8 +1,9 @@
 ---
-slug: /interfaces/formats
+description: 'Overview of supported data formats for input and output in ClickHouse'
+sidebar_label: 'View all formats...'
 sidebar_position: 21
-sidebar_label: View all formats...
-title: Formats for Input and Output Data
+slug: /interfaces/formats
+title: 'Formats for input and output data'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -287,7 +288,7 @@ See [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow)
 
 ### JSON Formats Settings {#json-formats-settings}
 
-See [JSON Format Settings](/interfaces/formats/format-settings)
+See [JSON Format Settings](/operations/settings/formats)
 
 ### BSONEachRow {#bsoneachrow}
 
@@ -387,7 +388,7 @@ See [Prometheus](/interfaces/formats/Prometheus)
 
 ### Protobuf {#protobuf}
 
-See [Protobuf](/interfaces/formats/Protobuf/Protobuf)
+See [Protobuf](/interfaces/formats/Protobuf)
 
 ### ProtobufSingle {#protobufsingle}
 

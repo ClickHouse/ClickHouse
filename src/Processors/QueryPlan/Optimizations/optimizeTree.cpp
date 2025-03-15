@@ -123,6 +123,9 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     while (!stack.empty())
     {
         optimizePrimaryKeyConditionAndLimit(stack);
+
+        updateQueryConditionCache(stack, optimization_settings);
+
         /// NOTE: optimizePrewhere can modify the stack.
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
         if (optimization_settings.optimize_prewhere)
@@ -141,6 +144,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         stack.pop_back();
     }
+
+    calculateHashTableCacheKeys(root);
 
     stack.push_back({.node = &root});
     while (!stack.empty())

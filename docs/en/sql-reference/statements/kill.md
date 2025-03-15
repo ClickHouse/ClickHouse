@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/kill
+description: 'Documentation for Kill'
+sidebar_label: 'KILL'
 sidebar_position: 46
-sidebar_label: KILL
-title: "KILL Statements"
+slug: /sql-reference/statements/kill
+title: 'KILL Statements'
 ---
 
 There are two kinds of kill statements: to kill a query and to kill a mutation
@@ -89,7 +90,7 @@ KILL MUTATION
   [FORMAT format]
 ```
 
-Tries to cancel and remove [mutations](../../sql-reference/statements/alter/index.md#alter-mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
+Tries to cancel and remove [mutations](/sql-reference/statements/alter#mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](/operations/system-tables/mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
 
 A test query (`TEST`) only checks the user's rights and displays a list of mutations to stop.
 

@@ -87,6 +87,6 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 **Смотрите также**
 
 -   [Функции интроспекции](../../sql-reference/functions/introspection.md) — описание функций интроспекции и примеры использования.
--   [system.trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) — системная таблица, содержащая трассировки стека, собранные профилировщиком выборочных запросов.
--   [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — описание и пример использования функции `arrayMap`.
--   [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — описание и пример использования функции `arrayFilter`.
+-   [system.trace_log](/operations/system-tables/trace_log) — системная таблица, содержащая трассировки стека, собранные профилировщиком выборочных запросов.
+-   [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) — описание и пример использования функции `arrayMap`.
+-   [arrayFilter](/sql-reference/functions/array-functions#arrayfilterfunc-arr1-) — описание и пример использования функции `arrayFilter`.

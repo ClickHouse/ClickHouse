@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/ttl
+description: 'Documentation for Manipulations with Table TTL'
+sidebar_label: 'TTL'
 sidebar_position: 44
-sidebar_label: TTL
+slug: /sql-reference/statements/alter/ttl
+title: 'Manipulations with Table TTL'
 ---
 
 # Manipulations with Table TTL
@@ -87,4 +89,4 @@ The `TTL` is no longer there, so the second row is not deleted:
 **See Also**
 
 - More about the [TTL-expression](../../../sql-reference/statements/create/table.md#ttl-expression).
-- Modify column [with TTL](../../../sql-reference/statements/alter/column.md#alter_modify-column).
+- Modify column [with TTL](/sql-reference/statements/alter/ttl).

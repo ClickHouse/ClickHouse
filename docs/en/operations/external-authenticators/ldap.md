@@ -1,7 +1,9 @@
 ---
+description: 'Guide to configuring LDAP authentication for ClickHouse'
 slug: /operations/external-authenticators/ldap
-title: "LDAP"
+title: 'LDAP'
 ---
+
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 <SelfManaged />
@@ -112,7 +114,7 @@ At each login attempt, ClickHouse tries to "bind" to the specified DN defined by
 
 Note, that user `my_user` refers to `my_ldap_server`. This LDAP server must be configured in the main `config.xml` file as described previously.
 
-When SQL-driven [Access Control and Account Management](/guides/sre/user-management/index.md#access-control) is enabled, users that are authenticated by LDAP servers can also be created using the [CREATE USER](/sql-reference/statements/create/user.md#create-user-statement) statement.
+When SQL-driven [Access Control and Account Management](/operations/access-rights#access-control-usage) is enabled, users that are authenticated by LDAP servers can also be created using the [CREATE USER](/sql-reference/statements/create/user) statement.
 
 Query:
 
@@ -124,7 +126,7 @@ CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
 
 In addition to the locally defined users, a remote LDAP server can be used as a source of user definitions. To achieve this, specify previously defined LDAP server name (see [LDAP Server Definition](#ldap-server-definition)) in the `ldap` section inside the `users_directories` section of the `config.xml` file.
 
-At each login attempt, ClickHouse tries to find the user definition locally and authenticate it as usual. If the user is not defined, ClickHouse will assume the definition exists in the external LDAP directory and will try to "bind" to the specified DN at the LDAP server using the provided credentials. If successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then be assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](/guides/sre/user-management/index.md#access-control) is enabled and roles are created using the [CREATE ROLE](/sql-reference/statements/create/role.md#create-role-statement) statement.
+At each login attempt, ClickHouse tries to find the user definition locally and authenticate it as usual. If the user is not defined, ClickHouse will assume the definition exists in the external LDAP directory and will try to "bind" to the specified DN at the LDAP server using the provided credentials. If successful, the user will be considered existing and authenticated. The user will be assigned roles from the list specified in the `roles` section. Additionally, LDAP "search" can be performed and results can be transformed and treated as role names and then be assigned to the user if the `role_mapping` section is also configured. All this implies that the SQL-driven [Access Control and Account Management](/operations/access-rights#access-control-usage) is enabled and roles are created using the [CREATE ROLE](/sql-reference/statements/create/role) statement.
 
 **Example**
 
@@ -173,7 +175,7 @@ Note that `my_ldap_server` referred in the `ldap` section inside the `user_direc
 - `roles` — Section with a list of locally defined roles that will be assigned to each user retrieved from the LDAP server.
     - If no roles are specified here or assigned during role mapping (below), user will not be able to perform any actions after authentication.
 - `role_mapping` — Section with LDAP search parameters and mapping rules.
-    - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](/sql-reference/statements/create/role.md#create-role-statement) statement.
+    - When a user authenticates, while still bound to LDAP, an LDAP search is performed using `search_filter` and the name of the logged-in user. For each entry found during that search, the value of the specified attribute is extracted. For each attribute value that has the specified prefix, the prefix is removed, and the rest of the value becomes the name of a local role defined in ClickHouse, which is expected to be created beforehand by the [CREATE ROLE](/sql-reference/statements/create/role) statement.
     - There can be multiple `role_mapping` sections defined inside the same `ldap` section. All of them will be applied.
         - `base_dn` — Template used to construct the base DN for the LDAP search.
             - The resulting DN will be constructed by replacing all `{user_name}`, `{bind_dn}`, and `{user_dn}` substrings of the template with the actual user name, bind DN, and user DN during each LDAP search.

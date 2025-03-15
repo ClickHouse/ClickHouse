@@ -1,10 +1,11 @@
 ---
-title: ORC
-slug: /interfaces/formats/ORC
-keywords: [ORC]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the ORC format'
+input_format: true
+keywords: ['ORC']
+output_format: true
+slug: /interfaces/formats/ORC
+title: 'ORC'
 ---
 
 | Input | Output | Alias |
@@ -42,7 +43,7 @@ The table below compares supported ORC data types and their corresponding ClickH
 
 - Other types are not supported.
 - Arrays can be nested and can have a value of the `Nullable` type as an argument. `Tuple` and `Map` types also can be nested.
-- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions.md/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
+- The data types of ClickHouse table columns do not have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](/sql-reference/functions/type-conversion-functions#cast) the data to the data type set for the ClickHouse table column.
 
 ## Example Usage {#example-usage}
 
