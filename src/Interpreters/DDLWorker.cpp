@@ -1205,6 +1205,11 @@ void DDLWorker::runMainThread()
 
             LOG_DEBUG(log, "Waiting for queue updates");
             queue_updated_event->wait();
+            if (need_reset_fault_injected)
+            {
+                need_reset_fault_injected = false;
+                throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected, resetting queue");
+            }
         }
         catch (const Coordination::Exception & e)
         {

@@ -2047,6 +2047,8 @@ void InterpreterCreateQuery::throwIfTooManyEntities(ASTCreateQuery & create, Sto
 BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                                                        const InterpreterCreateQuery::TableProperties & properties, LoadingStrictnessLevel mode)
 {
+    auto shared_database_lock = DatabaseCatalog::instance().getDDLGuard(create.getDatabase(), "");
+
     /// Replicated database requires separate contexts for each DDL query
     ContextPtr current_context = getContext();
     if (auto txn = current_context->getZooKeeperMetadataTransaction())
