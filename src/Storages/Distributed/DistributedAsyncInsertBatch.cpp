@@ -11,9 +11,9 @@
 #include <base/defines.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromFile.h>
-#include <boost/range/adaptor/indexed.hpp>
 
 #include <fmt/ranges.h>
+#include <ranges>
 
 namespace CurrentMetrics
 {
@@ -59,21 +59,6 @@ bool isSplittableErrorCode(int code, bool remote)
         || code == ErrorCodes::DISTRIBUTED_BROKEN_BATCH_INFO
         || isDistributedSendBroken(code, remote)
     ;
-}
-
-auto convertPartElementsToString(const std::vector<std::string> & files)
-{
-    std::vector<std::string> vec;
-    for (auto index_value : files | boost::adaptors::indexed())
-    {
-        if (index_value.index() > 8)
-        {
-            vec.push_back("...");
-            break;
-        }
-        vec.push_back(index_value.value());
-    }
-    return fmt::join(vec, "\n");
 }
 
 DistributedAsyncInsertBatch::DistributedAsyncInsertBatch(DistributedAsyncInsertDirectoryQueue & parent_)
@@ -137,7 +122,9 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes,
         }
         else
         {
-            e.addMessage(fmt::format("While sending a batch of {} files, files: {}", files.size(), convertPartElementsToString(files)));
+            e.addMessage(fmt::format("While sending a batch of {} files, files: {}",
+                files.size(),
+                fmt::join(files | std::ranges::views::take(8), "\n")));
             throw;
         }
     }
@@ -152,7 +139,10 @@ void DistributedAsyncInsertBatch::send(const SettingsChanges & settings_changes,
     }
     else if (!batch_marked_as_broken)
     {
-        LOG_ERROR(parent.log, "Marking a batch of {} files as broken, files: {}", files.size(), convertPartElementsToString(files));
+        LOG_ERROR(parent.log,
+            "Marking a batch of {} files as broken, files: {}",
+            files.size(),
+            fmt::join(files | std::ranges::views::take(8), "\n"));
 
         for (const auto & file : files)
             parent.markAsBroken(file);
