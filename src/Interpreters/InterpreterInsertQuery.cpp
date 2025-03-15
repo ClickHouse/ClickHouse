@@ -99,13 +99,14 @@ namespace ErrorCodes
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
-    const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_)
+    const ASTPtr & query_ptr_, ContextPtr context_, bool allow_materialized_, bool no_squash_, bool no_destination_, bool async_insert_, size_t parent_pipeline_threads_)
     : WithContext(context_)
     , query_ptr(query_ptr_)
     , allow_materialized(allow_materialized_)
     , no_squash(no_squash_)
     , no_destination(no_destination_)
     , async_insert(async_insert_)
+    , parent_pipeline_threads(parent_pipeline_threads_)
 {
     checkStackSize();
     if (auto quota = getContext()->getQuota())
@@ -314,6 +315,14 @@ static bool isTrivialSelect(const ASTPtr & select)
     }
     /// This query is ASTSelectWithUnionQuery subquery
     return false;
+}
+
+static size_t getPreSinkStreams(const SettingFieldUInt64 max_insert_threads, size_t pipeline_streams)
+{
+    size_t presink_streams_size = std::max<size_t>(max_insert_threads, pipeline_streams);
+    if (max_insert_threads.changed)
+        presink_streams_size = std::max<size_t>(1, max_insert_threads);
+    return presink_streams_size;
 }
 
 Chain InterpreterInsertQuery::buildChain(
@@ -685,22 +694,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     ///    materializing and squashing (too slow to do in one thread). That's `presink_chains`.
     ///  * If the table supports parallel inserts, use max_insert_threads for writing to IStorage.
     ///    Otherwise ResizeProcessor them down to 1 stream.
-
-    size_t presink_streams_size = std::max<size_t>(settings[Setting::max_insert_threads], pipeline.getNumStreams());
-    if (settings[Setting::max_insert_threads].changed)
-        presink_streams_size = std::max<size_t>(1, settings[Setting::max_insert_threads]);
+    size_t presink_streams_size = getPreSinkStreams(settings[Setting::max_insert_threads], pipeline.getNumStreams());
 
     size_t sink_streams_size = table->supportsParallelInsert() ? std::max<size_t>(1, settings[Setting::max_insert_threads]) : 1;
-
-    size_t views_involved =  table->isView() || !DatabaseCatalog::instance().getDependentViews(table->getStorageID()).empty();
+    bool views_involved = table->isView() || !DatabaseCatalog::instance().getDependentViews(table->getStorageID()).empty();
     if (!settings[Setting::parallel_view_processing] && views_involved)
-    {
         sink_streams_size = 1;
-    }
 
-    auto [presink_chains, sink_chains] = buildPreAndSinkChains(
-        presink_streams_size, sink_streams_size,
-        table, /* view_level */ 0, metadata_snapshot, query_sample_block);
+    auto [presink_chains, sink_chains] = buildPreAndSinkChains(presink_streams_size, sink_streams_size, table, /* view_level */ 0, metadata_snapshot, query_sample_block);
 
     pipeline.resize(presink_chains.size());
 
@@ -753,8 +754,12 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
 
     {
         auto [presink_chains, sink_chains] = buildPreAndSinkChains(
-            /* presink_streams */1, /* sink_streams */1,
-            table, /* view_level */ 0, metadata_snapshot, query_sample_block);
+            /*presink_streams=*/ parent_pipeline_threads,
+            /*sink_streams=*/ 1,
+            table,
+            /*view_level=*/ 0,
+            metadata_snapshot,
+            query_sample_block);
 
         chain = std::move(presink_chains.front());
         chain.appendChain(std::move(sink_chains.front()));
