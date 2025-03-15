@@ -10,6 +10,15 @@ title: 'Visual Interfaces from Third-party Developers'
 
 ## Open-Source {#open-source}
 
+### agx {#agx}
+
+[agx](https://github.com/agnosticeng/agx) is a desktop application built with Tauri and SvelteKit that provides a modern interface for exploring and querying data using ClickHouse's embedded database engine (chdb).
+
+- Leverage ch-db when running the native application.
+- Can connect to a Clickhouse instance when running the web instance.
+- Monaco editor so you'll feel at home.
+- Multiple and evolving data visualizations.
+
 ### ch-ui {#ch-ui}
 
 [ch-ui](https://github.com/caioricciuti/ch-ui) is a simple React.js app interface for ClickHouse databases designed for executing queries and visualizing data. Built with React and the ClickHouse client for web, it offers a sleek and user-friendly UI for easy database interactions.
