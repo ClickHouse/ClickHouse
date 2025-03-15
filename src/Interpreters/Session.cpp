@@ -139,7 +139,7 @@ public:
         LOG_TRACE(log, "Reuse session from storage with session_id: {}, user_id: {}", key.second, toString(key.first));
 
         if (!isSharedPtrUnique(session))
-            throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client", session_id);
+            throw Exception(ErrorCodes::SESSION_IS_LOCKED, "Session {} is locked by a concurrent client, use count - {}", session_id, session.use_count());
 
         if (session->close_time_bucket != std::chrono::steady_clock::time_point{})
         {
@@ -217,7 +217,8 @@ private:
         auto & bucket_sessions = close_time_buckets[close_time_bucket];
         bucket_sessions.insert(session.key);
 
-        LOG_TEST(log, "Schedule closing session with session_id: {}, user_id: {}",
+        // Temp change to check test failures
+        LOG_TRACE(log, "Schedule closing session with session_id: {}, user_id: {}",
             session.key.second, toString(session.key.first));
     }
 
@@ -254,7 +255,8 @@ private:
 
                 if (session.use_count() != 1)
                 {
-                    LOG_TEST(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
+                    // Temp change to check test failures
+                    LOG_TRACE(log, "Delay closing session with session_id: {}, user_id: {}, refcount: {}",
                         key.second, toString(key.first), session.use_count());
 
                     session->timeout = std::chrono::steady_clock::duration{0};
@@ -736,6 +738,8 @@ void Session::releaseSessionID()
     if (!named_session)
         return;
 
+    LOG_DEBUG(log, "Releasing session with id: {}", named_session->key.second);
+
     prepared_client_info = getClientInfo();
     session_context.reset();
 
@@ -752,6 +756,7 @@ void Session::closeSession(const String & session_id)
     if (!named_session)
         return;
 
+    LOG_DEBUG(log, "Closing session (closeSession) with id: {}", session_id);
     NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_id, named_session);
 }
 
