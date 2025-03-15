@@ -25,7 +25,7 @@ public:
     using ConfigurationObserverPtr = StorageObjectStorage::ConfigurationObserverPtr;
     static constexpr auto name = "DeltaLake";
 
-    DeltaLakeMetadataDeltaKernel(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_, ContextPtr context_);
+    DeltaLakeMetadataDeltaKernel(ObjectStoragePtr object_storage_, ConfigurationObserverPtr configuration_);
 
     bool supportsUpdate() const override { return true; }
 
@@ -42,10 +42,9 @@ public:
     static DataLakeMetadataPtr create(
         ObjectStoragePtr object_storage,
         ConfigurationObserverPtr configuration,
-        ContextPtr local_context,
-        bool)
+        ContextPtr, bool)
     {
-        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
+        return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration);
     }
 
     bool supportsFileIterator() const override { return true; }

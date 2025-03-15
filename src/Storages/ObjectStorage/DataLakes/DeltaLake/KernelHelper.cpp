@@ -21,11 +21,13 @@ public:
         const DB::S3::URI & url_,
         const std::string & access_key_id_,
         const std::string & secret_access_key_,
-        const std::string & region_)
+        const std::string & region_,
+        const std::string & token_)
         : url(url_)
         , access_key_id(access_key_id_)
         , secret_access_key(secret_access_key_)
         , region(region_)
+        , token(token_)
         , table_location(getTableLocation(url_))
     {
     }
@@ -53,8 +55,11 @@ public:
         /// For now it uses its own client, which would lake all the auth options
         /// which our own client supports.
 
+        /// Supported options
+        /// https://github.com/apache/arrow-rs/blob/main/object_store/src/aws/builder.rs#L191
         set_option("aws_access_key_id", access_key_id);
         set_option("aws_secret_access_key", secret_access_key);
+        set_option("aws_token", token);
         set_option("aws_region", region);
         set_option("allow_http", "true");
         set_option("aws_endpoint", url.endpoint);
@@ -67,6 +72,8 @@ private:
     const std::string access_key_id;
     const std::string secret_access_key;
     const std::string region;
+    const std::string token;
+
     const std::string table_location;
 
     static std::string getTableLocation(const DB::S3::URI & url)
@@ -87,7 +94,9 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString region;
 }
 
-DeltaLake::KernelHelperPtr getKernelHelper(const StorageObjectStorage::ConfigurationPtr & configuration)
+DeltaLake::KernelHelperPtr getKernelHelper(
+    const StorageObjectStorage::ConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage)
 {
     switch (configuration->getType())
     {
@@ -95,12 +104,15 @@ DeltaLake::KernelHelperPtr getKernelHelper(const StorageObjectStorage::Configura
         {
             const auto * s3_conf = dynamic_cast<const DB::StorageS3Configuration *>(configuration.get());
             const auto auth_settings = s3_conf->getAuthSettings();
+            const auto & s3_client = object_storage->getS3StorageClient();
+            const auto & s3_credentials = s3_client->getCredentials();
 
             return std::make_shared<DeltaLake::S3KernelHelper>(
                 s3_conf->getURL(),
-                auth_settings[S3AuthSetting::access_key_id],
-                auth_settings[S3AuthSetting::secret_access_key],
-                auth_settings[S3AuthSetting::region]);
+                s3_credentials.GetAWSAccessKeyId(),
+                s3_credentials.GetAWSSecretKey(),
+                s3_client->getRegion(),
+                s3_credentials.GetSessionToken());
         }
         default:
         {
