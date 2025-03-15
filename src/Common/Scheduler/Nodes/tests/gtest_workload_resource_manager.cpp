@@ -509,33 +509,33 @@ TEST(SchedulerWorkloadResourceManager, CpuSlotsAllocationRoundRobin)
     for (int query = 0; query < 2; query++)
         queries.push_back(std::make_shared<TestQuery>(t));
 
+    auto ensure = [&] (size_t q0_threads, size_t q1_threads)
+    {
+        if (q0_threads > 0)
+            queries[0]->waitActiveThreads(q0_threads);
+        if (q1_threads > 0)
+            queries[1]->waitActiveThreads(q1_threads);
+    };
+
+    auto finish = [&] (size_t q0_threads, size_t q1_threads)
+    {
+        if (q0_threads > 0)
+            queries[0]->finishThread(q0_threads);
+        if (q1_threads > 0)
+            queries[1]->finishThread(q1_threads);
+    };
+
     // Note that thread with number 0 is noncompeting
     queries[0]->start("all", 6);
-    // Q0: 0 1 2 3 4; Q1: -
-    queries[0]->waitActiveThreads(5);
+    ensure(5, 0); // Q0: 0 1 2 3 4; Q1: -
     queries[1]->start("all", 8);
-    queries[0]->finishThread(2);
-    // Q0: 2 3 4; Q1: 0 1
-    queries[1]->waitActiveThreads(2);
-    queries[0]->finishThread(1);
-    // Q0: 3 4 5; Q1: 0 1
-    queries[0]->waitActiveThreads(3);
-    queries[1]->waitActiveThreads(2);
-    queries[0]->finishThread(1);
-    // Q0: 4 5; Q1: 0 1 2
-    queries[1]->waitActiveThreads(3);
-    queries[1]->finishThread(1);
-    // Q0: 4 5; Q1: 1 2
-    queries[1]->waitActiveThreads(2);
-    queries[1]->finishThread(1);
-    // Q0: 4 5; Q1: 2 3
-    queries[1]->waitActiveThreads(2);
-    queries[1]->finishThread(1);
-    // Q0: 4 5; Q1: 3 4
-    queries[1]->waitActiveThreads(2);
-    queries[0]->finishThread(2);
-    // Q0: -; Q1: 3 4 5 6
-    queries[1]->waitActiveThreads(4);
+    ensure(5, 1); // Q0: 0 1 2 3 4; Q1: 0
+    finish(2, 0); // Q0: 2 3 4; Q1: 0
+    ensure(4, 1); // Q0: 2 3 4 5; Q2: 0
+    finish(1, 0); // Q0: 3 4 5; Q1: 0
+    ensure(3, 2); // Q0: 3 4 5; Q1: 0 1
+    finish(1, 1); // Q0: 4 5; Q1: 1
+    ensure(2, 2); // Q0: 4 5; Q1: 1 2
 
     // Q0 - is done, Q1 still needs 1 query, but we cancel it
     queries.clear();
