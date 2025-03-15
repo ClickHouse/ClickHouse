@@ -31,6 +31,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/QueryLog.h>
 
+#include <Planner/Utils.h>
+
 namespace DB
 {
 
@@ -165,7 +167,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, nullptr /*storage*/))
-    , planner(query_tree, select_query_options)
+    , planner(query_tree, select_query_options, "InterpreterSelectQueryAnalyzer")
 {
 }
 
@@ -179,7 +181,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(buildQueryTreeAndRunPasses(query, select_query_options, context, storage_))
-    , planner(query_tree, select_query_options)
+    , planner(query_tree, select_query_options, "InterpreterSelectQueryAnalyzer")
 {
 }
 
@@ -191,7 +193,7 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
     , context(buildContext(context_, select_query_options_))
     , select_query_options(select_query_options_)
     , query_tree(query_tree_)
-    , planner(query_tree_, select_query_options)
+    , planner(query_tree_, select_query_options, "InterpreterSelectQueryAnalyzer")
 {
 }
 
@@ -265,6 +267,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
 {
     planner.buildQueryPlanIfNeeded();
     auto & query_plan = planner.getQueryPlan();
+    LOG_DEBUG(getLogger(__PRETTY_FUNCTION__), "{}", dumpQueryPlan(query_plan));
 
     QueryPlanOptimizationSettings optimization_settings(context);
     BuildQueryPipelineSettings build_pipeline_settings(context);
