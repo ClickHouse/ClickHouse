@@ -669,6 +669,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     SCOPE_EXIT_SAFE({
         if (!session_id.empty())
         {
+            LOG_DEBUG(log, "Session id is not empty - {}, {}", session_id, close_session ? "closing" : "releasing");
             if (close_session)
                 session->closeSession(session_id);
             else
@@ -735,7 +736,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
         if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
             close_session = true;
 
-        if (close_session)
+        if (params.has("session_id"))
             session_id = params.get("session_id");
 
         /// FIXME: maybe this check is already unnecessary.
