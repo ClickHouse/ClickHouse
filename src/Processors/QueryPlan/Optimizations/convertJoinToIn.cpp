@@ -176,7 +176,6 @@ InConversion buildInConversion(
         size_limits,
         max_size_for_index);
 
-    chassert(future_set->get() == nullptr);
     ColumnPtr set_col = ColumnSet::create(1, future_set);
     const ActionsDAG::Node * in_rhs_arg =
         &lhs_dag.addColumn({set_col, std::make_shared<DataTypeSet>(), "set column"});

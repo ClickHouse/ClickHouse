@@ -534,8 +534,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
             delayed->getPreparedSetsCache());
 
         std::swap(parent, child);
-        std::swap(parent_node->children, child_node->children);
-        std::swap(parent_node->children.front(), child_node->children.front());
         /// DelayedCreatingSets - Filter - Something
         return 2;
     }
