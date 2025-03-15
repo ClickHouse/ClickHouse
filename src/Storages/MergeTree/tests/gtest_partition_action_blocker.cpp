@@ -2,11 +2,12 @@
 
 #include <vector>
 #include <thread>
-#include <fmt/format.h>
 
 #include <Storages/MergeTree/PartitionActionBlocker.h>
 
 #include <iomanip>
+
+import fmt;
 
 using namespace DB;
 

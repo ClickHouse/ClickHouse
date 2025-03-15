@@ -5,7 +5,7 @@
 #include <Interpreters/TransactionsInfoLog.h>
 #include <Common/noexcept_scope.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace DB
 {

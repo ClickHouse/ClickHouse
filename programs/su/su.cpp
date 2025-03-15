@@ -1,6 +1,5 @@
 #include <Common/Exception.h>
 #include <IO/ReadHelpers.h>
-#include <fmt/format.h>
 
 #include <iostream>
 #include <vector>
@@ -9,6 +8,8 @@
 #include <unistd.h>
 #include <pwd.h>
 #include <grp.h>
+
+import fmt;
 
 
 /// "su" means "set user"

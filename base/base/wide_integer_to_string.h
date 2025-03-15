@@ -1,7 +1,7 @@
 #pragma once
 
+import fmt;
 #include <string>
-#include <fmt/format.h>
 
 namespace wide
 {

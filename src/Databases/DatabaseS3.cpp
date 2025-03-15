@@ -33,7 +33,8 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
 }
 
-static const std::unordered_set<std::string_view> optional_configuration_keys = {
+/// TODO: FMT module should work with fmt::join<std::string_view>
+static const std::unordered_set<std::string> optional_configuration_keys = {
     "url",
     "access_key_id",
     "secret_access_key",

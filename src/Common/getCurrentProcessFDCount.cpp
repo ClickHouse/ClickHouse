@@ -2,9 +2,10 @@
 #include <Common/ShellCommand.h>
 #include <IO/WriteBufferFromString.h>
 #include <unistd.h>
-#include <fmt/format.h>
 #include <IO/ReadHelpers.h>
 #include <filesystem>
+
+import fmt;
 
 
 Int64 getCurrentProcessFDCount()

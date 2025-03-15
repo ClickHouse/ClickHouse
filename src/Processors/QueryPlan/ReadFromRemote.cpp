@@ -41,7 +41,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 
-#include <fmt/format.h>
+import fmt;
 
 namespace DB
 {
@@ -821,7 +821,7 @@ Pipes ReadFromParallelRemoteReplicasStep::addPipes(ASTPtr ast, const Header & ou
 {
     Pipes pipes;
 
-    std::vector<std::string_view> addresses;
+    std::vector<String> addresses; /// TODO: FMT module should work with fmt::join<std::string_view>
     addresses.reserve(pools_to_use.size());
     for (size_t i = 0, l = pools_to_use.size(); i < l; ++i)
     {

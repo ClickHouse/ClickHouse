@@ -29,7 +29,8 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <fmt/core.h>
+
+import fmt;
 
 using namespace std::literals;
 

@@ -9,7 +9,7 @@
 #include <span>
 #include <functional>
 
-#include <fmt/format.h>
+import fmt;
 
 /** Generic interface for ZooKeeper-like services.
   * Possible examples are:
@@ -609,10 +609,10 @@ public:
 
 }
 
-template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<std::string_view>
+template <> struct fmt::formatter<Coordination::Error> : fmt::formatter<fmt::string_view>
 {
     constexpr auto format(Coordination::Error code, auto & ctx) const
     {
-        return formatter<string_view>::format(Coordination::errorMessage(code), ctx);
+        return formatter<fmt::string_view>::format(Coordination::errorMessage(code), ctx);
     }
 };

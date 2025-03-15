@@ -1,6 +1,6 @@
 #include "errnoToString.h"
 
-#include <fmt/format.h>
+import fmt;
 
 
 std::string errnoToString(int the_errno)

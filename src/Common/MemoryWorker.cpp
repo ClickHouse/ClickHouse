@@ -7,13 +7,12 @@
 #include <Common/Jemalloc.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
-#include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-
-#include <fmt/ranges.h>
 
 #include <filesystem>
 #include <optional>
+
+import fmt;
 
 namespace fs = std::filesystem;
 

@@ -2,7 +2,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace DB
 {

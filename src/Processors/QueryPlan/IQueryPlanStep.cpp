@@ -4,7 +4,7 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
 
-#include <fmt/format.h>
+import fmt;
 
 namespace DB
 {

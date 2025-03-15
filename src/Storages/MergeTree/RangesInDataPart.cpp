@@ -1,12 +1,11 @@
 #include <Storages/MergeTree/RangesInDataPart.h>
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>
-
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include "IO/VarInt.h"
+#include <IO/VarInt.h>
+
+import fmt;
 
 template <>
 struct fmt::formatter<DB::RangesInDataPartDescription>

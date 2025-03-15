@@ -4,9 +4,10 @@
 
 #include <base/types.h>
 #include <stdexcept>
-#include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/clibssh.h>
+
+import fmt;
 
 namespace DB
 {

@@ -18,8 +18,7 @@
 #include <Processors/Formats/Impl/TabSeparatedRowInputFormat.h>
 #include <Processors/Formats/RowInputFormatWithNamesAndTypes.h>
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>
+import fmt;
 
 namespace DB
 {

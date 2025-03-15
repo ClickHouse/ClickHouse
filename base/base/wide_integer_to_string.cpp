@@ -2,8 +2,6 @@
 #include <base/wide_integer_to_string.h>
 
 #include <string>
-#include <fmt/format.h>
-
 
 namespace wide
 {

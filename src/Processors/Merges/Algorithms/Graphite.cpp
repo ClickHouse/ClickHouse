@@ -12,10 +12,9 @@
 #include <vector>
 #include <unordered_map>
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>
-
 #include <Poco/Util/AbstractConfiguration.h>
+
+import fmt;
 
 
 using namespace std::literals;

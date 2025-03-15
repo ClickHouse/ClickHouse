@@ -15,8 +15,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 
-#include <fmt/format.h>
-
 #include <openssl/evp.h>
 #include <openssl/engine.h>
 
@@ -25,6 +23,8 @@
 #include <initializer_list>
 
 #include <string.h>
+
+import fmt;
 
 
 namespace DB

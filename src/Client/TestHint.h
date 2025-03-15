@@ -5,8 +5,7 @@
 #include <optional>
 #include <vector>
 
-#include <fmt/format.h>
-#include <fmt/ranges.h>
+import fmt;
 
 namespace DB
 {

@@ -4,8 +4,8 @@
 #define MAGIC_ENUM_RANGE_MIN (-100)
 #define MAGIC_ENUM_RANGE_MAX 1000
 #include <magic_enum.hpp>
-#include <fmt/format.h>
 
+import fmt;
 
 template <typename T> concept is_enum = std::is_enum_v<T>;
 
@@ -33,10 +33,10 @@ constexpr void static_for(F && f)
 
 /// Enable printing enum values as strings via fmt + magic_enum
 template <is_enum T>
-struct fmt::formatter<T> : fmt::formatter<std::string_view>
+struct fmt::formatter<T> : fmt::formatter<fmt::string_view>
 {
-    constexpr auto format(T value, auto& format_context) const
+    constexpr auto format(T value, auto & format_context) const
     {
-        return formatter<string_view>::format(magic_enum::enum_name(value), format_context);
+        return fmt::formatter<fmt::string_view>::format(magic_enum::enum_name(value), format_context);
     }
 };

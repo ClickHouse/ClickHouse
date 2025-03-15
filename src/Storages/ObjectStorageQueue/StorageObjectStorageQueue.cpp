@@ -33,7 +33,7 @@
 
 #include <filesystem>
 
-#include <fmt/ranges.h>
+import fmt;
 
 namespace fs = std::filesystem;
 
