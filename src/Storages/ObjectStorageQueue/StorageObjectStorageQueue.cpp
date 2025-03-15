@@ -575,69 +575,67 @@ bool StorageObjectStorageQueue::streamToViews()
 
     while (!shutdown_called && !file_iterator->isFinished())
     {
-        /// FIXME:
-        /// it is possible that MV is dropped just before we start the insert,
-        /// but in this case we would not throw any exception, so
-        /// data will not be inserted anywhere.
-        InterpreterInsertQuery interpreter(
-            insert,
-            queue_context,
-            /* allow_materialized */ false,
-            /* no_squash */ true,
-            /* no_destination */ true,
-            /* async_isnert */ false);
-        auto block_io = interpreter.execute();
-        auto read_from_format_info = prepareReadingFromFormat(
-            block_io.pipeline.getHeader().getNames(),
-            storage_snapshot,
-            queue_context,
-            supportsSubsetOfColumns(queue_context));
-
-        Pipes pipes;
+        QueryPipeline pipeline;
         std::vector<std::shared_ptr<ObjectStorageQueueSource>> sources;
-
-        pipes.reserve(processing_threads_num);
         sources.reserve(processing_threads_num);
 
-        auto processing_progress = std::make_shared<ProcessingProgress>();
         for (size_t i = 0; i < processing_threads_num; ++i)
         {
+            /// FIXME:
+            /// it is possible that MV is dropped just before we start the insert,
+            /// but in this case we would not throw any exception, so
+            /// data will not be inserted anywhere.
+            InterpreterInsertQuery interpreter(
+                insert,
+                queue_context,
+                /*allow_materialized_=*/ false,
+                /*no_squash_=*/ true,
+                /*no_destination=*/ true,
+                /*async_insert_=*/ false);
+            auto block_io = interpreter.execute();
+            auto read_from_format_info = prepareReadingFromFormat(
+                block_io.pipeline.getHeader().getNames(),
+                storage_snapshot,
+                queue_context,
+                supportsSubsetOfColumns(queue_context));
+
+            auto processing_progress = std::make_shared<ProcessingProgress>();
             auto source = createSource(
-                i/* processor_id */,
+                /*processor_id=*/ i,
                 read_from_format_info,
                 processing_progress,
                 file_iterator,
                 DBMS_DEFAULT_BUFFER_SIZE,
                 queue_context,
-                false/* commit_once_processed */);
+                /*commit_once_processed=*/ false);
 
-            pipes.emplace_back(source);
             sources.emplace_back(source);
-        }
-        auto pipe = Pipe::unitePipes(std::move(pipes));
+            block_io.pipeline.complete(Pipe(std::move(source)));
 
-        block_io.pipeline.complete(std::move(pipe));
-        block_io.pipeline.setNumThreads(processing_threads_num);
-        block_io.pipeline.setConcurrencyControl(queue_context->getSettingsRef()[Setting::use_concurrency_control]);
+            pipeline.addCompletedPipeline(std::move(block_io.pipeline));
+        }
+
+        pipeline.setNumThreads(processing_threads_num);
+        pipeline.setConcurrencyControl(queue_context->getSettingsRef()[Setting::use_concurrency_control]);
 
         std::atomic_size_t rows = 0;
-        block_io.pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
+        pipeline.setProgressCallback([&](const Progress & progress) { rows += progress.read_rows.load(); });
 
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueInsertIterations);
 
         try
         {
-            CompletedPipelineExecutor executor(block_io.pipeline);
+            CompletedPipelineExecutor executor(pipeline);
             executor.execute();
         }
         catch (...)
         {
-            commit(/* insert_succeeded */false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
+            commit(/*insert_succeeded=*/ false, rows, sources, getCurrentExceptionMessage(true), getCurrentExceptionCode());
             file_iterator->releaseFinishedBuckets();
             throw;
         }
 
-        commit(/* insert_succeeded */true, rows, sources);
+        commit(/*insert_succeeded=*/ true, rows, sources);
         file_iterator->releaseFinishedBuckets();
         total_rows += rows;
     }
