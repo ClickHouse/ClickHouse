@@ -577,10 +577,11 @@ bool StorageObjectStorageQueue::streamToViews()
         InterpreterInsertQuery interpreter(
             insert,
             queue_context,
-            /* allow_materialized */ false,
-            /* no_squash */ true,
-            /* no_destination */ true,
-            /* async_isnert */ false);
+            /*allow_materialized_=*/ false,
+            /*no_squash_=*/ true,
+            /*no_destination=*/ true,
+            /*async_insert_=*/ false,
+            /*parent_pipeline_threads_=*/ processing_threads_num);
         auto block_io = interpreter.execute();
         auto read_from_format_info = prepareReadingFromFormat(
             block_io.pipeline.getHeader().getNames(),

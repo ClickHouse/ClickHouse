@@ -28,7 +28,10 @@ public:
         bool allow_materialized_,
         bool no_squash_,
         bool no_destination,
-        bool async_insert_);
+        bool async_insert_,
+        // Number of threads for INSERT without INSERT SELECT
+        // (ignores max_insert_threads)
+        size_t parent_pipeline_threads = 1);
 
     /** Prepare a request for execution. Return block streams
       * - the stream into which you can write data to execute the query, if INSERT;
@@ -79,6 +82,7 @@ private:
     bool no_squash = false;
     bool no_destination = false;
     const bool async_insert;
+    const size_t parent_pipeline_threads;
 
     std::vector<std::unique_ptr<ReadBuffer>> owned_buffers;
 

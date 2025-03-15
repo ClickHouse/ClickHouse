@@ -118,7 +118,7 @@ Default value: `0`.
 
 Number of threads to perform processing. Applies only for `Unordered` mode.
 
-Default value: `1`.
+Default value: Number of CPUs or 16.
 
 ### s3queue_enable_logging_to_s3queue_log {#enable_logging_to_s3queue_log}
 
