@@ -7,12 +7,8 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
-node1 = cluster.add_instance(
-    "node1", stay_alive=True, with_zookeeper=True, with_remote_database_disk=False
-)
-node2 = cluster.add_instance(
-    "node2", with_zookeeper=True, with_remote_database_disk=False
-)
+node1 = cluster.add_instance("node1", stay_alive=True, with_zookeeper=True)
+node2 = cluster.add_instance("node2", with_zookeeper=True)
 
 instance = node1
 q = node1.query
@@ -50,7 +46,10 @@ def test_make_clone_covered_by_broken_detached_dir_exists(started_cluster):
     q(
         "CREATE TABLE test_make_clone_cvbdde(n int, m String) ENGINE=ReplicatedMergeTree('/test_make_clone_cvbdde', '1') ORDER BY n SETTINGS old_parts_lifetime=3600, min_age_to_force_merge_seconds=1, min_age_to_force_merge_on_partition_only=0"
     )
-    path = path_to_data + "data/default/test_make_clone_cvbdde/"
+
+    data_path = node1.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='test_make_clone_cvbdde'"
+    ).strip()
 
     q("INSERT INTO test_make_clone_cvbdde VALUES (0, 'hbl')")
 
@@ -66,14 +65,14 @@ def test_make_clone_covered_by_broken_detached_dir_exists(started_cluster):
     if not (wait_merged_part("test_make_clone_cvbdde", "all_0_3_3")):
         assert False, "Part all_0_3_3 doesn't appeared in system.parts"
 
-    res = str(instance.exec_in_container(["ls", path]).strip().split("\n"))
+    res = str(instance.exec_in_container(["ls", data_path]).strip().split("\n"))
 
     # broke the merged parts
     instance.exec_in_container(
         [
             "bash",
             "-c",
-            "echo 'broken' > {}".format(path + "all_0_1_1/data.bin"),
+            "echo 'broken' > {}".format(data_path + "all_0_1_1/data.bin"),
         ]
     )
 
@@ -81,7 +80,7 @@ def test_make_clone_covered_by_broken_detached_dir_exists(started_cluster):
         [
             "bash",
             "-c",
-            "echo 'broken' > {}".format(path + "all_0_2_2/data.bin"),
+            "echo 'broken' > {}".format(data_path + "all_0_2_2/data.bin"),
         ]
     )
 
@@ -89,7 +88,7 @@ def test_make_clone_covered_by_broken_detached_dir_exists(started_cluster):
         [
             "bash",
             "-c",
-            "echo 'broken' > {}".format(path + "all_0_3_3/data.bin"),
+            "echo 'broken' > {}".format(data_path + "all_0_3_3/data.bin"),
         ]
     )
 
@@ -104,5 +103,5 @@ def test_make_clone_covered_by_broken_detached_dir_exists(started_cluster):
         "covered-by-broken_all_2_2_0",
         "covered-by-broken_all_3_3_0",
     ] == sorted(
-        instance.exec_in_container(["ls", path + "detached/"]).strip().split("\n")
+        instance.exec_in_container(["ls", data_path + "detached/"]).strip().split("\n")
     )

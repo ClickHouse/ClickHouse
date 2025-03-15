@@ -13,7 +13,7 @@ def started_cluster():
             main_configs=["config.xml"],
             with_minio=True,
             with_zookeeper=True,
-            with_remote_database_disk=False,
+            with_remote_database_disk=False,  # The tests work on the local disk and check local files
         )
         cluster.start()
 

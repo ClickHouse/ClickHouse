@@ -13,7 +13,6 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/asynchronous_metrics_update_period_s.xml"],
-    with_remote_database_disk=False,
 )
 
 
@@ -101,11 +100,14 @@ def test_numbers_of_detached_parts(started_cluster):
     assert 3 == int(node1.query(query_number_detached_by_user_parts_in_async_metric))
 
     # inject some data directly and wait until asynchronous metrics notice it
+    data_path = node1.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='t'"
+    ).strip()
     node1.exec_in_container(
         [
             "bash",
             "-c",
-            "mkdir /var/lib/clickhouse/data/default/t/detached/unexpected_all_0_0_0",
+            f"mkdir {data_path}/detached/unexpected_all_0_0_0",
         ]
     )
 
@@ -124,9 +126,7 @@ def test_numbers_of_detached_parts(started_cluster):
         [
             "bash",
             "-c",
-            "rm -rf /var/lib/clickhouse/data/default/t/detached/{}".format(
-                partition_name
-            ),
+            f"rm -rf {data_path}/detached/{partition_name}",
         ]
     )
 

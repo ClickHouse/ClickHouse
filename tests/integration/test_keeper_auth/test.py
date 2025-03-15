@@ -19,7 +19,6 @@ node = cluster.add_instance(
     with_zookeeper=True,
     use_keeper=False,
     stay_alive=True,
-    with_remote_database_disk=False,
 )
 
 SUPERAUTH = "super:admin"

@@ -15,6 +15,7 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/enable_keeper.xml"],
     stay_alive=True,
+    # When `with_remote_database_disk` is enalbed, `with_zookeeper` might be enabled and the feature flag `CHECK_NOT_EXISTS` is enabled, causing the test `test_keeper_feature_flags` to fail
     with_remote_database_disk=False,
 )
 

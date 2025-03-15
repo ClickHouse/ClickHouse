@@ -11,7 +11,7 @@ from helpers.cluster import ClickHouseCluster
 def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-
+        # Disable `with_remote_database_disk` as the test uses proxy, which might not work with the default configs of the remote database disk
         cluster.add_instance(
             "remote_proxy_node",
             main_configs=[

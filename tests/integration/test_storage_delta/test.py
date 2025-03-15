@@ -70,6 +70,7 @@ def randomize_table_name(table_name, random_suffix_length=10):
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__, with_spark=True)
+        # Disable `with_remote_database_disk` as the instances does not use the default minIO
         cluster.add_instance(
             "node1",
             main_configs=[

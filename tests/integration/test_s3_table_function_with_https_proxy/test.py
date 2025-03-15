@@ -13,7 +13,7 @@ def cluster():
         cluster = ClickHouseCluster(__file__)
 
         # minio_certs_dir is set only once and used by all instances
-
+        # Disable `with_remote_database_disk` as the test uses proxy, which might not work with the default configs of the remote database disk
         cluster.add_instance(
             "remote_proxy_node",
             main_configs=[

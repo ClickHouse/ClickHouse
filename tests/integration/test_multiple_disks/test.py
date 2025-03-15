@@ -24,7 +24,6 @@ node1 = cluster.add_instance(
     stay_alive=True,
     tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
     macros={"shard": 0, "replica": 1},
-    with_remote_database_disk=False,
 )
 
 node2 = cluster.add_instance(
@@ -38,7 +37,6 @@ node2 = cluster.add_instance(
     stay_alive=True,
     tmpfs=["/jbod1:size=40M", "/jbod2:size=40M", "/external:size=200M"],
     macros={"shard": 0, "replica": 2},
-    with_remote_database_disk=False,
 )
 
 
@@ -87,6 +85,10 @@ def test_system_tables(start_cluster):
             "keep_free_space": "0",
         },
     ]
+    if node1.with_remote_database_disk:
+        expected_disks_data.append(
+            {"name": "disk_db_remote", "path": "", "keep_free_space": "0"}
+        )
 
     click_disk_data = json.loads(
         node1.query("SELECT name, path, keep_free_space FROM system.disks FORMAT JSON")

@@ -12,12 +12,7 @@ from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    "node",
-    stay_alive=True,
-    with_zookeeper=True,
-    with_remote_database_disk=False,
-)
+node = cluster.add_instance("node", stay_alive=True, with_zookeeper=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -30,19 +25,23 @@ def start_cluster():
 
 
 def break_part(table, part_name):
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table}'"
+    ).strip()
     node.exec_in_container(
         [
             "bash",
             "-c",
-            f"rm /var/lib/clickhouse/data/default/{table}/{part_name}/columns.txt",
+            f"rm {data_path}/{part_name}/columns.txt",
         ]
     )
 
 
 def remove_part(table, part_name):
-    node.exec_in_container(
-        ["bash", "-c", f"rm -r /var/lib/clickhouse/data/default/{table}/{part_name}"]
-    )
+    data_path = node.query(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='{table}'"
+    ).strip()
+    node.exec_in_container(["bash", "-c", f"rm -r {data_path}/{part_name}"])
 
 
 def get_count(table):

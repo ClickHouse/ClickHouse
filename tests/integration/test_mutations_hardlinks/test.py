@@ -12,7 +12,7 @@ cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/wide_parts_only.xml"],
-    with_remote_database_disk=False,
+    with_remote_database_disk=False,  # The test checks hardlinks in the local disk
 )
 
 

@@ -7,7 +7,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance("node", with_remote_database_disk=False)
+instance = cluster.add_instance("node")
 path_to_data = "/var/lib/clickhouse/"
 
 
