@@ -67,6 +67,11 @@ void registerTableFunctions(bool use_legacy_mongodb_integration [[maybe_unused]]
     registerTableFunctionObjectStorageCluster(factory);
     registerDataLakeTableFunctions(factory);
     registerDataLakeClusterTableFunctions(factory);
+
+#if USE_YTSAURUS
+    registerTableFunctionYTsaurus(factory);
+#endif
+
 }
 
 }

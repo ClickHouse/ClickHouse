@@ -52,6 +52,8 @@ void enableAllExperimentalSettings(ContextMutablePtr context)
     context->setSetting("allow_not_comparable_types_in_comparison_functions", 1);
     context->setSetting("allow_not_comparable_types_in_order_by", 1);
     context->setSetting("allow_experimental_database_unity_catalog", 1);
+    context->setSetting("allow_experimental_ytsaurus_table_function", 1);
+    context->setSetting("allow_experimental_ytsaurus_table_engine", 1);
 
     /// clickhouse-private settings
     context->setSetting("allow_experimental_shared_set_join", 1);

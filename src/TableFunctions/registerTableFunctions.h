@@ -24,6 +24,9 @@ void registerTableFunctionGenerate(TableFunctionFactory & factory);
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionMongoDBPocoLegacy(TableFunctionFactory & factory);
 #endif
+#if USE_YTSAURUS
+void registerTableFunctionYTsaurus(TableFunctionFactory & factory);
+#endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
