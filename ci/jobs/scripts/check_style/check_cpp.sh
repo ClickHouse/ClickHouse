@@ -53,7 +53,7 @@ find $ROOT_PATH/{src,base,programs,utils} -name '*.h' -or -name '*.cpp' 2>/dev/n
 find -L $ROOT_PATH -type l 2>/dev/null | grep -v contrib && echo "^ Broken symlinks found"
 
 # Duplicated or incorrect setting declarations
-bash $ROOT_PATH/ci/jobs/scripts/check-style/check-settings-style
+bash $ROOT_PATH/ci/jobs/scripts/check_style/check-settings-style
 
 # Unused/Undefined/Duplicates ErrorCodes/ProfileEvents/CurrentMetrics
 declare -A EXTERN_TYPES

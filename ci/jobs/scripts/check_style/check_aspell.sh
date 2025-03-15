@@ -16,7 +16,7 @@ ROOT_PATH="."
 
 CHECK_LANG=en
 
-ASPELL_IGNORE_PATH="${ROOT_PATH}/ci/jobs/scripts/check-style/aspell-ignore/${CHECK_LANG}"
+ASPELL_IGNORE_PATH="${ROOT_PATH}/ci/jobs/scripts/check_style/aspell-ignore/${CHECK_LANG}"
 
 # Use this to filter out lines we don't wanna consider in spell-check - slugs, imports
 preprocess_file() {

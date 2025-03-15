@@ -414,6 +414,4 @@ if __name__ == "__main__":
             )
         )
 
-    result = Result.create_from(results=results, stopwatch=stop_watch)
-
-    result.complete_job()
+    result = Result.create_from(results=results, stopwatch=stop_watch).complete_job()
