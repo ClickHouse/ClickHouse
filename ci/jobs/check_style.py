@@ -414,4 +414,13 @@ if __name__ == "__main__":
             )
         )
 
+    testname = "Check mypy"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_mypy,
+            )
+        )
+
     result = Result.create_from(results=results, stopwatch=stop_watch).complete_job()
