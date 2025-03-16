@@ -396,6 +396,65 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
     kafka_delete_topic(admin_client, "tomv")
 
 
+def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
+
+    kafka_create_topic(admin_client, "visible")
+    kafka_create_topic(admin_client, "hidden")
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS kafka_grant_visible;
+        DROP TABLE IF EXISTS kafka_grant_hidden;
+
+        CREATE TABLE kafka_grant_visible (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'visible',
+                     kafka_group_name = 'visible',
+                     kafka_format = 'JSONEachRow',
+                     kafka_num_consumers = 1;
+
+        CREATE TABLE kafka_grant_hidden (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'hidden',
+                     kafka_group_name = 'hidden',
+                     kafka_format = 'JSONEachRow',
+                     kafka_num_consumers = 1;
+
+    """
+    )
+
+    result_system_kafka_consumers = instance.query_with_retry(
+        """
+        SELECT count(1) FROM system.kafka_consumers WHERE table LIKE 'kafka_grant%'
+        """,
+        retry_count=max_retries,
+        sleep_time=1,
+        check_callback=lambda res: int(res) == 2,
+    )
+
+    instance.query("CREATE USER RESTRICTED")
+    instance.query("GRANT SHOW ON default.kafka_grant_visible TO RESTRICTED")
+    instance.query("GRANT SELECT ON system.kafka_consumers TO RESTRICTED")
+
+    restricted_result_system_kafka_consumers = instance.query(
+        "SELECT count(1) FROM system.kafka_consumers WHERE table LIKE 'kafka_grant%'", user="RESTRICTED"
+    )
+    assert int(restricted_result_system_kafka_consumers) == 1
+
+    kafka_delete_topic(admin_client, "visible")
+    kafka_delete_topic(admin_client, "hidden")
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS kafka_grant_visible;
+        DROP TABLE IF EXISTS kafka_grant_hidden;
+    """
+    )
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
