@@ -78,7 +78,6 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/QueryParameterVisitor.h>
 
 namespace DB

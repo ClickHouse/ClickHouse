@@ -34,9 +34,8 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserDataType.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/ParserQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
-
 #include <pcg_random.hpp>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -1442,7 +1441,8 @@ ASTPtr QueryFuzzer::addJoinClause()
             std::advance(rand_col2, fuzz_rand() % to_search.size());
 
             const String id1_alias = id1->tryGetAlias();
-            const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1_alias;
+            const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ?
+            (id1->shortName().empty() ? id1->name() : id1->shortName()) : id1_alias;
             ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
             ASTPtr exp2 = rand_col2->second->clone();
 
@@ -2174,11 +2174,7 @@ void QueryFuzzer::fuzzMain(ASTPtr & ast)
     if (out_stream)
     {
         *out_stream << std::endl;
-
-        WriteBufferFromOStream ast_buf(*out_stream, 4096);
-        formatAST(*ast, ast_buf, false /*highlight*/);
-        ast_buf.finalize();
-        *out_stream << std::endl << std::endl;
+        *out_stream << ast->formatWithSecretsOneLine() << std::endl << std::endl;
     }
 }
 

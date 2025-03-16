@@ -853,12 +853,12 @@ void Client::processOptions(
         config().setBool("ignore-error", true);
         ignore_error = true;
 #if USE_BUZZHOUSE
-        if (query_fuzzer_runs && !buzz_house_options_path.empty())
+        if (!buzz_house_options_path.empty())
         {
             fuzz_config = std::make_unique<BuzzHouse::FuzzConfig>(this, buzz_house_options_path);
             external_integrations = std::make_unique<BuzzHouse::ExternalIntegrations>(*fuzz_config);
 
-            if (fuzz_config->seed)
+            if (query_fuzzer_runs && fuzz_config->seed)
             {
                 fuzzer.setSeed(fuzz_config->seed);
             }

@@ -53,9 +53,9 @@ SELECT * FROM test SETTINGS format_json_object_each_row_column_for_object_name='
 
 ```json title="Response"
 {
-	"first_obj": {"number": 1},
-	"second_obj": {"number": 2},
-	"third_obj": {"number": 3}
+    "first_obj": {"number": 1},
+    "second_obj": {"number": 2},
+    "third_obj": {"number": 3}
 }
 ```
 

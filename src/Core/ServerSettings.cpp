@@ -824,7 +824,7 @@ namespace DB
     - `1` — Enabled.
     )", 0) \
     DECLARE(Seconds, keep_alive_timeout, DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT, R"(
-    The number of seconds that ClickHouse waits for incoming requests before closing the connection.
+    The number of seconds that ClickHouse waits for incoming requests for HTTP protocol before closing the connection.
 
     **Example**
 
