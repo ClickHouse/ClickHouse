@@ -17,6 +17,7 @@
 #include <Storages/IStorage.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Common/CurrentThread.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
@@ -35,6 +36,8 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsBool implicit_select;
+    extern const SettingsLogsLevel send_logs_level;
+    extern const SettingsString send_logs_source_regexp;
 }
 
 namespace ErrorCodes
@@ -155,6 +158,11 @@ void LocalConnection::sendQuery(
     state->stage = QueryProcessingStage::Enum(stage);
     state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
     CurrentThread::attachInternalProfileEventsQueue(state->profile_queue);
+    state->logs_queue = std::make_shared<InternalTextLogsQueue>();
+    const auto client_logs_level = getContext()->getSettingsRef()[Setting::send_logs_level];
+    state->logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
+    state->logs_queue->setSourceRegexp(getContext()->getSettingsRef()[Setting::send_logs_source_regexp]);
+    CurrentThread::attachInternalTextLogsQueue(state->logs_queue, client_logs_level);
 
     if (send_progress)
         state->after_send_progress.restart();
@@ -408,6 +416,9 @@ bool LocalConnection::poll(size_t)
         if (needSendProgressOrMetrics())
             return true;
 
+        if (needSendLogs())
+            return true;
+
         try
         {
             while (pollImpl())
@@ -415,6 +426,9 @@ bool LocalConnection::poll(size_t)
                 LOG_TEST(&Poco::Logger::get("LocalConnection"), "Executor timeout encountered, will retry");
 
                 if (needSendProgressOrMetrics())
+                    return true;
+
+                if (needSendLogs())
                     return true;
             }
         }
@@ -524,6 +538,41 @@ bool LocalConnection::needSendProgressOrMetrics()
         && (state->after_send_profile_events.elapsedMicroseconds() >= query_context->getSettingsRef()[Setting::interactive_delay]))
     {
         sendProfileEvents();
+        return true;
+    }
+
+    return false;
+}
+
+bool LocalConnection::needSendLogs()
+{
+    if (!state->logs_queue)
+        return false;
+
+    MutableColumns logs_columns;
+    MutableColumns curr_logs_columns;
+    size_t rows = 0;
+
+    for (; state->logs_queue->tryPop(curr_logs_columns); ++rows)
+    {
+        if (rows == 0)
+        {
+            logs_columns = std::move(curr_logs_columns);
+        }
+        else
+        {
+            for (size_t j = 0; j < logs_columns.size(); ++j)
+                logs_columns[j]->insertRangeFrom(*curr_logs_columns[j], 0, curr_logs_columns[j]->size());
+        }
+    }
+
+    if (rows > 0)
+    {
+        Block block = InternalTextLogsQueue::getSampleBlock();
+        block.setColumns(std::move(logs_columns));
+
+        next_packet_type = Protocol::Server::Log;
+        state->block = std::move(block);
         return true;
     }
 

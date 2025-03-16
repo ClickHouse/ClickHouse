@@ -4,7 +4,6 @@
 
 #include <atomic>
 #include <memory>
-#include <stdexcept>
 
 #include <Server/ClientEmbedded/ClientEmbedded.h>
 #include <Server/ClientEmbedded/IClientDescriptorSet.h>
@@ -18,8 +17,12 @@ namespace DB
 class ClientEmbeddedRunner
 {
 public:
-    explicit ClientEmbeddedRunner(std::unique_ptr<IClientDescriptorSet> && client_descriptor_, std::unique_ptr<Session> && dbSession_)
-        : client_descriptors(std::move(client_descriptor_)), db_session(std::move(dbSession_)), log(&Poco::Logger::get("ClientEmbeddedRunner"))
+    explicit ClientEmbeddedRunner(
+        std::unique_ptr<IClientDescriptorSet> && client_descriptor_,
+        std::unique_ptr<Session> && database_session_)
+        : client_descriptors(std::move(client_descriptor_))
+        , db_session(std::move(database_session_))
+        , log(&Poco::Logger::get("ClientEmbeddedRunner"))
     {
     }
     ~ClientEmbeddedRunner();

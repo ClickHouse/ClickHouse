@@ -65,6 +65,7 @@ protected:
                         const std::vector<Arguments> &,
                         const std::vector<Arguments> &) override {}
     void processConfig() override {}
+    bool isEmbeeddedClient() const override;
 
 private:
     void cleanup();
