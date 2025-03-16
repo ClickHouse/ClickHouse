@@ -416,7 +416,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 if (!metadata)
                     return {};
 
-                object_info->metadata = metadaat;
+                object_info->metadata = metadata;
             }
             else
                 object_info->metadata = object_storage->getObjectMetadata(path);
