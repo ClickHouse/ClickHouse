@@ -26,10 +26,10 @@ public:
     ReadBufferFromRemoteFSGather(
         ReadBufferCreator && read_buffer_creator_,
         const StoredObjects & blobs_to_read_,
+        const std::string & cache_path_prefix_,
         const ReadSettings & settings_,
         std::shared_ptr<FilesystemCacheLog> cache_log_,
-        bool use_external_buffer_,
-        size_t buffer_size);
+        bool use_external_buffer_);
 
     ~ReadBufferFromRemoteFSGather() override;
 
@@ -71,10 +71,12 @@ private:
     const ReadSettings settings;
     const StoredObjects blobs_to_read;
     const ReadBufferCreator read_buffer_creator;
+    const std::string cache_path_prefix;
     const std::shared_ptr<FilesystemCacheLog> cache_log;
     const String query_id;
     const bool use_external_buffer;
     const bool with_file_cache;
+    const bool with_page_cache;
 
     size_t read_until_position = 0;
     size_t file_offset_of_buffer_end = 0;
@@ -85,4 +87,6 @@ private:
 
     LoggerPtr log;
 };
+
+size_t chooseBufferSizeForRemoteReading(const DB::ReadSettings & settings, size_t file_size);
 }

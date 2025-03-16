@@ -1,13 +1,11 @@
 import logging
-import os
-import random
 import time
+import os
 
 import pytest
-
 from helpers.cluster import ClickHouseCluster
-from helpers.mock_servers import start_mock_servers, start_s3_mock
-from helpers.utility import SafeThread, generate_values, replace_config
+from helpers.mock_servers import start_s3_mock, start_mock_servers
+from helpers.utility import generate_values, replace_config, SafeThread
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -33,10 +31,12 @@ def cluster():
             ],
         )
         cluster.add_instance(
-            "cache_dynamic_resize",
+            "node_no_filesystem_caches_path",
             main_configs=[
-                "config.d/cache_dynamic_resize.xml",
+                "config.d/storage_conf.xml",
+                "config.d/remove_filesystem_caches_path.xml",
             ],
+            stay_alive=True,
         )
         cluster.add_instance(
             "node_force_read_through_cache_on_merge",
@@ -59,51 +59,6 @@ def cluster():
         cluster.shutdown()
 
 
-@pytest.fixture(scope="function")
-def non_shared_cluster():
-    """
-    For tests that cannot run in parallel against the same node/cluster (see test_custom_cached_disk, which relies on
-    changing server settings at runtime)
-    """
-    try:
-        # Randomize the cluster name
-        cluster = ClickHouseCluster(f"{__file__}_non_shared_{random.randint(0, 10**7)}")
-        cluster.add_instance(
-            "node_no_filesystem_caches_path",
-            main_configs=[
-                "config.d/storage_conf.xml",
-                "config.d/remove_filesystem_caches_path.xml",
-            ],
-            stay_alive=True,
-        )
-
-        logging.info("Starting test-exclusive cluster...")
-        cluster.start()
-        logging.info("Cluster started")
-
-        yield cluster
-    finally:
-        cluster.shutdown()
-
-
-def wait_for_cache_initialized(node, cache_path, max_attempts=50):
-    initialized = False
-    attempts = 0
-    while not initialized:
-        query_result = node.query(
-            "SELECT path FROM system.filesystem_cache_settings WHERE is_initialized"
-        )
-        initialized = cache_path in query_result
-
-        if initialized:
-            break
-
-        time.sleep(0.1)
-        attempts += 1
-        if attempts >= max_attempts:
-            raise "Stopped waiting for cache to be initialized"
-
-
 @pytest.mark.parametrize("node_name", ["node"])
 def test_parallel_cache_loading_on_startup(cluster, node_name):
     node = cluster.instances[node_name]
@@ -116,21 +71,14 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
         ORDER BY value
         SETTINGS disk = disk(
             type = cache,
-            name = 'parallel_loading_test',
-            path = 'parallel_loading_test',
+            path = 'paralel_loading_test',
             disk = 'hdd_blob',
             max_file_segment_size = '1Ki',
             boundary_alignment = '1Ki',
             max_size = '1Gi',
             max_elements = 10000000,
             load_metadata_threads = 30);
-        """
-    )
 
-    wait_for_cache_initialized(node, "parallel_loading_test")
-
-    node.query(
-        """
         SYSTEM DROP FILESYSTEM CACHE;
         INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
         SELECT * FROM test FORMAT Null;
@@ -155,7 +103,6 @@ def test_parallel_cache_loading_on_startup(cluster, node_name):
     )
 
     node.restart_clickhouse()
-    wait_for_cache_initialized(node, "parallel_loading_test")
 
     # < because of additional files loaded into cache on server startup.
     assert cache_count <= int(node.query("SELECT count() FROM system.filesystem_cache"))
@@ -184,7 +131,7 @@ def test_caches_with_the_same_configuration(cluster, node_name):
     node = cluster.instances[node_name]
     cache_path = "cache1"
 
-    node.query("SYSTEM DROP FILESYSTEM CACHE;")
+    node.query(f"SYSTEM DROP FILESYSTEM CACHE;")
     for table in ["test", "test2"]:
         node.query(
             f"""
@@ -195,20 +142,14 @@ def test_caches_with_the_same_configuration(cluster, node_name):
             ORDER BY value
             SETTINGS disk = disk(
                 type = cache,
-                name = '{table}',
+                name = {table},
                 path = '{cache_path}',
                 disk = 'hdd_blob',
                 max_file_segment_size = '1Ki',
                 boundary_alignment = '1Ki',
                 cache_on_write_operations=1,
                 max_size = '1Mi');
-            """
-        )
 
-        wait_for_cache_initialized(node, cache_path)
-
-        node.query(
-            f"""
             SET enable_filesystem_cache_on_write_operations=1;
             INSERT INTO {table} SELECT * FROM generateRandom('a Int32, b String')
             LIMIT 1000;
@@ -254,8 +195,9 @@ def test_caches_with_the_same_configuration(cluster, node_name):
 @pytest.mark.parametrize("node_name", ["node_caches_with_same_path"])
 def test_caches_with_the_same_configuration_2(cluster, node_name):
     node = cluster.instances[node_name]
+    cache_path = "cache1"
 
-    node.query("SYSTEM DROP FILESYSTEM CACHE;")
+    node.query(f"SYSTEM DROP FILESYSTEM CACHE;")
     for table in ["cache1", "cache2"]:
         node.query(
             f"""
@@ -265,13 +207,7 @@ def test_caches_with_the_same_configuration_2(cluster, node_name):
             Engine=MergeTree()
             ORDER BY value
             SETTINGS disk = '{table}';
-            """
-        )
 
-        wait_for_cache_initialized(node, "cache1")
-
-        node.query(
-            f"""
             SET enable_filesystem_cache_on_write_operations=1;
             INSERT INTO {table} SELECT * FROM generateRandom('a Int32, b String')
             LIMIT 1000;
@@ -291,8 +227,8 @@ def test_caches_with_the_same_configuration_2(cluster, node_name):
     )
 
 
-def test_custom_cached_disk(non_shared_cluster):
-    node = non_shared_cluster.instances["node_no_filesystem_caches_path"]
+def test_custom_cached_disk(cluster):
+    node = cluster.instances["node_no_filesystem_caches_path"]
 
     assert "Cannot create cached custom disk without" in node.query_and_get_error(
         f"""
@@ -441,7 +377,6 @@ def test_force_filesystem_cache_on_merges(cluster):
             ORDER BY value
             SETTINGS disk = disk(
                 type = cache,
-                name = 'force_cache_on_merges',
                 path = 'force_cache_on_merges',
                 disk = 'hdd_blob',
                 max_file_segment_size = '1Ki',
@@ -450,13 +385,7 @@ def test_force_filesystem_cache_on_merges(cluster):
                 max_size = '10Gi',
                 max_elements = 10000000,
                 load_metadata_threads = 30);
-            """
-        )
 
-        wait_for_cache_initialized(node, "force_cache_on_merges")
-
-        node.query(
-            """
             SYSTEM DROP FILESYSTEM CACHE;
             INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
             INSERT INTO test SELECT * FROM generateRandom('a Int32, b String') LIMIT 1000000;
@@ -478,8 +407,6 @@ def test_force_filesystem_cache_on_merges(cluster):
             )
         )
         assert r_cache_count_2 == r_cache_count
-
-        assert node.query("select current_size from system.filesystem_cache_settings where cache_name = 'force_cache_on_merges'") == node.query("select sum(downloaded_size) from system.filesystem_cache")
 
         node.query("SYSTEM DROP FILESYSTEM CACHE")
         node.query("OPTIMIZE TABLE test FINAL")
@@ -510,17 +437,11 @@ DROP TABLE IF EXISTS test;
 CREATE TABLE test (a Int32, b String)
 ENGINE = MergeTree() ORDER BY tuple()
 SETTINGS disk = disk(type = cache,
-            max_size = '10Gi',
+            max_size = '100Ki',
             path = "test_system_sync_filesystem_cache",
-            disk = hdd_blob),
+            delayed_cleanup_interval_ms = 10000000, disk = hdd_blob),
         min_bytes_for_wide_part = 10485760;
-    """
-    )
 
-    wait_for_cache_initialized(node, "test_system_sync_filesystem_cache")
-
-    node.query(
-        """
 INSERT INTO test SELECT 1, 'test';
     """
     )
@@ -604,13 +525,7 @@ SETTINGS disk = disk(type = cache,
             keep_free_space_elements_ratio = {elements_ratio},
             disk = hdd_blob),
         min_bytes_for_wide_part = 10485760;
-    """
-    )
 
-    wait_for_cache_initialized(node, "test_keep_up_size_ratio")
-
-    node.query(
-        """
 INSERT INTO test SELECT randomString(200);
     """
     )
@@ -643,128 +558,3 @@ INSERT INTO test SELECT randomString(200);
             break
         time.sleep(1)
     assert elements <= expected
-
-cache_dynamic_resize_config = """
-<clickhouse>
-    <storage_configuration>
-        <disks>
-            <hdd_blob>
-                <type>local_blob_storage</type>
-                <path>/</path>
-            </hdd_blob>
-            <cache_dynamic_resize>
-                <type>cache</type>
-                <disk>hdd_blob</disk>
-                <max_size>{}</max_size>
-                <max_elements>{}</max_elements>
-                <max_file_segment_size>10</max_file_segment_size>
-                <boundary_alignment>10</boundary_alignment>
-                <path>./cache_dynamic_reload/</path>
-            </cache_dynamic_resize>
-        </disks>
-    </storage_configuration>
-    <filesystem_cache_log>
-            <database>system</database>
-            <table>filesystem_cache_log</table>
-    </filesystem_cache_log>
-</clickhouse>
-"""
-
-def test_dynamic_resize(cluster):
-    node = cluster.instances["cache_dynamic_resize"]
-    max_elements = 20
-    cache_name = "cache_dynamic_resize"
-    node.query(
-        f"""
-DROP TABLE IF EXISTS test;
-SYSTEM DROP FILESYSTEM CACHE;
-CREATE TABLE test (a String)
-ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS disk = '{cache_name}', min_bytes_for_wide_part = 10485760;
-    """
-    )
-
-    node.query(
-        """
-INSERT INTO test SELECT randomString(200);
-SELECT * FROM test;
-    """
-    )
-
-    def get_downloaded_size():
-        return int(node.query(
-            f"SELECT sum(downloaded_size) FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
-        ))
-
-    def get_queue_size():
-        return int(node.query(
-            f"SELECT current_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-        ))
-
-    def get_downloaded_elements():
-        return int(node.query(
-            f"SELECT count() FROM system.filesystem_cache WHERE cache_name = '{cache_name}'"
-        ))
-
-    def get_queue_elements():
-        return int(node.query(
-            f"SELECT current_elements_num FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-        ))
-
-
-    size = get_downloaded_size()
-    assert size > 100
-    assert size == get_queue_size()
-
-    elements = get_downloaded_elements()
-    assert elements > 10
-    assert elements == get_queue_elements()
-
-    default_config = cache_dynamic_resize_config.format(100000, 100)
-    new_config = cache_dynamic_resize_config.format(100000, 10)
-    node.replace_config("/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", new_config)
-
-    node.query("SYSTEM RELOAD CONFIG")
-
-    assert 10 == get_downloaded_elements()
-    assert 10 == get_queue_elements()
-
-    node.query(f"SYSTEM ENABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
-
-    new_config = cache_dynamic_resize_config.format(100000, 5)
-    node.replace_config("/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", new_config)
-
-    node.query("SYSTEM RELOAD CONFIG")
-
-    assert 10 == get_queue_elements()
-    assert 10 == get_downloaded_elements()
-
-    assert 100000 == int(node.query(
-        f"SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
-    assert 10 == int(node.query(
-        f"SELECT max_elements FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
-
-    node.query(f"SYSTEM DISABLE FAILPOINT file_cache_dynamic_resize_fail_to_evict")
-    node.query("SYSTEM RELOAD CONFIG")
-
-    assert 5 == get_downloaded_elements()
-    assert 5 == get_queue_elements()
-
-    assert 100000 == int(node.query(
-        f"SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
-    assert 5 == int(node.query(
-        f"SELECT max_elements FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
-
-    node.replace_config("/etc/clickhouse-server/config.d/cache_dynamic_resize.xml", default_config)
-    node.query("SYSTEM RELOAD CONFIG")
-
-    assert 100000 == int(node.query(
-        f"SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))
-    assert 100 == int(node.query(
-        f"SELECT max_elements FROM system.filesystem_cache_settings WHERE cache_name = '{cache_name}'"
-    ))

@@ -1,8 +1,6 @@
 #include "Storages/ObjectStorage/StorageObjectStorageCluster.h"
 
 #include <Common/Exception.h>
-#include <Common/StringUtils.h>
-
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/queryToString.h>
@@ -12,15 +10,11 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
-#include <Storages/extractTableFunctionFromSelectQuery.h>
+#include <Storages/extractTableFunctionArgumentsFromSelectQuery.h>
 
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool use_hive_partitioning;
-}
 
 namespace ErrorCodes
 {
@@ -71,7 +65,7 @@ StorageObjectStorageCluster::StorageObjectStorageCluster(
     metadata.setColumns(columns);
     metadata.setConstraints(constraints_);
 
-    if (sample_path.empty() && context_->getSettingsRef()[Setting::use_hive_partitioning])
+    if (sample_path.empty() && context_->getSettingsRef().use_hive_partitioning)
         sample_path = getPathSample(metadata, context_);
 
     setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(metadata.columns, context_, sample_path));
@@ -88,16 +82,7 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
     const DB::StorageSnapshotPtr & storage_snapshot,
     const ContextPtr & context)
 {
-    auto * table_function = extractTableFunctionFromSelectQuery(query);
-    if (!table_function)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Expected SELECT query from table function {}, got '{}'",
-            configuration->getEngineName(), queryToString(query));
-    }
-
-    auto * expression_list = table_function->arguments->as<ASTExpressionList>();
+    ASTExpressionList * expression_list = extractTableFunctionArgumentsFromSelectQuery(query);
     if (!expression_list)
     {
         throw Exception(
@@ -116,15 +101,10 @@ void StorageObjectStorageCluster::updateQueryToSendIfNeeded(
             configuration->getEngineName());
     }
 
-    if (!endsWith(table_function->name, "Cluster"))
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-    else
-    {
-        ASTPtr cluster_name_arg = args.front();
-        args.erase(args.begin());
-        configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
-        args.insert(args.begin(), cluster_name_arg);
-    }
+    ASTPtr cluster_name_arg = args.front();
+    args.erase(args.begin());
+    configuration->addStructureAndFormatToArgsIfNeeded(args, structure, configuration->format, context, /*with_structure=*/true);
+    args.insert(args.begin(), cluster_name_arg);
 }
 
 RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExtension(
@@ -132,19 +112,15 @@ RemoteQueryExecutor::Extension StorageObjectStorageCluster::getTaskIteratorExten
 {
     auto iterator = StorageObjectStorageSource::createFileIterator(
         configuration, configuration->getQuerySettings(local_context), object_storage, /* distributed_processing */false,
-        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback(), /*ignore_archive_globs=*/true);
+        local_context, predicate, virtual_columns, nullptr, local_context->getFileProgressCallback());
 
     auto callback = std::make_shared<std::function<String()>>([iterator]() mutable -> String
     {
         auto object_info = iterator->next(0);
-        if (!object_info)
+        if (object_info)
+            return object_info->getPath();
+        else
             return "";
-
-        auto archive_object_info = std::dynamic_pointer_cast<StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive>(object_info);
-        if (archive_object_info)
-            return archive_object_info->getPathToArchive();
-
-        return object_info->getPath();
     });
     return RemoteQueryExecutor::Extension{ .task_iterator = std::move(callback) };
 }

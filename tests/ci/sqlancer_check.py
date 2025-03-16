@@ -7,12 +7,12 @@ import sys
 from pathlib import Path
 
 from build_download_helper import read_build_urls
-from ci_config import CI
 from docker_images_helper import DockerImage, get_docker_image, pull_image
 from env_helper import REPORT_PATH, TEMP_PATH
 from report import FAILURE, SUCCESS, JobReport, TestResult, TestResults
 from stopwatch import Stopwatch
 from tee_popen import TeePopen
+from ci_config import CI
 
 IMAGE_NAME = "clickhouse/sqlancer-test"
 
@@ -86,8 +86,6 @@ def main():
     paths = [
         run_log_path,
         workspace_path / "clickhouse-server.log",
-        workspace_path / "clickhouse-server.log.err",
-        workspace_path / "cores",
         workspace_path / "stderr.log",
         workspace_path / "stdout.log",
     ]
@@ -114,7 +112,7 @@ def main():
 
     if not test_results:
         test_results = [TestResult(name=__file__, status=status)]
-    paths.sort()
+
     JobReport(
         description=description,
         test_results=test_results,

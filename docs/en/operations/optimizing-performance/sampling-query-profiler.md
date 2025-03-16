@@ -1,12 +1,9 @@
 ---
-description: 'Documentation for the sampling query profiler tool in ClickHouse'
-sidebar_label: 'Query Profiling'
+slug: /en/operations/optimizing-performance/sampling-query-profiler
 sidebar_position: 54
-slug: /operations/optimizing-performance/sampling-query-profiler
-title: 'Sampling Query Profiler'
+sidebar_label: Query Profiling
 ---
-
-import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
+import SelfManaged from '@site/docs/en/_snippets/_self_managed_only_no_roadmap.md';
 
 # Sampling Query Profiler
 
@@ -31,15 +28,15 @@ SETTINGS allow_introspection_functions = 1
 
 In self-managed deployments, to use query profiler:
 
-- Setup the [trace_log](../../operations/server-configuration-parameters/settings.md#trace_log) section of the server configuration.
+- Setup the [trace_log](../../operations/server-configuration-parameters/settings.md#server_configuration_parameters-trace_log) section of the server configuration.
 
-    This section configures the [trace_log](/operations/system-tables/trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for a running server. After the server restart, ClickHouse does not clean up the table and all the stored virtual memory address may become invalid.
+    This section configures the [trace_log](../../operations/system-tables/trace_log.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for a running server. After the server restart, ClickHouse does not clean up the table and all the stored virtual memory address may become invalid.
 
 - Setup the [query_profiler_cpu_time_period_ns](../../operations/settings/settings.md#query_profiler_cpu_time_period_ns) or [query_profiler_real_time_period_ns](../../operations/settings/settings.md#query_profiler_real_time_period_ns) settings. Both settings can be used simultaneously.
 
     These settings allow you to configure profiler timers. As these are the session settings, you can get different sampling frequency for the whole server, individual users or user profiles, for your interactive session, and for each individual query.
 
-The default sampling frequency is one sample per second and both CPU and real timers are enabled. This frequency allows collecting enough information about ClickHouse cluster. At the same time, working with this frequency, profiler does not affect ClickHouse server's performance. If you need to profile each individual query try to use higher sampling frequency.
+The default sampling frequency is one sample per second and both CPU and real timers are enabled. This frequency allows collecting enough information about ClickHouse cluster. At the same time, working with this frequency, profiler does not affect ClickHouse server’s performance. If you need to profile each individual query try to use higher sampling frequency.
 
 To analyze the `trace_log` system table:
 
@@ -51,7 +48,7 @@ To analyze the `trace_log` system table:
 
 - Use the `addressToLine`, `addressToLineWithInlines`, `addressToSymbol` and `demangle` [introspection functions](../../sql-reference/functions/introspection.md) to get function names and their positions in ClickHouse code. To get a profile for some query, you need to aggregate data from the `trace_log` table. You can aggregate data by individual functions or by the whole stack traces.
 
-If you need to visualize `trace_log` info, try [flamegraph](/interfaces/third-party/gui#clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
+If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui.md#clickhouse-flamegraph-clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
 
 ## Example {#example}
 

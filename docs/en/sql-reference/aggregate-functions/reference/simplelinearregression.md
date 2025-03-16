@@ -1,8 +1,6 @@
 ---
-description: 'Performs simple (unidimensional) linear regression.'
+slug: /en/sql-reference/aggregate-functions/reference/simplelinearregression
 sidebar_position: 183
-slug: /sql-reference/aggregate-functions/reference/simplelinearregression
-title: 'simpleLinearRegression'
 ---
 
 # simpleLinearRegression
@@ -20,7 +18,7 @@ Parameters:
 
 Returned values:
 
-Constants `(k, b)` of the resulting line `y = k*x + b`.
+Constants `(a, b)` of the resulting line `y = a*x + b`.
 
 **Examples**
 

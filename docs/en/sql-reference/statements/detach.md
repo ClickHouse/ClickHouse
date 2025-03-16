@@ -1,9 +1,8 @@
 ---
-description: 'Documentation for Detach'
-sidebar_label: 'DETACH'
+slug: /en/sql-reference/statements/detach
 sidebar_position: 43
-slug: /sql-reference/statements/detach
-title: 'DETACH Statement'
+sidebar_label: DETACH
+title: "DETACH Statement"
 ---
 
 Makes the server "forget" about the existence of a table, a materialized view, a dictionary, or a database.
@@ -71,11 +70,7 @@ Received exception from server (version 21.4.1):
 Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test does not exist.
 ```
 
-:::note
-In ClickHouse Cloud users should use the `PERMANENTLY` clause e.g. `DETACH TABLE <table> PERMANENTLY`. If this clause is not used, tables will be reattached on cluster restart e.g. during upgrades.
-:::
-
 **See Also**
 
-- [Materialized View](/sql-reference/statements/create/view#materialized-view)
+- [Materialized View](../../sql-reference/statements/create/view.md#materialized)
 - [Dictionaries](../../sql-reference/dictionaries/index.md)

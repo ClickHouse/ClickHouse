@@ -17,9 +17,7 @@
     },
     "docker/test/integration/base": {
         "name": "clickhouse/integration-test",
-        "dependent": [
-            "docker/test/integration/clickhouse_with_unity_catalog"
-        ]
+        "dependent": []
     },
     "docker/test/fuzzer": {
         "name": "clickhouse/fuzzer",
@@ -49,7 +47,8 @@
     "docker/test/stateful": {
         "name": "clickhouse/stateful-test",
         "dependent": [
-            "docker/test/stress"
+            "docker/test/stress",
+            "docker/test/upgrade"
         ]
     },
     "docker/test/unit": {
@@ -58,6 +57,10 @@
     },
     "docker/test/stress": {
         "name": "clickhouse/stress-test",
+        "dependent": []
+    },
+    "docker/test/upgrade": {
+        "name": "clickhouse/upgrade-check",
         "dependent": []
     },
     "docker/test/integration/runner": {
@@ -130,6 +133,11 @@
             "docker/test/unit"
          ]
     },
+    "docker/test/integration/kerberized_hadoop": {
+        "only_amd64": true,
+        "name": "clickhouse/kerberized-hadoop",
+        "dependent": []
+    },
     "docker/test/sqlancer": {
         "name": "clickhouse/sqlancer-test",
         "dependent": []
@@ -168,10 +176,6 @@
     },
     "docker/test/integration/nginx_dav": {
         "name": "clickhouse/nginx-dav",
-        "dependent": []
-    },
-    "docker/test/integration/clickhouse_with_unity_catalog": {
-        "name": "clickhouse/integration-test-with-unity-catalog",
         "dependent": []
     }
 }

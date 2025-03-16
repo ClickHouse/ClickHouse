@@ -40,7 +40,7 @@ public:
     /// The same as read, but with specified set of parts.
     QueryPlanStepPtr readFromParts(
         MergeTreeData::DataPartsVector parts,
-        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
+        std::vector<AlterConversionsPtr> alter_conversions,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
         const SelectQueryInfo & query_info,
@@ -56,7 +56,6 @@ public:
     /// This method is used to select best projection for table.
     ReadFromMergeTree::AnalysisResultPtr estimateNumMarksToRead(
         MergeTreeData::DataPartsVector parts,
-        MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
         const Names & column_names,
         const StorageMetadataPtr & metadata_snapshot,
         const SelectQueryInfo & query_info,
@@ -121,17 +120,18 @@ private:
     ///  as well as `max_block_number_to_read`.
     static void selectPartsToRead(
         MergeTreeData::DataPartsVector & parts,
+        std::vector<AlterConversionsPtr> & alter_conversions,
         const std::optional<std::unordered_set<String>> & part_values,
         const std::optional<KeyCondition> & minmax_idx_condition,
         const DataTypes & minmax_columns_types,
         const std::optional<PartitionPruner> & partition_pruner,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
-        PartFilterCounters & counters,
-        QueryStatusPtr query_status);
+        PartFilterCounters & counters);
 
     /// Same as previous but also skip parts uuids if any to the query context, or skip parts which uuids marked as excluded.
     static void selectPartsToReadWithUUIDFilter(
         MergeTreeData::DataPartsVector & parts,
+        std::vector<AlterConversionsPtr> & alter_conversions,
         const std::optional<std::unordered_set<String>> & part_values,
         MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
         const std::optional<KeyCondition> & minmax_idx_condition,
@@ -153,7 +153,11 @@ public:
 
     /// The same as roundRowsOrBytesToMarks, but return no more than max_marks.
     static size_t minMarksForConcurrentRead(
-        size_t rows_setting, size_t bytes_setting, size_t rows_granularity, size_t bytes_granularity, size_t min_marks, size_t max_marks);
+        size_t rows_setting,
+        size_t bytes_setting,
+        size_t rows_granularity,
+        size_t bytes_granularity,
+        size_t max_marks);
 
     /// If possible, construct optional key condition from predicates containing _part_offset column.
     static void buildKeyConditionFromPartOffset(
@@ -171,9 +175,10 @@ public:
 
     /// Filter parts using minmax index and partition key.
     static void filterPartsByPartition(
-        MergeTreeData::DataPartsVector & parts,
         const std::optional<PartitionPruner> & partition_pruner,
         const std::optional<KeyCondition> & minmax_idx_condition,
+        MergeTreeData::DataPartsVector & parts,
+        std::vector<AlterConversionsPtr> & alter_conversions,
         const std::optional<std::unordered_set<String>> & part_values,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
@@ -187,6 +192,7 @@ public:
     /// If 'check_limits = true' it will throw exception if the amount of data exceed the limits from settings.
     static RangesInDataParts filterPartsByPrimaryKeyAndSkipIndexes(
         MergeTreeData::DataPartsVector && parts,
+        std::vector<AlterConversionsPtr> && alter_conversions,
         StorageMetadataPtr metadata_snapshot,
         const ContextPtr & context,
         const KeyCondition & key_condition,
@@ -198,13 +204,6 @@ public:
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
         bool find_exact_ranges);
-
-    /// Filter parts using query condition cache.
-    static void filterPartsByQueryConditionCache(
-        RangesInDataParts & parts_with_ranges,
-        const SelectQueryInfo & select_query_info,
-        const ContextPtr & context,
-        LoggerPtr log);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

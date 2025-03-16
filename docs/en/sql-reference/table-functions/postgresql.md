@@ -1,13 +1,10 @@
 ---
-description: 'Allows `SELECT` and `INSERT` queries to be performed on data that is
-  stored on a remote PostgreSQL server.'
-sidebar_label: 'postgresql'
+slug: /en/sql-reference/table-functions/postgresql
 sidebar_position: 160
-slug: /sql-reference/table-functions/postgresql
-title: 'postgresql'
+sidebar_label: postgresql
 ---
 
-# postgresql Table Function
+# postgresql
 
 Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server.
 
@@ -27,7 +24,7 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 - `schema` — Non-default table schema. Optional.
 - `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional.
 
-Arguments also can be passed using [named collections](operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](/docs/en/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 **Returned Value**
 
@@ -37,7 +34,7 @@ A table object with the same columns as the original PostgreSQL table.
 In the `INSERT` query to distinguish table function `postgresql(...)` from table name with column names list you must use keywords `FUNCTION` or `TABLE FUNCTION`. See examples below.
 :::
 
-## Implementation Details {#implementation-details}
+## Implementation Details
 
 `SELECT` queries on PostgreSQL side run as `COPY (SELECT ...) TO STDOUT` inside read-only PostgreSQL transaction with commit after each `SELECT` query.
 
@@ -98,7 +95,7 @@ Selecting data from ClickHouse using plain arguments:
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
 ```
 
-Or using [named collections](operations/named-collections.md):
+Or using [named collections](/docs/en/operations/named-collections.md):
 
 ```sql
 CREATE NAMED COLLECTION mypg AS
@@ -148,13 +145,9 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
-- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#postgresql)
+- [Using PostgreSQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
 
-## Related content {#related-content}
+## Related content
 
 - Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 - Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)
-
-### Replicating or migrating Postgres data with with PeerDB {#replicating-or-migrating-postgres-data-with-with-peerdb}
-
-> In addition to table functions, you can always use [PeerDB](https://docs.peerdb.io/introduction) by ClickHouse to set up a continuous data pipeline from Postgres to ClickHouse. PeerDB is a tool designed specifically to replicate data from Postgres to ClickHouse using change data capture (CDC).

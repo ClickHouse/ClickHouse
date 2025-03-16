@@ -97,10 +97,6 @@ cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA "-DCMAKE_BUILD_TYPE=$BUI
 # shellcheck disable=SC2086 # No quotes because I want it to expand to nothing if empty.
 ninja $NINJA_FLAGS $BUILD_TARGET
 
-# We don't allow dirty files in the source directory after build
-git ls-files --others --exclude-standard | grep . && echo "^ Dirty files in the working copy after build" && exit 1
-git submodule foreach --quiet git ls-files --others --exclude-standard | grep . && echo "^ Dirty files in submodules after build" && exit 1
-
 ls -la ./programs
 
 ccache_status
@@ -175,8 +171,6 @@ then
     git -C "$PERF_OUTPUT"/ch tag | xargs git -C "$PERF_OUTPUT"/ch tag -d >/dev/null
     git -C "$PERF_OUTPUT"/ch reset --soft pr
     git -C "$PERF_OUTPUT"/ch log -5
-    # Unlike git log, git show requires trees
-    git -C "$PERF_OUTPUT"/ch show -s
     (
         cd "$PERF_OUTPUT"/..
         tar -cv --zstd -f /output/performance.tar.zst output

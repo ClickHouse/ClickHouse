@@ -13,10 +13,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool optimize_normalize_count_variants;
-}
 
 namespace
 {
@@ -29,7 +25,7 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
-        if (!getSettings()[Setting::optimize_normalize_count_variants])
+        if (!getSettings().optimize_normalize_count_variants)
             return;
 
         auto * function_node = node->as<FunctionNode>();

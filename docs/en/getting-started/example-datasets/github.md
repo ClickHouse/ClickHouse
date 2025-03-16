@@ -1,11 +1,11 @@
 ---
-description: 'Dataset containing all of the commits and changes for the ClickHouse
-  repository'
-sidebar_label: 'Github Repo'
+slug: /en/getting-started/example-datasets/github
+sidebar_label: Github Repo
 sidebar_position: 1
-slug: /getting-started/example-datasets/github
-title: 'Writing Queries in ClickHouse using GitHub Data'
+description: Analyze the ClickHouse GitHub repo or any repository of your choosing
 ---
+
+# Writing Queries in ClickHouse using GitHub Data
 
 This dataset contains all of the commits and changes for the ClickHouse repository. It can be generated using the native `git-import` tool distributed with ClickHouse.
 
@@ -21,7 +21,44 @@ As of November 8th, 2022, each TSV is approximately the following size and numbe
 - `file_changes` - 53M - 266,051 rows
 - `line_changes` - 2.7G - 7,535,157 rows
 
-## Generating the data {#generating-the-data}
+# Table of Contents
+
+- [Table of Contents](#table-of-contents)
+- [Generating the data](#generating-the-data)
+- [Downloading and inserting the data](#downloading-and-inserting-the-data)
+- [Queries](#queries)
+  - [History of a single file](#history-of-a-single-file)
+  - [Find the current active files](#find-the-current-active-files)
+  - [List files with most modifications](#list-files-with-most-modifications)
+  - [What day of the week do commits usually occur?](#what-day-of-the-week-do-commits-usually-occur)
+  - [History of subdirectory/file - number of lines, commits and contributors over time](#history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time)
+  - [List files with maximum number of authors](#list-files-with-maximum-number-of-authors)
+  - [Oldest lines of code in the repository](#oldest-lines-of-code-in-the-repository)
+  - [Files with longest history](#files-with-longest-history)
+  - [Distribution of contributors with respect to docs and code over the month](#distribution-of-contributors-with-respect-to-docs-and-code-over-the-month)
+  - [Authors with the most diverse impact](#authors-with-the-most-diverse-impact)
+  - [Favorite files for an author](#favorite-files-for-an-author)
+  - [Largest files with lowest number of authors](#largest-files-with-lowest-number-of-authors)
+  - [Commits and lines of code distribution by time; by weekday, by author; for specific subdirectories](#commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories)
+  - [Matrix of authors that shows what authors tends to rewrite another authors code](#matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code)
+  - [Who is the highest percentage contributor per day of week?](#who-is-the-highest-percentage-contributor-per-day-of-week)
+  - [Distribution of code age across repository](#distribution-of-code-age-across-repository)
+  - [What percentage of code for an author has been removed by other authors?](#what-percentage-of-code-for-an-author-has-been-removed-by-other-authors)
+  - [List files that were rewritten most number of times?](#list-files-that-were-rewritten-most-number-of-times)
+  - [What weekday does the code have the highest chance to stay in the repository?](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository)
+  - [Files sorted by average code age](#files-sorted-by-average-code-age)
+  - [Who tends to write more tests / CPP code / comments?](#who-tends-to-write-more-tests--cpp-code--comments)
+  - [How does an authors commits change over time with respect to code/comments percentage?](#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage)
+  - [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay)
+  - [What is the worst time to write code in sense that the code has highest chance to be re-written?](#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written)
+  - [Which authors code is the most sticky?](#which-authors-code-is-the-most-sticky)
+  - [Most consecutive days of commits by an author](#most-consecutive-days-of-commits-by-an-author)
+  - [Line by line commit history of a file](#line-by-line-commit-history-of-a-file)
+- [Unsolved Questions](#unsolved-questions)
+  - [Git blame](#git-blame)
+- [Related Content](#related-content)
+
+# Generating the data
 
 This is optional. We distribute the data freely - see [Downloading and inserting the data](#downloading-and-inserting-the-data).
 
@@ -41,7 +78,7 @@ clickhouse git-import -h
 
 This help also provides the DDL for each of the above tables e.g.
 
-```sql
+```
 CREATE TABLE git.commits
 (
     hash String,
@@ -64,7 +101,7 @@ CREATE TABLE git.commits
 
 - Linux - `~/clickhouse git-import` - 160 mins
 
-## Downloading and inserting the data {#downloading-and-inserting-the-data}
+# Downloading and inserting the data
 
 The following data can be used to reproduce a working environment. Alternatively, this dataset is available in play.clickhouse.com - see [Queries](#queries) for further details.
 
@@ -174,8 +211,7 @@ CREATE TABLE git.line_changes
 ) ENGINE = MergeTree ORDER BY time;
 ```
 
-Insert the data using `INSERT INTO SELECT` and the [s3 function](/sql-reference/table-functions/s3). For example, below, we insert the ClickHouse files into each of their respective tables:
-
+Insert the data using `INSERT INTO SELECT` and the [s3 function](https://clickhouse.com/docs/en/integrations/s3/s3-table-functions/). For example, below, we insert the ClickHouse files into each of their respective tables:
 
 *commits*
 
@@ -204,17 +240,17 @@ FROM s3('https://datasets-documentation.s3.amazonaws.com/github/commits/clickhou
 0 rows in set. Elapsed: 50.535 sec. Processed 7.54 million rows, 2.09 GB (149.11 thousand rows/s., 41.40 MB/s.)
 ```
 
-## Queries {#queries}
+# Queries
 
 The tool suggests several queries via its help output. We have answered these in addition to some additional supplementary questions of interest. These queries are of approximately increasing complexity vs. the tool's arbitrary order.
 
-This dataset is available in [play.clickhouse.com](https://sql.clickhouse.com?query_id=DCQPNPAIMAQXRLHYURLKVJ) in the `git_clickhouse` databases. We provide a link to this environment for all queries, adapting the database name as required. Note that play results may vary from the those presented here due to differences in time of data collection.
+This dataset is available in [play.clickhouse.com](https://play.clickhouse.com/play?user=play#U0hPVyBUQUJMRVMgSU4gZ2l0X2NsaWNraG91c2U=) in the `git_clickhouse` databases. We provide a link to this environment for all queries, adapting the database name as required. Note that play results may vary from the those presented here due to differences in time of data collection.
 
-### History of a single file {#history-of-a-single-file}
+## History of a single file
 
 The simplest of queries. Here we look at all commit messages for the `StorageReplicatedMergeTree.cpp`. Since these are likely more interesting, we sort by the most recent messages first.
 
-[play](https://sql.clickhouse.com?query_id=COAZRFX2YFULDBXRQTCQ1S)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICB0aW1lLAogICAgc3Vic3RyaW5nKGNvbW1pdF9oYXNoLCAxLCAxMSkgQVMgY29tbWl0LAogICAgY2hhbmdlX3R5cGUsCiAgICBhdXRob3IsCiAgICBwYXRoLAogICAgb2xkX3BhdGgsCiAgICBsaW5lc19hZGRlZCwKICAgIGxpbmVzX2RlbGV0ZWQsCiAgICBjb21taXRfbWVzc2FnZQpGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwpXSEVSRSBwYXRoID0gJ3NyYy9TdG9yYWdlcy9TdG9yYWdlUmVwbGljYXRlZE1lcmdlVHJlZS5jcHAnCk9SREVSIEJZIHRpbWUgREVTQwpMSU1JVCAxMA==)
 
 ```sql
 SELECT
@@ -251,7 +287,7 @@ LIMIT 10
 
 We can also review the line changes, excluding renames i.e. we won't show changes before a rename event when the file existed under a different name:
 
-[play](https://sql.clickhouse.com?query_id=AKS9SYLARFMZCHGAAQNEBN)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICB0aW1lLAogICAgc3Vic3RyaW5nKGNvbW1pdF9oYXNoLCAxLCAxMSkgQVMgY29tbWl0LAogICAgc2lnbiwKICAgIGxpbmVfbnVtYmVyX29sZCwKICAgIGxpbmVfbnVtYmVyX25ldywKICAgIGF1dGhvciwKICAgIGxpbmUKRlJPTSBnaXRfY2xpY2tob3VzZS5saW5lX2NoYW5nZXMKV0hFUkUgcGF0aCA9ICdzcmMvU3RvcmFnZXMvU3RvcmFnZVJlcGxpY2F0ZWRNZXJnZVRyZWUuY3BwJwpPUkRFUiBCWSBsaW5lX251bWJlcl9uZXcgQVNDCkxJTUlUIDEw)
 
 ```sql
 SELECT
@@ -285,13 +321,13 @@ LIMIT 10
 
 Note a more complex variant of this query exists where we find the [line-by-line commit history of a file](#line-by-line-commit-history-of-a-file) considering renames.
 
-### Find the current active files {#find-the-current-active-files}
+## Find the current active files
 
 This is important for later analysis when we only want to consider the current files in the repository. We estimate this set as the files which haven't been renamed or deleted (and then re-added/re-named).
 
 **Note there appears to have been a broken commit history in relation to files under the `dbms`, `libs`, `tests/testflows/` directories during their renames. We also thus exclude these.**
 
-[play](https://sql.clickhouse.com?query_id=2HNFWPCFWEEY92WTAPMA7W)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUIHBhdGgKRlJPTQooCiAgICBTRUxFQ1QKICAgICAgICBvbGRfcGF0aCBBUyBwYXRoLAogICAgICAgIG1heCh0aW1lKSBBUyBsYXN0X3RpbWUsCiAgICAgICAgMiBBUyBjaGFuZ2VfdHlwZQogICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgIEdST1VQIEJZIG9sZF9wYXRoCiAgICBVTklPTiBBTEwKICAgIFNFTEVDVAogICAgICAgIHBhdGgsCiAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICBhcmdNYXgoY2hhbmdlX3R5cGUsIHRpbWUpIEFTIGNoYW5nZV90eXBlCiAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgR1JPVVAgQlkgcGF0aAopCkdST1VQIEJZIHBhdGgKSEFWSU5HIChhcmdNYXgoY2hhbmdlX3R5cGUsIGxhc3RfdGltZSkgIT0gMikgQU5EIE5PVCBtYXRjaChwYXRoLCAnKF5kYm1zLyl8KF5saWJzLyl8KF50ZXN0cy90ZXN0Zmxvd3MvKXwoXnByb2dyYW1zL3NlcnZlci9zdG9yZS8pJykgT1JERVIgQlkgcGF0aApMSU1JVCAxMA==)
 
 ```sql
 SELECT path
@@ -333,7 +369,7 @@ LIMIT 10
 
 Note that this allows for files to be renamed and then re-renamed to their original values. First we aggregate `old_path` for a list of deleted files as a result of renaming. We union this with the last operation for every `path`. Finally, we filter this list to those where the final event is not a `Delete`.
 
-[play](https://sql.clickhouse.com?query_id=1OXCKMOH2JVMSHD3NS2WW6)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUIHVuaXEocGF0aCkKRlJPTQooCiAgICBTRUxFQ1QgcGF0aAogICAgRlJPTQogICAgKAogICAgICAgIFNFTEVDVAogICAgICAgICAgICBvbGRfcGF0aCBBUyBwYXRoLAogICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICAyIEFTIGNoYW5nZV90eXBlCiAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICBHUk9VUCBCWSBvbGRfcGF0aAogICAgICAgIFVOSU9OIEFMTAogICAgICAgIFNFTEVDVAogICAgICAgICAgICBwYXRoLAogICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICBhcmdNYXgoY2hhbmdlX3R5cGUsIHRpbWUpIEFTIGNoYW5nZV90eXBlCiAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICBHUk9VUCBCWSBwYXRoCiAgICApCiAgICBHUk9VUCBCWSBwYXRoCiAgICBIQVZJTkcgKGFyZ01heChjaGFuZ2VfdHlwZSwgbGFzdF90aW1lKSAhPSAyKSBBTkQgTk9UIG1hdGNoKHBhdGgsICcoXmRibXMvKXwoXmxpYnMvKXwoXnRlc3RzL3Rlc3RmbG93cy8pfChecHJvZ3JhbXMvc2VydmVyL3N0b3JlLyknKSBPUkRFUiBCWSBwYXRoCikK)
 
 ```sql
 SELECT uniq(path)
@@ -383,7 +419,7 @@ The difference here is caused by a few factors:
 
 - A rename can occur alongside other modifications to the file. These are listed as separate events in file_changes but with the same time. The `argMax` function has no way of distinguishing these - it picks the first value. The natural ordering of the inserts (the only means of knowing the correct order) is not maintained across the union so modified events can be selected. For example, below the `src/Functions/geometryFromColumn.h` file has several modifications before being renamed to `src/Functions/geometryConverters.h`. Our current solution may pick a Modify event as the latest change causing `src/Functions/geometryFromColumn.h` to be retained.
 
-[play](https://sql.clickhouse.com?query_id=SCXWMR9GBMJ9UNZYQXQBFA)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICAgIGNoYW5nZV90eXBlLAogICAgICBwYXRoLAogICAgICBvbGRfcGF0aCwKICAgICAgdGltZSwKICAgICAgY29tbWl0X2hhc2gKICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogIFdIRVJFIChwYXRoID0gJ3NyYy9GdW5jdGlvbnMvZ2VvbWV0cnlGcm9tQ29sdW1uLmgnKSBPUiAob2xkX3BhdGggPSAnc3JjL0Z1bmN0aW9ucy9nZW9tZXRyeUZyb21Db2x1bW4uaCcpCg==)
 
 ```sql
   SELECT
@@ -414,11 +450,11 @@ The difference here is caused by a few factors:
 
 These differences shouldn't meaningfully impact our analysis. **We welcome improved versions of this query**.
 
-### List files with most modifications {#list-files-with-most-modifications}
+## List files with most modifications
 
 Limiting to current files, we consider the number of modifications to be the sum of deletes and additions.
 
-[play](https://sql.clickhouse.com?query_id=MHXPSBNPTDMJYR3OYSXVR7)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBjdXJyZW50X2ZpbGVzIEFTCiAgICAoCiAgICAgICAgU0VMRUNUIHBhdGgKICAgICAgICBGUk9NCiAgICAgICAgKAogICAgICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgICAgIG9sZF9wYXRoIEFTIHBhdGgsCiAgICAgICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICAgICAgMiBBUyBjaGFuZ2VfdHlwZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBvbGRfcGF0aAogICAgICAgICAgICBVTklPTiBBTEwKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIGFyZ01heChjaGFuZ2VfdHlwZSwgdGltZSkgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgICkKICAgICAgICBHUk9VUCBCWSBwYXRoCiAgICAgICAgSEFWSU5HIChhcmdNYXgoY2hhbmdlX3R5cGUsIGxhc3RfdGltZSkgIT0gMikgQU5EIChOT1QgbWF0Y2gocGF0aCwgJyheZGJtcy8pfChebGlicy8pfChedGVzdHMvdGVzdGZsb3dzLyl8KF5wcm9ncmFtcy9zZXJ2ZXIvc3RvcmUvKScpKQogICAgICAgIE9SREVSIEJZIHBhdGggQVNDCiAgICApClNFTEVDVAogICAgcGF0aCwKICAgIHN1bShsaW5lc19hZGRlZCkgKyBzdW0obGluZXNfZGVsZXRlZCkgQVMgbW9kaWZpY2F0aW9ucwpGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwpXSEVSRSAocGF0aCBJTiAoY3VycmVudF9maWxlcykpIEFORCAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnKSkKR1JPVVAgQlkgcGF0aApPUkRFUiBCWSBtb2RpZmljYXRpb25zIERFU0MKTElNSVQgMTA=)
 
 ```sql
 WITH current_files AS
@@ -469,9 +505,9 @@ LIMIT 10
 10 rows in set. Elapsed: 0.134 sec. Processed 798.15 thousand rows, 16.46 MB (5.95 million rows/s., 122.62 MB/s.)
 ```
 
-### What day of the week do commits usually occur? {#what-day-of-the-week-do-commits-usually-occur}
+## What day of the week do commits usually occur?
 
-[play](https://sql.clickhouse.com?query_id=GED2STFSYJDRAA59H8RLIV)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBkYXlfb2Zfd2VlaywKICAgIGNvdW50KCkgQVMgYwpGUk9NIGdpdF9jbGlja2hvdXNlLmNvbW1pdHMKR1JPVVAgQlkgZGF5T2ZXZWVrKHRpbWUpIEFTIGRheV9vZl93ZWVrCg==)
 
 ```sql
 SELECT
@@ -494,11 +530,11 @@ GROUP BY dayOfWeek(time) AS day_of_week
 
 This makes sense with some productivity drop-off on Fridays. Great to see people committing code at weekends! Big thanks to our contributors!
 
-### History of subdirectory/file - number of lines, commits and contributors over time {#history-of-subdirectoryfile---number-of-lines-commits-and-contributors-over-time}
+## History of subdirectory/file - number of lines, commits and contributors over time
 
 This would produce a large query result that is unrealistic to show or visualize if unfiltered. We, therefore, allow a file or subdirectory to be filtered in the following example. Here we group by week using the `toStartOfWeek` function - adapt as required.
 
-[play](https://sql.clickhouse.com?query_id=REZRXDVU7CAWT5WKNJSTNY)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICB3ZWVrLAogICAgc3VtKGxpbmVzX2FkZGVkKSBBUyBsaW5lc19hZGRlZCwKICAgIHN1bShsaW5lc19kZWxldGVkKSBBUyBsaW5lc19kZWxldGVkLAogICAgdW5pcShjb21taXRfaGFzaCkgQVMgbnVtX2NvbW1pdHMsCiAgICB1bmlxKGF1dGhvcikgQVMgYXV0aG9ycwpGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwpXSEVSRSBwYXRoIExJS0UgJ3NyYy9TdG9yYWdlcyUnCkdST1VQIEJZIHRvU3RhcnRPZldlZWsodGltZSkgQVMgd2VlawpPUkRFUiBCWSB3ZWVrIEFTQwpMSU1JVCAxMAo=)
 
 ```sql
 SELECT
@@ -538,11 +574,11 @@ This data visualizes well. Below we use Superset.
 
 ![](./images/superset-commits-authors.png)
 
-### List files with maximum number of authors {#list-files-with-maximum-number-of-authors}
+## List files with maximum number of authors
 
 Limit to current files only.
 
-[play](https://sql.clickhouse.com?query_id=CYQFNQNK9TAMPU2OZ8KG5Y)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBjdXJyZW50X2ZpbGVzIEFTCiAgICAoCiAgICAgICAgU0VMRUNUIHBhdGgKICAgICAgICBGUk9NCiAgICAgICAgKAogICAgICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgICAgIG9sZF9wYXRoIEFTIHBhdGgsCiAgICAgICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICAgICAgMiBBUyBjaGFuZ2VfdHlwZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBvbGRfcGF0aAogICAgICAgICAgICBVTklPTiBBTEwKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIGFyZ01heChjaGFuZ2VfdHlwZSwgdGltZSkgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgICkKICAgICAgICBHUk9VUCBCWSBwYXRoCiAgICAgICAgSEFWSU5HIChhcmdNYXgoY2hhbmdlX3R5cGUsIGxhc3RfdGltZSkgIT0gMikgQU5EIChOT1QgbWF0Y2gocGF0aCwgJyheZGJtcy8pfChebGlicy8pfChedGVzdHMvdGVzdGZsb3dzLyl8KF5wcm9ncmFtcy9zZXJ2ZXIvc3RvcmUvKScpKQogICAgICAgIE9SREVSIEJZIHBhdGggQVNDCiAgICApClNFTEVDVAogICAgcGF0aCwKICAgIHVuaXEoYXV0aG9yKSBBUyBudW1fYXV0aG9ycwpGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwpXSEVSRSBwYXRoIElOIChjdXJyZW50X2ZpbGVzKQpHUk9VUCBCWSBwYXRoCk9SREVSIEJZIG51bV9hdXRob3JzIERFU0MKTElNSVQgMTA=)
 
 ```sql
 WITH current_files AS
@@ -593,11 +629,11 @@ LIMIT 10
 10 rows in set. Elapsed: 0.239 sec. Processed 798.15 thousand rows, 14.13 MB (3.35 million rows/s., 59.22 MB/s.)
 ```
 
-### Oldest lines of code in the repository {#oldest-lines-of-code-in-the-repository}
+## Oldest lines of code in the repository
 
 Limited to current files only.
 
-[play](https://sql.clickhouse.com?query_id=VWPBPGRZVGTHOCQYWNQZNT)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBjdXJyZW50X2ZpbGVzIEFTCiAgICAoCiAgICAgICAgU0VMRUNUIHBhdGgKICAgICAgICBGUk9NCiAgICAgICAgKAogICAgICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgICAgIG9sZF9wYXRoIEFTIHBhdGgsCiAgICAgICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICAgICAgMiBBUyBjaGFuZ2VfdHlwZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBvbGRfcGF0aAogICAgICAgICAgICBVTklPTiBBTEwKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIGFyZ01heChjaGFuZ2VfdHlwZSwgdGltZSkgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgICkKICAgICAgICBHUk9VUCBCWSBwYXRoCiAgICAgICAgSEFWSU5HIChhcmdNYXgoY2hhbmdlX3R5cGUsIGxhc3RfdGltZSkgIT0gMikgQU5EIChOT1QgbWF0Y2gocGF0aCwgJyheZGJtcy8pfChebGlicy8pfChedGVzdHMvdGVzdGZsb3dzLyl8KF5wcm9ncmFtcy9zZXJ2ZXIvc3RvcmUvKScpKQogICAgICAgIE9SREVSIEJZIHBhdGggQVNDCiAgICApClNFTEVDVAogICAgYW55KHBhdGgpIEFTIGZpbGVfcGF0aCwKICAgIGxpbmUsCiAgICBtYXgodGltZSkgQVMgbGF0ZXN0X2NoYW5nZSwKICAgIGFueShmaWxlX2NoYW5nZV90eXBlKQpGUk9NIGdpdF9jbGlja2hvdXNlLmxpbmVfY2hhbmdlcwpXSEVSRSBwYXRoIElOIChjdXJyZW50X2ZpbGVzKQpHUk9VUCBCWSBsaW5lCk9SREVSIEJZIGxhdGVzdF9jaGFuZ2UgQVNDCkxJTUlUIDEw)
 
 ```sql
 WITH current_files AS
@@ -650,11 +686,11 @@ LIMIT 10
 10 rows in set. Elapsed: 1.101 sec. Processed 8.07 million rows, 905.86 MB (7.33 million rows/s., 823.13 MB/s.)
 ```
 
-### Files with longest history {#files-with-longest-history}
+## Files with longest history
 
 Limited to current files only.
 
-[play](https://sql.clickhouse.com?query_id=VWPBPGRZVGTHOCQYWNQZNT)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBjdXJyZW50X2ZpbGVzIEFTCiAgICAoCiAgICAgICAgU0VMRUNUIHBhdGgKICAgICAgICBGUk9NCiAgICAgICAgKAogICAgICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgICAgIG9sZF9wYXRoIEFTIHBhdGgsCiAgICAgICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICAgICAgMiBBUyBjaGFuZ2VfdHlwZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBvbGRfcGF0aAogICAgICAgICAgICBVTklPTiBBTEwKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIGFyZ01heChjaGFuZ2VfdHlwZSwgdGltZSkgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgICkKICAgICAgICBHUk9VUCBCWSBwYXRoCiAgICAgICAgSEFWSU5HIChhcmdNYXgoY2hhbmdlX3R5cGUsIGxhc3RfdGltZSkgIT0gMikgQU5EIChOT1QgbWF0Y2gocGF0aCwgJyheZGJtcy8pfChebGlicy8pfChedGVzdHMvdGVzdGZsb3dzLyl8KF5wcm9ncmFtcy9zZXJ2ZXIvc3RvcmUvKScpKQogICAgICAgIE9SREVSIEJZIHBhdGggQVNDCiAgICApClNFTEVDVAogICAgY291bnQoKSBBUyBjLAogICAgcGF0aCwKICAgIG1heCh0aW1lKSBBUyBsYXRlc3RfY2hhbmdlCkZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCldIRVJFIHBhdGggSU4gKGN1cnJlbnRfZmlsZXMpCkdST1VQIEJZIHBhdGgKT1JERVIgQlkgYyBERVNDCkxJTUlUIDEw)
 
 ```sql
 WITH current_files AS
@@ -708,13 +744,13 @@ LIMIT 10
 
 Our core data structure, the Merge Tree, is obviously under constant evolution with a long history of edits!
 
-### Distribution of contributors with respect to docs and code over the month {#distribution-of-contributors-with-respect-to-docs-and-code-over-the-month}
+## Distribution of contributors with respect to docs and code over the month
 
 **During data capture the changes on the `docs/` folder have been filtered out due to a very commit dirty history. The results of this query are therefore not accurate.**
 
 Do we write more docs at certain times of the month e.g., around release dates? We can use the `countIf` function to compute a simple ratio, visualizing the result using the `bar` function.
 
-[play](https://sql.clickhouse.com?query_id=BA4RZUXUHNQBH9YK7F2T9J)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBkYXksCiAgICBiYXIoZG9jc19yYXRpbyAqIDEwMDAsIDAsIDEwMCwgMTAwKSBBUyBiYXIKRlJPTQooCiAgICBTRUxFQ1QKICAgICAgICBkYXksCiAgICAgICAgY291bnRJZihmaWxlX2V4dGVuc2lvbiBJTiAoJ2gnLCAnY3BwJywgJ3NxbCcpKSBBUyBjb2RlLAogICAgICAgIGNvdW50SWYoZmlsZV9leHRlbnNpb24gPSAnbWQnKSBBUyBkb2NzLAogICAgICAgIGRvY3MgLyAoY29kZSArIGRvY3MpIEFTIGRvY3NfcmF0aW8KICAgIEZST00gZ2l0X2NsaWNraG91c2UubGluZV9jaGFuZ2VzCiAgICBXSEVSRSAoc2lnbiA9IDEpIEFORCAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnLCAnbWQnKSkKICAgIEdST1VQIEJZIGRheU9mTW9udGgodGltZSkgQVMgZGF5CikK)
 
 ```sql
 SELECT
@@ -771,11 +807,11 @@ FROM
 
 Maybe a little more near the end of the month, but overall we keep a good even distribution. Again this is unreliable due to the filtering of the docs filter during data insertion.
 
-### Authors with the most diverse impact {#authors-with-the-most-diverse-impact}
+## Authors with the most diverse impact
 
 We consider diversity here to be the number of unique files an author has contributed to.
 
-[play](https://sql.clickhouse.com?query_id=MT8WBABUKYBYSBA78W5TML)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhdXRob3IsCiAgICB1bmlxKHBhdGgpIEFTIG51bV9maWxlcwpGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwpXSEVSRSAoY2hhbmdlX3R5cGUgSU4gKCdBZGQnLCAnTW9kaWZ5JykpIEFORCAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnKSkKR1JPVVAgQlkgYXV0aG9yCk9SREVSIEJZIG51bV9maWxlcyBERVNDCkxJTUlUIDEw)
 
 ```sql
 SELECT
@@ -805,7 +841,7 @@ LIMIT 10
 
 Let's see who has the most diverse commits in their recent work. Rather than limit by date, we'll restrict to an author's last N commits (in this case, we've used 3 but feel free to modify):
 
-[play](https://sql.clickhouse.com?query_id=4Q3D67FWRIVWTY8EIDDE5U)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhdXRob3IsCiAgICBzdW0obnVtX2ZpbGVzX2NvbW1pdCkgQVMgbnVtX2ZpbGVzCkZST00KKAogICAgU0VMRUNUCiAgICAgICAgYXV0aG9yLAogICAgICAgIGNvbW1pdF9oYXNoLAogICAgICAgIHVuaXEocGF0aCkgQVMgbnVtX2ZpbGVzX2NvbW1pdCwKICAgICAgICBtYXgodGltZSkgQVMgY29tbWl0X3RpbWUKICAgIEZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCiAgICBXSEVSRSAoY2hhbmdlX3R5cGUgSU4gKCdBZGQnLCAnTW9kaWZ5JykpIEFORCAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnKSkKICAgIEdST1VQIEJZCiAgICAgICAgYXV0aG9yLAogICAgICAgIGNvbW1pdF9oYXNoCiAgICBPUkRFUiBCWQogICAgICAgIGF1dGhvciBBU0MsCiAgICAgICAgY29tbWl0X3RpbWUgREVTQwogICAgTElNSVQgMyBCWSBhdXRob3IKKQpHUk9VUCBCWSBhdXRob3IKT1JERVIgQlkgbnVtX2ZpbGVzIERFU0MKTElNSVQgMTA=)
 
 ```sql
 SELECT
@@ -848,11 +884,11 @@ LIMIT 10
 10 rows in set. Elapsed: 0.106 sec. Processed 266.05 thousand rows, 21.04 MB (2.52 million rows/s., 198.93 MB/s.)
 ```
 
-### Favorite files for an author {#favorite-files-for-an-author}
+## Favorite files for an author
 
 Here we select our founder [Alexey Milovidov](https://github.com/alexey-milovidov) and limit our analysis to current files.
 
-[play](https://sql.clickhouse.com?query_id=OKGZBACRHVGCRAGCZAJKMF)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBjdXJyZW50X2ZpbGVzIEFTCiAgICAoCiAgICAgICAgU0VMRUNUIHBhdGgKICAgICAgICBGUk9NCiAgICAgICAgKAogICAgICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgICAgIG9sZF9wYXRoIEFTIHBhdGgsCiAgICAgICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICAgICAgMiBBUyBjaGFuZ2VfdHlwZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBvbGRfcGF0aAogICAgICAgICAgICBVTklPTiBBTEwKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIGFyZ01heChjaGFuZ2VfdHlwZSwgdGltZSkgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgICkKICAgICAgICBHUk9VUCBCWSBwYXRoCiAgICAgICAgSEFWSU5HIChhcmdNYXgoY2hhbmdlX3R5cGUsIGxhc3RfdGltZSkgIT0gMikgQU5EIChOT1QgbWF0Y2gocGF0aCwgJyheZGJtcy8pfChebGlicy8pfChedGVzdHMvdGVzdGZsb3dzLyl8KF5wcm9ncmFtcy9zZXJ2ZXIvc3RvcmUvKScpKQogICAgICAgIE9SREVSIEJZIHBhdGggQVNDCiAgICApClNFTEVDVAogICAgcGF0aCwKICAgIGNvdW50KCkgQVMgYwpGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwpXSEVSRSAoYXV0aG9yID0gJ0FsZXhleSBNaWxvdmlkb3YnKSBBTkQgKHBhdGggSU4gKGN1cnJlbnRfZmlsZXMpKQpHUk9VUCBCWSBwYXRoCk9SREVSIEJZIGMgREVTQwpMSU1JVCAxMA==)
 
 ```sql
 WITH current_files AS
@@ -905,7 +941,7 @@ LIMIT 10
 
 This makes sense because Alexey has been responsible for maintaining the Change log. But what if we use the base name of the file to identify his popular files - this allows for renames and should focus on code contributions.
 
-[play](https://sql.clickhouse.com?query_id=P9PBDZGOSVTKXEXU73ZNAJ)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBiYXNlLAogICAgY291bnQoKSBBUyBjCkZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCldIRVJFIChhdXRob3IgPSAnQWxleGV5IE1pbG92aWRvdicpIEFORCAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnKSkKR1JPVVAgQlkgYmFzZW5hbWUocGF0aCkgQVMgYmFzZQpPUkRFUiBCWSBjIERFU0MKTElNSVQgMTA=)
 
 ```sql
 SELECT
@@ -934,13 +970,13 @@ LIMIT 10
 
 This is maybe more reflective of his areas of interest.
 
-### Largest files with lowest number of authors {#largest-files-with-lowest-number-of-authors}
+## Largest files with lowest number of authors
 
 For this, we first need to identify the largest files. Estimating this via a full file reconstruction, for every file, from the history of commits will be very expensive!
 
 To estimate, assuming we restrict to current files, we sum line additions and subtract deletions. We can then compute a ratio of length to the number of authors.
 
-[play](https://sql.clickhouse.com?query_id=PVSDOHZYUMRDDUZFEYJC7J)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBjdXJyZW50X2ZpbGVzIEFTCiAgICAoCiAgICAgICAgU0VMRUNUIHBhdGgKICAgICAgICBGUk9NCiAgICAgICAgKAogICAgICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgICAgIG9sZF9wYXRoIEFTIHBhdGgsCiAgICAgICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICAgICAgMiBBUyBjaGFuZ2VfdHlwZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBvbGRfcGF0aAogICAgICAgICAgICBVTklPTiBBTEwKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIGFyZ01heChjaGFuZ2VfdHlwZSwgdGltZSkgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgICkKICAgICAgICBHUk9VUCBCWSBwYXRoCiAgICAgICAgSEFWSU5HIChhcmdNYXgoY2hhbmdlX3R5cGUsIGxhc3RfdGltZSkgIT0gMikgQU5EIChOT1QgbWF0Y2gocGF0aCwgJyheZGJtcy8pfChebGlicy8pfChedGVzdHMvdGVzdGZsb3dzLyl8KF5wcm9ncmFtcy9zZXJ2ZXIvc3RvcmUvKScpKQogICAgICAgIE9SREVSIEJZIHBhdGggQVNDCiAgICApClNFTEVDVAogICAgcGF0aCwKICAgIHN1bShsaW5lc19hZGRlZCkgLSBzdW0obGluZXNfZGVsZXRlZCkgQVMgbnVtX2xpbmVzLAogICAgdW5pcUV4YWN0KGF1dGhvcikgQVMgbnVtX2F1dGhvcnMsCiAgICBudW1fbGluZXMgLyBudW1fYXV0aG9ycyBBUyBsaW5lc19hdXRob3JfcmF0aW8KRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKV0hFUkUgcGF0aCBJTiAoY3VycmVudF9maWxlcykKR1JPVVAgQlkgcGF0aApPUkRFUiBCWSBsaW5lc19hdXRob3JfcmF0aW8gREVTQwpMSU1JVCAxMA==)
 
 ```sql
 WITH current_files AS
@@ -995,7 +1031,7 @@ LIMIT 10
 
 Text dictionaries aren't maybe realistic, so lets restrict to code only via a file extension filter!
 
-[play](https://sql.clickhouse.com?query_id=BZHGWUIZMPZZUHS5XRBK2M)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBjdXJyZW50X2ZpbGVzIEFTCiAgICAoCiAgICAgICAgU0VMRUNUIHBhdGgKICAgICAgICBGUk9NCiAgICAgICAgKAogICAgICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgICAgIG9sZF9wYXRoIEFTIHBhdGgsCiAgICAgICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICAgICAgMiBBUyBjaGFuZ2VfdHlwZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBvbGRfcGF0aAogICAgICAgICAgICBVTklPTiBBTEwKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIGFyZ01heChjaGFuZ2VfdHlwZSwgdGltZSkgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgICkKICAgICAgICBHUk9VUCBCWSBwYXRoCiAgICAgICAgSEFWSU5HIChhcmdNYXgoY2hhbmdlX3R5cGUsIGxhc3RfdGltZSkgIT0gMikgQU5EIChOT1QgbWF0Y2gocGF0aCwgJyheZGJtcy8pfChebGlicy8pfChedGVzdHMvdGVzdGZsb3dzLyl8KF5wcm9ncmFtcy9zZXJ2ZXIvc3RvcmUvKScpKQogICAgICAgIE9SREVSIEJZIHBhdGggQVNDCiAgICApClNFTEVDVAogICAgcGF0aCwKICAgIHN1bShsaW5lc19hZGRlZCkgLSBzdW0obGluZXNfZGVsZXRlZCkgQVMgbnVtX2xpbmVzLAogICAgdW5pcUV4YWN0KGF1dGhvcikgQVMgbnVtX2F1dGhvcnMsCiAgICBudW1fbGluZXMgLyBudW1fYXV0aG9ycyBBUyBsaW5lc19hdXRob3JfcmF0aW8KRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKV0hFUkUgKHBhdGggSU4gKGN1cnJlbnRfZmlsZXMpKSBBTkQgKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnLCAnc3FsJykpCkdST1VQIEJZIHBhdGgKT1JERVIgQlkgbGluZXNfYXV0aG9yX3JhdGlvIERFU0MKTElNSVQgMTA=)
 
 ```sql
 WITH current_files AS
@@ -1049,7 +1085,7 @@ LIMIT 10
 
 There is some recency bias in this - newer files have fewer opportunities for commits. What about if we restrict to files at least 1 yr old?
 
-[play](https://sql.clickhouse.com?query_id=RMHHZEDHFUCBGRQVQA2732)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBjdXJyZW50X2ZpbGVzIEFTCiAgICAoCiAgICAgICAgU0VMRUNUIHBhdGgKICAgICAgICBGUk9NCiAgICAgICAgKAogICAgICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgICAgIG9sZF9wYXRoIEFTIHBhdGgsCiAgICAgICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICAgICAgMiBBUyBjaGFuZ2VfdHlwZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBvbGRfcGF0aAogICAgICAgICAgICBVTklPTiBBTEwKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIGFyZ01heChjaGFuZ2VfdHlwZSwgdGltZSkgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgICkKICAgICAgICBHUk9VUCBCWSBwYXRoCiAgICAgICAgSEFWSU5HIChhcmdNYXgoY2hhbmdlX3R5cGUsIGxhc3RfdGltZSkgIT0gMikgQU5EIChOT1QgbWF0Y2gocGF0aCwgJyheZGJtcy8pfChebGlicy8pfChedGVzdHMvdGVzdGZsb3dzLyl8KF5wcm9ncmFtcy9zZXJ2ZXIvc3RvcmUvKScpKQogICAgICAgIE9SREVSIEJZIHBhdGggQVNDCiAgICApClNFTEVDVAogICAgbWluKHRpbWUpIEFTIG1pbl9kYXRlLAogICAgcGF0aCwKICAgIHN1bShsaW5lc19hZGRlZCkgLSBzdW0obGluZXNfZGVsZXRlZCkgQVMgbnVtX2xpbmVzLAogICAgdW5pcUV4YWN0KGF1dGhvcikgQVMgbnVtX2F1dGhvcnMsCiAgICBudW1fbGluZXMgLyBudW1fYXV0aG9ycyBBUyBsaW5lc19hdXRob3JfcmF0aW8KRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKV0hFUkUgKHBhdGggSU4gKGN1cnJlbnRfZmlsZXMpKSBBTkQgKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnLCAnc3FsJykpCkdST1VQIEJZIHBhdGgKSEFWSU5HIG1pbl9kYXRlIDw9IChub3coKSAtIHRvSW50ZXJ2YWxZZWFyKDEpKQpPUkRFUiBCWSBsaW5lc19hdXRob3JfcmF0aW8gREVTQwpMSU1JVCAxMA==)
 
 ```sql
 WITH current_files AS
@@ -1104,11 +1140,11 @@ LIMIT 10
 10 rows in set. Elapsed: 0.143 sec. Processed 798.15 thousand rows, 18.00 MB (5.58 million rows/s., 125.87 MB/s.)
 ```
 
-### Commits and lines of code distribution by time; by weekday, by author; for specific subdirectories {#commits-and-lines-of-code-distribution-by-time-by-weekday-by-author-for-specific-subdirectories}
+## Commits and lines of code distribution by time; by weekday, by author; for specific subdirectories
 
 We interpret this as the number of lines added and removed by the day of the week. In this case, we focus on the [Functions directory](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions)
 
-[play](https://sql.clickhouse.com?query_id=PF3KEMYG5CVLJGCFYQEGB1)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBkYXlPZldlZWssCiAgICB1bmlxKGNvbW1pdF9oYXNoKSBBUyBjb21taXRzLAogICAgc3VtKGxpbmVzX2FkZGVkKSBBUyBsaW5lc19hZGRlZCwKICAgIHN1bShsaW5lc19kZWxldGVkKSBBUyBsaW5lc19kZWxldGVkCkZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCldIRVJFIHBhdGggTElLRSAnc3JjL0Z1bmN0aW9ucyUnCkdST1VQIEJZIHRvRGF5T2ZXZWVrKHRpbWUpIEFTIGRheU9mV2Vlaw==)
 
 ```sql
 SELECT
@@ -1135,7 +1171,7 @@ GROUP BY toDayOfWeek(time) AS dayOfWeek
 
 And by time of day,
 
-[play](https://sql.clickhouse.com?query_id=Q4VDVKEGHHRBCUJHNCVTF1)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBob3VyT2ZEYXksCiAgICB1bmlxKGNvbW1pdF9oYXNoKSBBUyBjb21taXRzLAogICAgc3VtKGxpbmVzX2FkZGVkKSBBUyBsaW5lc19hZGRlZCwKICAgIHN1bShsaW5lc19kZWxldGVkKSBBUyBsaW5lc19kZWxldGVkCkZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCldIRVJFIHBhdGggTElLRSAnc3JjL0Z1bmN0aW9ucyUnCkdST1VQIEJZIHRvSG91cih0aW1lKSBBUyBob3VyT2ZEYXk=)
 
 ```sql
 SELECT
@@ -1179,7 +1215,7 @@ GROUP BY toHour(time) AS hourOfDay
 
 This distribution makes sense given most of our development team is in Amsterdam. The `bar` functions helps us visualize these distributions:
 
-[play](https://sql.clickhouse.com?query_id=9AZ8CENV8N91YGW7T6IB68)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBob3VyT2ZEYXksCiAgICBiYXIoY29tbWl0cywgMCwgNDAwLCA1MCkgQVMgY29tbWl0cywKICAgIGJhcihsaW5lc19hZGRlZCwgMCwgMzAwMDAsIDUwKSBBUyBsaW5lc19hZGRlZCwKICAgIGJhcihsaW5lc19kZWxldGVkLCAwLCAxNTAwMCwgNTApIEFTIGxpbmVzX2RlbGV0ZWQKRlJPTQooCiAgICBTRUxFQ1QKICAgICAgICBob3VyT2ZEYXksCiAgICAgICAgdW5pcShjb21taXRfaGFzaCkgQVMgY29tbWl0cywKICAgICAgICBzdW0obGluZXNfYWRkZWQpIEFTIGxpbmVzX2FkZGVkLAogICAgICAgIHN1bShsaW5lc19kZWxldGVkKSBBUyBsaW5lc19kZWxldGVkCiAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgV0hFUkUgcGF0aCBMSUtFICdzcmMvRnVuY3Rpb25zJScKICAgIEdST1VQIEJZIHRvSG91cih0aW1lKSBBUyBob3VyT2ZEYXkKKQ==)
 
 ```sql
 SELECT
@@ -1229,11 +1265,11 @@ FROM
 24 rows in set. Elapsed: 0.038 sec. Processed 266.05 thousand rows, 14.66 MB (7.09 million rows/s., 390.69 MB/s.)
 ```
 
-### Matrix of authors that shows what authors tends to rewrite another authors code {#matrix-of-authors-that-shows-what-authors-tends-to-rewrite-another-authors-code}
+## Matrix of authors that shows what authors tends to rewrite another authors code
 
 The `sign = -1` indicates a code deletion. We exclude punctuation and the insertion of empty lines.
 
-[play](https://sql.clickhouse.com?query_id=448O8GWAHY3EM6ZZ7AGLAM)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBwcmV2X2F1dGhvciB8fCAnKGEpJyBhcyBhZGRfYXV0aG9yLAogICAgYXV0aG9yICB8fCAnKGQpJyBhcyBkZWxldGVfYXV0aG9yLAogICAgY291bnQoKSBBUyBjCkZST00gZ2l0X2NsaWNraG91c2UubGluZV9jaGFuZ2VzCldIRVJFIChzaWduID0gLTEpIEFORCAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcpKSBBTkQgKGxpbmVfdHlwZSBOT1QgSU4gKCdQdW5jdCcsICdFbXB0eScpKSBBTkQgKGF1dGhvciAhPSBwcmV2X2F1dGhvcikgQU5EIChwcmV2X2F1dGhvciAhPSAnJykKR1JPVVAgQlkKICAgIHByZXZfYXV0aG9yLAogICAgYXV0aG9yCk9SREVSIEJZIGMgREVTQwpMSU1JVCAxIEJZIHByZXZfYXV0aG9yCkxJTUlUIDEwMA==)
 
 ```sql
 SELECT
@@ -1285,11 +1321,11 @@ Alexey clearly likes removing other peoples code. Lets exclude him for a more ba
 
 ![](./images/superset-authors-matrix_v2.png)
 
-### Who is the highest percentage contributor per day of week? {#who-is-the-highest-percentage-contributor-per-day-of-week}
+## Who is the highest percentage contributor per day of week?
 
 If we consider by just number of commits:
 
-[play](https://sql.clickhouse.com?query_id=WXPKFJCAHOKYKEVTWNFVCY)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBkYXlfb2Zfd2VlaywKICAgIGF1dGhvciwKICAgIGNvdW50KCkgQVMgYwpGUk9NIGdpdF9jbGlja2hvdXNlLmNvbW1pdHMKR1JPVVAgQlkKICAgIGRheU9mV2Vlayh0aW1lKSBBUyBkYXlfb2Zfd2VlaywKICAgIGF1dGhvcgpPUkRFUiBCWQogICAgZGF5X29mX3dlZWsgQVNDLAogICAgYyBERVNDCkxJTUlUIDEgQlkgZGF5X29mX3dlZWs=)
 
 ```sql
 SELECT
@@ -1320,7 +1356,7 @@ LIMIT 1 BY day_of_week
 
 OK, some possible advantages here to the longest contributor - our founder Alexey. Lets limit our analysis to the last year.
 
-[play](https://sql.clickhouse.com?query_id=8YRJGHFTNJAWJ96XCJKKEH)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBkYXlfb2Zfd2VlaywKICAgIGF1dGhvciwKICAgIGNvdW50KCkgQVMgYwpGUk9NIGdpdF9jbGlja2hvdXNlLmNvbW1pdHMKV0hFUkUgdGltZSA+IChub3coKSAtIHRvSW50ZXJ2YWxZZWFyKDEpKQpHUk9VUCBCWQogICAgZGF5T2ZXZWVrKHRpbWUpIEFTIGRheV9vZl93ZWVrLAogICAgYXV0aG9yCk9SREVSIEJZCiAgICBkYXlfb2Zfd2VlayBBU0MsCiAgICBjIERFU0MKTElNSVQgMSBCWSBkYXlfb2Zfd2Vlaw==)
 
 ```sql
 SELECT
@@ -1354,7 +1390,7 @@ This is still a little simple and doesn't reflect people's work.
 
 A better metric might be who is the top contributor each day as a fraction of the total work performed in the last year. Note that we treat the deletion and adding code equally.
 
-[play](https://sql.clickhouse.com?query_id=VQF4KMRDSUEXGS1JFVDJHV)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICB0b3BfYXV0aG9yLmRheV9vZl93ZWVrLAogICAgdG9wX2F1dGhvci5hdXRob3IsCiAgICB0b3BfYXV0aG9yLmF1dGhvcl93b3JrIC8gYWxsX3dvcmsudG90YWxfd29yayBBUyB0b3BfYXV0aG9yX3BlcmNlbnQKRlJPTQooCiAgICBTRUxFQ1QKICAgICAgICBkYXlfb2Zfd2VlaywKICAgICAgICBhdXRob3IsCiAgICAgICAgc3VtKGxpbmVzX2FkZGVkKSArIHN1bShsaW5lc19kZWxldGVkKSBBUyBhdXRob3Jfd29yawogICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgIFdIRVJFIHRpbWUgPiAobm93KCkgLSB0b0ludGVydmFsWWVhcigxKSkKICAgIEdST1VQIEJZCiAgICAgICAgYXV0aG9yLAogICAgICAgIGRheU9mV2Vlayh0aW1lKSBBUyBkYXlfb2Zfd2VlawogICAgT1JERVIgQlkKICAgICAgICBkYXlfb2Zfd2VlayBBU0MsCiAgICAgICAgYXV0aG9yX3dvcmsgREVTQwogICAgTElNSVQgMSBCWSBkYXlfb2Zfd2VlawopIEFTIHRvcF9hdXRob3IKSU5ORVIgSk9JTgooCiAgICBTRUxFQ1QKICAgICAgICBkYXlfb2Zfd2VlaywKICAgICAgICBzdW0obGluZXNfYWRkZWQpICsgc3VtKGxpbmVzX2RlbGV0ZWQpIEFTIHRvdGFsX3dvcmsKICAgIEZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCiAgICBXSEVSRSB0aW1lID4gKG5vdygpIC0gdG9JbnRlcnZhbFllYXIoMSkpCiAgICBHUk9VUCBCWSBkYXlPZldlZWsodGltZSkgQVMgZGF5X29mX3dlZWsKKSBBUyBhbGxfd29yayBVU0lORyAoZGF5X29mX3dlZWsp)
 
 ```sql
 SELECT
@@ -1400,11 +1436,11 @@ INNER JOIN
 7 rows in set. Elapsed: 0.014 sec. Processed 106.12 thousand rows, 1.38 MB (7.61 million rows/s., 98.65 MB/s.)
 ```
 
-### Distribution of code age across repository {#distribution-of-code-age-across-repository}
+## Distribution of code age across repository
 
 We limit the analysis to the current files. For brevity, we restrict the results to a depth of 2 with 5 files per root folder. Adjust as required.
 
-[play](https://sql.clickhouse.com?query_id=6YWAUQYPZINZDJGBEZBNWG)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBjdXJyZW50X2ZpbGVzIEFTCiAgICAoCiAgICAgICAgU0VMRUNUIHBhdGgKICAgICAgICBGUk9NCiAgICAgICAgKAogICAgICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgICAgIG9sZF9wYXRoIEFTIHBhdGgsCiAgICAgICAgICAgICAgICBtYXgodGltZSkgQVMgbGFzdF90aW1lLAogICAgICAgICAgICAgICAgMiBBUyBjaGFuZ2VfdHlwZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBvbGRfcGF0aAogICAgICAgICAgICBVTklPTiBBTEwKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIGFyZ01heChjaGFuZ2VfdHlwZSwgdGltZSkgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgICkKICAgICAgICBHUk9VUCBCWSBwYXRoCiAgICAgICAgSEFWSU5HIChhcmdNYXgoY2hhbmdlX3R5cGUsIGxhc3RfdGltZSkgIT0gMikgQU5EIChOT1QgbWF0Y2gocGF0aCwgJyheZGJtcy8pfChebGlicy8pfChedGVzdHMvdGVzdGZsb3dzLyl8KF5wcm9ncmFtcy9zZXJ2ZXIvc3RvcmUvKScpKQogICAgICAgIE9SREVSIEJZIHBhdGggQVNDCiAgICApClNFTEVDVAogICAgY29uY2F0KHJvb3QsICcvJywgc3ViX2ZvbGRlcikgQVMgZm9sZGVyLAogICAgcm91bmQoYXZnKGRheXNfcHJlc2VudCkpIEFTIGF2Z19hZ2Vfb2ZfZmlsZXMsCiAgICBtaW4oZGF5c19wcmVzZW50KSBBUyBtaW5fYWdlX2ZpbGVzLAogICAgbWF4KGRheXNfcHJlc2VudCkgQVMgbWF4X2FnZV9maWxlcywKICAgIGNvdW50KCkgQVMgYwpGUk9NCigKICAgIFNFTEVDVAogICAgICAgIHBhdGgsCiAgICAgICAgZGF0ZURpZmYoJ2RheScsIG1pbih0aW1lKSwgdG9EYXRlKCcyMDIyLTExLTAzJykpIEFTIGRheXNfcHJlc2VudAogICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgIFdIRVJFIChwYXRoIElOIChjdXJyZW50X2ZpbGVzKSkgQU5EIChmaWxlX2V4dGVuc2lvbiBJTiAoJ2gnLCAnY3BwJywgJ3NxbCcpKQogICAgR1JPVVAgQlkgcGF0aAopCkdST1VQIEJZCiAgICBzcGxpdEJ5Q2hhcignLycsIHBhdGgpWzFdIEFTIHJvb3QsCiAgICBzcGxpdEJ5Q2hhcignLycsIHBhdGgpWzJdIEFTIHN1Yl9mb2xkZXIKT1JERVIgQlkKICAgIHJvb3QgQVNDLAogICAgYyBERVNDCkxJTUlUIDUgQlkgcm9vdAo=)
 
 ```sql
 WITH current_files AS
@@ -1483,11 +1519,11 @@ LIMIT 5 BY root
 24 rows in set. Elapsed: 0.129 sec. Processed 798.15 thousand rows, 15.11 MB (6.19 million rows/s., 117.08 MB/s.)
 ```
 
-### What percentage of code for an author has been removed by other authors? {#what-percentage-of-code-for-an-author-has-been-removed-by-other-authors}
+## What percentage of code for an author has been removed by other authors?
 
 For this question, we need the number of lines written by an author divided by the total number of lines they have had removed by another contributor.
 
-[play](https://sql.clickhouse.com?query_id=T4DTWTB36WFSEYAZLMGRNF)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBrLAogICAgd3JpdHRlbl9jb2RlLmMsCiAgICByZW1vdmVkX2NvZGUuYywKICAgIHJlbW92ZWRfY29kZS5jIC8gd3JpdHRlbl9jb2RlLmMgQVMgcmVtb3ZlX3JhdGlvCkZST00KKAogICAgU0VMRUNUCiAgICAgICAgYXV0aG9yIEFTIGssCiAgICAgICAgY291bnQoKSBBUyBjCiAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmxpbmVfY2hhbmdlcwogICAgV0hFUkUgKHNpZ24gPSAxKSBBTkQgKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnKSkgQU5EIChsaW5lX3R5cGUgTk9UIElOICgnUHVuY3QnLCAnRW1wdHknKSkKICAgIEdST1VQIEJZIGsKKSBBUyB3cml0dGVuX2NvZGUKSU5ORVIgSk9JTgooCiAgICBTRUxFQ1QKICAgICAgICBwcmV2X2F1dGhvciBBUyBrLAogICAgICAgIGNvdW50KCkgQVMgYwogICAgRlJPTSBnaXRfY2xpY2tob3VzZS5saW5lX2NoYW5nZXMKICAgIFdIRVJFIChzaWduID0gLTEpIEFORCAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcpKSBBTkQgKGxpbmVfdHlwZSBOT1QgSU4gKCdQdW5jdCcsICdFbXB0eScpKSBBTkQgKGF1dGhvciAhPSBwcmV2X2F1dGhvcikKICAgIEdST1VQIEJZIGsKKSBBUyByZW1vdmVkX2NvZGUgVVNJTkcgKGspCldIRVJFIHdyaXR0ZW5fY29kZS5jID4gMTAwMApPUkRFUiBCWSByZW1vdmVfcmF0aW8gREVTQwpMSU1JVCAxMAo=)
 
 ```sql
 SELECT
@@ -1533,7 +1569,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.126 sec. Processed 15.07 million rows, 73.51 MB (119.97 million rows/s., 585.16 MB/s.)
 ```
 
-### List files that were rewritten most number of times? {#list-files-that-were-rewritten-most-number-of-times}
+## List files that were rewritten most number of times?
 
 
 The simplest approach to this question might be to simply count the most number of line modifications per path (restricted to current files) e.g.:
@@ -1591,7 +1627,7 @@ This doesn't capture the notion of a "re-write" however, where a large portion o
 
 The query is limited to the current files only. We list all file changes by grouping by `path` and `commit_hash`, returning the number of lines added and removed. Using a window function, we estimate the file's total size at any moment in time by performing a cumulative sum and estimating the impact of any change on file size as `lines added - lines removed`. Using this statistic, we can calculate the percentage of the file that has been added or removed for each change. Finally, we count the number of file changes that constitute a rewrite per file i.e. `(percent_add >= 0.5) AND (percent_delete >= 0.5) AND current_size > 50`. Note we require files to be more than 50 lines to avoid early contributions to a file being counted as a rewrite. This also avoids a bias to very small files, which may be more likely to be rewritten.
 
-[play](https://sql.clickhouse.com?query_id=5PL1QLNSH6QQTR8H9HINNP)
+[play](https://play.clickhouse.com/play?user=play#V0lUSAogICAgY3VycmVudF9maWxlcyBBUwogICAgKAogICAgICAgIFNFTEVDVCBwYXRoCiAgICAgICAgRlJPTQogICAgICAgICgKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBvbGRfcGF0aCBBUyBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIDIgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgb2xkX3BhdGgKICAgICAgICAgICAgVU5JT04gQUxMCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgICAgIG1heCh0aW1lKSBBUyBsYXN0X3RpbWUsCiAgICAgICAgICAgICAgICBhcmdNYXgoY2hhbmdlX3R5cGUsIHRpbWUpIEFTIGNoYW5nZV90eXBlCiAgICAgICAgICAgIEZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCiAgICAgICAgICAgIEdST1VQIEJZIHBhdGgKICAgICAgICApCiAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgIEhBVklORyAoYXJnTWF4KGNoYW5nZV90eXBlLCBsYXN0X3RpbWUpICE9IDIpIEFORCAoTk9UIG1hdGNoKHBhdGgsICcoXmRibXMvKXwoXmxpYnMvKXwoXnRlc3RzL3Rlc3RmbG93cy8pfChecHJvZ3JhbXMvc2VydmVyL3N0b3JlLyknKSkKICAgICAgICBPUkRFUiBCWSBwYXRoIEFTQwogICAgKSwKICAgIGNoYW5nZXMgQVMKICAgICgKICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgbWF4KHRpbWUpIEFTIG1heF90aW1lLAogICAgICAgICAgICBjb21taXRfaGFzaCwKICAgICAgICAgICAgYW55KGxpbmVzX2FkZGVkKSBBUyBudW1fYWRkZWQsCiAgICAgICAgICAgIGFueShsaW5lc19kZWxldGVkKSBBUyBudW1fZGVsZXRlZCwKICAgICAgICAgICAgYW55KGNoYW5nZV90eXBlKSBBUyB0eXBlCiAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICBXSEVSRSAoY2hhbmdlX3R5cGUgSU4gKCdBZGQnLCAnTW9kaWZ5JykpIEFORCAocGF0aCBJTiAoY3VycmVudF9maWxlcykpIEFORCAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnKSkKICAgICAgICBHUk9VUCBCWQogICAgICAgICAgICBwYXRoLAogICAgICAgICAgICBjb21taXRfaGFzaAogICAgICAgIE9SREVSIEJZCiAgICAgICAgICAgIHBhdGggQVNDLAogICAgICAgICAgICBtYXhfdGltZSBBU0MKICAgICksCiAgICByZXdyaXRlcyBBUwogICAgKAogICAgICAgIFNFTEVDVAogICAgICAgICAgICBwYXRoLAogICAgICAgICAgICBjb21taXRfaGFzaCwKICAgICAgICAgICAgbWF4X3RpbWUsCiAgICAgICAgICAgIHR5cGUsCiAgICAgICAgICAgIG51bV9hZGRlZCwKICAgICAgICAgICAgbnVtX2RlbGV0ZWQsCiAgICAgICAgICAgIHN1bShudW1fYWRkZWQgLSBudW1fZGVsZXRlZCkgT1ZFUiAoUEFSVElUSU9OIEJZIHBhdGggT1JERVIgQlkgbWF4X3RpbWUgQVNDKSBBUyBjdXJyZW50X3NpemUsCiAgICAgICAgICAgIGlmKGN1cnJlbnRfc2l6ZSA+IDAsIG51bV9hZGRlZCAvIGN1cnJlbnRfc2l6ZSwgMCkgQVMgcGVyY2VudF9hZGQsCiAgICAgICAgICAgIGlmKGN1cnJlbnRfc2l6ZSA+IDAsIG51bV9kZWxldGVkIC8gY3VycmVudF9zaXplLCAwKSBBUyBwZXJjZW50X2RlbGV0ZQogICAgICAgIEZST00gY2hhbmdlcwogICAgKQpTRUxFQ1QKICAgIHBhdGgsCiAgICBjb3VudCgpIEFTIG51bV9yZXdyaXRlcwpGUk9NIHJld3JpdGVzCldIRVJFICh0eXBlID0gJ01vZGlmeScpIEFORCAocGVyY2VudF9hZGQgPj0gMC41KSBBTkQgKHBlcmNlbnRfZGVsZXRlID49IDAuNSkgQU5EIChjdXJyZW50X3NpemUgPiA1MCkKR1JPVVAgQlkgcGF0aApPUkRFUiBCWSBudW1fcmV3cml0ZXMgREVTQwpMSU1JVCAxMA==)
 
 ```sql
 WITH
@@ -1675,7 +1711,7 @@ LIMIT 10
 10 rows in set. Elapsed: 0.299 sec. Processed 798.15 thousand rows, 31.52 MB (2.67 million rows/s., 105.29 MB/s.)
 ```
 
-### What weekday does the code have the highest chance to stay in the repository? {#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository}
+## What weekday does the code have the highest chance to stay in the repository?
 
 For this, we need to identify a line of code uniquely. We estimate this(as the same line may appear multiple times in a file) using the path and line contents.
 
@@ -1683,7 +1719,7 @@ We query for lines added, joining this with the lines removed - filtering to cas
 
 Finally, we aggregate across this dataset to compute the average number of days lines stay in the repository by the day of the week.
 
-[play](https://sql.clickhouse.com?query_id=GVF23LEZTNZI22BT8LZBBE)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBkYXlfb2Zfd2Vla19hZGRlZCwKICAgIGNvdW50KCkgQVMgbnVtLAogICAgYXZnKGRheXNfcHJlc2VudCkgQVMgYXZnX2RheXNfcHJlc2VudApGUk9NCigKICAgIFNFTEVDVAogICAgICAgIGFkZGVkX2NvZGUubGluZSwKICAgICAgICBhZGRlZF9jb2RlLnRpbWUgQVMgYWRkZWRfZGF5LAogICAgICAgIGRhdGVEaWZmKCdkYXknLCBhZGRlZF9jb2RlLnRpbWUsIHJlbW92ZWRfY29kZS50aW1lKSBBUyBkYXlzX3ByZXNlbnQKICAgIEZST00KICAgICgKICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgbGluZSwKICAgICAgICAgICAgbWF4KHRpbWUpIEFTIHRpbWUKICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmxpbmVfY2hhbmdlcwogICAgICAgIFdIRVJFIChzaWduID0gMSkgQU5EIChsaW5lX3R5cGUgTk9UIElOICgnUHVuY3QnLCAnRW1wdHknKSkKICAgICAgICBHUk9VUCBCWQogICAgICAgICAgICBwYXRoLAogICAgICAgICAgICBsaW5lCiAgICApIEFTIGFkZGVkX2NvZGUKICAgIElOTkVSIEpPSU4KICAgICgKICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgbGluZSwKICAgICAgICAgICAgbWF4KHRpbWUpIEFTIHRpbWUKICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmxpbmVfY2hhbmdlcwogICAgICAgIFdIRVJFIChzaWduID0gLTEpIEFORCAobGluZV90eXBlIE5PVCBJTiAoJ1B1bmN0JywgJ0VtcHR5JykpCiAgICAgICAgR1JPVVAgQlkKICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgbGluZQogICAgKSBBUyByZW1vdmVkX2NvZGUgVVNJTkcgKHBhdGgsIGxpbmUpCiAgICBXSEVSRSByZW1vdmVkX2NvZGUudGltZSA+IGFkZGVkX2NvZGUudGltZQopCkdST1VQIEJZIGRheU9mV2VlayhhZGRlZF9kYXkpIEFTIGRheV9vZl93ZWVrX2FkZGVk)
 
 ```sql
 SELECT
@@ -1737,12 +1773,12 @@ GROUP BY dayOfWeek(added_day) AS day_of_week_added
 7 rows in set. Elapsed: 3.965 sec. Processed 15.07 million rows, 1.92 GB (3.80 million rows/s., 483.50 MB/s.)
 ```
 
-### Files sorted by average code age {#files-sorted-by-average-code-age}
+## Files sorted by average code age
 
 This query uses the same principle as [What weekday does the code have the highest chance to stay in the repository](#what-weekday-does-the-code-have-the-highest-chance-to-stay-in-the-repository) - by aiming to uniquely identify a line of code using the path and line contents.
 This allows us to identify the time between when a line was added and removed. We filter to current files and code only, however, and average the time for each file across lines.
 
-[play](https://sql.clickhouse.com?query_id=3CYYT7HEHWRFHVCM9JCKSU)
+[play](https://play.clickhouse.com/play?user=play#V0lUSAogICAgY3VycmVudF9maWxlcyBBUwogICAgKAogICAgICAgIFNFTEVDVCBwYXRoCiAgICAgICAgRlJPTQogICAgICAgICgKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBvbGRfcGF0aCBBUyBwYXRoLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIGxhc3RfdGltZSwKICAgICAgICAgICAgICAgIDIgQVMgY2hhbmdlX3R5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgR1JPVVAgQlkgb2xkX3BhdGgKICAgICAgICAgICAgVU5JT04gQUxMCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgICAgIG1heCh0aW1lKSBBUyBsYXN0X3RpbWUsCiAgICAgICAgICAgICAgICBhcmdNYXgoY2hhbmdlX3R5cGUsIHRpbWUpIEFTIGNoYW5nZV90eXBlCiAgICAgICAgICAgIEZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCiAgICAgICAgICAgIEdST1VQIEJZIHBhdGgKICAgICAgICApCiAgICAgICAgR1JPVVAgQlkgcGF0aAogICAgICAgIEhBVklORyAoYXJnTWF4KGNoYW5nZV90eXBlLCBsYXN0X3RpbWUpICE9IDIpIEFORCAoTk9UIG1hdGNoKHBhdGgsICcoXmRibXMvKXwoXmxpYnMvKXwoXnRlc3RzL3Rlc3RmbG93cy8pfChecHJvZ3JhbXMvc2VydmVyL3N0b3JlLyknKSkKICAgICAgICBPUkRFUiBCWSBwYXRoIEFTQwogICAgKSwKICAgIGxpbmVzX3JlbW92ZWQgQVMKICAgICgKICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgYWRkZWRfY29kZS5wYXRoIEFTIHBhdGgsCiAgICAgICAgICAgIGFkZGVkX2NvZGUubGluZSwKICAgICAgICAgICAgYWRkZWRfY29kZS50aW1lIEFTIGFkZGVkX2RheSwKICAgICAgICAgICAgZGF0ZURpZmYoJ2RheScsIGFkZGVkX2NvZGUudGltZSwgcmVtb3ZlZF9jb2RlLnRpbWUpIEFTIGRheXNfcHJlc2VudAogICAgICAgIEZST00KICAgICAgICAoCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgICAgIGxpbmUsCiAgICAgICAgICAgICAgICBtYXgodGltZSkgQVMgdGltZSwKICAgICAgICAgICAgICAgIGFueShmaWxlX2V4dGVuc2lvbikgQVMgZmlsZV9leHRlbnNpb24KICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5saW5lX2NoYW5nZXMKICAgICAgICAgICAgV0hFUkUgKHNpZ24gPSAxKSBBTkQgKGxpbmVfdHlwZSBOT1QgSU4gKCdQdW5jdCcsICdFbXB0eScpKQogICAgICAgICAgICBHUk9VUCBCWQogICAgICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgICAgIGxpbmUKICAgICAgICApIEFTIGFkZGVkX2NvZGUKICAgICAgICBJTk5FUiBKT0lOCiAgICAgICAgKAogICAgICAgICAgICBTRUxFQ1QKICAgICAgICAgICAgICAgIHBhdGgsCiAgICAgICAgICAgICAgICBsaW5lLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIHRpbWUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5saW5lX2NoYW5nZXMKICAgICAgICAgICAgV0hFUkUgKHNpZ24gPSAtMSkgQU5EIChsaW5lX3R5cGUgTk9UIElOICgnUHVuY3QnLCAnRW1wdHknKSkKICAgICAgICAgICAgR1JPVVAgQlkKICAgICAgICAgICAgICAgIHBhdGgsCiAgICAgICAgICAgICAgICBsaW5lCiAgICAgICAgKSBBUyByZW1vdmVkX2NvZGUgVVNJTkcgKHBhdGgsIGxpbmUpCiAgICAgICAgV0hFUkUgKHJlbW92ZWRfY29kZS50aW1lID4gYWRkZWRfY29kZS50aW1lKSBBTkQgKHBhdGggSU4gKGN1cnJlbnRfZmlsZXMpKSBBTkQgKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnLCAnc3FsJykpCiAgICApClNFTEVDVAogICAgcGF0aCwKICAgIGF2ZyhkYXlzX3ByZXNlbnQpIEFTIGF2Z19jb2RlX2FnZQpGUk9NIGxpbmVzX3JlbW92ZWQKR1JPVVAgQlkgcGF0aApPUkRFUiBCWSBhdmdfY29kZV9hZ2UgREVTQwpMSU1JVCAxMA==)
 
 ```sql
 WITH
@@ -1762,7 +1798,7 @@ WITH
                 path,
                 max(time) AS last_time,
                 argMax(change_type, time) AS change_type
-            FROM git.clickhouse_file_changes
+            FROM git.file_changes
             GROUP BY path
         )
         GROUP BY path
@@ -1827,13 +1863,13 @@ LIMIT 10
 10 rows in set. Elapsed: 3.134 sec. Processed 16.13 million rows, 1.83 GB (5.15 million rows/s., 582.99 MB/s.)
 ```
 
-### Who tends to write more tests / CPP code / comments? {#who-tends-to-write-more-tests--cpp-code--comments}
+## Who tends to write more tests / CPP code / comments?
 
 There are a few ways we can address this question. Focusing on the code to test ratio, this query is relatively simple - count the number of contributions to folders containing `tests` and compute the ratio to total contributions.
 
 Note we limit to users with more than 20 changes to focus on regular committers and avoid a bias to one-off contributions.
 
-[play](https://sql.clickhouse.com?query_id=JGKZSEQDPDTDKZXD3ZCGLE)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhdXRob3IsCiAgICBjb3VudElmKChmaWxlX2V4dGVuc2lvbiBJTiAoJ2gnLCAnY3BwJywgJ3NxbCcsICdzaCcsICdweScsICdleHBlY3QnKSkgQU5EIChwYXRoIExJS0UgJyV0ZXN0cyUnKSkgQVMgdGVzdCwKICAgIGNvdW50SWYoKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnLCAnc3FsJykpIEFORCAoTk9UIChwYXRoIExJS0UgJyV0ZXN0cyUnKSkpIEFTIGNvZGUsCiAgICBjb2RlIC8gKGNvZGUgKyB0ZXN0KSBBUyByYXRpb19jb2RlCkZST00gZ2l0X2NsaWNraG91c2UuZmlsZV9jaGFuZ2VzCkdST1VQIEJZIGF1dGhvcgpIQVZJTkcgY29kZSA+IDIwCk9SREVSIEJZIGNvZGUgREVTQwpMSU1JVCAyMA==)
 
 ```sql
 SELECT
@@ -1841,7 +1877,7 @@ SELECT
     countIf((file_extension IN ('h', 'cpp', 'sql', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
     countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
     code / (code + test) AS ratio_code
-FROM git.clickhouse_file_changes
+FROM git.file_changes
 GROUP BY author
 HAVING code > 20
 ORDER BY code DESC
@@ -1875,7 +1911,7 @@ LIMIT 20
 
 We can plot this distribution as a histogram.
 
-[play](https://sql.clickhouse.com?query_id=S5AJIIRGSUAY1JXEVHQDAK)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCAoCiAgICAgICAgU0VMRUNUIGhpc3RvZ3JhbSgxMCkocmF0aW9fY29kZSkgQVMgaGlzdAogICAgICAgIEZST00KICAgICAgICAoCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgYXV0aG9yLAogICAgICAgICAgICAgICAgY291bnRJZigoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnLCAnc2gnLCAncHknLCAnZXhwZWN0JykpIEFORCAocGF0aCBMSUtFICcldGVzdHMlJykpIEFTIHRlc3QsCiAgICAgICAgICAgICAgICBjb3VudElmKChmaWxlX2V4dGVuc2lvbiBJTiAoJ2gnLCAnY3BwJywgJ3NxbCcpKSBBTkQgKE5PVCAocGF0aCBMSUtFICcldGVzdHMlJykpKSBBUyBjb2RlLAogICAgICAgICAgICAgICAgY29kZSAvIChjb2RlICsgdGVzdCkgQVMgcmF0aW9fY29kZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwogICAgICAgICAgICBHUk9VUCBCWSBhdXRob3IKICAgICAgICAgICAgSEFWSU5HIGNvZGUgPiAyMAogICAgICAgICAgICBPUkRFUiBCWSBjb2RlIERFU0MKICAgICAgICAgICAgTElNSVQgMjAKICAgICAgICApCiAgICApIEFTIGhpc3QKU0VMRUNUCiAgICBhcnJheUpvaW4oaGlzdCkuMSBBUyBsb3dlciwKICAgIGFycmF5Sm9pbihoaXN0KS4yIEFTIHVwcGVyLAogICAgYmFyKGFycmF5Sm9pbihoaXN0KS4zLCAwLCAxMDAsIDUwMCkgQVMgYmFy)
 
 ```sql
 WITH (
@@ -1887,7 +1923,7 @@ WITH (
                 countIf((file_extension IN ('h', 'cpp', 'sql', 'sh', 'py', 'expect')) AND (path LIKE '%tests%')) AS test,
                 countIf((file_extension IN ('h', 'cpp', 'sql')) AND (NOT (path LIKE '%tests%'))) AS code,
                 code / (code + test) AS ratio_code
-            FROM git.clickhouse_file_changes
+            FROM git.file_changes
             GROUP BY author
             HAVING code > 20
             ORDER BY code DESC
@@ -1918,7 +1954,7 @@ Most contributors write more code than tests, as you'd expect.
 
 What about who adds the most comments when contributing code?
 
-[play](https://sql.clickhouse.com?query_id=EXPHDIURBTOXXOK1TGNNYD)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBhdXRob3IsCiAgICBhdmcocmF0aW9fY29tbWVudHMpIEFTIGF2Z19yYXRpb19jb21tZW50cywKICAgIHN1bShjb2RlKSBBUyBjb2RlCkZST00KKAogICAgU0VMRUNUCiAgICAgICAgYXV0aG9yLAogICAgICAgIGNvbW1pdF9oYXNoLAogICAgICAgIGNvdW50SWYobGluZV90eXBlID0gJ0NvbW1lbnQnKSBBUyBjb21tZW50cywKICAgICAgICBjb3VudElmKGxpbmVfdHlwZSA9ICdDb2RlJykgQVMgY29kZSwKICAgICAgICBpZihjb21tZW50cyA+IDAsIGNvbW1lbnRzIC8gKGNvbW1lbnRzICsgY29kZSksIDApIEFTIHJhdGlvX2NvbW1lbnRzCiAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmxpbmVfY2hhbmdlcwogICAgR1JPVVAgQlkKICAgICAgICBhdXRob3IsCiAgICAgICAgY29tbWl0X2hhc2gKKQpHUk9VUCBCWSBhdXRob3IKT1JERVIgQlkgY29kZSBERVNDCkxJTUlUIDEwCg==)
 
 ```sql
 SELECT
@@ -1933,7 +1969,7 @@ FROM
         countIf(line_type = 'Comment') AS comments,
         countIf(line_type = 'Code') AS code,
         if(comments > 0, comments / (comments + code), 0) AS ratio_comments
-    FROM git.clickhouse_line_changes
+    FROM git.line_changes
     GROUP BY
         author,
         commit_hash
@@ -1958,9 +1994,11 @@ LIMIT 10
 
 Note we sort by code contributions. Surprisingly high % for all our largest contributors and part of what makes our code so readable.
 
-### How does an authors commits change over time with respect to code/comments percentage? {#how-does-an-authors-commits-change-over-time-with-respect-to-codecomments-percentage}
+## How does an authors commits change over time with respect to code/comments percentage?
 
 To compute this by author is trivial,
+
+[play](#U0VMRUNUCiAgICBhdXRob3IsCiAgICBjb3VudElmKGxpbmVfdHlwZSA9ICdDb2RlJykgQVMgY29kZV9saW5lcywKICAgIGNvdW50SWYoKGxpbmVfdHlwZSA9ICdDb21tZW50JykgT1IgKGxpbmVfdHlwZSA9ICdQdW5jdCcpKSBBUyBjb21tZW50cywKICAgIGNvZGVfbGluZXMgLyAoY29tbWVudHMgKyBjb2RlX2xpbmVzKSBBUyByYXRpb19jb2RlLAogICAgdG9TdGFydE9mV2Vlayh0aW1lKSBBUyB3ZWVrCkZST00gZ2l0X2NsaWNraG91c2UubGluZV9jaGFuZ2VzCkdST1VQIEJZCiAgICB0aW1lLAogICAgYXV0aG9yCk9SREVSIEJZCiAgICBhdXRob3IgQVNDLAogICAgdGltZSBBU0MKTElNSVQgMTA=)
 
 ```sql
 SELECT
@@ -2000,7 +2038,7 @@ To compute this, we first work out each author's comments ratio over time - simi
 
 After calculating the average by-week offset across all authors, we sample these results by selecting every 10th week.
 
-[play](https://sql.clickhouse.com?query_id=SBHEWR8XC4PRHY13HPPKCN)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBhdXRob3JfcmF0aW9zX2J5X29mZnNldCBBUwogICAgKAogICAgICAgIFNFTEVDVAogICAgICAgICAgICBhdXRob3IsCiAgICAgICAgICAgIGRhdGVEaWZmKCd3ZWVrJywgc3RhcnRfZGF0ZXMuc3RhcnRfZGF0ZSwgY29udHJpYnV0aW9ucy53ZWVrKSBBUyB3ZWVrX29mZnNldCwKICAgICAgICAgICAgcmF0aW9fY29kZQogICAgICAgIEZST00KICAgICAgICAoCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgYXV0aG9yLAogICAgICAgICAgICAgICAgdG9TdGFydE9mV2VlayhtaW4odGltZSkpIEFTIHN0YXJ0X2RhdGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5saW5lX2NoYW5nZXMKICAgICAgICAgICAgV0hFUkUgZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnKQogICAgICAgICAgICBHUk9VUCBCWSBhdXRob3IgQVMgc3RhcnRfZGF0ZXMKICAgICAgICApIEFTIHN0YXJ0X2RhdGVzCiAgICAgICAgSU5ORVIgSk9JTgogICAgICAgICgKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBhdXRob3IsCiAgICAgICAgICAgICAgICBjb3VudElmKGxpbmVfdHlwZSA9ICdDb2RlJykgQVMgY29kZSwKICAgICAgICAgICAgICAgIGNvdW50SWYoKGxpbmVfdHlwZSA9ICdDb21tZW50JykgT1IgKGxpbmVfdHlwZSA9ICdQdW5jdCcpKSBBUyBjb21tZW50cywKICAgICAgICAgICAgICAgIGNvbW1lbnRzIC8gKGNvbW1lbnRzICsgY29kZSkgQVMgcmF0aW9fY29kZSwKICAgICAgICAgICAgICAgIHRvU3RhcnRPZldlZWsodGltZSkgQVMgd2VlawogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmxpbmVfY2hhbmdlcwogICAgICAgICAgICBXSEVSRSAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnKSkgQU5EIChzaWduID0gMSkKICAgICAgICAgICAgR1JPVVAgQlkKICAgICAgICAgICAgICAgIHRpbWUsCiAgICAgICAgICAgICAgICBhdXRob3IKICAgICAgICAgICAgSEFWSU5HIGNvZGUgPiAyMAogICAgICAgICAgICBPUkRFUiBCWQogICAgICAgICAgICAgICAgYXV0aG9yIEFTQywKICAgICAgICAgICAgICAgIHRpbWUgQVNDCiAgICAgICAgKSBBUyBjb250cmlidXRpb25zIFVTSU5HIChhdXRob3IpCiAgICApClNFTEVDVAogICAgd2Vla19vZmZzZXQsCiAgICBhdmcocmF0aW9fY29kZSkgQVMgYXZnX2NvZGVfcmF0aW8KRlJPTSBhdXRob3JfcmF0aW9zX2J5X29mZnNldApHUk9VUCBCWSB3ZWVrX29mZnNldApIQVZJTkcgKHdlZWtfb2Zmc2V0ICUgMTApID0gMApPUkRFUiBCWSB3ZWVrX29mZnNldCBBU0MKTElNSVQgMjAK)
 
 ```sql
 WITH author_ratios_by_offset AS
@@ -2074,11 +2112,11 @@ LIMIT 20
 
 Encouragingly, our comment % is pretty constant and doesn't degrade the longer authors contribute.
 
-### What is the average time before code will be rewritten and the median (half-life of code decay)? {#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay}
+## What is the average time before code will be rewritten and the median (half-life of code decay)?
 
-We can use the same principle as [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-times) to identify rewrites but consider all files. A window function is used to compute the time between rewrites for each file. From this, we can calculate an average and median across all files.
+We can use the same principle as [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-time-or-by-most-of-authors) to identify rewrites but consider all files. A window function is used to compute the time between rewrites for each file. From this, we can calculate an average and median across all files.
 
-[play](https://sql.clickhouse.com?query_id=WSHUEPJP9TNJUH7QITWWOR)
+[play](https://play.clickhouse.com/play?user=play#V0lUSAogICAgY2hhbmdlcyBBUwogICAgKAogICAgICAgIFNFTEVDVAogICAgICAgICAgICBwYXRoLAogICAgICAgICAgICBjb21taXRfaGFzaCwKICAgICAgICAgICAgbWF4X3RpbWUsCiAgICAgICAgICAgIHR5cGUsCiAgICAgICAgICAgIG51bV9hZGRlZCwKICAgICAgICAgICAgbnVtX2RlbGV0ZWQsCiAgICAgICAgICAgIHN1bShudW1fYWRkZWQgLSBudW1fZGVsZXRlZCkgT1ZFUiAoUEFSVElUSU9OIEJZIHBhdGggT1JERVIgQlkgbWF4X3RpbWUgQVNDKSBBUyBjdXJyZW50X3NpemUsCiAgICAgICAgICAgIGlmKGN1cnJlbnRfc2l6ZSA+IDAsIG51bV9hZGRlZCAvIGN1cnJlbnRfc2l6ZSwgMCkgQVMgcGVyY2VudF9hZGQsCiAgICAgICAgICAgIGlmKGN1cnJlbnRfc2l6ZSA+IDAsIG51bV9kZWxldGVkIC8gY3VycmVudF9zaXplLCAwKSBBUyBwZXJjZW50X2RlbGV0ZQogICAgICAgIEZST00KICAgICAgICAoCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgICAgIG1heCh0aW1lKSBBUyBtYXhfdGltZSwKICAgICAgICAgICAgICAgIGNvbW1pdF9oYXNoLAogICAgICAgICAgICAgICAgYW55KGxpbmVzX2FkZGVkKSBBUyBudW1fYWRkZWQsCiAgICAgICAgICAgICAgICBhbnkobGluZXNfZGVsZXRlZCkgQVMgbnVtX2RlbGV0ZWQsCiAgICAgICAgICAgICAgICBhbnkoY2hhbmdlX3R5cGUpIEFTIHR5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKICAgICAgICAgICAgV0hFUkUgKGNoYW5nZV90eXBlIElOICgnQWRkJywgJ01vZGlmeScpKSBBTkQgKGZpbGVfZXh0ZW5zaW9uIElOICgnaCcsICdjcHAnLCAnc3FsJykpCiAgICAgICAgICAgIEdST1VQIEJZCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgY29tbWl0X2hhc2gKICAgICAgICAgICAgT1JERVIgQlkKICAgICAgICAgICAgICAgIHBhdGggQVNDLAogICAgICAgICAgICAgICAgbWF4X3RpbWUgQVNDCiAgICAgICAgKQogICAgKSwKICAgIHJld3JpdGVzIEFTCiAgICAoCiAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICosCiAgICAgICAgICAgIGFueShtYXhfdGltZSkgT1ZFUiAoUEFSVElUSU9OIEJZIHBhdGggT1JERVIgQlkgbWF4X3RpbWUgQVNDIFJPV1MgQkVUV0VFTiAxIFBSRUNFRElORyBBTkQgQ1VSUkVOVCBST1cpIEFTIHByZXZpb3VzX3Jld3JpdGUsCiAgICAgICAgICAgIGRhdGVEaWZmKCdkYXknLCBwcmV2aW91c19yZXdyaXRlLCBtYXhfdGltZSkgQVMgcmV3cml0ZV9kYXlzCiAgICAgICAgRlJPTSBjaGFuZ2VzCiAgICAgICAgV0hFUkUgKHR5cGUgPSAnTW9kaWZ5JykgQU5EIChwZXJjZW50X2FkZCA+PSAwLjUpIEFORCAocGVyY2VudF9kZWxldGUgPj0gMC41KSBBTkQgKGN1cnJlbnRfc2l6ZSA+IDUwKQogICAgKQpTRUxFQ1QKICAgIGF2Z0lmKHJld3JpdGVfZGF5cywgcmV3cml0ZV9kYXlzID4gMCkgQVMgYXZnX3Jld3JpdGVfdGltZSwKICAgIHF1YW50aWxlc1RpbWluZ0lmKDAuNSkocmV3cml0ZV9kYXlzLCByZXdyaXRlX2RheXMgPiAwKSBBUyBoYWxmX2xpZmUKRlJPTSByZXdyaXRlcw==)
 
 ```sql
 WITH
@@ -2134,11 +2172,11 @@ FROM rewrites
 1 row in set. Elapsed: 0.388 sec. Processed 266.05 thousand rows, 22.85 MB (685.82 thousand rows/s., 58.89 MB/s.)
 ```
 
-### What is the worst time to write code in sense that the code has highest chance to be re-written? {#what-is-the-worst-time-to-write-code-in-sense-that-the-code-has-highest-chance-to-be-re-written}
+## What is the worst time to write code in sense that the code has highest chance to be re-written?
 
-Similar to [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) and [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-times), except we aggregate by day of week. Adjust as required e.g. month of year.
+Similar to [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) and [List files that were rewritten most number of time or by most of authors](#list-files-that-were-rewritten-most-number-of-time-or-by-most-of-authors), except we aggregate by day of week. Adjust as required e.g. month of year.
 
-[play](https://sql.clickhouse.com?query_id=8PQNWEWHAJTGN6FTX59KH2)
+[play](https://play.clickhouse.com/play?user=play#V0lUSAogICAgY2hhbmdlcyBBUwogICAgKAogICAgICAgIFNFTEVDVAogICAgICAgICAgICBwYXRoLAogICAgICAgICAgICBjb21taXRfaGFzaCwKICAgICAgICAgICAgbWF4X3RpbWUsCiAgICAgICAgICAgIHR5cGUsCiAgICAgICAgICAgIG51bV9hZGRlZCwKICAgICAgICAgICAgbnVtX2RlbGV0ZWQsCiAgICAgICAgICAgIHN1bShudW1fYWRkZWQgLSBudW1fZGVsZXRlZCkgT1ZFUiAoUEFSVElUSU9OIEJZIHBhdGggT1JERVIgQlkgbWF4X3RpbWUgQVNDKSBBUyBjdXJyZW50X3NpemUsCiAgICAgICAgICAgIGlmKGN1cnJlbnRfc2l6ZSA+IDAsIG51bV9hZGRlZCAvIGN1cnJlbnRfc2l6ZSwgMCkgQVMgcGVyY2VudF9hZGQsCiAgICAgICAgICAgIGlmKGN1cnJlbnRfc2l6ZSA+IDAsIG51bV9kZWxldGVkIC8gY3VycmVudF9zaXplLCAwKSBBUyBwZXJjZW50X2RlbGV0ZQogICAgICAgIEZST00KICAgICAgICAoCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgICAgIG1heCh0aW1lKSBBUyBtYXhfdGltZSwKICAgICAgICAgICAgICAgIGNvbW1pdF9oYXNoLAogICAgICAgICAgICAgICAgYW55KGZpbGVfbGluZXNfYWRkZWQpIEFTIG51bV9hZGRlZCwKICAgICAgICAgICAgICAgIGFueShmaWxlX2xpbmVzX2RlbGV0ZWQpIEFTIG51bV9kZWxldGVkLAogICAgICAgICAgICAgICAgYW55KGZpbGVfY2hhbmdlX3R5cGUpIEFTIHR5cGUKICAgICAgICAgICAgRlJPTSBnaXRfY2xpY2tob3VzZS5saW5lX2NoYW5nZXMKICAgICAgICAgICAgV0hFUkUgKGZpbGVfY2hhbmdlX3R5cGUgSU4gKCdBZGQnLCAnTW9kaWZ5JykpIEFORCAoZmlsZV9leHRlbnNpb24gSU4gKCdoJywgJ2NwcCcsICdzcWwnKSkKICAgICAgICAgICAgR1JPVVAgQlkKICAgICAgICAgICAgICAgIHBhdGgsCiAgICAgICAgICAgICAgICBjb21taXRfaGFzaAogICAgICAgICAgICBPUkRFUiBCWQogICAgICAgICAgICAgICAgcGF0aCBBU0MsCiAgICAgICAgICAgICAgICBtYXhfdGltZSBBU0MKICAgICAgICApCiAgICApLAogICAgcmV3cml0ZXMgQVMKICAgICgKICAgICAgICBTRUxFQ1QgYW55KG1heF90aW1lKSBPVkVSIChQQVJUSVRJT04gQlkgcGF0aCBPUkRFUiBCWSBtYXhfdGltZSBBU0MgUk9XUyBCRVRXRUVOIDEgUFJFQ0VESU5HIEFORCBDVVJSRU5UIFJPVykgQVMgcHJldmlvdXNfcmV3cml0ZQogICAgICAgIEZST00gY2hhbmdlcwogICAgICAgIFdIRVJFICh0eXBlID0gJ01vZGlmeScpIEFORCAocGVyY2VudF9hZGQgPj0gMC41KSBBTkQgKHBlcmNlbnRfZGVsZXRlID49IDAuNSkgQU5EIChjdXJyZW50X3NpemUgPiA1MCkKICAgICkKU0VMRUNUCiAgICBkYXlPZldlZWsocHJldmlvdXNfcmV3cml0ZSkgQVMgZGF5T2ZXZWVrLAogICAgY291bnQoKSBBUyBudW1fcmVfd3JpdGVzCkZST00gcmV3cml0ZXMKR1JPVVAgQlkgZGF5T2ZXZWVr)
 
 ```sql
 WITH
@@ -2198,11 +2236,11 @@ GROUP BY dayOfWeek
 7 rows in set. Elapsed: 0.466 sec. Processed 7.54 million rows, 701.52 MB (16.15 million rows/s., 1.50 GB/s.)
 ```
 
-### Which authors code is the most sticky? {#which-authors-code-is-the-most-sticky}
+## Which authors code is the most sticky?
 
 We define "sticky" as how long does an author's code stay before its rewritten. Similar to the previous question [What is the average time before code will be rewritten and the median (half-life of code decay)?](#what-is-the-average-time-before-code-will-be-rewritten-and-the-median-half-life-of-code-decay) - using the same metric for rewrites i.e. 50% additions and 50% deletions to the file. We compute the average rewrite time per author and only consider contributors with more than two files.
 
-[play](https://sql.clickhouse.com?query_id=BKHLVVWN5SET1VTIFQ8JVK)
+[play](https://play.clickhouse.com/play?user=play#V0lUSAogICAgY2hhbmdlcyBBUwogICAgKAogICAgICAgIFNFTEVDVAogICAgICAgICAgICBwYXRoLAogICAgICAgICAgICBhdXRob3IsCiAgICAgICAgICAgIGNvbW1pdF9oYXNoLAogICAgICAgICAgICBtYXhfdGltZSwKICAgICAgICAgICAgdHlwZSwKICAgICAgICAgICAgbnVtX2FkZGVkLAogICAgICAgICAgICBudW1fZGVsZXRlZCwKICAgICAgICAgICAgc3VtKG51bV9hZGRlZCAtIG51bV9kZWxldGVkKSBPVkVSIChQQVJUSVRJT04gQlkgcGF0aCBPUkRFUiBCWSBtYXhfdGltZSBBU0MpIEFTIGN1cnJlbnRfc2l6ZSwKICAgICAgICAgICAgaWYoY3VycmVudF9zaXplID4gMCwgbnVtX2FkZGVkIC8gY3VycmVudF9zaXplLCAwKSBBUyBwZXJjZW50X2FkZCwKICAgICAgICAgICAgaWYoY3VycmVudF9zaXplID4gMCwgbnVtX2RlbGV0ZWQgLyBjdXJyZW50X3NpemUsIDApIEFTIHBlcmNlbnRfZGVsZXRlCiAgICAgICAgRlJPTQogICAgICAgICgKICAgICAgICAgICAgU0VMRUNUCiAgICAgICAgICAgICAgICBwYXRoLAogICAgICAgICAgICAgICAgYW55KGF1dGhvcikgQVMgYXV0aG9yLAogICAgICAgICAgICAgICAgbWF4KHRpbWUpIEFTIG1heF90aW1lLAogICAgICAgICAgICAgICAgY29tbWl0X2hhc2gsCiAgICAgICAgICAgICAgICBhbnkoZmlsZV9saW5lc19hZGRlZCkgQVMgbnVtX2FkZGVkLAogICAgICAgICAgICAgICAgYW55KGZpbGVfbGluZXNfZGVsZXRlZCkgQVMgbnVtX2RlbGV0ZWQsCiAgICAgICAgICAgICAgICBhbnkoZmlsZV9jaGFuZ2VfdHlwZSkgQVMgdHlwZQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmxpbmVfY2hhbmdlcwogICAgICAgICAgICBXSEVSRSAoZmlsZV9jaGFuZ2VfdHlwZSBJTiAoJ0FkZCcsICdNb2RpZnknKSkgQU5EIChmaWxlX2V4dGVuc2lvbiBJTiAoJ2gnLCAnY3BwJywgJ3NxbCcpKQogICAgICAgICAgICBHUk9VUCBCWQogICAgICAgICAgICAgICAgcGF0aCwKICAgICAgICAgICAgICAgIGNvbW1pdF9oYXNoCiAgICAgICAgICAgIE9SREVSIEJZCiAgICAgICAgICAgICAgICBwYXRoIEFTQywKICAgICAgICAgICAgICAgIG1heF90aW1lIEFTQwogICAgICAgICkKICAgICksCiAgICByZXdyaXRlcyBBUwogICAgKAogICAgICAgIFNFTEVDVAogICAgICAgICAgICAqLAogICAgICAgICAgICBhbnkobWF4X3RpbWUpIE9WRVIgKFBBUlRJVElPTiBCWSBwYXRoIE9SREVSIEJZIG1heF90aW1lIEFTQyBST1dTIEJFVFdFRU4gMSBQUkVDRURJTkcgQU5EIENVUlJFTlQgUk9XKSBBUyBwcmV2aW91c19yZXdyaXRlLAogICAgICAgICAgICBkYXRlRGlmZignZGF5JywgcHJldmlvdXNfcmV3cml0ZSwgbWF4X3RpbWUpIEFTIHJld3JpdGVfZGF5cywKICAgICAgICAgICAgYW55KGF1dGhvcikgT1ZFUiAoUEFSVElUSU9OIEJZIHBhdGggT1JERVIgQlkgbWF4X3RpbWUgQVNDIFJPV1MgQkVUV0VFTiAxIFBSRUNFRElORyBBTkQgQ1VSUkVOVCBST1cpIEFTIHByZXZfYXV0aG9yCiAgICAgICAgRlJPTSBjaGFuZ2VzCiAgICAgICAgV0hFUkUgKHR5cGUgPSAnTW9kaWZ5JykgQU5EIChwZXJjZW50X2FkZCA+PSAwLjUpIEFORCAocGVyY2VudF9kZWxldGUgPj0gMC41KSBBTkQgKGN1cnJlbnRfc2l6ZSA+IDUwKQogICAgKQpTRUxFQ1QKICAgIHByZXZfYXV0aG9yLAogICAgYXZnKHJld3JpdGVfZGF5cykgQVMgYywKICAgIHVuaXEocGF0aCkgQVMgbnVtX2ZpbGVzCkZST00gcmV3cml0ZXMKR1JPVVAgQlkgcHJldl9hdXRob3IKSEFWSU5HIG51bV9maWxlcyA+IDIKT1JERVIgQlkgYyBERVNDCkxJTUlUIDEwCg==)
 
 ```sql
 WITH
@@ -2275,13 +2313,13 @@ LIMIT 10
 10 rows in set. Elapsed: 0.555 sec. Processed 7.54 million rows, 720.60 MB (13.58 million rows/s., 1.30 GB/s.)
 ```
 
-### Most consecutive days of commits by an author {#most-consecutive-days-of-commits-by-an-author}
+## Most consecutive days of commits by an author
 
 This query first requires us to calculate the days when an author has committed. Using a window function, partitioning by author, we can compute the days between their commits. For each commit, if the time since the last commit was 1 day we mark it as consecutive (1) and 0 otherwise - storing this result in `consecutive_day`.
 
 Our subsequent array functions compute each author's longest sequence of consecutive ones. First, the `groupArray` function is used to collate all `consecutive_day` values for an author. This array of 1s and 0s, is then split on 0 values into subarrays. Finally, we calculate the longest subarray.
 
-[play](https://sql.clickhouse.com?query_id=S3E64UYCAMDAYJRSXINVFR)
+[play](https://play.clickhouse.com/play?user=play#V0lUSCBjb21taXRfZGF5cyBBUwogICAgKAogICAgICAgIFNFTEVDVAogICAgICAgICAgICBhdXRob3IsCiAgICAgICAgICAgIGRheSwKICAgICAgICAgICAgYW55KGRheSkgT1ZFUiAoUEFSVElUSU9OIEJZIGF1dGhvciBPUkRFUiBCWSBkYXkgQVNDIFJPV1MgQkVUV0VFTiAxIFBSRUNFRElORyBBTkQgQ1VSUkVOVCBST1cpIEFTIHByZXZpb3VzX2NvbW1pdCwKICAgICAgICAgICAgZGF0ZURpZmYoJ2RheScsIHByZXZpb3VzX2NvbW1pdCwgZGF5KSBBUyBkYXlzX3NpbmNlX2xhc3QsCiAgICAgICAgICAgIGlmKGRheXNfc2luY2VfbGFzdCA9IDEsIDEsIDApIEFTIGNvbnNlY3V0aXZlX2RheQogICAgICAgIEZST00KICAgICAgICAoCiAgICAgICAgICAgIFNFTEVDVAogICAgICAgICAgICAgICAgYXV0aG9yLAogICAgICAgICAgICAgICAgdG9TdGFydE9mRGF5KHRpbWUpIEFTIGRheQogICAgICAgICAgICBGUk9NIGdpdF9jbGlja2hvdXNlLmNvbW1pdHMKICAgICAgICAgICAgR1JPVVAgQlkKICAgICAgICAgICAgICAgIGF1dGhvciwKICAgICAgICAgICAgICAgIGRheQogICAgICAgICAgICBPUkRFUiBCWQogICAgICAgICAgICAgICAgYXV0aG9yIEFTQywKICAgICAgICAgICAgICAgIGRheSBBU0MKICAgICAgICApCiAgICApClNFTEVDVAogICAgYXV0aG9yLAogICAgYXJyYXlNYXgoYXJyYXlNYXAoeCAtPiBsZW5ndGgoeCksIGFycmF5U3BsaXQoeCAtPiAoeCA9IDApLCBncm91cEFycmF5KGNvbnNlY3V0aXZlX2RheSkpKSkgQVMgbWF4X2NvbnNlY3V0aXZlX2RheXMKRlJPTSBjb21taXRfZGF5cwpHUk9VUCBCWSBhdXRob3IKT1JERVIgQlkgbWF4X2NvbnNlY3V0aXZlX2RheXMgREVTQwpMSU1JVCAxMA==)
 
 ```sql
 WITH commit_days AS
@@ -2330,11 +2368,11 @@ LIMIT 10
 10 rows in set. Elapsed: 0.025 sec. Processed 62.78 thousand rows, 395.47 KB (2.54 million rows/s., 16.02 MB/s.)
 ```
 
-### Line by line commit history of a file {#line-by-line-commit-history-of-a-file}
+## Line by line commit history of a file
 
 Files can be renamed. When this occurs, we get a rename event, where the `path` column is set to the new path of the file and the `old_path` represents the previous location e.g.
 
-[play](https://sql.clickhouse.com?query_id=AKTW3Z8JZAPQ4H9BH2ZFRX)
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICB0aW1lLAogICAgcGF0aCwKICAgIG9sZF9wYXRoLAogICAgY29tbWl0X2hhc2gsCiAgICBjb21taXRfbWVzc2FnZQpGUk9NIGdpdF9jbGlja2hvdXNlLmZpbGVfY2hhbmdlcwpXSEVSRSAocGF0aCA9ICdzcmMvU3RvcmFnZXMvU3RvcmFnZVJlcGxpY2F0ZWRNZXJnZVRyZWUuY3BwJykgQU5EIChjaGFuZ2VfdHlwZSA9ICdSZW5hbWUnKQ==)
 
 ```sql
 SELECT
@@ -2372,6 +2410,8 @@ By calling `file_path_history('src/Storages/StorageReplicatedMergeTree.cpp')` we
 
 For example,
 
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUIGZpbGVfcGF0aF9oaXN0b3J5KCdzcmMvU3RvcmFnZXMvU3RvcmFnZVJlcGxpY2F0ZWRNZXJnZVRyZWUuY3BwJykgQVMgcGF0aHMK)
+
 ```sql
 SELECT file_path_history('src/Storages/StorageReplicatedMergeTree.cpp') AS paths
 
@@ -2383,6 +2423,8 @@ SELECT file_path_history('src/Storages/StorageReplicatedMergeTree.cpp') AS paths
 ```
 
 We can use this capability to now assemble the commits for the entire history of a file. In this example, we show one commit for each of the `path` values.
+
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICB0aW1lLAogICAgc3Vic3RyaW5nKGNvbW1pdF9oYXNoLCAxLCAxMSkgQVMgY29tbWl0LAogICAgY2hhbmdlX3R5cGUsCiAgICBhdXRob3IsCiAgICBwYXRoLAogICAgY29tbWl0X21lc3NhZ2UKRlJPTSBnaXRfY2xpY2tob3VzZS5maWxlX2NoYW5nZXMKV0hFUkUgcGF0aCBJTiBmaWxlX3BhdGhfaGlzdG9yeSgnc3JjL1N0b3JhZ2VzL1N0b3JhZ2VSZXBsaWNhdGVkTWVyZ2VUcmVlLmNwcCcpCk9SREVSIEJZIHRpbWUgREVTQwpMSU1JVCAxIEJZIHBhdGgKRk9STUFUIFByZXR0eUNvbXBhY3RNb25vQmxvY2s=)
 
 ```sql
 SELECT
@@ -2407,13 +2449,15 @@ FORMAT PrettyCompactMonoBlock
 3 rows in set. Elapsed: 0.170 sec. Processed 611.53 thousand rows, 41.76 MB (3.60 million rows/s., 246.07 MB/s.)
 ```
 
-## Unsolved Questions {#unsolved-questions}
+# Unsolved Questions
 
-### Git blame {#git-blame}
+## Git blame
 
 This is particularly difficult to get an exact result due to the inability to currently keep state in array functions. This will be possible with an `arrayFold` or `arrayReduce`, which allows state to be held on each iteration.
 
 An approximate solution, sufficient for a high-level analysis, may look something like this:
+
+[play](https://play.clickhouse.com/play?user=play#U0VMRUNUCiAgICBsaW5lX251bWJlcl9uZXcsCiAgICBhcmdNYXgoYXV0aG9yLCB0aW1lKSwKICAgIGFyZ01heChsaW5lLCB0aW1lKQpGUk9NIGdpdF9jbGlja2hvdXNlLmxpbmVfY2hhbmdlcwpXSEVSRSBwYXRoIElOIGZpbGVfcGF0aF9oaXN0b3J5KCdzcmMvU3RvcmFnZXMvU3RvcmFnZVJlcGxpY2F0ZWRNZXJnZVRyZWUuY3BwJykKR1JPVVAgQlkgbGluZV9udW1iZXJfbmV3Ck9SREVSIEJZIGxpbmVfbnVtYmVyX25ldyBBU0MKTElNSVQgMjA=)
 
 ```sql
 SELECT
@@ -2454,7 +2498,7 @@ LIMIT 20
 We welcome exact and improved solutions here.
 
 
-## Related Content {#related-content}
+## Related Content
 
 - Blog: [Git commits and our community](https://clickhouse.com/blog/clickhouse-git-community-commits)
 - Blog: [Window and array functions for Git commit sequences](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)

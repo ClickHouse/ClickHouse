@@ -1,23 +1,16 @@
 ---
-description: 'differs from MergeTree in that it removes duplicate entries with the
-  same sorting key value (`ORDER BY` table section, not `PRIMARY KEY`).'
-sidebar_label: 'ReplacingMergeTree'
+slug: /en/engines/table-engines/mergetree-family/replacingmergetree
 sidebar_position: 40
-slug: /engines/table-engines/mergetree-family/replacingmergetree
-title: 'ReplacingMergeTree'
+sidebar_label:  ReplacingMergeTree
 ---
 
 # ReplacingMergeTree
 
-The engine differs from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) in that it removes duplicate entries with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md) value (`ORDER BY` table section, not `PRIMARY KEY`).
+The engine differs from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) in that it removes duplicate entries with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md) value (`ORDER BY` table section, not `PRIMARY KEY`).
 
-Data deduplication occurs only during a merge. Merging occurs in the background at an unknown time, so you can't plan for it. Some of the data may remain unprocessed. Although you can run an unscheduled merge using the `OPTIMIZE` query, do not count on using it, because the `OPTIMIZE` query will read and write a large amount of data.
+Data deduplication occurs only during a merge. Merging occurs in the background at an unknown time, so you can’t plan for it. Some of the data may remain unprocessed. Although you can run an unscheduled merge using the `OPTIMIZE` query, do not count on using it, because the `OPTIMIZE` query will read and write a large amount of data.
 
 Thus, `ReplacingMergeTree` is suitable for clearing out duplicate data in the background in order to save space, but it does not guarantee the absence of duplicates.
-
-:::note
-A detailed guide on ReplacingMergeTree, including best practices and how to optimize performance, is available [here](/guides/replacing-merge-tree).
-:::
 
 ## Creating a Table {#creating-a-table}
 
@@ -41,9 +34,9 @@ For a description of request parameters, see [statement description](../../../sq
 Uniqueness of rows is determined by the `ORDER BY` table section, not `PRIMARY KEY`.
 :::
 
-## ReplacingMergeTree Parameters {#replacingmergetree-parameters}
+## ReplacingMergeTree Parameters
 
-### ver {#ver}
+### ver
 
 `ver` — column with the version number. Type `UInt*`, `Date`, `DateTime` or `DateTime64`. Optional parameter.
 
@@ -95,7 +88,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 └─────┴─────────┴─────────────────────┘
 ```
 
-### is_deleted {#is_deleted}
+### is_deleted
 
 `is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
 
@@ -104,17 +97,10 @@ SELECT * FROM mySecondReplacingMT FINAL;
 :::note
 `is_deleted` can only be enabled when `ver` is used.
 
-No matter the operation on the data, the version should be increased. If two inserted rows have the same version number, the last inserted row is kept.
+The row is deleted only when `OPTIMIZE ... FINAL CLEANUP`. This `CLEANUP` special keyword is not allowed by default unless `allow_experimental_replacing_merge_with_cleanup` MergeTree setting is enabled.
 
-By default, ClickHouse will keep the last row for a key even if that row is a delete row. This is so that any future rows with lower versions can
-be safely inserted and the delete row will still be applied.
+No matter the operation on the data, the version must be increased. If two inserted rows have the same version number, the last inserted row is the one kept.
 
-To permanently drop such delete rows, enable the table setting `allow_experimental_replacing_merge_with_cleanup` and either:
-
-1. Set the table settings `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`, `min_age_to_force_merge_on_partition_only` and `min_age_to_force_merge_seconds`. If all parts in a partition are older than `min_age_to_force_merge_seconds`, ClickHouse will merge them
-all into a single part and remove any delete rows.
-
-2. Manually run `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
 :::
 
 Example:
@@ -150,7 +136,7 @@ select * from myThirdReplacingMT final;
 └─────┴─────────┴─────────────────────┴────────────┘
 ```
 
-## Query clauses {#query-clauses}
+## Query clauses
 
 When creating a `ReplacingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 
@@ -176,51 +162,3 @@ All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 - `ver` - column with the version. Optional parameter. For a description, see the text above.
 
 </details>
-
-## Query time de-duplication & FINAL {#query-time-de-duplication--final}
-
-At merge time, the ReplacingMergeTree identifies duplicate rows, using the values of the `ORDER BY` columns (used to create the table) as a unique identifier, and retains only the highest version. This, however, offers eventual correctness only - it does not guarantee rows will be deduplicated, and you should not rely on it. Queries can, therefore, produce incorrect answers due to update and delete rows being considered in queries.
-
-To obtain correct answers, users will need to complement background merges with query time deduplication and deletion removal. This can be achieved using the `FINAL` operator. For example, consider the following example:
-
-```sql
-CREATE TABLE rmt_example
-(
-    `number` UInt16
-)
-ENGINE = ReplacingMergeTree
-ORDER BY number
-
-INSERT INTO rmt_example SELECT floor(randUniform(0, 100)) AS number
-FROM numbers(1000000000)
-
-0 rows in set. Elapsed: 19.958 sec. Processed 1.00 billion rows, 8.00 GB (50.11 million rows/s., 400.84 MB/s.)
-```
-Querying without `FINAL` produces an incorrect count (exact result will vary depending on merges):
-
-```sql
-SELECT count()
-FROM rmt_example
-
-┌─count()─┐
-│     200 │
-└─────────┘
-
-1 row in set. Elapsed: 0.002 sec.
-```
-
-Adding final produces a correct result:
-
-```sql
-SELECT count()
-FROM rmt_example
-FINAL
-
-┌─count()─┐
-│     100 │
-└─────────┘
-
-1 row in set. Elapsed: 0.002 sec.
-```
-
-For further details on `FINAL`, including how to optimize `FINAL` performance, we recommend reading our [detailed guide on ReplacingMergeTree](/guides/replacing-merge-tree).

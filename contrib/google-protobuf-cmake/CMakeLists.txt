@@ -5,9 +5,6 @@ if(NOT ENABLE_PROTOBUF)
   return()
 endif()
 
-# To avoid errors "'X' does not refer to a value" while using `offsetof` function.
-set(CMAKE_CXX_STANDARD 17)
-
 set(Protobuf_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/google-protobuf/src")
 if(OS_FREEBSD AND SANITIZE STREQUAL "address")
   # ../contrib/protobuf/src/google/protobuf/arena_impl.h:45:10: fatal error: 'sanitizer/asan_interface.h' file not found
@@ -362,9 +359,7 @@ else ()
 
         execute_process(
             COMMAND mkdir -p ${PROTOC_BUILD_DIR}
-            COMMAND_ECHO STDOUT
-            COMMAND_ERROR_IS_FATAL ANY
-        )
+            COMMAND_ECHO STDOUT)
 
         execute_process(
             COMMAND ${CMAKE_COMMAND}
@@ -380,15 +375,11 @@ else ()
                 "-DABSL_ENABLE_INSTALL=0"
                 "${protobuf_source_dir}"
             WORKING_DIRECTORY "${PROTOC_BUILD_DIR}"
-            COMMAND_ECHO STDOUT
-            COMMAND_ERROR_IS_FATAL ANY
-        )
+            COMMAND_ECHO STDOUT)
 
         execute_process(
             COMMAND ${CMAKE_COMMAND} --build "${PROTOC_BUILD_DIR}"
-            COMMAND_ECHO STDOUT
-            COMMAND_ERROR_IS_FATAL ANY
-        )
+            COMMAND_ECHO STDOUT)
     endif ()
 
     add_executable(protoc IMPORTED GLOBAL)

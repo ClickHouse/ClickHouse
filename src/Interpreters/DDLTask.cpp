@@ -1,7 +1,6 @@
 #include <Interpreters/DDLTask.h>
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/isLocalAddress.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
@@ -22,16 +21,6 @@
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsBool allow_settings_after_format_in_insert;
-    extern const SettingsUInt64 distributed_ddl_entry_format_version;
-    extern const SettingsUInt64 log_queries_cut_to_length;
-    extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_query_size;
-}
 
 namespace ErrorCodes
 {
@@ -81,14 +70,10 @@ void DDLLogEntry::assertVersion() const
 
 void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
 {
-    version = context->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
+    version = context->getSettingsRef().distributed_ddl_entry_format_version;
     if (version <= 0 || version > DDL_ENTRY_FORMAT_MAX_VERSION)
         throw Exception(ErrorCodes::UNKNOWN_FORMAT_VERSION, "Unknown distributed_ddl_entry_format_version: {}."
                                                             "Maximum supported version is {}.", version, DDL_ENTRY_FORMAT_MAX_VERSION);
-
-    parent_table_uuid = context->getParentTable();
-    if (parent_table_uuid.has_value())
-        version = std::max(version, PARENT_TABLE_UUID_VERSION);
 
     /// NORMALIZE_CREATE_ON_INITIATOR_VERSION does not affect entry format in ZooKeeper
     if (version == NORMALIZE_CREATE_ON_INITIATOR_VERSION)
@@ -138,16 +123,6 @@ String DDLLogEntry::toString() const
     if (version >= BACKUP_RESTORE_FLAG_IN_ZK_VERSION)
         wb << "is_backup_restore: " << is_backup_restore << "\n";
 
-    if (version >= PARENT_TABLE_UUID_VERSION)
-    {
-        wb << "parent: ";
-        if (parent_table_uuid.has_value())
-            wb << parent_table_uuid.value();
-        else
-            wb << "-";
-        wb << "\n";
-    }
-
     return wb.str();
 }
 
@@ -182,8 +157,7 @@ void DDLLogEntry::parse(const String & data)
             ParserSetQuery parser{true};
             constexpr UInt64 max_depth = 16;
             constexpr UInt64 max_backtracks = DBMS_DEFAULT_MAX_PARSER_BACKTRACKS;
-            ASTPtr settings_ast = parseQuery(
-                parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef()[Setting::max_query_size], max_depth, max_backtracks);
+            ASTPtr settings_ast = parseQuery(parser, settings_str, Context::getGlobalContextInstance()->getSettingsRef().max_query_size, max_depth, max_backtracks);
             settings.emplace(std::move(settings_ast->as<ASTSetQuery>()->changes));
         }
     }
@@ -208,18 +182,6 @@ void DDLLogEntry::parse(const String & data)
         checkChar('\n', rb);
     }
 
-    if (version >= PARENT_TABLE_UUID_VERSION)
-    {
-        rb >> "parent: ";
-        if (!checkChar('-', rb))
-        {
-            UUID uuid;
-            rb >> uuid;
-            parent_table_uuid = uuid;
-        }
-        rb >> "\n";
-    }
-
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -236,16 +198,16 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
     const char * end = begin + entry.query.size();
     const auto & settings = context->getSettingsRef();
 
-    ParserQuery parser_query(end, settings[Setting::allow_settings_after_format_in_insert]);
+    ParserQuery parser_query(end, settings.allow_settings_after_format_in_insert);
     String description;
-    query = parseQuery(parser_query, begin, end, description, 0, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+    query = parseQuery(parser_query, begin, end, description, 0, settings.max_parser_depth, settings.max_parser_backtracks);
 }
 
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
 {
     /// Convert rewritten AST back to string.
     query_str = queryToString(*query);
-    query_for_logging = query->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]);
+    query_for_logging = query->formatForLogging(context->getSettingsRef().log_queries_cut_to_length);
 }
 
 ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & /*zookeeper*/)
@@ -418,27 +380,28 @@ bool DDLTask::tryFindHostInCluster()
                                         "There are two exactly the same ClickHouse instances {} in cluster {}",
                                         address.readableString(), cluster_name);
                     }
-
-                    /* Circular replication is used.
+                    else
+                    {
+                        /* Circular replication is used.
                          * It is when every physical node contains
                          * replicas of different shards of the same table.
                          * To distinguish one replica from another on the same node,
                          * every shard is placed into separate database.
                          * */
-                    is_circular_replicated = true;
-                    auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
+                        is_circular_replicated = true;
+                        auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(query.get());
 
-                    /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
-                    if (query_with_table)
-                    {
-                        if (!query_with_table->database)
-                            throw Exception(
-                                ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
-                                "For a distributed DDL on circular replicated cluster its table name "
-                                "must be qualified by database name.");
+                        /// For other DDLs like CREATE USER, there is no database name and should be executed successfully.
+                        if (query_with_table)
+                        {
+                            if (!query_with_table->database)
+                                throw Exception(ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION,
+                                                "For a distributed DDL on circular replicated cluster its table name "
+                                                "must be qualified by database name.");
 
-                        if (default_database == query_with_table->getDatabase())
-                            return true;
+                            if (default_database == query_with_table->getDatabase())
+                                return true;
+                        }
                     }
                 }
                 found_exact_match = true;
@@ -474,11 +437,13 @@ bool DDLTask::tryFindHostInClusterViaResolving(ContextPtr context)
                                     "There are two the same ClickHouse instances in cluster {} : {} and {}",
                                     cluster_name, address_in_cluster.readableString(), address.readableString());
                 }
-
-                found_via_resolving = true;
-                host_shard_num = shard_num;
-                host_replica_num = replica_num;
-                address_in_cluster = address;
+                else
+                {
+                    found_via_resolving = true;
+                    host_shard_num = shard_num;
+                    host_replica_num = replica_num;
+                    address_in_cluster = address;
+                }
             }
         }
     }
@@ -600,12 +565,6 @@ void ZooKeeperMetadataTransaction::commit()
     state = FAILED;
     current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
-
-    if (finalizer)
-    {
-        finalizer();
-        finalizer = FinalizerCallback();
-    }
 }
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
@@ -622,7 +581,8 @@ ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)
     {
         if (all_groups)
             return replicated_db->tryGetAllGroupsCluster();
-        return replicated_db->tryGetCluster();
+        else
+            return replicated_db->tryGetCluster();
     }
     return {};
 }

@@ -2,8 +2,8 @@
 
 import unittest
 
-import docker_server as ds
 from version_helper import get_version_from_string
+import docker_server as ds
 
 
 class TestDockerServer(unittest.TestCase):

@@ -1,29 +1,19 @@
 ---
-description: 'Replaces all rows with the same primary key (or more accurately, with
-  the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md))
-  with a single row (within a single data part) that stores a combination of states
-  of aggregate functions.'
-sidebar_label: 'AggregatingMergeTree'
+slug: /en/engines/table-engines/mergetree-family/aggregatingmergetree
 sidebar_position: 60
-slug: /engines/table-engines/mergetree-family/aggregatingmergetree
-title: 'AggregatingMergeTree'
+sidebar_label:  AggregatingMergeTree
 ---
 
 # AggregatingMergeTree
 
-The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a single data part) that stores a combination of states of aggregate functions.
+The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree), altering the logic for data parts merging. ClickHouse replaces all rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with a single row (within a one data part) that stores a combination of states of aggregate functions.
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
 
-You can see an example of how to use the AggregatingMergeTree and Aggregate functions in the below video:
-<div class='vimeo-container'>
-<iframe width="1030" height="579" src="https://www.youtube.com/embed/pryhI4F_zqQ" title="Aggregation States in ClickHouse" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-</div>
-
 The engine processes all columns with the following types:
 
-## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md) {#aggregatefunction}
-## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md) {#simpleaggregatefunction}
+## [AggregateFunction](../../../sql-reference/data-types/aggregatefunction.md)
+## [SimpleAggregateFunction](../../../sql-reference/data-types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 
@@ -47,7 +37,7 @@ For a description of request parameters, see [request description](../../../sql-
 
 **Query clauses**
 
-When creating an `AggregatingMergeTree` table, the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required as when creating a `MergeTree` table.
+When creating an `AggregatingMergeTree` table the same [clauses](../../../engines/table-engines/mergetree-family/mergetree.md) are required, as when creating a `MergeTree` table.
 
 <details markdown="1">
 
@@ -72,19 +62,19 @@ All of the parameters have the same meaning as in `MergeTree`.
 ## SELECT and INSERT {#select-and-insert}
 
 To insert data, use [INSERT SELECT](../../../sql-reference/statements/insert-into.md) query with aggregate -State- functions.
-When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using the `-Merge` suffix.
+When selecting data from `AggregatingMergeTree` table, use `GROUP BY` clause and the same aggregate functions as when inserting data, but using `-Merge` suffix.
 
-In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. For example, if you dump data into `TabSeparated` format with a `SELECT` query, then this dump can be loaded back using an `INSERT` query.
+In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
 
 ## Example of an Aggregated Materialized View {#example-of-an-aggregated-materialized-view}
 
-The following example assumes that you have a database named `test`, so create it if it doesn't already exist:
+The following examples assumes that you have a database named `test` so make sure you create that if it doesn't already exist:
 
 ```sql
 CREATE DATABASE test;
 ```
 
-Now create the table `test.visits` that contains the raw data:
+We will create the table `test.visits` that contain the raw data:
 
 ``` sql
 CREATE TABLE test.visits
@@ -96,9 +86,9 @@ CREATE TABLE test.visits
 ) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
 ```
 
-Next, you need an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users. 
+Next, we need to create an `AggregatingMergeTree` table that will store `AggregationFunction`s that keep track of the total number of visits and the number of unique users. 
 
-Create an `AggregatingMergeTree` materialized view that watches the `test.visits` table, and uses the `AggregateFunction` type:
+`AggregatingMergeTree` materialized view that watches the `test.visits` table, and use the `AggregateFunction` type:
 
 ``` sql
 CREATE TABLE test.agg_visits (
@@ -110,7 +100,7 @@ CREATE TABLE test.agg_visits (
 ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID);
 ```
 
-Create a materialized view that populates `test.agg_visits` from `test.visits`:
+And then let's create a materialized view that populates `test.agg_visits` from `test.visits` :
 
 ```sql
 CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
@@ -123,7 +113,7 @@ FROM test.visits
 GROUP BY StartDate, CounterID;
 ```
 
-Insert data into the `test.visits` table:
+Inserting data into the `test.visits` table.
 
 ``` sql
 INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
@@ -132,7 +122,7 @@ INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
 
 The data is inserted in both `test.visits` and `test.agg_visits`.
 
-To get the aggregated data, execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.mv_visits`:
+To get the aggregated data, we need to execute a query such as `SELECT ... GROUP BY ...` from the materialized view `test.mv_visits`:
 
 ```sql
 SELECT
@@ -150,14 +140,14 @@ ORDER BY StartDate;
 └─────────────────────────┴────────┴───────┘
 ```
 
-Add another couple of records to `test.visits`, but this time try using a different timestamp for one of the records:
+And how about if we add another couple of records to `test.visits`, but this time we'll use a different timestamp for one of the records:
 
 ```sql
 INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
  VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
 ```
 
-Run the `SELECT` query again, which will return the following output:
+If we then run the `SELECT` query again, we'll see the following output:
 
 ```text
 ┌───────────────StartDate─┬─Visits─┬─Users─┐
@@ -166,6 +156,6 @@ Run the `SELECT` query again, which will return the following output:
 └─────────────────────────┴────────┴───────┘
 ```
 
-## Related Content {#related-content}
+## Related Content
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

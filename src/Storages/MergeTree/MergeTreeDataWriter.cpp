@@ -8,16 +8,12 @@
 #include <Interpreters/AggregationCommon.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/PreparedSets.h>
 #include <Processors/TTL/ITTLAlgorithm.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RowOrderOptimizer.h>
-#include <Storages/MergeTree/MergeTreeMarksLoader.h>
-#include <Common/ColumnsHashing.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
@@ -35,8 +31,6 @@
 #include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 #include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
-
-#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
@@ -60,32 +54,12 @@ namespace ProfileEvents
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool materialize_skip_indexes_on_insert;
-    extern const SettingsBool materialize_statistics_on_insert;
-    extern const SettingsBool optimize_on_insert;
-    extern const SettingsBool throw_on_max_partitions_per_insert_block;
-    extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
-    extern const SettingsFloat min_free_disk_ratio_to_perform_insert;
-}
-
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsBool assign_part_uuids;
-    extern const MergeTreeSettingsBool fsync_after_insert;
-    extern const MergeTreeSettingsBool fsync_part_directory;
-    extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;
-    extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
-    extern const MergeTreeSettingsBool optimize_row_order;
-    extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
-}
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_PARTS;
-    extern const int NOT_ENOUGH_SPACE;
 }
 
 namespace
@@ -104,11 +78,11 @@ void buildScatterSelector(
 
     size_t num_rows = columns[0]->size();
     size_t partitions_count = 0;
-    size_t throw_on_limit = context->getSettingsRef()[Setting::throw_on_max_partitions_per_insert_block];
+    size_t throw_on_limit = context->getSettingsRef().throw_on_max_partitions_per_insert_block;
 
     for (size_t i = 0; i < num_rows; ++i)
     {
-        Data::key_type key = ColumnsHashing::hash128(i, columns.size(), columns);
+        Data::key_type key = hash128(i, columns.size(), columns);
         typename Data::LookupResult it;
         bool inserted;
         partitions_map.emplace(key, it, inserted);
@@ -206,31 +180,19 @@ void updateTTL(
         ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
 }
 
-void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
-{
-    /// Iterate over required columns in the expression and check if block doesn't have this column.
-    /// It can happen only if required column is a actually a subcolumn of some column in the block.
-    /// In this case we should add this subcolumn to the block as a separate column so it can be
-    /// processed as a separate input in the expression actions.
-    for (const auto & required_column : expr->getRequiredColumns())
-    {
-        if (!block.has(required_column))
-            block.insert(block.getSubcolumnByName(required_column));
-    }
-}
-
 }
 
 void MergeTreeDataWriter::TemporaryPart::cancel()
 {
-    for (auto & stream : streams)
+    try
     {
-        stream.stream->cancel();
-        stream.finalizer.cancel();
+        /// An exception context is needed to proper delete write buffers without finalization
+        throw Exception(ErrorCodes::ABORTED, "Cancel temporary part.");
     }
-
-    /// The part is trying to delete leftovers here
-    part.reset();
+    catch (...)
+    {
+        *this = TemporaryPart{};
+    }
 }
 
 void MergeTreeDataWriter::TemporaryPart::finalize()
@@ -241,28 +203,6 @@ void MergeTreeDataWriter::TemporaryPart::finalize()
     part->getDataPartStorage().precommitTransaction();
     for (const auto & [_, projection] : part->getProjectionParts())
         projection->getDataPartStorage().precommitTransaction();
-}
-
-/// This method must be called after rename and commit of part
-/// because a correct path is required for the keys of caches.
-void MergeTreeDataWriter::TemporaryPart::prewarmCaches()
-{
-    size_t bytes_uncompressed = part->getBytesUncompressedOnDisk();
-
-    if (auto mark_cache = part->storage.getMarkCacheToPrewarm(bytes_uncompressed))
-    {
-        for (const auto & stream : streams)
-        {
-            auto marks = stream.stream->releaseCachedMarks();
-            addMarksToCache(*part, marks, mark_cache.get());
-        }
-    }
-
-    if (auto index_cache = part->storage.getPrimaryIndexCacheToPrewarm(bytes_uncompressed))
-    {
-        /// Index was already set during writing. Now move it to cache.
-        part->moveIndexToCache(*index_cache);
-    }
 }
 
 std::vector<AsyncInsertInfoPtr> scatterAsyncInsertInfoBySelector(AsyncInsertInfoPtr async_insert_info, const IColumn::Selector & selector, size_t partition_num)
@@ -337,67 +277,62 @@ BlocksWithPartition MergeTreeDataWriter::splitBlockIntoParts(
 
     ColumnRawPtrs partition_columns;
     partition_columns.reserve(partition_key_names_and_types.size());
-    bool all_partition_columns_are_equal = true;
     for (const auto & element : partition_key_names_and_types)
-    {
         partition_columns.emplace_back(block_copy.getByName(element.name).column.get());
-        if (!partition_columns.back()->hasEqualValues())
-            all_partition_columns_are_equal = false;
-    }
-    auto get_partition = [&](size_t row_num)
+
+    PODArray<size_t> partition_num_to_first_row;
+    IColumn::Selector selector;
+    buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts, context);
+
+    auto async_insert_info_with_partition = scatterAsyncInsertInfoBySelector(async_insert_info, selector, partition_num_to_first_row.size());
+
+    size_t partitions_count = partition_num_to_first_row.size();
+    result.reserve(partitions_count);
+
+    auto get_partition = [&](size_t num)
     {
         Row partition(partition_columns.size());
         for (size_t i = 0; i < partition_columns.size(); ++i)
-            partition[i] = (*partition_columns[i])[row_num];
+            partition[i] = (*partition_columns[i])[partition_num_to_first_row[num]];
         return partition;
     };
 
-    if (!all_partition_columns_are_equal)
-    {
-        PODArray<size_t> partition_num_to_first_row;
-        IColumn::Selector selector;
-        buildScatterSelector(partition_columns, partition_num_to_first_row, selector, max_parts, context);
-
-        auto async_insert_info_with_partition = scatterAsyncInsertInfoBySelector(async_insert_info, selector, partition_num_to_first_row.size());
-
-        size_t partitions_count = partition_num_to_first_row.size();
-        result.reserve(partitions_count);
-
-        for (size_t i = 0; i < partitions_count; ++i)
-            result.emplace_back(block.cloneEmpty(), get_partition(partition_num_to_first_row[i]));
-
-        for (size_t col = 0; col < block.columns(); ++col)
-        {
-            MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
-            for (size_t i = 0; i < partitions_count; ++i)
-                result[i].block.getByPosition(col).column = std::move(scattered[i]);
-        }
-
-        for (size_t i = 0; i < async_insert_info_with_partition.size(); ++i)
-        {
-            if (async_insert_info_with_partition[i] == nullptr)
-            {
-                LOG_ERROR(
-                    getLogger("MergeTreeDataWriter"),
-                    "The {}th element in async_insert_info_with_partition is nullptr. There are totally {} partitions in the insert. Selector content is ({}). Offsets content is ({})",
-                    i, partitions_count, fmt::join(selector.begin(), selector.end(), ","), fmt::join(async_insert_info->offsets.begin(), async_insert_info->offsets.end(), ","));
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error for async deduplicated insert, please check error logs");
-            }
-            result[i].offsets = std::move(async_insert_info_with_partition[i]->offsets);
-            result[i].tokens = std::move(async_insert_info_with_partition[i]->tokens);
-        }
-    }
-    else
+    if (partitions_count == 1)
     {
         /// A typical case is when there is one partition (you do not need to split anything).
         /// NOTE: returning a copy of the original block so that calculated partition key columns
         /// do not interfere with possible calculated primary key columns of the same name.
         result.emplace_back(Block(block), get_partition(0));
-        if (async_insert_info != nullptr)
+        if (!async_insert_info_with_partition.empty())
         {
-            result[0].offsets = std::move(async_insert_info->offsets);
-            result[0].tokens = std::move(async_insert_info->tokens);
+            result[0].offsets = std::move(async_insert_info_with_partition[0]->offsets);
+            result[0].tokens = std::move(async_insert_info_with_partition[0]->tokens);
         }
+        return result;
+    }
+
+    for (size_t i = 0; i < partitions_count; ++i)
+        result.emplace_back(block.cloneEmpty(), get_partition(i));
+
+    for (size_t col = 0; col < block.columns(); ++col)
+    {
+        MutableColumns scattered = block.getByPosition(col).column->scatter(partitions_count, selector);
+        for (size_t i = 0; i < partitions_count; ++i)
+            result[i].block.getByPosition(col).column = std::move(scattered[i]);
+    }
+
+    for (size_t i = 0; i < async_insert_info_with_partition.size(); ++i)
+    {
+        if (async_insert_info_with_partition[i] == nullptr)
+        {
+            LOG_ERROR(
+                getLogger("MergeTreeDataWriter"),
+                "The {}th element in async_insert_info_with_partition is nullptr. There are totally {} partitions in the insert. Selector content is ({}). Offsets content is ({})",
+                i, partitions_count, fmt::join(selector.begin(), selector.end(), ","), fmt::join(async_insert_info->offsets.begin(), async_insert_info->offsets.end(), ","));
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error for async deduplicated insert, please check error logs");
+        }
+        result[i].offsets = std::move(async_insert_info_with_partition[i]->offsets);
+        result[i].tokens = std::move(async_insert_info_with_partition[i]->tokens);
     }
 
     return result;
@@ -430,8 +365,7 @@ Block MergeTreeDataWriter::mergeBlock(
             case MergeTreeData::MergingParams::Collapsing:
                 return std::make_shared<CollapsingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.sign_column,
-                    false, block_size + 1, /*block_size_bytes=*/0, getLogger("MergeTreeDataWriter"), /*out_row_sources_buf_=*/ nullptr,
-                    /*use_average_block_sizes=*/ false, /*throw_if_invalid_sign=*/ true);
+                    false, block_size + 1, /*block_size_bytes=*/0, getLogger("MergeTreeDataWriter"));
             case MergeTreeData::MergingParams::Summing:
                 return std::make_shared<SummingSortedAlgorithm>(
                     block, 1, sort_description, merging_params.columns_to_sum,
@@ -513,11 +447,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     MergeTreePartition partition(block_with_partition.partition);
 
-    bool optimize_on_insert = context->getSettingsRef()[Setting::optimize_on_insert] && data.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-    UInt32 new_part_level = optimize_on_insert ? 1 : 0;
-
-    MergeTreePartInfo new_part_info(partition.getID(metadata_snapshot->getPartitionKey().sample_block), block_number, block_number, new_part_level);
-
+    MergeTreePartInfo new_part_info(partition.getID(metadata_snapshot->getPartitionKey().sample_block), block_number, block_number, 0);
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
@@ -554,34 +484,24 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     temp_part.temporary_directory_lock = data.getTemporaryPartDirectoryHolder(part_dir);
 
     MergeTreeIndices indices;
-    if (context->getSettingsRef()[Setting::materialize_skip_indexes_on_insert])
+    if (context->getSettingsRef().materialize_skip_indexes_on_insert)
         indices = MergeTreeIndexFactory::instance().getMany(metadata_snapshot->getSecondaryIndices());
 
     ColumnsStatistics statistics;
-    if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
+    if (context->getSettingsRef().materialize_statistics_on_insert)
         statistics = MergeTreeStatisticsFactory::instance().getMany(metadata_snapshot->getColumns());
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
-    {
-        auto expr = data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices);
-        addSubcolumnsFromSortingKeyAndSkipIndicesExpression(expr, block);
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, indices)->execute(block);
-    }
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
     for (size_t i = 0; i < sort_columns_size; ++i)
-    {
-        if (!reverse_flags.empty() && reverse_flags[i])
-            sort_description.emplace_back(sort_columns[i], -1, 1);
-        else
-            sort_description.emplace_back(sort_columns[i], 1, 1);
-    }
+        sort_description.emplace_back(sort_columns[i], 1, 1);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocks);
 
@@ -601,7 +521,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if ((*data.getSettings())[MergeTreeSetting::optimize_row_order]
+    if (data.getSettings()->optimize_row_order
             && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
         RowOrderOptimizer::optimize(block, sort_description, perm);
@@ -609,7 +529,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     }
 
     Names partition_key_columns = metadata_snapshot->getPartitionKey().column_names;
-    if (context->getSettingsRef()[Setting::optimize_on_insert])
+    if (context->getSettingsRef().optimize_on_insert)
     {
         ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterMergingBlocksMicroseconds);
         block = mergeBlock(std::move(block), sort_description, partition_key_columns, perm_ptr, data.merging_params);
@@ -633,42 +553,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     VolumePtr volume = data.getStoragePolicy()->getVolume(0);
     VolumePtr data_part_volume = createVolumeFromReservation(reservation, volume);
 
-    const auto & global_settings = context->getSettingsRef();
-    const auto & data_settings = data.getSettings();
-
-    const UInt64 & min_bytes_to_perform_insert =
-            (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert].changed
-            ? (*data_settings)[MergeTreeSetting::min_free_disk_bytes_to_perform_insert]
-            : global_settings[Setting::min_free_disk_bytes_to_perform_insert];
-
-    const Float32 & min_ratio_to_perform_insert =
-        (*data_settings)[MergeTreeSetting::min_free_disk_ratio_to_perform_insert].changed
-        ? (*data_settings)[MergeTreeSetting::min_free_disk_ratio_to_perform_insert]
-        : global_settings[Setting::min_free_disk_ratio_to_perform_insert];
-
-    if (min_bytes_to_perform_insert > 0 || min_ratio_to_perform_insert > 0.0)
-    {
-        const auto & disk = data_part_volume->getDisk();
-        const UInt64 & total_disk_bytes = disk->getTotalSpace().value_or(0);
-        const UInt64 & free_disk_bytes = disk->getAvailableSpace().value_or(0);
-
-        const UInt64 & min_bytes_from_ratio = static_cast<UInt64>(min_ratio_to_perform_insert * total_disk_bytes);
-        const UInt64 & needed_free_bytes = std::max(min_bytes_to_perform_insert, min_bytes_from_ratio);
-
-        if (needed_free_bytes > free_disk_bytes)
-        {
-            throw Exception(
-                ErrorCodes::NOT_ENOUGH_SPACE,
-                "Could not perform insert: less than {} free bytes left in the disk space ({}). "
-                "Configure this limit with user settings {} or {}",
-                needed_free_bytes,
-                free_disk_bytes,
-                "min_free_disk_bytes_to_perform_insert",
-                "min_free_disk_ratio_to_perform_insert");
-        }
-    }
-
-    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir, getReadSettings())
+    auto new_data_part = data.getDataPartBuilder(part_name, data_part_volume, part_dir)
         .withPartFormat(data.choosePartFormat(expected_size, block.rows()))
         .withPartInfo(new_part_info)
         .build();
@@ -676,19 +561,14 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     auto data_part_storage = new_data_part->getDataPartStoragePtr();
     data_part_storage->beginTransaction();
 
-    if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
+    if (data.storage_settings.get()->assign_part_uuids)
         new_data_part->uuid = UUIDHelpers::generateV4();
 
-    SerializationInfo::Settings settings{(*data_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
+    const auto & data_settings = data.getSettings();
+
+    SerializationInfo::Settings settings{data_settings->ratio_of_defaults_for_sparse_serialization, true};
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
-
-    for (const auto & [column_name, _] : columns)
-    {
-        auto & column = block.getByName(column_name);
-        if (infos.getKind(column_name) != ISerialization::Kind::SPARSE)
-            column.column = recursiveRemoveSparse(column.column);
-    }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
     new_data_part->rows_count = block.rows();
@@ -702,22 +582,24 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
     SyncGuardPtr sync_guard;
-
-    /// The name could be non-unique in case of stale files from previous runs.
-    String full_path = new_data_part->getDataPartStorage().getFullPath();
-
-    if (new_data_part->getDataPartStorage().exists())
+    if (new_data_part->isStoredOnDisk())
     {
-        LOG_WARNING(log, "Removing old temporary directory {}", full_path);
-        data_part_storage->removeRecursive();
-    }
+        /// The name could be non-unique in case of stale files from previous runs.
+        String full_path = new_data_part->getDataPartStorage().getFullPath();
 
-    data_part_storage->createDirectories();
+        if (new_data_part->getDataPartStorage().exists())
+        {
+            LOG_WARNING(log, "Removing old temporary directory {}", full_path);
+            data_part_storage->removeRecursive();
+        }
 
-    if ((*data_settings)[MergeTreeSetting::fsync_part_directory])
-    {
-        const auto disk = data_part_volume->getDisk();
-        sync_guard = disk->getDirectorySyncGuard(full_path);
+        data_part_storage->createDirectories();
+
+        if (data.getSettings()->fsync_part_directory)
+        {
+            const auto disk = data_part_volume->getDisk();
+            sync_guard = disk->getDirectorySyncGuard(full_path);
+        }
     }
 
     if (metadata_snapshot->hasRowsTTL())
@@ -742,13 +624,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
-    auto index_granularity_ptr = createMergeTreeIndexGranularity(
-        block.rows(),
-        block.bytes(),
-        *data.getSettings(),
-        new_data_part->index_granularity_info,
-        /*blocks_are_granules=*/ false);
-
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
@@ -756,11 +631,9 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
         indices,
         statistics,
         compression_codec,
-        std::move(index_granularity_ptr),
         context->getCurrentTransaction() ? context->getCurrentTransaction()->tid : Tx::PrehistoricTID,
-        block.bytes(),
-        /*reset_columns=*/ false,
-        /*blocks_are_granules_size=*/ false,
+        false,
+        false,
         context->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
@@ -776,7 +649,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
         if (projection_block.rows())
         {
-            auto proj_temp_part = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
+            auto proj_temp_part
+                = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false);
             new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part.part));
             for (auto & stream : proj_temp_part.streams)
                 temp_part.streams.emplace_back(std::move(stream));
@@ -785,7 +659,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempPartImpl(
 
     auto finalizer = out->finalizePartAsync(
         new_data_part,
-        (*data_settings)[MergeTreeSetting::fsync_after_insert],
+        data_settings->fsync_after_insert,
         nullptr, nullptr);
 
     temp_part.part = new_data_part;
@@ -827,38 +701,35 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     new_data_part->is_temp = is_temp;
 
     NamesAndTypesList columns = metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames());
-    SerializationInfo::Settings settings{(*data.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization], true};
+    SerializationInfo::Settings settings{data.getSettings()->ratio_of_defaults_for_sparse_serialization, true};
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
 
-    /// The name could be non-unique in case of stale files from previous runs.
-    if (projection_part_storage->exists())
+    if (new_data_part->isStoredOnDisk())
     {
-        LOG_WARNING(log, "Removing old temporary directory {}", projection_part_storage->getFullPath());
-        projection_part_storage->removeRecursive();
-    }
+        /// The name could be non-unique in case of stale files from previous runs.
+        if (projection_part_storage->exists())
+        {
+            LOG_WARNING(log, "Removing old temporary directory {}", projection_part_storage->getFullPath());
+            projection_part_storage->removeRecursive();
+        }
 
-    projection_part_storage->createDirectories();
+        projection_part_storage->createDirectories();
+    }
 
     /// If we need to calculate some columns to sort.
     if (metadata_snapshot->hasSortingKey() || metadata_snapshot->hasSecondaryIndices())
         data.getSortingKeyAndSkipIndicesExpression(metadata_snapshot, {})->execute(block);
 
     Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-    std::vector<bool> reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     SortDescription sort_description;
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
     for (size_t i = 0; i < sort_columns_size; ++i)
-    {
-        if (!reverse_flags.empty() && reverse_flags[i])
-            sort_description.emplace_back(sort_columns[i], -1, 1);
-        else
-            sort_description.emplace_back(sort_columns[i], 1, 1);
-    }
+        sort_description.emplace_back(sort_columns[i], 1, 1);
 
     ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocks);
 
@@ -878,7 +749,7 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if ((*data.getSettings())[MergeTreeSetting::optimize_row_order]
+    if (data.getSettings()->optimize_row_order
             && data.merging_params.mode == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
         RowOrderOptimizer::optimize(block, sort_description, perm);
@@ -898,13 +769,6 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.getContext()->chooseCompressionCodec(0, 0);
 
-    auto index_granularity_ptr = createMergeTreeIndexGranularity(
-        block.rows(),
-        block.bytes(),
-        *data.getSettings(),
-        new_data_part->index_granularity_info,
-        /*blocks_are_granules=*/ false);
-
     auto out = std::make_unique<MergedBlockOutputStream>(
         new_data_part,
         metadata_snapshot,
@@ -913,12 +777,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeProjectionPartImpl(
         /// TODO(hanfei): It should be helpful to write statistics for projection result.
         ColumnsStatistics{},
         compression_codec,
-        std::move(index_granularity_ptr),
         Tx::PrehistoricTID,
-        block.bytes(),
-        /*reset_columns=*/ false,
-        /*blocks_are_granules_size=*/ false,
-        data.getContext()->getWriteSettings());
+        false, false, data.getContext()->getWriteSettings());
 
     out->writeWithPermutation(block, perm_ptr);
     auto finalizer = out->finalizePartAsync(new_data_part, false);
@@ -955,11 +815,8 @@ MergeTreeDataWriter::TemporaryPart MergeTreeDataWriter::writeTempProjectionPart(
     size_t block_num)
 {
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
-    auto new_part = writeProjectionPartImpl(
-        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
-
-    new_part.part->temp_projection_block_number = block_num;
-    return new_part;
+    return writeProjectionPartImpl(
+        part_name, true /* is_temp */, parent_part, data, log, std::move(block), projection, /*merge_is_needed=*/true);
 }
 
 }

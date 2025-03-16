@@ -1,8 +1,7 @@
 ---
-description: 'Documentation for Offset'
-sidebar_label: 'OFFSET'
-slug: /sql-reference/statements/select/offset
-title: 'OFFSET FETCH Clause'
+slug: /en/sql-reference/statements/select/offset
+sidebar_label: OFFSET
+title: "OFFSET FETCH Clause"
 ---
 
 `OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.
@@ -39,7 +38,7 @@ According to the standard, the `OFFSET` clause must come before the `FETCH` clau
 The real offset can also depend on the [offset](../../../operations/settings/settings.md#offset) setting.
 :::
 
-## Examples {#examples}
+## Examples
 
 Input table:
 

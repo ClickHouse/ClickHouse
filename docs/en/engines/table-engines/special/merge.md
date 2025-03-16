@@ -1,10 +1,7 @@
 ---
-description: 'The `Merge` engine (not to be confused with `MergeTree`) does not store
-  data itself, but allows reading from any number of other tables simultaneously.'
-sidebar_label: 'Merge'
+slug: /en/engines/table-engines/special/merge
 sidebar_position: 30
-slug: /engines/table-engines/special/merge
-title: 'Merge Table Engine'
+sidebar_label: Merge
 ---
 
 # Merge Table Engine
@@ -19,16 +16,16 @@ Reading is automatically parallelized. Writing to a table is not supported. When
 CREATE TABLE ... Engine=Merge(db_name, tables_regexp)
 ```
 
-## Engine Parameters {#engine-parameters}
+## Engine Parameters
 
-### db_name {#db_name}
+### db_name
 
 `db_name` — Possible values:
     - database name,
     - constant expression that returns a string with a database name, for example, `currentDatabase()`,
     - `REGEXP(expression)`, where `expression` is a regular expression to match the DB names.
 
-### tables_regexp {#tables_regexp}
+### tables_regexp
 
 `tables_regexp` — A regular expression to match the table names in the specified DB or DBs.
 

@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -305,33 +304,6 @@ namespace
 
         type_indexes.erase(TypeIndex::Int64);
         type_indexes.erase(TypeIndex::UInt64);
-    }
-
-    /// if setting 'try_infer_variant' is true then we convert to type variant.
-    void transformVariant(DataTypes & data_types, TypeIndexesSet & type_indexes)
-    {
-        if (checkIfTypesAreEqual(data_types))
-            return;
-
-        DataTypes variant_types;
-        for (const auto & type : data_types)
-        {
-            if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
-            {
-                const auto & current_variants = variant_type->getVariants();
-                variant_types.insert(variant_types.end(), current_variants.begin(), current_variants.end());
-            }
-            else
-            {
-                variant_types.push_back(type);
-            }
-        }
-
-        auto variant_type = std::make_shared<DataTypeVariant>(variant_types);
-
-        for (auto & type : data_types)
-            type = variant_type;
-        type_indexes = {TypeIndex::Variant};
     }
 
     /// If we have only date/datetimes types (Date/DateTime/DateTime64), convert all of them to the common type,
@@ -680,11 +652,7 @@ namespace
                 transformDatesAndDateTimes(data_types, type_indexes);
 
             if constexpr (!is_json)
-            {
-                if (settings.try_infer_variant)
-                    transformVariant(data_types, type_indexes);
                 return;
-            }
 
             /// Check settings specific for JSON formats.
 
@@ -702,10 +670,6 @@ namespace
 
             if (settings.json.try_infer_objects_as_tuples)
                 mergeJSONPaths(data_types, type_indexes, settings, json_info);
-
-            if (settings.try_infer_variant)
-                transformVariant(data_types, type_indexes);
-
         };
 
         auto transform_complex_types = [&](DataTypes & data_types, TypeIndexesSet & type_indexes)
@@ -718,11 +682,7 @@ namespace
             transformNothingComplexTypes(data_types, type_indexes);
 
             if constexpr (!is_json)
-            {
-                if (settings.try_infer_variant)
-                    transformVariant(data_types, type_indexes);
                 return;
-            }
 
             /// Convert JSON tuples with same nested types to arrays.
             transformTuplesWithEqualNestedTypesToArrays(data_types, type_indexes);
@@ -735,9 +695,6 @@ namespace
 
             if (json_info && json_info->allow_merging_named_tuples)
                 mergeNamedTuples(data_types, type_indexes, settings, json_info);
-
-            if (settings.try_infer_variant)
-                transformVariant(data_types, type_indexes);
         };
 
         transformTypesRecursively(types, transform_simple_types, transform_complex_types);
@@ -904,6 +861,7 @@ namespace
 
             if (checkIfTypesAreEqual(nested_types_copy))
                 return std::make_shared<DataTypeArray>(nested_types_copy.back());
+
             return std::make_shared<DataTypeTuple>(nested_types);
         }
         else
@@ -978,7 +936,7 @@ namespace
         if (settings.try_infer_integers)
         {
             /// If we read from String, we can do it in a more efficient way.
-            if (auto * /*string_buf*/ _ = dynamic_cast<ReadBufferFromString *>(&buf))
+            if (auto * string_buf = dynamic_cast<ReadBufferFromString *>(&buf))
             {
                 /// Remember the pointer to the start of the number to rollback to it.
                 /// We can safely get back to the start of the number, because we read from a string and we didn't reach eof.
@@ -1349,7 +1307,7 @@ namespace
                     return std::make_shared<DataTypeNothing>();
                 return makeNullable(std::make_shared<DataTypeNothing>());
             }
-            if (checkStringCaseInsensitive("an", buf))
+            else if (checkStringCaseInsensitive("an", buf))
                 return std::make_shared<DataTypeFloat64>();
         }
 
@@ -1502,15 +1460,6 @@ void transformFinalInferredJSONTypeIfNeededImpl(DataTypePtr & data_type, const F
 
         return;
     }
-
-    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(data_type.get()))
-    {
-        auto nested_types = variant_type->getVariants();
-        for (auto & nested_type : nested_types)
-            transformFinalInferredJSONTypeIfNeededImpl(nested_type, settings, json_info, remain_nothing_types);
-        data_type = std::make_shared<DataTypeVariant>(nested_types);
-        return;
-    }
 }
 
 void transformFinalInferredJSONTypeIfNeeded(DataTypePtr & data_type, const FormatSettings & settings, JSONInferenceInfo * json_info)
@@ -1573,7 +1522,7 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
     return type;
 }
 
-DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & settings)
+DataTypePtr makeNullableRecursively(DataTypePtr type)
 {
     if (!type)
         return nullptr;
@@ -1586,22 +1535,8 @@ DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & set
     if (which.isArray())
     {
         const auto * array_type = assert_cast<const DataTypeArray *>(type.get());
-        auto nested_type = makeNullableRecursively(array_type->getNestedType(), settings);
+        auto nested_type = makeNullableRecursively(array_type->getNestedType());
         return nested_type ? std::make_shared<DataTypeArray>(nested_type) : nullptr;
-    }
-
-    if (which.isVariant())
-    {
-        const auto * variant_type = assert_cast<const DataTypeVariant *>(type.get());
-        DataTypes nested_types;
-        for (const auto & nested_type: variant_type->getVariants())
-        {
-            if (!nested_type->lowCardinality() && nested_type->haveSubtypes())
-                nested_types.push_back(makeNullableRecursively(nested_type, settings));
-            else
-                nested_types.push_back(nested_type);
-        }
-        return std::make_shared<DataTypeVariant>(nested_types);
     }
 
     if (which.isTuple())
@@ -1610,7 +1545,7 @@ DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & set
         DataTypes nested_types;
         for (const auto & element : tuple_type->getElements())
         {
-            auto nested_type = makeNullableRecursively(element, settings);
+            auto nested_type = makeNullableRecursively(element);
             if (!nested_type)
                 return nullptr;
             nested_types.push_back(nested_type);
@@ -1625,15 +1560,15 @@ DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & set
     if (which.isMap())
     {
         const auto * map_type = assert_cast<const DataTypeMap *>(type.get());
-        auto key_type = makeNullableRecursively(map_type->getKeyType(), settings);
-        auto value_type = makeNullableRecursively(map_type->getValueType(), settings);
+        auto key_type = makeNullableRecursively(map_type->getKeyType());
+        auto value_type = makeNullableRecursively(map_type->getValueType());
         return key_type && value_type ? std::make_shared<DataTypeMap>(removeNullable(key_type), value_type) : nullptr;
     }
 
     if (which.isLowCardinality())
     {
         const auto * lc_type = assert_cast<const DataTypeLowCardinality *>(type.get());
-        auto nested_type = makeNullableRecursively(lc_type->getDictionaryType(), settings);
+        auto nested_type = makeNullableRecursively(lc_type->getDictionaryType());
         return nested_type ? std::make_shared<DataTypeLowCardinality>(nested_type) : nullptr;
     }
 
@@ -1645,17 +1580,14 @@ DataTypePtr makeNullableRecursively(DataTypePtr type, const FormatSettings & set
         return std::make_shared<DataTypeObjectDeprecated>(object_type->getSchemaFormat(), true);
     }
 
-    if (which.isObject() && !settings.schema_inference_make_json_columns_nullable)
-        return type;
-
     return makeNullableSafe(type);
 }
 
-NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header, const FormatSettings & settings)
+NamesAndTypesList getNamesAndRecursivelyNullableTypes(const Block & header)
 {
     NamesAndTypesList result;
     for (auto & [name, type] : header.getNamesAndTypesList())
-        result.emplace_back(name, makeNullableRecursively(type, settings));
+        result.emplace_back(name, makeNullableRecursively(type));
     return result;
 }
 

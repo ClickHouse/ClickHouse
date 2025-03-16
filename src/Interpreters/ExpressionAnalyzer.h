@@ -1,14 +1,13 @@
 #pragma once
 
-#include <Columns/FilterDescription.h>
 #include <Core/ColumnNumbers.h>
-#include <Interpreters/ActionsMatcher.h>
+#include <Columns/FilterDescription.h>
+#include <Interpreters/ActionsVisitor.h>
 #include <Interpreters/AggregateDescription.h>
-#include <Interpreters/ArrayJoin.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/WindowDescription.h>
+#include <Interpreters/JoinUtils.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
@@ -39,23 +38,12 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 class ArrayJoinAction;
 using ArrayJoinActionPtr = std::shared_ptr<ArrayJoinAction>;
 
-class Set;
-using SetPtr = std::shared_ptr<Set>;
-
-class QueryPlan;
-
-namespace ExpressionActionsChainSteps
-{
-struct Step;
-}
-
 /// Create columns in block or return false if not possible
 bool sanitizeBlock(Block & block, bool throw_if_cannot_create_column = false);
 
 /// ExpressionAnalyzer sources, intermediates and results. It splits data and logic, allows to test them separately.
 struct ExpressionAnalyzerData
 {
-    ExpressionAnalyzerData();
     ~ExpressionAnalyzerData();
 
     PreparedSetsPtr prepared_sets;
@@ -102,6 +90,7 @@ private:
     /// Extracts settings to enlight which are used (and avoid copy of others).
     struct ExtractedSettings
     {
+        const bool use_index_for_in_with_subqueries;
         const SizeLimits size_limits_for_set;
         const SizeLimits size_limits_for_set_used_with_index;
         const UInt64 distributed_group_by_no_merge;
@@ -138,7 +127,7 @@ public:
       * That is, you need to call getSetsWithSubqueries after all calls of `append*` or `getActions`
       *  and create all the returned sets before performing the actions.
       */
-    PreparedSetsPtr & getPreparedSets() { return prepared_sets; }
+    PreparedSetsPtr getPreparedSets() { return prepared_sets; }
 
     /// Get intermediates for tests
     const ExpressionAnalyzerData & getAnalyzedData() const { return *this; }
@@ -185,7 +174,7 @@ protected:
     /// Find global subqueries in the GLOBAL IN/JOIN sections. Fills in external_tables.
     void initGlobalSubqueriesAndExternalTables(bool do_global, bool is_explain);
 
-    ArrayJoin addMultipleArrayJoinAction(ActionsDAG & actions, bool is_left) const;
+    ArrayJoinActionPtr addMultipleArrayJoinAction(ActionsDAG & actions, bool is_left) const;
 
     void getRootActions(const ASTPtr & ast, bool no_makeset_for_subqueries, ActionsDAG & actions, bool only_consts = false);
 
@@ -245,7 +234,7 @@ struct ExpressionAnalysisResult
     bool use_grouping_set_key = false;
 
     ActionsAndProjectInputsFlagPtr before_array_join;
-    std::optional<ArrayJoin> array_join;
+    ArrayJoinActionPtr array_join;
     ActionsAndProjectInputsFlagPtr before_join;
     ActionsAndProjectInputsFlagPtr converting_join_columns;
     JoinPtr join;
@@ -399,7 +388,7 @@ private:
       */
 
     /// Before aggregation:
-    std::optional<ArrayJoin> appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types);
+    ArrayJoinActionPtr appendArrayJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & before_array_join, bool only_types);
     bool appendJoinLeftKeys(ExpressionActionsChain & chain, bool only_types);
     JoinPtr appendJoin(ExpressionActionsChain & chain, ActionsAndProjectInputsFlagPtr & converting_join_columns);
 
@@ -408,12 +397,11 @@ private:
     ActionsAndProjectInputsFlagPtr appendPrewhere(ExpressionActionsChain & chain, bool only_types);
     bool appendWhere(ExpressionActionsChain & chain, bool only_types);
     bool appendGroupBy(ExpressionActionsChain & chain, bool only_types, bool optimize_aggregation_in_order, ManyExpressionActions &);
-    void validateGroupByKeyType(const DataTypePtr & key_type) const;
     void appendAggregateFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
     void appendWindowFunctionsArguments(ExpressionActionsChain & chain, bool only_types);
 
     void appendExpressionsAfterWindowFunctions(ExpressionActionsChain & chain, bool only_types);
-    void appendSelectSkipWindowExpressions(ExpressionActionsChainSteps::Step & step, ASTPtr const & node);
+    void appendSelectSkipWindowExpressions(ExpressionActionsChain::Step & step, ASTPtr const & node);
 
     void appendGroupByModifiers(ActionsDAG & before_aggregation, ExpressionActionsChain & chain, bool only_types);
 
@@ -421,7 +409,6 @@ private:
     bool appendHaving(ExpressionActionsChain & chain, bool only_types);
     ///  appendSelect
     ActionsAndProjectInputsFlagPtr appendOrderBy(ExpressionActionsChain & chain, bool only_types, bool optimize_read_in_order, ManyExpressionActions &);
-    void validateOrderByKeyType(const DataTypePtr & key_type) const;
     bool appendLimitBy(ExpressionActionsChain & chain, bool only_types);
     ///  appendProjectResult
 };

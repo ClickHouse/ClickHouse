@@ -32,36 +32,26 @@ void ASTDataType::updateTreeHashImpl(SipHash & hash_state, bool) const
     /// Children are hashed automatically.
 }
 
-void ASTDataType::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+void ASTDataType::formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_function : "") << name;
+    settings.ostr << (settings.hilite ? hilite_function : "") << name;
 
     if (arguments && !arguments->children.empty())
     {
-        ostr << '(' << (settings.hilite ? hilite_none : "");
+        settings.ostr << '(' << (settings.hilite ? hilite_none : "");
 
-        if (!settings.one_line && settings.print_pretty_type_names && name == "Tuple")
+        for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
         {
-            ++frame.indent;
-            std::string indent_str = settings.one_line ? "" : "\n" + std::string(4 * frame.indent, ' ');
-            for (size_t i = 0, size = arguments->children.size(); i < size; ++i)
-            {
-                if (i != 0)
-                    ostr << ',';
-                ostr << indent_str;
-                arguments->children[i]->format(ostr, settings, state, frame);
-            }
-        }
-        else
-        {
-            frame.expression_list_prepend_whitespace = false;
-            arguments->format(ostr, settings, state, frame);
+            if (i != 0)
+                settings.ostr << ", ";
+
+            arguments->children[i]->formatImpl(settings, state, frame);
         }
 
-        ostr << (settings.hilite ? hilite_function : "") << ')';
+        settings.ostr << (settings.hilite ? hilite_function : "") << ')';
     }
 
-    ostr << (settings.hilite ? hilite_none : "");
+    settings.ostr << (settings.hilite ? hilite_none : "");
 }
 
 }

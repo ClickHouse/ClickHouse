@@ -1,9 +1,6 @@
 ---
-description: 'Calculates the maximum from `value` array according to the keys specified
-  in the `key` array.'
+slug: /en/sql-reference/aggregate-functions/reference/maxmap
 sidebar_position: 165
-slug: /sql-reference/aggregate-functions/reference/maxmap
-title: 'maxMap'
 ---
 
 # maxMap

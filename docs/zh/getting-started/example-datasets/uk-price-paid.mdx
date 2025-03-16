@@ -42,9 +42,9 @@ ORDER BY (postcode1, postcode2, addr1, addr2);
 
 - 将`postcode` 拆分为两个不同的列 - `postcode1` 和 `postcode2`，因为这更适合存储和查询 
 - 将`time` 字段转换为日期因为它只包含 00:00 时间 
-- 忽略 [UUid](/zh/sql-reference/data-types/uuid.md) 字段，因为我们不需要它进行分析
-- 使用 [transform](/zh/sql-reference/functions/other-functions.md#transform) 函数将 `Enum` 字段 `type` 和 `duration` 转换为更易读的 `Enum` 字段
-- 将 `is_new` 字段从单字符串（` Y`/`N`) 到 [UInt8](/zh/sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-uint256-int8-int16-int32-int64 -int128-int256) 字段为 0 或 1
+- 忽略 [UUid](/docs/zh/sql-reference/data-types/uuid.md) 字段，因为我们不需要它进行分析 
+- 使用 [transform](/docs/zh/sql-reference/functions/other-functions.md#transform) 函数将 `Enum` 字段 `type` 和 `duration` 转换为更易读的 `Enum` 字段 
+- 将 `is_new` 字段从单字符串（` Y`/`N`) 到 [UInt8](/docs/zh/sql-reference/data-types/int-uint.md#uint8-uint16-uint32-uint64-uint256-int8-int16-int32-int64 -int128-int256) 字段为 0 或 1 
 - 删除最后两列，因为它们都具有相同的值（即 0）
 
 `url` 函数将来自网络服务器的数据流式传输到 ClickHouse 表中。以下命令将 500 万行插入到 `uk_price_paid` 表中：
@@ -342,7 +342,7 @@ LIMIT 100
 
 ## 使用 Projection 加速查询 {#speedup-with-projections}
 
-[Projections](/zh/sql-reference/statements/alter/projection.mdx) 允许我们通过存储任意格式的预先聚合的数据来提高查询速度。在此示例中，我们创建了一个按年份、地区和城镇分组的房产的平均价格、总价格和数量的 Projection。在执行时，如果 ClickHouse 认为 Projection 可以提高查询的性能，它将使用 Projection（何时使用由 ClickHouse 决定）。
+[Projections](/docs/zh/sql-reference/statements/alter/projection.mdx) 允许我们通过存储任意格式的预先聚合的数据来提高查询速度。在此示例中，我们创建了一个按年份、地区和城镇分组的房产的平均价格、总价格和数量的 Projection。在执行时，如果 ClickHouse 认为 Projection 可以提高查询的性能，它将使用 Projection（何时使用由 ClickHouse 决定）。
 
 ### 构建投影{#build-projection}
 
@@ -447,4 +447,4 @@ With projection: 100 rows in set. Elapsed: 0.336 sec. Processed 17.32 thousand r
 
 ### 在 Playground 上测试{#playground}
 
-也可以在 [Online Playground](https://sql.clickhouse.com?query_id=TRCWH5ZETY4SEEK8ISCCAX) 上找到此数据集。
+也可以在 [Online Playground](https://play.clickhouse.com/play?user=play#U0VMRUNUIHRvd24sIGRpc3RyaWN0LCBjb3VudCgpIEFTIGMsIHJvdW5kKGF2ZyhwcmljZSkpIEFTIHByaWNlLCBiYXIocHJpY2UsIDAsIDUwMDAwMDAsIDEwMCkgRlJPTSB1a19wcmljZV9wYWlkIFdIRVJFIGRhdGUgPj0gJzIwMjAtMDEtMDEnIEdST1VQIEJZIHRvd24sIGRpc3RyaWN0IEhBVklORyBjID49IDEwMCBPUkRFUiBCWSBwcmljZSBERVNDIExJTUlUIDEwMA==) 上找到此数据集。

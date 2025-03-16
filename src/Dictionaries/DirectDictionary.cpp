@@ -20,10 +20,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsBool dictionary_use_async_executor;
-}
 
 namespace ErrorCodes
 {
@@ -216,10 +212,12 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getColumn(
         IColumn::Filter & default_mask = std::get<RefFilter>(default_or_filter).get();
         return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, default_mask).front();
     }
-
-    const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
-    const Columns & columns = Columns({default_values_column});
-    return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
+    else
+    {
+        const ColumnPtr & default_values_column = std::get<RefDefault>(default_or_filter).get();
+        const Columns & columns= Columns({default_values_column});
+        return getColumns({attribute_name}, {attribute_type}, key_columns, key_types, columns).front();
+    }
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -305,7 +303,8 @@ ColumnPtr DirectDictionary<dictionary_key_type>::getHierarchy(
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
-    return nullptr;
+    else
+        return nullptr;
 }
 
 template <DictionaryKeyType dictionary_key_type>
@@ -322,7 +321,8 @@ ColumnUInt8::Ptr DirectDictionary<dictionary_key_type>::isInHierarchy(
         found_count.fetch_add(keys_found, std::memory_order_relaxed);
         return result;
     }
-    return nullptr;
+    else
+        return nullptr;
 }
 
 template <typename TExecutor = PullingPipelineExecutor>
@@ -334,7 +334,6 @@ public:
         , pipeline(std::move(pipeline_))
         , executor(pipeline)
     {
-        pipeline.setConcurrencyControl(false);
     }
 
     std::string getName() const override
@@ -379,6 +378,7 @@ Pipe DirectDictionary<dictionary_key_type>::getSourcePipe(
             ids.emplace_back(key);
 
         auto pipeline = source_ptr->loadIds(ids);
+
         if (use_async_executor)
             pipe = Pipe(std::make_shared<SourceFromQueryPipeline<PullingAsyncPipelineExecutor>>(std::move(pipeline)));
         else
@@ -414,7 +414,7 @@ void DirectDictionary<dictionary_key_type>::applySettings(const Settings & setti
     if (const auto * clickhouse_source = dynamic_cast<const ClickHouseDictionarySource *>(source_ptr.get()))
     {
         /// Only applicable for CLICKHOUSE dictionary source.
-        use_async_executor = settings[Setting::dictionary_use_async_executor] && clickhouse_source->isLocal();
+        use_async_executor = settings.dictionary_use_async_executor && clickhouse_source->isLocal();
     }
 }
 

@@ -1,14 +1,12 @@
-import math
 import os
-
+import math
 import pytest
 
-from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
-from helpers.external_sources import SourceMongoURI
-from helpers.config_cluster import mongo_pass
-
 from .common import *
+
+from helpers.cluster import ClickHouseCluster
+from helpers.dictionary import Field, Row, Dictionary, DictionaryStructure, Layout
+from helpers.external_sources import SourceMongoURI
 
 test_name = "mongo_uri"
 
@@ -28,13 +26,12 @@ def source(secure_connection, cluster):
     return SourceMongoURI(
         "MongoDB",
         "localhost",
-        cluster.mongo_secure_port if secure_connection else cluster.mongo_port,
-        "mongo_secure" if secure_connection else "mongo1",
-        27017,
+        cluster.mongo_port,
+        cluster.mongo_host,
+        "27017",
         "root",
-        mongo_pass,
+        "clickhouse",
         secure=secure_connection,
-        legacy=False,
     )
 
 
@@ -48,13 +45,11 @@ def simple_tester(source):
 
 @pytest.fixture(scope="module")
 def main_config(secure_connection):
-    main_config = [os.path.join("configs", "mongo", "new.xml")]
-
+    main_config = []
     if secure_connection:
         main_config.append(os.path.join("configs", "disable_ssl_verification.xml"))
     else:
         main_config.append(os.path.join("configs", "ssl_verification.xml"))
-
     return main_config
 
 
@@ -67,6 +62,7 @@ def started_cluster(secure_connection, cluster, main_config, simple_tester):
         main_configs=main_config,
         dictionaries=dictionaries,
         with_mongo=True,
+        with_mongo_secure=secure_connection,
     )
     try:
         cluster.start()
@@ -85,7 +81,5 @@ def test_simple(secure_connection, started_cluster, simple_tester, layout_name):
 
 @pytest.mark.parametrize("secure_connection", [True], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", ["flat"])
-def test_simple_ssl(
-    secure_connection, started_cluster, simple_tester, layout_name
-):
+def test_simple_ssl(secure_connection, started_cluster, simple_tester, layout_name):
     simple_tester.execute(layout_name, started_cluster.instances["uri_node"])

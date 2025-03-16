@@ -4,14 +4,17 @@
 
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
+#include <Core/PlainRanges.h>
 
 #include <DataTypes/Serializations/ISerialization.h>
 
+#include <Parsers/ASTExpressionList.h>
+
+#include <Interpreters/Set.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/TreeRewriter.h>
 
 #include <Storages/SelectQueryInfo.h>
-#include <Storages/MergeTree/BoolMask.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 
@@ -25,7 +28,6 @@ using FunctionBasePtr = std::shared_ptr<const IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 struct ActionDAGNodes;
-class MergeTreeSetIndex;
 
 
 /** Condition on the index.
@@ -47,26 +49,10 @@ public:
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false);
 
-    struct BloomFilterData
-    {
-        using HashesForColumns = std::vector<std::vector<uint64_t>>;
-        HashesForColumns hashes_per_column;
-        std::vector<std::size_t> key_columns;
-    };
-
-    struct BloomFilter
-    {
-        virtual ~BloomFilter() = default;
-
-        virtual bool findAnyHash(const std::vector<uint64_t> & hashes) = 0;
-    };
-
-    using ColumnIndexToBloomFilter = std::unordered_map<std::size_t, std::unique_ptr<BloomFilter>>;
     /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
     BoolMask checkInHyperrectangle(
         const Hyperrectangle & hyperrectangle,
-        const DataTypes & data_types,
-        const ColumnIndexToBloomFilter & column_index_to_column_bf = {}) const;
+        const DataTypes & data_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -166,8 +152,6 @@ public:
     /// The expression is stored as Reverse Polish Notation.
     struct RPNElement
     {
-        struct Polygon;
-
         enum Function
         {
             /// Atoms of a Boolean expression.
@@ -184,9 +168,6 @@ public:
             /// this expression will be analyzed and then represented by following:
             ///   args in hyperrectangle [10, 20] × [20, 30].
             FUNCTION_ARGS_IN_HYPERRECTANGLE,
-            /// Special for pointInPolygon to utilize minmax indices.
-            /// For example: pointInPolygon((x, y), [(0, 0), (0, 2), (2, 2), (2, 0)])
-            FUNCTION_POINT_IN_POLYGON,
             /// Can take any value.
             FUNCTION_UNKNOWN,
             /// Operators of the logical expression.
@@ -198,10 +179,11 @@ public:
             ALWAYS_TRUE,
         };
 
-        RPNElement();
-        explicit RPNElement(Function function_);
-        RPNElement(Function function_, size_t key_column_);
-        RPNElement(Function function_, size_t key_column_, const Range & range_);
+        RPNElement() = default;
+        RPNElement(Function function_) : function(function_) {} /// NOLINT
+        RPNElement(Function function_, size_t key_column_) : function(function_), key_column(key_column_) {}
+        RPNElement(Function function_, size_t key_column_, const Range & range_)
+            : function(function_), range(range_), key_column(key_column_) {}
 
         String toString() const;
         String toString(std::string_view column_name, bool print_constants) const;
@@ -224,22 +206,7 @@ public:
         /// For FUNCTION_ARGS_IN_HYPERRECTANGLE
         Hyperrectangle space_filling_curve_args_hyperrectangle;
 
-        /// For FUNCTION_POINT_IN_POLYGON.
-        /// Function like 'pointInPolygon' has multiple columns.
-        /// This struct description column part of the function, such as (x, y) in 'pointInPolygon'.
-        struct MultiColumnsFunctionDescription
-        {
-            String function_name;
-            std::vector<size_t> key_column_positions;
-            std::vector<String> key_columns;
-        };
-        std::optional<MultiColumnsFunctionDescription> point_in_polygon_column_description;
-
-        std::shared_ptr<Polygon> polygon;
-
         MonotonicFunctionsChain monotonic_functions_chain;
-
-        std::optional<BloomFilterData> bloom_filter_data;
     };
 
     using RPN = std::vector<RPNElement>;
@@ -252,11 +219,6 @@ public:
     const ColumnIndices & getKeyColumns() const { return key_columns; }
 
     bool isRelaxed() const { return relaxed; }
-
-    bool isSinglePoint() const { return single_point; }
-
-    void prepareBloomFilterData(std::function<std::optional<uint64_t>(size_t column_idx, const Field &)> hash_one,
-                                std::function<std::optional<std::vector<uint64_t>>(size_t column_idx, const ColumnPtr &)> hash_many);
 
 private:
     BoolMask checkInRange(
@@ -397,7 +359,6 @@ private:
     };
     using SpaceFillingCurveDescriptions = std::vector<SpaceFillingCurveDescription>;
     SpaceFillingCurveDescriptions key_space_filling_curves;
-
     void getAllSpaceFillingCurves();
 
     /// Array joined column names
@@ -408,15 +369,6 @@ private:
     /// transformed by any deterministic functions. It is used by
     /// PartitionPruner.
     bool single_point;
-
-
-    /// Determines if a function maintains monotonicity.
-    /// Currently only does special checks for toDateTime monotonicity.
-    bool isFunctionReallyMonotonic(const IFunctionBase & func, const IDataType & arg_type) const;
-
-    /// Holds the result of (setting.date_time_overflow_behavior == DateTimeOverflowBehavior::Ignore)
-    /// Used to check toDateTime monotonicity.
-    bool date_time_overflow_behavior_ignore;
 
     /// If true, this key condition is relaxed. When a key condition is relaxed, it
     /// is considered weakened. This is because keys may not always align perfectly

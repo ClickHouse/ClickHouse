@@ -18,11 +18,14 @@ ColumnPtr ArrayFilterImpl::execute(const ColumnArray & array, ColumnPtr mapped)
         const auto * column_filter_const = checkAndGetColumnConst<ColumnUInt8>(&*mapped);
 
         if (!column_filter_const)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column: {}; The result of the lambda is expected to be a UInt8", mapped->getDataType());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type of filter column");
 
         if (column_filter_const->getValue<UInt8>())
             return array.clone();
-        return ColumnArray::create(array.getDataPtr()->cloneEmpty(), ColumnArray::ColumnOffsets::create(array.size(), 0));
+        else
+            return ColumnArray::create(
+                array.getDataPtr()->cloneEmpty(),
+                ColumnArray::ColumnOffsets::create(array.size(), 0));
     }
 
     const IColumn::Filter & filter = column_filter->getData();

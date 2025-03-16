@@ -8,7 +8,6 @@
 #define APPLY_FOR_BUILTIN_METRICS(M) \
     M(Query, "Number of executing queries") \
     M(Merge, "Number of executing background merges") \
-    M(MergeParts, "Number of source parts participating in current background merges") \
     M(Move, "Number of currently executing moves") \
     M(PartMutation, "Number of mutations (ALTER DELETE/UPDATE)") \
     M(ReplicatedFetch, "Number of data parts being fetched from replica") \
@@ -28,13 +27,13 @@
     M(BackgroundBufferFlushSchedulePoolSize, "Limit on number of tasks in BackgroundBufferFlushSchedulePool") \
     M(BackgroundDistributedSchedulePoolTask, "Number of active tasks in BackgroundDistributedSchedulePool. This pool is used for distributed sends that is done in background.") \
     M(BackgroundDistributedSchedulePoolSize, "Limit on number of tasks in BackgroundDistributedSchedulePool") \
-    M(BackgroundMessageBrokerSchedulePoolTask, "Number of active tasks in BackgroundMessageBrokerSchedulePool for message streaming") \
-    M(BackgroundMessageBrokerSchedulePoolSize, "Limit on number of tasks in BackgroundMessageBrokerSchedulePool for message streaming") \
+    M(BackgroundMessageBrokerSchedulePoolTask, "Number of active tasks in BackgroundProcessingPool for message streaming") \
+    M(BackgroundMessageBrokerSchedulePoolSize, "Limit on number of tasks in BackgroundProcessingPool for message streaming") \
     M(CacheDictionaryUpdateQueueBatches, "Number of 'batches' (a set of keys) in update queue in CacheDictionaries.") \
     M(CacheDictionaryUpdateQueueKeys, "Exact number of keys in update queue in CacheDictionaries.") \
     M(DiskSpaceReservedForMerge, "Disk space reserved for currently running background merges. It is slightly more than the total size of currently merging parts.") \
     M(DistributedSend, "Number of connections to remote servers sending data that was INSERTed into Distributed tables. Both synchronous and asynchronous mode.") \
-    M(QueryPreempted, "Number of running tasks which are paused and waiting due to 'priority' setting.") \
+    M(QueryPreempted, "Number of queries that are stopped and waiting due to 'priority' setting.") \
     M(TCPConnection, "Number of connections to TCP server (clients with native interface), also included server-server distributed query connections") \
     M(MySQLConnection, "Number of client connections using MySQL protocol") \
     M(HTTPConnection, "Number of connections to HTTP server") \
@@ -42,15 +41,10 @@
     M(PostgreSQLConnection, "Number of client connections using PostgreSQL protocol") \
     M(OpenFileForRead, "Number of files open for reading") \
     M(OpenFileForWrite, "Number of files open for writing") \
-    M(Compressing, "Number of compress operations using internal compression codecs") \
-    M(Decompressing, "Number of decompress operations using internal compression codecs") \
-    M(ParallelCompressedWriteBufferThreads, "Number of threads in all instances of ParallelCompressedWriteBuffer - these threads are doing parallel compression and writing") \
-    M(ParallelCompressedWriteBufferWait, "Number of threads in all instances of ParallelCompressedWriteBuffer that are currently waiting for buffer to become available for writing") \
     M(TotalTemporaryFiles, "Number of temporary files created") \
     M(TemporaryFilesForSort, "Number of temporary files created for external sorting") \
     M(TemporaryFilesForAggregation, "Number of temporary files created for external aggregation") \
     M(TemporaryFilesForJoin, "Number of temporary files created for JOIN") \
-    M(TemporaryFilesForMerge, "Number of temporary files for vertical merge") \
     M(TemporaryFilesUnknown, "Number of temporary files created without known purpose") \
     M(Read, "Number of read (read, pread, io_getevents, etc.) syscalls in fly") \
     M(RemoteRead, "Number of read with remote reader in fly") \
@@ -62,7 +56,6 @@
     M(QueryThread, "Number of query processing threads") \
     M(ReadonlyReplica, "Number of Replicated tables that are currently in readonly state due to re-initialization after ZooKeeper session loss or due to startup without ZooKeeper configured.") \
     M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
-    M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \
@@ -82,9 +75,9 @@
     M(GlobalThread, "Number of threads in global thread pool.") \
     M(GlobalThreadActive, "Number of threads in global thread pool running a task.") \
     M(GlobalThreadScheduled, "Number of queued or active jobs in global thread pool.") \
-    M(LocalThread, "Obsolete. Number of threads in local thread pools. The threads in local thread pools are taken from the global thread pool.") \
-    M(LocalThreadActive, "Obsolete. Number of threads in local thread pools running a task.") \
-    M(LocalThreadScheduled, "Obsolete. Number of queued or active jobs in local thread pools.") \
+    M(LocalThread, "Number of threads in local thread pools. The threads in local thread pools are taken from the global thread pool.") \
+    M(LocalThreadActive, "Number of threads in local thread pools running a task.") \
+    M(LocalThreadScheduled, "Number of queued or active jobs in local thread pools.") \
     M(MergeTreeDataSelectExecutorThreads, "Number of threads in the MergeTreeDataSelectExecutor thread pool.") \
     M(MergeTreeDataSelectExecutorThreadsActive, "Number of threads in the MergeTreeDataSelectExecutor thread pool running a task.") \
     M(MergeTreeDataSelectExecutorThreadsScheduled, "Number of queued or active jobs in the MergeTreeDataSelectExecutor thread pool.") \
@@ -106,9 +99,6 @@
     M(IOThreads, "Number of threads in the IO thread pool.") \
     M(IOThreadsActive, "Number of threads in the IO thread pool running a task.") \
     M(IOThreadsScheduled, "Number of queued or active jobs in the IO thread pool.") \
-    M(CompressionThread, "Number of threads in compression thread pools.") \
-    M(CompressionThreadActive, "Number of threads in compression thread pools running a task.") \
-    M(CompressionThreadScheduled, "Number of queued or active jobs in compression thread pools.") \
     M(ThreadPoolRemoteFSReaderThreads, "Number of threads in the thread pool for remote_filesystem_read_method=threadpool.") \
     M(ThreadPoolRemoteFSReaderThreadsActive, "Number of threads in the thread pool for remote_filesystem_read_method=threadpool running a task.") \
     M(ThreadPoolRemoteFSReaderThreadsScheduled, "Number of queued or active jobs in the thread pool for remote_filesystem_read_method=threadpool.") \
@@ -132,9 +122,6 @@
     M(DatabaseOnDiskThreads, "Number of threads in the DatabaseOnDisk thread pool.") \
     M(DatabaseOnDiskThreadsActive, "Number of threads in the DatabaseOnDisk thread pool running a task.") \
     M(DatabaseOnDiskThreadsScheduled, "Number of queued or active jobs in the DatabaseOnDisk thread pool.") \
-    M(DatabaseBackupThreads, "Number of threads in the DatabaseBackup thread pool.") \
-    M(DatabaseBackupThreadsActive, "Number of threads in the DatabaseBackup thread pool running a task.") \
-    M(DatabaseBackupThreadsScheduled, "Number of queued or active jobs in the DatabaseBackup thread pool.") \
     M(DatabaseCatalogThreads, "Number of threads in the DatabaseCatalog thread pool.") \
     M(DatabaseCatalogThreadsActive, "Number of threads in the DatabaseCatalog thread pool running a task.") \
     M(DatabaseCatalogThreadsScheduled, "Number of queued or active jobs in the DatabaseCatalog thread pool.") \
@@ -191,27 +178,17 @@
     M(ObjectStorageAzureThreads, "Number of threads in the AzureObjectStorage thread pool.") \
     M(ObjectStorageAzureThreadsActive, "Number of threads in the AzureObjectStorage thread pool running a task.") \
     M(ObjectStorageAzureThreadsScheduled, "Number of queued or active jobs in the AzureObjectStorage thread pool.") \
-    M(BuildVectorSimilarityIndexThreads, "Number of threads in the build vector similarity index thread pool.") \
-    M(BuildVectorSimilarityIndexThreadsActive, "Number of threads in the build vector similarity index thread pool running a task.") \
-    M(BuildVectorSimilarityIndexThreadsScheduled, "Number of queued or active jobs in the build vector similarity index thread pool.") \
-    M(ObjectStorageQueueRegisteredServers, "Number of registered servers in StorageS3(Azure)Queue")\
-    M(IcebergCatalogThreads, "Number of threads in the IcebergCatalog thread pool.") \
-    M(IcebergCatalogThreadsActive, "Number of threads in the IcebergCatalog thread pool running a task.") \
-    M(IcebergCatalogThreadsScheduled, "Number of queued or active jobs in the IcebergCatalog thread pool.") \
-    M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
-    M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
-    M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
     \
     M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableAzureFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
+    M(DiskPlainRewritableAzureUniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableLocalDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
     M(DiskPlainRewritableLocalFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
+    M(DiskPlainRewritableLocalUniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for LocalObjectStorage.") \
     M(DiskPlainRewritableS3DirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
     M(DiskPlainRewritableS3FileCount, "Number of file entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
+    M(DiskPlainRewritableS3UniqueFileNamesCount, "Number of unique file name entries in the 'plain_rewritable' in-memory map for S3ObjectStorage.") \
     \
-    M(MergeTreeFetchPartitionThreads, "Number of threads for ALTER TABLE FETCH PARTITION") \
-    M(MergeTreeFetchPartitionThreadsActive, "Number of threads for ALTER TABLE FETCH PARTITION fetching part") \
-    M(MergeTreeFetchPartitionThreadsScheduled, "Number of queued or active part fetches in ALTER TABLE FETCH PARTITION") \
     M(MergeTreePartsLoaderThreads, "Number of threads in the MergeTree parts loader thread pool.") \
     M(MergeTreePartsLoaderThreadsActive, "Number of threads in the MergeTree parts loader thread pool running a task.") \
     M(MergeTreePartsLoaderThreadsScheduled, "Number of queued or active jobs in the MergeTree parts loader thread pool.") \
@@ -242,24 +219,15 @@
     M(ParquetDecoderThreads, "Number of threads in the ParquetBlockInputFormat thread pool.") \
     M(ParquetDecoderThreadsActive, "Number of threads in the ParquetBlockInputFormat thread pool running a task.") \
     M(ParquetDecoderThreadsScheduled, "Number of queued or active jobs in the ParquetBlockInputFormat thread pool.") \
-    M(ParquetDecoderIOThreads, "Number of threads in the ParquetBlockInputFormat io thread pool.") \
-    M(ParquetDecoderIOThreadsActive, "Number of threads in the ParquetBlockInputFormat io thread pool running a task.") \
-    M(ParquetDecoderIOThreadsScheduled, "Number of queued or active jobs in the ParquetBlockInputFormat io thread pool.") \
     M(ParquetEncoderThreads, "Number of threads in ParquetBlockOutputFormat thread pool.") \
     M(ParquetEncoderThreadsActive, "Number of threads in ParquetBlockOutputFormat thread pool running a task.") \
     M(ParquetEncoderThreadsScheduled, "Number of queued or active jobs in ParquetBlockOutputFormat thread pool.") \
-    M(MergeTreeSubcolumnsReaderThreads, "Number of threads in the thread pool used for subcolumns reading in MergeTree.") \
-    M(MergeTreeSubcolumnsReaderThreadsActive, "Number of threads in the thread pool used for subcolumns reading in MergeTree running a task.") \
-    M(MergeTreeSubcolumnsReaderThreadsScheduled, "Number of queued or active jobs in the thread pool used for subcolumns reading in MergeTree.") \
     M(DWARFReaderThreads, "Number of threads in the DWARFBlockInputFormat thread pool.") \
     M(DWARFReaderThreadsActive, "Number of threads in the DWARFBlockInputFormat thread pool running a task.") \
     M(DWARFReaderThreadsScheduled, "Number of queued or active jobs in the DWARFBlockInputFormat thread pool.") \
     M(OutdatedPartsLoadingThreads, "Number of threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsActive, "Number of active threads in the threadpool for loading Outdated data parts.") \
     M(OutdatedPartsLoadingThreadsScheduled, "Number of queued or active jobs in the threadpool for loading Outdated data parts.") \
-    M(PolygonDictionaryThreads, "Number of threads in the threadpool for polygon dictionaries.") \
-    M(PolygonDictionaryThreadsActive, "Number of active threads in the threadpool for polygon dictionaries.") \
-    M(PolygonDictionaryThreadsScheduled, "Number of queued or active jobs in the threadpool for polygon dictionaries.") \
     M(DistributedBytesToInsert, "Number of pending bytes to process for asynchronous insertion into Distributed tables. Number of bytes for every shard is summed.") \
     M(BrokenDistributedBytesToInsert, "Number of bytes for asynchronous insertion into Distributed tables that has been marked as broken. Number of bytes for every shard is summed.") \
     M(DistributedFilesToInsert, "Number of pending files to process for asynchronous insertion into Distributed tables. Number of files for every shard is summed.") \
@@ -274,7 +242,6 @@
     M(PartsActive, "Active data part, used by current and upcoming SELECTs.") \
     M(AttachedDatabase, "Active databases.") \
     M(AttachedTable, "Active tables.") \
-    M(AttachedReplicatedTable, "Active replicated tables.") \
     M(AttachedView, "Active views.") \
     M(AttachedDictionary, "Active dictionaries.") \
     M(PartsOutdated, "Not active data part, but could be used by only current SELECTs, could be deleted after SELECTs finishes.") \
@@ -327,17 +294,9 @@
     M(CacheWarmerBytesInProgress, "Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.") \
     M(DistrCacheOpenedConnections, "Number of open connections to Distributed Cache") \
     M(DistrCacheUsedConnections, "Number of currently used connections to Distributed Cache") \
-    M(DistrCacheAllocatedConnections, "Number of currently allocated connections to Distributed Cache connection pool") \
-    M(DistrCacheBorrowedConnections, "Number of currently borrowed connections to Distributed Cache connection pool") \
     M(DistrCacheReadRequests, "Number of executed Read requests to Distributed Cache") \
     M(DistrCacheWriteRequests, "Number of executed Write requests to Distributed Cache") \
     M(DistrCacheServerConnections, "Number of open connections to ClickHouse server from Distributed Cache") \
-    M(DistrCacheRegisteredServers, "Number of distributed cache registered servers") \
-    M(DistrCacheRegisteredServersCurrentAZ, "Number of distributed cache registered servers in current az") \
-    M(DistrCacheServerS3CachedClients, "Number of distributed cache S3 cached clients") \
-    \
-    M(SchedulerIOReadScheduled, "Number of IO reads are being scheduled currently") \
-    M(SchedulerIOWriteScheduled, "Number of IO writes are being scheduled currently") \
     \
     M(StorageConnectionsStored, "Total count of sessions stored in the session pool for storages") \
     M(StorageConnectionsTotal, "Total count of all sessions: stored in the pool and actively used right now for storages") \
@@ -354,35 +313,7 @@
     M(FilteringMarksWithPrimaryKey, "Number of threads currently doing filtering of mark ranges by the primary key") \
     M(FilteringMarksWithSecondaryKeys, "Number of threads currently doing filtering of mark ranges by secondary keys") \
     \
-    M(ConcurrencyControlAcquired, "Total number of acquired CPU slots") \
-    M(ConcurrencyControlAcquiredNonCompeting, "Total number of acquired CPU slots that are not considered competing (the first thread if fair_round_robin scheduler is in use)") \
-    M(ConcurrencyControlSoftLimit, "Value of soft limit on number of CPU slots") \
-    \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
-    \
-    M(SharedCatalogStateApplicationThreads, "Number of threads in the threadpool for state application in Shared Catalog.") \
-    M(SharedCatalogStateApplicationThreadsActive, "Number of active threads in the threadpool for state application in Shared Catalog.") \
-    M(SharedCatalogStateApplicationThreadsScheduled, "Number of queued or active jobs in the threadpool for state application in Shared Catalog.") \
-    \
-    M(SharedCatalogDropLocalThreads, "Number of threads in the threadpool for drop of local tables in Shared Catalog.") \
-    M(SharedCatalogDropLocalThreadsActive, "Number of active threads in the threadpool for drop of local tables in Shared Catalog.") \
-    M(SharedCatalogDropLocalThreadsScheduled, "Number of queued or active jobs in the threadpool for drop of local tables in Shared Catalog.") \
-    \
-    M(SharedCatalogDropZooKeeperThreads, "Number of threads in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
-    M(SharedCatalogDropZooKeeperThreadsActive, "Number of active threads in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
-    M(SharedCatalogDropZooKeeperThreadsScheduled, "Number of queued or active jobs in the threadpool for drop of object in ZooKeeper in Shared Catalog.") \
-    \
-    M(SharedDatabaseCatalogTablesInLocalDropDetachQueue, "Number of tables in the queue for local drop or detach in Shared Catalog.") \
-    \
-    M(SharedCatalogDropDetachLocalTablesErrors, "Number of errors that occurred when attempting to drop or detach local tables in Shared Catalog.") \
-    \
-    M(MetadataFromKeeperCacheObjects, "Number of objects in disk metadata cache.") \
-    \
-    M(LicenseRemainingSeconds, "Remaining seconds of the license validity period.") \
-    \
-    M(StartupScriptsExecutionState, "State of startup scripts execution: 0 = not finished, 1 = success, 2 = failure.") \
-    \
-    M(IsServerShuttingDown, "Indicates if the server is shutting down: 0 = no, 1 = yes") \
 
 #ifdef APPLY_FOR_EXTERNAL_METRICS
     #define APPLY_FOR_METRICS(M) APPLY_FOR_BUILTIN_METRICS(M) APPLY_FOR_EXTERNAL_METRICS(M)

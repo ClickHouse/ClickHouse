@@ -28,18 +28,12 @@
 #include "config.h"
 
 #if USE_AZURE_BLOB_STORAGE
-namespace DB::AzureBlobStorage
-{
-class ContainerClientWrapper;
-using ContainerClient = ContainerClientWrapper;
-}
+#include <Common/MultiVersion.h>
+#include <azure/storage/blobs.hpp>
 #endif
 
 #if USE_AWS_S3
-namespace DB::S3
-{
-class Client;
-}
+#include <IO/S3/Client.h>
 #endif
 
 namespace DB
@@ -152,7 +146,14 @@ public:
     /// Read single object
     virtual std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = ReadSettings{},
+        std::optional<size_t> read_hint = {},
+        std::optional<size_t> file_size = {}) const = 0;
+
+    /// Read multiple objects with common prefix
+    virtual std::unique_ptr<ReadBufferFromFileBase> readObjects( /// NOLINT
+        const StoredObjects & objects,
+        const ReadSettings & read_settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
         std::optional<size_t> file_size = {}) const = 0;
 
@@ -165,6 +166,13 @@ public:
         const WriteSettings & write_settings = {}) = 0;
 
     virtual bool isRemote() const = 0;
+
+    /// Remove object. Throws exception if object doesn't exists.
+    virtual void removeObject(const StoredObject & object) = 0;
+
+    /// Remove multiple objects. Some object storages can do batch remove in a more
+    /// optimal way.
+    virtual void removeObjects(const StoredObjects & objects) = 0;
 
     /// Remove object on path if exists
     virtual void removeObjectIfExists(const StoredObject & object) = 0;
@@ -234,10 +242,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'generateObjectKeyPrefixForDirectoryPath' is not implemented");
     }
 
-    /// Returns whether this object storage generates a random blob name for each object.
-    /// This function returns false if this object storage just adds some constant string to a passed path to generate a blob name.
-    virtual bool areObjectKeysRandom() const = 0;
-
     /// Get unique id for passed absolute path in object storage.
     virtual std::string getUniqueId(const std::string & path) const { return path; }
 
@@ -259,7 +263,7 @@ public:
     virtual void setKeysGenerator(ObjectStorageKeysGeneratorPtr) { }
 
 #if USE_AZURE_BLOB_STORAGE
-    virtual std::shared_ptr<const AzureBlobStorage::ContainerClient> getAzureBlobStorageClient() const
+    virtual std::shared_ptr<const Azure::Storage::Blobs::BlobContainerClient> getAzureBlobStorageClient() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }

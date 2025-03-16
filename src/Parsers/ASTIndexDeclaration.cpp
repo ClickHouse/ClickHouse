@@ -62,7 +62,7 @@ std::shared_ptr<ASTFunction> ASTIndexDeclaration::getType() const
     return func_ast;
 }
 
-void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTIndexDeclaration::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     if (auto expr = getExpression())
     {
@@ -70,31 +70,31 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         {
             if (expr->as<ASTExpressionList>())
             {
-                ostr << "(";
-                expr->format(ostr, s, state, frame);
-                ostr << ")";
+                s.ostr << "(";
+                expr->formatImpl(s, state, frame);
+                s.ostr << ")";
             }
             else
-                expr->format(ostr, s, state, frame);
+                expr->formatImpl(s, state, frame);
         }
         else
         {
-            s.writeIdentifier(ostr, name, /*ambiguous=*/false);
-            ostr << " ";
-            expr->format(ostr, s, state, frame);
+            s.ostr << backQuoteIfNeed(name);
+            s.ostr << " ";
+            expr->formatImpl(s, state, frame);
         }
     }
 
     if (auto type = getType())
     {
-        ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
-        type->format(ostr, s, state, frame);
+        s.ostr << (s.hilite ? hilite_keyword : "") << " TYPE " << (s.hilite ? hilite_none : "");
+        type->formatImpl(s, state, frame);
     }
 
     if (granularity)
     {
-        ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
-        ostr << granularity;
+        s.ostr << (s.hilite ? hilite_keyword : "") << " GRANULARITY " << (s.hilite ? hilite_none : "");
+        s.ostr << granularity;
     }
 }
 

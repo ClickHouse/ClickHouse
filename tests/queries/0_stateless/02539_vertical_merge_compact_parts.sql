@@ -14,7 +14,7 @@ INSERT INTO t_compact_vertical_merge SELECT number, toString(number), range(numb
 INSERT INTO t_compact_vertical_merge SELECT number, toString(number), range(number % 10) FROM numbers(40);
 
 OPTIMIZE TABLE t_compact_vertical_merge FINAL;
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 WITH splitByChar('_', part_name) AS name_parts,
     name_parts[2]::UInt64 AS min_block,
@@ -23,13 +23,12 @@ SELECT min_block, max_block, event_type, merge_algorithm, part_type FROM system.
 WHERE
     database = currentDatabase() AND
     table = 't_compact_vertical_merge' AND
-    min_block = 1 AND max_block = 2
-ORDER BY event_time_microseconds;
+    min_block = 1 AND max_block = 2;
 
 INSERT INTO t_compact_vertical_merge SELECT number, toString(number), range(number % 10) FROM numbers(40);
 
 OPTIMIZE TABLE t_compact_vertical_merge FINAL;
-SYSTEM FLUSH LOGS part_log;
+SYSTEM FLUSH LOGS;
 
 WITH splitByChar('_', part_name) AS name_parts,
     name_parts[2]::UInt64 AS min_block,
@@ -38,7 +37,6 @@ SELECT min_block, max_block, event_type, merge_algorithm, part_type FROM system.
 WHERE
     database = currentDatabase() AND
     table = 't_compact_vertical_merge' AND
-    min_block = 1 AND max_block = 3
-ORDER BY event_time_microseconds;
+    min_block = 1 AND max_block = 3;
 
 DROP TABLE t_compact_vertical_merge;

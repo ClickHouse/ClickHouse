@@ -1,12 +1,9 @@
 #include "config.h"
 
-#include <Core/FormatFactorySettings.h>
-#include <Core/Settings.h>
-#include <Parsers/ASTCreateQuery.h>
-#include <Formats/FormatFactory.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
-#include <Storages/StorageFactory.h>
+#include <Formats/FormatFactory.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -33,7 +30,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
-    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false, nullptr);
+    StorageObjectStorage::Configuration::initialize(*configuration, args.engine_args, args.getContext(), false);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -43,12 +40,26 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
     auto queue_settings = std::make_unique<ObjectStorageQueueSettings>();
     if (args.storage_def->settings)
     {
-        const bool is_attach = args.mode > LoadingStrictnessLevel::CREATE;
-        queue_settings->loadFromQuery(*args.storage_def, is_attach, args.table_id);
+        queue_settings->loadFromQuery(*args.storage_def);
+        FormatFactorySettings user_format_settings;
 
-        Settings settings = args.getContext()->getSettingsCopy();
-        settings.applyChanges(args.storage_def->settings->changes);
-        format_settings = getFormatSettings(args.getContext(), settings);
+        // Apply changed settings from global context, but ignore the
+        // unknown ones, because we only have the format settings here.
+        const auto & changes = args.getContext()->getSettingsRef().changes();
+        for (const auto & change : changes)
+        {
+            if (user_format_settings.has(change.name))
+                user_format_settings.set(change.name, change.value);
+
+            args.storage_def->settings->changes.removeSetting(change.name);
+        }
+
+        for (const auto & change : args.storage_def->settings->changes)
+        {
+            if (user_format_settings.has(change.name))
+                user_format_settings.applyChange(change);
+        }
+        format_settings = getFormatSettings(args.getContext(), user_format_settings);
     }
     else
     {
@@ -81,7 +92,6 @@ void registerStorageS3Queue(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::S3,
-            .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
         });
 }
 #endif
@@ -99,7 +109,6 @@ void registerStorageAzureQueue(StorageFactory & factory)
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessType::AZURE,
-            .has_builtin_setting_fn = ObjectStorageQueueSettings::hasBuiltin,
         });
 }
 #endif

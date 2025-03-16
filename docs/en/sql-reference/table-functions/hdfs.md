@@ -1,18 +1,12 @@
 ---
-description: 'Creates a table from files in HDFS. This table function is similar to
-  the url and file table functions.'
-sidebar_label: 'hdfs'
+slug: /en/sql-reference/table-functions/hdfs
 sidebar_position: 80
-slug: /sql-reference/table-functions/hdfs
-title: 'hdfs'
+sidebar_label: hdfs
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+# hdfs
 
-# hdfs Table Function
-
-Creates a table from files in HDFS. This table function is similar to the [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) table functions.
+Creates a table from files in HDFS. This table function is similar to [url](../../sql-reference/table-functions/url.md) and [file](../../sql-reference/table-functions/file.md) ones.
 
 ``` sql
 hdfs(URI, format, structure)
@@ -21,7 +15,7 @@ hdfs(URI, format, structure)
 **Input parameters**
 
 - `URI` — The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, \``'abc', 'def'` — strings.
-- `format` — The [format](/sql-reference/formats) of the file.
+- `format` — The [format](../../interfaces/formats.md#formats) of the file.
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Returned value**
@@ -61,12 +55,12 @@ Constructions with `{}` are similar to the [remote](remote.md) and [file](file.m
 
 1.  Suppose that we have several files with following URIs on HDFS:
 
-- 'hdfs://hdfs1:9000/some_dir/some_file_1'
-- 'hdfs://hdfs1:9000/some_dir/some_file_2'
-- 'hdfs://hdfs1:9000/some_dir/some_file_3'
-- 'hdfs://hdfs1:9000/another_dir/some_file_1'
-- 'hdfs://hdfs1:9000/another_dir/some_file_2'
-- 'hdfs://hdfs1:9000/another_dir/some_file_3'
+- ‘hdfs://hdfs1:9000/some_dir/some_file_1’
+- ‘hdfs://hdfs1:9000/some_dir/some_file_2’
+- ‘hdfs://hdfs1:9000/some_dir/some_file_3’
+- ‘hdfs://hdfs1:9000/another_dir/some_file_1’
+- ‘hdfs://hdfs1:9000/another_dir/some_file_2’
+- ‘hdfs://hdfs1:9000/another_dir/some_file_3’
 
 2.  Query the amount of rows in these files:
 
@@ -99,10 +93,10 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 ```
 
-## Virtual Columns {#virtual-columns}
+## Virtual Columns
 
-- `_path` — Path to the file. Type: `LowCardinality(String)`.
-- `_file` — Name of the file. Type: `LowCardinality(String)`.
+- `_path` — Path to the file. Type: `LowCardinalty(String)`.
+- `_file` — Name of the file. Type: `LowCardinalty(String)`.
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
@@ -115,14 +109,16 @@ When setting `use_hive_partitioning` is set to 1, ClickHouse will detect Hive-st
 Use virtual column, created with Hive-style partitioning
 
 ``` sql
+SET use_hive_partitioning = 1;
 SELECT * from HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parquet') where _date > '2020-01-01' and _country = 'Netherlands' and _code = 42;
 ```
 
 ## Storage Settings {#storage-settings}
 
-- [hdfs_truncate_on_insert](operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
-- [hdfs_create_new_file_on_insert](operations/settings/settings.md#hdfs_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
-- [hdfs_skip_empty_files](operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [hdfs_truncate_on_insert](/docs/en/operations/settings/settings.md#hdfs_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
+- [hdfs_create_multiple_files](/docs/en/operations/settings/settings.md#hdfs_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
+- [hdfs_skip_empty_files](/docs/en/operations/settings/settings.md#hdfs_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
+- [ignore_access_denied_multidirectory_globs](/docs/en/operations/settings/settings.md#ignore_access_denied_multidirectory_globs) - allows to ignore permission denied errors for multi-directory globs.
 
 **See Also**
 

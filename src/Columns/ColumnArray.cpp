@@ -1,5 +1,3 @@
-#include <DataTypes/getLeastSupertype.h>
-#include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnDecimal.h>
@@ -143,34 +141,13 @@ void ColumnArray::get(size_t n, Field & res) const
             size, max_array_size_as_field);
 
     res = Array();
-    Array & res_arr = res.safeGet<Array>();
+    Array & res_arr = res.safeGet<Array &>();
     res_arr.reserve(size);
 
     for (size_t i = 0; i < size; ++i)
         res_arr.push_back(getData()[offset + i]);
 }
 
-std::pair<String, DataTypePtr> ColumnArray::getValueNameAndType(size_t n) const
-{
-    size_t offset = offsetAt(n);
-    size_t size = sizeAt(n);
-
-    String value_name {"["};
-    DataTypes element_types;
-    element_types.reserve(size);
-
-    for (size_t i = 0; i < size; ++i)
-    {
-        const auto & [value, type] = getData().getValueNameAndType(offset + i);
-        element_types.push_back(type);
-        if (i > 0)
-            value_name += ", ";
-        value_name += value;
-    }
-    value_name += "]";
-
-    return {value_name, std::make_shared<DataTypeArray>(getLeastSupertype<LeastSupertypeOnError::Variant>(element_types))};
-}
 
 StringRef ColumnArray::getDataAt(size_t n) const
 {
@@ -332,7 +309,7 @@ void ColumnArray::updateHashFast(SipHash & hash) const
 
 void ColumnArray::insert(const Field & x)
 {
-    const Array & array = x.safeGet<Array>();
+    const Array & array = x.safeGet<const Array &>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
         getData().insert(array[i]);
@@ -344,7 +321,7 @@ bool ColumnArray::tryInsert(const Field & x)
     if (x.getType() != Field::Types::Which::Array)
         return false;
 
-    const Array & array = x.safeGet<Array>();
+    const Array & array = x.safeGet<const Array &>();
     size_t size = array.size();
     for (size_t i = 0; i < size; ++i)
     {
@@ -390,23 +367,6 @@ void ColumnArray::popBack(size_t n)
     if (nested_n)
         getData().popBack(nested_n);
     offsets_data.resize_assume_reserved(offsets_data.size() - n);
-}
-
-ColumnCheckpointPtr ColumnArray::getCheckpoint() const
-{
-    return std::make_shared<ColumnCheckpointWithNested>(size(), getData().getCheckpoint());
-}
-
-void ColumnArray::updateCheckpoint(ColumnCheckpoint & checkpoint) const
-{
-    checkpoint.size = size();
-    getData().updateCheckpoint(*assert_cast<ColumnCheckpointWithNested &>(checkpoint).nested);
-}
-
-void ColumnArray::rollback(const ColumnCheckpoint & checkpoint)
-{
-    getOffsets().resize_assume_reserved(checkpoint.size);
-    getData().rollback(*assert_cast<const ColumnCheckpointWithNested &>(checkpoint).nested);
 }
 
 int ColumnArray::compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator) const
@@ -685,8 +645,6 @@ ColumnPtr ColumnArray::filter(const Filter & filt, ssize_t result_size_hint) con
         return filterNumber<Int128>(filt, result_size_hint);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return filterNumber<Int256>(filt, result_size_hint);
-    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
-        return filterNumber<BFloat16>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
         return filterNumber<Float32>(filt, result_size_hint);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))
@@ -1047,10 +1005,10 @@ void ColumnArray::updatePermutationWithCollation(const Collator & collator, Perm
             DefaultPartialSort());
 }
 
-ColumnPtr ColumnArray::compress(bool force_compression) const
+ColumnPtr ColumnArray::compress() const
 {
-    ColumnPtr data_compressed = data->compress(force_compression);
-    ColumnPtr offsets_compressed = offsets->compress(force_compression);
+    ColumnPtr data_compressed = data->compress();
+    ColumnPtr offsets_compressed = offsets->compress();
 
     size_t byte_size = data_compressed->byteSize() + offsets_compressed->byteSize();
 
@@ -1090,8 +1048,6 @@ ColumnPtr ColumnArray::replicate(const Offsets & replicate_offsets) const
         return replicateNumber<Int128>(replicate_offsets);
     if (typeid_cast<const ColumnInt256 *>(data.get()))
         return replicateNumber<Int256>(replicate_offsets);
-    if (typeid_cast<const ColumnBFloat16 *>(data.get()))
-        return replicateNumber<BFloat16>(replicate_offsets);
     if (typeid_cast<const ColumnFloat32 *>(data.get()))
         return replicateNumber<Float32>(replicate_offsets);
     if (typeid_cast<const ColumnFloat64 *>(data.get()))

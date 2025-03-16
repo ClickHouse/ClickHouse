@@ -57,11 +57,6 @@ public:
         return std::make_shared<DataTypeUInt8>();
     }
 
-    DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override
-    {
-        return std::make_shared<DataTypeUInt8>();
-    }
-
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         const auto * value_col = arguments.front().column.get();
@@ -111,7 +106,7 @@ private:
 
             return out_col;
         }
-        if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
+        else if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
             bool is_const;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
@@ -121,16 +116,18 @@ private:
             {
                 return result_type->createColumnConst(input_rows_count, toField(Impl::apply(val, const_mask)));
             }
+            else
+            {
+                const auto mask = createMask<T>(input_rows_count, arguments);
+                auto out_col = ColumnVector<UInt8>::create(input_rows_count);
 
-            const auto mask = createMask<T>(input_rows_count, arguments);
-            auto out_col = ColumnVector<UInt8>::create(input_rows_count);
+                auto & out = out_col->getData();
 
-            auto & out = out_col->getData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    out[i] = Impl::apply(val, mask[i]);
 
-            for (size_t i = 0; i < input_rows_count; ++i)
-                out[i] = Impl::apply(val, mask[i]);
-
-            return out_col;
+                return out_col;
+            }
         }
 
         return nullptr;
@@ -198,14 +195,12 @@ private:
 
             return true;
         }
-        if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
+        else if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
         {
             const auto & pos = pos_col_const->template getValue<PosType>();
             if (pos >= 8 * sizeof(ValueType))
-                throw Exception(
-                    ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                    "The bit position argument {} is out of bounds for number",
-                    static_cast<UInt64>(pos));
+                throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                                "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos));
 
             const auto new_mask = ValueType(1) << pos;
 

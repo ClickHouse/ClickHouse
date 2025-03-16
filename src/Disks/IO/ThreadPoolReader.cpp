@@ -1,20 +1,20 @@
 #include "ThreadPoolReader.h"
-#include <future>
-#include <fcntl.h>
-#include <unistd.h>
-#include <base/MemorySanitizer.h>
-#include <base/errnoToString.h>
-#include <Poco/Environment.h>
-#include <Poco/Event.h>
-#include <Common/CurrentMetrics.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
-#include <Common/ThreadPool.h>
 #include <Common/VersionNumber.h>
 #include <Common/assert_cast.h>
+#include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
+#include <Common/MemorySanitizer.h>
+#include <Common/CurrentThread.h>
+#include <Common/ThreadPool.h>
+#include <Poco/Environment.h>
+#include <base/errnoToString.h>
+#include <Poco/Event.h>
+#include <future>
+#include <unistd.h>
+#include <fcntl.h>
 
 #if defined(OS_LINUX)
 
@@ -111,9 +111,9 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
     /// RWF_NOWAIT flag may return 0 even when not at end of file.
     /// It can't be distinguished from the real eof, so we have to
     /// disable pread with nowait.
-    static const bool has_pread_nowait_support = !hasBugInPreadV2();
+    static std::atomic<bool> has_pread_nowait_support = !hasBugInPreadV2();
 
-    if (has_pread_nowait_support)
+    if (has_pread_nowait_support.load(std::memory_order_relaxed))
     {
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
@@ -161,29 +161,32 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
                 if (errno == ENOSYS || errno == EOPNOTSUPP)
                 {
                     /// No support for the syscall or the flag in the Linux kernel.
-                    /// It shouldn't happen because we check the kernel version but let's
-                    /// fallback to the thread pool.
+                    has_pread_nowait_support.store(false, std::memory_order_relaxed);
                     break;
                 }
-                if (errno == EAGAIN)
+                else if (errno == EAGAIN)
                 {
                     /// Data is not available in page cache. Will hand off to thread pool.
                     break;
                 }
-                if (errno == EINTR)
+                else if (errno == EINTR)
                 {
                     /// Interrupted by a signal.
                     continue;
                 }
-
-                ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
-                promise.set_exception(
-                    std::make_exception_ptr(ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
-                return future;
+                else
+                {
+                    ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+                    promise.set_exception(std::make_exception_ptr(
+                        ErrnoException(ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, "Cannot read from file {}", fd)));
+                    return future;
+                }
             }
-
-            bytes_read += res;
-            __msan_unpoison(request.buf, res);
+            else
+            {
+                bytes_read += res;
+                __msan_unpoison(request.buf, res);
+            }
         }
 
         if (bytes_read)

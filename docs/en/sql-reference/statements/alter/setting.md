@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for Table Settings Manipulations'
-sidebar_label: 'SETTING'
+slug: /en/sql-reference/statements/alter/setting
 sidebar_position: 38
-slug: /sql-reference/statements/alter/setting
-title: 'Table Settings Manipulations'
+sidebar_label: SETTING
 ---
 
 # Table Settings Manipulations
@@ -21,7 +19,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
 These queries can be applied to [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) tables only.
 :::
 
-## MODIFY SETTING {#modify-setting}
+## MODIFY SETTING
 
 Changes table settings.
 
@@ -39,7 +37,7 @@ CREATE TABLE example_table (id UInt32, data String) ENGINE=MergeTree() ORDER BY 
 ALTER TABLE example_table MODIFY SETTING max_part_loading_threads=8, max_parts_in_total=50000;
 ```
 
-## RESET SETTING {#reset-setting}
+## RESET SETTING
 
 Resets table settings to their default values. If a setting is in a default state, then no action is taken.
 

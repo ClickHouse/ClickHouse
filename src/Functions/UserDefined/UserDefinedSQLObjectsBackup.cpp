@@ -18,11 +18,6 @@
 
 namespace DB
 {
-namespace Setting
-{
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
-}
 
 namespace ErrorCodes
 {
@@ -134,8 +129,7 @@ restoreUserDefinedSQLObjects(RestorerFromBackup & restorer, const String & data_
                     statement_def.data() + statement_def.size(),
                     "in file " + filepath + " from backup " + backup->getNameForLogging(),
                     0,
-                    context->getSettingsRef()[Setting::max_parser_depth],
-                    context->getSettingsRef()[Setting::max_parser_backtracks]);
+                    context->getSettingsRef().max_parser_depth, context->getSettingsRef().max_parser_backtracks);
                 break;
             }
         }

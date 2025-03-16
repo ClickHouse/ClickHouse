@@ -1,16 +1,14 @@
 ---
-description: 'Documentation for Parametric Aggregate Functions'
-sidebar_label: 'Parametric'
+slug: /en/sql-reference/aggregate-functions/parametric-functions
 sidebar_position: 38
-slug: /sql-reference/aggregate-functions/parametric-functions
-title: 'Parametric Aggregate Functions'
+sidebar_label: Parametric
 ---
 
 # Parametric Aggregate Functions
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
-## histogram {#histogram}
+## histogram
 
 Calculates an adaptive histogram. It does not guarantee precise results.
 
@@ -22,7 +20,7 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
 
 **Arguments**
 
-`values` — [Expression](/sql-reference/syntax#expressions) resulting in input values.
+`values` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in input values.
 
 **Parameters**
 
@@ -57,7 +55,7 @@ FROM (
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-You can visualize a histogram with the [bar](/sql-reference/functions/other-functions#bar) function, for example:
+You can visualize a histogram with the [bar](../../sql-reference/functions/other-functions.md#function-bar) function, for example:
 
 ``` sql
 WITH histogram(5)(rand() % 100) AS hist
@@ -84,7 +82,7 @@ FROM
 
 In this case, you should remember that you do not know the histogram bin borders.
 
-## sequenceMatch {#sequencematch}
+## sequenceMatch
 
 Checks whether the sequence contains an event chain that matches the pattern.
 
@@ -102,20 +100,21 @@ Events that occur at the same second may lay in the sequence in an undefined ord
 
 - `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../sql-reference/data-types/int-uint.md) data types.
 
-- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn’t described in a condition, the function skips them.
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
+- `pattern` — Pattern string. See [Pattern syntax](#sequencematch).
 
 **Returned values**
 
 - 1, if the pattern is matched.
-- 0, if the pattern isn't matched.
+- 0, if the pattern isn’t matched.
 
 Type: `UInt8`.
 
-#### Pattern syntax {#pattern-syntax}
+<a name="sequence-function-pattern-syntax"></a>
+**Pattern syntax**
 
 - `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
 
@@ -159,7 +158,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM 
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-In this case, the function couldn't find the event chain matching the pattern, because the event for number 3 occurred between 1 and 2. If in the same case we checked the condition for number 4, the sequence would match the pattern.
+In this case, the function couldn’t find the event chain matching the pattern, because the event for number 3 occurred between 1 and 2. If in the same case we checked the condition for number 4, the sequence would match the pattern.
 
 ``` sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM t
@@ -175,7 +174,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 - [sequenceCount](#sequencecount)
 
-## sequenceCount {#sequencecount}
+## sequenceCount
 
 Counts the number of event chains that matched the pattern. The function searches event chains that do not overlap. It starts to search for the next chain after the current chain is matched.
 
@@ -193,11 +192,11 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 - `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../sql-reference/data-types/int-uint.md) data types.
 
-- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
+- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn’t described in a condition, the function skips them.
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
+- `pattern` — Pattern string. See [Pattern syntax](#sequencematch).
 
 **Returned values**
 
@@ -232,68 +231,11 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-## sequenceMatchEvents {#sequencematchevents}
-
-Return event timestamps of longest event chains that matched the pattern.
-
-:::note
-Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
-:::
-
-**Syntax**
-
-``` sql
-sequenceMatchEvents(pattern)(timestamp, cond1, cond2, ...)
-```
-
-**Arguments**
-
-- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../sql-reference/data-types/int-uint.md) data types.
-
-- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn't described in a condition, the function skips them.
-
-**Parameters**
-
-- `pattern` — Pattern string. See [Pattern syntax](#pattern-syntax).
-
-**Returned values**
-
-- Array of timestamps for matched condition arguments (?N) from event chain. Position in array match position of condition argument in pattern
-
-Type: Array.
-
-**Example**
-
-Consider data in the `t` table:
-
-``` text
-┌─time─┬─number─┐
-│    1 │      1 │
-│    2 │      3 │
-│    3 │      2 │
-│    4 │      1 │
-│    5 │      3 │
-│    6 │      2 │
-└──────┴────────┘
-```
-
-Return timestamps of events for longest chain 
-
-``` sql
-SELECT sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, number = 1, number = 2, number = 4) FROM t
-```
-
-``` text
-┌─sequenceMatchEvents('(?1).*(?2).*(?1)(?3)')(time, equals(number, 1), equals(number, 2), equals(number, 4))─┐
-│ [1,3,4]                                                                                                    │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
-```
-
 **See Also**
 
 - [sequenceMatch](#sequencematch)
 
-## windowFunnel {#windowfunnel}
+## windowFunnel
 
 Searches for event chains in a sliding time window and calculates the maximum number of events that occurred from the chain.
 
@@ -301,7 +243,7 @@ The function works according to the algorithm:
 
 - The function searches for data that triggers the first condition in the chain and sets the event counter to 1. This is the moment when the sliding window starts.
 
-- If events from the chain occur sequentially within the window, the counter is incremented. If the sequence of events is disrupted, the counter isn't incremented.
+- If events from the chain occur sequentially within the window, the counter is incremented. If the sequence of events is disrupted, the counter isn’t incremented.
 
 - If the data has multiple event chains at varying points of completion, the function will only output the size of the longest chain.
 
@@ -313,17 +255,16 @@ windowFunnel(window, [mode, [mode, ... ]])(timestamp, cond1, cond2, ..., condN)
 
 **Arguments**
 
-- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](/sql-reference/data-types/datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it's value can't exceed the Int64 maximum, which is 2^63 - 1).
+- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it’s value can’t exceed the Int64 maximum, which is 2^63 - 1).
 - `cond` — Conditions or data describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
 
 **Parameters**
 
 - `window` — Length of the sliding window, it is the time interval between the first and the last condition. The unit of `window` depends on the `timestamp` itself and varies. Determined using the expression `timestamp of cond1 <= timestamp of cond2 <= ... <= timestamp of condN <= timestamp of cond1 + window`.
 - `mode` — It is an optional argument. One or more modes can be set.
-    - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing. Note: it may work unexpectedly if several conditions hold for the same event.
+    - `'strict_deduplication'` — If the same condition holds for the sequence of events, then such repeating event interrupts further processing.
     - `'strict_order'` — Don't allow interventions of other events. E.g. in the case of `A->B->D->C`, it stops finding `A->B->C` at the `D` and the max event level is 2.
     - `'strict_increase'` — Apply conditions only to events with strictly increasing timestamps.
-    - `'strict_once'` — Count each event only once in the chain even if it meets the condition several times
 
 **Returned value**
 
@@ -389,10 +330,10 @@ Result:
 └───────┴───┘
 ```
 
-## retention {#retention}
+## retention
 
 The function takes as arguments a set of conditions from 1 to 32 arguments of type `UInt8` that indicate whether a certain condition was met for the event.
-Any condition can be specified as an argument (as in [WHERE](/sql-reference/statements/select/where)).
+Any condition can be specified as an argument (as in [WHERE](../../sql-reference/statements/select/where.md#select-where)).
 
 The conditions, except the first, apply in pairs: the result of the second will be true if the first and second are true, of the third if the first and third are true, etc.
 
@@ -411,13 +352,13 @@ retention(cond1, cond2, ..., cond32);
 The array of 1 or 0.
 
 - 1 — Condition was met for the event.
-- 0 — Condition wasn't met for the event.
+- 0 — Condition wasn’t met for the event.
 
 Type: `UInt8`.
 
 **Example**
 
-Let's consider an example of calculating the `retention` function to determine site traffic.
+Let’s consider an example of calculating the `retention` function to determine site traffic.
 
 **1.** Create a table to illustrate an example.
 
@@ -548,9 +489,9 @@ Where:
 - `r2`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-02 (`cond1` and `cond2` conditions).
 - `r3`- the number of unique visitors who visited the site during a specific time period on 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
 
-## uniqUpTo(N)(x) {#uniquptonx}
+## uniqUpTo(N)(x)
 
-Calculates the number of different values of the argument up to a specified limit, `N`. If the number of different argument values is greater than `N`, this function returns `N` + 1, otherwise it calculates the exact value.
+Calculates the number of different values of the argument up to a specified limit, `N`. If the number of different argument values is greater than `N`, this function returns `N` + 1, otherwise it calculates the exact value. 
 
 Recommended for use with small `N`s, up to 10. The maximum value of `N` is 100.
 
@@ -568,9 +509,9 @@ HAVING uniqUpTo(4)(UserID) >= 5
 
 `uniqUpTo(4)(UserID)` calculates the number of unique `UserID` values for each `SearchPhrase`, but it only counts up to 4 unique values. If there are more than 4 unique `UserID` values for a `SearchPhrase`, the function returns 5 (4 + 1). The `HAVING` clause then filters out the `SearchPhrase` values for which the number of unique `UserID` values is less than 5. This will give you a list of search keywords that were used by at least 5 unique users.
 
-## sumMapFiltered {#summapfiltered}
+## sumMapFiltered
 
-This function behaves the same as [sumMap](/sql-reference/aggregate-functions/reference/summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys.
+This function behaves the same as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys.
 
 **Syntax**
 
@@ -582,7 +523,7 @@ This function behaves the same as [sumMap](/sql-reference/aggregate-functions/re
 - `keys`: [Array](../data-types/array.md) of keys.
 - `values`: [Array](../data-types/array.md) of values.
 
-**Returned Value**
+**Returned Value** 
 
 - Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
@@ -599,10 +540,10 @@ CREATE TABLE sum_map
 )
 ENGINE = Log
 
-INSERT INTO sum_map VALUES
-    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
+INSERT INTO sum_map VALUES 
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]), 
     ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]), 
     ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
 ```
 
@@ -618,9 +559,9 @@ Result:
    └─────────────────────────────────────────────────────────────────┘
 ```
 
-## sumMapFilteredWithOverflow {#summapfilteredwithoverflow}
+## sumMapFilteredWithOverflow
 
-This function behaves the same as [sumMap](/sql-reference/aggregate-functions/reference/summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys. It differs from the [sumMapFiltered](#summapfiltered) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
+This function behaves the same as [sumMap](../../sql-reference/aggregate-functions/reference/summap.md#agg_functions-summap) except that it also accepts an array of keys to filter with as a parameter. This can be especially useful when working with a high cardinality of keys. It differs from the [sumMapFiltered](#summapfiltered) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
 **Syntax**
 
@@ -632,7 +573,7 @@ This function behaves the same as [sumMap](/sql-reference/aggregate-functions/re
 - `keys`: [Array](../data-types/array.md) of keys.
 - `values`: [Array](../data-types/array.md) of values.
 
-**Returned Value**
+**Returned Value** 
 
 - Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
@@ -651,10 +592,10 @@ CREATE TABLE sum_map
 )
 ENGINE = Log
 
-INSERT INTO sum_map VALUES
-    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]),
+INSERT INTO sum_map VALUES 
+    ('2000-01-01', '2000-01-01 00:00:00', [1, 2, 3], [10, 10, 10]), 
     ('2000-01-01', '2000-01-01 00:00:00', [3, 4, 5], [10, 10, 10]),
-    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]),
+    ('2000-01-01', '2000-01-01 00:01:00', [4, 5, 6], [10, 10, 10]), 
     ('2000-01-01', '2000-01-01 00:01:00', [6, 7, 8], [10, 10, 10]);
 ```
 
@@ -680,7 +621,7 @@ Result:
    └──────────────────────┴────────────────────────────────────┘
 ```
 
-## sequenceNextNode {#sequencenextnode}
+## sequenceNextNode
 
 Returns a value of the next event that matched an event chain.
 
@@ -706,7 +647,7 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 
 **Arguments**
 
-- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](/sql-reference/data-types/datetime) and other unsigned integer types.
+- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md#data_type-datetime) and other unsigned integer types.
 - `event_column` — Name of the column containing the value of the next event to be returned. Data types supported: [String](../../sql-reference/data-types/string.md) and [Nullable(String)](../../sql-reference/data-types/nullable.md).
 - `base_condition` — Condition that the base point must fulfill.
 - `event1`, `event2`, ... — Conditions describing the chain of events. [UInt8](../../sql-reference/data-types/int-uint.md).
@@ -714,7 +655,7 @@ sequenceNextNode(direction, base)(timestamp, event_column, base_condition, event
 **Returned values**
 
 - `event_column[next_index]` — If the pattern is matched and next value exists.
-- `NULL` - If the pattern isn't matched or next value doesn't exist.
+- `NULL` - If the pattern isn’t matched or next value doesn't exist.
 
 Type: [Nullable(String)](../../sql-reference/data-types/nullable.md).
 

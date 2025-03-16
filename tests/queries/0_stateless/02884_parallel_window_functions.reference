@@ -12,7 +12,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_function_threading
+    FROM window_funtion_threading
     GROUP BY ac, nw
 )
 GROUP BY nw
@@ -32,7 +32,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_function_threading
+    FROM window_funtion_threading
     GROUP BY ac, nw
 )
 GROUP BY nw
@@ -42,7 +42,6 @@ SETTINGS max_threads = 1;
 0	2	0
 1	2	0
 2	2	0
-SET max_rows_to_read = 40000000;
 SELECT
     nw,
     sum(WR) AS R,
@@ -54,7 +53,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_function_threading
+    FROM window_funtion_threading
     WHERE (ac % 4) = 0
     GROUP BY
         ac,
@@ -65,7 +64,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_function_threading
+    FROM window_funtion_threading
     WHERE (ac % 4) = 1
     GROUP BY
         ac,
@@ -76,7 +75,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_function_threading
+    FROM window_funtion_threading
     WHERE (ac % 4) = 2
     GROUP BY
         ac,
@@ -87,7 +86,7 @@ FROM
         AVG(wg) AS WR,
         ac,
         nw
-    FROM window_function_threading
+    FROM window_funtion_threading
     WHERE (ac % 4) = 3
     GROUP BY
         ac,

@@ -5,11 +5,9 @@
 
 -- If this test fails, see the "Top patterns of log messages" diagnostics in the end of run.log
 
-system flush logs text_log;
+system flush logs;
 drop table if exists logs;
 create view logs as select * from system.text_log where now() - toIntervalMinute(120) < event_time;
-
-SET max_rows_to_read = 0; -- system.text_log can be really big
 
 -- Check that we don't have too many messages formatted with fmt::runtime or strings concatenation.
 -- 0.001 threshold should be always enough, the value was about 0.00025
@@ -62,13 +60,13 @@ SELECT
             WHERE
                 length(message_format_string) = 0
               AND (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%'
+              AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%'
             GROUP BY message ORDER BY c LIMIT 10
         ))
 FROM logs
 WHERE
   (message like '%DB::Exception%' or message like '%Coordination::Exception%')
-  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%' and message not like '%throwIf%';
+  AND message not like '% Received from %' and message not like '%(SYNTAX_ERROR)%' and message not like '%Fault injection%';
 
 
 -- FIXME some of the following messages are not informative and it has to be fixed
