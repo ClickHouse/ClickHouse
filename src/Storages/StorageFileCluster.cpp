@@ -4,7 +4,6 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Sources/RemoteSource.h>
-#include <Parsers/queryToString.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Storages/StorageFileCluster.h>
 #include <Storages/IStorage.h>
@@ -68,7 +67,7 @@ void StorageFileCluster::updateQueryToSendIfNeeded(DB::ASTPtr & query, const Sto
 {
     auto * table_function = extractTableFunctionFromSelectQuery(query);
     if (!table_function)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", queryToString(query));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected SELECT query from table function fileCluster, got '{}'", query->formatForErrorMessage());
 
     TableFunctionFileCluster::updateStructureAndFormatArgumentsIfNeeded(
         table_function,

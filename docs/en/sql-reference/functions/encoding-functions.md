@@ -700,7 +700,7 @@ select untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) fr
 Result:
 
 ```response
-1	2	3	4	5	6	7	8
+1    2    3    4    5    6    7    8
 ```
 
 ## hilbertEncode {#hilbertencode}
@@ -965,5 +965,5 @@ select untuple(hilbertDecode(2, hilbertEncode(n1, n2))) from hilbert_numbers;
 Result:
 
 ```response
-1	2
+1    2
 ```

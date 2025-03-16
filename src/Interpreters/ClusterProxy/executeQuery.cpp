@@ -15,7 +15,6 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/queryToString.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -187,7 +186,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     {
         Tuple tuple;
         tuple.push_back(main_table.getShortName());
-        tuple.push_back(queryToString(additional_filter_ast));
+        tuple.push_back(additional_filter_ast->formatWithSecretsOneLine());
         new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
     }
 

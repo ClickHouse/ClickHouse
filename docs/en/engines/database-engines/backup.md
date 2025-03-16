@@ -40,16 +40,16 @@ Let's make an example with a `Disk` backup destination. Let's first setup backup
 
 ``` xml
 <storage_configuration>
-	<disks>
-		<backups>
-			<type>local</type>
-			<path>/home/ubuntu/ClickHouseWorkDir/backups/</path>
-		</backups>
-	</disks>
+    <disks>
+        <backups>
+            <type>local</type>
+            <path>/home/ubuntu/ClickHouseWorkDir/backups/</path>
+        </backups>
+    </disks>
 </storage_configuration>
 <backups>
-	<allowed_disk>backups</allowed_disk>
-	<allowed_path>/home/ubuntu/ClickHouseWorkDir/backups/</allowed_path>
+    <allowed_disk>backups</allowed_disk>
+    <allowed_path>/home/ubuntu/ClickHouseWorkDir/backups/</allowed_path>
 </backups>
 ```
 

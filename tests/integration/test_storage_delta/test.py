@@ -35,6 +35,7 @@ from pyspark.sql.window import Window
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import minio_secret_key
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
     get_file_contents,
@@ -467,7 +468,7 @@ def test_types(started_cluster, use_delta_kernel):
     instance.query(
         f"""
         DROP TABLE IF EXISTS {TABLE_NAME};
-        CREATE TABLE {TABLE_NAME} ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')"""
+        CREATE TABLE {TABLE_NAME} ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"""
     )
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 1
     assert (
@@ -475,7 +476,7 @@ def test_types(started_cluster, use_delta_kernel):
         == "123\tstring\t2000-01-01\t['str1','str2']\ttrue\t['str1','str4']"
     )
 
-    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
     assert (
         instance.query(f"SELECT * FROM {table_function}").strip()
         == "123\tstring\t2000-01-01\t['str1','str2']\ttrue\t['str1','str4']"
@@ -670,7 +671,7 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     print(f"Uploaded files: {files}")
 
     result = instance.query(
-        f"describe table deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+        f"describe table deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
     ).strip()
 
     assert (
@@ -681,7 +682,7 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     result = int(
         instance.query(
             f"""SELECT count()
-            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
+            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
             """
         )
     )
@@ -689,7 +690,7 @@ def test_partition_columns(started_cluster, use_delta_kernel):
     result = int(
         instance.query(
             f"""SELECT count()
-            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
+            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
             WHERE c == toDateTime('2000/01/05')
             """
         )
@@ -700,7 +701,7 @@ def test_partition_columns(started_cluster, use_delta_kernel):
         f"""
        DROP TABLE IF EXISTS {TABLE_NAME};
        CREATE TABLE {TABLE_NAME} (a Nullable(Int32), b Nullable(String), c Nullable(Date32), d Nullable(Int32), e Nullable(Bool))
-       ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')
+       ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
        SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
         """
     )
@@ -731,7 +732,7 @@ def test_partition_columns(started_cluster, use_delta_kernel):
         f"""
        DROP TABLE IF EXISTS {TABLE_NAME};
        CREATE TABLE {TABLE_NAME} (b Nullable(String), c Nullable(Date32), d Nullable(Int32))
-       ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123')
+       ENGINE=DeltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')
        SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}
         """
     )
@@ -774,7 +775,7 @@ test9	2000-01-09	9"""
     result = int(
         instance.query(
             f"""SELECT count()
-            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
+            FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})
             """
         )
     )
@@ -801,7 +802,7 @@ test9	2000-01-09	9"""
 18	test18	2000-01-18	18	false"""
         == instance.query(
             f"""
-SELECT * FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', 'minio123', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}) ORDER BY c
+SELECT * FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel}) ORDER BY c
         """
         ).strip()
     )
@@ -877,7 +878,7 @@ def test_complex_types(started_cluster, use_delta_kernel):
 
     endpoint_url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
     aws_access_key_id = "minio"
-    aws_secret_access_key = "minio123"
+    aws_secret_access_key = "ClickHouse_Minio_P@ssw0rd"
     table_name = randomize_table_name("test_complex_types")
 
     storage_options = {
@@ -893,18 +894,18 @@ def test_complex_types(started_cluster, use_delta_kernel):
     write_deltalake(path, table, storage_options=storage_options)
 
     assert "1\n2\n3\n" in node.query(
-        f"SELECT id FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', 'minio123', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+        f"SELECT id FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
     )
     assert (
         "('123 Elm St','Springfield','IL')\n('456 Maple St','Shelbyville','IL')\n('789 Oak St','Ogdenville','IL')"
         in node.query(
-            f"SELECT address FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', 'minio123', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+            f"SELECT address FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
         )
     )
     assert (
         "{'key1':'value1','key2':'value2'}\n{'key1':'value3','key2':'value4'}\n{'key1':'value5','key2':'value6'}"
         in node.query(
-            f"SELECT metadata FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', 'minio123', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
+            f"SELECT metadata FROM deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}' , 'minio', '{minio_secret_key}', SETTINGS allow_experimental_delta_kernel_rs={use_delta_kernel})"
         )
     )
 
@@ -1002,7 +1003,7 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
 
     endpoint_url = f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}"
     aws_access_key_id = "minio"
-    aws_secret_access_key = "minio123"
+    aws_secret_access_key = "ClickHouse_Minio_P@ssw0rd"
 
     schema = pa.schema(
         [
@@ -1045,7 +1046,7 @@ def test_replicated_database_and_unavailable_s3(started_cluster, use_delta_kerne
             f"""
             DROP TABLE IF EXISTS {DB_NAME}.{TABLE_NAME};
             CREATE TABLE {DB_NAME}.{TABLE_NAME}
-            AS deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{TABLE_NAME}' , 'minio', 'minio123')
+            AS deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{TABLE_NAME}' , 'minio', '{minio_secret_key}')
             """
         )
 

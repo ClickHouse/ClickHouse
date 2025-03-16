@@ -6,6 +6,10 @@ slug: /sql-reference/aggregate-functions/reference/quantilebfloat16
 title: 'quantileBFloat16'
 ---
 
+# quantileBFloat16Weighted
+
+Like `quantileBFloat16` but takes into account the weight of each sequence member.
+
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers. `bfloat16` is a floating-point data type with 1 sign bit, 8 exponent bits and 7 fraction bits.
 The function converts input values to 32-bit floats and takes the most significant 16 bits. Then it calculates `bfloat16` quantile value and converts the result to a 64-bit float by appending zero bits.
 The function is a fast quantile estimator with a relative error no more than 0.390625%.
@@ -59,10 +63,6 @@ Result:
 └───────────────────────────┴───────────────────────────┘
 ```
 Note that all floating point values in the example are truncated to 1.0 when converting to `bfloat16`.
-
-# quantileBFloat16Weighted
-
-Like `quantileBFloat16` but takes into account the weight of each sequence member.
 
 **See Also**
 

@@ -133,7 +133,7 @@ The 28.7M rows are in a Parquet file in S3 - let's insert them into the `hackern
 
 ```sql
 INSERT INTO hackernews
-	SELECT * FROM s3Cluster(
+    SELECT * FROM s3Cluster(
         'default',
         'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
         'Parquet',
@@ -144,9 +144,9 @@ INSERT INTO hackernews
     by String,
     time DateTime,
     text String,
-	dead UInt8,
-	parent UInt64,
-	poll UInt64,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
     kids Array(UInt32),
     url String,
     score UInt32,
