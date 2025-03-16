@@ -98,18 +98,25 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     std::vector<const ActionsDAG::Node *> left_columns;
     Header right_predicate_header;
+    std::unordered_set<String> unique_left_columns;
+    std::unordered_set<String> unique_right_columns;
     for (const auto & predicate : join_info.expression.condition.predicates)
     {
-        auto it = outputs.find(predicate.left_node.getColumn().name);
+        const auto & left_column_name = predicate.left_node.getColumn().name;
+        auto it = outputs.find(left_column_name);
         if (it == outputs.end())
             return 0;
-        left_columns.push_back(it->second);
+        /// To prevent duplicate predicates.
+        if (unique_left_columns.insert(left_column_name).second)
+            left_columns.push_back(it->second);
 
-        const auto * right_column = right_header.findByName(predicate.right_node.getColumn().name);
+        const auto & right_column_name = predicate.right_node.getColumn().name;
+        /// column in predicate is null, so get column here
+        const auto * right_column = right_header.findByName(right_column_name);
         if (!right_column)
             return 0;
-        /// column in predicate is null, so get column here
-        right_predicate_header.insert(*right_column);
+        if (unique_right_columns.insert(left_column_name).second)
+            right_predicate_header.insert(*right_column);
     }
 
     /// left parameter of IN function
