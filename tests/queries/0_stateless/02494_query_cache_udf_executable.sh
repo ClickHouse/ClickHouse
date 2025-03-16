@@ -17,17 +17,17 @@ $CLICKHOUSE_LOCAL -q "
 SYSTEM DROP QUERY CACHE;
 " -q "
 SELECT '-- query_cache_nondeterministic_function_handling = throw';
-SELECT test_function() SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT test_function() FORMAT Null SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT count(*) FROM system.query_cache;
 SYSTEM DROP QUERY CACHE;
 " -q "
 SELECT '-- query_cache_nondeterministic_function_handling = save';
-SELECT test_function() SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save';
+SELECT test_function() FORMAT Null SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save';
 SELECT count(*) FROM system.query_cache;
 SYSTEM DROP QUERY CACHE;
 " -q "
 SELECT '-- query_cache_nondeterministic_function_handling = ignore';
-SELECT test_function() SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore';
+SELECT test_function() FORMAT Null SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore';
 SELECT count(*) FROM system.query_cache;
 SYSTEM DROP QUERY CACHE;
 " -- --user_scripts_path=$SCRIPTS_DIR \
