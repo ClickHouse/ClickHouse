@@ -334,3 +334,22 @@ def test_executable_function_always_error_python(started_cluster):
         assert False, "Exception have to be thrown"
     except Exception as ex:
         assert "DB::Exception: Child process was exited with return code 1" in str(ex)
+
+def test_executable_function_bash_cache(started_cluster):
+    '''Test that the executable UDFs are non-deterministic by default'''
+    skip_test_msan(node)
+    # test that when not specified the default behavior is implicitly non-deterministic
+    assert node.query_and_get_error("SELECT test_function_bash(1) SETTINGS use_query_cache = true;")
+    assert node.query_and_get_error("SELECT test_function_bash(2) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'throw'")
+    assert node.query("SELECT count(*) FROM system.query_cache") == "0\n"
+    node.query("SYSTEM DROP QUERY CACHE");
+
+    # Test now with 'save'
+    assert node.query("SELECT test_function_bash(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'save'") == "Key 1\n"
+    assert node.query("SELECT count(*) FROM system.query_cache") == "1\n"
+    node.query("SYSTEM DROP QUERY CACHE");
+
+    # Just ignore.
+    assert node.query("SELECT test_function_bash(1) SETTINGS use_query_cache = true, query_cache_nondeterministic_function_handling = 'ignore'") == "Key 1\n"
+    assert node.query("SELECT count(*) FROM system.query_cache") == "0\n"
+    node.query("SYSTEM DROP QUERY CACHE");
