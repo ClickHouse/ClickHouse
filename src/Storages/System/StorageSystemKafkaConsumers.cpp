@@ -89,11 +89,6 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
 
     auto add_row = [&](const DatabaseTablesIteratorPtr & it, StorageKafka * storage_kafka_ptr)
     {
-        if (!access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
-        {
-            return;
-        }
-
         std::string database_str = it->databaseName();
         std::string table_str = it->name();
 
@@ -158,12 +153,16 @@ void StorageSystemKafkaConsumers::fillData(MutableColumns & res_columns, Context
         auto databases = DatabaseCatalog::instance().getDatabases();
         for (const auto & db : databases)
         {
-            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto it = db.second->getTablesIterator(context); it->isValid(); it->next())
             {
-                StoragePtr storage = iterator->table();
+                StoragePtr storage = it->table();
                 if (auto * kafka_table = dynamic_cast<StorageKafka *>(storage.get()))
                 {
-                    add_row(iterator, kafka_table);
+                    if (!show_tables_granted && !access->isGranted(AccessType::SHOW_TABLES, it->databaseName(), it->name()))
+                    {
+                        return;
+                    }
+                    add_row(it, kafka_table);
                 }
             }
         }
