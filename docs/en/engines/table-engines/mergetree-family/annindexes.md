@@ -131,7 +131,7 @@ additional techniques are recommended to speed up index creation:
   inserted using `SYSTEM START MERGES`.
 - If the data is inserted in very small batches, the latter may lead to an "too many parts" error. As an alternative, you could disable
   merge tree setting [`materialize_skip_indexes_on_merge`](../../../operations/settings/merge-tree-settings.md), then insert the data (with
-  backgroun merges continuously combining new and existing parts), afterwards enable `materialize_skip_indexes_on_merge` via an `ALTER
+  background merges continuously combining new and existing parts), afterwards enable `materialize_skip_indexes_on_merge` via an `ALTER
   TABLE` statement, and finally force a merge for all parts (`OPTIMIZE TABLE`).
 
 Vector similarity indexes support this type of query:
