@@ -65,12 +65,13 @@ struct HasNonDeterministicFunctionsMatcher
             }
             if (const auto udf_sql = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
             {
+                /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
                 data.has_non_deterministic_functions = true;
                 return;
             }
-            if (const auto udf_ex = UserDefinedExecutableFunctionFactory::tryGet(function->name, data.context))
+            if (const auto udf_executable = UserDefinedExecutableFunctionFactory::tryGet(function->name, data.context))
             {
-                if (!udf_ex->isDeterministic())
+                if (!udf_executable->isDeterministic())
                     data.has_non_deterministic_functions = true;
                 return;
             }
