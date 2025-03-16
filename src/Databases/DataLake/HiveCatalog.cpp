@@ -1,28 +1,29 @@
 #include "Databases/DataLake/HiveCatalog.h"
-#include <optional>
-#include "Common/Exception.h"
-#include "Core/Names.h"
-#include "Databases/DataLake/ICatalog.h"
+#if USE_AVRO
+#    include <optional>
+#    include "Common/Exception.h"
+#    include "Core/Names.h"
+#    include "Databases/DataLake/ICatalog.h"
 
-#include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeFixedString.h>
-#include <DataTypes/DataTypeMap.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeTuple.h>
-#include <DataTypes/DataTypeUUID.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/IDataType.h>
+#    include <DataTypes/DataTypeArray.h>
+#    include <DataTypes/DataTypeDate.h>
+#    include <DataTypes/DataTypeDateTime64.h>
+#    include <DataTypes/DataTypeFactory.h>
+#    include <DataTypes/DataTypeFixedString.h>
+#    include <DataTypes/DataTypeMap.h>
+#    include <DataTypes/DataTypeNullable.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypeTuple.h>
+#    include <DataTypes/DataTypeUUID.h>
+#    include <DataTypes/DataTypesDecimal.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <DataTypes/IDataType.h>
 
-#include <IO/S3/Client.h>
-#include <IO/S3/Credentials.h>
-#include <IO/S3Settings.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Common/ProxyConfigurationResolverProvider.h>
+#    include <IO/S3/Client.h>
+#    include <IO/S3/Credentials.h>
+#    include <IO/S3Settings.h>
+#    include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#    include <Common/ProxyConfigurationResolverProvider.h>
 
 namespace DB::ErrorCodes
 {
@@ -234,3 +235,4 @@ std::optional<StorageType> HiveCatalog::getStorageType() const
 }
 
 }
+#endif
