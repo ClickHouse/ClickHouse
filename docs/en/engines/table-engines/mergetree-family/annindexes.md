@@ -121,12 +121,18 @@ are ideally used only with immutable or rarely changed data, respectively when a
 additional techniques are recommended to speed up index creation:
 - Index creation can be parallelized. The maximum number of threads can be configured using server setting
   [max_build_vector_similarity_index_thread_pool_size](../../../operations/server-configuration-parameters/settings.md#server_configuration_parameters_max_build_vector_similarity_index_thread_pool_size).
-- Index creation on newly inserted parts may be disabled using setting `materialize_skip_indexes_on_insert`. Search on such parts will fall
-  back to exact search but as inserted parts are typically small compared to the total table size, the performance impact is negligible.
+  It is recommended to configure the setting to the number of CPU cores of the machine.
+- Index creation on newly inserted parts may be disabled using session setting
+  [`materialize_skip_indexes_on_insert`](../../../operations/settings/settings.md). Searches on such parts will fall back to exact search
+  but as inserted parts are typically small compared to the total table size, the performance impact is expected to be negligible.
 - As parts are incrementally merged into bigger parts, and these new parts are merged into even bigger parts ("write amplification"),
   vector similarity indexes are possibly build multiple times for the same vectors. To avoid that, you may suppress merges during insert
   using statement [`SYSTEM STOP MERGES`](../../../sql-reference/statements/system.md), respectively start merges once all data has been
   inserted using `SYSTEM START MERGES`.
+- If the data is inserted in very small batches, the latter may lead to an "too many parts" error. As an alternative, you could disable
+  merge tree setting [`materialize_skip_indexes_on_merge`](../../../operations/settings/merge-tree-settings.md), then insert the data (with
+  backgroun merges continuously combining new and existing parts), afterwards enable `materialize_skip_indexes_on_merge` via an `ALTER
+  TABLE` statement, and finally force a merge for all parts (`OPTIMIZE TABLE`).
 
 Vector similarity indexes support this type of query:
 
