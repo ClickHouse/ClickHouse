@@ -19,9 +19,8 @@ Block ColumnLazyTransform::transformHeader(Block header)
 }
 
 ColumnLazyTransform::ColumnLazyTransform(
-    const Block & header_, const LazilyReadInfoPtr & lazily_read_info_, MergeTreeLazilyReaderPtr lazy_column_reader_)
+    const Block & header_, MergeTreeLazilyReaderPtr lazy_column_reader_)
     : ISimpleTransform(header_, transformHeader(header_), true)
-    , lazily_read_info(lazily_read_info_)
     , lazy_column_reader(std::move(lazy_column_reader_))
 {
 }

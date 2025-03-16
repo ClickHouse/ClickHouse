@@ -4,8 +4,8 @@
 #include <Columns/ColumnLazy.h>
 #include <Common/Logger.h>
 #include <Common/typeid_cast.h>
-#include "Columns/IColumn.h"
-#include "Core/Settings.h"
+#include <Columns/ColumnSparse.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -177,6 +177,9 @@ void MergeTreeLazilyReader::readLazyColumns(
             /// Handle cases where columns are missing in MergeTree.
             bool should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, read_rows);
+            
+            for (auto & col : columns_to_read)
+                col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
 
             if (should_evaluate_missing_defaults)
             {
@@ -188,7 +191,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             reader->performRequiredConversions(columns_to_read);
 
             for (size_t i = 0; i < columns_size; ++i)
-                lazily_read_columns[i]->insert((*columns_to_read[i])[0]);
+                lazily_read_columns[i]->insertFrom((*columns_to_read[i]), 0);
 
             auto prev_mark = mark_range_iter->begin;
             auto prev_offset = next_offset;
@@ -211,7 +214,7 @@ void MergeTreeLazilyReader::readLazyColumns(
                     {
                         /// The next row of data was already read during the previous read.
                         for (size_t i = 0; i < columns_size; ++i)
-                            lazily_read_columns[i]->insert((*columns_to_read[i])[next_offset - prev_offset]);
+                            lazily_read_columns[i]->insertFrom((*columns_to_read[i]), next_offset - prev_offset);
                     }
                     else
                     {
