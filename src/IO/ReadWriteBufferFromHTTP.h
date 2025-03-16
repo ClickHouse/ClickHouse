@@ -32,6 +32,7 @@ namespace DB
 
 class ReadWriteBufferFromHTTP : public SeekableReadBuffer, public WithFileName, public WithFileSize
 {
+    friend class BuilderRWBufferFromHTTP;
 public:
     /// Information from HTTP response header.
     struct HTTPFileInfo
@@ -41,6 +42,9 @@ public:
         std::optional<time_t> last_modified;
         bool seekable = false;
     };
+
+    using OutStreamCallback = std::function<void(std::ostream &)>;
+    using NextCallback = std::function<void(size_t)>;
 
 private:
     /// Byte range, including right bound [begin, end].
@@ -139,10 +143,6 @@ private:
     // If true, if we destroy impl now, no work was wasted. Just for metrics.
     bool atEndOfRequestedRangeGuess();
 
-public:
-    using NextCallback = std::function<void(size_t)>;
-    using OutStreamCallback = std::function<void(std::ostream &)>;
-
     ReadWriteBufferFromHTTP(
         const HTTPConnectionGroupType & connection_group_,
         const Poco::URI & uri_,
@@ -161,6 +161,7 @@ public:
         bool delay_initialization,
         std::optional<HTTPFileInfo> file_info_);
 
+public:
     bool nextImpl() override;
 
     size_t readBigAt(char * to, size_t n, size_t offset, const std::function<bool(size_t)> & progress_callback) const override;
@@ -202,7 +203,7 @@ class BuilderRWBufferFromHTTP
     Poco::URI uri;
     std::string method = Poco::Net::HTTPRequest::HTTP_GET;
     HTTPConnectionGroupType connection_group = HTTPConnectionGroupType::HTTP;
-    ProxyConfiguration proxy_config{};
+    bool bypass_proxy = false;
     ReadSettings read_settings{};
     ConnectionTimeouts timeouts{};
     const RemoteHostFilter * remote_host_filter = nullptr;
@@ -229,7 +230,7 @@ public:
 
     setterMember(withConnectionGroup, connection_group)
     setterMember(withMethod, method)
-    setterMember(withProxy, proxy_config)
+    setterMember(withBypassProxy, bypass_proxy)
     setterMember(withSettings, read_settings)
     setterMember(withTimeouts, timeouts)
     setterMember(withHostFilter, remote_host_filter)
@@ -243,26 +244,7 @@ public:
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_)
-    {
-        return std::make_unique<ReadWriteBufferFromHTTP>(
-            connection_group,
-            uri,
-            method,
-            proxy_config,
-            read_settings,
-            timeouts,
-            credentials_,
-            remote_host_filter,
-            buffer_size,
-            max_redirects,
-            out_stream_callback,
-            use_external_buffer,
-            http_skip_not_found_url,
-            http_header_entries,
-            delay_initialization,
-            /*file_info_=*/ std::nullopt);
-    }
+    ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
 };
 
 }
