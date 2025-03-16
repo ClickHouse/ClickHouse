@@ -406,7 +406,7 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue where zookeep
         info = node.query(
             f"""
             select concat('test_',  toString(number), '.csv') as file from numbers(300)
-            where file not in (select splitByChar('/', file_name)[-1] from clusterAllReplicas(default, system.s3queue)
+            where file not in (select splitByChar('/', file_name)[-1] from clusterAllReplicas(cluster, system.s3queue)
             where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_processed > 0)
             """
         )
