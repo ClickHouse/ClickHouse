@@ -517,17 +517,14 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
     auto storage_engine_arguments = storage->engine->arguments;
     if (table_metadata.isDefaultReadableTable())
     {
-        if (storage_engine_arguments->children.empty())
-        {
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Unexpected number of arguments: {}",
-                storage_engine_arguments->children.size());
-        }
         auto table_endpoint = getStorageEndpointForTable(table_metadata);
         if (table_endpoint.starts_with(DataLake::FILE_PATH_PREFIX))
             table_endpoint = table_endpoint.substr(DataLake::FILE_PATH_PREFIX.length());
 
         LOG_DEBUG(log, "Table endpoint {}", table_endpoint);
+        if (storage_engine_arguments->children.empty())
+            storage_engine_arguments->children.emplace_back();
+
         storage_engine_arguments->children[0] = std::make_shared<ASTLiteral>(table_endpoint);
     }
     else

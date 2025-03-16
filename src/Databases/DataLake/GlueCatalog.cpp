@@ -366,10 +366,8 @@ void GlueCatalog::getTableMetadata(
             result.setSchema(schema);
         }
 
-        if (!credentials.IsEmpty())
-        {
+        if (result.requiresCredentials())
             setCredentials(result);
-        }
 
         if (result.requiresDataLakeSpecificProperties())
         {
