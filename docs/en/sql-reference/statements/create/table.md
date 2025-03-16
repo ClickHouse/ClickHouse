@@ -89,7 +89,7 @@ In ClickHouse Cloud please split this into two steps:
   CREATE TABLE t1
   ENGINE = MergeTree
   ORDER BY ...
-  # highlight-next-line
+  -- highlight-next-line
   EMPTY AS
   SELECT ...
   ```
