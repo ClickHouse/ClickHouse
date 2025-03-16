@@ -177,7 +177,7 @@ void MergeTreeLazilyReader::readLazyColumns(
             /// Handle cases where columns are missing in MergeTree.
             bool should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, read_rows);
-            
+
             for (auto & col : columns_to_read)
                 col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
 
