@@ -441,16 +441,22 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStateVariant * variant_state = nullptr;
     std::vector<size_t> variant_rows_offsets;
     std::vector<size_t> variant_limits;
+    size_t discriminators_offset = 0;
 
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
         col.getLocalDiscriminatorsPtr() = cached_discriminators;
+        auto * discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
+        discriminators_offset = discriminators_state->origin_num_rows;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
         variant_state = checkAndGetState<DeserializeBinaryBulkStateVariant>(state);
         auto * discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
+        const auto origin_num_rows = col.getLocalDiscriminatorsPtr()->size();
+        discriminators_state->origin_num_rows = origin_num_rows;
+        discriminators_offset = origin_num_rows;
 
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == DiscriminatorsSerializationMode::BASIC)
@@ -490,7 +496,6 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
         if (rows_offset)
         {
-            size_t discriminators_offset = col.getLocalDiscriminatorsPtr()->size() - limit - rows_offset;
             auto & discriminators_data = col.getLocalDiscriminators();
 
             for (size_t i = discriminators_offset; i != discriminators_offset + rows_offset; ++i)
@@ -504,7 +509,6 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
     if (rows_offset)
     {
-        size_t discriminators_offset = col.getLocalDiscriminatorsPtr()->size() - limit - rows_offset;
         auto & discriminators_data = col.getLocalDiscriminators();
 
         for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
@@ -516,17 +520,6 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     {
         variant_limits.resize(variants.size(), 0);
         auto & discriminators_data = col.getLocalDiscriminators();
-
-        /// We can actually read less than limit discriminators and we cannot determine the actual number of read rows
-        /// by discriminators column as it could be taken from the substreams cache. And we need actual number of read
-        /// rows to fill offsets correctly later if they are not in the cache. We can determine if offsets column is in cache
-        /// or not by comparing it with discriminators column size (they should be the same when offsets are in cache).
-        /// If offsets are not in the cache, we can use it's size to determine the actual number of read rows.
-        size_t num_new_discriminators = limit;
-        size_t offsets_size = col.getOffsetsPtr()->size();
-        if (discriminators_data.size() > offsets_size)
-            num_new_discriminators = discriminators_data.size() - offsets_size;
-        size_t discriminators_offset = discriminators_data.size() - num_new_discriminators;
 
         for (size_t i = discriminators_offset ; i != discriminators_data.size(); ++i)
         {

@@ -187,6 +187,7 @@ private:
         CompactDiscriminatorsGranuleFormat granule_format = CompactDiscriminatorsGranuleFormat::PLAIN;
         size_t remaining_rows_in_granule = 0;
         ColumnVariant::Discriminator compact_discr = 0;
+        size_t origin_num_rows = 0;
 
         ISerialization::DeserializeBinaryBulkStatePtr clone() const override
         {

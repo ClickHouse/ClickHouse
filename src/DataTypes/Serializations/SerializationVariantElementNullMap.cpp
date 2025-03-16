@@ -93,10 +93,14 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
 
     DeserializeBinaryBulkStateVariantElementNullMap * variant_element_null_map_state = nullptr;
     std::optional<size_t> variant_limit;
+    size_t discriminators_offset = 0;
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
         variant_element_null_map_state = checkAndGetState<DeserializeBinaryBulkStateVariantElementNullMap>(state);
         variant_element_null_map_state->discriminators = cached_discriminators;
+        auto * discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(
+            variant_element_null_map_state->discriminators_state);
+        discriminators_offset = discriminators_state->origin_num_rows;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
@@ -107,6 +111,9 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
         /// If we started to read a new column, reinitialize discriminators column in deserialization state.
         if (!variant_element_null_map_state->discriminators || result_column->empty())
             variant_element_null_map_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
+
+        const auto origin_num_rows = variant_element_null_map_state->discriminators->size();
+        discriminators_offset = origin_num_rows;
 
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
@@ -145,7 +152,6 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
 
     if (rows_offset)
     {
-        size_t discriminators_offset = variant_element_null_map_state->discriminators->size() - limit - rows_offset;
         auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_null_map_state->discriminators->assumeMutable()).getData();
 
         for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
@@ -170,7 +176,6 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     {
         const auto & discriminators_data
             = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*variant_element_null_map_state->discriminators).getData();
-        size_t discriminators_offset = variant_element_null_map_state->discriminators->size() - limit;
         for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
             data.push_back(discriminators_data[i] != variant_discriminator);
     }
