@@ -1,8 +1,10 @@
 ---
-slug: /operations/opentelemetry
+description: 'Guide to using OpenTelemetry for distributed tracing and metrics collection
+  in ClickHouse'
+sidebar_label: 'Tracing ClickHouse with OpenTelemetry'
 sidebar_position: 62
-sidebar_label: Tracing ClickHouse with OpenTelemetry
-title: "Tracing ClickHouse with OpenTelemetry"
+slug: /operations/opentelemetry
+title: 'Tracing ClickHouse with OpenTelemetry'
 ---
 
 [OpenTelemetry](https://opentelemetry.io/) is an open standard for collecting traces and metrics from the distributed application. ClickHouse has some support for OpenTelemetry.

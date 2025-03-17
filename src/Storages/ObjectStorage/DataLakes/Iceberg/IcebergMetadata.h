@@ -128,8 +128,6 @@ private:
 
     Iceberg::ManifestListIterator getManifestList(const String & filename) const;
 
-    Int64 getRelevantSnapshotId(const Poco::JSON::Object::Ptr & metadata, const ContextPtr & local_context) const;
-
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
     Iceberg::ManifestFileContent initializeManifestFile(const String & filename, Int64 inherited_sequence_number) const;

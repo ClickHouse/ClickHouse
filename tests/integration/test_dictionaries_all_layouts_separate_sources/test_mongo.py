@@ -3,6 +3,7 @@ import os
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import mongo_pass
 from helpers.external_sources import SourceMongo
 
 from .common import *
@@ -40,7 +41,7 @@ def source(secure_connection, legacy, cluster):
         "mongo_secure" if secure_connection else "mongo1",
         27017,
         "root",
-        "clickhouse",
+        mongo_pass,
         secure=secure_connection,
         legacy=legacy,
     )

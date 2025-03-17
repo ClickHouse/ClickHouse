@@ -1,6 +1,7 @@
 #include <Access/Credentials.h>
 #include <Access/Common/SSLCertificateSubjects.h>
 #include <Common/Exception.h>
+#include <Poco/Net/HTTPRequest.h>
 
 namespace DB
 {
