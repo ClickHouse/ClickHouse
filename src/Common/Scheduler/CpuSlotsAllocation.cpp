@@ -72,7 +72,7 @@ CpuSlotsAllocation::~CpuSlotsAllocation()
         std::unique_lock lock{schedule_mutex};
         if (allocated < max)
         {
-            bool canceled = link.queue->cancelRequest(&requests[allocated]);
+            bool canceled = link.queue->cancelRequest(&requests[allocated - min]);
             if (!canceled)
             {
                 // Request was not canceled, it means it is currently processed by the scheduler thread, we have to wait
@@ -110,7 +110,7 @@ CpuSlotsAllocation::~CpuSlotsAllocation()
         {
             chassert(link);
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
-            size_t index = last_request_index.fetch_add(1, std::memory_order_relaxed);
+            size_t index = last_acquire_index.fetch_add(1, std::memory_order_relaxed);
             return AcquiredSlotPtr(new AcquiredCpuSlot(shared_from_this(), &requests[index]));
         }
     }
