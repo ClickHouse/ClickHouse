@@ -75,7 +75,7 @@ private:
     static constexpr SlotCount exception_value = SlotCount(-1);
     std::atomic<SlotCount> noncompeting; // allocated noncompeting slots, but not yet acquired
     std::atomic<SlotCount> granted{0}; // allocated competing slots, but not yet acquired
-    std::atomic<size_t> last_request_index{0};
+    std::atomic<size_t> last_acquire_index{0};
 
     // Requests per every slot
     // NOTE: it should not be reallocated after initialization because AcquiredCpuSlot holds raw pointer

@@ -158,18 +158,18 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
     }
 
     template <class Func>
-    size_t async(Func func)
+    ThreadFromGlobalPool * async(Func func)
     {
         std::scoped_lock lock{threads_mutex};
         threads.emplace_back([func2 = std::move(func)] mutable
         {
             func2();
         });
-        return threads.size() - 1;
+        return &threads.back();
     }
 
     template <class Func>
-    size_t async(const String & workload, Func func)
+    ThreadFromGlobalPool * async(const String & workload, Func func)
     {
         std::scoped_lock lock{threads_mutex};
         threads.emplace_back([=, this, func2 = std::move(func)] mutable
@@ -177,11 +177,11 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
             ClassifierPtr classifier = manager->acquire(workload);
             func2(classifier);
         });
-        return threads.size() - 1;
+        return &threads.back();
     }
 
     template <class Func>
-    size_t async(const String & workload, const String & resource, Func func)
+    ThreadFromGlobalPool * async(const String & workload, const String & resource, Func func)
     {
         std::scoped_lock lock{threads_mutex};
         threads.emplace_back([=, this, func2 = std::move(func)] mutable
@@ -190,7 +190,7 @@ struct ResourceTest : ResourceTestManager<WorkloadResourceManager>
             ResourceLink link = classifier->get(resource);
             func2(link);
         });
-        return threads.size() - 1;
+        return &threads.back();
     }
 };
 
@@ -365,12 +365,12 @@ struct TestQuery {
     size_t max_threads = 1;
     size_t threads_finished = 0;
     size_t active_threads = 0;
-    size_t last_thread_num = 0;
-    bool query_is_finished;
+    size_t started_threads = 0;
+    bool query_is_finished = false;
     UInt64 work_left = UInt64(-1);
 
-    std::mutex ids_mutex;
-    std::vector<size_t> ids;
+    std::mutex threads_mutex;
+    std::vector<ThreadFromGlobalPool *> threads;
 
     // Number of threads that should be granted to every query no matter how many threads are already running in other queries
     static constexpr size_t min_threads = 1uz;
@@ -384,15 +384,18 @@ struct TestQuery {
     {
         finish();
         while (true) {
-            std::vector<size_t> ids_to_wait;
+            std::vector<ThreadFromGlobalPool *> threads_to_join;
             {
-                std::scoped_lock lock{ids_mutex};
-                ids_to_wait.swap(ids);
+                std::scoped_lock lock{threads_mutex};
+                threads_to_join.swap(threads);
             }
-            if (ids_to_wait.empty())
+            if (threads_to_join.empty())
                 break;
-            for (size_t id : ids_to_wait)
-                t.wait(id);
+            for (ThreadFromGlobalPool * thread : threads_to_join)
+            {
+                if (thread->joinable())
+                    thread->join();
+            }
             // we have to repeat because threads we have just joined could have created new threads in the meantime
         }
     }
@@ -401,13 +404,13 @@ struct TestQuery {
     {
         while (auto slot = slots->tryAcquire())
         {
-            size_t id = t.async([this, my_slot = std::move(slot)] mutable
+            ThreadFromGlobalPool * thread = t.async([this, my_slot = std::move(slot)] mutable
             {
                 threadFunc(std::move(my_slot));
             });
 
-            std::scoped_lock lock{ids_mutex};
-            ids.push_back(id);
+            std::scoped_lock lock{threads_mutex};
+            threads.push_back(thread);
         }
     }
 
@@ -432,13 +435,21 @@ struct TestQuery {
         cv.wait(lock, [=, this] () { return active_threads >= thread_num_to_wait; });
     }
 
+    // Wait until number of started threads (including already finished) is not less than specified
+    void waitStartedThreads(size_t thread_num_to_wait)
+    {
+        std::unique_lock lock{mutex};
+        cv.wait(lock, [=, this] () { return started_threads >= thread_num_to_wait; });
+    }
+
     // Returns unique thread number
     size_t onThreadStart()
     {
         std::scoped_lock lock{mutex};
         active_threads++;
+        started_threads++;
         cv.notify_all();
-        return last_thread_num++;
+        return started_threads - 1;
     }
 
     void onThreadStop()
@@ -512,9 +523,9 @@ TEST(SchedulerWorkloadResourceManager, CpuSlotsAllocationRoundRobin)
     auto ensure = [&] (size_t q0_threads, size_t q1_threads)
     {
         if (q0_threads > 0)
-            queries[0]->waitActiveThreads(q0_threads);
+            queries[0]->waitStartedThreads(q0_threads);
         if (q1_threads > 0)
-            queries[1]->waitActiveThreads(q1_threads);
+            queries[1]->waitStartedThreads(q1_threads);
     };
 
     auto finish = [&] (size_t q0_threads, size_t q1_threads)
@@ -526,18 +537,20 @@ TEST(SchedulerWorkloadResourceManager, CpuSlotsAllocationRoundRobin)
     };
 
     // Note that thread with number 0 is noncompeting
-    queries[0]->start("all", 6);
+    queries[0]->start("all", 7);
     ensure(5, 0); // Q0: 0 1 2 3 4; Q1: -
     queries[1]->start("all", 8);
     ensure(5, 1); // Q0: 0 1 2 3 4; Q1: 0
     finish(2, 0); // Q0: 2 3 4; Q1: 0
-    ensure(4, 1); // Q0: 2 3 4 5; Q2: 0
+    ensure(6, 1); // Q0: 2 3 4 5; Q2: 0
     finish(1, 0); // Q0: 3 4 5; Q1: 0
-    ensure(3, 2); // Q0: 3 4 5; Q1: 0 1
+    ensure(6, 2); // Q0: 3 4 5; Q1: 0 1
     finish(1, 1); // Q0: 4 5; Q1: 1
-    ensure(2, 2); // Q0: 4 5; Q1: 1 2
+    ensure(7, 1); // Q0: 4 5 6; Q1: 1
+    finish(1, 0); // Q0: 5 6; Q1: 1
+    ensure(7, 3); // Q0: 5 6; Q1: 1 2
 
-    // Q0 - is done, Q1 still needs 1 query, but we cancel it
+    // Q0 - is done, Q1 still have pending resource requests, but we cancel it
     queries.clear();
 
     t.wait();
