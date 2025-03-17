@@ -48,6 +48,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsString role_arn;
+    extern const S3AuthSettingsString role_session_name;
 }
 
 namespace ErrorCodes
@@ -457,6 +458,12 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
                                         [](const HTTPHeaderEntry & entry) { return entry.name == "role_arn"; });
         if (role_arn_it != extra_credentials_from_ast.end())
             auth_settings[S3AuthSetting::role_arn] = role_arn_it->value;
+
+        auto role_session_name_it = std::find_if(extra_credentials_from_ast.begin(), extra_credentials_from_ast.end(),
+                                        [](const HTTPHeaderEntry & entry) { return entry.name == "role_session_name"; });
+        if (role_session_name_it != extra_credentials_from_ast.end())
+            auth_settings[S3AuthSetting::role_session_name] = role_session_name_it->value;
+
     }
 
     static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
