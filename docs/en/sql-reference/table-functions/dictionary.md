@@ -59,4 +59,4 @@ Result:
 
 **See Also**
 
-- [Dictionary engine](../../engines/table-engines/special/dictionary.md#dictionary)
+- [Dictionary engine](/engines/table-engines/special/dictionary)

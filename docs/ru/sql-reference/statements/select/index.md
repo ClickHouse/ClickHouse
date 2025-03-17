@@ -41,7 +41,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 -   [Секция JOIN](join.md)
 -   [Секция PREWHERE](prewhere.md)
 -   [Секция WHERE](where.md)
--   [Секция GROUP BY](group-by.md)
+-   [Секция GROUP BY](/sql-reference/statements/select/group-by)
 -   [Секция LIMIT BY](limit-by.md)
 -   [Секция HAVING](having.md)
 -   [Секция LIMIT](limit.md)
@@ -142,7 +142,7 @@ Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of 
 
 Вы можете использовать синонимы (алиасы `AS`) в любом месте запроса.
 
-В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` можно использовать не названия столбцов, а номера. Для этого нужно включить настройку [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments). Тогда, например, в запросе с `ORDER BY 1,2` будет выполнена сортировка сначала по первому, а затем по второму столбцу.
+В секциях `GROUP BY`, `ORDER BY` и `LIMIT BY` можно использовать не названия столбцов, а номера. Для этого нужно включить настройку [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments). Тогда, например, в запросе с `ORDER BY 1,2` будет выполнена сортировка сначала по первому, а затем по второму столбцу.
 
 
 ## Детали реализации {#implementation-details}
@@ -217,7 +217,7 @@ SELECT * EXCEPT (i) from columns_transformers;
 
 ### REPLACE {#replace-modifier}
 
-Определяет одно или несколько [выражений алиасов](../../../sql-reference/syntax.md#syntax-expression_aliases). Каждый алиас должен соответствовать имени столбца из запроса `SELECT *`. В списке столбцов результата запроса имя столбца, соответствующее алиасу, заменяется выражением в модификаторе `REPLACE`.
+Определяет одно или несколько [выражений алиасов](/sql-reference/syntax#expression-aliases). Каждый алиас должен соответствовать имени столбца из запроса `SELECT *`. В списке столбцов результата запроса имя столбца, соответствующее алиасу, заменяется выражением в модификаторе `REPLACE`.
 
 Этот модификатор не изменяет имена или порядок столбцов. Однако он может изменить значение и тип значения.
 

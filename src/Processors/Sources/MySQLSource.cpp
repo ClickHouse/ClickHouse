@@ -21,6 +21,8 @@
 #include <Processors/Sources/MySQLSource.h>
 #include <boost/algorithm/string.hpp>
 
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -169,11 +171,12 @@ namespace
                     char * to = reinterpret_cast<char *>(&val);
                     memcpy(to, const_cast<char *>(value.data()), n);
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-                    char * start = to;
-                    char * end = to + n;
-                    std::reverse(start, end);
-#endif
+                    if constexpr (std::endian::native == std::endian::little)
+                    {
+                        char * start = to;
+                        char * end = to + n;
+                        std::reverse(start, end);
+                    }
                     assert_cast<ColumnUInt64 &>(column).insertValue(val);
                     read_bytes_size += n;
                 }
