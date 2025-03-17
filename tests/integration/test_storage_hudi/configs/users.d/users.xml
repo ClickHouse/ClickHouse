@@ -4,6 +4,7 @@
             <password></password>
             <profile>default</profile>
             <named_collection_control>1</named_collection_control>
+	    <use_datalake_metadata_cache>1</use_datalake_metadata_cache>
         </default>
     </users>
 </clickhouse>

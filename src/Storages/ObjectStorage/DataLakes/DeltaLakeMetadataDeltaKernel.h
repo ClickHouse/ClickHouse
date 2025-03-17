@@ -48,6 +48,8 @@ public:
         return std::make_unique<DeltaLakeMetadataDeltaKernel>(object_storage, configuration, local_context);
     }
 
+    size_t getMemoryBytes() const override;
+
     bool supportsFileIterator() const override { return true; }
 
     ObjectIterator iterate() const override;
