@@ -679,7 +679,8 @@ void DatabaseCatalog::updateMetadataFile(const DatabasePtr & database)
         ast_create_query->attach = true;
 
     WriteBufferFromOwnString statement_buf;
-    formatAST(*ast_create_query, statement_buf, false);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    ast_create_query->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
