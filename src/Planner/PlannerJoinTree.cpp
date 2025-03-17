@@ -1206,19 +1206,12 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             else
             {
                 /// Create step which reads from empty source if storage has no data.
-                const auto & column_names = table_expression_data.getColumnNames();
+                const auto & column_names = table_expression_data.getSelectedColumnsNames();
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
                 Pipe pipe(std::make_shared<NullSource>(source_header));
                 auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
                 read_from_pipe->setStepDescription("Read from NullSource");
                 query_plan.addStep(std::move(read_from_pipe));
-
-                auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
-                if (!alias_column_expressions.empty())
-                {
-                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
-                    query_plan.addStep(std::move(alias_column_step));
-                }
             }
         }
     }
@@ -1603,7 +1596,8 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             false /*optimize_read_in_order*/,
             true /*optimize_skip_unused_shards*/);
 
-        join_step->swap_join_tables = settings[Setting::query_plan_join_swap_table].get();
+        auto setting_swap = settings[Setting::query_plan_join_swap_table];
+        join_step->swap_join_tables = setting_swap.is_auto ? std::nullopt : std::make_optional(setting_swap.base);
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 

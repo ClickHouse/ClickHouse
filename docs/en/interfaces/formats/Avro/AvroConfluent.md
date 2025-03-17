@@ -1,10 +1,11 @@
 ---
-title: AvroConfluent
-slug: /interfaces/formats/AvroConfluent
-keywords: [AvroConfluent]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the AvroConfluent format'
+input_format: true
+keywords: ['AvroConfluent']
+output_format: false
+slug: /interfaces/formats/AvroConfluent
+title: 'AvroConfluent'
 ---
 
 import DataTypesMatching from './_snippets/data-types-matching.md'
@@ -67,5 +68,5 @@ Setting `format_avro_schema_registry_url` needs to be configured in `users.xml` 
 | Setting                                     | Description                                                                                         | Default |
 |---------------------------------------------|-----------------------------------------------------------------------------------------------------|---------|
 | `input_format_avro_allow_missing_fields`    | For Avro/AvroConfluent format: when field is not found in schema use default value instead of error | `0`     |
-| `input_format_avro_null_as_default`         | For Avro/AvroConfluent format: insert default in case of null and non Nullable column	              |   `0`   |
+| `input_format_avro_null_as_default`         | For Avro/AvroConfluent format: insert default in case of null and non Nullable column                  |   `0`   |
 | `format_avro_schema_registry_url`           | For AvroConfluent format: Confluent Schema Registry URL.                                            |         |

@@ -35,8 +35,6 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/queryNormalization.h>
-#include <Parsers/queryToString.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/toOneLineQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -425,7 +423,7 @@ QueryLogElement logQueryStart(
     elem.current_database = context->getCurrentDatabase();
     elem.query = query_for_logging;
     if (settings[Setting::log_formatted_queries])
-        elem.formatted_query = queryToString(query_ast);
+        elem.formatted_query = query_ast->formatWithSecretsOneLine();
     elem.normalized_query_hash = normalized_query_hash;
     elem.query_kind = query_ast->getQueryKind();
 
@@ -745,7 +743,7 @@ void logExceptionBeforeStart(
     {
         elem.query_kind = ast->getQueryKind();
         if (settings[Setting::log_formatted_queries])
-            elem.formatted_query = queryToString(ast);
+            elem.formatted_query = ast->formatWithSecretsOneLine();
     }
 
     addPrivilegesInfoToQueryLogElement(elem, context);
@@ -1048,7 +1046,7 @@ static BlockIO executeQueryImpl(
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);
             if (visitor.getNumberOfReplacedParameters())
-                query = serializeAST(*out_ast);
+                query = out_ast->formatWithSecretsOneLine();
             else
                 query.assign(begin, query_end);
         }
