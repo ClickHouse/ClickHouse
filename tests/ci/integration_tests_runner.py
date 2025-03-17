@@ -32,8 +32,8 @@ SLEEP_BETWEEN_RETRIES = 5
 PARALLEL_GROUP_SIZE = 100
 CLICKHOUSE_BINARY_PATH = "usr/bin/clickhouse"
 
-FLAKY_TRIES_COUNT = 3  # run whole pytest several times
-FLAKY_REPEAT_COUNT = 5  # runs test case in single module several times
+FLAKY_TRIES_COUNT = 2  # run whole pytest several times
+FLAKY_REPEAT_COUNT = 3  # runs test case in single module several times
 MAX_TIME_SECONDS = 3600
 
 MAX_TIME_IN_SANDBOX = 20 * 60  # 20 minutes
@@ -504,6 +504,7 @@ class ClickhouseIntegrationTestsRunner:
 
     def try_run_test_group(
         self,
+        timeout,
         test_group,
         tests_in_group,
         num_tries,
@@ -512,6 +513,7 @@ class ClickhouseIntegrationTestsRunner:
     ):
         try:
             return self.run_test_group(
+                timeout,
                 test_group,
                 tests_in_group,
                 num_tries,
@@ -534,6 +536,7 @@ class ClickhouseIntegrationTestsRunner:
 
     def run_test_group(
         self,
+        timeout,
         test_group,
         tests_in_group,
         num_tries,
@@ -594,7 +597,7 @@ class ClickhouseIntegrationTestsRunner:
             # -s -- (s)kipped
             cmd = (
                 f"cd {self.repo_path}/tests/integration && "
-                f"timeout --signal=KILL 1h ./runner {self._get_runner_opts()} "
+                f"timeout --signal=KILL {timeout} ./runner {self._get_runner_opts()} "
                 f"{image_cmd} -t {test_cmd} {parallel_cmd} {repeat_cmd} -- "
                 f"-rfEps --run-id={i} --color=no --durations=0 "
                 f"--report-log={report_name} --report-log-exclude-logs-on-passed-tests "
@@ -734,6 +737,7 @@ class ClickhouseIntegrationTestsRunner:
                 final_retry += 1
                 logging.info("Running tests for the %s time", i)
                 group_counters, group_test_times, log_paths = self.try_run_test_group(
+                    "3h",
                     f"bugfix_{id_counter}" if should_fail else f"flaky{id_counter}",
                     [test_to_run],
                     1,
@@ -928,7 +932,7 @@ class ClickhouseIntegrationTestsRunner:
                 break
             logging.info("Running test group %s containing %s tests", group, len(tests))
             group_counters, group_test_times, log_paths = self.try_run_test_group(
-                group, tests, MAX_RETRY, NUM_WORKERS, 0
+                "1h", group, tests, MAX_RETRY, NUM_WORKERS, 0
             )
             total_tests = 0
             for counter, value in group_counters.items():

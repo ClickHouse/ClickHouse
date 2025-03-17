@@ -789,7 +789,7 @@ See also:
 
 ### Random (by Default) {#load_balancing-random}
 
-``` sql
+```sql
 load_balancing = random
 ```
 
@@ -798,7 +798,7 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 
 ### Nearest Hostname {#load_balancing-nearest_hostname}
 
-``` sql
+```sql
 load_balancing = nearest_hostname
 ```
 
@@ -812,13 +812,13 @@ We can also assume that when sending a query to the same server, in the absence 
 
 ### Hostname levenshtein distance {#load_balancing-hostname_levenshtein_distance}
 
-``` sql
+```sql
 load_balancing = hostname_levenshtein_distance
 ```
 
 Just like `nearest_hostname`, but it compares hostname in a [levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance) manner. For example:
 
-``` text
+```text
 example-clickhouse-0-0 ample-clickhouse-0-0
 1
 
@@ -831,7 +831,7 @@ example-clickhouse-0-0 example-clickhouse-12-0
 
 ### In Order {#load_balancing-in_order}
 
-``` sql
+```sql
 load_balancing = in_order
 ```
 
@@ -840,7 +840,7 @@ This method is appropriate when you know exactly which replica is preferable.
 
 ### First or Random {#load_balancing-first_or_random}
 
-``` sql
+```sql
 load_balancing = first_or_random
 ```
 
@@ -852,7 +852,7 @@ It's possible to explicitly define what the first replica is by using the settin
 
 ### Round Robin {#load_balancing-round_robin}
 
-``` sql
+```sql
 load_balancing = round_robin
 ```
 
@@ -1583,7 +1583,7 @@ Queries sent to ClickHouse with this setup are logged according to the rules in 
 
 Example:
 
-``` text
+```text
 log_queries=1
 ```
 )", 0) \

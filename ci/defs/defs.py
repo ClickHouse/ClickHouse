@@ -295,6 +295,19 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
+    # TODO: remove redundant images
+    Docker.Config(
+        name="clickhouse/clickbench",
+        path="./docker/test/clickbench",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/sqltest",
+        path="./docker/test/sqltest",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
 ]
 
 
