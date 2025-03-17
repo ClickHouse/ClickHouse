@@ -1,4 +1,5 @@
--- Tags: no-random-settings
+-- Tags: no-random-settings, no-parallel-replicas
+set enable_analyzer=1;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test
