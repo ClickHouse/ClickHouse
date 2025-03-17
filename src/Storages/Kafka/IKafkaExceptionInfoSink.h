@@ -28,5 +28,4 @@ public:
 using IKafkaExceptionInfoSinkPtr = std::shared_ptr<IKafkaExceptionInfoSink>;
 using IKafkaExceptionInfoSinkWeakPtr = std::weak_ptr<IKafkaExceptionInfoSink>;
 
-
 }
