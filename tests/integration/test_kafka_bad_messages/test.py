@@ -469,6 +469,32 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
     )
 
 
+def test_log_to_exceptions(kafka_cluster, max_retries=20):
+
+    non_existent_broker_port = 9876
+    instance.query(
+        f"""
+        DROP TABLE IF EXISTS foo_exceptions;
+
+        CREATE TABLE foo_exceptions(a String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'localhost:{non_existent_broker_port}', kafka_topic_list = 'foo', kafka_group_name = 'foo', kafka_format = 'RawBLOB';
+    """
+    )
+
+    instance.query("SELECT * FROM foo_exceptions SETTINGS stream_like_engine_allow_direct_select=1")
+    instance.query("SYSTEM FLUSH LOGS")
+
+    system_kafka_consumers_content = instance.query("SELECT exceptions.text FROM system.kafka_consumers ARRAY JOIN exceptions WHERE table LIKE 'foo_exceptions' LIMIT 1")
+
+    logging.debug(
+        f"system.kafka_consumers content: {system_kafka_consumers_content}"
+    )
+    assert system_kafka_consumers_content.startswith(f"[thrd:localhost:{non_existent_broker_port}/bootstrap]: localhost:{non_existent_broker_port}/bootstrap: Connect to ipv4#127.0.0.1:{non_existent_broker_port} failed: Connection refused")
+
+    instance.query("DROP TABLE foo_exceptions")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")

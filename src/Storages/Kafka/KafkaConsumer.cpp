@@ -538,6 +538,8 @@ void KafkaConsumer::setExceptionInfo(const std::string & text, bool with_stacktr
 
     if (with_stacktrace)
     {
+        if (!enriched_text.ends_with('\n'))
+            enriched_text.append(1, '\n');
         enriched_text.append(StackTrace().toString());
     }
 
