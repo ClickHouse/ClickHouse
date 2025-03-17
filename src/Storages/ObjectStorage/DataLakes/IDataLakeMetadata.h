@@ -13,7 +13,7 @@ namespace ErrorCodes
 extern const int UNSUPPORTED_METHOD;
 }
 
-class IDataLakeMetadata : boost::noncopyable, public std::enable_shared_from_this<IDataLakeMetadata>
+class IDataLakeMetadata : boost::noncopyable
 {
 public:
     virtual ~IDataLakeMetadata() = default;

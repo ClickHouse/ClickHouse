@@ -1,6 +1,5 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <base/JSON.h>
-#include "Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h"
 #include "config.h"
 #include <set>
 
