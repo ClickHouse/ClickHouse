@@ -258,6 +258,7 @@ class Runner:
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(cmd, timeout=job.timeout) as process:
+            start_time = Utils.timestamp()
             if Path((Result.experimental_file_name_static())).exists():
                 # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
                 Path(Result.experimental_file_name_static()).unlink()
@@ -265,11 +266,14 @@ class Runner:
             exit_code = process.wait()
 
             if Path(Result.experimental_file_name_static()).exists():
-                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
-                Shell.check(
-                    f"cp {Result.experimental_file_name_static()} {Result.file_name_static(job.name)}",
-                    verbose=True,
-                )
+                result = Result.experimental_from_fs(job.name)
+                if not result.start_time:
+                    print(
+                        "WARNING: no start_time set by the job - set job start_time/duration"
+                    )
+                    result.start_time = start_time
+                    result.dump()
+
             result = Result.from_fs(job.name)
             if exit_code != 0:
                 if not result.is_completed():
