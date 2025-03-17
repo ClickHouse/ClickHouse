@@ -60,6 +60,7 @@ public:
         set_option("aws_access_key_id", access_key_id);
         set_option("aws_secret_access_key", secret_access_key);
         set_option("aws_token", token);
+
         set_option("aws_region", region);
         set_option("allow_http", "true");
         set_option("aws_endpoint", url.endpoint);
@@ -103,7 +104,6 @@ DeltaLake::KernelHelperPtr getKernelHelper(
         case DB::ObjectStorageType::S3:
         {
             const auto * s3_conf = dynamic_cast<const DB::StorageS3Configuration *>(configuration.get());
-            const auto auth_settings = s3_conf->getAuthSettings();
             const auto & s3_client = object_storage->getS3StorageClient();
             const auto & s3_credentials = s3_client->getCredentials();
 

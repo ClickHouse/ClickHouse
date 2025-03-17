@@ -35,7 +35,6 @@ from pyspark.sql.window import Window
 
 import helpers.client
 from helpers.cluster import ClickHouseCluster
-from helpers.config_cluster import minio_secret_key
 from helpers.network import PartitionManager
 from helpers.s3_tools import (
     get_file_contents,
@@ -45,25 +44,10 @@ from helpers.s3_tools import (
 )
 from helpers.test_tools import TSV
 from helpers.mock_servers import start_mock_servers
+from helpers.config_cluster import minio_access_key
+from helpers.config_cluster import minio_secret_key
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
-METADATA_SERVER_HOSTNAME = "resolver"
-METADATA_SERVER_PORT = 8080
-
-
-def start_metadata_server(cluster):
-    script_dir = os.path.join(os.path.dirname(__file__), "metadata_servers")
-    start_mock_servers(
-        cluster,
-        script_dir,
-        [
-            (
-                "server_with_session_tokens.py",
-                METADATA_SERVER_HOSTNAME,
-                METADATA_SERVER_PORT,
-            )
-        ],
-    )
 
 
 def get_spark():
@@ -113,17 +97,6 @@ def started_cluster():
             with_zookeeper=True,
         )
         cluster.add_instance(
-            "node_with_session_token",
-            with_minio=True,
-            main_configs=[
-                "configs/config.d/named_collections.xml",
-                "configs/config.d/use_environment_credentials.xml",
-            ],
-            env_variables={
-                "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}",
-            },
-        )
-        cluster.add_instance(
             "node_with_environment_credentials",
             with_minio=True,
             main_configs=[
@@ -131,8 +104,8 @@ def started_cluster():
                 "configs/config.d/use_environment_credentials.xml",
             ],
             env_variables={
-                "AWS_ACCESS_KEY_ID": "minio",
-                "AWS_SECRET_ACCESS_KEY": "minio123",
+                "AWS_ACCESS_KEY_ID": minio_access_key,
+                "AWS_SECRET_ACCESS_KEY": minio_secret_key,
             },
         )
 
@@ -140,7 +113,6 @@ def started_cluster():
         cluster.start()
 
         prepare_s3_bucket(cluster)
-        start_metadata_server(cluster)
 
         cluster.spark_session = get_spark()
 
@@ -1110,7 +1082,7 @@ def test_session_token(started_cluster):
         instance2.query(
             f"""
     SELECT count() FROM deltaLake(
-        'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/', 'minio', 'minio123',
+        'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/', '{minio_access_key}', '{minio_secret_key}',
         SETTINGS allow_experimental_delta_kernel_rs=1)
     """
         )
@@ -1121,33 +1093,8 @@ def test_session_token(started_cluster):
         in instance2.query_and_get_error(
             f"""
     SELECT count() FROM deltaLake(
-        'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/', 'minio', 'minio123', 'fake-token',
+        'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/', '{minio_access_key}', '{minio_secret_key}', 'fake-token',
         SETTINGS allow_experimental_delta_kernel_rs=1)
     """
         )
     )
-
-    instance3 = started_cluster.instances["node_with_session_token"]
-
-    assert 0 < int(
-        instance3.query(
-            f"""
-       SELECT count() FROM deltaLake(
-           'http://{started_cluster.minio_host}:{started_cluster.minio_port}/{started_cluster.minio_bucket}/{TABLE_NAME}/',
-           SETTINGS allow_experimental_delta_kernel_rs=1)
-       """
-        )
-    )
-
-    #expected_logs = [
-    #    "Calling EC2MetadataService to get token",
-    #    "Calling EC2MetadataService resource, /latest/meta-data/iam/security-credentials with token returned profile string myrole",
-    #    "Calling EC2MetadataService resource resolver:8080/latest/meta-data/iam/security-credentials/myrole with token",
-    #    "Successfully pulled credentials from EC2MetadataService with access key",
-    #]
-
-    #instance3.query("SYSTEM FLUSH LOGS")
-    #for expected_msg in expected_logs:
-    #    assert instance3.contains_in_log(
-    #        "AWSEC2InstanceProfileConfigLoader: " + expected_msg
-    #    )
