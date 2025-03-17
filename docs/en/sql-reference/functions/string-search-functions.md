@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/string-search-functions
+description: 'Documentation for Functions for Searching in Strings'
+sidebar_label: 'Searching in Strings'
 sidebar_position: 160
-sidebar_label: Searching in Strings
+slug: /sql-reference/functions/string-search-functions
+title: 'Functions for Searching in Strings'
 ---
 
 # Functions for Searching in Strings

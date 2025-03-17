@@ -1,7 +1,10 @@
 ---
+description: 'Documentation for the MySQL protocol interface in ClickHouse, allowing
+  MySQL clients to connect to ClickHouse'
+sidebar_label: 'MySQL Interface'
+sidebar_position: 25
 slug: /interfaces/mysql
-sidebar_position: 20
-sidebar_label: MySQL Interface
+title: 'MySQL Interface'
 ---
 
 import mysql0 from '@site/static/images/interfaces/mysql0.png';

@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/insert-into
+description: 'Documentation for INSERT INTO Statement'
+sidebar_label: 'INSERT INTO'
 sidebar_position: 33
-sidebar_label: INSERT INTO
+slug: /sql-reference/statements/insert-into
+title: 'INSERT INTO Statement'
 ---
 
 # INSERT INTO Statement

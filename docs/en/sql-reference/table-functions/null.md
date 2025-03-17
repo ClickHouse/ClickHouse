@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/null
+description: 'Creates a temporary table of the specified structure with the Null table
+  engine. The function is used for the convenience of test writing and demonstrations.'
+sidebar_label: 'null function'
 sidebar_position: 140
-sidebar_label: null function
+slug: /sql-reference/table-functions/null
 title: 'null'
-description: "Creates a temporary table of the specified structure with the Null table engine. The function is used for the convenience of test writing and demonstrations."
 ---
 
 # null Table Function

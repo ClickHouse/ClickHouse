@@ -1,10 +1,11 @@
 ---
-slug: /engines/database-engines/materialized-postgresql
-sidebar_label: MaterializedPostgreSQL
+description: 'Creates a ClickHouse database with tables from PostgreSQL database.'
+sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 60
-title: "MaterializedPostgreSQL"
-description: "Creates a ClickHouse database with tables from PostgreSQL database."
+slug: /engines/database-engines/materialized-postgresql
+title: 'MaterializedPostgreSQL'
 ---
+
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 

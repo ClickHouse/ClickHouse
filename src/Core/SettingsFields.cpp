@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 
@@ -46,7 +45,11 @@ namespace
             throw Exception(ErrorCodes::CANNOT_PARSE_BOOL, "Cannot parse bool from string '{}'", str);
         }
         else
-            return parseWithSizeSuffix<T>(str);
+        {
+            T value = parseWithSizeSuffix<T>(str);
+            validateFloatingPointSettingValue(value);
+            return value;
+        }
     }
 
     template <typename T>
@@ -60,16 +63,18 @@ namespace
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<UInt64>(), result))
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            validateFloatingPointSettingValue(result);
             return result;
         }
         if (f.getType() == Field::Types::Int64)
         {
             T result;
             if (!accurate::convertNumeric(f.safeGet<Int64>(), result))
-                throw Exception(
-                    ErrorCodes::CANNOT_CONVERT_TYPE, "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
+                                "Field value {} is out of range of {} type", f, demangle(typeid(T).name()));
+            validateFloatingPointSettingValue(result);
             return result;
         }
         if (f.getType() == Field::Types::Bool)
@@ -79,6 +84,7 @@ namespace
         if (f.getType() == Field::Types::Float64)
         {
             Float64 x = f.safeGet<Float64>();
+            validateFloatingPointSettingValue(x);
             if constexpr (std::is_floating_point_v<T>)
             {
                 return T(x);

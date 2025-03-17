@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/other-functions
+description: 'Documentation for Other Functions'
+sidebar_label: 'Other'
 sidebar_position: 140
-sidebar_label: Other
+slug: /sql-reference/functions/other-functions
+title: 'Other Functions'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -2658,7 +2660,7 @@ runningAccumulate(agg_state[, grouping]);
 
 **Arguments**
 
-- `agg_state` — State of the aggregate function. [AggregateFunction](/sql-reference/data-types/aggregatefunctione).
+- `agg_state` — State of the aggregate function. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
 - `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../data-types/index.md) for which the equality operator is defined.
 
 **Returned value**
@@ -3135,7 +3137,7 @@ SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
 Result:
 
 ```text
-1	1	1	1
+1    1    1    1
 ```
 
 ## countDigits {#countdigits}
@@ -3173,7 +3175,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 Result:
 
 ```text
-10	10	19	19	39	39
+10    10    19    19    39    39
 ```
 
 ## errorCodeToName {#errorcodetoname}

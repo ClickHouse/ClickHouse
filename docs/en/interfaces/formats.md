@@ -1,7 +1,9 @@
 ---
-slug: /interfaces/formats
+description: 'Overview of supported data formats for input and output in ClickHouse'
+sidebar_label: 'View all formats...'
 sidebar_position: 21
-sidebar_label: View all formats...
+slug: /interfaces/formats
+title: 'Formats for input and output data'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -102,7 +104,7 @@ The supported formats are:
 | [Prometheus](#prometheus)                                                                 | ✗   | ✔     |
 | [Protobuf](#protobuf)                                                                     | ✔   | ✔     |
 | [ProtobufSingle](#protobufsingle)                                                         | ✔   | ✔     |
-| [ProtobufList](#protobuflist)								                                                     | ✔   | ✔     |
+| [ProtobufList](#protobuflist)                                                                                     | ✔   | ✔     |
 | [Avro](#data-format-avro)                                                                 | ✔   | ✔     |
 | [AvroConfluent](#data-format-avro-confluent)                                              | ✔   | ✗     |
 | [Parquet](#data-format-parquet)                                                           | ✔   | ✔     |

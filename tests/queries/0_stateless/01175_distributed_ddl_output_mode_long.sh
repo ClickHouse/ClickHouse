@@ -61,7 +61,10 @@ $CLIENT --distributed_ddl_output_mode=throw -q "select value from system.setting
 $CLIENT --distributed_ddl_output_mode=throw -q "create table throw on cluster test_shard_localhost (n int) engine=Memory;"
 $CLIENT --distributed_ddl_output_mode=throw -q "create table throw on cluster test_shard_localhost (n int) engine=Memory format Null;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//"
 
-run_until_out_contains 'not finished on 1 ' $CLICKHOUSE_CLIENT_WITH_SETTINGS --distributed_ddl_output_mode=throw -q "drop table if exists throw on cluster test_unavailable_shard;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//" | sed "s/Distributed DDL task .* is not finished/Distributed DDL task <task> is not finished/" | sed "s/for .* seconds/for <sec> seconds/"
+# ┌─host──────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+# │ localhost │ 9000 │      0 │       │                   1 │                0 │
+# └───────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+run_until_out_contains '9000	0		1	0' $CLICKHOUSE_CLIENT_WITH_SETTINGS --distributed_ddl_output_mode=throw -q "drop table if exists throw on cluster test_unavailable_shard;" 2>&1 | sed "s/DB::Exception/Error/g" | sed "s/ (version.*)//" | sed "s/Distributed DDL task .* is not finished/Distributed DDL task <task> is not finished/" | sed "s/for .* seconds/for <sec> seconds/"
 
 
 $CLIENT --distributed_ddl_output_mode=null_status_on_timeout -q "select value from system.settings where name='distributed_ddl_output_mode';"

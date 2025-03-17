@@ -1,9 +1,11 @@
 ---
-description: "System table containing information about the number of events that have occurred in the system."
+description: 'System table containing information about the number of events that
+  have occurred in the system.'
+keywords: ['system table', 'events']
 slug: /operations/system-tables/events
-title: "system.events"
-keywords: ["system table", "events"]
+title: 'system.events'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>

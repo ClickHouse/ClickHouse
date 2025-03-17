@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparraysorted
+description: 'Returns an array with the first N items in ascending order.'
 sidebar_position: 146
-title: "groupArraySorted"
-description: "Returns an array with the first N items in ascending order."
+slug: /sql-reference/aggregate-functions/reference/grouparraysorted
+title: 'groupArraySorted'
 ---
 
 # groupArraySorted

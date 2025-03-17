@@ -126,6 +126,8 @@ public:
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
+    bool isDirectoryEmpty(const String & path) const override;
+
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
     Poco::Timestamp getLastModified(const String & path) const override;

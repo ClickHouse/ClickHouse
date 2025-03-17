@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/comment
+description: 'Documentation for ALTER TABLE ... MODIFY COMMENT'
+sidebar_label: 'COMMENT'
 sidebar_position: 51
-sidebar_label: COMMENT
+slug: /sql-reference/statements/alter/comment
+title: 'ALTER TABLE ... MODIFY COMMENT'
 ---
 
 # ALTER TABLE ... MODIFY COMMENT

@@ -1,10 +1,11 @@
 ---
-title: ArrowStream
-slug: /interfaces/formats/ArrowStream
-keywords: [ArrowStream]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the ArrowStream format'
+input_format: true
+keywords: ['ArrowStream']
+output_format: true
+slug: /interfaces/formats/ArrowStream
+title: 'ArrowStream'
 ---
 
 | Input | Output | Alias |

@@ -1,10 +1,11 @@
 ---
-title: JSONColumns
-slug: /interfaces/formats/JSONColumns
-keywords: [JSONColumns]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the JSONColumns format'
+input_format: true
+keywords: ['JSONColumns']
+output_format: true
+slug: /interfaces/formats/JSONColumns
+title: 'JSONColumns'
 ---
 
 | Input | Output | Alias |
@@ -30,9 +31,9 @@ Example:
 
 ```json
 {
-	"num": [42, 43, 44],
-	"str": ["hello", "hello", "hello"],
-	"arr": [[0,1], [0,1,2], [0,1,2,3]]
+    "num": [42, 43, 44],
+    "str": ["hello", "hello", "hello"],
+    "arr": [[0,1], [0,1,2], [0,1,2,3]]
 }
 ```
 

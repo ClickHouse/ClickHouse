@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/time-window-functions
+description: 'Documentation for Time Window Functions'
+sidebar_label: 'Time Window'
 sidebar_position: 175
-sidebar_label: Time Window
+slug: /sql-reference/functions/time-window-functions
+title: 'Time Window Functions'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

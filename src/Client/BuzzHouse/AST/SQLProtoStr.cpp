@@ -118,7 +118,7 @@ CONV_FN(ExprColAlias, eca)
     }
 }
 
-void convertToSQLString(String & ret, const String & s)
+static void convertToSQLString(String & ret, const String & s)
 {
     for (size_t i = 0; i < s.length(); i++)
     {
@@ -704,7 +704,7 @@ CONV_FN(EnumDefValue, edf)
     ret += std::to_string(edf.number());
 }
 
-void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
+static void BottomTypeNameToString(String & ret, const uint32_t quote, const bool lcard, const BottomTypeName & btn)
 {
     using BottomTypeNameType = BottomTypeName::BottomOneOfCase;
     switch (btn.bottom_one_of_case())
@@ -1790,7 +1790,7 @@ CONV_FN(GenerateSeriesFunc, gsf)
 
 CONV_FN(TableFunction, tf);
 
-void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
+static void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
 {
     using TableOrFunctionType = TableOrFunction::JtfOneofCase;
     switch (tof.jtf_oneof_case())
@@ -2001,6 +2001,45 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
     ret += ")";
 }
 
+CONV_FN(GenerateRandomFunc, grfunc)
+{
+    ret += "generateRandom('";
+    ret += grfunc.structure();
+    ret += "'";
+    if (grfunc.has_random_seed())
+    {
+        ret += ", ";
+        ret += std::to_string(grfunc.random_seed());
+    }
+    if (grfunc.has_max_string_length())
+    {
+        ret += ", ";
+        ret += std::to_string(grfunc.max_string_length());
+    }
+    if (grfunc.has_max_array_length())
+    {
+        ret += ", ";
+        ret += std::to_string(grfunc.max_array_length());
+    }
+    ret += ")";
+}
+
+static void ValuesStatementToString(String & ret, const bool tudf, const ValuesStatement & values)
+{
+    ret += "VALUES ";
+    ret += tudf ? "(" : "";
+    ret += "(";
+    ExprListToString(ret, values.expr_list());
+    ret += ")";
+    for (int i = 0; i < values.extra_expr_lists_size(); i++)
+    {
+        ret += ", (";
+        ExprListToString(ret, values.extra_expr_lists(i));
+        ret += ")";
+    }
+    ret += tudf ? ")" : "";
+}
+
 CONV_FN(TableFunction, tf)
 {
     using TableFunctionType = TableFunction::JtfOneofCase;
@@ -2046,6 +2085,12 @@ CONV_FN(TableFunction, tf)
             ret += "loop(";
             TableOrFunctionToString(ret, true, tf.loop());
             ret += ")";
+            break;
+        case TableFunctionType::kGrandom:
+            GenerateRandomFuncToString(ret, tf.grandom());
+            break;
+        case TableFunctionType::kValues:
+            ValuesStatementToString(ret, true, tf.values());
             break;
         default:
             ret += "numbers(10)";
@@ -3016,71 +3061,9 @@ CONV_FN(Drop, dt)
     }
 }
 
-CONV_FN(ValuesStatement, values)
-{
-    if (values.has_setting_values())
-    {
-        ret += "SETTINGS ";
-        SettingValuesToString(ret, values.setting_values());
-        ret += " ";
-    }
-    ret += "VALUES (";
-    ExprListToString(ret, values.expr_list());
-    ret += ")";
-    for (int i = 0; i < values.extra_expr_lists_size(); i++)
-    {
-        ret += ", (";
-        ExprListToString(ret, values.extra_expr_lists(i));
-        ret += ")";
-    }
-}
-
-CONV_FN(InsertFromFile, insert_file)
-{
-    ret += "FROM INFILE '";
-    ret += insert_file.path();
-    ret += "'";
-    if (insert_file.has_fcomp())
-    {
-        ret += " COMPRESSION '";
-        ret += FileCompression_Name(insert_file.fcomp()).substr(4);
-        ret += "'";
-    }
-    if (insert_file.has_settings())
-    {
-        ret += " SETTINGS ";
-        SettingValuesToString(ret, insert_file.settings());
-    }
-    ret += " FORMAT ";
-    ret += InFormat_Name(insert_file.format()).substr(3);
-}
-
-CONV_FN(InsertSelect, insert_sel)
-{
-    if (insert_sel.has_setting_values())
-    {
-        ret += "SETTINGS ";
-        SettingValuesToString(ret, insert_sel.setting_values());
-        ret += " ";
-    }
-    SelectToString(ret, insert_sel.select());
-}
-
-CONV_FN(InsertStringQuery, insert_query)
-{
-    if (insert_query.has_setting_values())
-    {
-        ret += "SETTINGS ";
-        SettingValuesToString(ret, insert_query.setting_values());
-        ret += " ";
-    }
-    ret += "VALUES ";
-    ret += insert_query.query();
-}
-
 CONV_FN(Insert, insert)
 {
-    if (insert.has_ctes() && insert.has_est() && insert.has_insert_select())
+    if (insert.has_ctes() && insert.has_est() && insert.has_select())
     {
         CTEsToString(ret, insert.ctes());
     }
@@ -3108,21 +3091,45 @@ CONV_FN(Insert, insert)
         ret += ")";
     }
     ret += " ";
+    if (!insert.has_insert_file() && insert.has_setting_values())
+    {
+        ret += "SETTINGS ";
+        SettingValuesToString(ret, insert.setting_values());
+        ret += " ";
+    }
     if (insert.has_values())
     {
-        ValuesStatementToString(ret, insert.values());
+        ValuesStatementToString(ret, false, insert.values());
     }
-    else if (insert.has_insert_select())
+    else if (insert.has_select())
     {
-        InsertSelectToString(ret, insert.insert_select());
+        SelectToString(ret, insert.select());
     }
     else if (insert.has_insert_file())
     {
-        InsertFromFileToString(ret, insert.insert_file());
+        const InsertFromFile & insert_file = insert.insert_file();
+
+        ret += "FROM INFILE '";
+        ret += insert_file.path();
+        ret += "'";
+        if (insert_file.has_fcomp())
+        {
+            ret += " COMPRESSION '";
+            ret += FileCompression_Name(insert_file.fcomp()).substr(4);
+            ret += "'";
+        }
+        if (insert.has_setting_values())
+        {
+            ret += " SETTINGS ";
+            SettingValuesToString(ret, insert.setting_values());
+        }
+        ret += " FORMAT ";
+        ret += InFormat_Name(insert_file.format()).substr(3);
     }
     else if (insert.has_query())
     {
-        InsertStringQueryToString(ret, insert.query());
+        ret += "VALUES ";
+        ret += insert.query();
     }
     else
     {
@@ -3276,7 +3283,7 @@ CONV_FN(DeduplicateExpr, de)
     if (de.has_col_list())
     {
         ret += " BY ";
-        ExprColumnListToString(ret, de.col_list());
+        ColumnPathListToString(ret, 0, de.col_list());
     }
     else if (de.has_ded_star())
     {
@@ -3285,7 +3292,7 @@ CONV_FN(DeduplicateExpr, de)
     else if (de.has_ded_star_except())
     {
         ret += " BY * EXCEPT (";
-        ExprColumnListToString(ret, de.ded_star_except());
+        ColumnPathListToString(ret, 0, de.ded_star_except());
         ret += ")";
     }
 }

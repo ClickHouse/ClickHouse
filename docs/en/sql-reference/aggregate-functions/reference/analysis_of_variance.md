@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/analysis_of_variance
+description: 'Provides a statistical test for one-way analysis of variance (ANOVA
+  test). It is a test over several groups of normally distributed observations to
+  find out whether all groups have the same mean or not.'
 sidebar_position: 101
-title: "analysisOfVariance"
-description: "Provides a statistical test for one-way analysis of variance (ANOVA test). It is a test over several groups of normally distributed observations to find out whether all groups have the same mean or not."
+slug: /sql-reference/aggregate-functions/reference/analysis_of_variance
+title: 'analysisOfVariance'
 ---
 
 # analysisOfVariance

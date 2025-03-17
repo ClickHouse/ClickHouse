@@ -11,7 +11,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Columns/IColumn.h>
 #include <Common/ProfileEvents.h>
@@ -251,9 +250,7 @@ IAST::Hash calculateAstHash(ASTPtr ast, const String & current_database, const S
 
 String queryStringFromAST(ASTPtr ast)
 {
-    WriteBufferFromOwnString buf;
-    formatAST(*ast, buf, /*hilite*/ false, /*one_line*/ true, /*show_secrets*/ false);
-    return buf.str();
+    return ast->formatForLogging();
 }
 
 }

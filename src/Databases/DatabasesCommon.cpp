@@ -11,7 +11,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
@@ -51,7 +50,7 @@ namespace
 void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
 {
     /// First validate that the query can be parsed
-    const auto serialized_query = serializeAST(query);
+    const auto serialized_query = query.formatWithSecretsOneLine();
     ParserCreateQuery parser;
     ASTPtr new_query_raw = parseQuery(
         parser,

@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/grant
+description: 'Documentation for GRANT Statement'
+sidebar_label: 'GRANT'
 sidebar_position: 38
-sidebar_label: GRANT
+slug: /sql-reference/statements/grant
+title: 'GRANT Statement'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

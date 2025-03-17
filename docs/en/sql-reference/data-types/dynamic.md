@@ -1,8 +1,12 @@
 ---
-slug: /sql-reference/data-types/dynamic
+description: 'Documentation for the Dynamic data type in ClickHouse, which can store
+  values of different types in a single column'
+sidebar_label: 'Dynamic'
 sidebar_position: 62
-sidebar_label: Dynamic
+slug: /sql-reference/data-types/dynamic
+title: 'Dynamic'
 ---
+
 import BetaBadge from '@theme/badges/BetaBadge';
 
 # Dynamic

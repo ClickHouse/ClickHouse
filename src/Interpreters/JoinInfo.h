@@ -24,6 +24,9 @@ enum class PredicateOperator : UInt8
     GreaterOrEquals,
 };
 
+void serializePredicateOperator(PredicateOperator op, WriteBuffer & out);
+PredicateOperator deserializePredicateOperator(ReadBuffer & in);
+
 inline std::optional<PredicateOperator> getJoinPredicateOperator(const String & func_name)
 {
     if (func_name == "equals")
@@ -65,6 +68,13 @@ struct JoinExpressionActions
     {
     }
 
+    JoinExpressionActions(ActionsDAGPtr left_pre_join_actions_, ActionsDAGPtr right_pre_join_actions_, ActionsDAGPtr post_join_actions_)
+        : left_pre_join_actions(std::move(left_pre_join_actions_))
+        , right_pre_join_actions(std::move(right_pre_join_actions_))
+        , post_join_actions(std::move(post_join_actions_))
+    {
+    }
+
     ActionsDAGPtr left_pre_join_actions;
     ActionsDAGPtr right_pre_join_actions;
     ActionsDAGPtr post_join_actions;
@@ -88,6 +98,11 @@ public:
 
     operator bool() const { return actions_dag != nullptr; } /// NOLINT
 
+    using ActionsDAGRawPtrs = std::vector<const ActionsDAG *>;
+
+    void serialize(WriteBuffer & out, const ActionsDAGRawPtrs & dags) const;
+    static JoinActionRef deserialize(ReadBuffer & in, const ActionsDAGRawPtrs & dags);
+
 private:
     const ActionsDAG * actions_dag = nullptr;
     String column_name;
@@ -100,6 +115,9 @@ struct JoinPredicate
     JoinActionRef left_node;
     JoinActionRef right_node;
     PredicateOperator op;
+
+    void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
+    static JoinPredicate deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
 
 /// JoinCondition determines if rows from two tables can be joined
@@ -115,6 +133,9 @@ struct JoinCondition
     /// Residual conditions depend on data from both tables and must be evaluated after the join has been performed.
     /// Unlike the join predicates, these conditions can be arbitrary expressions.
     std::vector<JoinActionRef> residual_conditions;
+
+    void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
+    static JoinCondition deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
 
 struct JoinExpression
@@ -130,6 +151,9 @@ struct JoinExpression
 
     /// Indicates if the join expression is defined with the USING clause
     bool is_using = false;
+
+    void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
+    static JoinExpression deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
 
 struct JoinInfo
@@ -145,6 +169,9 @@ struct JoinInfo
 
     /// The locality of the join (e.g., LOCAL, GLOBAL)
     JoinLocality locality;
+
+    void serialize(WriteBuffer & out, const JoinActionRef::ActionsDAGRawPtrs & dags) const;
+    static JoinInfo deserialize(ReadBuffer & in, const JoinActionRef::ActionsDAGRawPtrs & dags);
 };
 
 
@@ -199,6 +226,8 @@ struct JoinSettings
 
     explicit JoinSettings(const Settings & query_settings);
     explicit JoinSettings(const QueryPlanSerializationSettings & settings);
+
+    void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
 };
 
 

@@ -3,6 +3,12 @@
 #include <Client/ClientApplicationBase.h>
 
 
+namespace BuzzHouse
+{
+    class FuzzConfig;
+    class ExternalIntegrations;
+};
+
 namespace DB
 {
 
@@ -11,7 +17,8 @@ class Client : public ClientApplicationBase
 public:
     using Arguments = ClientApplicationBase::Arguments;
 
-    Client() { fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr); }
+    Client();
+    ~Client() override;
 
     void initialize(Poco::Util::Application & self) override;
 
@@ -53,6 +60,9 @@ private:
     void printChangedSettings() const;
     void showWarnings();
 #if USE_BUZZHOUSE
+    std::unique_ptr<BuzzHouse::FuzzConfig> fuzz_config;
+    std::unique_ptr<BuzzHouse::ExternalIntegrations> external_integrations;
+
     bool logAndProcessQuery(std::ofstream & outf, const String & full_query);
     bool processBuzzHouseQuery(const String & full_query);
 #endif

@@ -1,7 +1,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Interpreters/Context.h>
-#include <Parsers/queryToString.h>
 #include <Storages/System/StorageSystemResources.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateResourceQuery.h>
@@ -27,7 +26,10 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
     const auto & resource_names = storage.getAllEntityNames(WorkloadEntityType::Resource);
     for (const auto & resource_name : resource_names)
     {
-        auto ast = storage.get(resource_name);
+        auto ast = storage.tryGet(resource_name);
+        if (!ast)
+            /// It might be modified in the meantime, but it's ok to not show those removed resources
+            continue;
         auto & resource = typeid_cast<ASTCreateResourceQuery &>(*ast);
         res_columns[0]->insert(resource_name);
         {
@@ -52,7 +54,7 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[1]->insert(read_disks);
             res_columns[2]->insert(write_disks);
         }
-        res_columns[3]->insert(queryToString(ast));
+        res_columns[3]->insert(ast->formatForLogging());
     }
 }
 

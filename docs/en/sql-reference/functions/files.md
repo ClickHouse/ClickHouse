@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/files
+description: 'Documentation for Files'
+sidebar_label: 'Files'
 sidebar_position: 75
-sidebar_label: Files
+slug: /sql-reference/functions/files
+title: 'Files'
 ---
 
 ## file {#file}

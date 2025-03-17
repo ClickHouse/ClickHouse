@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/mergetree-family/replication
+description: 'Overview of Data Replication in ClickHouse'
+sidebar_label: 'Data Replication'
 sidebar_position: 20
-sidebar_label: Data Replication
-title: "Data Replication"
-description: "Overview of Data Replication in ClickHouse"
+slug: /engines/table-engines/mergetree-family/replication
+title: 'Data Replication'
 ---
 
 # Data Replication
@@ -241,7 +241,7 @@ In this case, you can omit arguments when creating tables:
 
 ``` sql
 CREATE TABLE table_name (
-	x UInt32
+    x UInt32
 ) ENGINE = ReplicatedMergeTree
 ORDER BY x;
 ```
@@ -250,7 +250,7 @@ It is equivalent to:
 
 ``` sql
 CREATE TABLE table_name (
-	x UInt32
+    x UInt32
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}')
 ORDER BY x;
 ```

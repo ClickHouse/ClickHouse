@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/url-functions
+description: 'Documentation for Functions for Working with URLs'
+sidebar_label: 'URLs'
 sidebar_position: 200
-sidebar_label: URLs
+slug: /sql-reference/functions/url-functions
+title: 'Functions for Working with URLs'
 ---
 
 # Functions for Working with URLs

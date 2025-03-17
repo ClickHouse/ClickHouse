@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for GROUP BY Clause'
+sidebar_label: 'GROUP BY'
 slug: /sql-reference/statements/select/group-by
-sidebar_label: GROUP BY
+title: 'GROUP BY Clause'
 ---
 
 # GROUP BY Clause

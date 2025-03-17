@@ -1,7 +1,10 @@
 ---
-slug: /sql-reference/data-types/date32
+description: 'Documentation for the Date32 data type in ClickHouse, which stores dates
+  with an extended range compared to Date'
+sidebar_label: 'Date32'
 sidebar_position: 14
-sidebar_label: Date32
+slug: /sql-reference/data-types/date32
+title: 'Date32'
 ---
 
 # Date32

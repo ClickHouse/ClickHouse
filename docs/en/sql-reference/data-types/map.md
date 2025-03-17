@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/map
+description: 'Documentation for the Map data type in ClickHouse'
+sidebar_label: 'Map(K, V)'
 sidebar_position: 36
-sidebar_label: Map(K, V)
+slug: /sql-reference/data-types/map
+title: 'Map(K, V)'
 ---
 
 # Map(K, V)

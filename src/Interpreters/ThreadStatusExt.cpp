@@ -8,7 +8,6 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/TraceCollector.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
@@ -661,7 +660,7 @@ void ThreadStatus::logToQueryThreadLog(QueryThreadLog & thread_log, const String
 
 static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
-    String res = serializeAST(*q);
+    String res = q->formatWithSecretsOneLine();
     if (auto masker = SensitiveDataMasker::getInstance())
         masker->wipeSensitiveData(res);
 

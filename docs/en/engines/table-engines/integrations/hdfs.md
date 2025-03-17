@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/integrations/hdfs
+description: 'This engine provides integration with the Apache Hadoop ecosystem by
+  allowing to manage data on HDFS via ClickHouse. This engine is similar to the File
+  and URL engines, but provides Hadoop-specific features.'
+sidebar_label: 'HDFS'
 sidebar_position: 80
-sidebar_label: HDFS
-title: "HDFS"
-description: "This engine provides integration with the Apache Hadoop ecosystem by allowing to manage data on HDFS via ClickHouse. This engine is similar to the File and URL engines, but provides Hadoop-specific features."
+slug: /engines/table-engines/integrations/hdfs
+title: 'HDFS'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -134,17 +136,17 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 Similar to GraphiteMergeTree, the HDFS engine supports extended configuration using the ClickHouse config file. There are two configuration keys that you can use: global (`hdfs`) and user-level (`hdfs_*`). The global configuration is applied first, and then the user-level configuration is applied (if it exists).
 
 ``` xml
-  <!-- Global configuration options for HDFS engine type -->
-  <hdfs>
-	<hadoop_kerberos_keytab>/tmp/keytab/clickhouse.keytab</hadoop_kerberos_keytab>
-	<hadoop_kerberos_principal>clickuser@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
-	<hadoop_security_authentication>kerberos</hadoop_security_authentication>
-  </hdfs>
+<!-- Global configuration options for HDFS engine type -->
+<hdfs>
+  <hadoop_kerberos_keytab>/tmp/keytab/clickhouse.keytab</hadoop_kerberos_keytab>
+  <hadoop_kerberos_principal>clickuser@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+  <hadoop_security_authentication>kerberos</hadoop_security_authentication>
+</hdfs>
 
-  <!-- Configuration specific for user "root" -->
-  <hdfs_root>
-	<hadoop_kerberos_principal>root@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
-  </hdfs_root>
+<!-- Configuration specific for user "root" -->
+<hdfs_root>
+  <hadoop_kerberos_principal>root@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+</hdfs_root>
 ```
 
 ### Configuration Options {#configuration-options}

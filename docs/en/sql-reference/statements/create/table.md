@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/statements/create/table
+description: 'Documentation for Table'
+keywords: ['compression', 'codec', 'schema', 'DDL']
+sidebar_label: 'TABLE'
 sidebar_position: 36
-sidebar_label: TABLE
-title: "CREATE TABLE"
-keywords: [compression, codec, schema, DDL]
+slug: /sql-reference/statements/create/table
+title: 'CREATE TABLE'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -88,7 +89,7 @@ In ClickHouse Cloud please split this into two steps:
   CREATE TABLE t1
   ENGINE = MergeTree
   ORDER BY ...
-  # highlight-next-line
+  -- highlight-next-line
   EMPTY AS
   SELECT ...
   ```
@@ -689,7 +690,7 @@ INSERT INTO base.t1 VALUES (1, 'test');
 
 SELECT * FROM base.t1;
 
-1	test
+1    test
 ```
 
 We can use the `REPLACE` statement to clear all the data:
@@ -707,7 +708,7 @@ INSERT INTO base.t1 VALUES (2, null);
 
 SELECT * FROM base.t1;
 
-2	
+2    
 ```
 
 Or we can use the `REPLACE` statement to change the table structure:

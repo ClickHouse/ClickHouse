@@ -1,10 +1,10 @@
 ---
-slug: /sql-reference/statements/delete
+description: 'Lightweight deletes simplify the process of deleting data from the database.'
+keywords: ['delete']
+sidebar_label: 'DELETE'
 sidebar_position: 36
-sidebar_label: DELETE
-description: Lightweight deletes simplify the process of deleting data from the database.
-keywords: [delete]
-title: The Lightweight DELETE Statement
+slug: /sql-reference/statements/delete
+title: 'The Lightweight DELETE Statement'
 ---
 
 The lightweight `DELETE` statement removes rows from the table `[db.]table` that match the expression `expr`. It is only available for the *MergeTree table engine family.

@@ -1,8 +1,8 @@
 ---
+description: 'Page describing automatic schema inference from input data in ClickHouse'
+sidebar_label: 'Schema inference'
 slug: /interfaces/schema-inference
-sidebar_position: 21
-sidebar_label: Schema inference
-title: Automatic schema inference from input data
+title: 'Automatic schema inference from input data'
 ---
 
 ClickHouse can automatically determine the structure of input data in almost all supported [Input formats](formats.md).
@@ -102,19 +102,19 @@ Let's use the file `hobbies.jsonl`. We can query the data from this file using `
 clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='DESCRIBE TABLE hobbies'
 ```
 ```response
-id	Nullable(Int64)
-age	Nullable(Int64)
-name	Nullable(String)
-hobbies	Array(Nullable(String))
+id    Nullable(Int64)
+age    Nullable(Int64)
+name    Nullable(String)
+hobbies    Array(Nullable(String))
 ```
 ```shell
 clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM hobbies'
 ```
 ```response
-1	25	Josh	['football','cooking','music']
-2	19	Alan	['tennis','art']
-3	32	Lana	['fitness','reading','shopping']
-4	47	Brayan	['movies','skydiving']
+1    25    Josh    ['football','cooking','music']
+2    19    Alan    ['tennis','art']
+3    32    Lana    ['fitness','reading','shopping']
+4    47    Brayan    ['movies','skydiving']
 ```
 
 ## Using structure from insertion table {#using-structure-from-insertion-table}
@@ -933,7 +933,7 @@ If setting `input_format_tsv_detect_header` is enabled, ClickHouse will try to d
 
 Integers, Floats, Bools, Strings:
 ```sql
-DESC format(TSV, '42	42.42	true	Hello,World!')
+DESC format(TSV, '42    42.42    true    Hello,World!')
 ```
 ```response
 ┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -944,7 +944,7 @@ DESC format(TSV, '42	42.42	true	Hello,World!')
 └──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 ```sql
-DESC format(TSKV, 'int=42	float=42.42	bool=true	string=Hello,World!\n')
+DESC format(TSKV, 'int=42    float=42.42    bool=true    string=Hello,World!\n')
 ```
 ```response
 ┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -958,7 +958,7 @@ DESC format(TSKV, 'int=42	float=42.42	bool=true	string=Hello,World!\n')
 Dates, DateTimes:
 
 ```sql
-DESC format(TSV, '2020-01-01	2020-01-01 00:00:00	2022-01-01 00:00:00.000')
+DESC format(TSV, '2020-01-01    2020-01-01 00:00:00    2022-01-01 00:00:00.000')
 ```
 ```response
 ┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -970,7 +970,7 @@ DESC format(TSV, '2020-01-01	2020-01-01 00:00:00	2022-01-01 00:00:00.000')
 
 Arrays:
 ```sql
-DESC format(TSV, '[1,2,3]	[[1, 2], [], [3, 4]]')
+DESC format(TSV, '[1,2,3]    [[1, 2], [], [3, 4]]')
 ```
 ```response
 ┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -979,7 +979,7 @@ DESC format(TSV, '[1,2,3]	[[1, 2], [], [3, 4]]')
 └──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 ```sql
-DESC format(TSV, '[''Hello'', ''world'']	[[''Abc'', ''Def''], []]')
+DESC format(TSV, '[''Hello'', ''world'']    [[''Abc'', ''Def''], []]')
 ```
 ```response
 ┌─name─┬─type───────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1041,7 +1041,7 @@ DESC format(TSV, '[NULL, NULL]')
 Example with disabled setting `input_format_tsv_use_best_effort_in_schema_inference`:
 ```sql
 SET input_format_tsv_use_best_effort_in_schema_inference = 0
-DESC format(TSV, '[1,2,3]	42.42	Hello World!')
+DESC format(TSV, '[1,2,3]    42.42    Hello World!')
 ```
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1056,9 +1056,9 @@ Examples of header auto-detection (when `input_format_tsv_detect_header` is enab
 Only names:
 ```sql
 SELECT * FROM format(TSV,
-$$number	string	array
-42	Hello	[1, 2, 3]
-43	World	[4, 5, 6]
+$$number    string    array
+42    Hello    [1, 2, 3]
+43    World    [4, 5, 6]
 $$);
 ```
 
@@ -1073,10 +1073,10 @@ Names and types:
 
 ```sql
 DESC format(TSV,
-$$number	string	array
-UInt32	String	Array(UInt16)
-42	Hello	[1, 2, 3]
-43	World	[4, 5, 6]
+$$number    string    array
+UInt32    String    Array(UInt16)
+42    Hello    [1, 2, 3]
+43    World    [4, 5, 6]
 $$)
 ```
 
@@ -1092,9 +1092,9 @@ Note that the header can be detected only if there is at least one column with a
 
 ```sql
 SELECT * FROM format(TSV,
-$$first_column	second_column
-Hello	World
-World	Hello
+$$first_column    second_column
+Hello    World
+World    Hello
 $$)
 ```
 
@@ -1204,7 +1204,7 @@ most likely this column contains only Nulls or empty Arrays/Maps.
 Example with disabled setting `input_format_tsv_use_best_effort_in_schema_inference`:
 ```sql
 SET input_format_tsv_use_best_effort_in_schema_inference = 0
-DESC format(TSV, '[1,2,3]	42.42	Hello World!')
+DESC format(TSV, '[1,2,3]    42.42    Hello World!')
 ```
 ```response
 ┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1357,7 +1357,7 @@ The list of column names to use in schema inference for formats without explicit
 **Example**
 
 ```sql
-DESC format(TSV, 'Hello, World!	42	[1, 2, 3]') settings column_names_for_schema_inference = 'str,int,arr'
+DESC format(TSV, 'Hello, World!    42    [1, 2, 3]') settings column_names_for_schema_inference = 'str,int,arr'
 ```
 ```response
 ┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
@@ -1663,9 +1663,9 @@ While schema inference for such formats, ClickHouse reads the first two rows and
 
 ```sql
 DESC format(TSVWithNamesAndTypes,
-$$num	str	arr
-UInt8	String	Array(UInt8)
-42	Hello, World!	[1,2,3]
+$$num    str    arr
+UInt8    String    Array(UInt8)
+42    Hello, World!    [1,2,3]
 $$)
 ```
 ```response
@@ -1685,39 +1685,39 @@ In schema inference for such formats, ClickHouse reads this metadata.
 ```sql
 DESC format(JSON, $$
 {
-	"meta":
-	[
-		{
-			"name": "num",
-			"type": "UInt8"
-		},
-		{
-			"name": "str",
-			"type": "String"
-		},
-		{
-			"name": "arr",
-			"type": "Array(UInt8)"
-		}
-	],
+    "meta":
+    [
+        {
+            "name": "num",
+            "type": "UInt8"
+        },
+        {
+            "name": "str",
+            "type": "String"
+        },
+        {
+            "name": "arr",
+            "type": "Array(UInt8)"
+        }
+    ],
 
-	"data":
-	[
-		{
-			"num": 42,
-			"str": "Hello, World",
-			"arr": [1,2,3]
-		}
-	],
+    "data":
+    [
+        {
+            "num": 42,
+            "str": "Hello, World",
+            "arr": [1,2,3]
+        }
+    ],
 
-	"rows": 1,
+    "rows": 1,
 
-	"statistics":
-	{
-		"elapsed": 0.005723915,
-		"rows_read": 1,
-		"bytes_read": 1
-	}
+    "statistics":
+    {
+        "elapsed": 0.005723915,
+        "rows_read": 1,
+        "bytes_read": 1
+    }
 }
 $$)
 ```

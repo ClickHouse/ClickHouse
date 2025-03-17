@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileGK
+description: 'Computes the quantile of a numeric data sequence using the Greenwald-Khanna
+  algorithm.'
 sidebar_position: 175
-title: "quantileGK"
-description: "Computes the quantile of a numeric data sequence using the Greenwald-Khanna algorithm."
+slug: /sql-reference/aggregate-functions/reference/quantileGK
+title: 'quantileGK'
 ---
 
 # quantileGK

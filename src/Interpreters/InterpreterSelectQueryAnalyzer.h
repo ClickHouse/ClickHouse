@@ -88,6 +88,4 @@ private:
     Planner planner;
 };
 
-void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage);
-
 }

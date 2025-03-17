@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/math-functions
+description: 'Documentation for Mathematical Functions'
+sidebar_label: 'Mathematical'
 sidebar_position: 125
-sidebar_label: Mathematical
+slug: /sql-reference/functions/math-functions
+title: 'Mathematical Functions'
 ---
 
 # Mathematical Functions

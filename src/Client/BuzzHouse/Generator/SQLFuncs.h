@@ -10,15 +10,15 @@ class CHAggregate
 {
 public:
     const bool support_nulls_clause;
-    const uint32_t fnum, min_args, max_args, min_params, max_params;
+    const uint32_t fnum, min_params, max_params, min_args, max_args;
 
     CHAggregate(const uint32_t f, const uint32_t min_p, const uint32_t max_p, const uint32_t min_a, const uint32_t m_args, const bool snc)
         : support_nulls_clause(snc)
         , fnum(f)
-        , min_args(min_a)
-        , max_args(m_args)
         , min_params(min_p)
         , max_params(max_p)
+        , min_args(min_a)
+        , max_args(m_args)
     {
     }
 };
@@ -64,6 +64,7 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCcovarSampMatrix, 0, 0, 1, ulimited_params, false),
     CHAggregate(SQLFunc::FUNCentropy, 0, 0, 1, 1, false),
     CHAggregate(SQLFunc::FUNCexponentialMovingAverage, 1, 1, 2, 2, false),
+    CHAggregate(SQLFunc::FUNCgrouping, 0, 0, 1, ulimited_params, false),
     CHAggregate(SQLFunc::FUNCintervalLengthSum, 0, 0, 2, 2, false),
     CHAggregate(SQLFunc::FUNCmedian, 1, 1, 1, 1, false),
     CHAggregate(SQLFunc::FUNCmedianDeterministic, 1, 1, 2, 2, false),
@@ -621,7 +622,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCasin, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCacos, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCatan, 0, 0, 1, 1),
-    CHFunction(SQLFunc::FUNCpow, 0, 0, 1, 1),
+    CHFunction(SQLFunc::FUNCpow, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCcosh, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCacosh, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCsinh, 0, 0, 1, 1),
@@ -1270,6 +1271,7 @@ const std::vector<CHFunction> CHTableFuncs = {
     CHFunction(SQLTableFunc::TFfileCluster, 0, 0, 2, 5),
     CHFunction(SQLTableFunc::TFformat, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFgenerateSeries, 0, 0, 2, 3),
+    CHFunction(SQLTableFunc::TFgenerateRandom, 0, 0, 1, 4),
     CHFunction(SQLTableFunc::TFmerge, 0, 0, 1, 2),
     CHFunction(SQLTableFunc::TFmergeTreeIndex, 0, 0, 2, 3),
     CHFunction(SQLTableFunc::TFmysql, 0, 0, 5, 7),
@@ -1280,6 +1282,7 @@ const std::vector<CHFunction> CHTableFuncs = {
     CHFunction(SQLTableFunc::TFS3Cluster, 0, 0, 2, 9),
     CHFunction(SQLTableFunc::TFsqlite, 0, 0, 2, 2),
     CHFunction(SQLTableFunc::TFurl, 0, 0, 1, 4),
-    CHFunction(SQLTableFunc::TFurlCluster, 0, 0, 4, 4)};
+    CHFunction(SQLTableFunc::TFurlCluster, 0, 0, 4, 4),
+    CHFunction(SQLTableFunc::TFvalues, 0, 0, 1, ulimited_params)};
 
 }

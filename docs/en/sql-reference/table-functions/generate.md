@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/generate
+description: 'Generates random data with a given schema. Allows populating test tables
+  with that data. Not all types are supported.'
+sidebar_label: 'generateRandom'
 sidebar_position: 75
-sidebar_label: generateRandom
-title: "generateRandom"
-description: "Generates random data with a given schema. Allows populating test tables with that data. Not all types are supported."
+slug: /sql-reference/table-functions/generate
+title: 'generateRandom'
 ---
 
 # generateRandom Table Function

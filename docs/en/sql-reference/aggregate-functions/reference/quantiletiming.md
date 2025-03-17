@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantiletiming
+description: 'With the determined precision computes the quantile of a numeric data
+  sequence.'
 sidebar_position: 180
-title: "quantileTiming"
-description: "With the determined precision computes the quantile of a numeric data sequence."
+slug: /sql-reference/aggregate-functions/reference/quantiletiming
+title: 'quantileTiming'
 ---
 
 # quantileTiming

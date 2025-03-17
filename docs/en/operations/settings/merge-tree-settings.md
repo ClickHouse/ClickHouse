@@ -1,7 +1,7 @@
 ---
+description: 'Settings for MergeTree which are in `system.merge_tree_settings`'
 slug: /operations/settings/merge-tree-settings
-title: "MergeTree tables settings"
-description: "Settings for MergeTree which are in `system.merge_tree_settings`"
+title: 'MergeTree tables settings'
 ---
 
 System table `system.merge_tree_settings` shows the globally set MergeTree settings.

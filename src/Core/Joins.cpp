@@ -1,7 +1,14 @@
 #include <Core/Joins.h>
+#include <IO/WriteHelpers.h>
+#include <IO/ReadHelpers.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 const char * toString(JoinKind kind)
 {
@@ -85,6 +92,85 @@ JoinKind reverseJoinKind(JoinKind kind)
     if (kind == JoinKind::Left)
         return JoinKind::Right;
     return kind;
+}
+
+void serializeJoinKind(JoinKind kind, WriteBuffer & out)
+{
+    uint8_t val = uint8_t(kind);
+    writeIntBinary(val, out);
+}
+
+JoinKind deserializeJoinKind(ReadBuffer & in)
+{
+    uint8_t val;
+    readIntBinary(val, in);
+
+    if (val == uint8_t(JoinKind::Inner))
+        return JoinKind::Inner;
+    if (val == uint8_t(JoinKind::Left))
+        return JoinKind::Left;
+    if (val == uint8_t(JoinKind::Right))
+        return JoinKind::Right;
+    if (val == uint8_t(JoinKind::Full))
+        return JoinKind::Full;
+    if (val == uint8_t(JoinKind::Cross))
+        return JoinKind::Cross;
+    if (val == uint8_t(JoinKind::Comma))
+        return JoinKind::Comma;
+    if (val == uint8_t(JoinKind::Paste))
+        return JoinKind::Paste;
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinKind", UInt16(val));
+}
+
+void serializeJoinStrictness(JoinStrictness strictness, WriteBuffer & out)
+{
+    uint8_t val = uint8_t(strictness);
+    writeIntBinary(val, out);
+}
+
+JoinStrictness deserializeJoinStrictness(ReadBuffer & in)
+{
+    uint8_t val;
+    readIntBinary(val, in);
+
+    if (val == uint8_t(JoinStrictness::Unspecified))
+        return JoinStrictness::Unspecified;
+    if (val == uint8_t(JoinStrictness::RightAny))
+        return JoinStrictness::RightAny;
+    if (val == uint8_t(JoinStrictness::Any))
+        return JoinStrictness::Any;
+    if (val == uint8_t(JoinStrictness::All))
+        return JoinStrictness::All;
+    if (val == uint8_t(JoinStrictness::Asof))
+        return JoinStrictness::Asof;
+    if (val == uint8_t(JoinStrictness::Semi))
+        return JoinStrictness::Semi;
+    if (val == uint8_t(JoinStrictness::Anti))
+        return JoinStrictness::Anti;
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinStrictness", UInt16(val));
+}
+
+void serializeJoinLocality(JoinLocality locality, WriteBuffer & out)
+{
+    uint8_t val = uint8_t(locality);
+    writeIntBinary(val, out);
+}
+JoinLocality deserializeJoinLocality(ReadBuffer & in)
+{
+    uint8_t val;
+    readIntBinary(val, in);
+
+    if (val == uint8_t(JoinLocality::Unspecified))
+        return JoinLocality::Unspecified;
+    if (val == uint8_t(JoinLocality::Local))
+        return JoinLocality::Local;
+    if (val == uint8_t(JoinLocality::Global))
+        return JoinLocality::Global;
+
+
+    throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot convert {} to JoinLocality", UInt16(val));
 }
 
 }

@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/create/dictionary
+description: 'Documentation for Dictionary'
+sidebar_label: 'DICTIONARY'
 sidebar_position: 38
-sidebar_label: DICTIONARY
-title: "CREATE DICTIONARY"
+slug: /sql-reference/statements/create/dictionary
+title: 'CREATE DICTIONARY'
 ---
 
 Creates a new [dictionary](../../../sql-reference/dictionaries/index.md) with given [structure](../../../sql-reference/dictionaries/index.md#dictionary-key-and-fields), [source](../../../sql-reference/dictionaries/index.md#dictionary-sources), [layout](/sql-reference/dictionaries#storing-dictionaries-in-memory) and [lifetime](/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime).

@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/functions/tuple-functions
+description: 'Documentation for Tuple Functions'
+sidebar_label: 'Tuples'
 sidebar_position: 180
-sidebar_label: Tuples
-title: Tuple Functions
+slug: /sql-reference/functions/tuple-functions
+title: 'Tuple Functions'
 ---
 
 ## tuple {#tuple}

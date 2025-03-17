@@ -427,6 +427,7 @@ class CommonJobConfigs:
         digest=DigestConfig(
             include_paths=[
                 "./tests/queries/0_stateless/",
+                "./tests/ci/stress.py",
                 "./tests/clickhouse-test",
                 "./tests/config",
                 "./tests/*.txt",

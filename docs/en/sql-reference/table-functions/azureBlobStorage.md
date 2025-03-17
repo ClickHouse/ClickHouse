@@ -1,10 +1,11 @@
 ---
-slug: /sql-reference/table-functions/azureBlobStorage
+description: 'Provides a table-like interface to select/insert files in Azure Blob
+  Storage. Similar to the s3 function.'
+keywords: ['azure blob storage']
+sidebar_label: 'azureBlobStorage'
 sidebar_position: 10
-sidebar_label: azureBlobStorage
-title: "azureBlobStorage"
-description: "Provides a table-like interface to select/insert files in Azure Blob Storage. Similar to the s3 function."
-keywords: [azure blob storage]
+slug: /sql-reference/table-functions/azureBlobStorage
+title: 'azureBlobStorage'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';

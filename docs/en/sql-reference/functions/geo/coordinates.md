@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/functions/geo/coordinates
-sidebar_label: Geographical Coordinates
+description: 'Documentation for Coordinates'
+sidebar_label: 'Geographical Coordinates'
 sidebar_position: 62
-title: "Functions for Working with Geographical Coordinates"
+slug: /sql-reference/functions/geo/coordinates
+title: 'Functions for Working with Geographical Coordinates'
 ---
 
 ## greatCircleDistance {#greatcircledistance}

@@ -395,6 +395,10 @@ DirectoryIteratorPtr DiskObjectStorage::iterateDirectory(const String & path) co
     return metadata_storage->iterateDirectory(path);
 }
 
+bool DiskObjectStorage::isDirectoryEmpty(const String & path) const
+{
+    return metadata_storage->isDirectoryEmpty(path);
+}
 
 void DiskObjectStorage::listFiles(const String & path, std::vector<String> & file_names) const
 {

@@ -337,7 +337,7 @@ void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
     }
     else
     {
-        refColumn(rg, rg.pickRandomlyFromVector(available_cols), expr);
+        refColumn(rg, rg.pickRandomly(available_cols), expr);
     }
 }
 
@@ -581,8 +581,9 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
         const bool prev_inside_aggregate = this->levels[this->current_level].inside_aggregate;
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
-        this->levels[this->current_level].inside_aggregate = true;
-        this->levels[this->current_level].allow_window_funcs = false;
+        /// Most of the times disallow nested aggregates, and window functions inside aggregates
+        this->levels[this->current_level].inside_aggregate = rg.nextSmallNumber() < 9;
+        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         if (max_params > 0 && max_params >= agg.min_params)
         {
             std::uniform_int_distribution<uint32_t> nparams(agg.min_params, max_params);
@@ -680,7 +681,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             /// Use a function from the user
             const std::reference_wrapper<const SQLFunction> & func = this->allow_not_deterministic
                 ? std::ref<const SQLFunction>(rg.pickValueRandomlyFromMap(this->functions))
-                : rg.pickRandomlyFromVector(filterCollection<SQLFunction>(StatementGenerator::funcDeterministicLambda));
+                : rg.pickRandomly(filterCollection<SQLFunction>(StatementGenerator::funcDeterministicLambda));
 
             min_args = max_args = func.get().nargs;
             sfn->mutable_function()->set_function("f" + std::to_string(func.get().fname));
@@ -987,7 +988,8 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
         this->depth++;
-        this->levels[this->current_level].allow_window_funcs = false;
+        /// Most of the times disallow nested window functions
+        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
         if (rg.nextSmallNumber() < 7)
         {
             generateFuncCall(rg, false, true, sfc->mutable_agg_func());
@@ -1015,7 +1017,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             this->ids.emplace_back(static_cast<uint32_t>(WINpercent_rank));
             this->ids.emplace_back(static_cast<uint32_t>(WINrank));
             this->ids.emplace_back(static_cast<uint32_t>(WINrow_number));
-            const WindowFuncs wfs = static_cast<WindowFuncs>(rg.pickRandomlyFromVector(this->ids));
+            const WindowFuncs wfs = static_cast<WindowFuncs>(rg.pickRandomly(this->ids));
 
             this->ids.clear();
             switch (wfs)

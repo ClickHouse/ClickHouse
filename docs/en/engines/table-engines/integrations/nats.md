@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/nats
+description: 'This engine allows integrating ClickHouse with NATS to publish or subscribe
+  to message subjects, and process new messages as they become available.'
+sidebar_label: 'NATS'
 sidebar_position: 140
-sidebar_label: NATS
-title: "NATS Engine"
-description: "his engine allows integrating ClickHouse with NATS to publish or subscribe to message subjects, and process new messages as they become available."
+slug: /engines/table-engines/integrations/nats
+title: 'NATS Engine'
 ---
 
 # NATS Engine {#redisstreams-engine}

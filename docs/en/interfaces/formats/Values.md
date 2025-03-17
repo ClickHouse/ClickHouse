@@ -1,10 +1,11 @@
 ---
-title: Values
-slug: /interfaces/formats/Values
-keywords: [Values]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the Values format'
+input_format: true
+keywords: ['Values']
+output_format: true
+slug: /interfaces/formats/Values
+title: 'Values'
 ---
 
 | Input | Output | Alias |

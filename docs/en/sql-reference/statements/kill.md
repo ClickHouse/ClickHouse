@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/kill
+description: 'Documentation for Kill'
+sidebar_label: 'KILL'
 sidebar_position: 46
-sidebar_label: KILL
-title: "KILL Statements"
+slug: /sql-reference/statements/kill
+title: 'KILL Statements'
 ---
 
 There are two kinds of kill statements: to kill a query and to kill a mutation

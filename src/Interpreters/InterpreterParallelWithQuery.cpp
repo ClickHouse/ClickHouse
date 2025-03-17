@@ -5,7 +5,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/executeQuery.h>
-#include <Parsers/queryToString.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 
 
@@ -120,7 +119,7 @@ void InterpreterParallelWithQuery::executeSubqueries(const ASTs & subqueries)
 
 void InterpreterParallelWithQuery::executeSubquery(ASTPtr subquery, ContextMutablePtr subquery_context)
 {
-    auto query_io = executeQuery(queryToString(subquery), subquery_context, QueryFlags{ .internal = true }).second;
+    auto query_io = executeQuery(subquery->formatWithSecretsOneLine(), subquery_context, QueryFlags{ .internal = true }).second;
     auto & pipeline = query_io.pipeline;
 
     if (!pipeline.initialized())

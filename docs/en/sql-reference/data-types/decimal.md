@@ -1,7 +1,11 @@
 ---
-slug: /sql-reference/data-types/decimal
+description: 'Documentation for the Decimal data types in ClickHouse, which provide
+  fixed-point arithmetic with configurable precision'
+sidebar_label: 'Decimal'
 sidebar_position: 6
-sidebar_label: Decimal
+slug: /sql-reference/data-types/decimal
+title: 'Decimal, Decimal(P), Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S),
+  Decimal256(S)'
 ---
 
 # Decimal, Decimal(P), Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S), Decimal256(S)

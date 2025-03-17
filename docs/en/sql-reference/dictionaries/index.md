@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/dictionaries
-sidebar_label: Defining Dictionaries
+description: 'Overview of external dictionaries functionality in ClickHouse'
+sidebar_label: 'Defining Dictionaries'
 sidebar_position: 35
+slug: /sql-reference/dictionaries
+title: 'Dictionaries'
 ---
 
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
@@ -804,9 +806,9 @@ Suppose we have a table in ClickHouse that contains our IP prefixes and mappings
 
 ```sql
 CREATE TABLE my_ip_addresses (
-	prefix String,
-	asn UInt32,
-	cca2 String
+    prefix String,
+    asn UInt32,
+    cca2 String
 )
 ENGINE = MergeTree
 PRIMARY KEY prefix;
@@ -814,7 +816,7 @@ PRIMARY KEY prefix;
 
 ```sql
 INSERT INTO my_ip_addresses VALUES
-	('202.79.32.0/20', 17501, 'NP'),
+    ('202.79.32.0/20', 17501, 'NP'),
     ('2620:0:870::/48', 3856, 'US'),
     ('2a02:6b8:1::/48', 13238, 'RU'),
     ('2001:db8::/32', 65536, 'ZZ')
@@ -1608,7 +1610,7 @@ Example of settings:
       <where>id=10</where>
       <invalidate_query>SQL_QUERY</invalidate_query>
       <fail_on_connection_loss>true</fail_on_connection_loss>
-	  <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
+      <query>SELECT id, value_1, value_2 FROM db_name.table_name</query>
   </mysql>
 </source>
 ```
@@ -1626,7 +1628,7 @@ SOURCE(MYSQL(
     where 'id=10'
     invalidate_query 'SQL_QUERY'
     fail_on_connection_loss 'true'
-	query 'SELECT id, value_1, value_2 FROM db_name.table_name'
+    query 'SELECT id, value_1, value_2 FROM db_name.table_name'
 ))
 ```
 
@@ -1645,7 +1647,7 @@ Example of settings:
         <table>ids</table>
         <where>id=10</where>
         <secure>1</secure>
-		<query>SELECT id, value_1, value_2 FROM default.ids</query>
+        <query>SELECT id, value_1, value_2 FROM default.ids</query>
     </clickhouse>
 </source>
 ```
@@ -1662,7 +1664,7 @@ SOURCE(CLICKHOUSE(
     table 'ids'
     where 'id=10'
     secure 1
-	query 'SELECT id, value_1, value_2 FROM default.ids'
+    query 'SELECT id, value_1, value_2 FROM default.ids'
 ));
 ```
 

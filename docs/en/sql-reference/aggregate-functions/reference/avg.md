@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/avg
+description: 'Calculates the arithmetic mean.'
 sidebar_position: 112
-title: "avg"
-description: "Calculates the arithmetic mean."
+slug: /sql-reference/aggregate-functions/reference/avg
+title: 'avg'
 ---
 
 # avg

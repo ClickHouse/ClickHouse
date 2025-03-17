@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/mysql
+description: 'Allows `SELECT` and `INSERT` queries to be performed on data that are
+  stored on a remote MySQL server.'
+sidebar_label: 'mysql'
 sidebar_position: 137
-sidebar_label: mysql
-title: "mysql"
-description: "Allows `SELECT` and `INSERT` queries to be performed on data that are stored on a remote MySQL server."
+slug: /sql-reference/table-functions/mysql
+title: 'mysql'
 ---
 
 # mysql Table Function

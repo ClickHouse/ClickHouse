@@ -1,9 +1,11 @@
 ---
-slug: /getting-started/example-datasets/
+description: 'Get started with ClickHouse using our tutorials and example datasets'
+keywords: ['clickhouse', 'install', 'tutorial', 'sample', 'datasets']
+pagination_next: tutorial
+sidebar_label: 'Overview'
 sidebar_position: 0
-sidebar_label: Overview
-keywords: [clickhouse, install, tutorial, sample, datasets]
-pagination_next: 'tutorial'
+slug: /getting-started/example-datasets/
+title: 'Tutorials and Example Datasets'
 ---
 
 # Tutorials and Example Datasets

@@ -1,7 +1,9 @@
 ---
-slug: /development/build
+description: 'Step-by-step guide for building ClickHouse from source on Linux systems'
+sidebar_label: 'Build on Linux'
 sidebar_position: 10
-sidebar_label: Build on Linux
+slug: /development/build
+title: 'How to Build ClickHouse on Linux'
 ---
 
 # How to Build ClickHouse on Linux
@@ -172,7 +174,7 @@ You can also run your custom-built ClickHouse binary with the config file from t
 ```bash
 sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
-````
+```
 
 ### Building on Any Linux {#building-on-any-linux}
 

@@ -10,7 +10,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-#include <Parsers/queryToString.h>
 
 namespace DB
 {
@@ -95,7 +94,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (column.default_desc.expression)
             {
                 column_info.default_kind = toString(column.default_desc.kind);
-                column_info.default_expression = queryToString(column.default_desc.expression);
+                column_info.default_expression = column.default_desc.expression->formatForLogging();
             }
 
             columns_info[column.name] = column_info;

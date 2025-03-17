@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/parametric-functions
+description: 'Documentation for Parametric Aggregate Functions'
+sidebar_label: 'Parametric'
 sidebar_position: 38
-sidebar_label: Parametric
+slug: /sql-reference/aggregate-functions/parametric-functions
+title: 'Parametric Aggregate Functions'
 ---
 
 # Parametric Aggregate Functions

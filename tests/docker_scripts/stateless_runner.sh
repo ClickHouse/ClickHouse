@@ -383,6 +383,13 @@ echo "Files in root directory"
 ls -la /
 
 clickhouse-client -q "system flush logs" ||:
+if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    clickhouse-client --port 19000 -q "system flush logs" ||:
+    clickhouse-client --port 29000 -q "system flush logs" ||:
+fi
+if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+    clickhouse-client --port 19000 -q "system flush logs" ||:
+fi
 
 # stop logs replication to make it possible to dump logs tables via clickhouse-local
 stop_logs_replication

@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/table-functions/odbc
+description: 'Returns the table that is connected via ODBC.'
+sidebar_label: 'odbc'
 sidebar_position: 150
-sidebar_label: odbc
-title: "odbc"
-description: "Returns the table that is connected via ODBC."
+slug: /sql-reference/table-functions/odbc
+title: 'odbc'
 ---
 
 # odbc Table Function

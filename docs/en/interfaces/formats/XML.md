@@ -1,10 +1,11 @@
 ---
-title: XML
-slug: /interfaces/formats/XML
-keywords: [XML]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the XML format'
+input_format: false
+keywords: ['XML']
+output_format: true
+slug: /interfaces/formats/XML
+title: 'XML'
 ---
 
 | Input | Output | Alias |

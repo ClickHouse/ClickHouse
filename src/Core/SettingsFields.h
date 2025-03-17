@@ -1,19 +1,21 @@
 #pragma once
 
-#include <chrono>
-#include <string_view>
-#include <optional>
 #include <Core/Field.h>
 #include <Core/MultiEnum.h>
 #include <base/types.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
+#include <IO/WriteHelpers.h>
+
+#include <chrono>
+#include <string_view>
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_PARSE_NUMBER;
 }
 
 class ReadBuffer;
@@ -27,6 +29,17 @@ class WriteBuffer;
   *  and the remote server will use its default value.
   */
 
+template<typename T>
+void validateFloatingPointSettingValue(T value)
+{
+    if constexpr (std::is_floating_point_v<T>)
+    {
+        if (!std::isfinite(value))
+            throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER,
+                "Float setting value must be finite, got {}", value);
+    }
+}
+
 template <typename T>
 struct SettingFieldNumber
 {
@@ -36,10 +49,20 @@ struct SettingFieldNumber
     Type value;
     bool changed = false;
 
-    explicit SettingFieldNumber(Type x = 0) : value(x) {}
+    explicit SettingFieldNumber(Type x = 0)
+    {
+        validateFloatingPointSettingValue(x);
+        value = x;
+    }
     explicit SettingFieldNumber(const Field & f);
 
-    SettingFieldNumber & operator=(Type x) { value = x; changed = true; return *this; }
+    SettingFieldNumber & operator=(Type x)
+    {
+        validateFloatingPointSettingValue(x);
+        value = x;
+        changed = true;
+        return *this;
+    }
     SettingFieldNumber & operator=(const Field & f);
 
     operator Type() const { return value; } /// NOLINT
@@ -126,7 +149,6 @@ struct SettingAutoWrapper
     void readBinary(ReadBuffer & in) { changed = true; is_auto = false; base.readBinary(in); }
 
     Type valueOr(Type default_value) const { return is_auto ? default_value : base.value; }
-    std::optional<Type> get() const { return is_auto ? std::nullopt : std::make_optional(base.value); }
 };
 
 using SettingFieldBoolAuto = SettingAutoWrapper<SettingFieldBool>;

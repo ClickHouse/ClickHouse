@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/simpleaggregatefunction
+description: 'Documentation for the SimpleAggregateFunction data type'
+sidebar_label: 'SimpleAggregateFunction'
 sidebar_position: 48
-sidebar_label: SimpleAggregateFunction
+slug: /sql-reference/data-types/simpleaggregatefunction
+title: 'SimpleAggregateFunction Type'
 ---
 
 # SimpleAggregateFunction Type
@@ -76,5 +78,5 @@ CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE
 ```
 ## Related Content {#related-content}
 
-- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)	- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+- Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)    - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
 - [AggregateFunction](/sql-reference/data-types/aggregatefunction) type.

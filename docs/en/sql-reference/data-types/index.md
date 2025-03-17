@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/
-sidebar_label: List of data types
+description: 'Documentation for Data Types in ClickHouse'
+sidebar_label: 'List of data types'
 sidebar_position: 1
+slug: /sql-reference/data-types/
+title: 'Data Types in ClickHouse'
 ---
 
 # Data Types in ClickHouse

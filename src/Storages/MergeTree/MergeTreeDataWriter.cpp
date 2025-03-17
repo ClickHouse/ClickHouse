@@ -25,8 +25,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 
-#include <Parsers/queryToString.h>
-
 #include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>

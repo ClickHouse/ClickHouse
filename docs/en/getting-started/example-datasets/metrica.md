@@ -1,8 +1,9 @@
 ---
-description: "Dataset consisting of two tables containing anonymized web analytics data with hits and visits"
+description: 'Dataset consisting of two tables containing anonymized web analytics
+  data with hits and visits'
+sidebar_label: 'Web Analytics Data'
 slug: /getting-started/example-datasets/metrica
-sidebar_label: Web Analytics Data
-title: "Anonymized Web Analytics"
+title: 'Anonymized Web Analytics'
 ---
 
 # Anonymized Web Analytics Data

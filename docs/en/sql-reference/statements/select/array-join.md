@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for ARRAY JOIN Clause'
+sidebar_label: 'ARRAY JOIN'
 slug: /sql-reference/statements/select/array-join
-sidebar_label: ARRAY JOIN
+title: 'ARRAY JOIN Clause'
 ---
 
 # ARRAY JOIN Clause

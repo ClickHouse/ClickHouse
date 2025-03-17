@@ -1,8 +1,11 @@
 ---
+description: 'System table containing information about parts of MergeTree'
+keywords: ['system table', 'parts']
 slug: /operations/system-tables/parts
-title: "system.parts"
-keywords: ["system table", "parts"]
+title: 'system.parts'
 ---
+
+# system.parts
 
 Contains information about parts of [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 

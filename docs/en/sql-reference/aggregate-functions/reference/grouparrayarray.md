@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparrayarray
+description: 'Aggregates arrays into a larger array of those arrays.'
+keywords: ['groupArrayArray', 'array_concat_agg']
 sidebar_position: 111
-title: "groupArrayArray"
-description: "Aggregates arrays into a larger array of those arrays."
-keywords: ["groupArrayArray", "array_concat_agg"]
+slug: /sql-reference/aggregate-functions/reference/grouparrayarray
+title: 'groupArrayArray'
 ---
 
 # groupArrayArray

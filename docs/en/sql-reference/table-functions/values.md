@@ -1,10 +1,10 @@
 ---
-slug: /sql-reference/table-functions/values
-sidebar_position: 210
-sidebar_label: values
-title: 'values'
 description: 'creates a temporary storage which fills columns with values.'
 keywords: ['values', 'table function']
+sidebar_label: 'values'
+sidebar_position: 210
+slug: /sql-reference/table-functions/values
+title: 'values'
 ---
 
 # Values Table Function {#values-table-function}

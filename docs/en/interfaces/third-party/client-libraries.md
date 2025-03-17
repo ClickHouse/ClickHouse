@@ -1,8 +1,10 @@
 ---
-slug: /interfaces/third-party/client-libraries
+description: 'Overview of available third-party client libraries for different programming
+  languages'
+sidebar_label: 'Client Libraries'
 sidebar_position: 26
-sidebar_label: Client Libraries
-description: Third-party client libraries
+slug: /interfaces/third-party/client-libraries
+title: 'Client Libraries from Third-party Developers'
 ---
 
 # Client Libraries from Third-party Developers

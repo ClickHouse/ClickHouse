@@ -1,8 +1,11 @@
 ---
-slug: /sql-reference/statements/create/view
+description: 'Documentation for CREATE VIEW'
+sidebar_label: 'VIEW'
 sidebar_position: 37
-sidebar_label: VIEW
+slug: /sql-reference/statements/create/view
+title: 'CREATE VIEW'
 ---
+
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';

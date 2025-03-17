@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/kurtpop
+description: 'Computes the kurtosis of a sequence.'
 sidebar_position: 157
-title: "kurtPop"
-description: "Computes the kurtosis of a sequence."
+slug: /sql-reference/aggregate-functions/reference/kurtpop
+title: 'kurtPop'
 ---
 
 # kurtPop
