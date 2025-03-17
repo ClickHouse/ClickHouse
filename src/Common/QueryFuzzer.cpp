@@ -39,7 +39,6 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
-#include <Parsers/ParserDataType.h>
 #include <Parsers/parseQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <pcg_random.hpp>
