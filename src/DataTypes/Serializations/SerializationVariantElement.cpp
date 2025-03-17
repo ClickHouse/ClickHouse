@@ -29,14 +29,12 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
     ColumnPtr variant;
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
-    size_t num_read_rows = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<SerializationVariantElement::DeserializeBinaryBulkStateVariantElement>();
         new_state->discriminators_state = discriminators_state ? discriminators_state->clone() : nullptr;
         new_state->variant_element_state = variant_element_state ? variant_element_state->clone() : nullptr;
-        new_state->num_read_rows = num_read_rows;
         return new_state;
     }
 };
@@ -111,13 +109,10 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     DeserializeBinaryBulkStateVariantElement * variant_element_state = nullptr;
     std::optional<size_t> variant_rows_offset;
     std::optional<size_t> variant_limit;
-    size_t discriminators_offset = 0;
     if (auto cached_discriminators = getFromSubstreamsCache(cache, settings.path))
     {
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
         variant_element_state->discriminators = cached_discriminators;
-        auto * discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(variant_element_state->discriminators_state);
-        discriminators_offset = discriminators_state->origin_num_rows;
     }
     else if (auto * discriminators_stream = settings.getter(settings.path))
     {
@@ -127,9 +122,6 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         /// If we started to read a new column, reinitialize discriminators column in deserialization state.
         if (!variant_element_state->discriminators || result_column->empty())
             variant_element_state->discriminators = ColumnVariant::ColumnDiscriminators::create();
-
-        const auto origin_num_rows = variant_element_state->discriminators->size();
-        discriminators_offset = origin_num_rows;
 
         /// Deserialize discriminators according to serialization mode.
         if (discriminators_state->mode.value == SerializationVariant::DiscriminatorsSerializationMode::BASIC)
@@ -172,6 +164,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
         if (rows_offset)
         {
+            size_t discriminators_offset = variant_element_state->discriminators->size() - limit - rows_offset;
             auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators->assumeMutable()).getData();
 
             for (size_t i = discriminators_offset; i != discriminators_offset + rows_offset; ++i)
@@ -181,6 +174,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     if (rows_offset)
     {
+        size_t discriminators_offset = variant_element_state->discriminators->size() - limit - rows_offset;
         auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators->assumeMutable()).getData();
 
         for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
@@ -189,11 +183,12 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     /// We could read less than limit discriminators, but we will need actual number of read rows later.
-    size_t num_new_discriminators = variant_element_state->discriminators->size() - discriminators_offset;
+    size_t num_new_discriminators = variant_element_state->discriminators->size() - result_column->size();
 
     /// Iterate through new discriminators to calculate the limit for our variant
     /// if we didn't do it during discriminators deserialization.
     const auto & discriminators_data = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators).getData();
+    size_t discriminators_offset = variant_element_state->discriminators->size() - num_new_discriminators;
     if (!variant_limit)
     {
         variant_limit = 0;
