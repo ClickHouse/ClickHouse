@@ -1,4 +1,7 @@
 #include <Processors/Transforms/DistinctTransform.h>
+#include "Interpreters/BloomFilter.h"
+
+
 
 namespace DB
 {
@@ -12,8 +15,10 @@ DistinctTransform::DistinctTransform(
     const Block & header_,
     const SizeLimits & set_size_limits_,
     const UInt64 limit_hint_,
-    const Names & columns_)
+    const Names & columns_,
+    const bool is_pre_distinct_)
     : ISimpleTransform(header_, header_, true)
+    , is_pre_distinct(is_pre_distinct_)
     , limit_hint(limit_hint_)
     , set_size_limits(set_size_limits_)
 {
@@ -34,17 +39,34 @@ void DistinctTransform::buildFilter(
     const ColumnRawPtrs & columns,
     IColumn::Filter & filter,
     const size_t rows,
-    SetVariants & variants) const
+    SetVariants & variants,
+    size_t & passed) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
+    auto bf_lookup = !leaky;
 
     for (size_t i = 0; i < rows; ++i)
     {
-        auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
-        /// Emit the record if there is no such key in the current set yet.
-        /// Skip it otherwise.
-        filter[i] = emplace_result.isInserted();
+        auto row_hash = state.getHash(method.data, i, variants.string_pool);
+        //auto row_hash  = ColumnsHashing::hash128(i, columns.size(), columns);
+
+        if (leaky)
+            bf_lookup = bloom_filter->findHashWithSeed(row_hash, 3213232);
+
+        if (bf_lookup)
+        {
+            auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
+            /// Emit the record if there is no such key in the current set yet.
+            /// Skip it otherwise.
+            filter[i] = emplace_result.isInserted();
+
+        } else
+        {
+            filter[i] = true;
+            bloom_filter->addHashWithSeed(row_hash, 3213232);
+            passed = passed + 1;
+        }
     }
 }
 
@@ -79,6 +101,14 @@ void DistinctTransform::transform(Chunk & chunk)
         data.init(SetVariants::chooseMethod(column_ptrs, key_sizes));
 
     const auto old_set_size = data.getTotalRowCount();
+    const auto old_bf_size =  bf_passed;
+
+    if ((!leaky) && is_pre_distinct && (!(limit_hint && limit_hint < 100000)) && old_set_size > 100000)
+    {
+        bloom_filter = std::make_unique<BloomFilter>(BloomFilterParameters(2500000, 3, 3213232));
+        leaky = true;
+    }
+
     IColumn::Filter filter(num_rows);
 
     switch (data.type)
@@ -87,7 +117,7 @@ void DistinctTransform::transform(Chunk & chunk)
             break;
 #define M(NAME) \
             case SetVariants::Type::NAME: \
-                buildFilter(*data.NAME, column_ptrs, filter, num_rows, data); \
+                buildFilter(*data.NAME, column_ptrs, filter, num_rows, data, bf_passed); \
                 break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
@@ -95,7 +125,9 @@ void DistinctTransform::transform(Chunk & chunk)
 
     /// Just go to the next chunk if there isn't any new record in the current one.
     size_t new_set_size = data.getTotalRowCount();
-    if (new_set_size == old_set_size)
+    size_t new_bf_size = bf_passed;
+
+    if (new_set_size + new_bf_size == old_set_size + old_bf_size)
         return;
 
     if (!set_size_limits.check(new_set_size, data.getTotalByteCount(), "DISTINCT", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED))
@@ -104,10 +136,14 @@ void DistinctTransform::transform(Chunk & chunk)
     for (auto & column : columns)
         column = column->filter(filter, -1);
 
-    chunk.setColumns(std::move(columns), new_set_size - old_set_size);
+    new_passes = ((new_set_size - old_set_size) + (new_bf_size - old_bf_size));
+
+    leaky = leaky && new_passes > 1000 ? true: false;
+
+    chunk.setColumns(std::move(columns), new_passes);
 
     /// Stop reading if we already reach the limit
-    if (limit_hint && new_set_size >= limit_hint)
+    if (limit_hint && (new_set_size >= limit_hint || new_bf_size >= limit_hint))
     {
         stopReading();
         return;
