@@ -8,6 +8,7 @@ import pika
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import rabbitmq_username, rabbitmq_password
 from .test import check_expected_result_polling
 
 DEFAULT_TIMEOUT_SEC = 120
@@ -205,7 +206,7 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
     everything is consumed before suspending and resuming the RabbitMQ server.
     """
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS test.consume;
         CREATE TABLE test.view (key UInt64, value UInt64)
             ENGINE = MergeTree
@@ -213,6 +214,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
         CREATE TABLE test.consume (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                    rabbitmq_username = '{rabbitmq_username}',
+                    rabbitmq_password = '{rabbitmq_password}',
                     rabbitmq_flush_interval_ms=1000,
                     rabbitmq_max_block_size = 1,
                     rabbitmq_exchange_name = 'producer_reconnect',
@@ -225,6 +228,8 @@ def test_rabbitmq_restore_failed_connection_without_losses_1(rabbitmq_cluster, r
         CREATE TABLE test.producer_reconnect (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                    rabbitmq_username = '{rabbitmq_username}',
+                    rabbitmq_password = '{rabbitmq_password}',
                     rabbitmq_exchange_name = 'producer_reconnect',
                     rabbitmq_persistent = '1',
                     rabbitmq_flush_interval_ms=1000,
@@ -255,11 +260,13 @@ def test_rabbitmq_restore_failed_connection_without_losses_2(rabbitmq_cluster, r
     everything is consumed before suspending and resuming the RabbitMQ server.
     """
     instance.query(
-        """
+        f"""
         DROP TABLE IF EXISTS test.consumer_reconnect;
         CREATE TABLE test.consumer_reconnect (key UInt64, value UInt64)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                    rabbitmq_username = '{rabbitmq_username}',
+                    rabbitmq_password = '{rabbitmq_password}',
                     rabbitmq_exchange_name = 'consumer_reconnect',
                     rabbitmq_num_consumers = 2,
                     rabbitmq_flush_interval_ms = 1000,
