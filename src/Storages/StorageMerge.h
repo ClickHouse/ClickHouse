@@ -31,6 +31,7 @@ public:
         bool database_is_regexp_,
         const DBToTableSetMap & source_databases_and_tables_,
         const std::optional<String> & table_to_write_,
+        bool table_to_write_auto_,
         ContextPtr context_);
 
     StorageMerge(
@@ -41,6 +42,7 @@ public:
         bool database_is_regexp_,
         const String & source_table_regexp_,
         const std::optional<String> & table_to_write_,
+        bool table_to_write_auto_,
         ContextPtr context_);
 
     std::string getName() const override { return "Merge"; }
@@ -128,12 +130,16 @@ private:
     DatabaseNameOrRegexp database_name_or_regexp;
 
     std::optional<QualifiedTableName> table_to_write;
+    bool table_to_write_auto = false;
 
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
     template <typename F>
     void forEachTable(F && func) const;
+
+    template <typename F>
+    void forEachTableName(F && func) const;
 
     ColumnSizeByName getColumnSizes() const override;
 
