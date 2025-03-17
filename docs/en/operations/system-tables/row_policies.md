@@ -1,9 +1,12 @@
 ---
-description: "System table containing filters for one particular table, as well as a list of roles and/or users which should use this row policy."
+description: 'System table containing filters for one particular table, as well as
+  a list of roles and/or users which should use this row policy.'
+keywords: ['system table', 'row_policies']
 slug: /operations/system-tables/row_policies
-title: "system.row_policies"
-keywords: ["system table", "row_policies"]
+title: 'system.row_policies'
 ---
+
+# system.row_policies
 
 Contains filters for one particular table, as well as a list of roles and/or users which should use this row policy.
 

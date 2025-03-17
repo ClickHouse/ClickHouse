@@ -1,10 +1,11 @@
 ---
-slug: /sql-reference/table-functions/azureBlobStorage
+description: 'Provides a table-like interface to select/insert files in Azure Blob
+  Storage. Similar to the s3 function.'
+keywords: ['azure blob storage']
+sidebar_label: 'azureBlobStorage'
 sidebar_position: 10
-sidebar_label: azureBlobStorage
-title: "azureBlobStorage"
-description: "Provides a table-like interface to select/insert files in Azure Blob Storage. Similar to the s3 function."
-keywords: [azure blob storage]
+slug: /sql-reference/table-functions/azureBlobStorage
+title: 'azureBlobStorage'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -27,7 +28,7 @@ azureBlobStorage(- connection_string|storage_account_url, container_name, blobpa
 - `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](../../interfaces/formats.md#formats) of the file.
+- `format` — The [format](/sql-reference/formats) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
 - `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 

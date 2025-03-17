@@ -18,7 +18,7 @@ generateUUIDv4([x])
 
 **Аргументы**
 
--   `x` — [выражение](../syntax.md#syntax-expressions), возвращающее значение одного из [поддерживаемых типов данных](../data-types/index.md#data_types). Значение используется, чтобы избежать [склейки одинаковых выражений](index.md#common-subexpression-elimination), если функция вызывается несколько раз в одном запросе. Необязательный параметр.
+-   `x` — [выражение](/sql-reference/syntax#expressions), возвращающее значение одного из [поддерживаемых типов данных](/sql-reference/data-types). Значение используется, чтобы избежать [склейки одинаковых выражений](index.md#common-subexpression-elimination), если функция вызывается несколько раз в одном запросе. Необязательный параметр.
    
 **Возвращаемое значение**
 
@@ -79,7 +79,7 @@ generateUUIDv7([x])
 
 **Аргументы**
 
--   `x` — [выражение](../syntax.md#syntax-expressions), возвращающее значение одного из [поддерживаемых типов данных](../data-types/index.md#data_types). Значение используется, чтобы избежать [склейки одинаковых выражений](index.md#common-subexpression-elimination), если функция вызывается несколько раз в одном запросе. Необязательный параметр.
+-   `x` — [выражение](/sql-reference/syntax#expressions), возвращающее значение одного из [поддерживаемых типов данных](/sql-reference/data-types). Значение используется, чтобы избежать [склейки одинаковых выражений](index.md#common-subexpression-elimination), если функция вызывается несколько раз в одном запросе. Необязательный параметр.
    
 **Возвращаемое значение**
 
@@ -124,7 +124,7 @@ empty(UUID)
 
 UUID считается пустым, если он содержит все нули (нулевой UUID).
 
-Функция также поддерживает работу с типами [Array](array-functions.md#function-empty) и [String](string-functions.md#empty).
+Функция также поддерживает работу с типами [Array](/sql-reference/functions/array-functions#empty) и [String](string-functions.md#empty).
 
 **Параметры**
 
@@ -166,7 +166,7 @@ notEmpty(UUID)
 
 UUID считается пустым, если он содержит все нули (нулевой UUID).
 
-Функция также поддерживает работу с типами [Array](array-functions.md#function-notempty) и [String](string-functions.md#function-notempty).
+Функция также поддерживает работу с типами [Array](/sql-reference/functions/array-functions#notempty) и [String](string-functions.md#function-notempty).
 
 **Параметры**
 

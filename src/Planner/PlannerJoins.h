@@ -3,14 +3,14 @@
 #include <Core/Joins.h>
 #include <Core/ColumnsWithTypeAndName.h>
 
-#include <Interpreters/ActionsDAG.h>
-#include <Interpreters/TableJoin.h>
-#include <Interpreters/IJoin.h>
-#include <Interpreters/JoinInfo.h>
-#include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/IJoin.h>
+#include <Interpreters/JoinInfo.h>
+#include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
 {
@@ -261,6 +261,7 @@ struct JoinAlgorithmSettings
 
     JoinAlgorithmSettings(
         const JoinSettings & join_settings,
+        UInt64 max_threads_,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         std::chrono::milliseconds lock_acquire_timeout_);
@@ -276,7 +277,7 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     const Block & left_table_expression_header,
     const Block & right_table_expression_header,
     const JoinAlgorithmSettings & settings,
-    IQueryTreeNode::HashState hash_table_key_hash);
+    UInt64 hash_table_key_hash);
 
 using TableExpressionSet = std::unordered_set<const IQueryTreeNode *>;
 TableExpressionSet extractTableExpressionsSet(const QueryTreeNodePtr & node);

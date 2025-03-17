@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/uniqthetasketch
+description: 'Calculates the approximate number of different argument values, using
+  the Theta Sketch Framework.'
 sidebar_position: 209
-title: uniqTheta
-description: "Calculates the approximate number of different argument values, using the Theta Sketch Framework."
+slug: /sql-reference/aggregate-functions/reference/uniqthetasketch
+title: 'uniqTheta'
 ---
 
 Calculates the approximate number of different argument values, using the [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketchFramework.html).
@@ -34,7 +35,7 @@ Function:
 **See Also**
 
 - [uniq](/sql-reference/aggregate-functions/reference/uniq)
-- [uniqCombined](../../../sql-reference/aggregate-functions/reference/uniqcombined.md#agg_function-uniqcombined)
-- [uniqCombined64](../../../sql-reference/aggregate-functions/reference/uniqcombined64.md#agg_function-uniqcombined64)
-- [uniqHLL12](../../../sql-reference/aggregate-functions/reference/uniqhll12.md#agg_function-uniqhll12)
+- [uniqCombined](/sql-reference/aggregate-functions/reference/uniqcombined)
+- [uniqCombined64](/sql-reference/aggregate-functions/reference/uniqcombined64)
+- [uniqHLL12](/sql-reference/aggregate-functions/reference/uniqhll12)
 - [uniqExact](/sql-reference/aggregate-functions/reference/uniqexact)

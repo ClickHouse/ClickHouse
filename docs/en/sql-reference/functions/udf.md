@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/udf
+description: 'Documentation for UDFs User Defined Functions'
+sidebar_label: 'UDF'
 sidebar_position: 15
-sidebar_label: UDF
+slug: /sql-reference/functions/udf
+title: 'UDFs User Defined Functions'
 ---
 
 import PrivatePreviewBadge from '@theme/badges/PrivatePreviewBadge';
@@ -24,7 +26,7 @@ A function configuration contains the following settings:
 
 - `name` - a function name.
 - `command` - script name to execute or command if `execute_direct` is false.
-- `argument` - argument description with the `type`, and optional `name` of an argument. Each argument is described in a separate setting. Specifying name is necessary if argument names are part of serialization for user defined function format like [Native](/docs/interfaces/formats/Native) or [JSONEachRow](/interfaces/formats/JSONEachRow). Default argument name value is `c` + argument_number.
+- `argument` - argument description with the `type`, and optional `name` of an argument. Each argument is described in a separate setting. Specifying name is necessary if argument names are part of serialization for user defined function format like [Native](/interfaces/formats/Native) or [JSONEachRow](/interfaces/formats/JSONEachRow). Default argument name value is `c` + argument_number.
 - `format` - a [format](../../interfaces/formats.md) in which arguments are passed to the command.
 - `return_type` - the type of a returned value.
 - `return_name` - name of returned value. Specifying return name is necessary if return name is part of serialization for user defined function format like [Native](../../interfaces/formats.md#native) or [JSONEachRow](/interfaces/formats/JSONEachRow). Optional. Default value is `result`.

@@ -1,22 +1,20 @@
 from praktika import Workflow
 
-from ci.defs.defs import SECRETS, ArtifactConfigs, ArtifactNames, JobNames
+from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs, ArtifactNames, JobNames
 from ci.defs.job_configs import JobConfigs
 
 workflow = Workflow.Config(
     name="MergeQueueCI",
     event=Workflow.Event.MERGE_QUEUE,
     jobs=[
-        JobConfigs.docker_build_arm,
-        JobConfigs.docker_build_amd,
         JobConfigs.style_check,
         JobConfigs.fast_test,
         *[job for job in JobConfigs.build_jobs if job.name == "Build (amd_binary)"],
-        *[
-            job
-            for job in JobConfigs.unittest_jobs
-            if job.name == JobNames.UNITTEST + " (binary)"
-        ],
+        # *[
+        #     job
+        #     for job in JobConfigs.unittest_jobs
+        #     if job.name == JobNames.UNITTEST + " (binary)"
+        # ],
     ],
     artifacts=[
         *[
@@ -31,7 +29,7 @@ workflow = Workflow.Config(
         ],
         ArtifactConfigs.fast_test,
     ],
-    # dockers=DOCKERS,
+    dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,

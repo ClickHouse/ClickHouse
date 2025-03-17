@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/uniqtheta-functions
+description: 'Documentation for uniqTheta Functions'
+sidebar_label: 'uniqTheta'
 sidebar_position: 210
-sidebar_label: uniqTheta
+slug: /sql-reference/functions/uniqtheta-functions
+title: 'uniqTheta Functions'
 ---
 
 # uniqTheta Functions
@@ -93,4 +95,4 @@ from
 
 **See Also**
 
-- [uniqThetaSketch](../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)
+- [uniqThetaSketch](/sql-reference/aggregate-functions/reference/uniqthetasketch)
