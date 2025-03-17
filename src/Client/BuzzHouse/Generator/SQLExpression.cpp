@@ -337,7 +337,7 @@ void StatementGenerator::generateColRef(RandomGenerator & rg, Expr * expr)
     }
     else
     {
-        refColumn(rg, rg.pickRandomly(available_cols), expr);
+        refColumn(rg, rg.pickRandomlyFromVector(available_cols), expr);
     }
 }
 
@@ -681,7 +681,7 @@ void StatementGenerator::generateFuncCall(RandomGenerator & rg, const bool allow
             /// Use a function from the user
             const std::reference_wrapper<const SQLFunction> & func = this->allow_not_deterministic
                 ? std::ref<const SQLFunction>(rg.pickValueRandomlyFromMap(this->functions))
-                : rg.pickRandomly(filterCollection<SQLFunction>(StatementGenerator::funcDeterministicLambda));
+                : rg.pickRandomlyFromVector(filterCollection<SQLFunction>(StatementGenerator::funcDeterministicLambda));
 
             min_args = max_args = func.get().nargs;
             sfn->mutable_function()->set_function("f" + std::to_string(func.get().fname));
@@ -1017,7 +1017,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
             this->ids.emplace_back(static_cast<uint32_t>(WINpercent_rank));
             this->ids.emplace_back(static_cast<uint32_t>(WINrank));
             this->ids.emplace_back(static_cast<uint32_t>(WINrow_number));
-            const WindowFuncs wfs = static_cast<WindowFuncs>(rg.pickRandomly(this->ids));
+            const WindowFuncs wfs = static_cast<WindowFuncs>(rg.pickRandomlyFromVector(this->ids));
 
             this->ids.clear();
             switch (wfs)

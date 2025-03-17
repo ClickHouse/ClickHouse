@@ -12,13 +12,28 @@
 namespace BuzzHouse
 {
 
-const RandomSettingParameter trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
+struct CHSetting
+{
+public:
+    const std::function<String(RandomGenerator &)> random_func;
+    const std::unordered_set<String> oracle_values;
+    const bool changes_behavior;
 
-const RandomSettingParameter zeroOneTwo = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 2)); };
+    CHSetting(const std::function<String(RandomGenerator &)> & rf, const std::unordered_set<String> & ov, const bool cb)
+        : random_func(rf)
+        , oracle_values(ov)
+        , changes_behavior(cb)
+    {
+    }
+};
 
-const RandomSettingParameter zeroToThree = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
+const std::function<String(RandomGenerator &)> trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
 
-extern std::unordered_map<String, CHSetting> performanceSettings;
+const std::function<String(RandomGenerator &)> zeroOneTwo
+    = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 2)); };
+
+const std::function<String(RandomGenerator &)> zeroToThree
+    = [](RandomGenerator & rg) { return std::to_string(rg.randomInt<uint32_t>(0, 3)); };
 
 extern std::unordered_map<String, CHSetting> serverSettings;
 
@@ -59,7 +74,7 @@ const std::unordered_map<String, CHSetting> fileTableSettings
             [](RandomGenerator & rg)
             {
                 const DB::Strings & choices = {"'read'", "'pread'", "'mmap'"};
-                return rg.pickRandomly(choices);
+                return rg.pickRandomlyFromVector(choices);
             },
             {},
             false)}};
@@ -70,7 +85,7 @@ const std::unordered_map<String, CHSetting> s3QueueTableSettings = {
          [](RandomGenerator & rg)
          {
              const DB::Strings & choices = {"''", "'keep'", "'delete'"};
-             return rg.pickRandomly(choices);
+             return rg.pickRandomlyFromVector(choices);
          },
          {},
          false)},

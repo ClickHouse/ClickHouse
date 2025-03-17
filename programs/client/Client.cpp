@@ -1,9 +1,15 @@
 #include "Client.h"
-#include <Client/ConnectionString.h>
-#include <Core/Protocol.h>
+#include <cstdlib>
+#include <iomanip>
+#include <iostream>
+#include <optional>
+#include <string>
+#include <fcntl.h>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/program_options.hpp>
 #include <Common/ThreadStatus.h>
+#include "Client/ConnectionString.h"
+#include "Core/Protocol.h"
 
 #include <Access/AccessControl.h>
 
@@ -32,14 +38,9 @@
 
 #include <Poco/Util/Application.h>
 
-#include <filesystem>
-
 #include "config.h"
 
-#if USE_BUZZHOUSE
-#   include <Client/BuzzHouse/Generator/ExternalIntegrations.h>
-#   include <Client/BuzzHouse/Generator/FuzzConfig.h>
-#endif
+#include <filesystem>
 
 namespace fs = std::filesystem;
 using namespace std::literals;
@@ -64,13 +65,6 @@ namespace ErrorCodes
     extern const int USER_EXPIRED;
 }
 
-Client::Client()
-{
-    fuzzer = QueryFuzzer(randomSeed(), &std::cout, &std::cerr);
-}
-
-
-Client::~Client() = default;
 
 void Client::processError(const String & query) const
 {
@@ -846,28 +840,12 @@ void Client::processOptions(
 
     query_fuzzer_runs = options["query-fuzzer-runs"].as<int>();
     buzz_house_options_path = options.count("buzz-house-config") ? options["buzz-house-config"].as<std::string>() : "";
-    buzz_house = !query_fuzzer_runs && !buzz_house_options_path.empty();
-    if (query_fuzzer_runs || !buzz_house_options_path.empty())
+    buzz_house = !buzz_house_options_path.empty();
+    if (query_fuzzer_runs || buzz_house)
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
         ignore_error = true;
-#if USE_BUZZHOUSE
-        if (query_fuzzer_runs && !buzz_house_options_path.empty())
-        {
-            fuzz_config = std::make_unique<BuzzHouse::FuzzConfig>(this, buzz_house_options_path);
-            external_integrations = std::make_unique<BuzzHouse::ExternalIntegrations>(*fuzz_config);
-
-            if (fuzz_config->seed)
-            {
-                fuzzer.setSeed(fuzz_config->seed);
-            }
-        }
-#endif
-        if (query_fuzzer_runs)
-        {
-            fmt::print(stdout, "Using seed {} for AST fuzzer\n", fuzzer.getSeed());
-        }
     }
 
     if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))

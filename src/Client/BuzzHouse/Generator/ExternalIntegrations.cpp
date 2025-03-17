@@ -717,7 +717,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((etp = dynamic_cast<EnumType *>(tp)))
     {
-        const EnumValue & nvalue = rg.pickRandomly(etp->values);
+        const EnumValue & nvalue = rg.pickRandomlyFromVector(etp->values);
 
         if constexpr (is_document<T>)
         {
@@ -929,7 +929,7 @@ void MongoDBIntegration::documentAppendAnyValue(
         }
         else
         {
-            documentAppendAnyValue(rg, cname, document, rg.pickRandomly(vtp->subtypes));
+            documentAppendAnyValue(rg, cname, document, rg.pickRandomlyFromVector(vtp->subtypes));
         }
     }
     else
@@ -1341,12 +1341,13 @@ std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDa
     }
 }
 
-bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableDatabase pt, PerformanceResult & res)
+bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
+    const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
 {
     String buf;
     std::error_code ec;
     const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
-    res.metrics.clear();
+
     if (!std::filesystem::remove(out_path, ec) && ec)
     {
         LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
@@ -1356,9 +1357,9 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
     if (clickhouse->performQueryOnServerOrRemote(
             pt,
             fmt::format(
-                "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64, c2 UInt64') SELECT query_duration_ms, "
-                "memory_usage, read_bytes FROM system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER "
-                "BY event_time_microseconds DESC LIMIT 1;",
+                "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage FROM "
+                "system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC "
+                "LIMIT 1;",
                 out_path.generic_string())))
     {
         std::ifstream infile(out_path);
@@ -1368,14 +1369,10 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableData
             {
                 buf.pop_back();
             }
-            const auto tabchar1 = buf.find('\t');
-            const auto substr = buf.substr(tabchar1 + 1);
-            const auto tabchar2 = substr.find('\t');
+            const auto tabchar = buf.find('\t');
 
-            res.metrics.insert(
-                {{"query_time", static_cast<uint64_t>(std::stoull(buf))},
-                 {"query_memory", static_cast<uint64_t>(std::stoull(buf.substr(tabchar1 + 1)))},
-                 {"query_bytes_read", static_cast<uint64_t>(std::stoull(substr.substr(tabchar2 + 1)))}});
+            query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
+            memory_usage = static_cast<uint64_t>(std::stoull(buf.substr(tabchar + 1)));
             return true;
         }
     }
