@@ -67,7 +67,6 @@ else()
     set(profile "release")
 endif()
 
-file(COPY_FILE ${DELTA_KERNEL_RS_CMAKE_DIR}/Cargo.lock ${DELTA_KERNEL_RS_SOURCE_DIR}/Cargo.lock)
 corrosion_import_crate(MANIFEST_PATH "${DELTA_KERNEL_RS_SOURCE_DIR}/ffi/Cargo.toml" NO_STD PROFILE ${profile} CRATE_TYPES staticlib ALL_FEATURES FLAGS --offline)
 corrosion_set_env_vars(delta_kernel_ffi
         "CARGO_TARGET_DIR=${DELTA_KERNEL_TARGET_PATH}"
