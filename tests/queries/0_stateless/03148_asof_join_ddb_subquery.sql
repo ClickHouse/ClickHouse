@@ -3,7 +3,7 @@ CREATE TABLE events (begin Float64, value Int32) ENGINE = MergeTree() ORDER BY b
 
 INSERT INTO events VALUES (1, 0), (3, 1), (6, 2), (8, 3);
 
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 SET join_algorithm = 'full_sorting_merge';
 SET joined_subquery_requires_alias = 0;
 

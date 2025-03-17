@@ -9,6 +9,7 @@ ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
 SETTINGS storage_policy = 'default';
 
+SET max_execution_time = 300;
 INSERT INTO test.hits_1m SELECT * FROM test.hits LIMIT 1000000
 SETTINGS min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_block_size = 8192, max_insert_threads = 1, max_threads = 1, max_parallel_replicas=1;
 
