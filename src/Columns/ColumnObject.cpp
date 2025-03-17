@@ -1830,81 +1830,28 @@ private:
         while (dynamic_paths_it != dynamic_paths_end && column_object.dynamic_paths.find(*dynamic_paths_it)->second->isNullAt(row))
             ++dynamic_paths_it;
 
-        if (dynamic_paths_it != dynamic_paths_end)
-        {
-            if (typed_paths_it != typed_paths_end)
+        std::array<std::pair<PathType, std::optional<std::string_view>>, 3> paths{
+            std::pair{PathType::TYPED, typed_paths_it == typed_paths_end ? std::nullopt : std::optional<std::string_view>(*typed_paths_it)},
+            std::pair{PathType::DYNAMIC, dynamic_paths_it == dynamic_paths_end ? std::nullopt : std::optional<std::string_view>(*dynamic_paths_it)},
+            std::pair{
+                PathType::SHARED_DATA, shared_data_it == shared_data_end ? std::nullopt : std::optional<std::string_view>(shared_data_paths->getDataAt(shared_data_it).toView())},
+        };
+
+        auto min_path = std::ranges::min(
+            paths,
+            [](auto first_path, auto second_path)
             {
-                if (shared_data_it != shared_data_end)
-                {
-                    /// All 3 iterators are valid, find smallest across all 3 paths.
-                    if (*dynamic_paths_it < *typed_paths_it)
-                    {
-                        if (*dynamic_paths_it < shared_data_paths->getDataAt(shared_data_it).toView())
-                            current_path_type = PathType::DYNAMIC;
-                        else
-                            current_path_type = PathType::SHARED_DATA;
-                    }
-                    else
-                    {
-                        if (*typed_paths_it < shared_data_paths->getDataAt(shared_data_it).toView())
-                            current_path_type = PathType::TYPED;
-                        else
-                            current_path_type = PathType::SHARED_DATA;
-                    }
-                }
-                else
-                {
-                    /// Dynamic and typed iterators are valid.
-                    if (*dynamic_paths_it < *typed_paths_it)
-                        current_path_type = PathType::DYNAMIC;
-                    else
-                        current_path_type = PathType::TYPED;
-                }
-            }
-            else
-            {
-                if (shared_data_it != shared_data_end)
-                {
-                    /// Dynamic and shared data iterators are valid.
-                    if (*dynamic_paths_it < shared_data_paths->getDataAt(shared_data_it).toView())
-                        current_path_type = PathType::DYNAMIC;
-                    else
-                        current_path_type = PathType::SHARED_DATA;
-                }
-                else
-                {
-                    /// Only dynamic iterator is valid.
-                    current_path_type = PathType::DYNAMIC;
-                }
-            }
-        }
-        else
-        {
-            if (typed_paths_it != typed_paths_end)
-            {
-                if (shared_data_it != shared_data_end)
-                {
-                    /// Typed and shared data iterators are valid.
-                    if (*typed_paths_it < shared_data_paths->getDataAt(shared_data_it).toView())
-                        current_path_type = PathType::TYPED;
-                    else
-                        current_path_type = PathType::SHARED_DATA;
-                }
-                else
-                {
-                    /// Only typed iterator is valid.
-                    current_path_type = PathType::TYPED;
-                }
-            }
-            else
-            {
-                if (shared_data_it != shared_data_end)
-                {
-                    /// Only shared data iterator is valid.
-                    current_path_type = PathType::SHARED_DATA;
-                }
-            }
-        }
+                if (!second_path.second)
+                    return true;
+
+                if (!first_path.second)
+                    return false;
+
+                return first_path.second < second_path.second;
+            });
+
+        if (min_path.second)
+            current_path_type = min_path.first;
     }
 
     std::string_view getCurrentPath() const
@@ -1937,7 +1884,7 @@ private:
         }
     }
 
-    enum PathType
+    enum class PathType
     {
         TYPED,
         DYNAMIC,
@@ -1945,10 +1892,10 @@ private:
     };
 
     const ColumnObject & column_object;
-    std::vector<std::string_view>::const_iterator typed_paths_it;
-    std::vector<std::string_view>::const_iterator typed_paths_end;
-    std::set<std::string_view>::const_iterator dynamic_paths_it;
-    std::set<std::string_view>::const_iterator dynamic_paths_end;
+    decltype(column_object.sorted_typed_paths)::const_iterator typed_paths_it;
+    decltype(column_object.sorted_typed_paths)::const_iterator typed_paths_end;
+    decltype(column_object.sorted_dynamic_paths)::const_iterator dynamic_paths_it;
+    decltype(column_object.sorted_dynamic_paths)::const_iterator dynamic_paths_end;
     size_t shared_data_it;
     size_t shared_data_end;
     const ColumnString * shared_data_paths;
@@ -1956,6 +1903,7 @@ private:
     PathType current_path_type;
     size_t row;
 };
+
 
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
