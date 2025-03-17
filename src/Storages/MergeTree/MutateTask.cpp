@@ -1149,7 +1149,8 @@ void finalizeMutatedPart(
     for (const auto & mutation_context : projection_mutation_contexts)
     {
         chassert(!new_data_part->isProjectionPart());
-        new_data_part->addProjectionPart(mutation_context->name, std::move(mutation_context->new_part));
+        if (!new_data_part->hasProjection(mutation_context->name))
+            new_data_part->addProjectionPart(mutation_context->name, std::move(mutation_context->new_part));
     }
 
     /// Load rest projections which are hardlinked
@@ -1212,7 +1213,8 @@ void ProjectionMutationContext::finalizeAllPart(
 
         static_pointer_cast<MergedBlockOutputStream>(out)->finalizePart(new_part, need_sync, nullptr, nullptr);
 
-        parent_new_data_part->addProjectionPart(name, std::move(new_part));
+        if (!parent_new_data_part->hasProjection(name))
+            parent_new_data_part->addProjectionPart(name, std::move(new_part));
 
         out.reset();
     }
