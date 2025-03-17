@@ -98,7 +98,11 @@ void RabbitMQConnection::connectImpl()
         AMQP::Address address(configuration.connection_string);
         /// FIXME: AMQP-CPP doesn't handle passwords with @ properly.
         std::string encoded_password = address.login().password();
-        std::string decoded_password(encoded_password.size(), '\0');
+        /// In decodeURL function memcpySmallAllowReadWriteOverflow15 is used
+        /// and thus we need to have padding on the right side of the buffer.
+        /// This amount of bytes is enough because URL decoding will produce
+        /// the string which length is <= than the original one.
+        std::string decoded_password(encoded_password.size() + 15, '\0');
         size_t real_size = decodeURL(encoded_password.data(), encoded_password.size(), decoded_password.data(), /*plus_as_space=*/false);
         decoded_password.resize(real_size);
         const_cast<std::string &>(const_cast<AMQP::Login &>(address.login()).password()) = decoded_password;
