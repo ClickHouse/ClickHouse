@@ -1,24 +1,23 @@
 ---
-alias: []
-description: 'Documentation for the CustomSeparatedWithNamesAndTypes format'
-input_format: true
-keywords: ['CustomSeparatedWithNamesAndTypes']
-output_format: true
+title : CustomSeparatedWithNamesAndTypes
 slug: /interfaces/formats/CustomSeparatedWithNamesAndTypes
-title: 'CustomSeparatedWithNamesAndTypes'
+keywords : [CustomSeparatedWithNamesAndTypes]
+input_format: true
+output_format: true
+alias: []
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description
 
 Also prints two header rows with column names and types, similar to [TabSeparatedWithNamesAndTypes](../TabSeparated/TabSeparatedWithNamesAndTypes.md).
 
-## Example Usage {#example-usage}
+## Example Usage
 
-## Format Settings {#format-settings}
+## Format Settings
 
 :::note
 If setting [`input_format_with_names_use_header`](../../../operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,

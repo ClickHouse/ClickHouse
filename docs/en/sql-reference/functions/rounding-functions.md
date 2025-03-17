@@ -1,14 +1,12 @@
 ---
-description: 'Documentation for Rounding Functions'
-sidebar_label: 'Rounding'
-sidebar_position: 155
 slug: /sql-reference/functions/rounding-functions
-title: 'Rounding Functions'
+sidebar_position: 155
+sidebar_label: Rounding
 ---
 
 # Rounding Functions
 
-## floor {#floor}
+## floor
 
 Returns the largest rounded number less than or equal `x`.
 A rounded number is a multiple of 1 / 10 * N, or the nearest number of the appropriate data type if 1 / 10 * N isn't exact.
@@ -62,7 +60,7 @@ Result:
 └─────────┘
 ```
 
-## ceiling {#ceiling}
+## ceiling
 
 Like `floor` but returns the smallest rounded number greater than or equal `x`.
 
@@ -74,7 +72,7 @@ ceiling(x[, N])
 
 Alias: `ceil`
 
-## truncate {#truncate}
+## truncate
 
 Like `floor` but returns the rounded number with largest absolute value that has an absolute value less than or equal to `x`'s.
 
@@ -100,7 +98,7 @@ SELECT truncate(123.499, 1) as res;
 └───────┘
 ```
 
-## round {#round}
+## round
 
 Rounds a value to a specified number of decimal places.
 
@@ -193,7 +191,7 @@ round(3.65, 1) = 3.6
 
 - [roundBankers](#roundbankers)
 
-## roundBankers {#roundbankers}
+## roundBankers
 
 Rounds a number to a specified decimal position.
 
@@ -278,7 +276,7 @@ roundBankers(10.755, 2) = 10.76
 
 - [round](#round)
 
-## roundToExp2 {#roundtoexp2}
+## roundToExp2
 
 Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to the nearest (whole non-negative) degree of two.
 
@@ -318,7 +316,7 @@ Result:
 └────────┴─────────────────────┘
 ```
 
-## roundDuration {#roundduration}
+## roundDuration
 
 Accepts a number. If the number is less than one, it returns `0`. Otherwise, it rounds the number down to numbers from the set of commonly used durations: `1, 10, 30, 60, 120, 180, 240, 300, 600, 1200, 1800, 3600, 7200, 18000, 36000`.
 
@@ -368,7 +366,7 @@ Result:
 └────────┴───────────────────────┘
 ```
 
-## roundAge {#roundage}
+## roundAge
 
 Accepts a number within various commonly used ranges of human age and returns either a maximum or a minimum within that range.
 
@@ -416,7 +414,7 @@ Result:
 └────────┴──────────────────┘
 ```
 
-## roundDown {#rounddown}
+## roundDown
 
 Accepts a number and rounds it down to an element in the specified array. If the value is less than the lowest bound, the lowest bound is returned.
 

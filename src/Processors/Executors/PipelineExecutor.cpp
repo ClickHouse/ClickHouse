@@ -127,12 +127,7 @@ void PipelineExecutor::execute(size_t num_threads, bool concurrency_control)
     {
         executeImpl(num_threads, concurrency_control);
 
-        /// Log all of the LOGICAL_ERROR exceptions.
-        for (auto & node : graph->nodes)
-            if (node->exception && getExceptionErrorCode(node->exception) == ErrorCodes::LOGICAL_ERROR)
-                tryLogException(node->exception, log);
-
-        /// Rethrow the first exception.
+        /// Execution can be stopped because of exception. Check and rethrow if any.
         for (auto & node : graph->nodes)
             if (node->exception)
                 std::rethrow_exception(node->exception);

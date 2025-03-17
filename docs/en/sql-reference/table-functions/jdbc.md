@@ -1,12 +1,10 @@
 ---
-description: 'Returns a table that is connected via JDBC driver.'
-sidebar_label: 'jdbc'
-sidebar_position: 100
 slug: /sql-reference/table-functions/jdbc
-title: 'jdbc'
+sidebar_position: 100
+sidebar_label: jdbc
 ---
 
-# jdbc Table Function
+# jdbc
 
 :::note
 clickhouse-jdbc-bridge contains experimental codes and is no longer supported. It may contain reliability issues and security vulnerabilities. Use it at your own risk. 

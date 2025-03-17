@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for MOVE access entity statement'
-sidebar_label: 'MOVE'
-sidebar_position: 54
 slug: /sql-reference/statements/move
-title: 'MOVE access entity statement'
+sidebar_position: 54
+sidebar_label: MOVE
 ---
 
 # MOVE access entity statement

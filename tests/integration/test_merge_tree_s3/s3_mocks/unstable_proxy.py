@@ -67,8 +67,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         for k, v in r.headers.items():
             self.send_header(k, v)
         self.end_headers()
-        if random.random() < 0.20 and len(r.content) > 1024 * 1024:
-            self.log_message("Breaking request %s", self.path)
+        if random.random() < 0.25 and len(r.content) > 1024 * 1024:
             r.content = r.content[: len(r.content) // 2]
         self.wfile.write(r.content)
 

@@ -2,7 +2,7 @@
 
 #include <Core/Settings.h>
 
-#include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 
 #include <DataTypes/DataTypeInterval.h>
 
@@ -96,7 +96,7 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
 
     ///////////////////////////////////
 
-    if (accurateEquals(fill_column_description.fill_step, Field{0}))
+    if (applyVisitor(FieldVisitorAccurateEquals(), fill_column_description.fill_step, Field{0}))
         throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
             "WITH FILL STEP value cannot be zero");
 
@@ -109,16 +109,16 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
 
     if (sort_node.getSortDirection() == SortDirection::ASCENDING)
     {
-        if (accurateLess(fill_column_description.fill_step, Field{0}))
+        if (applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_step, Field{0}))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STEP value cannot be negative for sorting in ascending direction");
 
-        if (accurateLess(fill_column_description.fill_staleness, Field{0}))
+        if (applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_staleness, Field{0}))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STALENESS value cannot be negative for sorting in ascending direction");
 
         if (!fill_column_description.fill_from.isNull() && !fill_column_description.fill_to.isNull() &&
-            accurateLess(fill_column_description.fill_to, fill_column_description.fill_from))
+            applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_to, fill_column_description.fill_from))
         {
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL TO value cannot be less than FROM value for sorting in ascending direction");
@@ -126,16 +126,16 @@ FillColumnDescription extractWithFillDescription(const SortNode & sort_node)
     }
     else
     {
-        if (accurateLess(Field{0}, fill_column_description.fill_step))
+        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, fill_column_description.fill_step))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STEP value cannot be positive for sorting in descending direction");
 
-        if (accurateLess(Field{0}, fill_column_description.fill_staleness))
+        if (applyVisitor(FieldVisitorAccurateLess(), Field{0}, fill_column_description.fill_staleness))
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL STALENESS value cannot be positive for sorting in descending direction");
 
         if (!fill_column_description.fill_from.isNull() && !fill_column_description.fill_to.isNull() &&
-            accurateLess(fill_column_description.fill_from, fill_column_description.fill_to))
+            applyVisitor(FieldVisitorAccurateLess(), fill_column_description.fill_from, fill_column_description.fill_to))
         {
             throw Exception(ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
                 "WITH FILL FROM value cannot be less than TO value for sorting in descending direction");

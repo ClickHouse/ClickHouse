@@ -2,8 +2,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledQuota.h>
-#include <Columns/IColumn.h>
-#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
@@ -19,6 +17,8 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
@@ -109,7 +109,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const Settings & settings_,
     DataKind data_kind_)
     : query(query_->clone())
-    , query_str(query->formatWithSecretsOneLine())
+    , query_str(queryToString(query))
     , user_id(user_id_)
     , current_roles(current_roles_)
     , settings(settings_)
@@ -760,7 +760,7 @@ String serializeQuery(const IAST & query, size_t max_length)
 {
     return query.hasSecretParts()
         ? query.formatForLogging(max_length)
-        : wipeSensitiveDataAndCutToLength(query.formatWithSecretsOneLine(), max_length);
+        : wipeSensitiveDataAndCutToLength(serializeAST(query), max_length);
 }
 
 }
@@ -964,7 +964,7 @@ try
 
         bool pulling_pipeline = false;
         logQueryFinish(
-            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryResultCacheUsage::None, internal);
+            query_log_elem, insert_context, key.query, pipeline, pulling_pipeline, query_span, QueryCacheUsage::None, internal);
     };
 
     try
@@ -1161,7 +1161,7 @@ template <typename E>
 void AsynchronousInsertQueue::finishWithException(
     const ASTPtr & query, const std::list<InsertData::EntryPtr> & entries, const E & exception)
 {
-    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", query->formatForLogging()));
+    tryLogCurrentException("AsynchronousInsertQueue", fmt::format("Failed insertion for query '{}'", queryToString(query)));
 
     for (const auto & entry : entries)
     {

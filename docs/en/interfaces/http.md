@@ -1,13 +1,8 @@
 ---
-description: 'Documentation for the HTTP interface in ClickHouse, which provides REST
-  API access to ClickHouse from any platform and programming language'
-sidebar_label: 'HTTP Interface'
-sidebar_position: 15
 slug: /interfaces/http
-title: 'HTTP Interface'
+sidebar_position: 19
+sidebar_label: HTTP Interface
 ---
-
-import PlayUI from '@site/static/images/play.png';
 
 # HTTP Interface
 
@@ -34,7 +29,7 @@ It has a secret feature for displaying charts and graphs for query pipelines.
 
 Web UI is designed for professionals like you.
 
-<img src={PlayUI} alt="ClickHouse Web UI screenshot" />
+![Web UI](../images/play.png)
 
 In health-check scripts use `GET /ping` request. This handler always returns "Ok." (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 
@@ -275,7 +270,7 @@ $ echo 'SELECT 1' | curl -H 'X-ClickHouse-User: user' -H 'X-ClickHouse-Key: pass
 If the user name is not specified, the `default` name is used. If the password is not specified, the empty password is used.
 You can also use the URL parameters to specify any settings for processing a single query or entire profiles of settings. Example:http://localhost:8123/?profile=web&max_rows_to_read=1000000000&query=SELECT+1
 
-For more information, see the [Settings](/operations/settings/settings) section.
+For more information, see the [Settings](../operations/settings/index.md) section.
 
 ``` bash
 $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:8123/?' --data-binary @-
@@ -293,7 +288,7 @@ $ echo 'SELECT number FROM system.numbers LIMIT 10' | curl 'http://localhost:812
 
 For information about other parameters, see the section "SET".
 
-## Using ClickHouse sessions in the HTTP protocol {#using-clickhouse-sessions-in-the-http-protocol}
+## Using ClickHouse sessions in the HTTP protocol 
 
 You can also use ClickHouse sessions in the HTTP protocol. To do this, you need to add the `session_id` GET parameter to the request. You can use any string as the session ID. By default, the session is terminated after 60 seconds of inactivity. To change this timeout (in seconds), modify the `default_session_timeout` setting in the server configuration, or add the `session_timeout` GET parameter to the request. To check the session status, use the `session_check=1` parameter. Only one query at a time can be executed within a single session.
 
@@ -401,7 +396,7 @@ You can create a query with parameters and pass values for them from the corresp
 $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHERE int_column = {id:UInt8} and string_column = {phrase:String}"
 ```
 
-### Tabs in URL Parameters {#tabs-in-url-parameters}
+### Tabs in URL Parameters
 
 Query parameters are parsed from the "escaped" format. This has some benefits, such as the possibility to unambiguously parse nulls as `\N`. This means the tab character should be encoded as `\t` (or `\` and a tab). For example, the following contains an actual tab between `abc` and `123` and the input string is split into two values:
 
@@ -417,7 +412,7 @@ However, if you try to encode an actual tab using `%09` in a URL parameter, it w
 
 ```bash
 curl -sS "http://localhost:8123?param_arg1=abc%09123" -d "SELECT splitByChar('\t', {arg1:String})"
-Code: 457. DB::Exception: Value abc    123 cannot be parsed as String for query parameter 'arg1' because it isn't parsed completely: only 3 of 7 bytes was parsed: abc. (BAD_QUERY_PARAMETER) (version 23.4.1.869 (official build))
+Code: 457. DB::Exception: Value abc	123 cannot be parsed as String for query parameter 'arg1' because it isn't parsed completely: only 3 of 7 bytes was parsed: abc. (BAD_QUERY_PARAMETER) (version 23.4.1.869 (official build))
 ```
 
 If you are using URL parameters, you will need to encode the `\t` as `%5C%09`. For example:
@@ -574,8 +569,8 @@ Example:
 
 ``` bash
 $ curl -H 'XXX:TEST_HEADER_VALUE' -H 'PARAMS_XXX:max_final_threads' 'http://localhost:8123/query_param_with_url/max_threads?max_threads=1&max_final_threads=2'
-max_final_threads    2
-max_threads    1
+max_final_threads	2
+max_threads	1
 ```
 
 :::note
@@ -814,37 +809,37 @@ Examples:
 ```bash
 $ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>3)+from+system.numbers+format+JSON+settings+max_block_size=1&http_write_exception_in_output_format=1'
 {
-    "meta":
-    [
-        {
-            "name": "number",
-            "type": "UInt64"
-        },
-        {
-            "name": "throwIf(greater(number, 2))",
-            "type": "UInt8"
-        }
-    ],
+	"meta":
+	[
+		{
+			"name": "number",
+			"type": "UInt64"
+		},
+		{
+			"name": "throwIf(greater(number, 2))",
+			"type": "UInt8"
+		}
+	],
 
-    "data":
-    [
-        {
-            "number": "0",
-            "throwIf(greater(number, 2))": 0
-        },
-        {
-            "number": "1",
-            "throwIf(greater(number, 2))": 0
-        },
-        {
-            "number": "2",
-            "throwIf(greater(number, 2))": 0
-        }
-    ],
+	"data":
+	[
+		{
+			"number": "0",
+			"throwIf(greater(number, 2))": 0
+		},
+		{
+			"number": "1",
+			"throwIf(greater(number, 2))": 0
+		},
+		{
+			"number": "2",
+			"throwIf(greater(number, 2))": 0
+		}
+	],
 
-    "rows": 3,
+	"rows": 3,
 
-    "exception": "Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)"
+	"exception": "Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)"
 }
 ```
 
@@ -852,33 +847,33 @@ $ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>3)+from+syste
 $ curl 'http://localhost:8123/?query=SELECT+number,+throwIf(number>2)+from+system.numbers+format+XML+settings+max_block_size=1&http_write_exception_in_output_format=1'
 <?xml version='1.0' encoding='UTF-8' ?>
 <result>
-    <meta>
-        <columns>
-            <column>
-                <name>number</name>
-                <type>UInt64</type>
-            </column>
-            <column>
-                <name>throwIf(greater(number, 2))</name>
-                <type>UInt8</type>
-            </column>
-        </columns>
-    </meta>
-    <data>
-        <row>
-            <number>0</number>
-            <field>0</field>
-        </row>
-        <row>
-            <number>1</number>
-            <field>0</field>
-        </row>
-        <row>
-            <number>2</number>
-            <field>0</field>
-        </row>
-    </data>
-    <rows>3</rows>
-    <exception>Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)</exception>
+	<meta>
+		<columns>
+			<column>
+				<name>number</name>
+				<type>UInt64</type>
+			</column>
+			<column>
+				<name>throwIf(greater(number, 2))</name>
+				<type>UInt8</type>
+			</column>
+		</columns>
+	</meta>
+	<data>
+		<row>
+			<number>0</number>
+			<field>0</field>
+		</row>
+		<row>
+			<number>1</number>
+			<field>0</field>
+		</row>
+		<row>
+			<number>2</number>
+			<field>0</field>
+		</row>
+	</data>
+	<rows>3</rows>
+	<exception>Code: 395. DB::Exception: Value passed to 'throwIf' function is non-zero: while executing 'FUNCTION throwIf(greater(number, 2) :: 2) -> throwIf(greater(number, 2)) UInt8 : 1'. (FUNCTION_THROW_IF_VALUE_IS_NON_ZERO) (version 23.8.1.1)</exception>
 </result>
 ```

@@ -1,11 +1,9 @@
 ---
-description: 'Documentation for the ClickHouse Keeper client utility'
-sidebar_label: 'clickhouse-keeper-client'
 slug: /operations/utilities/clickhouse-keeper-client
-title: 'clickhouse-keeper-client utility'
+sidebar_label: clickhouse-keeper-client
 ---
 
-# clickhouse-keeper-client utility
+# clickhouse-keeper-client
 
 A client application to interact with clickhouse-keeper by its native protocol.
 

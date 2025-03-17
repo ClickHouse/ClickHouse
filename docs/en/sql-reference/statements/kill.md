@@ -1,14 +1,13 @@
 ---
-description: 'Documentation for Kill'
-sidebar_label: 'KILL'
-sidebar_position: 46
 slug: /sql-reference/statements/kill
-title: 'KILL Statements'
+sidebar_position: 46
+sidebar_label: KILL
+title: "KILL Statements"
 ---
 
 There are two kinds of kill statements: to kill a query and to kill a mutation
 
-## KILL QUERY {#kill-query}
+## KILL QUERY
 
 ``` sql
 KILL QUERY [ON CLUSTER cluster]
@@ -76,7 +75,7 @@ The response contains the `kill_status` column, which can take the following val
 
 A test query (`TEST`) only checks the user's rights and displays a list of queries to stop.
 
-## KILL MUTATION {#kill-mutation}
+## KILL MUTATION
 
 The presence of long-running or incomplete mutations often indicates that a ClickHouse service is running poorly. The asynchronous nature of mutations can cause them to consume all available resources on a system. You may need to either: 
 
@@ -90,7 +89,7 @@ KILL MUTATION
   [FORMAT format]
 ```
 
-Tries to cancel and remove [mutations](/sql-reference/statements/alter#mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](/operations/system-tables/mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
+Tries to cancel and remove [mutations](../../sql-reference/statements/alter/index.md#alter-mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](../../operations/system-tables/mutations.md#system_tables-mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
 
 A test query (`TEST`) only checks the user's rights and displays a list of mutations to stop.
 
@@ -142,5 +141,5 @@ The query is useful when a mutation is stuck and cannot finish (e.g. if some fu
 Changes already made by the mutation are not rolled back.
 
 :::note 
-`is_killed=1` column (ClickHouse Cloud only) in the [system.mutations](/operations/system-tables/mutations) table does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
+`is_killed=1` column (ClickHouse Cloud only) in the [system.mutations](/docs/operations/system-tables/mutations) table does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
 :::

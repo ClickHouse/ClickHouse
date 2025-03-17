@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
+#include <Parsers/queryToString.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
@@ -187,7 +188,7 @@ protected:
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(toString(column.default_desc.kind));
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(column.default_desc.expression->formatForLogging());
+                        res_columns[res_index++]->insert(queryToString(column.default_desc.expression));
                 }
                 else
                 {
@@ -241,7 +242,7 @@ protected:
                 if (columns_mask[src_index++])
                 {
                     if (column.codec)
-                        res_columns[res_index++]->insert(column.codec->formatForLogging());
+                        res_columns[res_index++]->insert(queryToString(column.codec));
                     else
                         res_columns[res_index++]->insertDefault();
                 }

@@ -1,15 +1,11 @@
 ---
-description: 'Totals a `value` array according to the keys specified in the `key`
-  array. Returns a tuple of two arrays: keys in sorted order, and values summed for
-  the corresponding keys without overflow.'
-sidebar_position: 198
 slug: /sql-reference/aggregate-functions/reference/summap
-title: 'sumMap'
+sidebar_position: 198
 ---
 
 # sumMap
 
-Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values summed for the corresponding keys without overflow.
+Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys without overflow.
 
 **Syntax**
 

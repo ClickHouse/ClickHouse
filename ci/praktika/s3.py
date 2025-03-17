@@ -1,6 +1,5 @@
 import dataclasses
 import json
-import os
 from pathlib import Path
 from typing import Dict
 from urllib.parse import quote
@@ -172,25 +171,6 @@ class S3:
         )
 
     @classmethod
-    def compress_file(cls, path):
-        if Shell.check("which zstd"):
-            path_out = f"{path}.zst"
-            Shell.check(f"zstd < {path} > {path_out}", verbose=True, strict=True)
-        elif Shell.check("which pigz"):
-            path_out = f"{path}.gz"
-            Shell.check(f"pigz < {path} > {path_out}", verbose=True, strict=True)
-        elif Shell.check("which gzip"):
-            path_out = f"{path}.gz"
-            Shell.check(f"gzip < {path} > {path_out}", verbose=True, strict=True)
-        else:
-            print(f"ERROR: Failed to compress file [{path}] no zstd or gz installed")
-            _Environment.get().add_info(
-                f"Failed to compress file [{path}] no zstd or gz installed"
-            )
-            path_out = path
-        return path_out
-
-    @classmethod
     def _upload_file_to_s3(
         cls, local_file_path, upload_to_s3: bool, text: bool = False, s3_subprefix=""
     ) -> str:
@@ -200,14 +180,6 @@ class S3:
             if s3_subprefix:
                 s3_subprefix.removeprefix("/").removesuffix("/")
                 s3_path += f"/{s3_subprefix}"
-            if text and Settings.COMPRESS_THRESHOLD_MB > 0:
-                file_size_mb = os.path.getsize(local_file_path) / (1024 * 1024)
-                if file_size_mb > Settings.COMPRESS_THRESHOLD_MB:
-                    print(
-                        f"NOTE: File [{local_file_path}] exceeds threshold [Settings.COMPRESS_THRESHOLD_MB:{Settings.COMPRESS_THRESHOLD_MB}] - compress"
-                    )
-                    text = False
-                    local_file_path = cls.compress_file(local_file_path)
             html_link = S3.copy_file_to_s3(
                 s3_path=s3_path, local_path=local_file_path, text=text
             )

@@ -295,10 +295,38 @@ public:
       * access rights and settings. Moreover, the only use case for displaying secrets are backups,
       * and backup tools use only direct input and ignore logs and error messages.
       */
-    String formatForLogging(size_t max_length = 0) const;
-    String formatForErrorMessage() const;
-    String formatWithSecretsOneLine() const;
-    String formatWithSecretsMultiLine() const;
+    String formatForLogging(size_t max_length = 0) const
+    {
+        return formatWithPossiblyHidingSensitiveData(
+            /*max_length=*/max_length,
+            /*one_line=*/true,
+            /*show_secrets=*/false,
+            /*print_pretty_type_names=*/false,
+            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+    }
+
+    String formatForErrorMessage() const
+    {
+        return formatWithPossiblyHidingSensitiveData(
+            /*max_length=*/0,
+            /*one_line=*/true,
+            /*show_secrets=*/false,
+            /*print_pretty_type_names=*/false,
+            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+    }
+
+    String formatForAnything() const
+    {
+        return formatWithPossiblyHidingSensitiveData(
+            /*max_length=*/0,
+            /*one_line=*/true,
+            /*show_secrets=*/true,
+            /*print_pretty_type_names=*/false,
+            /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+            /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+    }
 
     virtual bool hasSecretParts() const { return childrenHaveSecretParts(); }
 

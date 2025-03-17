@@ -7,7 +7,6 @@
 #include <QueryPipeline/RemoteQueryExecutor.h>
 
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/ObjectUtils.h>
@@ -109,9 +108,6 @@
 #include <memory>
 #include <filesystem>
 #include <cassert>
-
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
 
 
 namespace fs = std::filesystem;
@@ -951,7 +947,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     }
 
     /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || owned_cluster || relative_data_path.empty();
+    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || owned_cluster;
     auto timeout = settings[Setting::distributed_background_insert_timeout];
 
     Names columns_to_send;
@@ -1112,7 +1108,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
                 plan.explainPlan(buf, {});
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Found multiple source steps for query\n{}\nPlan\n{}",
-                    ast->formatForErrorMessage(), buf.str());
+                    queryToString(ast), buf.str());
             }
 
             source = with_filter;
@@ -1318,7 +1314,7 @@ void StorageDistributed::initializeFromDisk()
         if (inc > file_names_increment.value)
             file_names_increment.value.store(inc);
     }
-    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value.load());
+    LOG_DEBUG(log, "Auto-increment is {}", file_names_increment.value);
 }
 
 
@@ -1686,7 +1682,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(
             log,
             "Number of values for sharding key exceeds optimize_skip_unused_shards_limit={}, "
             "try to increase it, but note that this may increase query processing time.",
-            local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit].value);
+            local_context->getSettingsRef()[Setting::optimize_skip_unused_shards_limit]);
         return nullptr;
     }
 

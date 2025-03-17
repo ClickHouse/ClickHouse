@@ -101,7 +101,6 @@ private:
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 };
 
-// The following two methods are deprecated and hopefully will be removed in the future.
 IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
 UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash);
 }

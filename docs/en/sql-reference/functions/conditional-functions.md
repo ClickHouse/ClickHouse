@@ -1,20 +1,18 @@
 ---
-description: 'Documentation for Conditional Functions'
-sidebar_label: 'Conditional'
-sidebar_position: 40
 slug: /sql-reference/functions/conditional-functions
-title: 'Conditional Functions'
+sidebar_position: 40
+sidebar_label: Conditional
 ---
 
 # Conditional Functions
 
-## if {#if}
+## if
 
 Performs conditional branching.
 
 If the condition `cond` evaluates to a non-zero value, the function returns the result of the expression `then`. If `cond` evaluates to zero or `NULL`, then the result of the `else` expression is returned.
 
-Setting [short_circuit_function_evaluation](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used. If enabled, the `then` expression is evaluated only on rows where `cond` is `true` and the `else` expression where `cond` is `false`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)`.
+Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, the `then` expression is evaluated only on rows where `cond` is `true` and the `else` expression where `cond` is `false`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT if(number = 0, 0, intDiv(42, number)) FROM numbers(10)`.
 
 `then` and `else` must be of a similar type.
 
@@ -49,7 +47,7 @@ Result:
 └────────────┘
 ```
 
-## multiIf {#multiif}
+## multiIf
 
 Allows to write the [CASE](../../sql-reference/operators/index.md#conditional-expression) operator more compactly in the query.
 
@@ -59,7 +57,7 @@ Allows to write the [CASE](../../sql-reference/operators/index.md#conditional-ex
 multiIf(cond_1, then_1, cond_2, then_2, ..., else)
 ```
 
-Setting [short_circuit_function_evaluation](/operations/settings/settings#short_circuit_function_evaluation) controls whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` is `true`, `cond_i` will be evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)`.
+Setting [short_circuit_function_evaluation](../../operations/settings/settings.md#short-circuit-function-evaluation) controls whether short-circuit evaluation is used. If enabled, the `then_i` expression is evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}) AND cond_i)` is `true`, `cond_i` will be evaluated only on rows where `((NOT cond_1) AND (NOT cond_2) AND ... AND (NOT cond_{i-1}))` is `true`. For example, with short-circuit evaluation, no division-by-zero exception is thrown when executing the query `SELECT multiIf(number = 2, intDiv(1, number), number = 5) FROM numbers(10)`.
 
 **Arguments**
 
@@ -102,7 +100,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴─────────────────┘
 ```
 
-## Using Conditional Results Directly {#using-conditional-results-directly}
+## Using Conditional Results Directly
 
 Conditionals always result to `0`, `1` or `NULL`. So you can use conditional results directly like this:
 
@@ -119,7 +117,7 @@ FROM LEFT_RIGHT
 └──────────┘
 ```
 
-## NULL Values in Conditionals {#null-values-in-conditionals}
+## NULL Values in Conditionals
 
 When `NULL` values are involved in conditionals, the result will also be `NULL`.
 
@@ -155,7 +153,7 @@ FROM LEFT_RIGHT
 └──────┴───────┴──────────────────┘
 ```
 
-## greatest {#greatest}
+## greatest
 
 Returns the greatest across a list of values.  All of the list members must be of comparable types.
 
@@ -196,7 +194,7 @@ SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
 :::
 
-## least {#least}
+## least
 
 Returns the least across a list of values.  All of the list members must be of comparable types.
 
@@ -237,7 +235,7 @@ SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3))
 The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
 :::
 
-## clamp {#clamp}
+## clamp
 
 Constrain the return value between A and B.
 
