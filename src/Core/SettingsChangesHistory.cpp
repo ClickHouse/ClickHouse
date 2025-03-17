@@ -672,7 +672,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
-            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"}
+            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
             {"zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock", 0, 0, "New setting"},
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
