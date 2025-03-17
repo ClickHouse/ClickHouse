@@ -6,6 +6,7 @@ from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProduc
 from kafka.admin import NewTopic
 
 from helpers.cluster import ClickHouseCluster, is_arm
+from helpers.kafka_common import kafka_create_topic, kafka_delete_topic, get_kafka_producer, producer_serializer, kafka_produce
 
 if is_arm():
     pytestmark = pytest.mark.skip
@@ -18,99 +19,6 @@ instance = cluster.add_instance(
     with_kafka=True,
 )
 
-
-def kafka_create_topic(
-    admin_client,
-    topic_name,
-    num_partitions=1,
-    replication_factor=1,
-    max_retries=50,
-    config=None,
-):
-    logging.debug(
-        f"Kafka create topic={topic_name}, num_partitions={num_partitions}, replication_factor={replication_factor}"
-    )
-    topics_list = [
-        NewTopic(
-            name=topic_name,
-            num_partitions=num_partitions,
-            replication_factor=replication_factor,
-            topic_configs=config,
-        )
-    ]
-    retries = 0
-    while True:
-        try:
-            admin_client.create_topics(new_topics=topics_list, validate_only=False)
-            logging.debug("Admin client succeed")
-            return
-        except Exception as e:
-            retries += 1
-            time.sleep(0.5)
-            if retries < max_retries:
-                logging.warning(f"Failed to create topic {e}")
-            else:
-                raise
-
-
-def kafka_delete_topic(admin_client, topic, max_retries=50):
-    result = admin_client.delete_topics([topic])
-    for topic, e in result.topic_error_codes:
-        if e == 0:
-            logging.debug(f"Topic {topic} deleted")
-        else:
-            logging.error(f"Failed to delete topic {topic}: {e}")
-
-    retries = 0
-    while True:
-        topics_listed = admin_client.list_topics()
-        logging.debug(f"TOPICS LISTED: {topics_listed}")
-        if topic not in topics_listed:
-            return
-        else:
-            retries += 1
-            time.sleep(0.5)
-            if retries > max_retries:
-                raise Exception(f"Failed to delete topics {topic}, {result}")
-
-
-def get_kafka_producer(port, serializer, retries):
-    errors = []
-    for _ in range(retries):
-        try:
-            producer = KafkaProducer(
-                bootstrap_servers="localhost:{}".format(port),
-                value_serializer=serializer,
-            )
-            logging.debug("Kafka Connection establised: localhost:{}".format(port))
-            return producer
-        except Exception as e:
-            errors += [str(e)]
-            time.sleep(1)
-
-    raise Exception("Connection not establised, {}".format(errors))
-
-
-def producer_serializer(x):
-    return x.encode() if isinstance(x, str) else x
-
-
-def kafka_produce(
-    kafka_cluster, topic, messages, timestamp=None, retries=15, partition=None
-):
-    logging.debug(
-        "kafka_produce server:{}:{} topic:{}".format(
-            "localhost", kafka_cluster.kafka_port, topic
-        )
-    )
-    producer = get_kafka_producer(
-        kafka_cluster.kafka_port, producer_serializer, retries
-    )
-    for message in messages:
-        producer.send(
-            topic=topic, value=message, timestamp_ms=timestamp, partition=partition
-        )
-        producer.flush()
 
 
 @pytest.fixture(scope="module")
@@ -401,98 +309,6 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
     kafka_delete_topic(admin_client, "tomv")
 
 
-def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
-    admin_client = KafkaAdminClient(
-        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
-    )
-
-    kafka_create_topic(admin_client, "visible")
-    kafka_create_topic(admin_client, "hidden")
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS kafka_grant_visible;
-        DROP TABLE IF EXISTS kafka_grant_hidden;
-
-        CREATE TABLE kafka_grant_visible (key UInt64, value String)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'visible',
-                     kafka_group_name = 'visible',
-                     kafka_format = 'JSONEachRow',
-                     kafka_flush_interval_ms=1000,
-                     kafka_num_consumers = 1;
-
-        CREATE TABLE kafka_grant_hidden (key UInt64, value String)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'kafka1:19092',
-                     kafka_topic_list = 'hidden',
-                     kafka_group_name = 'hidden',
-                     kafka_format = 'JSONEachRow',
-                     kafka_flush_interval_ms=1000,
-                     kafka_num_consumers = 1;
-    """
-    )
-
-    result_system_kafka_consumers = instance.query_with_retry(
-        """
-        SELECT count(1) FROM system.kafka_consumers WHERE table LIKE 'kafka_grant%'
-        """,
-        retry_count=max_retries,
-        sleep_time=1,
-        check_callback=lambda res: int(res) == 2,
-    )
-    # both kafka_grant_hidden and kafka_grant_visible tables are visible
-
-    instance.query(
-        f"""
-        CREATE USER RESTRICTED;
-        GRANT SHOW ON default.kafka_grant_visible TO RESTRICTED;
-        GRANT SELECT ON system.kafka_consumers TO RESTRICTED;
-    """
-    )
-
-    restricted_result_system_kafka_consumers = instance.query(
-        "SELECT count(1) FROM system.kafka_consumers WHERE table LIKE 'kafka_grant%'",
-        user="RESTRICTED",
-    )
-    assert int(restricted_result_system_kafka_consumers) == 1
-    # only kafka_grant_visible is visible for user RESTRICTED
-
-    kafka_delete_topic(admin_client, "visible")
-    kafka_delete_topic(admin_client, "hidden")
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS kafka_grant_visible;
-        DROP TABLE IF EXISTS kafka_grant_hidden;
-        DROP USER RESTRICTED;
-    """
-    )
-
-
-def test_log_to_exceptions(kafka_cluster, max_retries=20):
-
-    non_existent_broker_port = 9876
-    instance.query(
-        f"""
-        DROP TABLE IF EXISTS foo_exceptions;
-
-        CREATE TABLE foo_exceptions(a String)
-            ENGINE = Kafka
-            SETTINGS kafka_broker_list = 'localhost:{non_existent_broker_port}', kafka_topic_list = 'foo', kafka_group_name = 'foo', kafka_format = 'RawBLOB';
-    """
-    )
-
-    instance.query("SELECT * FROM foo_exceptions SETTINGS stream_like_engine_allow_direct_select=1")
-    instance.query("SYSTEM FLUSH LOGS")
-
-    system_kafka_consumers_content = instance.query("SELECT exceptions.text FROM system.kafka_consumers ARRAY JOIN exceptions WHERE table LIKE 'foo_exceptions' LIMIT 1")
-
-    logging.debug(
-        f"system.kafka_consumers content: {system_kafka_consumers_content}"
-    )
-    assert system_kafka_consumers_content.startswith(f"[thrd:localhost:{non_existent_broker_port}/bootstrap]: localhost:{non_existent_broker_port}/bootstrap: Connect to ipv4#127.0.0.1:{non_existent_broker_port} failed: Connection refused")
-
-    instance.query("DROP TABLE foo_exceptions")
 
 
 if __name__ == "__main__":
