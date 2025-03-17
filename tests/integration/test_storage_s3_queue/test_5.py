@@ -583,7 +583,7 @@ def test_failed_commit(started_cluster):
 def test_failure_in_the_middle(started_cluster):
     node = started_cluster.instances["instance"]
 
-    table_name = f"test_failure_in_the_middle"
+    table_name = f"test_failure_in_the_middle_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
     files_path = f"{table_name}_data"
