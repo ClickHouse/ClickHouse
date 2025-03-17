@@ -32,7 +32,7 @@ public:
         init(time, time_zone);
     }
 
-    LocalDate(DayNum day_num, const DateLUTImpl & time_zone = DateLUT::instance());
+    explicit LocalDate(DayNum day_num, const DateLUTImpl & time_zone = DateLUT::instance());
 
     explicit LocalDate(ExtendedDayNum day_num, const DateLUTImpl & time_zone = DateLUT::instance());
 
