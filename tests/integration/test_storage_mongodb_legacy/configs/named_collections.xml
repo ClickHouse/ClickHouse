@@ -2,7 +2,7 @@
     <named_collections>
         <mongo1>
             <user>root</user>
-            <password>clickhouse</password>
+            <password>ClickHouse_MongoDB_P@ssw0rd</password>
             <host>mongo1</host>
             <port>27017</port>
             <database>test</database>
