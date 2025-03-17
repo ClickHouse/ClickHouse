@@ -46,9 +46,6 @@ public:
 
     void shutdown();
 
-    inline static const String DEFAULT_DISK_NAME = "default";
-    inline static const String LOCAL_DISK_NAME = "local";
-
 private:
     DisksMap disks;
     bool is_initialized = false;

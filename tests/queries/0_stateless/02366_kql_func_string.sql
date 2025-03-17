@@ -27,7 +27,6 @@ CREATE TABLE Versions
 INSERT INTO Versions VALUES ('1.2.3.4'),('1.2'),('1.2.3'),('1');
 
 
-set allow_experimental_kusto_dialect=1;
 set dialect='kusto';
 print '-- test String Functions --';
 

@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for uniqTheta Functions'
-sidebar_label: 'uniqTheta'
+slug: /en/sql-reference/functions/uniqtheta-functions
 sidebar_position: 210
-slug: /sql-reference/functions/uniqtheta-functions
-title: 'uniqTheta Functions'
+sidebar_label: uniqTheta
 ---
 
 # uniqTheta Functions
@@ -15,7 +13,7 @@ A uniqThetaSketch object is to be constructed by aggregation function uniqTheta 
 UniqThetaSketch is a data structure storage of approximate values set.
 For more information on RoaringBitmap, see: [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketchFramework.html).
 
-## uniqThetaUnion {#uniqthetaunion}
+## uniqThetaUnion
 
 Two uniqThetaSketch objects to do union calculation(set operation ∪), the result is a new uniqThetaSketch.
 
@@ -41,7 +39,7 @@ from
 └───────────┴───────────────┴───────────────┘
 ```
 
-## uniqThetaIntersect {#uniqthetaintersect}
+## uniqThetaIntersect
 
 Two uniqThetaSketch objects to do intersect calculation(set operation ∩), the result is a new uniqThetaSketch.
 
@@ -67,7 +65,7 @@ from
 └───────────────┴───────────────┴───────────────┘
 ```
 
-## uniqThetaNot {#uniqthetanot}
+## uniqThetaNot
 
 Two uniqThetaSketch objects to do a_not_b calculation(set operation ×), the result is a new uniqThetaSketch.
 
@@ -95,4 +93,4 @@ from
 
 **See Also**
 
-- [uniqThetaSketch](/sql-reference/aggregate-functions/reference/uniqthetasketch)
+- [uniqThetaSketch](../../sql-reference/aggregate-functions/reference/uniqthetasketch.md#agg_function-uniqthetasketch)

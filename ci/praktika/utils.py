@@ -4,15 +4,12 @@ import glob
 import json
 import multiprocessing
 import os
-import platform
 import re
 import signal
 import subprocess
 import sys
 import time
-import traceback
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -123,7 +120,6 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            executable="/bin/bash",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
@@ -171,39 +167,6 @@ class Shell:
             )
             == 0
         )
-
-    @classmethod
-    def check_parallel(
-        cls,
-        commands,
-        verbose=False,
-        max_workers=None,
-    ):
-        if verbose:
-            print(
-                f"Run in parallel: [{len(commands)}], workers [{max_workers or len(commands)}]"
-            )
-
-        def execute(command):
-            return cls.get_res_stdout_stderr(command, verbose=True)
-
-        with ThreadPoolExecutor(max_workers=max_workers or len(commands)) as executor:
-            futures = {
-                executor.submit(execute, command): command for command in commands
-            }
-            results = []
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    results.append(result)
-                except Exception:
-                    results.append(False)
-        failed = False
-        for res, out_, err in results:
-            if res != 0:
-                print(f"Check Parallel failed, err: [{(res, out_, err)}]")
-                failed = True
-        return not failed
 
     @classmethod
     def run(
@@ -359,25 +322,6 @@ class Shell:
 
 
 class Utils:
-
-    @staticmethod
-    def absolute_path(path):
-        return os.path.abspath(str(path))
-
-    @staticmethod
-    def is_arm():
-        arch = platform.machine()
-        if "arm" in arch.lower() or "aarch" in arch.lower():
-            return True
-        return False
-
-    @staticmethod
-    def is_amd():
-        arch = platform.machine()
-        if "x86_64" in arch.lower() or "amd64" in arch.lower():
-            return True
-        return False
-
     @staticmethod
     def terminate_process_group(pid, force=False):
         if not force:
@@ -409,7 +353,7 @@ class Utils:
 
     @staticmethod
     def cwd():
-        return str(Path.cwd())
+        return Path.cwd()
 
     @staticmethod
     def cpu_count():
@@ -422,7 +366,7 @@ class Utils:
 
     @staticmethod
     def timestamp():
-        return datetime.now().timestamp()
+        return datetime.utcnow().timestamp()
 
     @staticmethod
     def timestamp_to_str(timestamp):
@@ -471,23 +415,20 @@ class Utils:
         res = string.lower()
         for r in (
             (" ", "_"),
-            ("(", "_"),
-            (")", "_"),
-            ("{", "_"),
-            ("}", "_"),
-            ("'", "_"),
-            ("[", "_"),
-            ("]", "_"),
-            (",", "_"),
+            ("(", ""),
+            (")", ""),
+            ("{", ""),
+            ("}", ""),
+            ("'", ""),
+            ("[", ""),
+            ("]", ""),
+            (",", ""),
             ("/", "_"),
             ("-", "_"),
-            (":", "_"),
-            ('"', "_"),
-            ("&", "_"),
+            (":", ""),
+            ('"', ""),
         ):
             res = res.replace(*r)
-            res = re.sub(r"_+", "_", res)
-            res = res.rstrip("_")
         return res
 
     @staticmethod
@@ -540,12 +481,16 @@ class Utils:
         for path in include_paths:
             included_files_.update(cls.traverse_path(path, file_suffixes=file_suffixes))
 
-        exclude_paths = ["./" + p.removeprefix("./") for p in exclude_paths]
-        res = [
-            f
-            for f in included_files_
-            if not any(f.startswith(exclude_path) for exclude_path in exclude_paths)
-        ]
+        excluded_files = set()
+        for path in exclude_paths:
+            res = cls.traverse_path(path, not_exists_ok=not_exists_ok)
+            if not res:
+                print(
+                    f"WARNING: Utils.traverse_paths excluded 0 files by path [{path}] in exclude_paths"
+                )
+            else:
+                excluded_files.update(res)
+        res = [f for f in included_files_ if f not in excluded_files]
         if sorted:
             res.sort(reverse=True)
         return res
@@ -559,11 +504,11 @@ class Utils:
 
     class Stopwatch:
         def __init__(self):
-            self.start_time = datetime.now().timestamp()
+            self.start_time = datetime.utcnow().timestamp()
 
         @property
         def duration(self) -> float:
-            return datetime.now().timestamp() - self.start_time
+            return datetime.utcnow().timestamp() - self.start_time
 
 
 class TeePopen:

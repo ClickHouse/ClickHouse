@@ -30,11 +30,8 @@ set (SRCS
     "${LIBRARY_DIR}/src/wait.cxx"
 )
 
-configure_file(${LIBRARY_DIR}/include/pqxx/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/pqxx/config-internal-compiler.h @ONLY)
-configure_file(${LIBRARY_DIR}/include/pqxx/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/pqxx/config-public-compiler.h @ONLY)
-
 add_library(_libpqxx ${SRCS})
 target_link_libraries(_libpqxx PUBLIC ch_contrib::libpq)
-target_include_directories (_libpqxx SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include" ${CMAKE_CURRENT_BINARY_DIR})
+target_include_directories (_libpqxx SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}/include")
 
 add_library(ch_contrib::libpqxx ALIAS _libpqxx)

@@ -507,11 +507,10 @@ AuthResult IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
-    const ClientInfo & client_info,
     bool allow_no_password,
     bool allow_plaintext_password) const
 {
-    return *authenticateImpl(credentials, address, external_authenticators, client_info, /* throw_if_user_not_exists = */ true, allow_no_password, allow_plaintext_password);
+    return *authenticateImpl(credentials, address, external_authenticators, /* throw_if_user_not_exists = */ true, allow_no_password, allow_plaintext_password);
 }
 
 
@@ -519,12 +518,11 @@ std::optional<AuthResult> IAccessStorage::authenticate(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
-    const ClientInfo & client_info,
     bool throw_if_user_not_exists,
     bool allow_no_password,
     bool allow_plaintext_password) const
 {
-    return authenticateImpl(credentials, address, external_authenticators, client_info, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
+    return authenticateImpl(credentials, address, external_authenticators, throw_if_user_not_exists, allow_no_password, allow_plaintext_password);
 }
 
 
@@ -532,7 +530,6 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
     const Credentials & credentials,
     const Poco::Net::IPAddress & address,
     const ExternalAuthenticators & external_authenticators,
-    const ClientInfo & client_info,
     bool throw_if_user_not_exists,
     bool allow_no_password,
     bool allow_plaintext_password) const
@@ -557,7 +554,7 @@ std::optional<AuthResult> IAccessStorage::authenticateImpl(
                     continue;
                 }
 
-                if (areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, client_info, auth_result.settings))
+                if (areCredentialsValid(user->getName(), auth_method, credentials, external_authenticators, auth_result.settings))
                 {
                     auth_result.authentication_data = auth_method;
                     return auth_result;
@@ -585,7 +582,6 @@ bool IAccessStorage::areCredentialsValid(
     const AuthenticationData & authentication_method,
     const Credentials & credentials,
     const ExternalAuthenticators & external_authenticators,
-    const ClientInfo & client_info,
     SettingsChanges & settings) const
 {
     if (!credentials.isReady())
@@ -603,7 +599,7 @@ bool IAccessStorage::areCredentialsValid(
             return false;
     }
 
-    return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, client_info, settings);
+    return Authentication::areCredentialsValid(credentials, authentication_method, external_authenticators, settings);
 }
 
 bool IAccessStorage::isAddressAllowed(const User & user, const Poco::Net::IPAddress & address) const

@@ -5,12 +5,8 @@
 
 #include <algorithm>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
-#include <Common/logger_useful.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -24,14 +20,13 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/addMissingDefaults.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/queryToString.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Sources/BlocksSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
-#include <QueryPipeline/Pipe.h>
 
 
 namespace DB
@@ -137,7 +132,7 @@ namespace
             ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
-            ExpressionActionsSettings(context, CompileExpressions::yes));
+            ExpressionActionsSettings::fromContext(context, CompileExpressions::yes));
         pipe.addSimpleTransform([&](const Block & stream_header)
         {
             return std::make_shared<ExpressionTransform>(stream_header, actions);
@@ -224,8 +219,7 @@ namespace
         };
 
         /// We're going to prepare two blocks - one for the "data" table, and one for the "tags" table.
-        Block data_block;
-        Block tags_block;
+        Block data_block, tags_block;
 
         auto make_column_for_data_block = [&](const ColumnDescription & column_description) -> IColumn &
         {
@@ -277,7 +271,7 @@ namespace
         const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
             const auto & tag_name = tuple.at(0).safeGet<String>();
             const auto & column_name = tuple.at(1).safeGet<String>();
             const auto & column_description = get_column_description(column_name);
@@ -544,7 +538,7 @@ namespace
                 ContextMutablePtr insert_context = Context::createCopy(context);
                 insert_context->setCurrentQueryId(context->getCurrentQueryId() + ":" + String{toString(table_kind)});
 
-                LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), insert_query->formatForLogging());
+                LOG_TEST(log, "{}: Executing query: {}", time_series_storage_id.getNameForLogs(), queryToString(insert_query));
 
                 InterpreterInsertQuery interpreter(
                     insert_query,

@@ -7,14 +7,13 @@
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IInterpreter.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/queryToString.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -135,7 +134,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
 
             if (log)
                 LOG_TRACE(
-                    log, "force_optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::force_optimize_skip_unused_shards_nesting].value);
+                    log, "force_optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::force_optimize_skip_unused_shards_nesting]);
         }
     }
 
@@ -155,7 +154,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
             new_settings[Setting::optimize_skip_unused_shards_nesting].changed = true;
 
             if (log)
-                LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting].value);
+                LOG_TRACE(log, "optimize_skip_unused_shards_nesting is now {}", new_settings[Setting::optimize_skip_unused_shards_nesting]);
         }
     }
 
@@ -186,7 +185,7 @@ ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     {
         Tuple tuple;
         tuple.push_back(main_table.getShortName());
-        tuple.push_back(additional_filter_ast->formatWithSecretsOneLine());
+        tuple.push_back(queryToString(additional_filter_ast));
         new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
     }
 
@@ -560,7 +559,7 @@ void executeQueryWithParallelReplicas(
             getLogger("ReadFromParallelRemoteReplicasStep"),
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
-            settings[Setting::max_parallel_replicas].value,
+            settings[Setting::max_parallel_replicas],
             shard.getAllNodeCount());
         max_replicas_to_use = shard.getAllNodeCount();
     }
@@ -655,8 +654,7 @@ void executeQueryWithParallelReplicas(
             getLogger("ReadFromParallelRemoteReplicasStep"),
             std::move(storage_limits),
             std::move(pools_to_use),
-            local_replica_index,
-            shard.pool);
+            local_replica_index);
 
         auto remote_plan = std::make_unique<QueryPlan>();
         remote_plan->addStep(std::move(read_from_remote));
@@ -691,9 +689,7 @@ void executeQueryWithParallelReplicas(
             std::move(external_tables),
             getLogger("ReadFromParallelRemoteReplicasStep"),
             std::move(storage_limits),
-            std::move(pools_to_use),
-            std::nullopt,
-            shard.pool);
+            std::move(pools_to_use));
 
         query_plan.addStep(std::move(read_from_remote));
     }
@@ -733,7 +729,7 @@ void executeQueryWithParallelReplicas(
         context, query_ast, storage_id.database_name, storage_id.table_name, /*remote_table_function_ptr*/ nullptr);
     auto header = InterpreterSelectQuery(modified_query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
 
-    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits, nullptr);
+    executeQueryWithParallelReplicas(query_plan, storage_id, header, processed_stage, modified_query_ast, context, storage_limits);
 }
 
 void executeQueryWithParallelReplicasCustomKey(

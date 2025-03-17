@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -10,6 +9,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/formatAST.h>
 #include <Interpreters/misc.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/NestedUtils.h>
@@ -185,12 +185,6 @@ static void collectColumns(const RPNBuilderTreeNode & node, const NameSet & colu
 
     auto function_node = node.toFunctionNode();
     size_t arguments_size = function_node.getArgumentsSize();
-
-    /// Do not account arguments of function "indexHint"
-    /// because they won't be read from table.
-    if (function_node.getFunctionName() == "indexHint")
-        return;
-
     for (size_t i = 0; i < arguments_size; ++i)
     {
         auto function_argument = function_node.getArgumentAt(i);
@@ -388,11 +382,9 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     for (const auto & condition : where_conditions)
         condition_positions[&condition] = position++;
 
-    size_t moved_conditions_count = 0;
     auto move_to_prewhere_conditions = [&](Conditions::iterator cond_it)
     {
-        moved_conditions_count++;
-        LOG_TEST(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
+        LOG_TRACE(log, "Condition {} moved to PREWHERE", cond_it->node.getColumnName());
         if (where_optimizer_context.allow_reorder_prewhere_conditions)
         {
             prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
@@ -466,7 +458,6 @@ std::optional<MergeTreeWhereOptimizer::OptimizeResult> MergeTreeWhereOptimizer::
     /// Nothing was moved.
     if (prewhere_conditions.empty())
         return {};
-    LOG_TRACE(log, "Moved {} conditions to PREWHERE", moved_conditions_count);
 
     OptimizeResult result = {std::move(where_conditions), std::move(prewhere_conditions)};
     return result;
@@ -549,6 +540,10 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
         /// disallow GLOBAL IN, GLOBAL NOT IN
         /// TODO why?
         if (function_name == "globalIn" || function_name == "globalNotIn")
+            return true;
+
+        /// indexHint is a special function that it does not make sense to transfer to PREWHERE
+        if (function_name == "indexHint")
             return true;
 
         size_t arguments_size = function_node.getArgumentsSize();

@@ -121,13 +121,7 @@ void writeQueryAroundTheError(
     else
     {
         if (num_positions_to_hilite)
-        {
-            const char * example_begin = positions_to_hilite[0].begin;
-            size_t total_bytes = end - example_begin;
-            size_t show_bytes = UTF8::computeBytesBeforeWidth(
-                reinterpret_cast<const UInt8 *>(example_begin), total_bytes, 0, SHOW_CHARS_ON_SYNTAX_ERROR);
-            out << ": " << std::string(example_begin, show_bytes) << (show_bytes < total_bytes ? "... " : ". ");
-        }
+            out << ": " << std::string(positions_to_hilite[0].begin, std::min(SHOW_CHARS_ON_SYNTAX_ERROR, end - positions_to_hilite[0].begin)) << ". ";
     }
 }
 
@@ -152,13 +146,7 @@ void writeCommonErrorMessage(
     }
     else
     {
-        /// Do not print too long tokens.
-        size_t token_size_bytes = last_token.end - last_token.begin;
-        size_t token_preview_size_bytes = UTF8::computeBytesBeforeWidth(
-            reinterpret_cast<const UInt8 *>(last_token.begin), token_size_bytes, 0, SHOW_CHARS_ON_SYNTAX_ERROR);
-
-        out << " (" << std::string(last_token.begin, token_preview_size_bytes)
-            << (token_preview_size_bytes < token_size_bytes ? "..." : "") << ")";
+        out << " ('" << std::string(last_token.begin, last_token.end - last_token.begin) << "')";
     }
 
     /// If query is multiline.
@@ -201,9 +189,15 @@ std::string getLexicalErrorMessage(
     const std::string & query_description)
 {
     WriteBufferFromOwnString out;
-    out << getErrorTokenDescription(last_token.type) << ": ";
     writeCommonErrorMessage(out, begin, end, last_token, query_description);
     writeQueryAroundTheError(out, begin, end, hilite, &last_token, 1);
+
+    out << getErrorTokenDescription(last_token.type);
+    if (last_token.size())
+    {
+       out << ": '" << std::string_view{last_token.begin, last_token.size()} << "'";
+    }
+
     return out.str();
 }
 

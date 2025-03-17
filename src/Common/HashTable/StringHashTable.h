@@ -5,6 +5,7 @@
 
 #include <bit>
 #include <new>
+#include <variant>
 
 
 using StringKey8 = UInt64;
@@ -21,26 +22,29 @@ struct StringKey24
 inline StringRef ALWAYS_INLINE toStringView(const StringKey8 & n)
 {
     assert(n != 0);
-    if constexpr (std::endian::native == std::endian::big)
-        return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
-    else
-        return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return {reinterpret_cast<const char *>(&n), 8ul - (std::countr_zero(n) >> 3)};
+#else
+    return {reinterpret_cast<const char *>(&n), 8ul - (std::countl_zero(n) >> 3)};
+#endif
 }
 inline StringRef ALWAYS_INLINE toStringView(const StringKey16 & n)
 {
     assert(n.items[1] != 0);
-    if constexpr (std::endian::native == std::endian::big)
-        return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
-    else
-        return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return {reinterpret_cast<const char *>(&n), 16ul - (std::countr_zero(n.items[1]) >> 3)};
+#else
+    return {reinterpret_cast<const char *>(&n), 16ul - (std::countl_zero(n.items[1]) >> 3)};
+#endif
 }
 inline StringRef ALWAYS_INLINE toStringView(const StringKey24 & n)
 {
     assert(n.c != 0);
-    if constexpr (std::endian::native == std::endian::big)
-        return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
-    else
-        return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    return {reinterpret_cast<const char *>(&n), 24ul - (std::countr_zero(n.c) >> 3)};
+#else
+    return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
+#endif
 }
 
 struct StringHashTableHash
@@ -137,7 +141,7 @@ struct StringHashTableEmpty
     using Self = StringHashTableEmpty;
 
     bool has_zero = false;
-    alignas(Cell) std::byte zero_value_storage[sizeof(Cell)]; /// Storage of element with zero key.
+    std::aligned_storage_t<sizeof(Cell), alignof(Cell)> zero_value_storage; /// Storage of element with zero key.
 
 public:
     bool hasZero() const { return has_zero; }

@@ -198,11 +198,6 @@ def fn_setup_tables():
 )
 @pytest.mark.parametrize("with_append", [True, False])
 @pytest.mark.parametrize("empty", [True, False])
-@pytest.mark.skipif(
-    datetime.now().minute > 57,
-    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
-           'which might trigger it earlier than expected'
-)
 def test_simple_append(
     module_setup_tables,
     fn_setup_tables,
@@ -264,11 +259,6 @@ def test_simple_append(
             "refresh_retry_max_backoff_ms": "20",
         },
     ],
-)
-@pytest.mark.skipif(
-    datetime.now().minute > 57,
-    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
-           'which might trigger it earlier than expected'
 )
 def test_alters(
     module_setup_tables,
@@ -337,6 +327,115 @@ def test_alters(
     compare_DDL_on_all_nodes()
 
 
+@pytest.mark.parametrize(
+    "append",
+    [True, False],
+)
+@pytest.mark.parametrize(
+    "empty",
+    [True, False],
+)
+@pytest.mark.parametrize(
+    "to_clause",
+    [
+        (None, "tgt1", "tgt1"),
+        ("Engine MergeTree ORDER BY tuple()", None, "test_rmv"),
+    ],
+)
+def test_real_wait_refresh(
+    fn_setup_tables,
+    append,
+    empty,
+    to_clause,
+):
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers (too slow)")
+
+    table_clause, to_clause_, tgt = to_clause
+
+    create_sql = CREATE_RMV.render(
+        table_name="test_rmv",
+        refresh_interval="EVERY 10 SECOND",
+        to_clause=to_clause_,
+        table_clause=table_clause,
+        select_query="SELECT now() as a, b FROM src1",
+        with_append=append,
+        empty=empty,
+    )
+    node.query(create_sql)
+    rmv = get_rmv_info(node, "test_rmv")
+
+    expected_rows = 0
+    if empty:
+        expect_rows(expected_rows, table=tgt)
+    else:
+        expected_rows += 2
+        expect_rows(expected_rows, table=tgt)
+
+    rmv2 = get_rmv_info(
+        node,
+        "test_rmv",
+        condition=lambda x: x["last_refresh_time"] == rmv["next_refresh_time"],
+        # wait for refresh a little bit more than 10 seconds
+        max_attempts=30,
+        delay=0.5,
+    )
+
+    if append:
+        expected_rows += 2
+        expect_rows(expected_rows, table=tgt)
+    else:
+        expect_rows(2, table=tgt)
+
+    assert rmv2["exception"] is None
+    assert rmv2["status"] == "Scheduled"
+    assert rmv2["last_success_time"] == rmv["next_refresh_time"]
+    assert rmv2["last_refresh_time"] == rmv["next_refresh_time"]
+    assert rmv2["retry"] == 0
+    assert rmv2["read_rows"] == 2
+    assert rmv2["read_bytes"] == 16
+    assert rmv2["total_rows"] == 2
+    assert rmv2["written_rows"] == 2
+    assert rmv2["written_bytes"] == 24
+
+    node.query("SYSTEM STOP VIEW test_rmv")
+    time.sleep(12)
+    rmv3 = get_rmv_info(node, "test_rmv")
+    # no refresh happen
+    assert rmv3["status"] == "Disabled"
+
+    del rmv3["status"]
+    del rmv2["status"]
+    assert rmv3 == rmv2
+
+    node.query("SYSTEM START VIEW test_rmv")
+    time.sleep(1)
+    rmv4 = get_rmv_info(node, "test_rmv")
+
+    if append:
+        expected_rows += 2
+        expect_rows(expected_rows, table=tgt)
+    else:
+        expect_rows(2, table=tgt)
+
+    assert rmv4["exception"] is None
+    assert rmv4["status"] == "Scheduled"
+    assert rmv4["retry"] == 0
+    assert rmv2["read_rows"] == 2
+    assert rmv2["read_bytes"] == 16
+    assert rmv2["total_rows"] == 2
+    assert rmv2["written_rows"] == 2
+    assert rmv2["written_bytes"] == 24
+
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    time.sleep(1)
+    if append:
+        expected_rows += 2
+        expect_rows(expected_rows, table=tgt)
+    else:
+        expect_rows(2, table=tgt)
+
+
 def get_rmv_info(
     node,
     table,
@@ -386,11 +485,6 @@ def expect_rows(rows, table="test_rmv"):
     assert len(inserted_data) == rows
 
 
-@pytest.mark.skipif(
-    datetime.now().minute > 57,
-    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
-           'which might trigger it earlier than expected'
-)
 def test_long_query(fn_setup_tables):
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")

@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
+#include <Parsers/queryToString.h>
 #include <base/hex.h>
 
 namespace DB
@@ -108,10 +109,13 @@ void StorageSystemProjectionParts::processNextStorage(
         ColumnSize columns_size = part->getTotalColumnsSize();
         ColumnSize parent_columns_size = parent_part->getTotalColumnsSize();
 
-        size_t src_index = 0;
-        size_t res_index = 0;
+        size_t src_index = 0, res_index = 0;
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(parent_part->partition.serializeToString(parent_part->getMetadataSnapshot()));
+        {
+            WriteBufferFromOwnString out;
+            parent_part->partition.serializeText(*info.data, out, format_settings);
+            columns[res_index++]->insert(out.str());
+        }
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->name);
         if (columns_mask[src_index++])
@@ -196,10 +200,21 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
             columns[res_index++]->insert(info.engine);
 
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
-        if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
+        if (part->isStoredOnDisk())
+        {
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->getDataPartStorage().getDiskName());
+            if (columns_mask[src_index++])
+                columns[res_index++]->insert(part->getDataPartStorage().getFullPath());
+        }
+        else
+        {
+            if (columns_mask[src_index++])
+                columns[res_index++]->insertDefault();
+            if (columns_mask[src_index++])
+                columns[res_index++]->insertDefault();
+        }
+
 
         {
             MinimalisticDataPartChecksums helper;
@@ -262,7 +277,7 @@ void StorageSystemProjectionParts::processNextStorage(
         if (columns_mask[src_index++])
         {
             if (part->default_codec)
-                columns[res_index++]->insert(part->default_codec->getCodecDesc()->formatForLogging());
+                columns[res_index++]->insert(queryToString(part->default_codec->getCodecDesc()));
             else
                 columns[res_index++]->insertDefault();
         }

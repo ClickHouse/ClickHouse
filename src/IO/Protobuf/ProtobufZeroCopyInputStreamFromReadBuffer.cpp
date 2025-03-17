@@ -1,8 +1,6 @@
 #include "config.h"
 
 #if USE_PROTOBUF
-
-#include <Common/Exception.h>
 #include <IO/Protobuf/ProtobufZeroCopyInputStreamFromReadBuffer.h>
 #include <IO/ReadBuffer.h>
 

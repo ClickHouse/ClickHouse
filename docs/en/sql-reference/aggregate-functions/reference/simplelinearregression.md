@@ -1,8 +1,6 @@
 ---
-description: 'Performs simple (unidimensional) linear regression.'
+slug: /en/sql-reference/aggregate-functions/reference/simplelinearregression
 sidebar_position: 183
-slug: /sql-reference/aggregate-functions/reference/simplelinearregression
-title: 'simpleLinearRegression'
 ---
 
 # simpleLinearRegression

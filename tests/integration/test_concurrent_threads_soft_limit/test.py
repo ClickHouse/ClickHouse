@@ -84,11 +84,12 @@ def test_concurrent_threads_soft_limit_default(started_cluster):
         "ConcurrencyControlQueriesDelayed",
         lambda x: x == 0,
     )
-    s_count = node1.query(
-        "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_1' order by query_start_time_microseconds desc limit 1"
-    ).strip()
-    count = int(s_count) if s_count else 0
-    assert count >= 3 and count <= 102
+    assert (
+        node1.query(
+            "select length(thread_ids) from system.query_log where current_database = currentDatabase() and type = 'QueryFinish' and query_id = 'test_concurrent_threads_soft_limit_1' order by query_start_time_microseconds desc limit 1"
+        )
+        == "102\n"
+    )
 
 
 def test_use_concurrency_control_default(started_cluster):

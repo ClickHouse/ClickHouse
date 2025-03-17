@@ -100,14 +100,13 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
                 /// So what we are going to do now is to check if each setting belongs to the engine or not, and if it doesn't
                 /// then move it to the context
 
-                const Settings & context_settings = context_->getSettingsRef();
                 ASTSetQuery * engine_settings = create_query->storage->settings;
                 auto const & features = StorageFactory::instance().getStorageFeatures(*storage_name);
                 chassert(!features.supports_settings || features.has_builtin_setting_fn != nullptr);
                 for (auto it = engine_settings->changes.begin(); it != engine_settings->changes.end();)
                 {
                     String & name = it->name;
-                    if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && context_settings.has(name))
+                    if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && Settings::hasBuiltin(name))
                     {
                         context_->setSetting(name, it->value);
                         it = engine_settings->changes.erase(it);

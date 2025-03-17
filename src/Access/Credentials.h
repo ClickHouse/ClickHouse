@@ -2,17 +2,9 @@
 
 #include <memory>
 #include <Access/Common/SSLCertificateSubjects.h>
-#include <Common/SSHWrapper.h>
-
 #include <base/types.h>
 
 #include "config.h"
-
-namespace Poco::Net
-{
-    class HTTPRequest;
-    class SocketAddress;
-}
 
 namespace DB
 {
@@ -30,7 +22,6 @@ public:
 
     const String & getUserName() const;
     bool isReady() const;
-    virtual bool allowInteractiveBasicAuthenticationInTheBrowser() const { return false; }
 
 protected:
     [[noreturn]] static void throwNotReady();
@@ -73,12 +64,9 @@ public:
     void setUserName(const String & user_name_);
     void setPassword(const String & password_);
     const String & getPassword() const;
-    bool allowInteractiveBasicAuthenticationInTheBrowser() const override { return allow_interactive_basic_authentication_in_the_browser; }
-    void enableInteractiveBasicAuthenticationInTheBrowser() { allow_interactive_basic_authentication_in_the_browser = true; }
 
 private:
     String password;
-    bool allow_interactive_basic_authentication_in_the_browser = false;
 };
 
 class CredentialsWithScramble : public Credentials
@@ -135,30 +123,6 @@ private:
     String signature;
     String original;
 };
-
-/// Credentials used only for logging in with PTY.
-class SSHPTYCredentials : public Credentials
-{
-public:
-    explicit SSHPTYCredentials(const String & user_name_, const SSHKey & key_)
-        : Credentials(user_name_), key(key_)
-    {
-        is_ready = true;
-    }
-
-    const SSHKey & getKey() const
-    {
-        if (!isReady())
-        {
-            throwNotReady();
-        }
-        return key;
-    }
-
-private:
-    SSHKey key;
-};
 #endif
-
 
 }

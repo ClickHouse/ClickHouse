@@ -12,16 +12,15 @@ ENGINE = Distributed(test_cluster_one_shard_three_replicas_localhost, currentDat
 
 insert into test select *, today() from numbers(100);
 
-SET enable_parallel_replicas = 2, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1;
-SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
-
 SELECT count(), min(id), max(id), avg(id)
-FROM test_d;
+FROM test_d
+SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1;
 
 insert into test select *, today() from numbers(100);
 
 SELECT count(), min(id), max(id), avg(id)
-FROM test_d;
+FROM test_d
+SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1;
 
 -- 2 shards
 
@@ -38,9 +37,11 @@ ENGINE = Distributed(test_cluster_two_shard_three_replicas_localhost, currentDat
 insert into test2 select *, today() from numbers(100);
 
 SELECT count(), min(id), max(id), avg(id)
-FROM test2_d;
+FROM test2_d
+SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1;
 
 insert into test2 select *, today() from numbers(100);
 
 SELECT count(), min(id), max(id), avg(id)
-FROM test2_d;
+FROM test2_d
+SETTINGS enable_parallel_replicas = 2, max_parallel_replicas = 3, prefer_localhost_replica = 0, parallel_replicas_for_non_replicated_merge_tree=1;

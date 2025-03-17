@@ -275,7 +275,7 @@ Query:
 
 Result:
 
-```text
+``` text
 ┌─widthBucket(10.15, -8.6, 23, 18)─┐
 │                               11 │
 └──────────────────────────────────┘
@@ -284,7 +284,7 @@ Result:
         .examples{
             {"simple", "SELECT widthBucket(10.15, -8.6, 23, 18)", ""},
         },
-        .category{"Mathematical"},
+        .categories{"Mathematical"},
     });
 
     factory.registerAlias("width_bucket", "widthBucket", FunctionFactory::Case::Insensitive);

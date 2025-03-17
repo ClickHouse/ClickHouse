@@ -1,7 +1,6 @@
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
@@ -23,12 +22,13 @@
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Transforms/CheckSortedTransform.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/formatAST.h>
+#include <Parsers/queryToString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
@@ -292,7 +292,7 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
 
     auto mutation_command = MutationCommand::parse(alter_command.get());
     if (!mutation_command)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", alter_command->formatForErrorMessage());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", queryToString(alter_command));
 
     return *mutation_command;
 }
@@ -796,13 +796,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             if (stages.size() == 1) /// First stage only supports filtering and can't update columns.
                 stages.emplace_back(context);
 
-            // Can't materialize a column in the sort key
-            Names sort_columns = metadata_snapshot->getSortingKeyColumns();
-            if (std::find(sort_columns.begin(), sort_columns.end(), command.column_name) != sort_columns.end())
-            {
-                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN, "Refused to materialize column {} because it's in the sort key. Doing so could break the sort order", backQuote(command.column_name));
-            }
-
             const auto & column = columns_desc.get(command.column_name);
 
             if (!column.default_desc.expression)
@@ -878,10 +871,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         else if (command.type == MutationCommand::MATERIALIZE_TTL)
         {
             mutation_kind.set(MutationKind::MUTATE_OTHER);
-            bool suitable_for_ttl_optimization = (*source.getMergeTreeData()->getSettings())[MergeTreeSetting::ttl_only_drop_parts]
-                && metadata_snapshot->hasOnlyRowsTTL();
-
-            if (materialize_ttl_recalculate_only || suitable_for_ttl_optimization)
+            if (materialize_ttl_recalculate_only)
             {
                 // just recalculate ttl_infos without remove expired data
                 auto all_columns_vec = all_columns.getNames();
@@ -1128,8 +1118,6 @@ void MutationsInterpreter::prepareMutationStages(std::vector<Stage> & prepared_s
             /// and so it is not in the list of AllPhysical columns.
             for (const auto & [column_name, _] : prepared_stages[i].column_to_updated)
             {
-                /// If we rewrite the whole part in ALTER DELETE and mask is not updated
-                /// do not write mask because it will be applied during execution of mutation.
                 if (column_name == RowExistsColumn::name && has_filters && !deleted_mask_updated)
                     continue;
 
@@ -1381,10 +1369,12 @@ QueryPipelineBuilder MutationsInterpreter::addStreamsForLaterStages(const std::v
         addCreatingSetsStep(plan, stage.analyzer->getPreparedSets(), context);
     }
 
-    QueryPlanOptimizationSettings do_not_optimize_plan_settings(context);
-    do_not_optimize_plan_settings.optimize_plan = false;
+    QueryPlanOptimizationSettings do_not_optimize_plan;
+    do_not_optimize_plan.optimize_plan = false;
 
-    auto pipeline = std::move(*plan.buildQueryPipeline(do_not_optimize_plan_settings, BuildQueryPipelineSettings(context)));
+    auto pipeline = std::move(*plan.buildQueryPipeline(
+        do_not_optimize_plan,
+        BuildQueryPipelineSettings::fromContext(context)));
 
     pipeline.addSimpleTransform([&](const Block & header)
     {
@@ -1470,25 +1460,6 @@ QueryPipelineBuilder MutationsInterpreter::execute()
         updated_header = std::make_unique<Block>(builder.getHeader());
 
     return builder;
-}
-
-std::vector<MutationActions> MutationsInterpreter::getMutationActions() const
-{
-    std::vector<MutationActions> result;
-    for (const auto & stage : stages)
-    {
-        for (size_t i = 0; i < stage.expressions_chain.steps.size(); ++i)
-        {
-            const auto & step = stage.expressions_chain.steps[i];
-            bool project_input = step->actions()->project_input;
-            if (i < stage.filter_column_names.size())
-                result.push_back({step->actions()->dag.clone(), stage.filter_column_names[i], project_input});
-            else
-                result.push_back({step->actions()->dag.clone(), "", project_input});
-        }
-    }
-
-    return result;
 }
 
 Block MutationsInterpreter::getUpdatedHeader() const

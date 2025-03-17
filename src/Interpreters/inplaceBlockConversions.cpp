@@ -1,6 +1,7 @@
 #include "inplaceBlockConversions.h"
 
 #include <Core/Block.h>
+#include <Parsers/queryToString.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -183,7 +184,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
 
     if (auto dag = createExpressions(block, conversion_expr_list, true, context))
     {
-        auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(context));
+        auto expression = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings::fromContext(context));
         expression->execute(block);
     }
 }

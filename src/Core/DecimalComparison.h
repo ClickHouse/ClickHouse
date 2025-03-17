@@ -1,13 +1,17 @@
 #pragma once
 
-#include <Columns/ColumnConst.h>
+#include <base/arithmeticOverflow.h>
+#include <Core/Block.h>
+#include <Core/DecimalFunctions.h>
+#include <Core/AccurateComparison.h>
+#include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
-#include <Core/ColumnsWithTypeAndName.h>
-#include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypesDecimal.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <base/arithmeticOverflow.h>
+#include <Columns/ColumnConst.h>
+#include <Functions/FunctionHelpers.h>  /// TODO Core should not depend on Functions
+
 
 namespace DB
 {
@@ -170,7 +174,7 @@ private:
             A a = c0_const.template getValue<A>();
             B b = c1_const.template getValue<B>();
             UInt8 res = apply<check_overflow, scale_left, scale_right>(a, b, scale);
-            return DataTypeUInt8().createColumnConst(c0->size(), Field(res));
+            return DataTypeUInt8().createColumnConst(c0->size(), toField(res));
         }
 
         ColumnUInt8::Container & vec_res = c_res->getData();

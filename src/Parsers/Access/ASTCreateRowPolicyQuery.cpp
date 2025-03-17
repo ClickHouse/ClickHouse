@@ -1,6 +1,7 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <base/range.h>
@@ -67,8 +68,7 @@ namespace
         }
 
         boost::container::flat_set<std::string_view> commands;
-        String filter;
-        String check;
+        String filter, check;
 
         do
         {

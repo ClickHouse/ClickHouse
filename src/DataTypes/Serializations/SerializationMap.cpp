@@ -3,13 +3,12 @@
 #include <DataTypes/DataTypeMap.h>
 
 #include <Common/StringUtils.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
-#include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 #include <Formats/JSONUtils.h>
 #include <Common/assert_cast.h>
+#include <Common/quoteString.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -42,11 +41,11 @@ static IColumn & extractNestedColumn(IColumn & column)
 
 void SerializationMap::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const auto & map = field.safeGet<Map>();
+    const auto & map = field.safeGet<const Map &>();
     writeVarUInt(map.size(), ostr);
     for (const auto & elem : map)
     {
-        const auto & tuple = elem.safeGet<Tuple>();
+        const auto & tuple = elem.safeGet<const Tuple>();
         assert(tuple.size() == 2);
         key->serializeBinary(tuple[0], ostr, settings);
         value->serializeBinary(tuple[1], ostr, settings);
@@ -65,7 +64,7 @@ void SerializationMap::deserializeBinary(Field & field, ReadBuffer & istr, const
             size,
             settings.binary.max_binary_string_size);
     field = Map();
-    Map & map = field.safeGet<Map>();
+    Map & map = field.safeGet<Map &>();
     map.reserve(size);
     for (size_t i = 0; i < size; ++i)
     {
@@ -307,13 +306,13 @@ void SerializationMap::serializeTextJSONPretty(const IColumn & column, size_t ro
         WriteBufferFromOwnString str_buf;
         key->serializeText(nested_tuple.getColumn(0), i, str_buf, settings);
 
-        writeChar(settings.json.pretty_print_indent, (indent + 1) * settings.json.pretty_print_indent_multiplier, ostr);
+        writeChar(' ', (indent + 1) * 4, ostr);
         writeJSONString(str_buf.str(), ostr, settings);
         writeCString(": ", ostr);
         value->serializeTextJSONPretty(nested_tuple.getColumn(1), i, ostr, settings, indent + 1);
     }
     writeChar('\n', ostr);
-    writeChar(settings.json.pretty_print_indent, indent * settings.json.pretty_print_indent_multiplier, ostr);
+    writeChar(' ', indent * 4, ostr);
     writeChar('}', ostr);
 }
 

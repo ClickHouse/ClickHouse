@@ -1,18 +1,18 @@
 #include "ColumnVector.h"
 
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Transforms/ColumnGathererTransform.h>
+#include <base/bit_cast.h>
+#include <base/scope_guard.h>
+#include <base/sort.h>
+#include <base/unaligned.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/NaNUtils.h>
@@ -23,9 +23,9 @@
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
-#include <DataTypes/FieldToDataType.h>
 
 #include <bit>
+#include <cmath>
 #include <cstring>
 
 #if defined(__SSE2__)
@@ -452,14 +452,6 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
     }
 
     return res;
-}
-
-template <typename T>
-std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
-{
-    chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
-    const auto & val = castToNearestFieldType(data[n]);
-    return {FieldVisitorToString()(val), FieldToDataType()(val)};
 }
 
 template <typename T>
@@ -1083,8 +1075,7 @@ DECLARE_AVX512VBMI_SPECIFIC_CODE(
 
             __m512i table1 = _mm512_loadu_epi8(data_pos);
             __m512i table2 = _mm512_loadu_epi8(data_pos + 64);
-            __m512i table3;
-            __m512i table4;
+            __m512i table3, table4;
             if (data_size <= 192)
             {
                 /// only 3 tables need to load if size <= 192

@@ -1,5 +1,5 @@
 #include <Storages/ColumnDefault.h>
-#include <Parsers/IAST.h>
+#include <Parsers/queryToString.h>
 
 namespace
 {
@@ -83,7 +83,7 @@ ColumnDefault & ColumnDefault::operator=(ColumnDefault && other) noexcept
 
 bool operator==(const ColumnDefault & lhs, const ColumnDefault & rhs)
 {
-    auto expression_str = [](const ASTPtr & expr) { return expr ? expr->formatWithSecretsOneLine() : String(); };
+    auto expression_str = [](const ASTPtr & expr) { return expr ? queryToString(expr) : String(); };
     return lhs.kind == rhs.kind && expression_str(lhs.expression) == expression_str(rhs.expression);
 }
 

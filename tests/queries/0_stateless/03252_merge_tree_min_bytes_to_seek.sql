@@ -1,7 +1,3 @@
-
--- Disable query condition cache because it affects the `SelectedRanges` metric.
-SET use_query_condition_cache = 0;
-
 DROP TABLE IF EXISTS t_min_bytes_to_seek;
 
 CREATE TABLE t_min_bytes_to_seek (id UInt64)

@@ -58,7 +58,7 @@ create table user_agents
 (
     ua String
 )
-Engine = MergeTree ORDER BY tuple();
+Engine = Log();
 "
 
 $CLICKHOUSE_CLIENT --query="

@@ -6,8 +6,8 @@ import re
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from praktika.result import Result
+from praktika.utils import Shell, Utils
 
 NPROC = multiprocessing.cpu_count()
 
@@ -193,7 +193,7 @@ def check_repo_submodules():
 
 def check_other():
     res, out, err = Shell.get_res_stdout_stderr(
-        "./ci/jobs/scripts/check_style/various_checks.sh"
+        "./ci/jobs/scripts/check_style/checks_to_refactor.sh"
     )
     if err:
         out += err
@@ -248,7 +248,8 @@ def check_file_names(files):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
-    parser.add_argument("--test", help="Sub check name", default="")
+    # parser.add_argument("--param", help="Optional job start stage", default=None)
+    parser.add_argument("--test", help="Optional test name pattern", default="")
     return parser.parse_args()
 
 
@@ -258,6 +259,16 @@ if __name__ == "__main__":
     testpattern = args.test
 
     stop_watch = Utils.Stopwatch()
+
+    all_files = Utils.traverse_paths(
+        include_paths=["."],
+        exclude_paths=[
+            "./.git",
+            "./contrib",
+            "./build",
+        ],
+        not_exists_ok=True,  # ./build may exist if runs locally
+    )
 
     cpp_files = Utils.traverse_paths(
         include_paths=["./src", "./base", "./programs", "./utils"],
@@ -276,8 +287,8 @@ if __name__ == "__main__":
     )
 
     xml_files = Utils.traverse_paths(
-        include_paths=["./tests", "./programs/"],
-        exclude_paths=[],
+        include_paths=["."],
+        exclude_paths=["./.git", "./contrib/"],
         file_suffixes=[".xml"],
     )
 
@@ -287,7 +298,16 @@ if __name__ == "__main__":
         file_suffixes=[".sql", ".sh", ".py", ".j2"],
     )
 
-    testname = "whitespace_check"
+    results.append(
+        Result(
+            name="Read Files",
+            status=Result.Status.SUCCESS,
+            start_time=stop_watch.start_time,
+            duration=stop_watch.duration,
+        )
+    )
+
+    testname = "Whitespace Check"
     if testpattern.lower() in testname.lower():
         results.append(
             run_check_concurrent(
@@ -296,7 +316,7 @@ if __name__ == "__main__":
                 files=cpp_files,
             )
         )
-    testname = "yamllint"
+    testname = "YamlLint Check"
     if testpattern.lower() in testname.lower():
         results.append(
             run_check_concurrent(
@@ -305,7 +325,7 @@ if __name__ == "__main__":
                 files=yaml_workflow_files,
             )
         )
-    testname = "xmllint"
+    testname = "XmlLint Check"
     if testpattern.lower() in testname.lower():
         results.append(
             run_check_concurrent(
@@ -314,7 +334,7 @@ if __name__ == "__main__":
                 files=xml_files,
             )
         )
-    testname = "functional_tests_check"
+    testname = "Functional Tests scripts smoke check"
     if testpattern.lower() in testname.lower():
         results.append(
             run_check_concurrent(
@@ -323,7 +343,7 @@ if __name__ == "__main__":
                 files=functional_test_files,
             )
         )
-    testname = "test_numbers_check"
+    testname = "Check Tests Numbers"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -332,7 +352,7 @@ if __name__ == "__main__":
                 command_args=[functional_test_files],
             )
         )
-    testname = "symlinks"
+    testname = "Check Broken Symlinks"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -344,7 +364,7 @@ if __name__ == "__main__":
                 },
             )
         )
-    testname = "cpp"
+    testname = "Check CPP code"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -352,7 +372,7 @@ if __name__ == "__main__":
                 command=check_cpp_code,
             )
         )
-    testname = "submodules"
+    testname = "Check Submodules"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -360,7 +380,16 @@ if __name__ == "__main__":
                 command=check_repo_submodules,
             )
         )
-    testname = "various"
+    testname = "Check File Names"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_file_names,
+                command_args=[all_files],
+            )
+        )
+    testname = "Check Many Different Things"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -368,7 +397,7 @@ if __name__ == "__main__":
                 command=check_other,
             )
         )
-    testname = "codespell"
+    testname = "Check Codespell"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -376,7 +405,7 @@ if __name__ == "__main__":
                 command=check_codespell,
             )
         )
-    testname = "aspell"
+    testname = "Check Aspell"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -385,15 +414,4 @@ if __name__ == "__main__":
             )
         )
 
-    testname = "mypy"
-    if testpattern.lower() in testname.lower():
-        results.append(
-            Result.from_commands_run(
-                name=testname,
-                command=check_mypy,
-            )
-        )
-
-    Result.create_from(results=results, stopwatch=stop_watch).add_job_summary_to_info(
-        with_local_run_command=True
-    ).complete_job()
+    Result.create_from(results=results, stopwatch=stop_watch).complete_job()

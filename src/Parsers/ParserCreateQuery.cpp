@@ -627,10 +627,8 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        /// For TABLE we only allow SETTINGS without ENGINE in order to support default_table_engine
-        /// Special handling is provided in InterpreterSetQuery::applySettingsFromQuery to differentiate between engine and query settings
-        /// For DATABASE we currently don't allow SETTINGS without ENGINE (it could be implemented in a similar fashion if necessary)
-        if ((engine_kind == TABLE_ENGINE || parsed_engine_keyword) && s_settings.ignore(pos, expected))
+        /// We allow SETTINGS clause without ENGINE in order to support default_table_engine
+        if (s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;
@@ -699,7 +697,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserNameList names_p;
 
     ASTPtr table;
-    ASTPtr to_inner_uuid;
     ASTPtr columns_list;
     std::shared_ptr<ASTStorage> storage;
     bool is_time_series_table = false;
@@ -744,13 +741,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (!table_name_p.parse(pos, table, expected))
         return false;
-
-    if (ParserKeyword{Keyword::TO_INNER_UUID}.ignore(pos, expected))
-    {
-        ParserStringLiteral literal_p;
-        if (!literal_p.parse(pos, to_inner_uuid, expected))
-            return false;
-    }
 
     std::optional<bool> attach_as_replicated = std::nullopt;
     if (attach)
@@ -961,21 +951,6 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     tryGetIdentifierNameInto(as_database, query->as_database);
     tryGetIdentifierNameInto(as_table, query->as_table);
     query->set(query->select, select);
-
-    if (to_inner_uuid)
-    {
-        if (!storage || !storage->engine || (storage->engine->name != "SharedSet" && storage->engine->name != "SharedJoin"))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage engine {} does not inner UUID", storage->engine->name);
-
-        if (targets)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "targets are already defined {}", targets->formatForErrorMessage());
-
-        auto view_targets = std::make_shared<ASTViewTargets>();
-        view_targets->setInnerUUID(ViewTarget::To, parseFromString<UUID>(to_inner_uuid->as<ASTLiteral>()->value.safeGet<String>()));
-
-        targets = view_targets;
-    }
-
     query->set(query->targets, targets);
     query->is_create_empty = is_create_empty;
     query->is_clone_as = is_clone_as;

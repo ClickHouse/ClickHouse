@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+
+# Fast check of all the setting struct usages
+# The linker does not complain about incorrect extern usage, so we need to make sure the style checker handles
+
+# We want traditional order so it takes underscore into account. With UTF-8 this is considered sorted:
+# disk_connections_warn_limit UInt64
+# disk Float
+# disk_move_retries_during_init UInt64
+# disk_move_retries_wait_ms UInt64
+# disk String
+export LC_COLLATE="C"
+ROOT_PATH=$(git rev-parse --show-toplevel)
+
+SETTINGS_FILE=$(mktemp)
+trap 'rm ${SETTINGS_FILE}' EXIT
+
+# Please note that ALL FILES MUST BE NAMED {}Settings and that must also be EXACTLY the class name
+ALL_DECLARATION_FILES="
+    $ROOT_PATH/src/Core/FormatFactorySettings.h
+    $ROOT_PATH/src/Core/Settings.cpp
+    $ROOT_PATH/src/Core/ServerSettings.cpp
+    $ROOT_PATH/src/Storages/MergeTree/MergeTreeSettings.cpp
+    $ROOT_PATH/src/Coordination/CoordinationSettings.cpp
+    $ROOT_PATH/src/Databases/DatabaseReplicatedSettings.cpp
+    $ROOT_PATH/src/Storages/TimeSeries/TimeSeriesSettings.cpp
+    $ROOT_PATH/src/Storages/RocksDB/RocksDBSettings.cpp
+    $ROOT_PATH/src/Storages/RabbitMQ/RabbitMQSettings.cpp
+    $ROOT_PATH/src/Storages/PostgreSQL/MaterializedPostgreSQLSettings.cpp
+    $ROOT_PATH/src/Storages/ObjectStorageQueue/ObjectStorageQueueSettings.cpp
+    $ROOT_PATH/src/Storages/MaterializedView/RefreshSettings.cpp
+    $ROOT_PATH/src/Storages/NATS/NATSSettings.cpp
+    $ROOT_PATH/src/Storages/Kafka/KafkaSettings.cpp
+    $ROOT_PATH/src/Storages/Hive/HiveSettings.cpp
+    $ROOT_PATH/src/Storages/FileLog/FileLogSettings.cpp
+    $ROOT_PATH/src/Storages/Distributed/DistributedSettings.cpp
+    $ROOT_PATH/src/Storages/SetSettings.cpp
+    $ROOT_PATH/src/Storages/MemorySettings.cpp
+    $ROOT_PATH/src/Storages/ExecutableSettings.cpp
+    $ROOT_PATH/src/Storages/MySQL/MySQLSettings.cpp
+    $ROOT_PATH/src/Databases/MySQL/MaterializedMySQLSettings.cpp
+    $ROOT_PATH/src/IO/S3AuthSettings.cpp
+    $ROOT_PATH/src/IO/S3RequestSettings.cpp
+"
+
+# We create an initial file with the shape {setting_name} {ClassName}{Type} SettingsDeclaration
+# We will use SettingsDeclaration to differentiate between setting declaration and usage
+function add_setting_declaration_file()
+{
+    if ! [ -f "$1" ]; then
+        echo "File '$1' does not exist."
+    fi
+    filename=$(basename -- "$1")
+    filename="${filename%.*}"
+    grep "DECLARE(" "$1" | awk -vfilename="${filename}" '{print substr($2, 0, length($2) - 1) " " filename substr($1, 9, length($1) - 9) " SettingsDeclaration" }' >> "${SETTINGS_FILE}"
+}
+
+for settings_file in ${ALL_DECLARATION_FILES};
+do
+    add_setting_declaration_file "$settings_file"
+done
+
+# Check that if there are duplicated settings (declared in different objects) they all have the same type (it's simpler to validate style with that assert)
+# Disabled because fixing this requires changing types of existing settings, and it's not as simple as just changing it as compatibility with
+# previous releases is more important
+#for setting in $(
+#      awk '{ gsub(/^.*Settings/, "", $2); print $1 " " $2}' "${SETTINGS_FILE}" | \
+#      sort | uniq | awk '{ print $1 }' | uniq -d
+#    );
+#do
+#    echo "# Found multiple definitions of setting ${setting} with different types: "
+#    grep --line-number " ${setting}," ${ALL_DECLARATION_FILES} | awk '{print "    > " $0 }'
+#done
+
+# We append all uses of extern found in implementation files to validate them in a single pass and avoid reading the same files over and over
+# Note that rg outputs 'path:$line', so with replace ':' with a space and then reorder to have "$setting $type $path"
+find "$ROOT_PATH"/{src,base,programs,utils} \( -name '*.cpp' -o -name '*.h' \) -print0 | \
+    xargs -0 rg "^\s*extern const .*Settings" | tr ':' ' ' | \
+    awk '{print substr($5, 0, length($5) -1) " " $4 " " $1}' >> "${SETTINGS_FILE}"
+
+# Detect duplicate extern declarations for settings (harmless but better style)
+awk '{if (seen[$0]++) print $3 " -> " $1 ;}' "${SETTINGS_FILE}" | while read -r line;
+do
+    echo "# Found duplicated setting declaration in: $line"
+done
+
+# Find missing declarations (obsolete settings being used)
+# Note that SettingsDeclaration are first in the file
+#  Disabled for now pending fixing the code
+#awk '{print $1 " " $3}' "${SETTINGS_FILE}" | awk '{if (!seen[$1]++) print $0}' | grep -v SettingsDeclaration | while read -r setting;
+#do
+#    echo "Could not find setting (maybe obsolete?) $setting"
+#done
+
+# Look for settings declared with multiple types
+# This works based on the fact that the if the setting declaration and usage have different types then the pair
+# <setting, type> won't be unique
+for setting in $(
+      awk '{ gsub(/^.*Settings/, "", $2); print $1 " " $2}' "${SETTINGS_FILE}" | \
+      sort | uniq | awk '{ print $1 }' | uniq -d
+    );
+do
+    expected=$(grep "^$setting " "${SETTINGS_FILE}" | grep SettingsDeclaration | awk '{ print $2 }')
+    grep "^$setting " "${SETTINGS_FILE}" | grep -v " $expected" | awk '{ print $3 " found setting \"" $1 "\" with type " $2 }' | while read -r line;
+    do
+        echo "# In $line but it should be ${expected/$'\n'/ }"
+    done
+done

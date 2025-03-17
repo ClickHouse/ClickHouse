@@ -4,11 +4,11 @@
 #include <Interpreters/Context.h>
 #include <Core/ServerSettings.h>
 
-#include <IO/Operators_pcg_random.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/Operators.h>
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -26,7 +26,7 @@
 
 #include <type_traits>
 
-constexpr size_t AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE = 0xFFFFFF;
+#define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE 0xFFFFFF
 
 
 namespace DB

@@ -21,13 +21,6 @@
 #    include <openssl/sha.h>
 #endif
 
-#if USE_SHA3IUF
-extern "C" {
-    #include <sha3.h>
-}
-#endif
-
-
 /// Instatiating only the functions that require FunctionStringHashFixedString in a separate file
 /// to better parallelize the build procedure and avoid MSan build failure
 /// due to excessive resource consumption.
@@ -225,22 +218,6 @@ struct ImplBLAKE3
 
 #endif
 
-#if USE_SHA3IUF
-struct Keccak256Impl
-{
-    static constexpr auto name = "keccak256";
-    enum
-    {
-        length = 32
-    };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, begin, size, out_char_data, Keccak256Impl::length);
-    }
-};
-#endif
-
 template <typename Impl>
 class FunctionStringHashFixedString : public IFunction
 {
@@ -321,7 +298,7 @@ public:
     }
 };
 
-#if USE_SSL || USE_BLAKE3 || USE_SHA3IUF
+#if USE_SSL || USE_BLAKE3
 REGISTER_FUNCTION(HashFixedStrings)
 {
 #    if USE_SSL
@@ -475,26 +452,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     It returns a BLAKE3 hash as a byte array with type FixedString(32).
     )",
         .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
-        .category{"Hash"}});
-#    endif
-
-#   if USE_SHA3IUF
-    using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
-    factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
-        .description = R"(Calculates the Keccak-256 cryptographic hash of the given string.
-        This hash function is widely used in blockchain applications, particularly Ethereum.)",
-        .syntax = "SELECT keccak256(message)",
-        .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = "A [FixedString(32)](../../sql-reference/data-types/fixedstring.md) containing the 32-byte Keccak-256 hash of the input string.",
-        .examples
-        = {{"",
-            "SELECT hex(keccak256('hello'))",
-            R"(
-┌─hex(keccak256('hello'))──────────────────────────────────────────┐
-│ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
-└──────────────────────────────────────────────────────────────────┘
-        )"}}});
+        .categories{"Hash"}});
 #    endif
 }
 #endif

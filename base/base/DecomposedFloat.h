@@ -10,17 +10,6 @@
 
 template <typename T> struct FloatTraits;
 
-struct Float16Tag;
-
-template <>
-struct FloatTraits<Float16Tag>
-{
-    using UInt = uint16_t;
-    static constexpr size_t bits = 16;
-    static constexpr size_t exponent_bits = 5;
-    static constexpr size_t mantissa_bits = bits - exponent_bits - 1;
-};
-
 template <>
 struct FloatTraits<BFloat16>
 {
@@ -61,10 +50,6 @@ struct DecomposedFloat
         memcpy(&x_uint, &x, sizeof(x));
     }
 
-    explicit DecomposedFloat(typename Traits::UInt x) : x_uint(x)
-    {
-    }
-
     typename Traits::UInt x_uint;
 
     bool isNegative() const
@@ -82,7 +67,7 @@ struct DecomposedFloat
 
     uint16_t exponent() const
     {
-        return (x_uint >> (Traits::mantissa_bits)) & ((1ull << Traits::exponent_bits) - 1);
+        return (x_uint >> (Traits::mantissa_bits)) & (((1ull << (Traits::exponent_bits + 1)) - 1) >> 1);
     }
 
     int16_t normalizedExponent() const
@@ -198,15 +183,8 @@ struct DecomposedFloat
             return isNegative() ? -1 : 1;
 
         /// Float has no fractional part means that the numbers are equal.
-        if (large_and_always_integer)
+        if (large_and_always_integer || (mantissa() & ((1ULL << (Traits::mantissa_bits - normalizedExponent())) - 1)) == 0)
             return 0;
-
-        /// Make clang-tidy happy
-        /// We know normalizedExponent() is positive from a check at the start at the function
-        /// We know normalizedExponent() < Traits::mantissa_bits from large_and_always_integer
-        if ((mantissa() & ((1ULL << (static_cast<uint64_t>(Traits::mantissa_bits) - static_cast<uint64_t>(normalizedExponent()))) - 1)) == 0)
-            return 0;
-
         /// Float has fractional part means its abs value is larger.
         return isNegative() ? -1 : 1;
     }
@@ -252,3 +230,4 @@ struct DecomposedFloat
 
 using DecomposedFloat64 = DecomposedFloat<double>;
 using DecomposedFloat32 = DecomposedFloat<float>;
+using DecomposedFloat16 = DecomposedFloat<BFloat16>;

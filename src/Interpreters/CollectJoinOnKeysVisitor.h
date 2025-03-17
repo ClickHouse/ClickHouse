@@ -6,6 +6,7 @@
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -73,7 +74,7 @@ public:
         else
         {
             if (ast->children.empty())
-                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Illegal expression '{}' in JOIN ON section", ast->formatForErrorMessage());
+                throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Illegal expression '{}' in JOIN ON section", queryToString(ast));
 
             /// visit children
         }

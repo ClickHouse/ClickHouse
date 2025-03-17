@@ -1,11 +1,4 @@
----
-description: 'The loop table function in ClickHouse is used to return query results
-  in an infinite loop.'
-slug: /sql-reference/table-functions/loop
-title: 'loop'
----
-
-# loop Table Function
+# loop
 
 **Syntax**
 

@@ -21,6 +21,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
@@ -31,6 +32,8 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <boost/range/algorithm_ext/push_back.hpp>
+
+#include <algorithm>
 
 
 namespace DB
@@ -96,7 +99,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     BlockIO res;
 
     if (!UserDefinedSQLFunctionFactory::instance().empty())
-        UserDefinedSQLFunctionVisitor::visit(query_ptr, getContext());
+        UserDefinedSQLFunctionVisitor::visit(query_ptr);
 
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
@@ -127,7 +130,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
     }
 
     if (!table)
@@ -141,7 +144,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (modify_query)
     {
         // Expand CTE before filling default database
-        ApplyWithSubqueryVisitor(getContext()).visit(*modify_query);
+        ApplyWithSubqueryVisitor::visit(*modify_query);
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
@@ -176,7 +179,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                     if (!mut_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
-                            command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
+                            queryToString(*command_ast), queryToString(*rewritten_command_ast));
                 }
             }
 
@@ -378,11 +381,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTICS, database, table);
             break;
         }
-        case ASTAlterCommand::UNLOCK_SNAPSHOT:
-        {
-            required_access.emplace_back(AccessType::ALTER_UNLOCK_SNAPSHOT, database, table);
-            break;
-        }
         case ASTAlterCommand::ADD_INDEX:
         {
             required_access.emplace_back(AccessType::ALTER_ADD_INDEX, database, table);
@@ -469,11 +467,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
                     required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
                     break;
                 case DataDestinationType::TABLE:
-                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
+                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
                     required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
                     break;
                 case DataDestinationType::SHARD:
-                    required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
+                    required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
                     required_access.emplace_back(AccessType::MOVE_PARTITION_BETWEEN_SHARDS);
                     break;
                 case DataDestinationType::DELETE:

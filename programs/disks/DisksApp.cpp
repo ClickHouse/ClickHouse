@@ -26,6 +26,7 @@
 #include "config.h"
 
 #include "Utils.h"
+
 #include <Server/CloudPlacementInfo.h>
 #include <IO/SharedThreadPools.h>
 
@@ -281,8 +282,6 @@ void DisksApp::runInteractiveReplxx()
         if (!processQueryText(input))
             break;
     }
-
-    std::cout << std::endl;
 }
 
 void DisksApp::parseAndCheckOptions(
@@ -322,7 +321,7 @@ void DisksApp::registerCommands()
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
     command_descriptions.emplace("help", makeCommandHelp(*this));
-#if CLICKHOUSE_CLOUD
+#ifdef CLICKHOUSE_CLOUD
     command_descriptions.emplace("packed-io", makeCommandPackedIO());
 #endif
     for (const auto & [command_name, command_ptr] : command_descriptions)
@@ -505,14 +504,14 @@ int DisksApp::main(const std::vector<String> & /*args*/)
         Poco::Logger::root().setLevel(Poco::Logger::parseLevel(log_level));
     }
 
+    registerCommands();
+  
     PlacementInfo::PlacementInfo::instance().initialize(config());
 
     getIOThreadPool().initialize(
         /*max_io_thread_pool_size*/ 100,
         /*max_io_thread_pool_free_size*/ 0,
         /*io_thread_pool_queue_size*/ 10000);
-
-    registerCommands();
 
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
