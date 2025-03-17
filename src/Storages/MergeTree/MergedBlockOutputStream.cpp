@@ -3,7 +3,6 @@
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Parsers/queryToString.h>
 #include <Core/Settings.h>
 
 
@@ -371,7 +370,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         write_plain_file(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, [&](auto & buffer)
         {
-            writeText(queryToString(default_codec->getFullCodecDesc()), buffer);
+            writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
         });
     }
     else

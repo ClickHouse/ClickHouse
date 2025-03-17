@@ -15,7 +15,6 @@
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/DumpASTNode.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>

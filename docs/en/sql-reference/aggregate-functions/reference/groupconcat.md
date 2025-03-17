@@ -48,7 +48,7 @@ Input table:
 └────┴──────┘
 ```
 
-1.	Basic usage without a delimiter:
+1.    Basic usage without a delimiter:
 
 Query:
 

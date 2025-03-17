@@ -49,8 +49,11 @@ def _get_workflows(
                     continue
             if file and str(file) not in str(py_file):
                 continue
-        else:
-            name = Settings.DEFAULT_LOCAL_TEST_WORKFLOW
+        elif py_file.name != Settings.DEFAULT_LOCAL_TEST_WORKFLOW:
+            print(
+                f"--workflow is not set. Default workflow is [{Settings.DEFAULT_LOCAL_TEST_WORKFLOW}]. Skip [{py_file.name}]"
+            )
+            continue
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
             module_name, f"{Settings.WORKFLOWS_DIRECTORY}/{module_name}"

@@ -16,7 +16,7 @@ This is not an article about the [JOIN clause](/sql-reference/statements/select/
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -109,31 +109,31 @@ The `Join`-engine allows to specify [join_use_nulls](/operations/settings/settin
 
 Creating the left-side table:
 
-``` sql
+```sql
 CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
 ```
 
-``` sql
+```sql
 INSERT INTO id_val VALUES (1,11)(2,12)(3,13);
 ```
 
 Creating the right-side `Join` table:
 
-``` sql
+```sql
 CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
 ```
 
-``` sql
+```sql
 INSERT INTO id_val_join VALUES (1,21)(1,22)(3,23);
 ```
 
 Joining the tables:
 
-``` sql
+```sql
 SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
 ```
 
-``` text
+```text
 ┌─id─┬─val─┬─id_val_join.val─┐
 │  1 │  11 │              21 │
 │  2 │  12 │               0 │
@@ -143,11 +143,11 @@ SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
 
 As an alternative, you can retrieve data from the `Join` table, specifying the join key value:
 
-``` sql
+```sql
 SELECT joinGet('id_val_join', 'val', toUInt32(1));
 ```
 
-``` text
+```text
 ┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
 │                                         21 │
 └────────────────────────────────────────────┘
