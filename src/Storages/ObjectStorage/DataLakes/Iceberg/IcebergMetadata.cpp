@@ -513,7 +513,7 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
     Strings data_files;
     for (const auto & manifest_list_entry : *(current_snapshot->manifest_list_iterator))
     {
-        PartitionPruner pruner(&schema_processor, current_schema_id, filter_dag, *manifest_list_entry.manifest_file, getContext());
+        PartitionPruner pruner(schema_processor, current_schema_id, filter_dag, *manifest_list_entry.manifest_file, getContext());
         const auto & data_files_in_manifest = manifest_list_entry.manifest_file->getFiles();
         for (const auto & manifest_file_entry : data_files_in_manifest)
         {

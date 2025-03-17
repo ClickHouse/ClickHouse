@@ -80,7 +80,7 @@ std::unique_ptr<DB::ActionsDAG> PartitionPruner::transformFilterDagForManifest(c
     ActionsDAG dag_with_renames;
     for (const auto column_id : partition_column_ids)
     {
-        auto column = schema_processor->tryGetFieldCharacteristics(current_schema_id, column_id);
+        auto column = schema_processor.tryGetFieldCharacteristics(current_schema_id, column_id);
 
         /// Columns which we dropped and doesn't exist in current schema
         /// cannot be queried in WHERE expression.
@@ -88,7 +88,7 @@ std::unique_ptr<DB::ActionsDAG> PartitionPruner::transformFilterDagForManifest(c
             continue;
 
         /// We take data type from manifest schema, not latest type
-        auto column_type = schema_processor->getFieldCharacteristics(manifest_schema_id, column_id).type;
+        auto column_type = schema_processor.getFieldCharacteristics(manifest_schema_id, column_id).type;
         auto numeric_column_name = DB::backQuote(DB::toString(column_id));
         const auto * node = &dag_with_renames.addInput(numeric_column_name, column_type);
         node = &dag_with_renames.addAlias(*node, column->name);
@@ -101,20 +101,20 @@ std::unique_ptr<DB::ActionsDAG> PartitionPruner::transformFilterDagForManifest(c
 }
 
 PartitionPruner::PartitionPruner(
-    const DB::IcebergSchemaProcessor * schema_processor_,
+    const DB::IcebergSchemaProcessor & schema_processor_,
     Int32 current_schema_id_,
     const DB::ActionsDAG * filter_dag,
     const ManifestFileContent & manifest_file,
     DB::ContextPtr context)
     : schema_processor(schema_processor_)
     , current_schema_id(current_schema_id_)
+    , partition_key(manifest_file.getPartitionKeyDescription())
 {
     if (manifest_file.hasPartitionKey())
     {
-        partition_key = &manifest_file.getPartitionKeyDescription();
         auto transformed_dag = transformFilterDagForManifest(filter_dag, manifest_file.getSchemaId(), manifest_file.getPartitionKeyColumnIDs());
         if (transformed_dag != nullptr)
-            key_condition.emplace(transformed_dag.get(), context, partition_key->column_names, partition_key->expression, true /* single_point */);
+            key_condition.emplace(transformed_dag.get(), context, partition_key.column_names, partition_key.expression, true /* single_point */);
     }
 }
 
@@ -133,7 +133,7 @@ bool PartitionPruner::canBePruned(const ManifestFileEntry & entry) const
     }
 
     bool can_be_true = key_condition->mayBeTrueInRange(
-        partition_value.size(), index_value.data(), index_value.data(), partition_key->data_types);
+        partition_value.size(), index_value.data(), index_value.data(), partition_key.data_types);
 
     return !can_be_true;
 }

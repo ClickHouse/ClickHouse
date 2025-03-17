@@ -23,9 +23,9 @@ DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String &
 class PartitionPruner
 {
 private:
-    const DB::IcebergSchemaProcessor * schema_processor;
+    const DB::IcebergSchemaProcessor & schema_processor;
     Int32 current_schema_id;
-    const DB::KeyDescription * partition_key;
+    const DB::KeyDescription & partition_key;
 
     std::optional<DB::KeyCondition> key_condition;
     /// NOTE: tricky part to support RENAME column in partition key.
@@ -34,7 +34,7 @@ private:
     std::unique_ptr<DB::ActionsDAG> transformFilterDagForManifest(const DB::ActionsDAG * source_dag, Int32 manifest_schema_id, const std::vector<Int32> & partition_column_ids) const;
 public:
     PartitionPruner(
-        const DB::IcebergSchemaProcessor * schema_processor_,
+        const DB::IcebergSchemaProcessor & schema_processor_,
         Int32 current_schema_id_,
         const DB::ActionsDAG * filter_dag,
         const ManifestFileContent & manifest_file,

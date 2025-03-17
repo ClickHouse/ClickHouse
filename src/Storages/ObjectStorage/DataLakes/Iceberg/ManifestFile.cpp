@@ -169,20 +169,20 @@ ManifestFileContentImpl::ManifestFileContentImpl(
 
     for (size_t i = 0; i != partition_specification->size(); ++i)
     {
-        auto current_field = partition_specification->getObject(static_cast<UInt32>(i));
+        auto partition_specification_field = partition_specification->getObject(static_cast<UInt32>(i));
 
-        auto source_id = current_field->getValue<Int32>("source-id");
+        auto source_id = partition_specification_field->getValue<Int32>("source-id");
         /// NOTE: tricky part to support RENAME column in partition key. Instead of some name
         /// we use column internal number as it's name.
         auto numeric_column_name = DB::backQuote(DB::toString(source_id));
-        DB::NameAndTypePair current_column = schema_processor.getFieldCharacteristics(schema_id, source_id);
-        auto partition_ast = getASTFromTransform(current_field->getValue<String>("transform"), numeric_column_name);
+        DB::NameAndTypePair manifest_file_column_characteristics = schema_processor.getFieldCharacteristics(schema_id, source_id);
+        auto partition_ast = getASTFromTransform(partition_specification_field->getValue<String>("transform"), numeric_column_name);
         /// Unsupported partition key expression
         if (partition_ast == nullptr)
             continue;
 
         partition_key_ast->arguments->children.emplace_back(std::move(partition_ast));
-        partition_columns_description.emplace_back(numeric_column_name, removeNullable(current_column.type));
+        partition_columns_description.emplace_back(numeric_column_name, removeNullable(manifest_file_column_characteristics.type));
         partition_columns.push_back(removeNullable(big_partition_tuple->getColumnPtr(i)));
         this->partition_column_ids.push_back(source_id);
     }
