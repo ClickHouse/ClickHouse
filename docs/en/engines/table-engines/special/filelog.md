@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/special/filelog
+description: 'This engine allows processing of application log files as a stream of
+  records.'
+sidebar_label: 'FileLog'
 sidebar_position: 160
-sidebar_label: FileLog
-title: "FileLog Engine"
-description: "This engine allows processing of application log files as a stream of records."
+slug: /engines/table-engines/special/filelog
+title: 'FileLog Engine'
 ---
 
 # FileLog Engine {#filelog-engine}
@@ -17,7 +18,7 @@ This engine allows processing of application log files as a stream of records.
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -42,7 +43,7 @@ Engine arguments:
 Optional parameters:
 
 - `poll_timeout_ms` - Timeout for single poll from log file. Default: [stream_poll_timeout_ms](../../../operations/settings/settings.md#stream_poll_timeout_ms).
-- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
+- `poll_max_batch_size` — Maximum amount of records to be polled in a single poll. Default: [max_block_size](/operations/settings/settings#max_block_size).
 - `max_block_size` — The maximum batch size (in records) for poll. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
 - `max_threads` - Number of max threads to parse files, default is 0, which means the number will be max(1, physical_cpu_cores / 4).
 - `poll_directory_watch_events_backoff_init` - The initial sleep value for watch directory thread. Default: `500`.
@@ -65,7 +66,7 @@ One FileLog table can have as many materialized views as you like, they do not r
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE logs (
     timestamp UInt64,
     level String,
@@ -87,7 +88,7 @@ Example:
 
 To stop receiving streams data or to change the conversion logic, detach the materialized view:
 
-``` sql
+```sql
   DETACH TABLE consumer;
   ATTACH TABLE consumer;
 ```

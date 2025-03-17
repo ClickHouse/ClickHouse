@@ -1,8 +1,9 @@
 ---
-description: "The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic."
+description: 'The data in this dataset is derived and cleaned from the full OpenSky
+  dataset to illustrate the development of air traffic during the COVID-19 pandemic.'
+sidebar_label: 'Air Traffic Data'
 slug: /getting-started/example-datasets/opensky
-sidebar_label: Air Traffic Data
-title: "Crowdsourced air traffic data from The OpenSky Network 2020"
+title: 'Crowdsourced air traffic data from The OpenSky Network 2020'
 ---
 
 The data in this dataset is derived and cleaned from the full OpenSky dataset to illustrate the development of air traffic during the COVID-19 pandemic. It spans all flights seen by the network's more than 2500 members since 1 January 2019. More data will be periodically included in the dataset until the end of the COVID-19 pandemic.
@@ -60,7 +61,7 @@ ls -1 flightlist_*.csv.gz | xargs -P100 -I{} bash -c 'gzip -c -d "{}" | clickhou
 `xargs -P100` specifies to use up to 100 parallel workers but as we only have 30 files, the number of workers will be only 30.
 - For every file, `xargs` will run a script with `bash -c`. The script has substitution in form of `{}` and the `xargs` command will substitute the filename to it (we have asked it for `xargs` with `-I{}`).
 - The script will decompress the file (`gzip -c -d "{}"`) to standard output (`-c` parameter) and the output is redirected to `clickhouse-client`.
-- We also asked to parse [DateTime](../../sql-reference/data-types/datetime.md) fields with extended parser ([--date_time_input_format best_effort](../../operations/settings/settings-formats.md#settings-date_time_input_format)) to recognize ISO-8601 format with timezone offsets.
+- We also asked to parse [DateTime](../../sql-reference/data-types/datetime.md) fields with extended parser ([--date_time_input_format best_effort](/operations/settings/formats#date_time_input_format)) to recognize ISO-8601 format with timezone offsets.
 
 Finally, `clickhouse-client` will do insertion. It will read input data in [CSVWithNames](../../interfaces/formats.md#csvwithnames) format. 
 

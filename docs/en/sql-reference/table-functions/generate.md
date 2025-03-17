@@ -1,13 +1,16 @@
 ---
-slug: /sql-reference/table-functions/generate
+description: 'Generates random data with a given schema. Allows populating test tables
+  with that data. Not all types are supported.'
+sidebar_label: 'generateRandom'
 sidebar_position: 75
-sidebar_label: generateRandom
+slug: /sql-reference/table-functions/generate
+title: 'generateRandom'
 ---
 
-# generateRandom
+# generateRandom Table Function
 
-Generates random data with given schema.
-Allows to populate test tables with data.
+Generates random data with a given schema.
+Allows populating test tables with that data.
 Not all types are supported.
 
 ``` sql

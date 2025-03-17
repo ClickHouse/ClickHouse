@@ -1,11 +1,16 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/summapwithoverflow
+description: 'Totals a `value` array according to the keys specified in the `key`
+  array. Returns a tuple of two arrays: keys in sorted order, and values summed for
+  the corresponding keys. Differs from the sumMap function in that it does summation
+  with overflow.'
 sidebar_position: 199
+slug: /sql-reference/aggregate-functions/reference/summapwithoverflow
+title: 'sumMapWithOverflow'
 ---
 
 # sumMapWithOverflow
 
-Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
+Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values summed for the corresponding keys.
 It differs from the [sumMap](../reference/summap.md) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
 **Syntax**

@@ -1,8 +1,16 @@
 ---
+description: 'Documentation for the MySQL protocol interface in ClickHouse, allowing
+  MySQL clients to connect to ClickHouse'
+sidebar_label: 'MySQL Interface'
+sidebar_position: 25
 slug: /interfaces/mysql
-sidebar_position: 20
-sidebar_label: MySQL Interface
+title: 'MySQL Interface'
 ---
+
+import mysql0 from '@site/static/images/interfaces/mysql0.png';
+import mysql1 from '@site/static/images/interfaces/mysql1.png';
+import mysql2 from '@site/static/images/interfaces/mysql2.png';
+import mysql3 from '@site/static/images/interfaces/mysql3.png';
 
 # MySQL Interface
 
@@ -22,7 +30,7 @@ If there is a native driver available (e.g., [DBeaver](../integrations/dbeaver))
 If your use case involves a particular tool that does not have a native ClickHouse driver, and you would like to use it via the MySQL interface and you found certain incompatibilities - please [create an issue](https://github.com/ClickHouse/ClickHouse/issues) in the ClickHouse repository.
 
 ::::note
-To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](../operations/settings/settings.md#prefer-column-name-to-alias).
+To support the SQL dialect of above BI tools better, ClickHouse's MySQL interface implicitly runs SELECT queries with setting [prefer_column_name_to_alias = 1](/operations/settings/settings#prefer_column_name_to_alias).
 This cannot be turned off and it can lead in rare edge cases to different behavior between queries sent to ClickHouse's normal and MySQL query interfaces.
 ::::
 
@@ -32,23 +40,23 @@ This cannot be turned off and it can lead in rare edge cases to different behavi
 
 <br/>
 
-![Credentials screen - Prompt](./images/mysql0.png)
+<img src={mysql0} alt="Credentials screen - Prompt" />
 
 2. Change the `Connect with` drop-down to `MySQL`. 
 
 <br/>
 
-![Credentials screen - Prompt](./images/mysql1.png)
+<img src={mysql1} alt="Credentials screen - MySQL selected" />
 
 3. Toggle the switch to enable the MySQL interface for this specific service. This will expose port `3306` for this service and prompt you with your MySQL connection screen that include your unique MySQL username. The password will be the same as the service's default user password.
 
 <br/>
 
-![Credentials screen - Enabled MySQL](./images/mysql2.png)
+<img src={mysql2} alt="Credentials screen - Enabled MySQL" />
 
 Copy the MySQL connection string shown.
 
-![Credentials screen - Connection String](./images/mysql3.png)
+<img src={mysql3} alt="Credentials screen - Connection String" />
 
 ## Creating multiple MySQL users in ClickHouse Cloud {#creating-multiple-mysql-users-in-clickhouse-cloud}
 
@@ -62,14 +70,14 @@ For ClickHouse Cloud hostname like `foobar.us-east1.aws.clickhouse.cloud`, the `
 
 You can create extra users to use with the MySQL interface if, for example, you need to apply extra settings.
 
-1. Optional - create a [settings profile](/docs/sql-reference/statements/create/settings-profile) to apply for your custom user. For example, `my_custom_profile` with an extra setting which will be applied by default when we connect with the user we create later:
+1. Optional - create a [settings profile](/sql-reference/statements/create/settings-profile) to apply for your custom user. For example, `my_custom_profile` with an extra setting which will be applied by default when we connect with the user we create later:
 
     ```sql
     CREATE SETTINGS PROFILE my_custom_profile SETTINGS prefer_column_name_to_alias=1;
     ```
 
     `prefer_column_name_to_alias` is used just as an example, you can use other settings there.
-2. [Create a user](/docs/sql-reference/statements/create/user) using the following format: `mysql4<subdomain>_<username>` ([see above](#creating-multiple-mysql-users-in-clickhouse-cloud)). The password must be in double SHA1 format. For example:
+2. [Create a user](/sql-reference/statements/create/user) using the following format: `mysql4<subdomain>_<username>` ([see above](#creating-multiple-mysql-users-in-clickhouse-cloud)). The password must be in double SHA1 format. For example:
 
     ```sql
     CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$';
@@ -82,7 +90,7 @@ You can create extra users to use with the MySQL interface if, for example, you 
     ```
 
     where `my_custom_profile` is the name of the profile you created earlier.
-3. [Grant](/docs/sql-reference/statements/grant) the new user the necessary permissions to interact with the desired tables or databases. For example, if you want to grant access to `system.query_log` only:
+3. [Grant](/sql-reference/statements/grant) the new user the necessary permissions to interact with the desired tables or databases. For example, if you want to grant access to `system.query_log` only:
 
     ```sql
     GRANT SELECT ON system.query_log TO mysql4foobar_team1;
@@ -148,8 +156,8 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings-users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings-users.md#password_sha256_hex), some clients won't be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
+For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](/operations/settings/settings-users#user-namepassword) in configuration file.
+If user password is specified using [SHA256](/sql-reference/functions/hash-functions#sha1-sha224-sha256-sha512-sha512_256), some clients won't be able to authenticate (mysqljs and old versions of command-line tool MySQL and MariaDB).
 
 Restrictions:
 

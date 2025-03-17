@@ -1,10 +1,14 @@
 ---
-slug: /sql-reference/table-functions/remote
+description: 'Table function `remote` allows to access remote servers on-the-fly,
+  i.e. without creating a distributed table. Table function `remoteSecure` is same
+  as `remote` but over a secure connection.'
+sidebar_label: 'remote'
 sidebar_position: 175
-sidebar_label: remote
+slug: /sql-reference/table-functions/remote
+title: 'remote, remoteSecure'
 ---
 
-# remote, remoteSecure
+# remote, remoteSecure Table Function
 
 Table function `remote` allows to access remote servers on-the-fly, i.e. without creating a [Distributed](../../engines/table-engines/special/distributed.md) table. Table function `remoteSecure` is same as `remote` but over a secure connection.
 
@@ -41,7 +45,7 @@ remoteSecure(named_collection[, option=value [,..]])
 - `password` — User password. If not specified, an empty password is used. Type: [String](../../sql-reference/data-types/string.md).
 - `sharding_key` — Sharding key to support distributing data across nodes. For example: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Type: [UInt32](../../sql-reference/data-types/int-uint.md).
 
-Arguments also can be passed using [named collections](/docs/operations/named-collections.md).
+Arguments also can be passed using [named collections](operations/named-collections.md).
 
 ## Returned value {#returned-value}
 
@@ -86,7 +90,7 @@ example01-01-1,example01-02-1
 SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
 ```
 
-Or using [named collections](/docs/operations/named-collections.md):
+Or using [named collections](operations/named-collections.md):
 
 ```sql
 CREATE NAMED COLLECTION creds AS

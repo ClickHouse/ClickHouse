@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/mergetree-family/graphitemergetree
+description: 'Designed for thinning and aggregating/averaging (rollup) Graphite data.'
+sidebar_label: 'GraphiteMergeTree'
 sidebar_position: 90
-sidebar_label:  GraphiteMergeTree
-title: "GraphiteMergeTree"
-description: "Designed for thinning and aggregating/averaging (rollup) Graphite data."
+slug: /engines/table-engines/mergetree-family/graphitemergetree
+title: 'GraphiteMergeTree'
 ---
 
 # GraphiteMergeTree
@@ -31,7 +31,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 A table for the Graphite data should have the following columns for the following data:
 

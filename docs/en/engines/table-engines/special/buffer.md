@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/special/buffer
+description: 'Buffers the data to write in RAM, periodically flushing it to another
+  table. During the read operation, data is read from the buffer and the other table
+  simultaneously.'
+sidebar_label: 'Buffer'
 sidebar_position: 120
-sidebar_label:  Buffer
-title: "Buffer Table Engine"
-description: "Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously."
+slug: /engines/table-engines/special/buffer
+title: 'Buffer Table Engine'
 ---
 
 # Buffer Table Engine
@@ -11,7 +13,7 @@ description: "Buffers the data to write in RAM, periodically flushing it to anot
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
 :::note
-A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/docs/guides/best-practices/asyncinserts.md).
+A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/guides/best-practices/asyncinserts.md).
 :::
 
 ``` sql

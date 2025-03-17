@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
+description: 'Allows for quick writing of object states that are continually changing,
+  and deleting old object states in the background.'
+sidebar_label: 'VersionedCollapsingMergeTree'
 sidebar_position: 80
-sidebar_label:  VersionedCollapsingMergeTree
-title: "VersionedCollapsingMergeTree"
-description: "Allows for quick writing of object states that are continually changing, and deleting old object states in the background."
+slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
+title: 'VersionedCollapsingMergeTree'
 ---
 
 # VersionedCollapsingMergeTree
@@ -15,7 +16,7 @@ This engine:
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
-The engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md#table_engines-mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
+The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](../../../engines/table-engines/mergetree-family/collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
 
 ## Creating a Table {#creating-a-table}
 
@@ -42,8 +43,8 @@ VersionedCollapsingMergeTree(sign, version)
 
 | Parameter | Description                                                                            | Type                                                                                                                                                                                                                                                                                    |
 |-----------|----------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/docs/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
-| `version` | Name of the column with the version of the object state.                               | [`Int*`](/docs/sql-reference/data-types/int-uint), [`UInt*`](/docs/sql-reference/data-types/int-uint), [`Date`](/docs/sql-reference/data-types/date), [`Date32`](/docs/sql-reference/data-types/date32), [`DateTime`](/docs/sql-reference/data-types/datetime) or [`DateTime64`](/docs/sql-reference/data-types/datetime64) |
+| `sign`    | Name of the column with the type of row: `1` is a "state" row, `-1` is a "cancel" row. | [`Int8`](/sql-reference/data-types/int-uint)                                                                                                                                                                                                                                    |
+| `version` | Name of the column with the version of the object state.                               | [`Int*`](/sql-reference/data-types/int-uint), [`UInt*`](/sql-reference/data-types/int-uint), [`Date`](/sql-reference/data-types/date), [`Date32`](/sql-reference/data-types/date32), [`DateTime`](/sql-reference/data-types/datetime) or [`DateTime64`](/sql-reference/data-types/datetime64) |
 
 ### Query Clauses {#query-clauses}
 

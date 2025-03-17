@@ -57,7 +57,7 @@ insert into dist_single settings distributed_foreground_insert=1, distributed_in
 insert into dist settings distributed_foreground_insert=1, distributed_insert_skip_read_only_replicas=1, load_balancing='round_robin' values ({{ i }});
 {% endfor %}
 -- cannot check for background inserts, so only here
-system flush logs;
+system flush logs query_log;
 select
     'DistributedConnectionSkipReadOnlyReplica', count() > 0, sum(ProfileEvents['DistributedConnectionSkipReadOnlyReplica']) > 0
 from system.query_log

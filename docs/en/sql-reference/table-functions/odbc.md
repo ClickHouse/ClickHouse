@@ -1,10 +1,12 @@
 ---
-slug: /sql-reference/table-functions/odbc
+description: 'Returns the table that is connected via ODBC.'
+sidebar_label: 'odbc'
 sidebar_position: 150
-sidebar_label: odbc
+slug: /sql-reference/table-functions/odbc
+title: 'odbc'
 ---
 
-# odbc
+# odbc Table Function
 
 Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
@@ -101,5 +103,5 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 ## See Also {#see-also}
 
-- [ODBC dictionaries](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-odbc)
-- [ODBC table engine](../../engines/table-engines/integrations/odbc.md).
+- [ODBC dictionaries](/sql-reference/dictionaries#dbms)
+- [ODBC table engine](/engines/table-engines/integrations/odbc).

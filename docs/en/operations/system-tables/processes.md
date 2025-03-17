@@ -1,10 +1,13 @@
 ---
-description: "System table used for implementing the `SHOW PROCESSLIST` query."
+description: 'System table used for implementing the `SHOW PROCESSLIST` query.'
+keywords: ['system table', 'processes']
 slug: /operations/system-tables/processes
-title: "processes"
-keywords: ["system table", "processes"]
+title: 'system.processes'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.processes
 
 <SystemTableCloud/>
 

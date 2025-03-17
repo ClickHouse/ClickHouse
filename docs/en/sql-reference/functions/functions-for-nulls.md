@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/functions-for-nulls
+description: 'Documentation for Functions for Working with Nullable Values'
+sidebar_label: 'Nullable'
 sidebar_position: 135
-sidebar_label: Nullable
+slug: /sql-reference/functions/functions-for-nulls
+title: 'Functions for Working with Nullable Values'
 ---
 
 # Functions for Working with Nullable Values
@@ -95,7 +97,7 @@ Result:
 
 ## isNotNull {#isnotnull}
 
-Returns whether the argument is not [NULL](../../sql-reference/syntax.md#null-literal).
+Returns whether the argument is not [NULL](/operations/settings/formats#input_format_null_as_default).
 
 See also operator [`IS NOT NULL`](../operators/index.md#is_not_null).
 
@@ -169,7 +171,7 @@ For a complete example see: [NULL values in JOIN keys](../../sql-reference/state
 
 ## isZeroOrNull {#iszeroornull}
 
-Returns whether the argument is 0 (zero) or [NULL](../../sql-reference/syntax.md#null-literal).
+Returns whether the argument is 0 (zero) or [NULL](/operations/settings/formats#input_format_null_as_default).
 
 ``` sql
 isZeroOrNull(x)

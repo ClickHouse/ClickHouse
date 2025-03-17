@@ -14,6 +14,8 @@
 
 #include <IO/S3/Requests.h>
 
+#include <fmt/ranges.h>
+
 namespace ProfileEvents
 {
     extern const Event WriteBufferFromS3Bytes;
@@ -48,9 +50,10 @@ namespace ErrorCodes
 
 namespace S3RequestSetting
 {
-    extern const S3RequestSettingsBool allow_native_copy;
+    extern const S3RequestSettingsBoolAuto allow_native_copy;
     extern const S3RequestSettingsBool check_objects_after_upload;
     extern const S3RequestSettingsUInt64 max_part_number;
+    extern const S3RequestSettingsBool allow_multipart_copy;
     extern const S3RequestSettingsUInt64 max_single_operation_copy_size;
     extern const S3RequestSettingsUInt64 max_single_part_upload_size;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
@@ -687,7 +690,10 @@ namespace
         void performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
-            if (!supports_multipart_copy || size <= request_settings[S3RequestSetting::max_single_operation_copy_size])
+            bool use_single_operation_copy = !supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
+                || (size <= request_settings[S3RequestSetting::max_single_operation_copy_size]);
+
+            if (use_single_operation_copy)
                 performSingleOperationCopy();
             else
                 performMultipartUploadCopy();
@@ -924,9 +930,17 @@ void copyS3File(
             object_metadata);
     };
 
-    if (!settings[S3RequestSetting::allow_native_copy])
+    /// Check whether the native copy is allowed and possible.
+    const auto & allow_native_copy = settings[S3RequestSetting::allow_native_copy];
+    if (!allow_native_copy.is_auto && (allow_native_copy.base.value == false))
     {
-        LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
+        LOG_TRACE(getLogger("copyS3File"), "Native copy is disabled for {}", src_key);
+        fallback_method();
+        return;
+    }
+    if (allow_native_copy.is_auto && (src_s3_client->getCredentials() != dest_s3_client->getCredentials()))
+    {
+        LOG_TRACE(getLogger("copyS3File"), "Native copy is not possible for {} because credentials are different", src_key);
         fallback_method();
         return;
     }

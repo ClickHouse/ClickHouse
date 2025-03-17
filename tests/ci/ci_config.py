@@ -174,7 +174,6 @@ class CI:
                 compiler="clang-19",
                 debug_build=True,
                 package_type="binary",
-                static_binary_name="debug-amd64",
                 tidy=True,
                 comment="clang-tidy is used for static analysis",
             ),

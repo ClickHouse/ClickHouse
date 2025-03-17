@@ -92,6 +92,11 @@ def main():
 
     repo_path = Path(REPO_COPY)
 
+    # i.e. "ClickHouse/ci/tmp"
+    #
+    # Note, it is not the same as "TEMP_PATH", since we want to upload binaries
+    # to the "clickhouse-builds" bucket from the Runner::_post_run, not the
+    # "S3_REPORT_BUCKET_NAME" via HtmlRunnerHooks::post_run
     build_output_temp_path = repo_path / "ci" / "tmp"
     build_output_temp_path.mkdir(parents=True, exist_ok=True)
     build_output_path = build_output_temp_path / "build"
@@ -123,7 +128,7 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     test_output_files = os.listdir(output_path)
-    additional_files = [f for f in output_path.glob('**/*') if f.is_file()]
+    additional_files = [f for f in output_path.glob("**/*") if f.is_file()]
     additional_files.append(run_log_path)
 
     test_log_exists = (

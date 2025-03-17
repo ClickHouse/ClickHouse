@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/string-functions
+description: 'Documentation for Functions for Working with Strings'
+sidebar_label: 'Strings'
 sidebar_position: 170
-sidebar_label: Strings
+slug: /sql-reference/functions/string-functions
+title: 'Functions for Working with Strings'
 ---
 
 import VersionBadge from '@theme/badges/VersionBadge';
@@ -14,7 +16,7 @@ Functions for [searching](string-search-functions.md) in strings and for [replac
 
 Checks whether the input string is empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
-The function is also available for [arrays](array-functions.md#function-empty) and [UUIDs](uuid-functions.md#empty).
+The function is also available for [arrays](/sql-reference/functions/array-functions#empty) and [UUIDs](uuid-functions.md#empty).
 
 **Syntax**
 
@@ -48,7 +50,7 @@ Result:
 
 Checks whether the input string is non-empty. A string is considered non-empty if it contains at least one byte, even if this byte is a space or the null byte.
 
-The function is also available for [arrays](array-functions.md#function-notempty) and [UUIDs](uuid-functions.md#notempty).
+The function is also available for [arrays](/sql-reference/functions/array-functions#notempty) and [UUIDs](uuid-functions.md#notempty).
 
 **Syntax**
 
@@ -1048,7 +1050,7 @@ SELECT 'Täglich grüßt das Murmeltier.' AS str,
 ```
 
 ```response
-Täglich grüßt das Murmeltier.	grüßt das Murmeltier.	grüßt
+Täglich grüßt das Murmeltier.    grüßt das Murmeltier.    grüßt
 ```
 
 ## substringIndex {#substringindex}

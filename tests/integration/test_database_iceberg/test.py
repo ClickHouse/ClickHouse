@@ -27,8 +27,10 @@ from pyiceberg.types import (
 )
 
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance, is_arm
+from helpers.config_cluster import minio_secret_key
 from helpers.s3_tools import get_file_contents, list_s3_objects, prepare_s3_bucket
 from helpers.test_tools import TSV, csv_compare
+from helpers.config_cluster import minio_secret_key
 
 BASE_URL = "http://rest:8181/v1"
 BASE_URL_LOCAL = "http://localhost:8182/v1"
@@ -85,7 +87,7 @@ def load_catalog_impl(started_cluster):
             "type": "rest",
             "s3.endpoint": f"http://localhost:9002",
             "s3.access-key-id": "minio",
-            "s3.secret-access-key": "minio123",
+            "s3.secret-access-key": "ClickHouse_Minio_P@ssw0rd",
         },
     )
 
@@ -132,7 +134,7 @@ def create_clickhouse_iceberg_database(
         f"""
 DROP DATABASE IF EXISTS {name};
 SET allow_experimental_database_iceberg=true;
-CREATE DATABASE {name} ENGINE = Iceberg('{BASE_URL}', 'minio', 'minio123')
+CREATE DATABASE {name} ENGINE = DataLakeCatalog('{BASE_URL}', 'minio', '{minio_secret_key}')
 SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
     """
     )
@@ -142,7 +144,7 @@ def print_objects():
     minio_client = Minio(
         f"localhost:9002",
         access_key="minio",
-        secret_key="minio123",
+        secret_key=minio_secret_key,
         secure=False,
         http_client=urllib3.PoolManager(cert_reqs="CERT_NONE"),
     )
@@ -345,3 +347,40 @@ def test_hide_sensitive_info(started_cluster):
         additional_settings={"auth_header": "SECRET_2"},
     )
     assert "SECRET_2" not in node.query(f"SHOW CREATE DATABASE {CATALOG_NAME}")
+
+
+def test_tables_with_same_location(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_tables_with_same_location_{uuid.uuid4()}"
+    namespace = f"{test_ref}_namespace"
+    catalog = load_catalog_impl(started_cluster)
+
+    table_name = f"{test_ref}_table"
+    table_name_2 = f"{test_ref}_table_2"
+
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name)
+    table_2 = create_table(catalog, namespace, table_name_2)
+
+    def record(key):
+        return {
+            "datetime": datetime.now(),
+            "symbol": str(key),
+            "bid": round(random.uniform(100, 200), 2),
+            "ask": round(random.uniform(200, 300), 2),
+            "details": {"created_by": "Alice Smith"},
+        }
+
+    data = [record('aaa') for _ in range(3)]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    data = [record('bbb') for _ in range(3)]
+    df = pa.Table.from_pylist(data)
+    table_2.append(df)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    assert 'aaa\naaa\naaa' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name}`").strip()
+    assert 'bbb\nbbb\nbbb' == node.query(f"SELECT symbol FROM {CATALOG_NAME}.`{namespace}.{table_name_2}`").strip()
