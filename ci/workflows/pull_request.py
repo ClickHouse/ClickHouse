@@ -55,8 +55,8 @@ workflow = Workflow.Config(
         *JobConfigs.buzz_fuzzer_jobs,
         *JobConfigs.performance_comparison_amd_jobs,
         *JobConfigs.performance_comparison_arm_jobs,
-        #TODO: remove
-        *JobConfigs.sqlancer_master_jobs
+        # TODO: remove
+        *JobConfigs.sqlancer_master_jobs,
     ],
     artifacts=[
         *ArtifactConfigs.unittests_binaries,

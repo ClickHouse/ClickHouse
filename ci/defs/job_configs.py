@@ -888,13 +888,13 @@ class JobConfigs:
         timeout=3600,
     ).parametrize(
         parameter=[
-            "release",
-            "debug",
+            "arm_release",
+            "amd_debug",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD, RunnerLabels.FUNC_TESTER_AMD],
+        runs_on=[RunnerLabels.FUNC_TESTER_ARM, RunnerLabels.FUNC_TESTER_AMD],
         requires=[
-            ["Build (amd_release)"],
-            ["Build (amd_debug)"],
+            [ArtifactNames.CH_ARM_RELEASE],
+            [ArtifactNames.CH_AMD_DEBUG],
         ],
     )
     sqltest_master_job = Job.Config(

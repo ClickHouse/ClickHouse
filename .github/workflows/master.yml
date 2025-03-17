@@ -4043,11 +4043,11 @@ jobs:
             python3 -m praktika run 'Performance Comparison (release, 3/3)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  sqlancer_release:
-    runs-on: [self-hosted, func-tester]
-    needs: [config_workflow, build_amd_release]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U1FMYW5jZXIgKHJlbGVhc2Up') }}
-    name: "SQLancer (release)"
+  sqlancer_arm_release:
+    runs-on: [self-hosted, func-tester-aarch64]
+    needs: [config_workflow, build_arm_release]
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U1FMYW5jZXIgKGFybV9yZWxlYXNlKQ==') }}
+    name: "SQLancer (arm_release)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4076,16 +4076,16 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'SQLancer (release)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'SQLancer (arm_release)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'SQLancer (release)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'SQLancer (arm_release)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
-  sqlancer_debug:
+  sqlancer_amd_debug:
     runs-on: [self-hosted, func-tester]
     needs: [config_workflow, build_amd_debug]
-    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U1FMYW5jZXIgKGRlYnVnKQ==') }}
-    name: "SQLancer (debug)"
+    if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'U1FMYW5jZXIgKGFtZF9kZWJ1Zyk=') }}
+    name: "SQLancer (amd_debug)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
     steps:
@@ -4114,9 +4114,9 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           set -o pipefail
           if command -v ts &> /dev/null; then
-            python3 -m praktika run 'SQLancer (debug)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
+            python3 -m praktika run 'SQLancer (amd_debug)' --workflow "MasterCI" --ci |& ts '[%Y-%m-%d %H:%M:%S]' | tee ./ci/tmp/job.log
           else
-            python3 -m praktika run 'SQLancer (debug)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
+            python3 -m praktika run 'SQLancer (amd_debug)' --workflow "MasterCI" --ci |& tee ./ci/tmp/job.log
           fi
 
   sqltest:
