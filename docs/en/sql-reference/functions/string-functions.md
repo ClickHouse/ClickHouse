@@ -1050,7 +1050,7 @@ SELECT 'Täglich grüßt das Murmeltier.' AS str,
 ```
 
 ```response
-Täglich grüßt das Murmeltier.	grüßt das Murmeltier.	grüßt
+Täglich grüßt das Murmeltier.    grüßt das Murmeltier.    grüßt
 ```
 
 ## substringIndex {#substringindex}

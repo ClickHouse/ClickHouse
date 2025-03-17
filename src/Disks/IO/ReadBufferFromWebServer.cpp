@@ -7,8 +7,6 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
 
-#include <thread>
-
 
 namespace DB
 {
@@ -16,11 +14,6 @@ namespace Setting
 {
     extern const SettingsSeconds http_connection_timeout;
     extern const SettingsSeconds http_receive_timeout;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsSeconds keep_alive_timeout;
 }
 
 namespace ErrorCodes

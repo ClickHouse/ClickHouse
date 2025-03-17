@@ -237,12 +237,13 @@ getLatestMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const S
     return *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
 }
 
-static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration)
+static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration, Poco::Logger * log)
 {
     auto explicit_metadata_path = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].value;
     std::pair<Int32, String> result;
     if (!explicit_metadata_path.empty())
     {
+        LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
         auto prefix_storage_path = configuration.getPath();
         if (!explicit_metadata_path.starts_with(prefix_storage_path))
             explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
@@ -274,7 +275,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr);
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, log.get());
 
     if (metadata_version == current_metadata_version)
         return false;
@@ -340,9 +341,9 @@ DataLakeMetadataPtr IcebergMetadata::create(
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr);
-
     auto log = getLogger("IcebergMetadata");
+
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, log.get());
 
     ObjectInfo object_info(metadata_file_path);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
