@@ -213,9 +213,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
         if (res.row_count)
         {
-            injectLazilyReadColumns(
-                res.row_count, res.block,
-                task.get(), lazily_read_info);
+            injectLazilyReadColumns(res.row_count, res.block, task.get(), lazily_read_info);
 
             /// Reorder the columns according to result_header
             Columns ordered_columns;
