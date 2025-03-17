@@ -188,29 +188,34 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
-    def get_commit_status_description(self):
-        if self.is_ok():
-            return "ok"
-        failed = [r.name for r in self.results if not r.is_ok()]
-        if not failed:
-            return "Failed"
-        failed_str = ",".join(failed)
-        return (
-            f"Failed: {failed_str}"
-            if len(failed_str) < 80
-            else f"Failed: {len(failed)} tests"
-        )
-
-    def add_local_run_command_to_info(self):
-        command_info = (
-            f'For local test: PYTHONPATH=./ci python -m praktika run "{self.name}"'
-        )
+    def add_job_summary_to_info(self, with_local_run_command=False):
         if not self.is_ok():
-            for r in self.results:
-                if not r.is_ok():
-                    command_info += f" --test {r.name}"
-                    break
+            failed = [r.name for r in self.results if not r.is_ok()]
+            if failed:
+                failed_str = ",".join(failed)
+                summary_info = (
+                    f"Failed: {failed_str}"
+                    if len(failed_str) < 80
+                    else f"Failed: {len(failed)} tests"
+                )
+            else:
+                summary_info = "Failed"
+        else:
+            summary_info = "ok"
+
+        self.set_info(summary_info)
+
+        if with_local_run_command and not self.is_ok():
+            command_info = (
+                f'For local test: PYTHONPATH=./ci python -m praktika run "{self.name}"'
+            )
+            first_failed_test = next(
+                (r.name for r in self.results if not r.is_ok()), None
+            )
+            if first_failed_test:
+                command_info += f" --test {first_failed_test}"
             self.set_info(command_info)
+
         return self
 
     @classmethod
