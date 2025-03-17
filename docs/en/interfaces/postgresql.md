@@ -14,7 +14,7 @@ To enable the PostgreSQL wire protocol, add the [postgresql_port](../operations/
 
 ```xml
 <clickhouse>
-	<postgresql_port>9005</postgresql_port>
+    <postgresql_port>9005</postgresql_port>
 </clickhouse>
 ```
 

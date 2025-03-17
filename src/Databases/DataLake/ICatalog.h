@@ -97,7 +97,6 @@ private:
     bool is_default_readable_table = true;
 
     bool with_location = false;
-    bool with_lightweight = false;
     bool with_schema = false;
     bool with_storage_credentials = false;
     bool with_datalake_specific_metadata = false;

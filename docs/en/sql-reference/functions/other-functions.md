@@ -3137,7 +3137,7 @@ SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
 Result:
 
 ```text
-1	1	1	1
+1    1    1    1
 ```
 
 ## countDigits {#countdigits}
@@ -3175,7 +3175,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 Result:
 
 ```text
-10	10	19	19	39	39
+10    10    19    19    39    39
 ```
 
 ## errorCodeToName {#errorcodetoname}

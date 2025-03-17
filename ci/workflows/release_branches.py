@@ -1,6 +1,6 @@
 from praktika import Workflow
 
-from ci.defs.defs import SECRETS, ArtifactConfigs
+from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 from ci.jobs.scripts.workflow_hooks.filter_job import should_skip_job
 
@@ -43,7 +43,7 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         *ArtifactConfigs.performance_packages,
     ],
-    # dockers=DOCKERS,
+    dockers=DOCKERS,
     secrets=SECRETS,
     enable_cache=True,
     enable_report=True,
