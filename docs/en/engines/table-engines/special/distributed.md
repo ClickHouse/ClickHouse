@@ -19,7 +19,7 @@ Tables with Distributed engine do not store any data of their own, but allow dis
 
 ## Creating a Table {#distributed-creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -33,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 When the `Distributed` table is pointing to a table on the current server you can adopt that table's schema:
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
 ```
 
@@ -131,7 +131,7 @@ For **Insert limit settings** (`..._insert`) see also:
 
 **Example**
 
-``` sql
+```sql
 CREATE TABLE hits_all AS hits
 ENGINE = Distributed(logs, default, hits[, sharding_key[, policy_name]])
 SETTINGS
@@ -147,7 +147,7 @@ Instead of the database name, you can use a constant expression that returns a s
 
 Clusters are configured in the [server configuration file](../../../operations/configuration-files.md):
 
-``` xml
+```xml
 <remote_servers>
     <logs>
         <!-- Inter-server per-cluster secret for Distributed queries

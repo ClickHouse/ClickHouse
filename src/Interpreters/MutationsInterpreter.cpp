@@ -29,8 +29,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Parsers/formatAST.h>
-#include <Parsers/queryToString.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
@@ -294,7 +292,7 @@ MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command)
 
     auto mutation_command = MutationCommand::parse(alter_command.get());
     if (!mutation_command)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", queryToString(alter_command));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to parse command {}. It's a bug", alter_command->formatForErrorMessage());
 
     return *mutation_command;
 }

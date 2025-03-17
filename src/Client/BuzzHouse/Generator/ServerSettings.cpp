@@ -576,11 +576,11 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
          {"0", "8", "32", "64", "1024", "10000"},
          false)},*/
     /// {"max_rows_in_set", CHSetting(highRange, {}, false)},
-    /// {"max_rows_to_group_by",  CHSetting(highRange, {}, false)},
+    /// {"max_rows_to_group_by", CHSetting(highRange, {}, false)},
     /// {"max_rows_to_read", CHSetting(highRange, {}, false)},
     /// {"max_rows_to_read_leaf", CHSetting(highRange, {}, false)},
     /// {"max_rows_to_sort", CHSetting(highRange, {}, false)},
-    /// {"max_temporary_columns",  CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
+    /// {"max_temporary_columns", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
     /// {"max_temporary_non_const_columns", CHSetting([](RandomGenerator & rg) { return std::to_string(UINT32_C(1) << (rg.nextLargeNumber() % 6)); }, {}, false)},
     {"max_threads", threadRange},
     {"max_threads_for_indexes", threadRange},
