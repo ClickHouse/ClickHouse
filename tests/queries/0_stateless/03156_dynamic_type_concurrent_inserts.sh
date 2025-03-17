@@ -4,7 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "CREATE OR REPLACE TABLE test_cc (d Dynamic) ENGINE = Memory"
+$CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "CREATE TABLE test_cc (d Dynamic) ENGINE = Memory"
 
 
 $CLICKHOUSE_CLIENT --allow_experimental_dynamic_type=1 -q "INSERT INTO test_cc SELECT number::Int64 AS d FROM numbers(10000) SETTINGS max_threads=1,max_insert_threads=1" &
