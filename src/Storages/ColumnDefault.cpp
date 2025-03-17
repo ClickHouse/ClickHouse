@@ -74,8 +74,7 @@ ColumnDefault & ColumnDefault::operator=(ColumnDefault && other) noexcept
         return *this;
 
     kind = std::exchange(other.kind, ColumnDefaultKind{});
-    expression = other.expression ? other.expression->clone() : nullptr;
-    other.expression.reset();
+    expression = std::exchange(other.expression, nullptr);
     ephemeral_default = std::exchange(other.ephemeral_default, false);
 
     return *this;
