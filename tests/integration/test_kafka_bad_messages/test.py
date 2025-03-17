@@ -6,7 +6,13 @@ from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProduc
 from kafka.admin import NewTopic
 
 from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.kafka_common import kafka_create_topic, kafka_delete_topic, get_kafka_producer, producer_serializer, kafka_produce
+from helpers.kafka_common import (
+    kafka_create_topic,
+    kafka_delete_topic,
+    get_kafka_producer,
+    producer_serializer,
+    kafka_produce,
+)
 
 if is_arm():
     pytestmark = pytest.mark.skip
@@ -18,7 +24,6 @@ instance = cluster.add_instance(
     main_configs=["configs/kafka.xml"],
     with_kafka=True,
 )
-
 
 
 @pytest.fixture(scope="module")
@@ -307,8 +312,6 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
     assert result_system_kafka_consumers.replace("\t", "|") == expected_result
 
     kafka_delete_topic(admin_client, "tomv")
-
-
 
 
 if __name__ == "__main__":

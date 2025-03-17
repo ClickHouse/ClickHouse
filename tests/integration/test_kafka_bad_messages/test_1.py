@@ -1,4 +1,10 @@
-from helpers.kafka_common import kafka_create_topic, kafka_delete_topic, get_kafka_producer, producer_serializer, kafka_produce
+from helpers.kafka_common import (
+    kafka_create_topic,
+    kafka_delete_topic,
+    get_kafka_producer,
+    producer_serializer,
+    kafka_produce,
+)
 
 import logging
 import time
@@ -8,7 +14,13 @@ from kafka import BrokerConnection, KafkaAdminClient, KafkaConsumer, KafkaProduc
 from kafka.admin import NewTopic
 
 from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.kafka_common import kafka_create_topic, kafka_delete_topic, get_kafka_producer, producer_serializer, kafka_produce
+from helpers.kafka_common import (
+    kafka_create_topic,
+    kafka_delete_topic,
+    get_kafka_producer,
+    producer_serializer,
+    kafka_produce,
+)
 
 if is_arm():
     pytestmark = pytest.mark.skip
@@ -19,6 +31,7 @@ instance = cluster.add_instance(
     main_configs=["configs/kafka.xml"],
     with_kafka=True,
 )
+
 
 @pytest.fixture(scope="module")
 def kafka_cluster():
@@ -112,15 +125,19 @@ def test_log_to_exceptions(kafka_cluster, max_retries=20):
     """
     )
 
-    instance.query("SELECT * FROM foo_exceptions SETTINGS stream_like_engine_allow_direct_select=1")
+    instance.query(
+        "SELECT * FROM foo_exceptions SETTINGS stream_like_engine_allow_direct_select=1"
+    )
     instance.query("SYSTEM FLUSH LOGS")
 
-    system_kafka_consumers_content = instance.query("SELECT exceptions.text FROM system.kafka_consumers ARRAY JOIN exceptions WHERE table LIKE 'foo_exceptions' LIMIT 1")
-
-    logging.debug(
-        f"system.kafka_consumers content: {system_kafka_consumers_content}"
+    system_kafka_consumers_content = instance.query(
+        "SELECT exceptions.text FROM system.kafka_consumers ARRAY JOIN exceptions WHERE table LIKE 'foo_exceptions' LIMIT 1"
     )
-    assert system_kafka_consumers_content.startswith(f"[thrd:localhost:{non_existent_broker_port}/bootstrap]: localhost:{non_existent_broker_port}/bootstrap: Connect to ipv4#127.0.0.1:{non_existent_broker_port} failed: Connection refused")
+
+    logging.debug(f"system.kafka_consumers content: {system_kafka_consumers_content}")
+    assert system_kafka_consumers_content.startswith(
+        f"[thrd:localhost:{non_existent_broker_port}/bootstrap]: localhost:{non_existent_broker_port}/bootstrap: Connect to ipv4#127.0.0.1:{non_existent_broker_port} failed: Connection refused"
+    )
 
     instance.query("DROP TABLE foo_exceptions")
 
