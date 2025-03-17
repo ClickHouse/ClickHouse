@@ -1441,8 +1441,7 @@ ASTPtr QueryFuzzer::addJoinClause()
             std::advance(rand_col2, fuzz_rand() % to_search.size());
 
             const String id1_alias = id1->tryGetAlias();
-            const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ?
-            (id1->shortName().empty() ? id1->name() : id1->shortName()) : id1_alias;
+            const String & nidentifier = (id1_alias.empty() || (fuzz_rand() % 2 == 0)) ? id1->shortName() : id1_alias;
             ASTPtr exp1 = std::make_shared<ASTIdentifier>(Strings{next_alias, nidentifier});
             ASTPtr exp2 = rand_col2->second->clone();
 
