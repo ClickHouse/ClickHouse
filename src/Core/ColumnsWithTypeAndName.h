@@ -1,8 +1,9 @@
 #pragma once
 
+#include <vector>
+
 #include <Core/ColumnWithTypeAndName.h>
 
-#include <vector>
 
 namespace DB
 {

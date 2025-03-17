@@ -1,14 +1,9 @@
 ---
-description: 'System table containing history of metrics values from tables `system.metrics`
-  and `system.events`, periodically flushed to disk.'
-keywords: ['system table', 'metric_log']
-slug: /operations/system-tables/metric_log
-title: 'system.metric_log'
+slug: /en/operations/system-tables/metric_log
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-# system.metric_log
+# metric_log
 
 <SystemTableCloud/>
 
@@ -58,6 +53,6 @@ CurrentMetric_DistributedFilesToInsert:                          0
 
 - [metric_log setting](../../operations/server-configuration-parameters/settings.md#metric_log) — Enabling and disabling the setting.
 - [system.asynchronous_metrics](../../operations/system-tables/asynchronous_metrics.md) — Contains periodically calculated metrics.
-- [system.events](/operations/system-tables/events) — Contains a number of events that occurred.
+- [system.events](../../operations/system-tables/events.md#system_tables-events) — Contains a number of events that occurred.
 - [system.metrics](../../operations/system-tables/metrics.md) — Contains instantly calculated metrics.
 - [Monitoring](../../operations/monitoring.md) — Base concepts of ClickHouse monitoring.

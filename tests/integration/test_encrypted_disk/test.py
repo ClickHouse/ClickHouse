@@ -5,7 +5,6 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
-from helpers.config_cluster import minio_secret_key
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 
@@ -519,7 +518,7 @@ def test_backup_restore(
     backup_name = new_backup_name()
     if backup_type == "S3":
         backup_destination = (
-            f"S3('http://minio1:9001/root/backups/{backup_name}', 'minio', '{minio_secret_key}')"
+            f"S3('http://minio1:9001/root/backups/{backup_name}', 'minio', 'minio123')"
         )
     elif backup_type == "File":
         backup_destination = f"File('/backups/{backup_name}/')"

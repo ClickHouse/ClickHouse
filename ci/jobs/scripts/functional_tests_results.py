@@ -28,6 +28,8 @@ RETRIES_SIGN = "Some tests were restarted"
 
 BROKEN_TESTS_ANALYZER_TECH_DEBT = [
     "01624_soft_constraints",
+    # Check after ConstantNode refactoring
+    "02944_variant_as_common_type",
 ]
 
 

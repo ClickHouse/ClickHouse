@@ -21,7 +21,6 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
-        DeserializationPrefixesCache * deserialization_prefixes_cache_,
         MarkRanges mark_ranges_,
         MergeTreeReaderSettings settings_,
         ValueSizeMap avg_value_size_hints_ = {},
@@ -80,26 +79,18 @@ private:
         size_t from_mark,
         bool continue_reading,
         size_t current_task_last_mark,
-        ISerialization::SubstreamsCache & cache);
+        ISerialization::SubstreamsCache & cache,
+        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
 
     void deserializePrefix(
         const SerializationPtr & serialization,
         const NameAndTypePair & name_and_type,
         size_t current_task_last_mark,
-        DeserializeBinaryBulkStateMap & deserialize_state_map,
         ISerialization::SubstreamsCache & cache,
-        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache,
-        ISerialization::StreamCallback prefixes_prefetch_callback);
-
-    void deserializePrefixForAllColumns(size_t num_columns, size_t current_task_last_mark);
-    void deserializePrefixForAllColumnsWithPrefetch(size_t num_columns, size_t current_task_last_mark, Priority priority);
-
-    using StreamCallbackGetter = std::function<ISerialization::StreamCallback(const NameAndTypePair &)>;
-    void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t current_task_last_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
+        ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
 
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
-    DeserializationPrefixesCache * deserialization_prefixes_cache;
     std::unordered_set<std::string> prefetched_streams;
     ssize_t prefetched_from_mark = -1;
     ReadBufferFromFileBase::ProfileCallback profile_callback;

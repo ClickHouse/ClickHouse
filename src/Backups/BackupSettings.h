@@ -42,9 +42,8 @@ struct BackupSettings
     /// Whether the BACKUP will omit similar files (within one backup only).
     bool deduplicate_files = true;
 
-    /// Whether S3 native copy is allowed.
-    /// If not set, then S3 native copy will be allowed only if the source and destination credentials are the same.
-    std::optional<bool> allow_s3_native_copy;
+    /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
+    bool allow_s3_native_copy = true;
 
     /// Whether native copy is allowed (optimization for cloud storages, that sometimes could have bugs)
     bool allow_azure_native_copy = true;
@@ -83,13 +82,6 @@ struct BackupSettings
     /// For example, if a role is granted to a user and we're making a backup of system.roles (but not system.users)
     /// this is whether the backup will contain information to grant the role to the corresponding user again.
     bool write_access_entities_dependents = true;
-
-    /// Only use in SharedMergeTree. Lightweight backup will only copy the meta and object keys of the files from parts.
-    /// This will avoid repeated data copy from original object storage to backup files. Instead of that, data will copy to destinated storage directly.
-    bool experimental_lightweight_snapshot = false;
-
-    /// Is it allowed to use blob paths to calculate checksums of backup entries?
-    bool allow_checksums_from_remote_paths = true;
 
     /// Internal, should not be specified by user.
     /// Whether this backup is a part of a distributed backup created by BACKUP ON CLUSTER.

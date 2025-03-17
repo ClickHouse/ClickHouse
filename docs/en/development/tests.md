@@ -1,14 +1,12 @@
 ---
-description: 'Guide to testing ClickHouse and running the test suite'
-sidebar_label: 'Testing'
+slug: /en/development/tests
 sidebar_position: 40
-slug: /development/tests
-title: 'Testing ClickHouse'
+sidebar_label: Testing
 ---
 
-# Testing ClickHouse
+# Testing
 
-## Functional Tests {#functional-tests}
+## Functional Tests
 
 Functional tests are the most simple and convenient to use.
 Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
@@ -32,7 +30,7 @@ A common mistake when testing data types `DateTime` and `DateTime64` is assuming
 are deliberately randomized. The easiest workaround is to specify the time zone for test values explicitly, e.g. `toDateTime64(val, 3, 'Europe/Amsterdam')`.
 :::
 
-### Running a Test Locally {#running-a-test-locally}
+### Running a Test Locally
 
 Start the ClickHouse server locally, listening on the default port (9000).
 To run, for example, the test `01428_hash_set_nan_key`, change to the repository folder and run the following command:
@@ -47,7 +45,7 @@ See `tests/clickhouse-test --help` for all options of `clickhouse-test`.
 You can run all tests or run subset of tests by providing a filter for test names: `./clickhouse-test substring`.
 There are also options to run tests in parallel or in random order.
 
-### Adding a New Test {#adding-a-new-test}
+### Adding a New Test
 
 To add new test, first create a `.sql` or `.sh` file in `queries/0_stateless` directory.
 Then generate the corresponding `.reference` file using `clickhouse-client < 12345_test.sql > 12345_test.reference` or `./12345_test.sh > ./12345_test.reference`.
@@ -73,7 +71,7 @@ Tests should be
 - make sure the other tests don't test the same stuff (i.e. grep first).
 :::
 
-### Restricting test runs {#restricting-test-runs}
+### Restricting test runs
 
 A test can have zero or more _tags_ specifying restrictions in which contexts the test runs in CI.
 
@@ -129,7 +127,7 @@ List of available tags:
 In addition to above settings, you can use `USE_*` flags from `system.build_options` to define usage of particular ClickHouse features.
 For example, if your test uses a MySQL table, you should add a tag `use-mysql`.
 
-### Specifying limits for random settings {#specifying-limits-for-random-settings}
+### Specifying limits for random settings
 
 A test can specify minimum and maximum allowed values for settings that can be randomized during test run.
 
@@ -151,7 +149,7 @@ SELECT 1
 
 If you need to specify only one limit, you can use `None` for another one.
 
-### Choosing the Test Name {#choosing-the-test-name}
+### Choosing the Test Name
 
 The name of the test starts with a five-digit prefix followed by a descriptive name, such as `00422_hash_function_constexpr.sql`.
 To choose the prefix, find the largest prefix already present in the directory, and increment it by one.
@@ -162,11 +160,11 @@ ls tests/queries/0_stateless/[0-9]*.reference | tail -n 1
 
 In the meantime, some other tests might be added with the same numeric prefix, but this is OK and does not lead to any problems, you don't have to change it later.
 
-### Checking for an Error that Must Occur {#checking-for-an-error-that-must-occur}
+### Checking for an Error that Must Occur
 
 Sometimes you want to test that a server error occurs for an incorrect query. We support special annotations for this in SQL tests, in the following form:
 
-```sql
+```
 select x; -- { serverError 49 }
 ```
 
@@ -178,24 +176,24 @@ Do not check for a particular wording of error message, it may change in the fut
 Check only the error code.
 If the existing error code is not precise enough for your needs, consider adding a new one.
 
-### Testing a Distributed Query {#testing-a-distributed-query}
+### Testing a Distributed Query
 
 If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`.
 Remember to add the words `shard` or `distributed` to the test name, so that it is run in CI in correct configurations, where the server is configured to support distributed queries.
 
-### Working with Temporary Files {#working-with-temporary-files}
+### Working with Temporary Files
 
 Sometimes in a shell test you may need to create a file on the fly to work with.
 Keep in mind that some CI checks run tests in parallel, so if you are creating or removing a temporary file in your script without a unique name this can cause some of the CI checks, such as Flaky, to fail.
 To get around this you should use environment variable `$CLICKHOUSE_TEST_UNIQUE_NAME` to give temporary files a name unique to the test that is running.
 That way you can be sure that the file you are creating during setup or removing during cleanup is the file only in use by that test and not some other test which is running in parallel.
 
-## Known Bugs {#known-bugs}
+## Known Bugs
 
 If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `tests/queries/bugs` directory.
 These tests will be moved to `tests/queries/0_stateless` when bugs are fixed.
 
-## Integration Tests {#integration-tests}
+## Integration Tests
 
 Integration tests allow testing ClickHouse in clustered configuration and ClickHouse interaction with other servers like MySQL, Postgres, MongoDB.
 They are useful to emulate network splits, packet drops, etc.
@@ -206,7 +204,7 @@ See `tests/integration/README.md` on how to run these tests.
 Note that integration of ClickHouse with third-party drivers is not tested.
 Also, we currently do not have integration tests with our JDBC and ODBC drivers.
 
-## Unit Tests {#unit-tests}
+## Unit Tests
 
 Unit tests are useful when you want to test not the ClickHouse as a whole, but a single isolated library or class.
 You can enable or disable build of tests with `ENABLE_TESTS` CMake option.
@@ -214,7 +212,7 @@ Unit tests (and other test programs) are located in `tests` subdirectories acros
 To run unit tests, type `ninja test`.
 Some tests use `gtest`, but some are just programs that return non-zero exit code on test failure.
 
-It's not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+It’s not necessary to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
 
 You can run individual gtest checks by calling the executable directly, for example:
 
@@ -222,7 +220,7 @@ You can run individual gtest checks by calling the executable directly, for exam
 $ ./src/unit_tests_dbms --gtest_filter=LocalAddress*
 ```
 
-## Performance Tests {#performance-tests}
+## Performance Tests
 
 Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries.
 Performance tests are located at `tests/performance/`.
@@ -235,13 +233,13 @@ If you want to improve performance of ClickHouse in some scenario, and if improv
 Also, it is recommended to write performance tests when you add or modify SQL functions which are relatively isolated and not too obscure.
 It always makes sense to use `perf top` or other `perf` tools during your tests.
 
-## Test Tools and Scripts {#test-tools-and-scripts}
+## Test Tools and Scripts
 
 Some programs in `tests` directory are not prepared tests, but are test tools.
 For example, for `Lexer` there is a tool `src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout.
 You can use these kind of tools as a code examples and for exploration and manual testing.
 
-## Miscellaneous Tests {#miscellaneous-tests}
+## Miscellaneous Tests
 
 There are tests for machine learned models in `tests/external_models`.
 These tests are not updated and must be transferred to integration tests.
@@ -254,7 +252,7 @@ This team no longer work with ClickHouse.
 Test was accidentally written in Java.
 For these reasons, quorum test must be rewritten and moved to integration tests.
 
-## Manual Testing {#manual-testing}
+## Manual Testing
 
 When you develop a new feature, it is reasonable to also test it manually.
 You can do it with the following steps:
@@ -295,7 +293,7 @@ If the system clickhouse-server is already running and you do not want to stop i
 `clickhouse` binary has almost no dependencies and works across wide range of Linux distributions.
 To quick and dirty test your changes on a server, you can simply `scp` your fresh built `clickhouse` binary to your server and then run it as in examples above.
 
-## Build Tests {#build-tests}
+## Build Tests
 
 Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems.
 These tests are automated as well.
@@ -319,7 +317,7 @@ We also test that there are no translation units that are too long to compile or
 
 We also test that there are no too large stack frames.
 
-## Testing for Protocol Compatibility {#testing-for-protocol-compatibility}
+## Testing for Protocol Compatibility
 
 When we extend ClickHouse network protocol, we test manually that old clickhouse-client works with new clickhouse-server and new clickhouse-client works with old clickhouse-server (simply by running binaries from corresponding packages).
 
@@ -327,53 +325,54 @@ We also test some cases automatically with integrational tests:
 - if data written by old version of ClickHouse can be successfully read by the new version;
 - do distributed queries work in a cluster with different ClickHouse versions.
 
-## Help from the Compiler {#help-from-the-compiler}
+## Help from the Compiler
 
-Main ClickHouse code (that is located in `src` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings.
+Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings.
 Although these options are not enabled for third-party libraries.
 
 Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
 
-We always use clang to build ClickHouse, both for development and production.
+For production builds, clang is used, but we also test make gcc builds.
+For development, clang is usually more convenient to use.
 You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis.
 When building with clang in debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
 
-## Sanitizers {#sanitizers}
+## Sanitizers
 
 :::note
 If the process (ClickHouse server or client) crashes at startup when running it locally, you might need to disable address space layout randomization: `sudo sysctl kernel.randomize_va_space=0`
 :::
 
-### Address sanitizer {#address-sanitizer}
+### Address sanitizer
 
 We run functional, integration, stress and unit tests under ASan on per-commit basis.
 
-### Thread sanitizer {#thread-sanitizer}
+### Thread sanitizer
 
 We run functional, integration, stress and unit tests under TSan on per-commit basis.
 
-### Memory sanitizer {#memory-sanitizer}
+### Memory sanitizer
 
 We run functional, integration, stress and unit tests under MSan on per-commit basis.
 
-### Undefined behaviour sanitizer {#undefined-behaviour-sanitizer}
+### Undefined behaviour sanitizer
 
 We run functional, integration, stress and unit tests under UBSan on per-commit basis.
 The code of some third-party libraries is not sanitized for UB.
 
-### Valgrind (Memcheck) {#valgrind-memcheck}
+### Valgrind (Memcheck)
 
 We used to run functional tests under Valgrind overnight, but don't do it anymore.
 It takes multiple hours.
 Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
 
-## Fuzzing {#fuzzing}
+## Fuzzing
 
 ClickHouse fuzzing is implemented both using [libFuzzer](https://llvm.org/docs/LibFuzzer.html) and random SQL queries.
 All the fuzz testing should be performed with sanitizers (Address and Undefined).
 
 LibFuzzer is used for isolated fuzz testing of library code.
-Fuzzers are implemented as part of test code and have "_fuzzer" name postfixes.
+Fuzzers are implemented as part of test code and have “_fuzzer” name postfixes.
 Fuzzer example can be found at `src/Parsers/fuzzers/lexer_fuzzer.cpp`.
 LibFuzzer-specific configs, dictionaries and corpus are stored at `tests/fuzz`.
 We encourage you to write fuzz tests for every functionality that handles user input.
@@ -393,7 +392,7 @@ It does random permutations and substitutions in queries AST.
 It remembers AST nodes from previous tests to use them for fuzzing of subsequent tests while processing them in random order.
 You can learn more about this fuzzer in [this blog article](https://clickhouse.com/blog/fuzzing-click-house).
 
-## Stress test {#stress-test}
+## Stress test
 
 Stress tests are another case of fuzzing.
 It runs all functional tests in parallel in random order with a single server.
@@ -407,16 +406,16 @@ It is checked that:
 
 There are five variants (Debug, ASan, TSan, MSan, UBSan).
 
-## Thread Fuzzer {#thread-fuzzer}
+## Thread Fuzzer
 
 Thread Fuzzer (please don't mix up with Thread Sanitizer) is another kind of fuzzing that allows to randomize thread order of execution.
 It helps to find even more special cases.
 
-## Security Audit {#security-audit}
+## Security Audit
 
 Our Security Team did some basic overview of ClickHouse capabilities from the security standpoint.
 
-## Static Analyzers {#static-analyzers}
+## Static Analyzers
 
 We run `clang-tidy` on per-commit basis.
 `clang-static-analyzer` checks are also enabled.
@@ -429,7 +428,7 @@ If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of t
 
 We also use `shellcheck` for static analysis of shell scripts.
 
-## Hardening {#hardening}
+## Hardening
 
 In debug build we are using custom allocator that does ASLR of user-level allocations.
 
@@ -445,7 +444,7 @@ It allows to use exceptions in release build but make it an assertion in debug b
 Debug version of jemalloc is used for debug builds.
 Debug version of libc++ is used for debug builds.
 
-## Runtime Integrity Checks {#runtime-integrity-checks}
+## Runtime Integrity Checks
 
 Data stored on disk is checksummed.
 Data in MergeTree tables is checksummed in three ways simultaneously* (compressed data blocks, uncompressed data blocks, the total checksum across blocks).
@@ -460,7 +459,7 @@ ClickHouse provides diagnostics that will help ops engineers to find faulty hard
 
 \* and it is not slow.
 
-## Code Style {#code-style}
+## Code Style
 
 Code style rules are described [here](style.md).
 
@@ -469,7 +468,7 @@ To check for some common style violations, you can use `utils/check-style` scrip
 To force proper style of your code, you can use `clang-format`.
 File `.clang-format` is located at the sources root.
 It mostly corresponding with our actual code style.
-But it's not recommended to apply `clang-format` to existing files because it makes formatting worse.
+But it’s not recommended to apply `clang-format` to existing files because it makes formatting worse.
 You can use `clang-format-diff` tool that you can find in clang source repository.
 
 Alternatively you can try `uncrustify` tool to reformat your code.
@@ -481,22 +480,22 @@ It is less tested than `clang-format`.
 We also use `codespell` to find typos in code.
 It is automated as well.
 
-## Test Coverage {#test-coverage}
+## Test Coverage
 
 We also track test coverage but only for functional tests and only for clickhouse-server.
 It is performed on daily basis.
 
-## Tests for Tests {#tests-for-tests}
+## Tests for Tests
 
 There is automated check for flaky tests.
 It runs all new tests 100 times (for functional tests) or 10 times (for integration tests).
 If at least single time the test failed, it is considered flaky.
 
-## Test Automation {#test-automation}
+## Test Automation
 
 We run tests with [GitHub Actions](https://github.com/features/actions).
 
 Build jobs and tests are run in Sandbox on per commit basis.
 Resulting packages and test results are published in GitHub and can be downloaded by direct links.
 Artifacts are stored for several months.
-When you send a pull request on GitHub, we tag it as "can be tested" and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
+When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.

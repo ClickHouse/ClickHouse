@@ -94,6 +94,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
+        SkippingIndexCache * skipping_index_cache,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -105,6 +106,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
+        SkippingIndexCache * skipping_index_cache,
         LoggerPtr log);
 
     struct PartFilterCounters
@@ -198,13 +200,6 @@ public:
         ReadFromMergeTree::IndexStats & index_stats,
         bool use_skip_indexes,
         bool find_exact_ranges);
-
-    /// Filter parts using query condition cache.
-    static void filterPartsByQueryConditionCache(
-        RangesInDataParts & parts_with_ranges,
-        const SelectQueryInfo & select_query_info,
-        const ContextPtr & context,
-        LoggerPtr log);
 
     /// Create expression for sampling.
     /// Also, calculate _sample_factor if needed.

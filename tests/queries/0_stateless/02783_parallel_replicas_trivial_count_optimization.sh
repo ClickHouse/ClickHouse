@@ -34,8 +34,7 @@ function run_query_with_pure_parallel_replicas () {
         --prefer_localhost_replica 1 \
         --cluster_for_parallel_replicas 'test_cluster_one_shard_three_replicas_localhost' \
         --enable_parallel_replicas 1 \
-        --enable_analyzer 0 \
-        --parallel_replicas_only_with_analyzer 0
+        --enable_analyzer 0
 
     $CLICKHOUSE_CLIENT \
         --query "$2" \
@@ -90,5 +89,5 @@ run_query_with_pure_parallel_replicas "${query_id_base}_1" "SELECT * FROM (SELEC
 #run_query_with_custom_key_parallel_replicas "${query_id_base}_3" "SELECT * FROM (SELECT count() FROM cluster(test_cluster_one_shard_three_replicas_localhost, currentDatabase(), replicated_numbers)) LIMIT 20" "sipHash64(number)"
 
 
-$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS"
 has_used_parallel_replicas "${query_id_base}"

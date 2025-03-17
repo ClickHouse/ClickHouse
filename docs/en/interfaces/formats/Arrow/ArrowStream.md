@@ -1,22 +1,21 @@
 ---
-alias: []
-description: 'Documentation for the ArrowStream format'
+title : ArrowStream
+slug : /en/interfaces/formats/ArrowStream
+keywords : [ArrowStream]
 input_format: true
-keywords: ['ArrowStream']
 output_format: true
-slug: /interfaces/formats/ArrowStream
-title: 'ArrowStream'
+alias: []
 ---
 
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
-## Description {#description}
+## Description
 
-`ArrowStream` is Apache Arrow's "stream mode" format. It is designed for in-memory stream processing.
+`ArrowStream` is Apache Arrow’s “stream mode” format. It is designed for in-memory stream processing.
 
-## Example Usage {#example-usage}
+## Example Usage
 
-## Format Settings {#format-settings}
+## Format Settings
 

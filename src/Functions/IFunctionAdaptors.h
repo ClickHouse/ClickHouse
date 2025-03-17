@@ -92,7 +92,7 @@ public:
         return function->getMonotonicityForRange(type, left, right);
     }
 
-    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
+    OptionalFieldInterval getPreimage(const IDataType & type, const Field & point) const override
     {
         return function->getPreimage(type, point);
     }

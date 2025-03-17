@@ -1,9 +1,8 @@
 ---
-description: 'Explore the WikiStat dataset containing 0.5 trillion records.'
-sidebar_label: 'WikiStat'
-slug: /getting-started/example-datasets/wikistat
-title: 'WikiStat'
+sidebar_label: WikiStat
 ---
+
+# WikiStat
 
 The dataset contains 0.5 trillion records.
 

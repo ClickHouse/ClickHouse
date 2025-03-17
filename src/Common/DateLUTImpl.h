@@ -977,7 +977,7 @@ public:
     }
 
     /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
-    /// It's needed for correct work of dateDiff function.
+    /// It’s needed for correct work of dateDiff function.
     Time toStableRelativeHourNum(Time t) const
     {
         return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);

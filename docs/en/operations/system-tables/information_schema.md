@@ -1,10 +1,7 @@
 ---
-description: 'System database providing an almost standardized DBMS-agnostic view
-  on metadata of database objects.'
-keywords: ['system database', 'information_schema']
-slug: /operations/system-tables/information_schema
-title: 'INFORMATION_SCHEMA'
+slug: /en/operations/system-tables/information_schema
 ---
+# INFORMATION_SCHEMA
 
 `INFORMATION_SCHEMA` (or: `information_schema`) is a system database which provides a (somewhat) standardized, [DBMS-agnostic view](https://en.wikipedia.org/wiki/Information_schema) on metadata of database objects. The views in `INFORMATION_SCHEMA` are generally inferior to normal system tables but tools can use them to obtain basic information in a cross-DBMS manner. The structure and content of views in `INFORMATION_SCHEMA` is supposed to evolves in a backwards-compatible way, i.e. only new functionality is added but existing functionality is not changed or removed. In terms of internal implementation, views in `INFORMATION_SCHEMA` usually map to to normal system tables like [system.columns](../../operations/system-tables/columns.md), [system.databases](../../operations/system-tables/databases.md) and [system.tables](../../operations/system-tables/tables.md).
 
@@ -255,7 +252,7 @@ Columns:
 - `view_definition` ([String](../../sql-reference/data-types/string.md)) — `SELECT` query for view.
 - `check_option` ([String](../../sql-reference/data-types/string.md)) — `NONE`, no checking.
 - `is_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the view is not updated.
-- `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — Shows whether the created view is [materialized](/sql-reference/statements/create/view#materialized-view). Possible values:
+- `is_insertable_into` ([Enum8](../../sql-reference/data-types/enum.md)) — Shows whether the created view is [materialized](../../sql-reference/statements/create/view.md/#materialized-view). Possible values:
     - `NO` — The created view is not materialized.
     - `YES` — The created view is materialized.
 - `is_trigger_updatable` ([Enum8](../../sql-reference/data-types/enum.md)) — `NO`, the trigger is not updated.
@@ -344,7 +341,7 @@ FORMAT Vertical;
 
 Result:
 
-```response
+```
 Row 1:
 ──────
 constraint_catalog:            def

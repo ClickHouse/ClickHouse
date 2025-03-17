@@ -1,12 +1,8 @@
 #include "config.h"
 
-#include <Core/Settings.h>
-#include <Core/SettingsEnums.h>
-
 #include <Access/Common/AccessFlags.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
@@ -23,19 +19,10 @@
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
-#include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
 
 namespace DB
 {
-
-namespace Setting
-{
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool parallel_replicas_for_cluster_engines;
-    extern const SettingsString cluster_for_parallel_replicas;
-    extern const SettingsParallelReplicasMode parallel_replicas_mode;
-}
 
 namespace ErrorCodes
 {
@@ -85,23 +72,7 @@ void TableFunctionObjectStorage<Definition, Configuration>::parseArguments(const
     if (args_func.size() != 1)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments.", getName());
 
-    settings = std::make_shared<StorageObjectStorageSettings>();
-
     auto & args = args_func.at(0)->children;
-    /// Support storage settings in table function,
-    /// e.g. `s3(endpoint, ..., SETTINGS setting=value, ..., setting=value)`
-    /// We do similarly for some other table functions
-    /// whose storage implementation supports storage settings (for example, MySQL).
-    for (auto * it = args.begin(); it != args.end(); ++it)
-    {
-        ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();
-        if (settings_ast)
-        {
-            settings->loadFromQuery(*settings_ast);
-            args.erase(it);
-            break;
-        }
-    }
     parseArgumentsImpl(args, context);
 }
 
@@ -129,9 +100,8 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
     ColumnsDescription cached_columns,
     bool is_insert_query) const
 {
-    chassert(configuration);
     ColumnsDescription columns;
-
+    chassert(configuration);
     if (configuration->structure != "auto")
         columns = parseColumnsListFromString(configuration->structure, context);
     else if (!structure_hint.empty())
@@ -139,44 +109,18 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration>::executeImpl(
     else if (!cached_columns.empty())
         columns = cached_columns;
 
-    StoragePtr storage;
-    const auto & query_settings = context->getSettingsRef();
-
-    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
-    const auto can_use_parallel_replicas = !parallel_replicas_cluster_name.empty()
-        && query_settings[Setting::parallel_replicas_for_cluster_engines]
-        && context->canUseTaskBasedParallelReplicas()
-        && !context->isDistributed();
-
-    const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-
-    if (can_use_parallel_replicas && !is_secondary_query && !is_insert_query)
-    {
-        storage = std::make_shared<StorageObjectStorageCluster>(
-            parallel_replicas_cluster_name,
-            configuration,
-            getObjectStorage(context, !is_insert_query),
-            StorageID(getDatabaseName(), table_name),
-            columns,
-            ConstraintsDescription{},
-            context);
-
-        storage->startup();
-        return storage;
-    }
-
-    storage = std::make_shared<StorageObjectStorage>(
+    StoragePtr storage = std::make_shared<StorageObjectStorage>(
         configuration,
         getObjectStorage(context, !is_insert_query),
         context,
         StorageID(getDatabaseName(), table_name),
         columns,
         ConstraintsDescription{},
-        /* comment */ String{},
+        String{},
         /* format_settings */ std::nullopt,
         /* mode */ LoadingStrictnessLevel::CREATE,
-        /* distributed_processing */ is_secondary_query,
-        /* partition_by */ nullptr);
+        /* distributed_processing */ false,
+        nullptr);
 
     storage->startup();
     return storage;
@@ -294,7 +238,7 @@ template class TableFunctionObjectStorage<IcebergAzureClusterDefinition, Storage
 template class TableFunctionObjectStorage<IcebergHDFSClusterDefinition, StorageHDFSIcebergConfiguration>;
 #endif
 
-#if USE_PARQUET && USE_AWS_S3 && USE_DELTA_KERNEL_RS
+#if USE_PARQUET && USE_AWS_S3
 template class TableFunctionObjectStorage<DeltaLakeClusterDefinition, StorageS3DeltaLakeConfiguration>;
 #endif
 
@@ -347,7 +291,7 @@ void registerTableFunctionIceberg(TableFunctionFactory & factory)
 
 
 #if USE_AWS_S3
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
 void registerTableFunctionDeltaLake(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionDeltaLake>(
@@ -378,7 +322,7 @@ void registerDataLakeTableFunctions(TableFunctionFactory & factory)
     registerTableFunctionIceberg(factory);
 #endif
 #if USE_AWS_S3
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
     registerTableFunctionDeltaLake(factory);
 #endif
     registerTableFunctionHudi(factory);

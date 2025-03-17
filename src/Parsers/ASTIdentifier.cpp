@@ -4,6 +4,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <IO/Operators.h>
 
@@ -267,7 +268,7 @@ String getIdentifierName(const IAST * ast)
     if (tryGetIdentifierNameInto(ast, res))
         return res;
     if (ast)
-        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an identifier", ast->formatForErrorMessage());
+        throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "{} is not an identifier", queryToString(*ast));
     throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "AST node is nullptr");
 }
 

@@ -11,7 +11,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/altsvc.c"
     "${LIBRARY_DIR}/lib/amigaos.c"
     "${LIBRARY_DIR}/lib/asyn-ares.c"
-    "${LIBRARY_DIR}/lib/asyn-thread.c"
     "${LIBRARY_DIR}/lib/base64.c"
     "${LIBRARY_DIR}/lib/bufq.c"
     "${LIBRARY_DIR}/lib/bufref.c"
@@ -34,6 +33,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/curl_memrchr.c"
     "${LIBRARY_DIR}/lib/curl_multibyte.c"
     "${LIBRARY_DIR}/lib/curl_ntlm_core.c"
+    "${LIBRARY_DIR}/lib/curl_path.c"
     "${LIBRARY_DIR}/lib/curl_range.c"
     "${LIBRARY_DIR}/lib/curl_rtmp.c"
     "${LIBRARY_DIR}/lib/curl_sasl.c"
@@ -107,6 +107,7 @@ set (SRCS
     "${LIBRARY_DIR}/lib/sha256.c"
     "${LIBRARY_DIR}/lib/share.c"
     "${LIBRARY_DIR}/lib/slist.c"
+    "${LIBRARY_DIR}/lib/smb.c"
     "${LIBRARY_DIR}/lib/smtp.c"
     "${LIBRARY_DIR}/lib/socketpair.c"
     "${LIBRARY_DIR}/lib/socks.c"
@@ -117,7 +118,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/strcase.c"
     "${LIBRARY_DIR}/lib/strdup.c"
     "${LIBRARY_DIR}/lib/strerror.c"
-    "${LIBRARY_DIR}/lib/strparse.c"
     "${LIBRARY_DIR}/lib/strtok.c"
     "${LIBRARY_DIR}/lib/strtoofft.c"
     "${LIBRARY_DIR}/lib/system_win32.c"
@@ -141,7 +141,6 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vauth/vauth.c"
     "${LIBRARY_DIR}/lib/version.c"
     "${LIBRARY_DIR}/lib/vquic/vquic.c"
-    "${LIBRARY_DIR}/lib/vssh/curl_path.c"
     "${LIBRARY_DIR}/lib/vssh/libssh.c"
     "${LIBRARY_DIR}/lib/vssh/libssh2.c"
     "${LIBRARY_DIR}/lib/vtls/bearssl.c"
@@ -154,11 +153,9 @@ set (SRCS
     "${LIBRARY_DIR}/lib/vtls/schannel_verify.c"
     "${LIBRARY_DIR}/lib/vtls/sectransp.c"
     "${LIBRARY_DIR}/lib/vtls/vtls.c"
-    "${LIBRARY_DIR}/lib/vtls/vtls_scache.c"
     "${LIBRARY_DIR}/lib/vtls/wolfssl.c"
     "${LIBRARY_DIR}/lib/vtls/x509asn1.c"
     "${LIBRARY_DIR}/lib/warnless.c"
-    "${LIBRARY_DIR}/lib/ws.c"
 )
 
 add_library (_curl ${SRCS})
@@ -168,7 +165,7 @@ target_compile_definitions (_curl PRIVATE
     BUILDING_LIBCURL
     CURL_HIDDEN_SYMBOLS
     libcurl_EXPORTS
-    CURL_OS="${CMAKE_SYSTEM_NAME}"
+    OS="${CMAKE_SYSTEM_NAME}"
 )
 
 target_include_directories (_curl SYSTEM PUBLIC

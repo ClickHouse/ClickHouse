@@ -2,7 +2,6 @@
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
-#include <Core/Field.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/JSON/JSON.h>
@@ -15,9 +14,6 @@ namespace ProfileEvents
 {
     extern const Event ObjectStorageQueueProcessedFiles;
     extern const Event ObjectStorageQueueFailedFiles;
-    extern const Event ObjectStorageQueueTrySetProcessingRequests;
-    extern const Event ObjectStorageQueueTrySetProcessingSucceeded;
-    extern const Event ObjectStorageQueueTrySetProcessingFailed;
 };
 
 namespace DB
@@ -50,8 +46,6 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
     state = FileStatus::State::Processing;
     processing_start_time = now();
-    processing_end_time = {};
-    processed_rows = 0;
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
@@ -240,7 +234,7 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
             && file_status->retries >= max_loading_retries))
     {
         LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                 path, state, file_status->retries.load(), max_loading_retries);
+                 path, state, file_status->retries, max_loading_retries);
         return false;
     }
 
@@ -248,8 +242,6 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     std::unique_lock processing_lock(file_status->processing_lock, std::defer_lock);
     if (!processing_lock.try_lock())
         return {};
-
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
 
     auto [success, file_state] = setProcessingImpl();
     if (success)
@@ -265,11 +257,6 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
     LOG_TEST(log, "File {} has state `{}`: will {}process (processing id version: {})",
              path, file_state, success ? "" : "not ",
              processing_id_version.has_value() ? toString(processing_id_version.value()) : "None");
-
-    if (success)
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingSucceeded);
-    else
-        ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingFailed);
 
     return success;
 }
@@ -296,7 +283,7 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
                 && file_status->retries >= max_loading_retries))
         {
             LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                    path, state, file_status->retries.load(), max_loading_retries);
+                    path, state, file_status->retries, max_loading_retries);
 
             /// This is possible in case on the same server
             /// there are more than one S3(Azure)Queue table processing the same keeper path.
@@ -305,7 +292,6 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         }
     }
 
-    ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
     return prepareProcessingRequestsImpl(requests);
 }
 
@@ -349,14 +335,15 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     }
 
     if (responses[0]->error == Coordination::Error::ZBADVERSION
-        || responses[0]->error == Coordination::Error::ZNONODE
-        || responses[1]->error == Coordination::Error::ZNONODE)
+        || responses[0]->error == Coordination::Error::ZNONODE)
     {
-        LOG_TRACE(
+        LOG_WARNING(
             log, "Processing node no longer exists ({}) "
             "while resetting processing state. "
-            "This could be as a result of expired keeper session. ",
+            "This could be as a result of expired keeper session. "
+            "Cannot set file as failed, will retry.",
             processing_node_path);
+        chassert(false);
         return;
     }
 
@@ -437,7 +424,7 @@ void ObjectStorageQueueIFileMetadata::finalizeProcessed()
     processing_id.reset();
     processing_id_version.reset();
 
-    LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows.load());
+    LOG_TRACE(log, "Set file {} as processed (rows: {})", path, file_status->processed_rows);
 }
 
 void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & exception_message)
@@ -448,7 +435,7 @@ void ObjectStorageQueueIFileMetadata::finalizeFailed(const std::string & excepti
     processing_id.reset();
     processing_id_version.reset();
 
-    LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows.load());
+    LOG_TRACE(log, "Set file {} as failed (rows: {})", path, file_status->processed_rows);
 }
 
 void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(

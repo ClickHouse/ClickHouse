@@ -1,20 +1,17 @@
 ---
-description: 'Allows `SELECT` queries to be performed on data that is stored on a
-  remote MongoDB server.'
-sidebar_label: 'mongodb'
+slug: /en/sql-reference/table-functions/mongodb
 sidebar_position: 135
-slug: /sql-reference/table-functions/mongodb
-title: 'mongodb'
+sidebar_label: mongodb
 ---
 
-# mongodb Table Function
+# mongodb
 
 Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server.
 
 **Syntax**
 
 ``` sql
-mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]])
+mongodb(host:port, database, collection, user, password, structure [, options])
 ```
 
 **Arguments**
@@ -33,22 +30,19 @@ mongodb(host:port, database, collection, user, password, structure[, options[, o
 
 - `options` - MongoDB connection string options (optional parameter).
 
-- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
-
 :::tip
 If you are using the MongoDB Atlas cloud offering please add these options:
 
-```ini
+```
 'connectTimeoutMS=10000&ssl=true&authSource=admin'
 ```
+
 :::
 
-You can also connect by URI:
-
+Also, you can connect by URI:
 ``` sql
-mongodb(uri, collection, structure[, oid_columns])
+mongodb(uri, collection, structure)
 ```
-
 **Arguments**
 
 - `uri` — Connection string.
@@ -56,8 +50,6 @@ mongodb(uri, collection, structure[, oid_columns])
 - `collection` — Remote collection name.
 
 - `structure` — The schema for the ClickHouse table returned from this function.
-
-- `oid_columns` - Comma-separated list of columns that should be treated as `oid` in the WHERE clause. `_id` by default.
 
 **Returned Value**
 
@@ -108,5 +100,5 @@ SELECT * FROM mongodb(
 
 **See Also**
 
-- [The `MongoDB` table engine](engines/table-engines/integrations/mongodb.md)
-- [Using MongoDB as a dictionary source](sql-reference/dictionaries/index.md#mongodb)
+- [The `MongoDB` table engine](/docs/en/engines/table-engines/integrations/mongodb.md)
+- [Using MongoDB as a dictionary source](/docs/en/sql-reference/dictionaries/index.md#mongodb)

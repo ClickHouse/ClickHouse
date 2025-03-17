@@ -1,20 +1,18 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
-#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 
-#include <Columns/ColumnConst.h>
 #include <Core/Defines.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
@@ -84,7 +82,7 @@ ProjectionsDescription ProjectionsDescription::clone() const
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
+    return name == other.name && queryToString(definition_ast) == queryToString(other.definition_ast);
 }
 
 ProjectionDescription
@@ -241,24 +239,24 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     result.required_columns = select.getRequiredColumns();
     result.sample_block = select.getSampleBlock();
 
-    std::set<size_t> constant_positions;
-    for (size_t i = 0; i < result.sample_block.columns(); ++i)
+    std::map<String, size_t> partition_column_name_to_value_index;
+    if (partition_columns)
     {
-        if (typeid_cast<const ColumnConst *>(result.sample_block.getByPosition(i).column.get()))
-            constant_positions.insert(i);
+        for (auto i : collections::range(partition_columns->children.size()))
+            partition_column_name_to_value_index[partition_columns->children[i]->getColumnNameWithoutAlias()] = i;
     }
-    result.sample_block.erase(constant_positions);
 
     const auto & analysis_result = select.getAnalysisResult();
     if (analysis_result.need_aggregate)
     {
         for (const auto & key : select.getQueryAnalyzer()->aggregationKeys())
         {
-            if (result.sample_block.has(key.name))
-            {
-                result.sample_block_for_keys.insert({nullptr, key.type, key.name});
-                result.partition_value_indices.push_back(result.sample_block.getPositionByName(key.name));
-            }
+            result.sample_block_for_keys.insert({nullptr, key.type, key.name});
+            auto it = partition_column_name_to_value_index.find(key.name);
+            if (it == partition_column_name_to_value_index.end())
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR, "minmax_count projection can only have keys about partition columns. It's a bug");
+            result.partition_value_indices.push_back(it->second);
         }
     }
 
@@ -298,7 +296,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
 
     ASTPtr query_ast_copy = nullptr;
     /// Respect the _row_exists column.
-    if (block.has(RowExistsColumn::name))
+    if (block.findByName("_row_exists"))
     {
         query_ast_copy = query_ast->clone();
         auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
@@ -307,7 +305,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
+            makeASTFunction("equals", std::make_shared<ASTIdentifier>("_row_exists"), std::make_shared<ASTLiteral>(1)));
     }
 
     auto builder = InterpreterSelectQuery(
@@ -346,7 +344,7 @@ String ProjectionsDescription::toString() const
     for (const auto & projection : projections)
         list.children.push_back(projection.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return serializeAST(list);
 }
 
 ProjectionsDescription ProjectionsDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr query_context)

@@ -233,8 +233,10 @@ function build
         ) | ts '%Y-%m-%d %H:%M:%S' | tee -a "$FASTTEST_OUTPUT/test_result.txt"
 
         if [ "$COPY_CLICKHOUSE_BINARY_TO_OUTPUT" -eq "1" ]; then
-            cp programs/clickhouse /build/clickhouse
-            zstd --threads=0 programs/clickhouse-stripped -o /build/clickhouse-stripped.zst
+            mkdir -p "$FASTTEST_OUTPUT/binaries/"
+            cp programs/clickhouse "$FASTTEST_OUTPUT/binaries/clickhouse"
+
+            zstd --threads=0 programs/clickhouse-stripped -o "$FASTTEST_OUTPUT/binaries/clickhouse-stripped.zst"
         fi
         ccache_status
         ccache --evict-older-than 1d ||:
@@ -287,7 +289,6 @@ function run_tests
         --order random
         --print-time
         --report-logs-stats
-        --no-stateful
         --jobs "${NPROC}"
         --timeout 45 # We don't want slow test being introduced again in this check
     )

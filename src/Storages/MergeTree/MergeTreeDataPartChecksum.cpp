@@ -7,12 +7,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
-#include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <optional>
-
-#include <fmt/ranges.h>
 
 
 namespace DB

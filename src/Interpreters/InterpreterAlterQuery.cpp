@@ -21,6 +21,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
+#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
@@ -31,6 +32,8 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <boost/range/algorithm_ext/push_back.hpp>
+
+#include <algorithm>
 
 
 namespace DB
@@ -127,7 +130,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
     }
 
     if (!table)
@@ -176,7 +179,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                     if (!mut_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
-                            command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
+                            queryToString(*command_ast), queryToString(*rewritten_command_ast));
                 }
             }
 
@@ -376,11 +379,6 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::MATERIALIZE_STATISTICS:
         {
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_STATISTICS, database, table);
-            break;
-        }
-        case ASTAlterCommand::UNLOCK_SNAPSHOT:
-        {
-            required_access.emplace_back(AccessType::ALTER_UNLOCK_SNAPSHOT, database, table);
             break;
         }
         case ASTAlterCommand::ADD_INDEX:

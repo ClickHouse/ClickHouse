@@ -1,5 +1,6 @@
 #include <Access/RolesOrUsersSet.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
+#include <Parsers/formatAST.h>
 #include <Access/AccessControl.h>
 #include <Access/User.h>
 #include <Access/Role.h>
@@ -181,14 +182,14 @@ std::shared_ptr<ASTRolesOrUsersSet> RolesOrUsersSet::toASTWithNames(const Access
 String RolesOrUsersSet::toString() const
 {
     auto ast = toAST();
-    return ast->formatWithSecretsOneLine();
+    return serializeAST(*ast);
 }
 
 
 String RolesOrUsersSet::toStringWithNames(const AccessControl & access_control) const
 {
     auto ast = toASTWithNames(access_control);
-    return ast->formatWithSecretsOneLine();
+    return serializeAST(*ast);
 }
 
 

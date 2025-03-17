@@ -133,6 +133,8 @@ private:
 protected:
     friend class ReadFromSystemPartsBase;
 
+    const FormatSettings format_settings = {};
+
     StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns);
 
     virtual std::unique_ptr<StoragesInfoStreamBase> getStoragesInfoStream(std::optional<ActionsDAG> filter_by_database, std::optional<ActionsDAG> filter_by_other_columns, ContextPtr context)

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+
+LC_ALL="en_US.UTF-8"
+ROOT_PATH=$(git rev-parse --show-toplevel)
+
+function xargs-pylint {
+  # $1 is number maximum arguments per pylint process
+  sort | awk '$2=="text/x-script.python" {print $1}' | \
+  xargs -P "$(nproc)" -n "$1" pylint --rcfile="$ROOT_PATH/pyproject.toml" --persistent=no --score=n
+}
+
+# exclude ci unittest scripts from check: test_*
+find "$ROOT_PATH/tests" -maxdepth 2 -type f -exec file -F' ' --mime-type {} + | grep -v "/test_" | xargs-pylint 50
+

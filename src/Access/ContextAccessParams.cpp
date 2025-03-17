@@ -3,9 +3,6 @@
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 
-#include <Poco/Net/SocketAddress.h>
-#include <Poco/Net/IPAddress.h>
-
 
 namespace DB
 {
@@ -36,7 +33,7 @@ ContextAccessParams::ContextAccessParams(
     , current_database(current_database_)
     , interface(client_info_.interface)
     , http_method(client_info_.http_method)
-    , address(std::make_shared<Poco::Net::IPAddress>(client_info_.current_address->host()))
+    , address(client_info_.current_address.host())
     , forwarded_address(client_info_.getLastForwardedForHost())
     , quota_key(client_info_.quota_key)
     , initial_user((client_info_.initial_user != client_info_.current_user) ? client_info_.initial_user : "")
@@ -86,8 +83,8 @@ String ContextAccessParams::toString() const
     out << separator() << "interface = " << magic_enum::enum_name(interface);
     if (http_method != ClientInfo::HTTPMethod::UNKNOWN)
         out << separator() << "http_method = " << magic_enum::enum_name(http_method);
-    if (!address->isWildcard())
-        out << separator() << "address = " << address->toString();
+    if (!address.isWildcard())
+        out << separator() << "address = " << address.toString();
     if (!forwarded_address.empty())
         out << separator() << "forwarded_address = " << forwarded_address;
     if (!quota_key.empty())

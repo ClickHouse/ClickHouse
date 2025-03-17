@@ -1,16 +1,14 @@
 ---
-description: 'Documentation for PARALLEL WITH Clause'
-sidebar_label: 'PARALLEL WITH'
+slug: /en/sql-reference/statements/parallel_with
 sidebar_position: 53
-slug: /sql-reference/statements/parallel_with
-title: 'PARALLEL WITH Clause'
+sidebar_label: PARALLEL WITH
 ---
 
 # PARALLEL WITH Clause
 
 Allows to execute multiple statements in parallel.
 
-## Syntax {#syntax}
+## Syntax
 
 ``` sql
 statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
@@ -20,7 +18,7 @@ Executes statements `statement1`, `statement2`, `statement3`, ... in parallel wi
 
 Executing statements in parallel may be faster than just a sequence of the same statements in many cases. For example, `statement1 PARALLEL WITH statement2 PARALLEL WITH statement3` is likely to be faster than `statement1; statement2; statement3`.
 
-## Examples {#examples}
+## Examples
 
 Creates two tables in parallel:
 
@@ -38,11 +36,11 @@ PARALLEL WITH
 DROP TABLE table2;
 ```
 
-## Settings {#settings}
+## Settings
 
 Setting [max_threads](../../operations/settings/settings.md#max_threads) controls how many threads are spawned.
 
-## Comparison with UNION {#comparison-with-union}
+## Comparison with UNION
 
 The `PARALLEL WITH` clause is a bit similar to [UNION](select/union.md), which also executes its operands in parallel. However there are some differences:
 - `PARALLEL WITH` doesn't return any results from executing its operands, it can only rethrow an exception from them if any;

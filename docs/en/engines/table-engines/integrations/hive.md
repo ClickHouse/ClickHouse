@@ -1,10 +1,7 @@
 ---
-description: 'The Hive engine allows you to perform `SELECT` queries on HDFS Hive
-  table.'
-sidebar_label: 'Hive'
+slug: /en/engines/table-engines/integrations/hive
 sidebar_position: 84
-slug: /engines/table-engines/integrations/hive
-title: 'Hive'
+sidebar_label: Hive
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -13,7 +10,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 <CloudNotSupportedBadge/>
 
-The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Currently, it supports input formats as below:
+The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Currently it supports input formats as below:
 
 - Text: only supports simple scalar column types except `binary`
 
@@ -32,7 +29,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Hive('thrift://host:port', 'database', 'table');
 PARTITION BY expr
 ```
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 The table structure can differ from the original Hive table structure:
 - Column names should be the same as in the original Hive table, but you can use just some of these columns and in any order, also you can use some alias columns calculated from other columns.
@@ -49,8 +46,7 @@ The table structure can differ from the original Hive table structure:
 
 ## Usage Example {#usage-example}
 
-### How to Use Local Cache for HDFS Filesystem {#how-to-use-local-cache-for-hdfs-filesystem}
-
+### How to Use Local Cache for HDFS Filesystem
 We strongly advice you to enable local cache for remote filesystems. Benchmark shows that its almost 2x faster with cache.
 
 Before using cache, add it to `config.xml`
@@ -70,10 +66,9 @@ Before using cache, add it to `config.xml`
 
 When ClickHouse is started up with local cache for remote filesystem enabled, users can still choose not to use cache with `settings use_local_cache_for_remote_storage = 0` in their query. `use_local_cache_for_remote_storage` is `1` by default.
 
-### Query Hive Table with ORC Input Format  {#query-hive-table-with-orc-input-format}
+### Query Hive Table with ORC Input Format
 
-#### Create Table in Hive {#create-table-in-hive}
-
+#### Create Table in Hive
 ``` text
 hive > CREATE TABLE `test`.`test_orc`(
   `f_tinyint` tinyint,
@@ -116,12 +111,11 @@ Time taken: 36.025 seconds
 
 hive > select * from test.test_orc;
 OK
-1    2    3    4    5    6.11    7.22    8    2021-11-05 12:38:16.314    2021-11-05    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
+1	2	3	4	5	6.11	7.22	8	2021-11-05 12:38:16.314	2021-11-05	hello world	hello world	hello world                                                                                         	true	hello world	[1,2,3]	["hello world","hello world"]	[1.1,1.2]	[[1,2],[3,4]]	[["a","b"],["c","d"]]	[[1.11,2.22],[3.33,4.44]]	2021-09-18
 Time taken: 0.295 seconds, Fetched: 1 row(s)
 ```
 
-#### Create Table in ClickHouse  {#create-table-in-clickhouse}
-
+#### Create Table in ClickHouse
 Table in ClickHouse, retrieving data from the Hive table created above:
 ``` sql
 CREATE TABLE test.test_orc
@@ -192,10 +186,9 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.078 sec.
 ```
 
-### Query Hive Table with Parquet Input Format {#query-hive-table-with-parquet-input-format}
+### Query Hive Table with Parquet Input Format
 
-#### Create Table in Hive {#create-table-in-hive-1}
-
+#### Create Table in Hive
 ``` text
 hive >
 CREATE TABLE `test`.`test_parquet`(
@@ -239,12 +232,11 @@ Time taken: 36.025 seconds
 
 hive > select * from test.test_parquet;
 OK
-1    2    3    4    5    6.11    7.22    8    2021-12-14 17:54:56.743    2021-12-14    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
+1	2	3	4	5	6.11	7.22	8	2021-12-14 17:54:56.743	2021-12-14	hello world	hello world	hello world                                                                                         	true	hello world	[1,2,3]	["hello world","hello world"]	[1.1,1.2]	[[1,2],[3,4]]	[["a","b"],["c","d"]]	[[1.11,2.22],[3.33,4.44]]	2021-09-18
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
-#### Create Table in ClickHouse {#create-table-in-clickhouse-1}
-
+#### Create Table in ClickHouse
 Table in ClickHouse, retrieving data from the Hive table created above:
 ``` sql
 CREATE TABLE test.test_parquet
@@ -315,10 +307,8 @@ day:                  2021-09-18
 1 rows in set. Elapsed: 0.357 sec.
 ```
 
-### Query Hive Table with Text Input Format {#query-hive-table-with-text-input-format}
-
-#### Create Table in Hive {#create-table-in-hive-2}
-
+### Query Hive Table with Text Input Format
+#### Create Table in Hive
 ``` text
 hive >
 CREATE TABLE `test`.`test_text`(
@@ -362,11 +352,11 @@ Time taken: 36.025 seconds
 
 hive > select * from test.test_text;
 OK
-1    2    3    4    5    6.11    7.22    8    2021-12-14 18:11:17.239    2021-12-14    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
+1	2	3	4	5	6.11	7.22	8	2021-12-14 18:11:17.239	2021-12-14	hello world	hello world	hello world                                                                                         	true	hello world	[1,2,3]	["hello world","hello world"]	[1.1,1.2]	[[1,2],[3,4]]	[["a","b"],["c","d"]]	[[1.11,2.22],[3.33,4.44]]	2021-09-18
 Time taken: 0.624 seconds, Fetched: 1 row(s)
 ```
 
-#### Create Table in ClickHouse {#create-table-in-clickhouse-2}
+#### Create Table in ClickHouse
 
 Table in ClickHouse, retrieving data from the Hive table created above:
 ``` sql

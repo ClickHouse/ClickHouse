@@ -3,6 +3,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 
+#include <Parsers/formatAST.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -34,7 +35,7 @@ String ConstraintsDescription::toString() const
     for (const auto & constraint : constraints)
         list.children.push_back(constraint);
 
-    return list.formatWithSecretsOneLine();
+    return serializeAST(list);
 }
 
 ConstraintsDescription ConstraintsDescription::parse(const String & str)

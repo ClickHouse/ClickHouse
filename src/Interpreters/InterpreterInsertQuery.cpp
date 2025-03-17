@@ -19,8 +19,6 @@
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context_fwd.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -135,11 +133,6 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
             }
             else
             {
-                ASTPtr input_function;
-                query.tryFindInputFunction(input_function);
-                if (input_function)
-                    throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Schema inference is not supported with allow_experimental_analyzer=0 for INSERT INTO FUNCTION ... SELECT FROM input()");
-
                 InterpreterSelectWithUnionQuery interpreter_select{
                     query.select, current_context, select_query_options};
                 auto tmp_pipeline = interpreter_select.buildQueryPipeline();
@@ -385,11 +378,6 @@ Chain InterpreterInsertQuery::buildSink(
     return out;
 }
 
-void InterpreterInsertQuery::addBuffer(std::unique_ptr<ReadBuffer> buffer)
-{
-    owned_buffers.push_back(std::move(buffer));
-}
-
 bool InterpreterInsertQuery::shouldAddSquashingForStorage(const StoragePtr & table) const
 {
     auto context_ptr = getContext();
@@ -468,8 +456,7 @@ Chain InterpreterInsertQuery::buildPreSinkChain(
         context_ptr,
         null_as_default);
 
-    auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(query_sample_block, adding_missing_defaults_dag.getRequiredColumnsNames(), context_ptr);
-    auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(adding_missing_defaults_dag)));
+    auto adding_missing_defaults_actions = std::make_shared<ExpressionActions>(std::move(adding_missing_defaults_dag));
 
     /// Actually we don't know structure of input blocks from query/table,
     /// because some clients break insertion protocol (columns != header)

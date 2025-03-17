@@ -1,9 +1,7 @@
 ---
-description: 'Guide for cross-compiling ClickHouse from Linux for macOS systems'
-sidebar_label: 'Build on Linux for macOS'
+slug: /en/development/build-cross-osx
 sidebar_position: 20
-slug: /development/build-cross-osx
-title: 'Build on Linux for macOS'
+sidebar_label: Build on Linux for macOS
 ---
 
 # How to Build ClickHouse on Linux for macOS
@@ -15,12 +13,12 @@ If you want to build ClickHouse directly on macOS, proceed with the [native buil
 The cross-build for macOS is based on the [Build instructions](../development/build.md), follow them first.
 
 The following sections provide a walk-through for building ClickHouse for `x86_64` macOS.
-If you're targeting ARM architecture, simply substitute all occurrences of `x86_64` with `aarch64`.
+If you’re targeting ARM architecture, simply substitute all occurrences of `x86_64` with `aarch64`.
 For example, replace `x86_64-apple-darwin` with `aarch64-apple-darwin` throughout the steps.
 
 ## Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
 
-Let's remember the path where we install `cctools` as `${CCTOOLS}`
+Let’s remember the path where we install `cctools` as `${CCTOOLS}`
 
 ``` bash
 mkdir ~/cctools
@@ -58,4 +56,4 @@ CC=clang-19 CXX=clang++-19 cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple
 ninja
 ```
 
-The resulting binary will have a Mach-O executable format and can't be run on Linux.
+The resulting binary will have a Mach-O executable format and can’t be run on Linux.

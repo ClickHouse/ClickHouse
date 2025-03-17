@@ -1,14 +1,8 @@
 ---
-description: 'Computes an approximate quantile of a sample consisting of bfloat16
-  numbers.'
+slug: /en/sql-reference/aggregate-functions/reference/quantilebfloat16
 sidebar_position: 171
-slug: /sql-reference/aggregate-functions/reference/quantilebfloat16
-title: 'quantileBFloat16'
+title: quantileBFloat16
 ---
-
-# quantileBFloat16Weighted
-
-Like `quantileBFloat16` but takes into account the weight of each sequence member.
 
 Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a sample consisting of [bfloat16](https://en.wikipedia.org/wiki/Bfloat16_floating-point_format) numbers. `bfloat16` is a floating-point data type with 1 sign bit, 8 exponent bits and 7 fraction bits.
 The function converts input values to 32-bit floats and takes the most significant 16 bits. Then it calculates `bfloat16` quantile value and converts the result to a 64-bit float by appending zero bits.
@@ -34,7 +28,7 @@ Alias: `medianBFloat16`
 
 - Approximate quantile of the specified level.
 
-Type: [Float64](/sql-reference/data-types/float).
+Type: [Float64](../../../sql-reference/data-types/float.md#float32-float64).
 
 **Example**
 
@@ -64,7 +58,11 @@ Result:
 ```
 Note that all floating point values in the example are truncated to 1.0 when converting to `bfloat16`.
 
+# quantileBFloat16Weighted
+
+Like `quantileBFloat16` but takes into account the weight of each sequence member.
+
 **See Also**
 
-- [median](/sql-reference/aggregate-functions/reference/median)
+- [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
 - [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

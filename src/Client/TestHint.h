@@ -1,17 +1,17 @@
 #pragma once
 
-#include <Core/Types.h>
-
 #include <optional>
 #include <vector>
 
 #include <fmt/format.h>
-#include <fmt/ranges.h>
+
+#include <Core/Types.h>
+#include <Common/Exception.h>
+
 
 namespace DB
 {
 
-class Exception;
 class Lexer;
 
 /// Checks expected server and client error codes.

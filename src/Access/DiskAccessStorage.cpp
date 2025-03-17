@@ -14,6 +14,7 @@
 #include <Poco/JSON/Stringifier.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/copy.hpp>
 #include <base/range.h>
 #include <filesystem>
 #include <fstream>

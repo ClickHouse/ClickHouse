@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for CREATE DATABASE'
-sidebar_label: 'DATABASE'
+slug: /en/sql-reference/statements/create/database
 sidebar_position: 35
-slug: /sql-reference/statements/create/database
-title: 'CREATE DATABASE'
+sidebar_label: DATABASE
 ---
 
 # CREATE DATABASE
@@ -14,24 +12,24 @@ Creates a new database.
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [COMMENT 'Comment']
 ```
 
-## Clauses {#clauses}
+## Clauses
 
-### IF NOT EXISTS {#if-not-exists}
+### IF NOT EXISTS
 
 If the `db_name` database already exists, then ClickHouse does not create a new database and:
 
-- Doesn't throw an exception if clause is specified.
-- Throws an exception if clause isn't specified.
+- Doesn’t throw an exception if clause is specified.
+- Throws an exception if clause isn’t specified.
 
-### ON CLUSTER {#on-cluster}
+### ON CLUSTER
 
 ClickHouse creates the `db_name` database on all the servers of a specified cluster. More details in a [Distributed DDL](../../../sql-reference/distributed-ddl.md) article.
 
-### ENGINE {#engine}
+### ENGINE
 
 By default, ClickHouse uses its own [Atomic](../../../engines/database-engines/atomic.md) database engine. There are also [Lazy](../../../engines/database-engines/lazy.md), [MySQL](../../../engines/database-engines/mysql.md), [PostgresSQL](../../../engines/database-engines/postgresql.md), [MaterializedPostgreSQL](../../../engines/database-engines/materialized-postgresql.md), [Replicated](../../../engines/database-engines/replicated.md), [SQLite](../../../engines/database-engines/sqlite.md).
 
-### COMMENT {#comment}
+### COMMENT
 
 You can add a comment to the database when you are creating it.
 

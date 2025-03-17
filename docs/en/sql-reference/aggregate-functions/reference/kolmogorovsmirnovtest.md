@@ -1,9 +1,7 @@
 ---
-description: 'Applies Kolmogorov-Smirnov''s test to samples from two populations.'
-sidebar_label: 'kolmogorovSmirnovTest'
+slug: /en/sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest
 sidebar_position: 156
-slug: /sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest
-title: 'kolmogorovSmirnovTest'
+sidebar_label: kolmogorovSmirnovTest
 ---
 
 # kolmogorovSmirnovTest

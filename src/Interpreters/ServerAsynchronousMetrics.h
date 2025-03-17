@@ -36,16 +36,9 @@ private:
         size_t detached_by_user;
     };
 
-    struct MutationStats
-    {
-        size_t stuck_mutations;
-        size_t pending_mutations;
-    };
-
     DetachedPartsStats detached_parts_stats{};
-    MutationStats mutation_stats{};
 
-    void updateMutationAndDetachedPartsStats();
+    void updateDetachedPartsStats();
     void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
 

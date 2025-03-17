@@ -1,8 +1,6 @@
 ---
-description: 'Calculates the weighted arithmetic mean.'
+slug: /en/sql-reference/aggregate-functions/reference/avgweighted
 sidebar_position: 113
-slug: /sql-reference/aggregate-functions/reference/avgweighted
-title: 'avgWeighted'
 ---
 
 # avgWeighted

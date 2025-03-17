@@ -30,7 +30,7 @@ static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 
 void SerializationArray::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    const Array & a = field.safeGet<Array>();
+    const Array & a = field.safeGet<const Array &>();
     writeVarUInt(a.size(), ostr);
     for (const auto & i : a)
     {
@@ -52,7 +52,7 @@ void SerializationArray::deserializeBinary(Field & field, ReadBuffer & istr, con
             settings.binary.max_binary_string_size);
 
     field = Array();
-    Array & arr = field.safeGet<Array>();
+    Array & arr = field.safeGet<Array &>();
     arr.reserve(size);
     for (size_t i = 0; i < size; ++i)
         nested->deserializeBinary(arr.emplace_back(), istr, settings);
@@ -212,7 +212,7 @@ DataTypePtr SerializationArray::SubcolumnCreator::create(const DataTypePtr & pre
     return std::make_shared<DataTypeArray>(prev);
 }
 
-SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
+SerializationPtr SerializationArray::SubcolumnCreator::create(const SerializationPtr & prev) const
 {
     return std::make_shared<SerializationArray>(prev);
 }

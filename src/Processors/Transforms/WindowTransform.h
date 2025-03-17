@@ -1,10 +1,11 @@
 #pragma once
 
-#include <AggregateFunctions/WindowFunction.h>
-#include <Core/Block.h>
 #include <Interpreters/WindowDescription.h>
+#include <AggregateFunctions/WindowFunction.h>
+
 #include <Processors/IProcessor.h>
-#include <Processors/Port.h>
+
+#include <Common/AlignedBuffer.h>
 
 #include <deque>
 

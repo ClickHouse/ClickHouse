@@ -1,37 +1,24 @@
 ---
-description: 'Composable protocols allows more flexible configuration of TCP access
-  to the ClickHouse server.'
-sidebar_label: 'Composable Protocols'
+slug: /en/operations/settings/composable-protocols
 sidebar_position: 64
-slug: /operations/settings/composable-protocols
-title: 'Composable Protocols'
+sidebar_label: Composable Protocols
 ---
 
 # Composable Protocols
 
-## Overview {#overview}
+Composable protocols allows more flexible configuration of TCP access to the ClickHouse server. This configuration can co-exist with or replace conventional configuration.
 
-Composable protocols allow more flexible configuration of TCP access to the 
-ClickHouse server. This configuration can co-exist alongside, or replace, 
-conventional configuration.
-
-## Configuring composable protocols {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
-
-Composable protocols can be configured in an XML configuration file. The protocols
-section is denoted with `protocols` tags in the XML config file: 
-
-```xml
+## Composable protocols section is denoted as `protocols` in configuration xml
+**Example:**
+``` xml
 <protocols>
 
 </protocols>
 ```
 
-### Configuring protocol layers {#basic-modules-define-protocol-layers}
-
-You can define protocol layers using basic modules. For example, to define an
-HTTP layer, you can add a new basic module to the `protocols` section:
-
-```xml
+## Basic modules define protocol layers
+**Example:**
+``` xml
 <protocols>
 
   <!-- plain_http module -->
@@ -41,13 +28,11 @@ HTTP layer, you can add a new basic module to the `protocols` section:
 
 </protocols>
 ```
-Modules can be configured according to:
-
-- `plain_http` - name which can be referred to by another layer
-- `type` - denotes the protocol handler which will be instantiated to process data.
-   It has the following set of predefined protocol handlers:
+where:
+- `plain_http` - name which can be referred by another layer
+- `type` - denotes protocol handler which will be instantiated to process data, set of protocol handlers is predefined:
   * `tcp` - native clickhouse protocol handler
-  * `http` - HTTP clickhouse protocol handler
+  * `http` - http clickhouse protocol handler
   * `tls` - TLS encryption layer
   * `proxy1` - PROXYv1 layer
   * `mysql` - MySQL compatibility protocol handler
@@ -59,13 +44,9 @@ Modules can be configured according to:
 `gRPC` protocol handler is not implemented for `Composable protocols`
 :::
  
-### Configuring endpoints {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
-
-Endpoints (listening ports) are denoted by `<port>` and optional `<host>` tags.
-For example, to configure an endpoint on the previously added HTTP layer we 
-could modify our configuration as follows:
-
-```xml
+## Endpoint (i.e. listening port) is denoted by `<port>` and (optional) `<host>` tags
+**Example:**
+``` xml
 <protocols>
 
   <plain_http>
@@ -79,17 +60,11 @@ could modify our configuration as follows:
 
 </protocols>
 ```
+If `<host>` is omitted, then `<listen_host>` from root config is used.
 
-If the `<host>` tag is omitted, then the `<listen_host>` from the root config is
-used.
-
-### Configuring layer sequences {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
-
-Layers sequences are defined using the `<impl>` tag, and referencing another 
-module. For example, to configure a TLS layer on top of our plain_http module
-we could further modify our configuration as follows:
-
-```xml
+## Layers sequence is defined by `<impl>` tag, referencing another module
+**Example:** definition for HTTPS protocol
+``` xml
 <protocols>
 
   <!-- http module -->
@@ -108,12 +83,9 @@ we could further modify our configuration as follows:
 </protocols>
 ```
 
-### Attaching endpoints to layers {#endpoint-can-be-attached-to-any-layer}
-
-Endpoints can be attached to any layer. For example, we can define endpoints for
-HTTP (port 8123) and HTTPS (port 8443):
-
-```xml
+## Endpoint can be attached to any layer
+**Example:** definition for HTTP (port 8123) and HTTPS (port 8443) endpoints
+``` xml
 <protocols>
 
   <plain_http>
@@ -132,12 +104,8 @@ HTTP (port 8123) and HTTPS (port 8443):
 </protocols>
 ```
 
-### Defining additional endpoints {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
-
-Additional endpoints can be defined by referencing any module and omitting the 
-`<type>` tag. For example, we can define `another_http` endpoint for the 
-`plain_http` module as follows:
-
+## Additional endpoints can be defined by referencing any module and omitting `<type>` tag
+**Example:** `another_http` endpoint is defined for `plain_http` module
 ``` xml
 <protocols>
 
@@ -163,13 +131,9 @@ Additional endpoints can be defined by referencing any module and omitting the
 </protocols>
 ```
 
-### Specifying additional layer parameters {#some-modules-can-contain-specific-for-its-layer-parameters}
-
-Some modules can contain additional layer parameters. For example, the TLS layer
-allows a private key (`privateKeyFile`) and certificate files (`certificateFile`)
-to be specified as follows:
-
-```xml
+## Some modules can contain specific for its layer parameters
+**Example:** for TLS layer private key (`privateKeyFile`) and certificate files (`certificateFile`) can be specified
+``` xml
 <protocols>
 
   <plain_http>
