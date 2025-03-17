@@ -178,9 +178,6 @@ void MergeTreeLazilyReader::readLazyColumns(
             bool should_evaluate_missing_defaults = false;
             reader->fillMissingColumns(columns_to_read, should_evaluate_missing_defaults, read_rows);
 
-            for (auto & col : columns_to_read)
-                col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
-
             if (should_evaluate_missing_defaults)
             {
                 Block block;
@@ -189,6 +186,9 @@ void MergeTreeLazilyReader::readLazyColumns(
             }
 
             reader->performRequiredConversions(columns_to_read);
+
+            for (auto & col : columns_to_read)
+                col = recursiveRemoveSparse(col->convertToFullColumnIfConst());
 
             for (size_t i = 0; i < columns_size; ++i)
                 lazily_read_columns[i]->insertFrom((*columns_to_read[i]), 0);
