@@ -166,6 +166,7 @@ def test_bad_messages_parsing_stream(kafka_cluster):
                          kafka_topic_list = '{format_name}_err',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
+                         kafka_flush_interval_ms=1000,
                          kafka_handle_error_mode='stream';
 
             CREATE MATERIALIZED VIEW view Engine=Log AS
@@ -212,6 +213,7 @@ message Message {
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
                          kafka_handle_error_mode='stream',
+                         kafka_flush_interval_ms=1000,
                          kafka_schema='schema_test_errors:Message';
 
             CREATE MATERIALIZED VIEW view Engine=Log AS
@@ -261,6 +263,7 @@ struct Message
                          kafka_group_name = 'CapnProto',
                          kafka_format = 'CapnProto',
                          kafka_handle_error_mode='stream',
+                         kafka_flush_interval_ms=1000,
                          kafka_schema='schema_test_errors:Message';
 
             CREATE MATERIALIZED VIEW view Engine=Log AS
@@ -313,6 +316,7 @@ def test_bad_messages_parsing_exception(kafka_cluster, max_retries=20):
                          kafka_topic_list = '{format_name}_parsing_err',
                          kafka_group_name = '{format_name}',
                          kafka_format = '{format_name}',
+                         kafka_flush_interval_ms=1000,
                          kafka_num_consumers = 1;
 
             CREATE MATERIALIZED VIEW view_{format_name} Engine=Log AS
@@ -367,6 +371,7 @@ def test_bad_messages_to_mv(kafka_cluster, max_retries=20):
                      kafka_topic_list = 'tomv',
                      kafka_group_name = 'tomv',
                      kafka_format = 'JSONEachRow',
+                     kafka_flush_interval_ms=1000,
                      kafka_num_consumers = 1;
 
         CREATE TABLE kafka_materialized(`key` UInt64, `value` UInt64) ENGINE = Log;
@@ -414,6 +419,7 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
                      kafka_topic_list = 'visible',
                      kafka_group_name = 'visible',
                      kafka_format = 'JSONEachRow',
+                     kafka_flush_interval_ms=1000,
                      kafka_num_consumers = 1;
 
         CREATE TABLE kafka_grant_hidden (key UInt64, value String)
@@ -422,6 +428,7 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
                      kafka_topic_list = 'hidden',
                      kafka_group_name = 'hidden',
                      kafka_format = 'JSONEachRow',
+                     kafka_flush_interval_ms=1000,
                      kafka_num_consumers = 1;
 
     """
@@ -441,7 +448,8 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
     instance.query("GRANT SELECT ON system.kafka_consumers TO RESTRICTED")
 
     restricted_result_system_kafka_consumers = instance.query(
-        "SELECT count(1) FROM system.kafka_consumers WHERE table LIKE 'kafka_grant%'", user="RESTRICTED"
+        "SELECT count(1) FROM system.kafka_consumers WHERE table LIKE 'kafka_grant%'",
+        user="RESTRICTED",
     )
     assert int(restricted_result_system_kafka_consumers) == 1
 
