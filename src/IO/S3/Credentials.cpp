@@ -698,7 +698,7 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
         {
             AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
                 credentials_configuration.role_arn,
-                /* sessionName */ Aws::String(),
+                /* sessionName */ credentials_configuration.role_session_name,
                 /* externalId */ Aws::String(),
                 /* loadFrequency */ Aws::Auth::DEFAULT_CREDS_LOAD_FREQ_SECONDS,
                 std::make_shared<Aws::STS::STSClient>(credentials)
