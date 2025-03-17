@@ -278,6 +278,11 @@ def test_create_table():
         f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_2.csv', '{azure_account_name}', '{azure_account_key}')",
         f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '{azure_account_key}', 'CSV')",
         f"AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_4.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none')",
+        f"AzureQueue('{azure_conn_string}', 'cont', 'test_simple.csv', 'CSV')",
+        f"AzureQueue('{azure_conn_string}', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
+        f"AzureQueue('{azure_storage_account_url}/', 'cont', 'test_simple_2.csv', '{azure_account_name}', '{azure_account_key}')",
+        f"AzureQueue('{azure_storage_account_url}/', 'cont', 'test_simple_3.csv', '{azure_account_name}', '{azure_account_key}', 'CSV')",
+        f"AzureQueue('{azure_storage_account_url}/', 'cont', 'test_simple_4.csv', '{azure_account_name}', '{azure_account_key}', 'CSV', 'none')",
     ]
 
     def make_test_case(i):
@@ -349,6 +354,11 @@ def test_create_table():
             f"CREATE TABLE table25 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_2.csv', '{azure_account_name}', '[HIDDEN]')",
             f"CREATE TABLE table26 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_3.csv', '{azure_account_name}', '[HIDDEN]', 'CSV')",
             f"CREATE TABLE table27 (`x` int) ENGINE = AzureBlobStorage('{azure_storage_account_url}', 'cont', 'test_simple_4.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none')",
+            f"CREATE TABLE table28 (`x` int) ENGINE = AzureQueue('{masked_azure_conn_string}/', 'cont', 'test_simple.csv', 'CSV')",
+            f"CREATE TABLE table29 (`x` int) ENGINE = AzureQueue('{masked_azure_conn_string}/', 'cont', 'test_simple_1.csv', 'CSV', 'none')",
+            f"CREATE TABLE table30 (`x` int) ENGINE = AzureQueue('{azure_storage_account_url}/', 'cont', 'test_simple_2.csv', '{azure_account_name}', '[HIDDEN]')",
+            f"CREATE TABLE table31 (`x` int) ENGINE = AzureQueue('{azure_storage_account_url}/', 'cont', 'test_simple_3.csv', '{azure_account_name}', '[HIDDEN]', 'CSV')",
+            f"CREATE TABLE table32 (`x` int) ENGINE = AzureQueue('{azure_storage_account_url}/', 'cont', 'test_simple_4.csv', '{azure_account_name}', '[HIDDEN]', 'CSV', 'none')",
         ],
         must_not_contain=[password],
     )

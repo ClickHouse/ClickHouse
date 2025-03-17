@@ -9,6 +9,7 @@
 #include <Storages/NATS/NATSConnection.h>
 #include <Storages/NATS/NATSHandler.h>
 #include <Storages/NATS/NATSSettings.h>
+#include <Storages/NATS/NATS_fwd.h>
 #include <Poco/Semaphore.h>
 #include <Common/thread_local_rng.h>
 
@@ -32,7 +33,7 @@ public:
 
     ~StorageNATS() override;
 
-    std::string getName() const override { return "NATS"; }
+    std::string getName() const override { return NATS::TABLE_ENGINE_NAME; }
 
     bool noPushingToViews() const override { return true; }
 
