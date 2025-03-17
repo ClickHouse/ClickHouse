@@ -258,8 +258,18 @@ class Runner:
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(cmd, timeout=job.timeout) as process:
+            if Path((Result.experimental_file_name_static())).exists():
+                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+                Path(Result.experimental_file_name_static()).unlink()
+
             exit_code = process.wait()
 
+            if Path(Result.experimental_file_name_static()).exists():
+                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+                Shell.check(
+                    f"cp {Result.experimental_file_name_static()} {Result.file_name_static(job.name)}",
+                    verbose=True,
+                )
             result = Result.from_fs(job.name)
             if exit_code != 0:
                 if not result.is_completed():
@@ -326,6 +336,7 @@ class Runner:
             result = Result.from_fs(job.name)
         except Exception as e:  # json.decoder.JSONDecodeError
             print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
+            traceback.print_exc()
             result = Result.create_from(
                 status=Result.Status.ERROR,
                 info=f"Failed to read Result json, ex: [{e}]",

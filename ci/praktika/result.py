@@ -223,6 +223,10 @@ class Result(MetaClasses.Serializable):
         return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
 
     @classmethod
+    def experimental_file_name_static(cls):
+        return f"{Settings.TEMP_DIR}/result.json"
+
+    @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
         sub_results = []
         for result_dict in obj.get("results", []):

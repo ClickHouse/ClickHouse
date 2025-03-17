@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # DISCLAIMER:
-# 1. This one is written in bash to demonstrate "praktika CI" flexibility
+# 1. This job script is written in bash to demonstrate "praktika CI" flexibility
 # 2. Other than for demonstration purposes it would be wierd to write this in bash
 
 set -exu
@@ -10,7 +10,7 @@ TMP_PATH=$(readlink -f ./ci/tmp/)
 OUTPUT_PATH="$TMP_PATH/sqlancer_output"
 PID_FILE="$TMP_PATH/clickhouse-server.pid"
 CLICKHOUSE_BIN="$TMP_PATH/clickhouse"
-RESULT_FILE="$TMP_PATH/result_sqlancer.json"
+RESULT_FILE="$TMP_PATH/result.json"
 
 mkdir -p $OUTPUT_PATH
 
