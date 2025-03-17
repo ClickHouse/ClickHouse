@@ -16,7 +16,8 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         const Block & sample_block_,
         ContextPtr context,
-        const std::string & blob_path = "");
+        const std::string & blob_path = "",
+        std::shared_ptr<ThreadPool> pool = nullptr);
 
     ~StorageObjectStorageSink() override;
 
@@ -49,7 +50,7 @@ public:
         ContextPtr context_,
         const ASTPtr & partition_by);
 
-    SinkPtr createSinkForPartition(const String & partition_id) override;
+    SinkPtr createSinkForPartition(const String & partition_id, std::shared_ptr<ThreadPool> pool) override;
 
 private:
     void validateKey(const String & str);

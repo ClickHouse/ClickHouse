@@ -28,7 +28,7 @@ public:
 
     void onFinish() override;
 
-    virtual SinkPtr createSinkForPartition(const String & partition_id) = 0;
+    virtual SinkPtr createSinkForPartition(const String & partition_id, std::shared_ptr<ThreadPool> pool) = 0;
 
     static void validatePartitionKey(const String & str, bool allow_slash);
 
@@ -37,6 +37,7 @@ public:
 private:
     ContextPtr context;
     Block sample_block;
+    std::shared_ptr<ThreadPool> pool;
 
     ExpressionActionsPtr partition_by_expr;
     String partition_by_column_name;

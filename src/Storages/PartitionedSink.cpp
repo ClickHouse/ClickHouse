@@ -14,13 +14,27 @@
 #include <Processors/ISource.h>
 
 #include <boost/algorithm/string/replace.hpp>
+#include <Core/Settings.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ThreadPool.h>
 
+namespace CurrentMetrics
+{
+extern const Metric ParallelFormattingOutputFormatThreads;
+extern const Metric ParallelFormattingOutputFormatThreadsActive;
+extern const Metric ParallelFormattingOutputFormatThreadsScheduled;
+}
 
 namespace DB
 {
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_TEXT;
+}
+
+namespace Setting
+{
+extern const SettingsMaxThreads max_threads;
 }
 
 PartitionedSink::PartitionedSink(
@@ -31,6 +45,16 @@ PartitionedSink::PartitionedSink(
     , context(context_)
     , sample_block(sample_block_)
 {
+    auto max_threads_setting = context->getSettingsRef()[Setting::max_threads];
+    // it needs at least two threads
+    auto number_of_threads = max_threads_setting > 1 ? max_threads_setting : max_threads_setting + 1;
+
+    pool = std::make_shared<ThreadPool>(
+        CurrentMetrics::ParallelFormattingOutputFormatThreads,
+        CurrentMetrics::ParallelFormattingOutputFormatThreadsActive,
+        CurrentMetrics::ParallelFormattingOutputFormatThreadsScheduled, number_of_threads);
+
+
     ASTs arguments(1, partition_by);
     ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
 
@@ -45,7 +69,7 @@ SinkPtr PartitionedSink::getSinkForPartitionKey(StringRef partition_key)
     auto it = partition_id_to_sink.find(partition_key);
     if (it == partition_id_to_sink.end())
     {
-        auto sink = createSinkForPartition(partition_key.toString());
+        auto sink = createSinkForPartition(partition_key.toString(), pool);
         std::tie(it, std::ignore) = partition_id_to_sink.emplace(partition_key, sink);
     }
 

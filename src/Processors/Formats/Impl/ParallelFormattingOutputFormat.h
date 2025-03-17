@@ -67,7 +67,110 @@ namespace ErrorCodes
 */
 class ParallelFormattingOutputFormat : public IOutputFormat
 {
+
+class ThreadPoolForwardingProxy
+{
 public:
+    using Job = std::function<void()>;
+
+    explicit ThreadPoolForwardingProxy(std::shared_ptr<ThreadPool> parent_pool_)
+        : parent_pool(parent_pool_)
+    {
+    }
+
+    void scheduleOrThrowOnError(Job job)
+    {
+        incrementJobCount();
+        parent_pool->scheduleOrThrowOnError(makeWrappedJob(std::move(job)));
+    }
+
+    bool trySchedule(Job job, Priority priority = {}, uint64_t wait_microseconds = 0)
+    {
+        incrementJobCount();
+        bool ok = parent_pool->trySchedule(makeWrappedJob(std::move(job)), priority, wait_microseconds);
+        if (!ok)
+        {
+            decrementJobCount();
+        }
+        return ok;
+    }
+
+    void scheduleOrThrow(Job job, Priority priority = {}, uint64_t wait_microseconds = 0, bool propagate_tracing = true)
+    {
+        incrementJobCount();
+        try
+        {
+            parent_pool->scheduleOrThrow(makeWrappedJob(std::move(job)), priority, wait_microseconds, propagate_tracing);
+        }
+        catch (...)
+        {
+            decrementJobCount();
+            throw;
+        }
+    }
+
+    void wait()
+    {
+        std::unique_lock<std::mutex> lock(mutex);
+        cv_finished.wait(lock, [this]
+        {
+            return jobs_in_flight == 0;
+        });
+
+        if (exception_ptr)
+        {
+            std::exception_ptr ex;
+            {
+                ex = exception_ptr;
+                exception_ptr = nullptr;
+            }
+            std::rethrow_exception(ex);
+        }
+    }
+
+private:
+    std::shared_ptr<ThreadPool> parent_pool;
+    size_t jobs_in_flight = 0;
+    std::mutex mutex;
+    std::condition_variable cv_finished;
+
+    std::exception_ptr exception_ptr = nullptr;
+
+    void incrementJobCount()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        jobs_in_flight++;
+    }
+
+    void decrementJobCount()
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        jobs_in_flight--;
+        if (jobs_in_flight == 0)
+            cv_finished.notify_all();
+    }
+
+    Job makeWrappedJob(Job user_job)
+    {
+        return [&]()
+        {
+            try
+            {
+                user_job();
+            }
+            catch (...)
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                if (!exception_ptr)
+                    exception_ptr = std::current_exception();
+            }
+            decrementJobCount();
+        };
+    }
+};
+
+public:
+    using ThreadPoolPtr = std::shared_ptr<ThreadPool>;
     /// Used to recreate formatter on every new data piece.
     using InternalFormatterCreator = std::function<OutputFormatPtr(WriteBuffer & buf)>;
 
@@ -78,6 +181,7 @@ public:
         const Block & header;
         InternalFormatterCreator internal_formatter_creator;
         const size_t max_threads_for_parallel_formatting;
+        ThreadPoolPtr pool;
     };
 
     ParallelFormattingOutputFormat() = delete;
@@ -85,8 +189,7 @@ public:
     explicit ParallelFormattingOutputFormat(Params params)
         : IOutputFormat(params.header, params.out)
         , internal_formatter_creator(params.internal_formatter_creator)
-        , pool(CurrentMetrics::ParallelFormattingOutputFormatThreads, CurrentMetrics::ParallelFormattingOutputFormatThreadsActive, CurrentMetrics::ParallelFormattingOutputFormatThreadsScheduled, params.max_threads_for_parallel_formatting)
-
+        , pool(params.pool)
     {
         LOG_TEST(getLogger("ParallelFormattingOutputFormat"), "Parallel formatting is being used");
 
@@ -102,8 +205,9 @@ public:
         /// Because otherwise the destructor of this class won't be called and this thread won't be joined.
         /// Also some race condition is possible, because collector_thread runs in parallel with
         /// the destruction of the objects already created in this scope.
-        collector_thread = ThreadFromGlobalPool([thread_group = CurrentThread::getGroup(), this]
-        {
+
+        /// we must somehow guarantee this actually gets allocated, otherwise formatting threads might consume everything?
+        pool.scheduleOrThrow([thread_group = CurrentThread::getGroup(), this](){
             collectorThreadFunction(thread_group);
         });
     }
@@ -230,11 +334,8 @@ private:
 
     std::atomic_bool need_flush{false};
 
-    // There are multiple "formatters", that's why we use thread pool.
-    ThreadPool pool;
-    // Collecting all memory to original ReadBuffer
-    ThreadFromGlobalPool collector_thread;
-    std::mutex collector_thread_mutex;
+    // There are multiple "formatters", that's why we use thread pool. There is also a collector thread
+    ThreadPoolForwardingProxy pool;
 
     std::exception_ptr background_exception = nullptr;
 

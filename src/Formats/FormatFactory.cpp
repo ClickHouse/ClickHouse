@@ -549,7 +549,8 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     WriteBuffer & buf,
     const Block & sample,
     const ContextPtr & context,
-    const std::optional<FormatSettings> & _format_settings) const
+    const std::optional<FormatSettings> & _format_settings,
+    std::shared_ptr<ThreadPool> pool_) const
 {
     const auto & output_getter = getCreators(name).output_creator;
     if (!output_getter)
@@ -568,7 +569,21 @@ OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
             return output_getter(output, sample, format_settings);
         };
 
-        ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings[Setting::max_threads]};
+        std::shared_ptr<ThreadPool> pool = pool_;
+
+        if (!pool)
+        {
+            auto max_threads_setting = settings[Setting::max_threads];
+            // it needs at least two threads
+            auto number_of_threads = max_threads_setting > 1 ? max_threads_setting : max_threads_setting + 1;
+
+            pool = std::make_shared<ThreadPool>(
+                CurrentMetrics::ParallelFormattingOutputFormatThreads,
+                CurrentMetrics::ParallelFormattingOutputFormatThreadsActive,
+                CurrentMetrics::ParallelFormattingOutputFormatThreadsScheduled, number_of_threads);
+        }
+
+        ParallelFormattingOutputFormat::Params builder{buf, sample, formatter_creator, settings[Setting::max_threads], pool};
 
         if (context->hasQueryContext() && settings[Setting::log_queries])
             context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Format, name);

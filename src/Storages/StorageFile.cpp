@@ -1746,7 +1746,8 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
         const ContextPtr & context_,
-        int flags_)
+        int flags_,
+        std::shared_ptr<ThreadPool> pool = nullptr)
         : SinkToStorage(metadata_snapshot_->getSampleBlock()), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -1759,7 +1760,7 @@ public:
         , format_settings(format_settings_)
         , flags(flags_)
     {
-        initialize();
+        initialize(pool);
     }
 
     StorageFileSink(
@@ -1774,7 +1775,8 @@ public:
         const std::optional<FormatSettings> & format_settings_,
         const String format_name_,
         const ContextPtr & context_,
-        int flags_)
+        int flags_,
+        std::shared_ptr<ThreadPool> pool = nullptr)
         : SinkToStorage(metadata_snapshot_->getSampleBlock()), WithContext(context_)
         , metadata_snapshot(metadata_snapshot_)
         , table_name_for_log(table_name_for_log_)
@@ -1790,7 +1792,7 @@ public:
     {
         if (!lock)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
-        initialize();
+        initialize(pool);
     }
 
     ~StorageFileSink() override
@@ -1799,7 +1801,7 @@ public:
             cancelBuffers();
     }
 
-    void initialize()
+    void initialize(std::shared_ptr<ThreadPool> pool)
     {
         std::unique_ptr<WriteBufferFromFileDescriptor> naked_buffer;
         if (use_table_fd)
@@ -1822,7 +1824,7 @@ public:
             static_cast<int>(settings[Setting::output_format_compression_zstd_window_log]));
 
         writer = FormatFactory::instance().getOutputFormatParallelIfPossible(format_name,
-                                                                             *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings);
+                                                                             *write_buf, metadata_snapshot->getSampleBlock(), getContext(), format_settings, pool);
 
         if (do_not_write_prefix)
             writer->doNotWritePrefix();
@@ -1924,7 +1926,7 @@ public:
     {
     }
 
-    SinkPtr createSinkForPartition(const String & partition_id) override
+    SinkPtr createSinkForPartition(const String & partition_id, std::shared_ptr<ThreadPool> pool) override
     {
         auto partition_path = PartitionedSink::replaceWildcards(path, partition_id);
 
@@ -1943,7 +1945,8 @@ public:
             format_settings,
             format_name,
             context,
-            flags);
+            flags,
+            pool);
     }
 
 private:

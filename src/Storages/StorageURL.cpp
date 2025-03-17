@@ -718,7 +718,7 @@ public:
     {
     }
 
-    SinkPtr createSinkForPartition(const String & partition_id) override
+    SinkPtr createSinkForPartition(const String & partition_id, std::shared_ptr<ThreadPool> /*unused because it is not parallel*/) override
     {
         auto partition_path = PartitionedSink::replaceWildcards(uri, partition_id);
         context->getRemoteHostFilter().checkURL(Poco::URI(partition_path));
