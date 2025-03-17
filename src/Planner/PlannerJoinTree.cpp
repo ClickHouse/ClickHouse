@@ -605,7 +605,7 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
-            
+
             if (find_first_symbols<'{'>(filter.data(), filter.data() + filter.size()) && planner_context->getQueryContext()->getQueryParameters().size() > 0)
             {
                 ReplaceQueryParameterVisitor visitor(planner_context->getQueryContext()->getQueryParameters());
