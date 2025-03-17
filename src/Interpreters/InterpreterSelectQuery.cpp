@@ -436,7 +436,7 @@ ASTPtr parseAdditionalFilterConditionForTable(
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
 
-            if (find_first_symbols<'{'>(filter.data(), filter.data() + filter.size()) && context.getQueryParameters().size() > 0)
+            if (find_first_symbols<'{'>(filter.data(), filter.data() + filter.size()) && !context.getQueryParameters().empty())
             {
                 ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
                 visitor.visit(query_ast);
