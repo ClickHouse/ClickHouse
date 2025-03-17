@@ -201,6 +201,7 @@ ContextLockWait
 Contrib
 CountMin
 Covid
+Cramer
 Cramer's
 Criteo
 Crotty
@@ -523,8 +524,6 @@ KafkaWrites
 Kahan
 Kaser
 Keccak
-blockchains
-keccak
 KeeperAliveConnections
 KeeperMap
 KeeperOutstandingRequests
@@ -873,6 +872,8 @@ QueryCacheBytes
 QueryCacheEntries
 QueryCacheHits
 QueryCacheMisses
+QueryConditionCacheHits
+QueryConditionCacheMisses
 QueryPreempted
 QueryResultCacheNondeterministicFunctionHandling
 QueryResultCacheSystemTableHandling
@@ -999,6 +1000,7 @@ Simhash
 SimpleAggregateFunction
 SimpleState
 SipHash
+Smirnov
 Smirnov's
 Smirnov'test
 Soundex
@@ -1084,6 +1086,7 @@ TemporaryFilesUnknown
 Testflows
 Tgz
 Theil's
+Theils
 ThreadMonotonic
 ThreadPoolFSReaderThreads
 ThreadPoolFSReaderThreadsActive
@@ -1174,6 +1177,7 @@ VirtualBox
 Vose
 WALs
 WSFG
+Welch
 Welch's
 Werror
 Wether
@@ -1422,6 +1426,7 @@ blake
 blockNumber
 blockSerializedSize
 blockSize
+blockchains
 blockinfo
 blockreader
 blocksize
@@ -2087,6 +2092,7 @@ kRing
 kafka
 kafkaMurmurHash
 kafkacat
+keccak
 keepalive
 keepermap
 kerberized
@@ -3231,7 +3237,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-Cramer
-Smirnov
-Theils
-Welch
