@@ -1,7 +1,7 @@
 import dataclasses
 from typing import List
 
-from praktika.result import Result
+from ci.praktika.result import Result
 
 OK_SIGN = "[ OK "
 FAIL_SIGN = "[ FAIL "

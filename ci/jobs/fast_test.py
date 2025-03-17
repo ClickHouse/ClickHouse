@@ -1,12 +1,15 @@
 import argparse
+import time
+from pathlib import Path
 
-from praktika.result import Result
-from praktika.settings import Settings
-from praktika.utils import MetaClasses, Shell, Utils
+from ci.praktika.result import Result
+from ci.praktika.settings import Settings
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
+from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
-from ci.workflows.defs import ToolSet
+from ci.praktika.info import Info
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/build"
@@ -21,7 +24,6 @@ def clone_submodules():
         "contrib/boost",
         "contrib/zlib-ng",
         "contrib/libxml2",
-        "contrib/libunwind",
         "contrib/fmtlib",
         "contrib/aklomp-base64",
         "contrib/cctz",
@@ -105,6 +107,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Fast Test Job")
+    parser.add_argument("--test", help="Optional test_case name to run", default=None)
     parser.add_argument("--param", help="Optional custom job start stage", default=None)
     return parser.parse_args()
 
@@ -121,6 +124,19 @@ def main():
         while stage in stages:
             stages.pop(0)
         stages.insert(0, stage)
+
+    clickhouse_bin_path = Path(f"{build_dir}/programs/clickhouse")
+    if Info().is_local_run:
+        if clickhouse_bin_path.exists():
+            print(
+                "NOTE: It's a local run and clickhouse binary is found - skip the build"
+            )
+            stages = [JobStages.CONFIG, JobStages.TEST]
+        else:
+            print(
+                "NOTE: It's a local run and clickhouse binary is not found - will be built"
+            )
+            time.sleep(5)
 
     Utils.add_to_PATH(f"{build_dir}/programs:{current_directory}/tests")
 
@@ -139,11 +155,12 @@ def main():
 
     if res and JobStages.CMAKE in stages:
         results.append(
+            # TODO: commented out to make job platform agnostic
+            #   -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
             Result.from_commands_run(
                 name="Cmake configuration",
                 command=f"cmake {current_directory} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} \
                 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} \
-                -DCMAKE_TOOLCHAIN_FILE={current_directory}/cmake/linux/toolchain-x86_64-musl.cmake \
                 -DENABLE_LIBRARIES=0 \
                 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DENABLE_THINLTO=0 -DENABLE_NURAFT=1 -DENABLE_SIMDJSON=1 \
                 -DENABLE_JEMALLOC=1 -DENABLE_LIBURING=1 -DENABLE_YAML_CPP=1 -DCOMPILER_CACHE=sccache",
@@ -218,14 +235,16 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-        res = res and CH.run_fast_test()
+        res = res and CH.run_fast_test(test=args.test)
         if res:
             results.append(FTResultsProcessor(wd=Settings.OUTPUT_DIR).run())
         results[-1].set_timing(stopwatch=stop_watch_)
 
     CH.terminate()
 
-    Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+    Result.create_from(results=results, stopwatch=stop_watch).add_job_summary_to_info(
+        with_local_run_command=True
+    ).complete_job()
 
 
 if __name__ == "__main__":

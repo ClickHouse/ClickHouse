@@ -63,13 +63,13 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
+    Docker.Config(
+        name="clickhouse/fasttest",
+        path="./ci/docker/fasttest",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
     # new images
-    # Docker.Config(
-    #     name="clickhouse/fasttest",
-    #     path="./ci/docker/fasttest",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
     # Docker.Config(
     #     name="clickhouse/binary-builder",
     #     path="./ci/docker/binary-builder",
@@ -82,12 +82,6 @@ DOCKERS = [
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=[],
     # ),
-    Docker.Config(
-        name="clickhouse/fasttest",
-        path="./docker/test/fasttest",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-util"],
-    ),
     # TODO: fix build failure:
     # 7 58.76 In file included from ./../code-sign-blobs/superblob.h:7:
     # 7 58.76 ./../code-sign-blobs/blob.h:185:60: error: no member named 'clone' in 'Security::BlobCore'

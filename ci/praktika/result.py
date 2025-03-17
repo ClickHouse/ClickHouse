@@ -73,12 +73,17 @@ class Result(MetaClasses.Serializable):
             if not name:
                 print("ERROR: Failed to guess the .name")
                 raise
+        start_time = None
+        duration = None
         if not stopwatch:
-            start_time = Result.from_fs(name=name).start_time
-            duration = (
-                datetime.datetime.now().timestamp()
-                - Result.from_fs(name=name).start_time
-            )
+            try:
+                preresult = Result.from_fs(name=name)
+                start_time = preresult.start_time
+                duration = datetime.datetime.now().timestamp() - preresult.start_time
+            except Exception:
+                print(
+                    f"WARNING: Failed to get start time for [{name}] - start time and duration won't be set"
+                )
         else:
             start_time = stopwatch.start_time
             duration = stopwatch.duration
@@ -188,7 +193,9 @@ class Result(MetaClasses.Serializable):
         self.dump()
         return self
 
-    def add_job_summary_to_info(self, with_local_run_command=False):
+    def add_job_summary_to_info(
+        self, with_local_run_command=False, with_test_in_run_command=False
+    ):
         if not self.is_ok():
             failed = [r.name for r in self.results if not r.is_ok()]
             if failed:
@@ -206,13 +213,11 @@ class Result(MetaClasses.Serializable):
         self.set_info(summary_info)
 
         if with_local_run_command and not self.is_ok():
-            command_info = (
-                f'For local test: PYTHONPATH=./ci python -m praktika run "{self.name}"'
-            )
+            command_info = f'For local test: python -m ci.praktika run "{self.name}"'
             first_failed_test = next(
                 (r.name for r in self.results if not r.is_ok()), None
             )
-            if first_failed_test:
+            if with_test_in_run_command and first_failed_test:
                 command_info += f" --test {first_failed_test}"
             self.set_info(command_info)
 

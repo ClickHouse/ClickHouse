@@ -36,15 +36,15 @@ class JobConfigs:
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
-        runs_on=RunnerLabels.BUILDER_AMD,
+        runs_on=RunnerLabels.BUILDER_ARM,
+        command="python3 ./ci/jobs/fast_test.py",
+        run_in_docker="clickhouse/fasttest",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
+                "./ci/jobs/fast_test.py",
                 "./tests/queries/0_stateless/",
-                "./tests/docker_scripts/",
                 "./tests/config/",
                 "./tests/clickhouse-test",
-                "./tests/ci/fast_test_check.py",
-                "./docker",
                 "./src",
                 "./contrib/",
                 "./CMakeLists.txt",
@@ -52,14 +52,9 @@ class JobConfigs:
                 "./cmake",
                 "./base",
                 "./programs",
-                "./docker/packager/packager",
                 "./rust",
-                "./ci/docker/fasttest",
-            ]
+            ],
         ),
-        requires=[],
-        timeout=3000,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         provides=[ArtifactNames.FAST_TEST],
     )
     tidy_build_jobs = Job.Config(
