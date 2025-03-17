@@ -31,7 +31,7 @@ class JobConfigs:
         name=JobNames.STYLE_CHECK,
         runs_on=RunnerLabels.STYLE_CHECK_ARM,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
-        requires=[JobNames.DOCKER_BUILDS_AMD],
+        requires=[],
         enable_commit_status=True,
     )
     fast_test = Job.Config(
@@ -54,9 +54,10 @@ class JobConfigs:
                 "./programs",
                 "./docker/packager/packager",
                 "./rust",
+                "./ci/docker/fasttest",
             ]
         ),
-        requires=[JobNames.DOCKER_BUILDS_AMD],
+        requires=[],
         timeout=3000,
         command="cd ./tests/ci && python3 ci.py --run-from-praktika",
         provides=[ArtifactNames.FAST_TEST],
@@ -109,6 +110,7 @@ class JobConfigs:
                 "./rust",
                 "./tests/ci/build_check.py",
                 "./tests/performance",
+                "./ci/docker/binary-builder",
             ],
             with_git_submodules=True,
         ),
@@ -201,6 +203,7 @@ class JobConfigs:
                 "./rust",
                 "./tests/ci/build_check.py",
                 "./tests/performance",
+                "./ci/docker/binary-builder",
             ],
             with_git_submodules=True,
         ),

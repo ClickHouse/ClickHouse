@@ -1,6 +1,5 @@
 ---
-alias:
-- TSVWithNames
+alias: ['TSVWithNames']
 description: 'Documentation for the TabSeparatedWithNames format'
 input_format: true
 keywords: ['TabSeparatedWithNames']
@@ -11,7 +10,7 @@ title: 'TabSeparatedWithNames'
 
 | Input | Output | Alias                          |
 |-------|--------|--------------------------------|
-| 	✔    | 	✔     | `TSVWithNames`, `RawWithNames` |
+|     ✔    |     ✔     | `TSVWithNames`, `RawWithNames` |
 
 ## Description {#description}
 
