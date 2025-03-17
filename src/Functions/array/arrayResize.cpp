@@ -23,12 +23,12 @@ namespace ErrorCodes
 
 DataTypePtr FunctionArrayResize::getReturnTypeImpl(const DataTypes & arguments) const
 {
-    const size_t number_of_arguments = arguments.size();
+    const size_t argument_count = arguments.size();
 
-    if (number_of_arguments < 2 || number_of_arguments > 3)
+    if (argument_count < 2 || argument_count > 3)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                         "Number of arguments for function {} doesn't match: passed {}, should be 2 or 3",
-                        getName(), number_of_arguments);
+                        getName(), argument_count);
 
     if (arguments[0]->onlyNull())
         return arguments[0];
@@ -51,9 +51,9 @@ DataTypePtr FunctionArrayResize::getReturnTypeImpl(const DataTypes & arguments) 
                         "Argument {} for function {} must be integer but it has type {}.",
                         toString(1), getName(), arguments[1]->getName());
 
-    if (number_of_arguments == 2)
+    if (argument_count == 2)
         return arguments[0];
-    /* if (number_of_arguments == 3) */
+    /* if (argument_count == 3) */
     return std::make_shared<DataTypeArray>(getLeastSupertype(DataTypes{array_type->getNestedType(), arguments[2]}));
 }
 
