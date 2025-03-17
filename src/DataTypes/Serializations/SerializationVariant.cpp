@@ -44,6 +44,7 @@ struct DeserializeBinaryBulkStateVariant : public ISerialization::DeserializeBin
 {
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     std::vector<ISerialization::DeserializeBinaryBulkStatePtr> variant_states;
+    size_t num_rows_read = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -482,6 +483,10 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
 
+    if (col.empty())
+        variant_state->num_rows_read = 0;
+    size_t discriminators_offset = variant_state->num_rows_read;
+
     /// Second, calculate offsets and limits for each variant by iterating through new discriminators
     /// if we didn't do it during discriminators deserialization.
     if (variant_rows_offsets.empty())
@@ -490,7 +495,6 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
         if (rows_offset)
         {
-            size_t discriminators_offset = col.getLocalDiscriminatorsPtr()->size() - limit - rows_offset;
             auto & discriminators_data = col.getLocalDiscriminators();
 
             for (size_t i = discriminators_offset; i != discriminators_offset + rows_offset; ++i)
@@ -504,7 +508,6 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
 
     if (rows_offset)
     {
-        size_t discriminators_offset = col.getLocalDiscriminatorsPtr()->size() - limit - rows_offset;
         auto & discriminators_data = col.getLocalDiscriminators();
 
         for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
@@ -516,17 +519,6 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
     {
         variant_limits.resize(variants.size(), 0);
         auto & discriminators_data = col.getLocalDiscriminators();
-
-        /// We can actually read less than limit discriminators and we cannot determine the actual number of read rows
-        /// by discriminators column as it could be taken from the substreams cache. And we need actual number of read
-        /// rows to fill offsets correctly later if they are not in the cache. We can determine if offsets column is in cache
-        /// or not by comparing it with discriminators column size (they should be the same when offsets are in cache).
-        /// If offsets are not in the cache, we can use it's size to determine the actual number of read rows.
-        size_t num_new_discriminators = limit;
-        size_t offsets_size = col.getOffsetsPtr()->size();
-        if (discriminators_data.size() > offsets_size)
-            num_new_discriminators = discriminators_data.size() - offsets_size;
-        size_t discriminators_offset = discriminators_data.size() - num_new_discriminators;
 
         for (size_t i = discriminators_offset ; i != discriminators_data.size(); ++i)
         {
@@ -611,6 +603,8 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         addToSubstreamsCache(cache, settings.path, col.getOffsetsPtr());
     }
     settings.path.pop_back();
+
+    variant_state->num_rows_read = col.size();
 }
 
 std::pair<std::vector<size_t>, std::vector<size_t>> SerializationVariant::deserializeCompactDiscriminators(

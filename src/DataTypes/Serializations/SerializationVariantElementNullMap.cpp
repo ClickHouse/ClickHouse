@@ -27,6 +27,7 @@ struct DeserializeBinaryBulkStateVariantElementNullMap : public ISerialization::
     /// substream cache correctly.
     ColumnPtr discriminators;
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
+    size_t num_rows_read = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -143,9 +144,12 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     }
     settings.path.pop_back();
 
+    if (result_column->empty())
+        variant_element_null_map_state->num_rows_read = 0;
+    size_t discriminators_offset = variant_element_null_map_state->num_rows_read;
+
     if (rows_offset)
     {
-        size_t discriminators_offset = variant_element_null_map_state->discriminators->size() - limit - rows_offset;
         auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_null_map_state->discriminators->assumeMutable()).getData();
 
         for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
@@ -170,7 +174,6 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     {
         const auto & discriminators_data
             = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*variant_element_null_map_state->discriminators).getData();
-        size_t discriminators_offset = variant_element_null_map_state->discriminators->size() - limit;
         for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
             data.push_back(discriminators_data[i] != variant_discriminator);
     }

@@ -29,6 +29,7 @@ struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : p
     ColumnPtr variant;
     ISerialization::DeserializeBinaryBulkStatePtr discriminators_state;
     ISerialization::DeserializeBinaryBulkStatePtr variant_element_state;
+    size_t num_rows_read = 0;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -158,13 +159,16 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     settings.path.pop_back();
 
+    if (result_column->empty())
+        variant_element_state->num_rows_read = 0;
+    size_t discriminators_offset = variant_element_state->num_rows_read;
+
     if (!variant_rows_offset)
     {
         variant_rows_offset = 0;
 
         if (rows_offset)
         {
-            size_t discriminators_offset = variant_element_state->discriminators->size() - limit - rows_offset;
             auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators->assumeMutable()).getData();
 
             for (size_t i = discriminators_offset; i != discriminators_offset + rows_offset; ++i)
@@ -174,7 +178,6 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
     if (rows_offset)
     {
-        size_t discriminators_offset = variant_element_state->discriminators->size() - limit - rows_offset;
         auto & discriminators_data = assert_cast<ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators->assumeMutable()).getData();
 
         for (size_t i = discriminators_offset; i + rows_offset < discriminators_data.size(); ++i)
@@ -183,12 +186,11 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     }
 
     /// We could read less than limit discriminators, but we will need actual number of read rows later.
-    size_t num_new_discriminators = variant_element_state->discriminators->size() - result_column->size();
+    size_t num_new_discriminators = variant_element_state->discriminators->size() - variant_element_state->num_rows_read;
 
     /// Iterate through new discriminators to calculate the limit for our variant
     /// if we didn't do it during discriminators deserialization.
     const auto & discriminators_data = assert_cast<const ColumnVariant::ColumnDiscriminators &>(*variant_element_state->discriminators).getData();
-    size_t discriminators_offset = variant_element_state->discriminators->size() - num_new_discriminators;
     if (!variant_limit)
     {
         variant_limit = 0;
@@ -270,6 +272,8 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
                 mutable_column->insertDefault();
         }
     }
+
+    variant_element_state->num_rows_read = result_column->size();
 }
 
 std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscriminators(
