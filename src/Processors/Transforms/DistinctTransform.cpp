@@ -4,55 +4,8 @@
 #include <set>
 #include <vector>
 #include <Processors/Transforms/DistinctTransform.h>
-#include "Common/PODArray.h"
-#include "Common/PODArray_fwd.h"
-#include "Common/ThreadPool_fwd.h"
-#include <Common/ThreadPool.h>
-#include <Common/CurrentThread.h>
-#include <Common/setThreadName.h>
-#include <Common/scope_guard_safe.h>
-#include <Common/CurrentMetrics.h>
-#include <exception>
-#include "Common/assert_cast.h"
-#include "Columns/ColumnVector.h"
-#include "Columns/ColumnsNumber.h"
-#include "Columns/IColumn.h"
-#include "Columns/IColumn_fwd.h"
-#include "Core/Block.h"
-#include "Core/ColumnNumbers.h"
-#include "Core/ColumnsWithTypeAndName.h"
-#include "DataTypes/DataTypesNumber.h"
-#include "Interpreters/AggregationCommon.h"
 #include "Interpreters/BloomFilter.h"
-#include "Interpreters/SetVariants.h"
-#include "Processors/Chunk.h"
-#include "Processors/Transforms/SortingTransform.h"
-#include "base/defines.h"
-#include "base/types.h"
 
-static inline size_t intHash32(UInt64 x)
-{
-    x = (~x) + (x << 18);
-    x = x ^ ((x >> 31) | (x << 33));
-    x = x * 21;
-    x = x ^ ((x >> 11) | (x << 53));
-    x = x + (x << 6);
-    x = x ^ ((x >> 22) | (x << 42));
-
-    return x;
-}
-
-
-static constexpr size_t BITS_FOR_BUCKET = 8;
-static constexpr UInt32 NUM_BUCKETS = 1ULL << BITS_FOR_BUCKET;
-static constexpr UInt32 MAX_BUCKET = NUM_BUCKETS - 1;
-
-namespace CurrentMetrics
-{
-    extern const Metric DestroyAggregatesThreads;
-    extern const Metric DestroyAggregatesThreadsActive;
-    extern const Metric DestroyAggregatesThreadsScheduled;
-}
 
 
 namespace DB
@@ -213,9 +166,11 @@ void DistinctTransform::buildSetFilter(
     const ColumnRawPtrs & columns,
     IColumnFilter & filter,
     const size_t rows,
-    SetVariants & variants) const
+    SetVariants & variants,
+    size_t & passed) const
 {
     typename Method::State state(columns, key_sizes, nullptr);
+    auto bf_lookup = !leaky;
 
     for (size_t i = 0; i < rows; ++i)
     {
