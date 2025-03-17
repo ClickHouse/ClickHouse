@@ -9,6 +9,7 @@ title: 'Geo Data using the Cell Tower Dataset'
 
 import ConnectionDetails from '@site/docs/_snippets/_gather_your_details_http.mdx';
 
+import Image from '@theme/IdealImage';
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 import CodeBlock from '@theme/CodeBlock';
@@ -46,7 +47,7 @@ ClickHouse Cloud provides an easy-button for uploading this dataset from S3.  Lo
 
 Choose the **Cell Towers** dataset from the **Sample data** tab, and **Load data**:
 
-<img src={cloud_load_data_sample} class="image" alt="Load cell towers dataset" />
+<Image img={cloud_load_data_sample} size='md' alt='Load cell towers dataset' />
 
 ### Examine the schema of the cell_towers table {#examine-the-schema-of-the-cell_towers-table}
 ```sql
