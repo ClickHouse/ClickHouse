@@ -163,6 +163,7 @@ def test_executable_function_non_direct_bash(started_cluster):
 def test_executable_function_sum_json_python(started_cluster):
     skip_test_msan(node)
 
+    node.query("DROP TABLE IF EXISTS test_table;")
     node.query("CREATE TABLE test_table (lhs UInt64, rhs UInt64) ENGINE=TinyLog;")
     node.query("INSERT INTO test_table VALUES (0, 0), (1, 1), (2, 2);")
 
@@ -234,6 +235,7 @@ def test_executable_function_sum_json_python(started_cluster):
 def test_executable_function_input_nullable_python(started_cluster):
     skip_test_msan(node)
 
+    node.query("DROP TABLE IF EXISTS test_table_nullable;")
     node.query(
         "CREATE TABLE test_table_nullable (value Nullable(UInt64)) ENGINE=TinyLog;"
     )
@@ -264,6 +266,8 @@ def test_executable_function_input_nullable_python(started_cluster):
         )
         == "Key 0\nKey Nullable\nKey 2\n"
     )
+
+    node.query("DROP TABLE test_table_nullable;")
 
 
 def test_executable_function_parameter_python(started_cluster):
