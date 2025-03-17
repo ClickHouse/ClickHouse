@@ -24,10 +24,10 @@ import add_clickhouse_as_superset_datasource from '@site/docs/getting-started/ex
 import add_cell_towers_table_as_dataset from '@site/docs/getting-started/example-datasets/images/superset-add-dataset.png'
 import create_a_map_in_superset from '@site/docs/getting-started/example-datasets/images/superset-create-map.png'
 import specify_long_and_lat from '@site/docs/getting-started/example-datasets/images/superset-lon-lat.png'
-import superset-mcc-204 from '@site/docs/getting-started/example-datasets/images/superset-mcc-204.png'
-import superset-radio-umts from '@site/docs/getting-started/example-datasets/images/superset-radio-umts.png'
-import superset-umts-netherlands from '@site/docs/getting-started/example-datasets/images/superset-umts-netherlands.png'
-import superset-cell-tower-dashboard from '@site/docs/getting-started/example-datasets/images/superset-cell-tower-dashboard.png'
+import superset_mcc_204 from '@site/docs/getting-started/example-datasets/images/superset-mcc-204.png'
+import superset_radio_umts from '@site/docs/getting-started/example-datasets/images/superset-radio-umts.png'
+import superset_umts_netherlands from '@site/docs/getting-started/example-datasets/images/superset-umts-netherlands.png'
+import superset_cell_tower_dashboard from '@site/docs/getting-started/example-datasets/images/superset-cell-tower-dashboard.png'
 
 ## Goal {#goal}
 
@@ -342,15 +342,15 @@ The fields `lon` and `lat` contain the longitude and latitude:
 
 Add a filter with `mcc` = `204` (or substitute any other `mcc` value):
 
-<Image img={superset-mcc-204} size="md" alt="Filter on MCC 204"/>
+<Image img={superset_mcc_2024} size="md" alt="Filter on MCC 204"/>
 
 Add a filter with `radio` = `'UMTS'` (or substitute any other `radio` value, you can see the choices in the output of `DESCRIBE TABLE cell_towers`):
 
-<Image img={superset-radio-umts} size="md" alt="Filter on radio equal to UMTS"/>
+<Image img={superset_radio_umts} size="md" alt="Filter on radio equal to UMTS"/>
 
 This is the full configuration for the chart that filters on `radio = 'UMTS'` and `mcc = 204`:
 
-<Image img={superset-umts-netherlands} size="md" alt="Chart for UMTS radios in MCC 204"/>
+<Image img={superset_umts_netherlands} size="md" alt="Chart for UMTS radios in MCC 204"/>
 
 Click on **UPDATE CHART** to render the visualization.
 
@@ -358,7 +358,7 @@ Click on **UPDATE CHART** to render the visualization.
 
 This screenshot shows cell tower locations with LTE, UMTS, and GSM radios.  The charts are all created in the same way, and they are added to a dashboard.
 
-<Image img={superset-cell-tower-dashboard} size="md" alt="Dashboard of cell towers by radio type in mcc 204"/>
+<Image img={superset_cell_tower_dashboard} size="md" alt="Dashboard of cell towers by radio type in mcc 204"/>
 
 :::tip
 The data is also available for interactive queries in the [Playground](https://sql.clickhouse.com).
