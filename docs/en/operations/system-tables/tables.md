@@ -33,7 +33,7 @@ Columns:
 
 - `dependencies_database` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Database dependencies.
 
-- `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([materialized views](../../sql-reference/statements/create/view.md#materialized-view) the current table).
+- `dependencies_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Table dependencies ([materialized views](/sql-reference/statements/create/view#materialized-view) the current table).
 
 - `create_table_query` ([String](../../sql-reference/data-types/string.md)) - The query that was used to create the table.
 

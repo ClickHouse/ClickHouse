@@ -22,7 +22,7 @@ histogram(number_of_bins)(values)
 
 `number_of_bins` — 直方图bin个数，这个函数会自动计算bin的数量，而且会尽量使用指定值，如果无法做到，那就使用更小的bin个数。
 
-`values` — [表达式](../syntax.md#syntax-expressions) 输入值。
+`values` — [表达式](/sql-reference/syntax#expressions) 输入值。
 
 **返回值**
 
@@ -496,4 +496,4 @@ FROM
 
 ## sumMapFiltered(keys_to_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
 
-和 [sumMap](./reference/summap.md#agg_functions-summap) 基本一致， 除了一个键数组作为参数传递。这在使用高基数key时尤其有用。
+和 [sumMap](/sql-reference/aggregate-functions/reference/summap) 基本一致， 除了一个键数组作为参数传递。这在使用高基数key时尤其有用。
