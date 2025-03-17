@@ -12,7 +12,7 @@ title: 'Functions for Working with Nullable Values'
 
 Returns whether the argument is [NULL](../../sql-reference/syntax.md#null).
 
-See also operator [`IS NULL`](../operators/index.md#is_null).
+See also operator [`IS NULL`](../operators/overview.md#is_null).
 
 **Syntax**
 
@@ -99,7 +99,7 @@ Result:
 
 Returns whether the argument is not [NULL](/operations/settings/formats#input_format_null_as_default).
 
-See also operator [`IS NOT NULL`](../operators/index.md#is_not_null).
+See also operator [`IS NOT NULL`](../operators/overview.md#is_not_null).
 
 ``` sql
 isNotNull(x)

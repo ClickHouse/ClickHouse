@@ -24,7 +24,7 @@ Setting [short_circuit_function_evaluation](/operations/settings/settings#short_
 and(val1, val2...)
 ```
 
-Alias: The [AND operator](../../sql-reference/operators/index.md#logical-and-operator).
+Alias: The [AND operator](../../sql-reference/operators/overview.md#logical-and-operator).
 
 **Arguments**
 
@@ -78,7 +78,7 @@ Setting [short_circuit_function_evaluation](/operations/settings/settings#short_
 or(val1, val2...)
 ```
 
-Alias: The [OR operator](../../sql-reference/operators/index.md#logical-or-operator).
+Alias: The [OR operator](../../sql-reference/operators/overview.md#logical-or-operator).
 
 **Arguments**
 
@@ -130,7 +130,7 @@ Calculates the logical negation of a value.
 not(val);
 ```
 
-Alias: The [Negation operator](../../sql-reference/operators/index.md#logical-negation-operator).
+Alias: The [Negation operator](../../sql-reference/operators/overview.md#logical-negation-operator).
 
 **Arguments**
 
