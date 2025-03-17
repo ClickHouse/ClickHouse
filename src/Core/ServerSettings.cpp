@@ -40,7 +40,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_thread_pool_size>12000</max_thread_pool_size>
     ```
     )", 0) \
@@ -49,7 +49,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_thread_pool_free_size>1200</max_thread_pool_free_size>
     ```
     )", 0) \
@@ -62,7 +62,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <thread_pool_queue_size>12000</thread_pool_queue_size>
     ```
     )", 0) \
@@ -539,7 +539,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_table_size_to_drop>0</max_table_size_to_drop>
     ```
     )", 0) \
@@ -557,7 +557,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_partition_size_to_drop>0</max_partition_size_to_drop>
     ```
     )", 0) \
@@ -566,7 +566,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_table_num_to_warn>400</max_table_num_to_warn>
     ```
     )", 0) \
@@ -575,7 +575,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
     ```
     )", 0) \
@@ -584,7 +584,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_view_num_to_warn>400</max_view_num_to_warn>
     ```
     )", 0) \
@@ -593,7 +593,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
     ```
     )", 0) \
@@ -602,7 +602,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_database_num_to_warn>50</max_database_num_to_warn>
     ```
     )", 0) \
@@ -611,7 +611,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_part_num_to_warn>400</max_part_num_to_warn>
     ```
     )", 0) \
@@ -794,7 +794,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <async_load_databases>true</async_load_databases>
     ```
     )", 0) \
@@ -806,7 +806,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <async_load_system_database>true</async_load_system_database>
     ```
     )", 0) \
@@ -824,11 +824,11 @@ namespace DB
     - `1` — Enabled.
     )", 0) \
     DECLARE(Seconds, keep_alive_timeout, DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT, R"(
-    The number of seconds that ClickHouse waits for incoming requests before closing the connection.
+    The number of seconds that ClickHouse waits for incoming requests for HTTP protocol before closing the connection.
 
     **Example**
 
-    ``` xml
+    ```xml
     <keep_alive_timeout>10</keep_alive_timeout>
     ```
     )", 0) \
@@ -837,7 +837,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_keep_alive_requests>10</max_keep_alive_requests>
     ```
     )", 0) \
@@ -872,7 +872,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
     ```
     )", 0) \
@@ -881,7 +881,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <default_replica_name>{replica}</default_replica_name>
     ```
     )", 0) \
@@ -918,7 +918,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <throw_on_unknown_workload>true</throw_on_unknown_workload>
     ```
 
@@ -995,7 +995,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <dictionaries_lazy_load>true</dictionaries_lazy_load>
     ```
     )", 0) \
@@ -1014,7 +1014,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
     ```
     )", 0) \
