@@ -40,7 +40,6 @@
 
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Processors/Sources/NullSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -959,11 +958,22 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                     {
                         auto table_function_ast = table_function_node->toAST();
                         table_function_ast->setAlias({});
-                        auto table_function_serialized_ast = queryToString(table_function_ast);
+
+                        WriteBufferFromOwnString out;
+                        IAST::FormatSettings format_settings(
+                            /*one_line=*/true,
+                            /*hilite=*/false,
+                            IdentifierQuotingRule::WhenNecessary,
+                            IdentifierQuotingStyle::Backticks,
+                            /*show_secrets_=*/false);
+
+                        table_function_ast->format(out, format_settings);
+
+                        auto table_function_serialized_ast = std::move(out.str());
 
                         auto reading_from_table_function = std::make_unique<ReadFromTableFunctionStep>(
                             sample_block,
-                            table_function_serialized_ast,
+                            std::move(table_function_serialized_ast),
                             table_expression_query_info.table_expression_modifiers.value_or(TableExpressionModifiers{}));
 
                         query_plan.addStep(std::move(reading_from_table_function));
