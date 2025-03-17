@@ -6,8 +6,8 @@ import re
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from praktika.result import Result
-from praktika.utils import Shell, Utils
+from ci.praktika.result import Result
+from ci.praktika.utils import Shell, Utils
 
 NPROC = multiprocessing.cpu_count()
 
@@ -248,7 +248,6 @@ def check_file_names(files):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Style Check Job")
-    # parser.add_argument("--param", help="Optional job start stage", default=None)
     parser.add_argument("--test", help="Sub check name", default="")
     return parser.parse_args()
 
@@ -260,16 +259,6 @@ if __name__ == "__main__":
 
     stop_watch = Utils.Stopwatch()
 
-    # all_files = Utils.traverse_paths(
-    #     include_paths=["."],
-    #     exclude_paths=[
-    #         "./.git",
-    #         "./contrib",
-    #         "./build",
-    #         "./ci/tmp",
-    #     ],
-    #     not_exists_ok=True,  # ./build may exist if runs locally
-    # )
     cpp_files = Utils.traverse_paths(
         include_paths=["./src", "./base", "./programs", "./utils"],
         exclude_paths=[
@@ -298,7 +287,7 @@ if __name__ == "__main__":
         file_suffixes=[".sql", ".sh", ".py", ".j2"],
     )
 
-    testname = "Whitespace Check"
+    testname = "whitespace_check"
     if testpattern.lower() in testname.lower():
         results.append(
             run_check_concurrent(
@@ -307,7 +296,7 @@ if __name__ == "__main__":
                 files=cpp_files,
             )
         )
-    testname = "YamlLint Check"
+    testname = "yamllint"
     if testpattern.lower() in testname.lower():
         results.append(
             run_check_concurrent(
@@ -316,7 +305,7 @@ if __name__ == "__main__":
                 files=yaml_workflow_files,
             )
         )
-    testname = "XmlLint Check"
+    testname = "xmllint"
     if testpattern.lower() in testname.lower():
         results.append(
             run_check_concurrent(
@@ -325,7 +314,7 @@ if __name__ == "__main__":
                 files=xml_files,
             )
         )
-    testname = "Functional Tests scripts smoke check"
+    testname = "functional_tests_check"
     if testpattern.lower() in testname.lower():
         results.append(
             run_check_concurrent(
@@ -334,7 +323,7 @@ if __name__ == "__main__":
                 files=functional_test_files,
             )
         )
-    testname = "Check Tests Numbers"
+    testname = "test_numbers_check"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -343,7 +332,7 @@ if __name__ == "__main__":
                 command_args=[functional_test_files],
             )
         )
-    testname = "Check Broken Symlinks"
+    testname = "symlinks"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -355,7 +344,7 @@ if __name__ == "__main__":
                 },
             )
         )
-    testname = "Check CPP code"
+    testname = "cpp"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -363,7 +352,7 @@ if __name__ == "__main__":
                 command=check_cpp_code,
             )
         )
-    testname = "Check Submodules"
+    testname = "submodules"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -371,16 +360,7 @@ if __name__ == "__main__":
                 command=check_repo_submodules,
             )
         )
-    # testname = "Check File Names"
-    # if testpattern.lower() in testname.lower():
-    #     results.append(
-    #         Result.from_commands_run(
-    #             name=testname,
-    #             command=check_file_names,
-    #             command_args=[all_files],
-    #         )
-    #     )
-    testname = "Check Many Different Things"
+    testname = "various"
     if testpattern.lower() in testname.lower():
         results.append(
             Result.from_commands_run(
@@ -414,4 +394,6 @@ if __name__ == "__main__":
             )
         )
 
-    result = Result.create_from(results=results, stopwatch=stop_watch).complete_job()
+    Result.create_from(
+        results=results, stopwatch=stop_watch
+    ).add_local_run_command_to_info().complete_job()

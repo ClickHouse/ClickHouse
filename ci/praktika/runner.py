@@ -430,7 +430,7 @@ class Runner:
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
-                description=result.info[0:70],
+                description=result.get_commit_status_description(),
                 url=report_url,
             ):
                 print(f"ERROR: Failed to post failed commit status for the job")

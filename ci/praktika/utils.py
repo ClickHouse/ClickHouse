@@ -540,8 +540,12 @@ class Utils:
         for path in include_paths:
             included_files_.update(cls.traverse_path(path, file_suffixes=file_suffixes))
 
-        exclude_paths = ["./" + p.removeprefix('./') for p in exclude_paths]
-        res = [f for f in included_files_ if not any(f.startswith(exclude_path) for exclude_path in exclude_paths)]
+        exclude_paths = ["./" + p.removeprefix("./") for p in exclude_paths]
+        res = [
+            f
+            for f in included_files_
+            if not any(f.startswith(exclude_path) for exclude_path in exclude_paths)
+        ]
         if sorted:
             res.sort(reverse=True)
         return res

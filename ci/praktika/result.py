@@ -63,7 +63,7 @@ class Result(MetaClasses.Serializable):
         files=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
-    ):
+    ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
         if not results and not status:
@@ -186,6 +186,31 @@ class Result(MetaClasses.Serializable):
     def set_link(self, link) -> "Result":
         self.links.append(link)
         self.dump()
+        return self
+
+    def get_commit_status_description(self):
+        if self.is_ok():
+            return "ok"
+        failed = [r.name for r in self.results if not r.is_ok()]
+        if not failed:
+            return "Failed"
+        failed_str = ",".join(failed)
+        return (
+            f"Failed: {failed_str}"
+            if len(failed_str) < 80
+            else f"Failed: {len(failed)} tests"
+        )
+
+    def add_local_run_command_to_info(self):
+        command_info = (
+            f'For local test: PYTHONPATH=./ci python -m praktika run "{self.name}"'
+        )
+        if not self.is_ok():
+            for r in self.results:
+                if not r.is_ok():
+                    command_info += f" --test {r.name}"
+                    break
+            self.set_info(command_info)
         return self
 
     @classmethod
