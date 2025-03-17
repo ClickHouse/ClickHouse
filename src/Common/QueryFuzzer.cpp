@@ -40,7 +40,7 @@
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Parsers/ParserDataType.h>
-#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <pcg_random.hpp>
 #include <Common/assert_cast.h>
