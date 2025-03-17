@@ -328,7 +328,7 @@ struct SettingFieldURI
   * DECLARE_SETTING_ENUM(SettingFieldGender, Gender)
   *
   * mysettings.cpp:
-  * IMPLEMENT_SETTING_ENUM(SettingFieldGender, ErrorCodes::BAD_ARGUMENTS,
+  * IMPLEMENT_SETTING_ENUM(SettingFieldGender, ExceptionType,
   *                        {{"Male", Gender::Male}, {"Female", Gender::Female}})
   */
 template <typename EnumT, typename Traits>
