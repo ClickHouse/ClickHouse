@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/combinators
+description: 'Documentation for Aggregate Function Combinators'
+sidebar_label: 'Combinators'
 sidebar_position: 37
-sidebar_label: Combinators
+slug: /sql-reference/aggregate-functions/combinators
+title: 'Aggregate Function Combinators'
 ---
 
 # Aggregate Function Combinators

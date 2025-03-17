@@ -1,10 +1,11 @@
 ---
-title: Vertical
-slug: /interfaces/formats/Vertical
-keywords: [Vertical]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the Vertical format'
+input_format: false
+keywords: ['Vertical']
+output_format: true
+slug: /interfaces/formats/Vertical
+title: 'Vertical'
 ---
 
 | Input | Output | Alias |

@@ -62,6 +62,8 @@ public:
 
     virtual void serializeSettings(QueryPlanSerializationSettings & /*settings*/) const {}
     virtual void serialize(Serialization & /*ctx*/) const;
+    virtual bool isSerializable() const { return false; }
+
     virtual const SortDescription & getSortDescription() const;
 
     struct FormatSettings

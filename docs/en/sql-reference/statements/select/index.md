@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/select/
+description: 'Documentation for SELECT Query'
+sidebar_label: 'SELECT'
 sidebar_position: 32
-sidebar_label: SELECT
+slug: /sql-reference/statements/select/
+title: 'SELECT Query'
 ---
 
 # SELECT Query
