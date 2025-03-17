@@ -230,12 +230,12 @@ ClickHouse is able to maintain Kerberos credentials using a keytab file. Conside
 Example:
 
 ``` xml
-  <!-- Kerberos-aware Kafka -->
-  <kafka>
-    <security_protocol>SASL_PLAINTEXT</security_protocol>
-	<sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
-	<sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
-  </kafka>
+<!-- Kerberos-aware Kafka -->
+<kafka>
+  <security_protocol>SASL_PLAINTEXT</security_protocol>
+  <sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+  <sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+</kafka>
 ```
 
 ## Virtual Columns {#virtual-columns}

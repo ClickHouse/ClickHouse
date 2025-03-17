@@ -184,7 +184,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
-    OutFormat outf = rg.pickKeyRandomlyFromMap(out_in);
+    OutFormat outf = rg.pickRandomly(out_in);
 
     /// Remove the file if exists
     if (!std::filesystem::remove(nfile, ec) && ec)
@@ -313,7 +313,7 @@ void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
     nsettings.clear();
     for (uint32_t i = 0; i < nsets; i++)
     {
-        const String & setting = rg.pickKeyRandomlyFromMap(queryOracleSettings);
+        const String & setting = rg.pickRandomly(queryOracleSettings);
         const CHSetting & chs = queryOracleSettings.at(setting);
         SetValue * setv = i == 0 ? sv->mutable_set_value() : sv->add_other_values();
 
@@ -333,8 +333,8 @@ void QueryOracle::generateFirstSetting(RandomGenerator & rg, SQLQuery & sq1)
         }
         else
         {
-            setv->set_value(rg.pickRandomlyFromSet(chs.oracle_values));
-            nsettings.push_back(rg.pickRandomlyFromSet(chs.oracle_values));
+            setv->set_value(rg.pickRandomly(chs.oracle_values));
+            nsettings.push_back(rg.pickRandomly(chs.oracle_values));
         }
         can_test_query_success &= !chs.changes_behavior;
     }
@@ -673,7 +673,8 @@ void QueryOracle::resetOracleValues()
     measure_performance = false;
     first_success = other_steps_sucess = true;
     can_test_query_success = fc.compare_success_results;
-    query_duration_ms1 = memory_usage1 = query_duration_ms2 = memory_usage2 = 0;
+    res1 = PerformanceResult();
+    res2 = PerformanceResult();
 }
 
 void QueryOracle::setIntermediateStepSuccess(const bool success)
@@ -687,8 +688,7 @@ void QueryOracle::processFirstOracleQueryResult(const bool success, ExternalInte
     {
         if (measure_performance)
         {
-            other_steps_sucess
-                &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->query_duration_ms1, this->memory_usage1);
+            other_steps_sucess &= ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::None, this->res1);
         }
         else
         {
@@ -710,28 +710,9 @@ void QueryOracle::processSecondOracleQueryResult(const bool success, ExternalInt
         {
             if (measure_performance)
             {
-                if (ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::ClickHouse, this->query_duration_ms2, this->memory_usage2))
+                if (ei.getPerformanceMetricsForLastQuery(PeerTableDatabase::ClickHouse, this->res2))
                 {
-                    if (this->fc.query_time_minimum<this->query_duration_ms1 && this->query_duration_ms1> static_cast<uint64_t>(
-                            this->query_duration_ms2 * (1 + (static_cast<double>(fc.query_time_threshold) / 100.0f))))
-                    {
-                        throw DB::Exception(
-                            DB::ErrorCodes::BUZZHOUSE,
-                            "{}: ClickHouse peer server query was faster than the target server: {} vs {}",
-                            oracle_name,
-                            formatReadableTime(static_cast<double>(this->query_duration_ms1 * 1000000)),
-                            formatReadableTime(static_cast<double>(this->query_duration_ms2 * 1000000)));
-                    }
-                    if (this->fc.query_memory_minimum<this->memory_usage1 && this->memory_usage1> static_cast<uint64_t>(
-                            this->memory_usage2 * (1 + (static_cast<double>(fc.query_memory_threshold) / 100.0f))))
-                    {
-                        throw DB::Exception(
-                            DB::ErrorCodes::BUZZHOUSE,
-                            "{}: ClickHouse peer server query used less memory than the target server: {} vs {}",
-                            oracle_name,
-                            formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage1)),
-                            formatReadableSizeWithBinarySuffix(static_cast<double>(this->memory_usage2)));
-                    }
+                    fc.comparePerformanceResults(oracle_name, this->res1, this->res2);
                 }
             }
             else

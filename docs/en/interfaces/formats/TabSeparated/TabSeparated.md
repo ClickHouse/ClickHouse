@@ -1,6 +1,5 @@
 ---
-alias:
-- TSV
+alias: ['TSV']
 description: 'Documentation for the TSV format'
 input_format: true
 keywords: ['TabSeparated', 'TSV']

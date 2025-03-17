@@ -8,6 +8,7 @@ import pytest
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import pg_pass, mysql_pass
 from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
@@ -64,7 +65,7 @@ def get_mysql_conn():
             if conn is None:
                 conn = pymysql.connect(
                     user="root",
-                    password="clickhouse",
+                    password=mysql_pass,
                     host=cluster.mysql8_ip,
                     port=cluster.mysql8_port,
                 )
@@ -103,9 +104,7 @@ def drop_mysql_table(conn, table_name):
 
 
 def get_postgres_conn(started_cluster):
-    conn_string = "host={} port={} user='postgres' password='mysecretpassword'".format(
-        started_cluster.postgres_ip, started_cluster.postgres_port
-    )
+    conn_string = f"host={started_cluster.postgres_ip} port={started_cluster.postgres_port} user='postgres' password='{pg_pass}'"
     errors = []
     for _ in range(15):
         try:
@@ -284,11 +283,8 @@ def test_mysql_simple_select_works(started_cluster):
     )
 
     node1.query(
-        """
-CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{}', 'root', 'clickhouse');
-""".format(
-            table_name, table_name
-        )
+        f"""
+CREATE TABLE {table_name}(id UInt32, name String, age UInt32, money UInt32, column_x Nullable(UInt32)) ENGINE = MySQL('mysql80:3306', 'clickhouse', '{table_name}', 'root', '{mysql_pass}');"""
     )
 
     node1.query(
