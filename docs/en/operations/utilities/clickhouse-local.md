@@ -1,7 +1,9 @@
 ---
-slug: /operations/utilities/clickhouse-local
+description: 'Guide to using clickhouse-local for processing data without a server'
+sidebar_label: 'clickhouse-local'
 sidebar_position: 60
-sidebar_label: clickhouse-local
+slug: /operations/utilities/clickhouse-local
+title: 'clickhouse-local'
 ---
 
 # clickhouse-local
@@ -71,21 +73,21 @@ Examples:
 :::
 
 ```response
-marketplace	Nullable(String)
-customer_id	Nullable(Int64)
-review_id	Nullable(String)
-product_id	Nullable(String)
-product_parent	Nullable(Int64)
-product_title	Nullable(String)
-product_category	Nullable(String)
-star_rating	Nullable(Int64)
-helpful_votes	Nullable(Int64)
-total_votes	Nullable(Int64)
-vine	Nullable(String)
-verified_purchase	Nullable(String)
-review_headline	Nullable(String)
-review_body	Nullable(String)
-review_date	Nullable(Date)
+marketplace    Nullable(String)
+customer_id    Nullable(Int64)
+review_id    Nullable(String)
+product_id    Nullable(String)
+product_parent    Nullable(Int64)
+product_title    Nullable(String)
+product_category    Nullable(String)
+star_rating    Nullable(Int64)
+helpful_votes    Nullable(Int64)
+total_votes    Nullable(Int64)
+vine    Nullable(String)
+verified_purchase    Nullable(String)
+review_headline    Nullable(String)
+review_body    Nullable(String)
+review_date    Nullable(Date)
 ```
 
 Let's find a product with the highest rating:
@@ -98,7 +100,7 @@ FROM file('reviews.tsv')"
 ```
 
 ```response
-Monopoly Junior Board Game	5
+Monopoly Junior Board Game    5
 ```
 
 ## Query data in a Parquet file in AWS S3 {#query-data-in-a-parquet-file-in-aws-s3}
@@ -124,20 +126,20 @@ It's always useful to see what the inferred schema that ClickHouse determines fr
 ```
 
 ```response
-price	Nullable(Int64)
-date	Nullable(UInt16)
-postcode1	Nullable(String)
-postcode2	Nullable(String)
-type	Nullable(String)
-is_new	Nullable(UInt8)
-duration	Nullable(String)
-addr1	Nullable(String)
-addr2	Nullable(String)
-street	Nullable(String)
-locality	Nullable(String)
-town	Nullable(String)
-district	Nullable(String)
-county	Nullable(String)
+price    Nullable(Int64)
+date    Nullable(UInt16)
+postcode1    Nullable(String)
+postcode2    Nullable(String)
+type    Nullable(String)
+is_new    Nullable(UInt8)
+duration    Nullable(String)
+addr1    Nullable(String)
+addr2    Nullable(String)
+street    Nullable(String)
+locality    Nullable(String)
+town    Nullable(String)
+district    Nullable(String)
+county    Nullable(String)
 ```
 
 Let's see what the most expensive neighborhoods are:
@@ -160,16 +162,16 @@ LIMIT 10"
 ```
 
 ```response
-LONDON	CITY OF LONDON	886	2271305	█████████████████████████████████████████████▍
-LEATHERHEAD	ELMBRIDGE	206	1176680	███████████████████████▌
-LONDON	CITY OF WESTMINSTER	12577	1108221	██████████████████████▏
-LONDON	KENSINGTON AND CHELSEA	8728	1094496	█████████████████████▉
-HYTHE	FOLKESTONE AND HYTHE	130	1023980	████████████████████▍
-CHALFONT ST GILES	CHILTERN	113	835754	████████████████▋
-AMERSHAM	BUCKINGHAMSHIRE	113	799596	███████████████▉
-VIRGINIA WATER	RUNNYMEDE	356	789301	███████████████▊
-BARNET	ENFIELD	282	740514	██████████████▊
-NORTHWOOD	THREE RIVERS	184	731609	██████████████▋
+LONDON    CITY OF LONDON    886    2271305    █████████████████████████████████████████████▍
+LEATHERHEAD    ELMBRIDGE    206    1176680    ███████████████████████▌
+LONDON    CITY OF WESTMINSTER    12577    1108221    ██████████████████████▏
+LONDON    KENSINGTON AND CHELSEA    8728    1094496    █████████████████████▉
+HYTHE    FOLKESTONE AND HYTHE    130    1023980    ████████████████████▍
+CHALFONT ST GILES    CHILTERN    113    835754    ████████████████▋
+AMERSHAM    BUCKINGHAMSHIRE    113    799596    ███████████████▉
+VIRGINIA WATER    RUNNYMEDE    356    789301    ███████████████▊
+BARNET    ENFIELD    282    740514    ██████████████▊
+NORTHWOOD    THREE RIVERS    184    731609    ██████████████▋
 ```
 
 :::tip
@@ -277,7 +279,7 @@ $ echo 2 | tee 2.tsv
 $ clickhouse-local --query "
     select * from file('1.tsv', TSV, 'a int') t1
     cross join file('2.tsv', TSV, 'b int') t2"
-1	2
+1    2
 ```
 
 Now let's output memory user for each Unix user:

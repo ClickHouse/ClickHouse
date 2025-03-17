@@ -1,7 +1,9 @@
 ---
+description: 'Documentation for the gRPC interface in ClickHouse'
+sidebar_label: 'gRPC Interface'
+sidebar_position: 25
 slug: /interfaces/grpc
-sidebar_position: 19
-sidebar_label: gRPC Interface
+title: 'gRPC Interface'
 ---
 
 # gRPC Interface

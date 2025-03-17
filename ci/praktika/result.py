@@ -63,7 +63,7 @@ class Result(MetaClasses.Serializable):
         files=None,
         info: Union[List[str], str] = "",
         with_info_from_results=False,
-    ):
+    ) -> "Result":
         if isinstance(status, bool):
             status = Result.Status.SUCCESS if status else Result.Status.FAILED
         if not results and not status:
@@ -92,19 +92,17 @@ class Result(MetaClasses.Serializable):
                 infos += info
         if results and not status:
             for result in results:
-                if result.status not in (
-                    Result.Status.SUCCESS,
-                    Result.Status.FAILED,
-                    Result.Status.ERROR,
-                ):
+                if result.status in (Result.Status.SUCCESS, Result.Status.SKIPPED):
+                    continue
+                elif result.status == Result.Status.ERROR:
+                    result_status = Result.Status.ERROR
+                    break
+                elif result.status == Result.Status.FAILED:
+                    result_status = Result.Status.FAILED
+                else:
                     Utils.raise_with_error(
                         f"Unexpected result status [{result.status}] for [{result.name}]"
                     )
-                if result.status != Result.Status.SUCCESS:
-                    result_status = Result.Status.FAILED
-                if result.status == Result.Status.ERROR:
-                    result_status = Result.Status.ERROR
-                    break
         if results and with_info_from_results:
             for result in results:
                 if result.info:
@@ -188,6 +186,36 @@ class Result(MetaClasses.Serializable):
     def set_link(self, link) -> "Result":
         self.links.append(link)
         self.dump()
+        return self
+
+    def add_job_summary_to_info(self, with_local_run_command=False):
+        if not self.is_ok():
+            failed = [r.name for r in self.results if not r.is_ok()]
+            if failed:
+                failed_str = ",".join(failed)
+                summary_info = (
+                    f"Failed: {failed_str}"
+                    if len(failed_str) < 80
+                    else f"Failed: {len(failed)} tests"
+                )
+            else:
+                summary_info = "Failed"
+        else:
+            summary_info = "ok"
+
+        self.set_info(summary_info)
+
+        if with_local_run_command and not self.is_ok():
+            command_info = (
+                f'For local test: PYTHONPATH=./ci python -m praktika run "{self.name}"'
+            )
+            first_failed_test = next(
+                (r.name for r in self.results if not r.is_ok()), None
+            )
+            if first_failed_test:
+                command_info += f" --test {first_failed_test}"
+            self.set_info(command_info)
+
         return self
 
     @classmethod
