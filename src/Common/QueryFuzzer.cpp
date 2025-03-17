@@ -1125,7 +1125,7 @@ ASTPtr QueryFuzzer::setIdentifierAliasOrNot(ASTPtr & exp)
 static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p)
 {
     /// No query parameters identifiers at this moment
-    const auto id = typeid_cast<ASTIdentifier *>(p.second.get());
+    const auto * id = typeid_cast<ASTIdentifier *>(p.second.get());
     return id && !id->name_parts.empty();
 };
 
