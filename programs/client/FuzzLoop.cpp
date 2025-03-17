@@ -1,6 +1,5 @@
 #include <base/scope_guard.h>
 #include "Client.h"
-#include "Parsers/formatAST.h"
 
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/copyData.h>
