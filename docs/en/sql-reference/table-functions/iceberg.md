@@ -1,17 +1,14 @@
 ---
-description: 'Provides a read-only table-like interface to Apache Iceberg tables in
-  Amazon S3, Azure, HDFS or locally stored.'
-sidebar_label: 'iceberg'
-sidebar_position: 90
 slug: /sql-reference/table-functions/iceberg
-title: 'iceberg'
+sidebar_position: 90
+sidebar_label: iceberg
 ---
 
 # iceberg Table Function
 
 Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.apache.org/) tables in Amazon S3, Azure, HDFS or locally stored.
 
-## Syntax {#syntax}
+## Syntax
 
 ``` sql
 icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
@@ -27,7 +24,7 @@ icebergLocal(path_to_table, [,format] [,compression_method])
 icebergLocal(named_collection[, option=value [,..]])
 ```
 
-## Arguments {#arguments}
+## Arguments
 
 Description of the arguments coincides with description of arguments in table functions `s3`, `azureBlobStorage`, `HDFS` and `file` correspondingly.
 `format` stands for the format of data files in the Iceberg table.
@@ -45,7 +42,7 @@ SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_tab
 ClickHouse currently supports reading v1 and v2 of the Iceberg format via the `icebergS3`, `icebergAzure`, `icebergHDFS` and `icebergLocal` table functions and `IcebergS3`, `icebergAzure`, `IcebergHDFS` and `IcebergLocal` table engines.
 :::
 
-## Defining a named collection {#defining-a-named-collection}
+## Defining a named collection
 
 Here is an example of configuring a named collection for storing the URL and credentials:
 
@@ -86,5 +83,5 @@ Table function `iceberg` is an alias to `icebergS3` now.
 
 **See Also**
 
-- [Iceberg engine](/engines/table-engines/integrations/iceberg.md)
-- [Iceberg cluster table function](/sql-reference/table-functions/icebergCluster.md)
+- [Iceberg engine](/docs/engines/table-engines/integrations/iceberg.md)
+- [Iceberg cluster table function](/docs/sql-reference/table-functions/icebergCluster.md)

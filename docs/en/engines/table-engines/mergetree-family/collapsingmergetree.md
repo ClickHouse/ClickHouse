@@ -1,16 +1,13 @@
 ---
-description: 'Inherits from MergeTree but adds logic for collapsing rows during the
-  merge process.'
-keywords: ['updates', 'collapsing']
-sidebar_label: 'CollapsingMergeTree'
-sidebar_position: 70
 slug: /engines/table-engines/mergetree-family/collapsingmergetree
-title: 'CollapsingMergeTree'
+sidebar_position: 70
+sidebar_label: CollapsingMergeTree
+keywords: ['updates', 'collapsing']
 ---
 
 # CollapsingMergeTree
 
-## Description {#description}
+## Description
 
 The `CollapsingMergeTree` engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
 and adds logic for collapsing rows during the merge process.
@@ -26,12 +23,12 @@ This engine may significantly reduce the volume of storage,
 increasing the efficiency of `SELECT` queries as a consequence.
 :::
 
-## Parameters {#parameters}
+## Parameters
 
 All parameters of this table engine, with the exception of the `Sign` parameter,
-have the same meaning as in [`MergeTree`](/engines/table-engines/mergetree-family/mergetree).
+have the same meaning as in [`MergeTree`](/docs/engines/table-engines/mergetree-family/mergetree).
 
-- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/sql-reference/data-types/int-uint).
+- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/docs/sql-reference/data-types/int-uint).
 
 ## Creating a Table {#creating-a-table}
 
@@ -68,7 +65,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE [=] CollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, Sign)
 ```
 
-`Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. [Int8](/sql-reference/data-types/int-uint).
+`Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. [Int8](/docs/sql-reference/data-types/int-uint).
 
 </details>
 
@@ -137,7 +134,7 @@ is further discussed in the [Algorithm](#table_engine-collapsingmergetree-collap
 
 ### Algorithm {#table_engine-collapsingmergetree-collapsing-algorithm}
 
-When ClickHouse merges data [parts](/concepts/glossary#parts), 
+When ClickHouse merges data [parts](/docs/concepts/glossary#parts), 
 each group of consecutive rows with the same sorting key (`ORDER BY`) is reduced to no more than two rows,
 the "state" row with `Sign` = `1` and the "cancel" row with `Sign` = `-1`. 
 In other words, in ClickHouse entries collapse.
@@ -180,7 +177,7 @@ you can use the [`FINAL`](../../../sql-reference/statements/select/from.md#final
 For CollapsingMergeTree, only the latest state row for each key is returned.
 :::
 
-## Examples {#examples}
+## Examples
 
 ### Example of Use {#example-of-use}
 
@@ -247,8 +244,8 @@ However, collapsing **did not occur** because there was no merge of the data par
 and ClickHouse merges data parts in the background at an unknown moment which we cannot predict.
 
 We therefore need an aggregation 
-which we perform with the [`sum`](/sql-reference/aggregate-functions/reference/sum) 
-aggregate function and the [`HAVING`](/sql-reference/statements/select/having) clause:
+which we perform with the [`sum`](/docs/sql-reference/aggregate-functions/reference/sum) 
+aggregate function and the [`HAVING`](/docs/sql-reference/statements/select/having) clause:
 
 ``` sql
 SELECT

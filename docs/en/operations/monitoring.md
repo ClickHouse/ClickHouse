@@ -1,12 +1,9 @@
 ---
-description: 'You can monitor the utilization of hardware resources and also ClickHouse
-  server metrics.'
-keywords: ['monitoring', 'observability', 'advanced dashboard', 'dashboard', 'observability
-    dashboard']
-sidebar_label: 'Monitoring'
-sidebar_position: 45
 slug: /operations/monitoring
-title: 'Monitoring'
+sidebar_position: 45
+sidebar_label: Monitoring
+description: You can monitor the utilization of hardware resources and also ClickHouse server metrics.
+keywords: [monitoring, observability, advanced dashboard, dashboard, observability dashboard]
 ---
 
 # Monitoring
@@ -20,7 +17,7 @@ You can monitor:
 - Utilization of hardware resources.
 - ClickHouse server metrics.
 
-## Built-in advanced observability dashboard {#built-in-advanced-observability-dashboard}
+## Built-in advanced observability dashboard
 
 <img width="400" alt="Screenshot 2023-11-12 at 6 08 58 PM" src="https://github.com/ClickHouse/ClickHouse/assets/3936029/2bd10011-4a47-4b94-b836-d44557c7fdc1" />
 
@@ -61,7 +58,7 @@ ClickHouse collects:
 - Different metrics of how the server uses computational resources.
 - Common statistics on query processing.
 
-You can find metrics in the [system.metrics](/operations/system-tables/metrics), [system.events](/operations/system-tables/events), and [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) tables.
+You can find metrics in the [system.metrics](../operations/system-tables/metrics.md#system_tables-metrics), [system.events](../operations/system-tables/events.md#system_tables-events), and [system.asynchronous_metrics](../operations/system-tables/asynchronous_metrics.md#system_tables-asynchronous_metrics) tables.
 
 You can configure ClickHouse to export metrics to [Graphite](https://github.com/graphite-project). See the [Graphite section](../operations/server-configuration-parameters/settings.md#graphite) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Graphite by following their official [guide](https://graphite.readthedocs.io/en/latest/install.html).
 

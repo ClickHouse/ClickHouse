@@ -5,13 +5,12 @@
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/PreparedSets.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -503,19 +502,14 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (!key_index && !map_key_index)
         return false;
 
-    if (map_key_index)
+    if (map_key_index && (function_name == "has" || function_name == "mapContains"))
     {
-        if (function_name == "has" || function_name == "mapContains")
-        {
-            out.key_column = *key_index;
-            out.function = RPNElement::FUNCTION_HAS;
-            out.bloom_filter = std::make_unique<BloomFilter>(params);
-            auto & value = const_value.safeGet<String>();
-            token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
-            return true;
-        }
-        // When map_key_index is set, we shouldn't use ngram/token bf for other functions
-        return false;
+        out.key_column = *key_index;
+        out.function = RPNElement::FUNCTION_HAS;
+        out.bloom_filter = std::make_unique<BloomFilter>(params);
+        auto & value = const_value.safeGet<String>();
+        token_extractor->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+        return true;
     }
 
     if (function_name == "has")

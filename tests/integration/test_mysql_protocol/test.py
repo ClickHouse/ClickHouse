@@ -178,7 +178,7 @@ def test_mysql_client(started_cluster):
 
     assert (
         "mysql: [Warning] Using a password on the command line interface can be insecure.\n"
-        "ERROR 516 (HY000): default: Authentication failed: password is incorrect, or there is no user with such name"
+        "ERROR 194 (HY000): default: Authentication failed: password is incorrect, or there is no user with such name"
         in stderr.decode()
     )
 
@@ -629,7 +629,7 @@ def test_python_client(started_cluster):
             port=server_port,
         )
 
-    assert exc_info.value.args[0] == 516
+    assert exc_info.value.args[0] == 194
     assert (
         "default: Authentication failed: password is incorrect, or there is no user with such name"
         in exc_info.value.args[1]

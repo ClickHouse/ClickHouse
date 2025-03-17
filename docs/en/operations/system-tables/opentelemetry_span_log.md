@@ -1,13 +1,10 @@
 ---
-description: 'System table containing information about trace spans for executed queries.'
-keywords: ['system table', 'opentelemetry_span_log']
+description: "System table containing information about trace spans for executed queries."
 slug: /operations/system-tables/opentelemetry_span_log
-title: 'system.opentelemetry_span_log'
+title: "opentelemetry_span_log"
+keywords: ["system table", "opentelemetry_span_log"]
 ---
-
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-# system.opentelemetry_span_log
 
 <SystemTableCloud/>
 

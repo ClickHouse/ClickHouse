@@ -8,12 +8,6 @@
 
 #include "config.h"
 
-namespace Poco::Net
-{
-    class HTTPRequest;
-    class SocketAddress;
-}
-
 namespace DB
 {
 
@@ -30,7 +24,6 @@ public:
 
     const String & getUserName() const;
     bool isReady() const;
-    virtual bool allowInteractiveBasicAuthenticationInTheBrowser() const { return false; }
 
 protected:
     [[noreturn]] static void throwNotReady();
@@ -73,12 +66,9 @@ public:
     void setUserName(const String & user_name_);
     void setPassword(const String & password_);
     const String & getPassword() const;
-    bool allowInteractiveBasicAuthenticationInTheBrowser() const override { return allow_interactive_basic_authentication_in_the_browser; }
-    void enableInteractiveBasicAuthenticationInTheBrowser() { allow_interactive_basic_authentication_in_the_browser = true; }
 
 private:
     String password;
-    bool allow_interactive_basic_authentication_in_the_browser = false;
 };
 
 class CredentialsWithScramble : public Credentials

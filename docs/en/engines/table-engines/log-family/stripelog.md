@@ -1,9 +1,7 @@
 ---
-description: 'Documentation for StripeLog'
 slug: /engines/table-engines/log-family/stripelog
 toc_priority: 32
-toc_title: 'StripeLog'
-title: 'StripeLog'
+toc_title: StripeLog
 ---
 
 # StripeLog
@@ -23,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = StripeLog
 ```
 
-See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 ## Writing the Data {#table_engines-stripelog-writing-the-data}
 

@@ -1,10 +1,7 @@
 ---
-description: 'Documentation for the DateTime data type in ClickHouse, which stores
-  timestamps with second precision'
-sidebar_label: 'DateTime'
-sidebar_position: 16
 slug: /sql-reference/data-types/datetime
-title: 'DateTime'
+sidebar_position: 16
+sidebar_label: DateTime
 ---
 
 # DateTime
@@ -21,13 +18,13 @@ Supported range of values: \[1970-01-01 00:00:00, 2106-02-07 06:28:15\].
 
 Resolution: 1 second.
 
-## Speed {#speed}
+## Speed
 
 The `Date` datatype is faster than `DateTime` under _most_ conditions.
 
 The `Date` type requires 2 bytes of storage, while `DateTime` requires 4. However, when the database compresses the database, this difference is amplified. This amplification is due to the minutes and seconds in `DateTime` being less compressible. Filtering and aggregating `Date` instead of `DateTime` is also faster.
 
-## Usage Remarks {#usage-remarks}
+## Usage Remarks
 
 The point in time is saved as a [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time), regardless of the time zone or daylight saving time. The time zone affects how the values of the `DateTime` type values are displayed in text format and how the values specified as strings are parsed ('2020-01-01 05:00:01').
 
@@ -43,7 +40,7 @@ ClickHouse outputs values depending on the value of the [date_time_output_format
 
 When inserting data into ClickHouse, you can use different formats of date and time strings, depending on the value of the [date_time_input_format](../../operations/settings/settings-formats.md#date_time_input_format) setting.
 
-## Examples {#examples}
+## Examples
 
 **1.** Creating a table with a `DateTime`-type column and inserting data into it:
 
@@ -130,7 +127,7 @@ FROM dt
 As timezone conversion only changes the metadata, the operation has no computation cost.
 
 
-## Limitations on time zones support {#limitations-on-time-zones-support}
+## Limitations on time zones support
 
 Some time zones may not be supported completely. There are a few cases:
 
@@ -144,7 +141,7 @@ Similar issue exists for Casey Antarctic station in year 2010. They changed time
 
 Time shifts for multiple days. Some pacific islands changed their timezone offset from UTC+14 to UTC-12. That's alright but some inaccuracies may present if you do calculations with their timezone for historical time points at the days of conversion.
 
-## Handling Daylight Saving Time (DST) {#handling-daylight-saving-time-dst}
+## Handling Daylight Saving Time (DST) 
 
 ClickHouse's DateTime type with time zones can exhibit unexpected behavior during Daylight Saving Time (DST) transitions, particularly when:
 
@@ -185,7 +182,7 @@ SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toInterv
 
 In this case, ClickHouse shifts the non-existent time `2023-03-26 01:30:00` back to `2023-03-26 00:30:00`.
 
-## See Also {#see-also}
+## See Also
 
 - [Type conversion functions](../../sql-reference/functions/type-conversion-functions.md)
 - [Functions for working with dates and times](../../sql-reference/functions/date-time-functions.md)
@@ -194,5 +191,5 @@ In this case, ClickHouse shifts the non-existent time `2023-03-26 01:30:00` back
 - [The `date_time_output_format` setting](../../operations/settings/settings-formats.md#date_time_output_format)
 - [The `timezone` server configuration parameter](../../operations/server-configuration-parameters/settings.md#timezone)
 - [The `session_timezone` setting](../../operations/settings/settings.md#session_timezone)
-- [Operators for working with dates and times](../../sql-reference/operators#operators-for-working-with-dates-and-times)
+- [Operators for working with dates and times](../../sql-reference/operators/index.md#operators-datetime)
 - [The `Date` data type](../../sql-reference/data-types/date.md)

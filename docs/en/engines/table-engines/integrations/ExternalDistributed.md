@@ -1,11 +1,8 @@
 ---
-description: 'The `ExternalDistributed` engine allows to perform `SELECT` queries
-  on data that is stored on a remote servers MySQL or PostgreSQL. Accepts MySQL or
-  PostgreSQL engines as an argument so sharding is possible.'
-sidebar_label: 'ExternalDistributed'
-sidebar_position: 55
 slug: /engines/table-engines/integrations/ExternalDistributed
-title: 'ExternalDistributed'
+sidebar_position: 55
+sidebar_label: ExternalDistributed
+title: ExternalDistributed
 ---
 
 The `ExternalDistributed` engine allows to perform `SELECT` queries on data that is stored on a remote servers MySQL or PostgreSQL. Accepts [MySQL](../../../engines/table-engines/integrations/mysql.md) or [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md) engines as an argument so sharding is possible.
@@ -21,12 +18,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password');
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 The table structure can differ from the original table structure:
 
 - Column names should be the same as in the original table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original table. ClickHouse tries to [cast](/sql-reference/functions/type-conversion-functions#cast) values to the ClickHouse data types.
+- Column types may differ from those in the original table. ClickHouse tries to [cast](../../../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) values to the ClickHouse data types.
 
 **Engine Parameters**
 

@@ -1,9 +1,7 @@
 ---
-description: 'Applies Welch''s t-test to samples from two populations.'
-sidebar_label: 'welchTTest'
-sidebar_position: 214
 slug: /sql-reference/aggregate-functions/reference/welchttest
-title: 'welchTTest'
+sidebar_position: 214
+sidebar_label: welchTTest
 ---
 
 # welchTTest
@@ -70,5 +68,4 @@ Result:
 **See Also**
 
 - [Welch's t-test](https://en.wikipedia.org/wiki/Welch%27s_t-test)
-- [studentTTest function](/sql-reference/aggregate-functions/reference/studentttest)
-
+- [studentTTest function](studentttest.md#studentttest)

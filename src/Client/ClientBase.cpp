@@ -12,7 +12,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
-#include <Common/ErrorCodes.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
@@ -27,6 +26,7 @@
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
@@ -76,7 +76,6 @@
 #include <unordered_map>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string/split.hpp>
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
@@ -131,7 +130,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int CANNOT_WRITE_TO_FILE;
 }
 
 }
@@ -145,84 +143,6 @@ namespace ProfileEvents
 namespace
 {
 constexpr UInt64 THREAD_GROUP_ID = 0;
-
-bool isSpecialFile(const String & path)
-{
-    return path == "/dev/null" || path == "/dev/stdout" || path == "/dev/stderr";
-}
-
-void handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const String & out_file, String & query)
-{
-    if (!query_with_output->is_outfile_truncate)
-        return;
-
-    /// Skip handling truncate mode of special files
-    if (isSpecialFile(out_file))
-        return;
-
-    /// Create a temporary file with unique suffix
-    String tmp_file = out_file + ".tmp." + DB::toString(randomSeed());
-
-    /// Update the AST to use the temporary file
-    auto tmp_file_literal = std::make_shared<DB::ASTLiteral>(tmp_file);
-    query_with_output->out_file = tmp_file_literal;
-
-    /// Update the query string after modifying the AST
-    query = query_with_output->formatWithSecretsOneLine();
-}
-
-void cleanupTempFile(const DB::ASTPtr & parsed_query)
-{
-    if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
-    {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
-        {
-            const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
-            String tmp_file = tmp_file_node.value.safeGet<std::string>();
-
-            /// Skip rename for special files
-            if (isSpecialFile(tmp_file))
-                return;
-
-            if (fs::exists(tmp_file))
-                fs::remove(tmp_file);
-        }
-    }
-}
-
-void performAtomicRename(const DB::ASTPtr & parsed_query)
-{
-    if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
-    {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
-        {
-            const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
-            String tmp_file = tmp_file_node.value.safeGet<std::string>();
-
-            /// Skip rename for special files
-            if (isSpecialFile(tmp_file))
-                return;
-
-            String out_file = tmp_file.substr(0, tmp_file.rfind(".tmp."));
-
-            try
-            {
-                fs::rename(tmp_file, out_file);
-            }
-            catch (const fs::filesystem_error & e)
-            {
-                /// Clean up temporary file
-                if (fs::exists(tmp_file))
-                    fs::remove(tmp_file);
-
-                throw DB::Exception(DB::ErrorCodes::CANNOT_WRITE_TO_FILE,
-                    "Cannot rename temporary file {} to {}: {}",
-                    tmp_file, out_file, e.what());
-            }
-        }
-    }
-}
-
 }
 
 namespace DB
@@ -1158,7 +1078,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
-            query = parsed_query->formatWithSecretsOneLine();
+            query = serializeAST(*parsed_query);
         chassert(!query.empty());
     }
 
@@ -1174,7 +1094,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 visitor.visit(parsed_query);
             }
 
-            query = parsed_query->formatWithSecretsOneLine();
+            query = serializeAST(*parsed_query);
         }
     }
 
@@ -1182,7 +1102,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
     {
         String out_file;
-
         if (query_with_output->out_file)
         {
             if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
@@ -1240,11 +1159,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                         out_file);
                 }
             }
-
-            if (query_with_output->is_outfile_truncate)
-            {
-                handleTruncateMode(const_cast<ASTQueryWithOutput *>(query_with_output), out_file, query);
-            }
         }
     }
 
@@ -1278,9 +1192,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             }
             catch (const NetException &)
             {
-                // Clean up temporary file if it exists
-                cleanupTempFile(parsed_query);
-
                 // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
                 receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
                 throw;
@@ -1288,16 +1199,10 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
             receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
 
-            // After successful query execution, perform atomic rename for TRUNCATE mode
-            performAtomicRename(parsed_query);
-
             break;
         }
         catch (const Exception & e)
         {
-            // Clean up temporary file if it exists
-            cleanupTempFile(parsed_query);
-
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
             if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
@@ -1758,7 +1663,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
-            query = parsed_query->formatWithSecretsOneLine();
+            query = serializeAST(*parsed_query);
         chassert(!query.empty());
     }
 
@@ -2256,7 +2161,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function))
+        if (insert && (!insert->select || input_function) && !is_async_insert_with_inlined_data)
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");

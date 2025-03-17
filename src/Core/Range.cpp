@@ -3,7 +3,7 @@
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorsAccurateComparison.h>
 
 
 namespace DB
@@ -97,12 +97,12 @@ void Range::shrinkToIncludedIfPossible()
 
 bool Range::equals(const Field & lhs, const Field & rhs)
 {
-    return accurateEquals(lhs, rhs);
+    return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs);
 }
 
 bool Range::less(const Field & lhs, const Field & rhs)
 {
-    return accurateLess(lhs, rhs);
+    return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs);
 }
 
 bool Range::empty() const

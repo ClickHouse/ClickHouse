@@ -2078,7 +2078,7 @@ Aggregator::ConvertToBlockResVariant Aggregator::convertToBlockImplFinal(
     data.forEachValue(
         [&](const auto & key, auto & mapped)
         {
-            if (unlikely(!out_cols.has_value()))
+            if (!out_cols.has_value())
                 init_out_cols();
 
             const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;

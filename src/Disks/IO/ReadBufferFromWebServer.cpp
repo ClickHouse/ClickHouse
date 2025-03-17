@@ -7,6 +7,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/logger_useful.h>
 
+#include <thread>
+
 
 namespace DB
 {
@@ -14,6 +16,11 @@ namespace Setting
 {
     extern const SettingsSeconds http_connection_timeout;
     extern const SettingsSeconds http_receive_timeout;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsSeconds keep_alive_timeout;
 }
 
 namespace ErrorCodes
@@ -49,7 +56,7 @@ std::unique_ptr<SeekableReadBuffer> ReadBufferFromWebServer::initialize()
     if (read_until_position)
     {
         if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
     }
 
     const auto & settings = context->getSettingsRef();
@@ -92,7 +99,7 @@ bool ReadBufferFromWebServer::nextImpl()
             return false;
 
         if (read_until_position < offset)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset.load(), read_until_position - 1);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to read beyond right offset ({} > {})", offset, read_until_position - 1);
     }
 
     if (!impl)

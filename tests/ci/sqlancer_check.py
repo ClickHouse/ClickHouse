@@ -86,8 +86,6 @@ def main():
     paths = [
         run_log_path,
         workspace_path / "clickhouse-server.log",
-        workspace_path / "clickhouse-server.log.err",
-        workspace_path / "cores",
         workspace_path / "stderr.log",
         workspace_path / "stdout.log",
     ]
@@ -114,7 +112,7 @@ def main():
 
     if not test_results:
         test_results = [TestResult(name=__file__, status=status)]
-    paths.sort()
+
     JobReport(
         description=description,
         test_results=test_results,

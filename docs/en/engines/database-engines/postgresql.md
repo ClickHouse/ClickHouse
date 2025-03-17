@@ -1,9 +1,7 @@
 ---
-description: 'Allows to connect to databases on a remote PostgreSQL server.'
-sidebar_label: 'PostgreSQL'
-sidebar_position: 40
 slug: /engines/database-engines/postgresql
-title: 'PostgreSQL'
+sidebar_position: 40
+sidebar_label: PostgreSQL
 ---
 
 # PostgreSQL
@@ -139,7 +137,7 @@ DESCRIBE TABLE test_database.test_table;
 └────────┴───────────────────┘
 ```
 
-## Related content {#related-content}
+## Related content
 
 - Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 - Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

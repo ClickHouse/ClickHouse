@@ -39,16 +39,6 @@ def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
     return False
 
 
-# Copy of packager.is_release_build()
-def with_performance_artifacts(build_config: CI.BuildConfig) -> bool:
-    return (
-        not build_config.debug_build
-        and build_config.package_type == "deb"
-        and build_config.sanitizer == ""
-        and not build_config.coverage
-    )
-
-
 def get_packager_cmd(
     build_config: CI.BuildConfig,
     packager_path: Path,
@@ -172,9 +162,8 @@ def main():
     pr_info = PRInfo()
 
     if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
-        thin_unshallow = not with_performance_artifacts(build_config)
-        print(f"Unshallow repo (thin: {thin_unshallow})")
-        unshallow(thin_unshallow)
+        print("Unshallow repo")
+        unshallow()
 
     print("Fetch submodules")
     # TODO: test sparse checkout: update-submodules.sh?
@@ -267,6 +256,7 @@ def main():
         duration=elapsed,
         additional_files=[
             str(log_path),
+            "/home/ubuntu/actions-runner/_work/ClickHouse/ClickHouse/build_docker/contrib/delta-kernel-rs-cmake/_delta_kernel_rs_target-prefix/src/_delta_kernel_rs_target-stamp/_delta_kernel_rs_target-build-err.log"
         ],
         build_dir_for_upload=build_output_path,
         version=version.describe,

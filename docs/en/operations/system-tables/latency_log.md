@@ -1,10 +1,6 @@
 ---
-description: 'Contains the history of all latency buckets, periodically flushed to
-  disk.'
 slug: /operations/system-tables/latency_log
-title: 'system.latency_log'
 ---
-
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 # latency_log

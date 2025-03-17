@@ -1,9 +1,6 @@
 ---
-description: 'Returns an array of the approximately most frequent values and their
-  counts in the specified column.'
-sidebar_position: 107
 slug: /sql-reference/aggregate-functions/reference/approxtopk
-title: 'approx_top_k'
+sidebar_position: 107
 ---
 
 # approx_top_k

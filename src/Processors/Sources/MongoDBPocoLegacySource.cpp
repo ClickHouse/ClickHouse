@@ -23,9 +23,6 @@
 #include <IO/ReadHelpers.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
-#include <Common/CurrentThread.h>
-#include <Interpreters/Context.h>
-
 #include "base/types.h"
 #include <base/range.h>
 #include <Poco/URI.h>
@@ -518,12 +515,8 @@ Chunk MongoDBPocoLegacySource::generate()
         columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
     size_t num_rows = 0;
-    auto context = CurrentThread::getQueryContext();
     while (num_rows < max_block_size)
     {
-        if (context && context->isCurrentQueryKilled())
-            break;
-
         auto documents = cursor.nextDocuments(*connection);
 
         for (auto & document : documents)
