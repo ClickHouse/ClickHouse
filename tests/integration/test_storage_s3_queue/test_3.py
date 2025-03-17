@@ -579,5 +579,9 @@ def test_upgrade_2(started_cluster):
 
     assert expected_rows == get_count()
 
+    # Parallel ordered mode used before 24.6 is not supported.
+    # Users must do ALTER TABLE MODIFY SETTING buckets=N.
+    node.query(f"DROP TABLE {table_name}_mv")
+
     node.restart_with_latest_version()
     assert table_name in node.query("SHOW TABLES")
