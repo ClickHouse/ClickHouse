@@ -6,8 +6,6 @@
 #include <Processors/Transforms/DistinctTransform.h>
 #include "Interpreters/BloomFilter.h"
 
-
-
 namespace DB
 {
 
