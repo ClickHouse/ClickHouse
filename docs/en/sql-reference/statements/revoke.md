@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/revoke
+description: 'Documentation for REVOKE Statement'
+sidebar_label: 'REVOKE'
 sidebar_position: 39
-sidebar_label: REVOKE
+slug: /sql-reference/statements/revoke
+title: 'REVOKE Statement'
 ---
 
 # REVOKE Statement
@@ -46,4 +48,4 @@ GRANT SELECT ON accounts.staff TO mira;
 REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```
 
-[Original article](/docs/operations/settings/settings/)
+[Original article](/operations/settings/settings/)

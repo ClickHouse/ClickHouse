@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/special/time_series
+description: 'A table engine storing time series, i.e. a set of values associated
+  with timestamps and tags (or labels).'
+sidebar_label: 'TimeSeries'
 sidebar_position: 60
-sidebar_label: TimeSeries
-title: "TimeSeries Engine"
-description: "A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels)."
+slug: /engines/table-engines/special/time_series
+title: 'TimeSeries Engine'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -24,7 +25,7 @@ metric_name2[...] = ...
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the TimeSeries table engine
-with [allow_experimental_time_series_table](../../../operations/settings/settings.md#allow-experimental-time-series-table) setting.
+with [allow_experimental_time_series_table](/operations/settings/settings#allow_experimental_time_series_table) setting.
 Input the command `set allow_experimental_time_series_table = 1`.
 :::
 

@@ -1,10 +1,11 @@
 ---
+description: 'Quickly find search terms in text.'
+keywords: ['full-text search', 'text search', 'index', 'indices']
+sidebar_label: 'Full-text Indexes'
 slug: /engines/table-engines/mergetree-family/invertedindexes
-sidebar_label: Full-text Indexes
-description: Quickly find search terms in text.
-keywords: [full-text search, text search, index, indices]
-title: "Full-text Search using Full-text Indexes"
+title: 'Full-text Search using Full-text Indexes'
 ---
+
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
@@ -13,8 +14,8 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-Full-text indexes are an experimental type of [secondary indexes](/docs/engines/table-engines/mergetree-family/mergetree.md/#available-types-of-indices) which provide fast text search
-capabilities for [String](/docs/sql-reference/data-types/string.md) or [FixedString](/docs/sql-reference/data-types/fixedstring.md)
+Full-text indexes are an experimental type of [secondary indexes](/engines/table-engines/mergetree-family/mergetree.md/#available-types-of-indices) which provide fast text search
+capabilities for [String](/sql-reference/data-types/string.md) or [FixedString](/sql-reference/data-types/fixedstring.md)
 columns. The main idea of a full-text index is to store a mapping from "terms" to the rows which contain these terms. "Terms" are
 tokenized cells of the string column. For example, the string cell "I will be a little late" is by default tokenized into six terms "I", "will",
 "be", "a", "little" and "late". Another kind of tokenizer is n-grams. For example, the result of 3-gram tokenization will be 21 terms "I w",
@@ -132,7 +133,7 @@ The 28.7M rows are in a Parquet file in S3 - let's insert them into the `hackern
 
 ```sql
 INSERT INTO hackernews
-	SELECT * FROM s3Cluster(
+    SELECT * FROM s3Cluster(
         'default',
         'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
         'Parquet',
@@ -143,9 +144,9 @@ INSERT INTO hackernews
     by String,
     time DateTime,
     text String,
-	dead UInt8,
-	parent UInt64,
-	poll UInt64,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
     kids Array(UInt32),
     url String,
     score UInt32,

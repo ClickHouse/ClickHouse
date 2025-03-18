@@ -229,6 +229,11 @@ public:
 
     virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
 
+    virtual bool isDirectoryEmpty(const std::string & path) const
+    {
+        return !iterateDirectory(path)->isValid();
+    }
+
     virtual uint32_t getHardlinkCount(const std::string & path) const = 0;
 
     /// Read metadata file to string from path

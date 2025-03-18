@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/ulid-functions
+description: 'Documentation for Functions for Working with ULID'
+sidebar_label: 'ULID'
 sidebar_position: 190
-sidebar_label: ULID
+slug: /sql-reference/functions/ulid-functions
+title: 'Functions for Working with ULID'
 ---
 
 # Functions for Working with ULID
@@ -18,7 +20,7 @@ generateULID([x])
 
 **Arguments**
 
-- `x` — [Expression](../../sql-reference/syntax.md#syntax-expressions) resulting in any of the [supported data types](../data-types/index.md#data_types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](../../sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
+- `x` — [Expression](/sql-reference/syntax#expressions) resulting in any of the [supported data types](/sql-reference/data-types). The resulting value is discarded, but the expression itself if used for bypassing [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in one query. Optional parameter.
 
 **Returned value**
 

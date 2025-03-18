@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/grant
+description: 'Documentation for GRANT Statement'
+sidebar_label: 'GRANT'
 sidebar_position: 38
-sidebar_label: GRANT
+slug: /sql-reference/statements/grant
+title: 'GRANT Statement'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -236,7 +238,7 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `SHOW NAMED COLLECTIONS SECRETS`
     - [`OPTIMIZE`](#optimize)
     - [`SELECT`](#select)
-    - [`SET DEFINER`](/docs/en/sql-reference/statements/create/view#sql_security)
+    - [`SET DEFINER`](/sql-reference/statements/create/view#sql_security)
     - [`SHOW`](#show)
         - `SHOW COLUMNS` 
         - `SHOW DATABASES`
@@ -610,7 +612,7 @@ Allows using [introspection](../../operations/optimizing-performance/sampling-qu
 
 ### SOURCES {#sources}
 
-Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](../../sql-reference/table-functions/index.md#table-functions).
+Allows using external data sources. Applies to [table engines](../../engines/table-engines/index.md) and [table functions](/sql-reference/table-functions).
 
 - `SOURCES`. Level: `GROUP`
     - `AZURE`. Level: `GLOBAL`
@@ -642,7 +644,7 @@ Examples:
 
 - `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
 
-Allows a user to execute [dictGet](../../sql-reference/functions/ext-dict-functions.md#dictget), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictisin) functions.
+Allows a user to execute [dictGet](/sql-reference/functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull), [dictHas](../../sql-reference/functions/ext-dict-functions.md#dicthas), [dictGetHierarchy](../../sql-reference/functions/ext-dict-functions.md#dictgethierarchy), [dictIsIn](../../sql-reference/functions/ext-dict-functions.md#dictisin) functions.
 
 Privilege level: `DICTIONARY`.
 
@@ -698,7 +700,7 @@ Allows using a specified table engine when creating a table. Applies to [table e
 Grants all the privileges on regulated entity to a user account or a role.
 
 :::note
-The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/docs/cloud/security/cloud-access-management#initial-settings) for further details.
+The privilege `ALL` is not supported in ClickHouse Cloud, where the `default` user has limited permissions. Users can grant the maximum permissions to a user by granting the `default_role`. See [here](/cloud/security/cloud-access-management/overview#initial-settings) for further details.
 Users can also use the `GRANT CURRENT GRANTS` as the default user to achieve similar effects to `ALL`.
 :::
 

@@ -122,7 +122,7 @@ class Runner:
 
         if job.requires and job.name not in (
             Settings.CI_CONFIG_JOB_NAME,
-            Settings.DOCKER_BUILD_JOB_NAME,
+            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
             Settings.FINISH_WORKFLOW_JOB_NAME,
         ):
             print("Download required artifacts")
@@ -146,7 +146,7 @@ class Runner:
                             if job.name
                             not in (
                                 Settings.CI_CONFIG_JOB_NAME,
-                                Settings.DOCKER_BUILD_JOB_NAME,
+                                Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                                 Settings.FINISH_WORKFLOW_JOB_NAME,
                             )
                         ]
@@ -212,9 +212,7 @@ class Runner:
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).custom_data.get(
-                        "digest_dockers", "latest"
-                    )
+                    RunConfig.from_fs(workflow.name).digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -419,6 +417,7 @@ class Runner:
             print(f"Run html report hook")
             HtmlRunnerHooks.post_run(workflow, job, info_errors)
 
+        report_url = Info().get_job_report_url(latest=False)
         if (
             workflow.enable_commit_status_on_failure and not result.is_ok()
         ) or job.enable_commit_status:
@@ -431,10 +430,14 @@ class Runner:
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
-                description=result.info[0:70],
-                url=Info().get_job_report_url(),
+                description=result.info.splitlines()[0] if result.info else "",
+                url=report_url,
             ):
                 print(f"ERROR: Failed to post failed commit status for the job")
+
+        if workflow.enable_report:
+            # to make it visible in GH Actions annotations
+            print(f"::notice ::Job report: {report_url}")
 
         return True
 

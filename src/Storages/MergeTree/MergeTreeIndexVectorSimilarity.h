@@ -6,6 +6,11 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Common/Logger.h>
+
+/// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
+#if defined(__x86_64__) || defined(__i386__)
+#include <immintrin.h>
+#endif
 #include <usearch/index_dense.hpp>
 
 namespace DB
@@ -60,8 +65,6 @@ public:
     };
 
     Statistics getStatistics() const;
-
-    size_t memoryUsageBytes() const;
 };
 
 using USearchIndexWithSerializationPtr = std::shared_ptr<USearchIndexWithSerialization>;
@@ -88,8 +91,6 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     bool empty() const override { return !index || index->size() == 0; }
-
-    size_t memoryUsageBytes() const override { return index->memoryUsageBytes(); }
 
     const String index_name;
     const unum::usearch::metric_kind_t metric_kind;

@@ -50,7 +50,7 @@ except Exception as e:
 import docker
 from dict2xml import dict2xml
 from docker.models.containers import Container
-from kazoo.client import KazooClient
+from helpers.kazoo_client import KazooClientWithImplicitRetries
 from kazoo.exceptions import KazooException
 from minio import Minio
 
@@ -536,6 +536,7 @@ class ClickHouseCluster:
 
         self.spark_session = None
         self.with_iceberg_catalog = False
+        self.with_glue_catalog = False
 
         self.with_azurite = False
         self.azurite_container = "azurite-container"
@@ -1377,6 +1378,25 @@ class ClickHouseCluster:
         )
         return self.base_minio_cmd
 
+    def setup_glue_catalog_cmd(
+        self, instance, env_variables, docker_compose_yml_dir
+    ):
+        self.base_cmd.extend(
+            [
+                "--file",
+                p.join(
+                    docker_compose_yml_dir, "docker_compose_glue_catalog.yml"
+                ),
+            ]
+        )
+        self.base_iceberg_catalog_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_glue_catalog.yml"),
+        )
+        return self.base_iceberg_catalog_cmd
+
     def setup_iceberg_catalog_cmd(
         self, instance, env_variables, docker_compose_yml_dir
     ):
@@ -1395,7 +1415,6 @@ class ClickHouseCluster:
             p.join(docker_compose_yml_dir, "docker_compose_iceberg_rest_catalog.yml"),
         )
         return self.base_iceberg_catalog_cmd
-        # return self.base_minio_cmd
 
     def setup_azurite_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_azurite = True
@@ -1563,6 +1582,7 @@ class ClickHouseCluster:
         with_coredns=False,
         with_prometheus=False,
         with_iceberg_catalog=False,
+        with_glue_catalog=False,
         handle_prometheus_remote_write=False,
         handle_prometheus_remote_read=False,
         use_old_analyzer=None,
@@ -1668,6 +1688,7 @@ class ClickHouseCluster:
             with_cassandra=with_cassandra,
             with_ldap=with_ldap,
             with_iceberg_catalog=with_iceberg_catalog,
+            with_glue_catalog=with_glue_catalog,
             use_old_analyzer=use_old_analyzer,
             server_bin_path=self.server_bin_path,
             clickhouse_path_dir=clickhouse_path_dir,
@@ -1847,6 +1868,13 @@ class ClickHouseCluster:
         if with_iceberg_catalog and not self.with_iceberg_catalog:
             cmds.append(
                 self.setup_iceberg_catalog_cmd(
+                    instance, env_variables, docker_compose_yml_dir
+                )
+            )
+
+        if with_glue_catalog and not self.with_glue_catalog:
+            cmds.append(
+                self.setup_glue_catalog_cmd(
                     instance, env_variables, docker_compose_yml_dir
                 )
             )
@@ -2183,8 +2211,8 @@ class ClickHouseCluster:
         while time.time() - start < timeout:
             try:
                 conn = pymysql.connect(
-                    user=mysql8_user,
-                    password=mysql8_pass,
+                    user=mysql_user,
+                    password=mysql_pass,
                     host=self.mysql8_ip,
                     port=self.mysql8_port,
                 )
@@ -2428,7 +2456,7 @@ class ClickHouseCluster:
 
     def wait_mongo_to_start(self, timeout=30, secure=False):
         connection_str = "mongodb://{user}:{password}@{host}:{port}".format(
-            host="localhost", port=self.mongo_port, user=mongo_user, password=mongo_pass
+            host="localhost", port=self.mongo_port, user=mongo_user, password=urllib.parse.quote_plus(mongo_pass)
         )
         if secure:
             connection_str += "/?tls=true&tlsAllowInvalidCertificates=true"
@@ -2476,7 +2504,7 @@ class ClickHouseCluster:
                         )
                         errors = minio_client.remove_objects(bucket, delete_object_list)
                         for error in errors:
-                            logging.error(f"Error occured when deleting object {error}")
+                            logging.error(f"Error occurred when deleting object {error}")
                         minio_client.remove_bucket(bucket)
                     minio_client.make_bucket(bucket)
                     logging.debug("S3 bucket '%s' created", bucket)
@@ -3166,22 +3194,38 @@ class ClickHouseCluster:
         if fatal_log is not None:
             raise Exception("Fatal messages found: {}".format(fatal_log))
 
-    def pause_container(self, instance_name):
+    def _pause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["pause", instance_name])
 
-    def unpause_container(self, instance_name):
+    def _unpause_container(self, instance_name):
         subprocess_check_call(self.base_cmd + ["unpause", instance_name])
+
+    @contextmanager
+    def pause_container(self, instance_name):
+        '''Use it as following:
+        with cluster.pause_container(name):
+            useful_stuff()
+        '''
+        self._pause_container(instance_name)
+        try:
+            yield
+        finally:
+            self._unpause_container(instance_name)
 
     def open_bash_shell(self, instance_name):
         os.system(" ".join(self.base_cmd + ["exec", instance_name, "/bin/bash"]))
 
-    def get_kazoo_client(self, zoo_instance_name, timeout: float = 30.0, retries=10):
+    def get_kazoo_client(
+        self, zoo_instance_name, timeout: float = 30.0, retries=10, external_port=None
+    ):
         use_ssl = False
         if self.with_zookeeper_secure:
             port = self.zookeeper_secure_port
             use_ssl = True
         elif self.with_zookeeper:
             port = self.zookeeper_port
+        elif external_port is not None:
+            port = external_port
         else:
             raise Exception("Cluster has no ZooKeeper")
 
@@ -3192,7 +3236,7 @@ class ClickHouseCluster:
         kazoo_retry = {
             "max_tries": retries,
         }
-        zk = KazooClient(
+        zk = KazooClientWithImplicitRetries(
             hosts=f"{ip}:{port}",
             timeout=timeout,
             connection_retry=kazoo_retry,
@@ -3327,6 +3371,7 @@ class ClickHouseInstance:
         with_cassandra,
         with_ldap,
         with_iceberg_catalog,
+        with_glue_catalog,
         use_old_analyzer,
         server_bin_path,
         clickhouse_path_dir,
@@ -4408,14 +4453,14 @@ class ClickHouseInstance:
                     "Driver": f"/usr/lib/{self.get_machine_name()}-linux-gnu/odbc/libmyodbc.so",
                     "Database": odbc_mysql_db,
                     "Uid": odbc_mysql_uid,
-                    "Pwd": odbc_mysql_pass,
+                    "Pwd": mysql_pass,
                     "Server": self.cluster.mysql8_host,
                 },
                 "PostgreSQL": {
                     "DSN": "postgresql_odbc",
                     "Database": odbc_psql_db,
                     "UserName": odbc_psql_user,
-                    "Password": odbc_psql_pass,
+                    "Password": pg_pass,
                     "Port": str(self.cluster.postgres_port),
                     "Servername": self.cluster.postgres_host,
                     "Protocol": "9.3",

@@ -1,6 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/quantileexact
+description: 'quantileExact, quantileExactLow, quantileExactHigh, quantileExactExclusive,
+  quantileExactInclusive functions'
 sidebar_position: 173
+slug: /sql-reference/aggregate-functions/reference/quantileexact
+title: 'quantileExact Functions'
 ---
 
 # quantileExact Functions
@@ -24,7 +27,7 @@ Alias: `medianExact`.
 **Arguments**
 
 - `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
@@ -89,7 +92,7 @@ SELECT quantileExactLow(0.1)(number) FROM numbers(10)
 └───────────────────────────────┘
 ```
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](/docs/ru/sql-reference/aggregate-functions/reference/quantiles) function.
+When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles) function.
 
 **Syntax**
 
@@ -102,7 +105,7 @@ Alias: `medianExactLow`.
 **Arguments**
 
 - `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
@@ -152,7 +155,7 @@ Alias: `medianExactHigh`.
 **Arguments**
 
 - `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Returned value**
 
@@ -198,7 +201,7 @@ quantileExactExclusive(level)(expr)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
@@ -250,7 +253,7 @@ quantileExactInclusive(level)(expr)
 
 **Arguments**
 
-- `expr` — Expression over the column values resulting in numeric [data types](../../../sql-reference/data-types/index.md#data_types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
+- `expr` — Expression over the column values resulting in numeric [data types](/sql-reference/data-types), [Date](../../../sql-reference/data-types/date.md) or [DateTime](../../../sql-reference/data-types/datetime.md).
 
 **Parameters**
 
@@ -286,5 +289,5 @@ Result:
 
 **See Also**
 
-- [median](../../../sql-reference/aggregate-functions/reference/median.md#median)
+- [median](/sql-reference/aggregate-functions/reference/median)
 - [quantiles](../../../sql-reference/aggregate-functions/reference/quantiles.md#quantiles)

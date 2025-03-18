@@ -1,9 +1,14 @@
 ---
-slug: /interfaces/cli
+description: 'Documentation for the ClickHouse command-line client interface'
+sidebar_label: 'ClickHouse Client'
 sidebar_position: 17
-sidebar_label: ClickHouse Client
-title: ClickHouse Client
+slug: /interfaces/cli
+title: 'ClickHouse Client'
 ---
+
+import Image from '@theme/IdealImage';
+import cloud_connect_button from '@site/static/images/_snippets/cloud-connect-button.png';
+import connection_details_native from '@site/static/images/_snippets/connection-details-native.png'
 
 ClickHouse provides a native command-line client for executing SQL queries directly against a ClickHouse server. It supports both interactive mode (for live query execution) and batch mode (for scripting and automation). Query results can be displayed in the terminal or exported to a file, with support for all ClickHouse output [formats](formats.md), such as Pretty, CSV, JSON, and more.
 
@@ -67,19 +72,19 @@ For a complete list of command-line options, see [Command Line Options](#command
 
 The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console. Select the service that you want to connect to and click **Connect**:
 
-<img src={require('../_snippets/images/cloud-connect-button.png').default}
-  class="image"
+<Image img={cloud_connect_button}
+  size="md"
   alt="ClickHouse Cloud service connect button"
-  style={{width: '30em'}} />
+/>
 
 <br/><br/>
 
 Choose **Native**, and the details are shown with an example `clickhouse-client` command:
 
-<img src={require('../_snippets/images/connection-details-native.png').default}
-  class="image"
+<Image img={connection_details_native}
+  size="md"
   alt="ClickHouse Cloud Native TCP connection details"
-  style={{width: '40em'}} />
+/>
 
 
 ### Storing connections in a configuration file {#connection-credentials}
@@ -105,7 +110,6 @@ See the [section on configuration files](#configuration_files) for more informat
 :::note
 To concentrate on the query syntax, the rest of the examples leave off the connection details (`--host`, `--port`, etc.). Remember to add them when you use the commands.
 :::
-
 
 ## Batch mode {#batch-mode}
 

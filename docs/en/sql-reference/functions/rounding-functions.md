@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/rounding-functions
+description: 'Documentation for Rounding Functions'
+sidebar_label: 'Rounding'
 sidebar_position: 155
-sidebar_label: Rounding
+slug: /sql-reference/functions/rounding-functions
+title: 'Rounding Functions'
 ---
 
 # Rounding Functions

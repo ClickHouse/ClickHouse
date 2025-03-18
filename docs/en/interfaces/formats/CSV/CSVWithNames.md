@@ -1,10 +1,11 @@
 ---
-title : CSVWithNames
-slug: /interfaces/formats/CSVWithNames
-keywords : [CSVWithNames]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the CSV format'
+input_format: true
+keywords: ['CSVWithNames']
+output_format: true
+slug: /interfaces/formats/CSVWithNames
+title: 'CSVWithNames'
 ---
 
 | Input | Output | Alias |
@@ -13,7 +14,7 @@ alias: []
 
 ## Description {#description}
 
-Also prints the header row with column names, similar to [TabSeparatedWithNames](/docs/interfaces/formats/TabSeparatedWithNames).
+Also prints the header row with column names, similar to [TabSeparatedWithNames](/interfaces/formats/TabSeparatedWithNames).
 
 ## Example Usage {#example-usage}
 

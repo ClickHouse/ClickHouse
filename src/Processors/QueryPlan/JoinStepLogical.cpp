@@ -1,6 +1,9 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -28,6 +31,7 @@
 #include <Functions/IsOperation.h>
 #include <Functions/tuple.h>
 
+
 namespace DB
 {
 
@@ -35,6 +39,8 @@ namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool join_any_take_last_row;
+    extern const SettingsUInt64 default_max_bytes_in_join;
+    extern const SettingsBool join_use_nulls;
 }
 
 namespace ErrorCodes
@@ -43,6 +49,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
+    extern const int INCORRECT_DATA;
 }
 
 std::string operatorToFunctionName(PredicateOperator op)
@@ -99,16 +106,15 @@ JoinStepLogical::JoinStepLogical(
     JoinInfo join_info_,
     JoinExpressionActions join_expression_actions_,
     Names required_output_columns_,
-    ContextPtr query_context_)
+    bool use_nulls_,
+    JoinSettings join_settings_,
+    SortingStep::Settings sorting_settings_)
     : expression_actions(std::move(join_expression_actions_))
     , join_info(std::move(join_info_))
     , required_output_columns(std::move(required_output_columns_))
-    , join_settings(JoinSettings::create(query_context_->getSettingsRef()))
-    , sorting_settings(*query_context_)
-    , expression_actions_settings(query_context_->getSettingsRef())
-    , tmp_volume(query_context_->getGlobalTemporaryVolume())
-    , tmp_data(query_context_->getTempDataOnDisk())
-    , query_context(std::move(query_context_))
+    , use_nulls(use_nulls_) // query_context_->getSettingsRef()[Setting::join_use_nulls])
+    , join_settings(std::move(join_settings_)) // JoinSettings::create(query_context_->getSettingsRef()))
+    , sorting_settings(std::move(sorting_settings_)) //*query_context_)
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -487,7 +493,6 @@ JoinActionRef buildSingleActionForJoinExpression(const JoinExpression & join_exp
     return concatConditionsWithFunction(all_conditions, expression_actions.post_join_actions, or_function);
 }
 
-void JoinStepLogical::setHashTableCacheKey(IQueryTreeNode::HashState hash_table_key_hash_) { hash_table_key_hash = std::move(hash_table_key_hash_); }
 void JoinStepLogical::setPreparedJoinStorage(PreparedJoinStorage storage) { prepared_join_storage = std::move(storage); }
 
 static Block blockWithColumns(ColumnsWithTypeAndName columns)
@@ -511,9 +516,18 @@ static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolve
     }
 }
 
-JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_explain_logical)
+JoinPtr JoinStepLogical::convertToPhysical(
+    JoinActionRef & post_filter,
+    bool is_explain_logical,
+    UInt64 max_threads,
+    UInt64 max_entries_for_hash_table_stats,
+    String initial_query_id,
+    std::chrono::milliseconds lock_acquire_timeout,
+    const ExpressionActionsSettings & actions_settings)
 {
-    auto table_join = std::make_shared<TableJoin>(join_settings, tmp_volume, tmp_data, query_context);
+    auto table_join = std::make_shared<TableJoin>(join_settings, use_nulls,
+        Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
+        Context::getGlobalContextInstance()->getTempDataOnDisk());
 
     auto & join_expression = join_info.expression;
 
@@ -544,13 +558,15 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
 
         if (!has_keys)
         {
-            if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithm, JoinAlgorithm::HASH))
+            if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH))
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot convert JOIN ON expression to CROSS JOIN, because hash join is disabled");
 
             table_join_clauses.pop_back();
             bool can_convert_to_cross = (isInner(join_info.kind) || isCrossOrComma(join_info.kind))
                 && join_info.strictness == JoinStrictness::All
-                && join_expression.disjunctive_conditions.empty();
+                && join_expression.disjunctive_conditions.empty()
+                && join_expression.condition.left_filter_conditions.empty()
+                && join_expression.condition.right_filter_conditions.empty();
 
             if (!can_convert_to_cross)
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
@@ -561,12 +577,12 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
 
     if (auto left_pre_filter_condition = concatMergeConditions(join_expression.condition.left_filter_conditions, expression_actions.left_pre_join_actions))
     {
-        table_join_clauses.back().analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
+        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_left_filter_condition_column_name = left_pre_filter_condition.getColumnName();
     }
 
     if (auto right_pre_filter_condition = concatMergeConditions(join_expression.condition.right_filter_conditions, expression_actions.right_pre_join_actions))
     {
-        table_join_clauses.back().analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
+        table_join_clauses.at(table_join_clauses.size() - 1).analyzer_right_filter_condition_column_name = right_pre_filter_condition.getColumnName();
     }
 
     if (join_info.strictness == JoinStrictness::Asof)
@@ -632,7 +648,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
     bool need_add_nullable = join_info.kind == JoinKind::Left
         || join_info.kind == JoinKind::Right
         || join_info.kind == JoinKind::Full;
-    if (need_add_nullable && join_settings.join_use_nulls)
+    if (need_add_nullable && use_nulls)
     {
         if (residual_filter_condition)
         {
@@ -677,7 +693,7 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
             }
         }
         ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
-        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), expression_actions_settings);
+        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), actions_settings);
     }
 
     NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
@@ -715,15 +731,18 @@ JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_
     {
         table_join->swapSides();
         std::swap(left_sample_block, right_sample_block);
+        std::swap(hash_table_key_hash_left, hash_table_key_hash_right);
     }
 
+    JoinAlgorithmSettings algo_settings(
+        join_settings,
+        max_threads,
+        max_entries_for_hash_table_stats,
+        std::move(initial_query_id),
+        lock_acquire_timeout);
+
     auto join_algorithm_ptr = chooseJoinAlgorithm(
-        table_join,
-        prepared_join_storage,
-        left_sample_block,
-        right_sample_block,
-        query_context,
-        hash_table_key_hash);
+        table_join, prepared_join_storage, left_sample_block, right_sample_block, algo_settings, hash_table_key_hash_right.value_or(0));
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;
 }
@@ -764,6 +783,102 @@ std::optional<ActionsDAG> JoinStepLogical::getFilterActions(JoinTableSide side, 
     }
 
     return {};
+}
+
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings) const
+{
+    join_settings.updatePlanSettings(settings);
+    sorting_settings.updatePlanSettings(settings);
+}
+
+void JoinStepLogical::serialize(Serialization & ctx) const
+{
+    if (prepared_join_storage)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of JoinStepLogical with prepared storage is not implemented");
+
+    if (swap_inputs)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of JoinStepLogical with swapped inputs is not implemented");
+
+    UInt8 flags = 0;
+    if (use_nulls)
+        flags |= 1;
+
+    writeIntBinary(flags, ctx.out);
+
+    JoinActionRef::ActionsDAGRawPtrs dags = {
+        expression_actions.left_pre_join_actions.get(),
+        expression_actions.right_pre_join_actions.get(),
+        expression_actions.post_join_actions.get()};
+
+    writeVarUInt(dags.size(), ctx.out);
+    for (const auto * dag : dags)
+        dag->serialize(ctx.out, ctx.registry);
+
+    join_info.serialize(ctx.out, dags);
+
+    writeVarUInt(required_output_columns.size(), ctx.out);
+    for (const auto & name : required_output_columns)
+        writeStringBinary(name, ctx.out);
+}
+
+std::unique_ptr<IQueryPlanStep> JoinStepLogical::deserialize(Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 2)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical must have two input streams");
+
+    UInt8 flags;
+    readIntBinary(flags, ctx.in);
+
+    bool use_nulls = flags & 1;
+
+    std::vector<ActionsDAGPtr> dag_ptrs;
+    {
+        UInt64 num_dags;
+        readVarUInt(num_dags, ctx.in);
+
+        if (num_dags != 3)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical deserialization expect 3 DAGs, got {}", num_dags);
+
+        dag_ptrs.reserve(num_dags);
+        for (size_t i = 0; i < num_dags; ++i)
+            dag_ptrs.emplace_back(std::make_unique<ActionsDAG>(ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context)));
+    }
+
+    JoinExpressionActions expression_actions(std::move(dag_ptrs[0]), std::move(dag_ptrs[1]), std::move(dag_ptrs[2]));
+
+    JoinActionRef::ActionsDAGRawPtrs dags = {
+        expression_actions.left_pre_join_actions.get(),
+        expression_actions.right_pre_join_actions.get(),
+        expression_actions.post_join_actions.get()};
+
+    auto join_info = JoinInfo::deserialize(ctx.in, dags);
+
+    Names required_output_columns;
+    {
+        UInt64 num_output_columns;
+        readVarUInt(num_output_columns, ctx.in);
+
+        required_output_columns.resize(num_output_columns);
+        for (auto & name : required_output_columns)
+            readStringBinary(name, ctx.in);
+    }
+
+    SortingStep::Settings sort_settings(ctx.settings);
+    JoinSettings join_settings(ctx.settings);
+
+    return std::make_unique<JoinStepLogical>(
+        ctx.input_headers.front(), ctx.input_headers.back(),
+        std::move(join_info),
+        std::move(expression_actions),
+        std::move(required_output_columns),
+        use_nulls,
+        std::move(join_settings),
+        std::move(sort_settings));
+}
+
+void registerJoinStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Join", JoinStepLogical::deserialize);
 }
 
 }

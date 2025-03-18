@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/hive
+description: 'The Hive engine allows you to perform `SELECT` queries on HDFS Hive
+  table.'
+sidebar_label: 'Hive'
 sidebar_position: 84
-sidebar_label: Hive
-title: "Hive"
-description: "The Hive engine allows you to perform `SELECT` queries on HDFS Hive table."
+slug: /engines/table-engines/integrations/hive
+title: 'Hive'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -31,7 +32,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = Hive('thrift://host:port', 'database', 'table');
 PARTITION BY expr
 ```
-See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 The table structure can differ from the original Hive table structure:
 - Column names should be the same as in the original Hive table, but you can use just some of these columns and in any order, also you can use some alias columns calculated from other columns.
@@ -115,7 +116,7 @@ Time taken: 36.025 seconds
 
 hive > select * from test.test_orc;
 OK
-1	2	3	4	5	6.11	7.22	8	2021-11-05 12:38:16.314	2021-11-05	hello world	hello world	hello world                                                                                         	true	hello world	[1,2,3]	["hello world","hello world"]	[1.1,1.2]	[[1,2],[3,4]]	[["a","b"],["c","d"]]	[[1.11,2.22],[3.33,4.44]]	2021-09-18
+1    2    3    4    5    6.11    7.22    8    2021-11-05 12:38:16.314    2021-11-05    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
 Time taken: 0.295 seconds, Fetched: 1 row(s)
 ```
 
@@ -238,7 +239,7 @@ Time taken: 36.025 seconds
 
 hive > select * from test.test_parquet;
 OK
-1	2	3	4	5	6.11	7.22	8	2021-12-14 17:54:56.743	2021-12-14	hello world	hello world	hello world                                                                                         	true	hello world	[1,2,3]	["hello world","hello world"]	[1.1,1.2]	[[1,2],[3,4]]	[["a","b"],["c","d"]]	[[1.11,2.22],[3.33,4.44]]	2021-09-18
+1    2    3    4    5    6.11    7.22    8    2021-12-14 17:54:56.743    2021-12-14    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
@@ -361,7 +362,7 @@ Time taken: 36.025 seconds
 
 hive > select * from test.test_text;
 OK
-1	2	3	4	5	6.11	7.22	8	2021-12-14 18:11:17.239	2021-12-14	hello world	hello world	hello world                                                                                         	true	hello world	[1,2,3]	["hello world","hello world"]	[1.1,1.2]	[[1,2],[3,4]]	[["a","b"],["c","d"]]	[[1.11,2.22],[3.33,4.44]]	2021-09-18
+1    2    3    4    5    6.11    7.22    8    2021-12-14 18:11:17.239    2021-12-14    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
 Time taken: 0.624 seconds, Fetched: 1 row(s)
 ```
 
