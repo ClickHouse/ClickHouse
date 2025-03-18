@@ -18,7 +18,7 @@ Columns:
 - `table_uuid` ([String](../../sql-reference/data-types/string.md)) — The table UUID.
 - `part_name` ([String](../../sql-reference/data-types/string.md)) — The part name.
 - `key_hash` ([String](/sql-reference/data-types/string.md)) — The hash of the filter condition.
-- `entry_size` ([UInt64](../../sql-reference/data-types/int-uint.md)) — Size of the entry in bytes.
+- `entry_size` ([UInt64](../../sql-reference/data-types/int-uint.md)) — The size of the entry in bytes.
 - `matching_marks` ([String](../../sql-reference/data-types/string.md)) — Matching marks.
 
 **Example**
