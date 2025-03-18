@@ -581,14 +581,28 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         Settings subquery_settings = context->getSettingsCopy();
         subquery_settings[Setting::max_result_rows] = 1;
         subquery_settings[Setting::extremes] = false;
-        subquery_context->setSettings(subquery_settings);
         /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
         /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
-        subquery_context->setSetting("use_structure_from_insertion_table_in_table_functions", false);
+        subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
+        subquery_context->setSettings(subquery_settings);
+
+        auto query_tree = node->clone();
+        /// Update context for the QueryTree, because apparently Planner would use this context.
+        if (auto * new_query_node = query_tree->as<QueryNode>())
+            new_query_node->getMutableContext() = subquery_context;
+        if (auto * new_union_node = query_tree->as<UnionNode>())
+            new_union_node->getMutableContext() = subquery_context;
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze;
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
+
+        QueryTreePassManager query_tree_pass_manager(subquery_context);
+        addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
+        query_tree_pass_manager.run(query_tree);
+
+        if (auto storage = subquery_context->getViewSource())
+            replaceStorageInQueryTree(query_tree, subquery_context, storage);
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
 
         if (only_analyze)
         {
