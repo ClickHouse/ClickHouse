@@ -465,6 +465,21 @@ def test_inaccessible_postgresql_database_engine_filterable_on_system_tables(
     assert "postgres_database" not in node1.query("SHOW DATABASES")
 
 
+@pytest.mark.parametrize("postgres_type,clickhouse_type",
+                         [("BOOLEAN[]", "Array(Nullable(UInt8))"),
+                          ("SMALLINT[]", "Array(Nullable(Int16))"),
+                          ("TEXT[]", "Array(Nullable(String))")])
+def test_array_data_types(started_cluster, postgres_type, clickhouse_type):
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("drop table if exists test_data_types")
+    cursor.execute(f"create table test_data_types (c0 {postgres_type})")
+
+    node1.query("drop database if exists pg")
+    node1.query("create database pg engine = PostgreSQL(postgres1)")
+    assert clickhouse_type in node1.query("show create table pg.test_data_types")
+    node1.query("select * from pg.test_data_types")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
