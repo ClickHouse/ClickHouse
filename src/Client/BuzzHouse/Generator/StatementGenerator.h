@@ -298,8 +298,7 @@ private:
     void addTableProjection(RandomGenerator & rg, SQLTable & t, bool staged, ProjectionDef * pdef);
     void addTableConstraint(RandomGenerator & rg, SQLTable & t, bool staged, ConstraintDef * cdef);
     void generateTableKey(RandomGenerator & rg, TableEngineValues teng, bool allow_asc_desc, TableKey * tkey);
-    void
-    generateMergeTreeEngineDetails(RandomGenerator & rg, TableEngineValues teng, PeerTableDatabase peer, bool add_pkey, TableEngine * te);
+    void generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLBase & b, bool add_pkey, TableEngine * te);
     void generateEngineDetails(RandomGenerator & rg, SQLBase & b, bool add_pkey, TableEngine * te);
 
     DatabaseEngineValues getNextDatabaseEngine(RandomGenerator & rg);

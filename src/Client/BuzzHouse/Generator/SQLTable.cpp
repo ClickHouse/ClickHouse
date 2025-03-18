@@ -638,12 +638,11 @@ String StatementGenerator::setMergeTableParameter(RandomGenerator & rg, const St
     }
 }
 
-void StatementGenerator::generateMergeTreeEngineDetails(
-    RandomGenerator & rg, const TableEngineValues teng, const PeerTableDatabase peer, const bool add_pkey, TableEngine * te)
+void StatementGenerator::generateMergeTreeEngineDetails(RandomGenerator & rg, const SQLBase & b, const bool add_pkey, TableEngine * te)
 {
     if (rg.nextSmallNumber() < 6)
     {
-        generateTableKey(rg, teng, peer != PeerTableDatabase::ClickHouse, te->mutable_order());
+        generateTableKey(rg, b.teng, b.peer_table != PeerTableDatabase::ClickHouse, te->mutable_order());
     }
     if (te->has_order() && add_pkey && rg.nextSmallNumber() < 5)
     {
@@ -665,15 +664,15 @@ void StatementGenerator::generateMergeTreeEngineDetails(
     }
     else if (!te->has_order() && add_pkey)
     {
-        generateTableKey(rg, teng, false, te->mutable_primary_key());
+        generateTableKey(rg, b.teng, false, te->mutable_primary_key());
     }
     if (rg.nextBool())
     {
-        generateTableKey(rg, teng, false, te->mutable_partition_by());
+        generateTableKey(rg, b.teng, false, te->mutable_partition_by());
     }
 
     const int npkey = te->primary_key().exprs_size();
-    if (npkey && rg.nextSmallNumber() < 5)
+    if (npkey && !b.is_deterministic && rg.nextSmallNumber() < 5)
     {
         /// Try to add sample key
         chassert(this->ids.empty());
@@ -724,7 +723,7 @@ void StatementGenerator::generateMergeTreeEngineDetails(
             this->filtered_entries.clear();
         }
     }
-    if (te->has_engine() && teng == TableEngineValues::SummingMergeTree && rg.nextSmallNumber() < 4)
+    if (te->has_engine() && b.teng == TableEngineValues::SummingMergeTree && rg.nextSmallNumber() < 4)
     {
         ColumnPathList * clist = te->add_params()->mutable_col_list();
         const size_t ncols = (rg.nextMediumNumber() % std::min<uint32_t>(static_cast<uint32_t>(entries.size()), UINT32_C(4))) + 1;
@@ -759,7 +758,7 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             te->set_toption(b.toption.value());
             this->ids.clear();
         }
-        generateMergeTreeEngineDetails(rg, b.teng, b.peer_table, add_pkey, te);
+        generateMergeTreeEngineDetails(rg, b, add_pkey, te);
     }
     else if (te->has_engine() && b.isFileEngine())
     {
