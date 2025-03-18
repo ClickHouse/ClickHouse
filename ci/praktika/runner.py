@@ -454,7 +454,7 @@ class Runner:
             # to make it visible in GH Actions annotations
             print(f"::notice ::Job report: {report_url}")
 
-        return True
+        return Result.from_fs(job.name).is_ok()
 
     def run(
         self,
@@ -530,7 +530,7 @@ class Runner:
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
+            res = self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
             print(f"=== Post run script finished ===")
 
         if not res:
