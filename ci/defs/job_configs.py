@@ -36,7 +36,7 @@ class JobConfigs:
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
-        runs_on=RunnerLabels.BUILDER_ARM,
+        runs_on=RunnerLabels.BUILDER_AMD,
         command="python3 ./ci/jobs/fast_test.py",
         run_in_docker="clickhouse/fasttest",
         digest_config=Job.CacheDigestConfig(

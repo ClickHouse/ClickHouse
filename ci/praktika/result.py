@@ -227,7 +227,12 @@ class Result(MetaClasses.Serializable):
                 and first_failed_test.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
             ):
                 first_failed_test = next(
-                    (r for r in first_failed_test.results if not r.is_ok()), None
+                    (
+                        r
+                        for r in first_failed_test.results
+                        if "fail" in r.status.lower()
+                    ),
+                    None,
                 )
             if with_test_in_run_command and first_failed_test:
                 command_info += f" --test {first_failed_test.name}"

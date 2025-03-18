@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ci.praktika.utils import Shell, Utils
 
-temp_dir = f"{Utils.cwd()}/ci/tmp/"
+temp_dir = f"{Utils.cwd()}/ci/tmp"
 
 
 class ClickHouseProc:

@@ -2,14 +2,13 @@ import argparse
 import time
 from pathlib import Path
 
-from ci.praktika.result import Result
-from ci.praktika.settings import Settings
-from ci.praktika.utils import MetaClasses, Shell, Utils
-
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
+from ci.praktika.result import Result
+from ci.praktika.settings import Settings
+from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/build"
@@ -247,7 +246,9 @@ def main():
 
     Result.create_from(
         results=results, stopwatch=stop_watch, files=attach_files
-    ).add_job_summary_to_info(with_local_run_command=True, with_test_in_run_command=True).complete_job()
+    ).add_job_summary_to_info(
+        with_local_run_command=True, with_test_in_run_command=True
+    ).complete_job()
 
 
 if __name__ == "__main__":
