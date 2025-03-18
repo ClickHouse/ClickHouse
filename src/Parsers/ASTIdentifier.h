@@ -29,7 +29,7 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name()); }
 
-    /** Check if identigier is a parameter */
+    /** Check if identifier is a parameter */
     bool isParam() const;
     /** Get the query param out of a non-compound identifier. */
     ASTPtr getParam() const;
