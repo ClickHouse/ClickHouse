@@ -14,6 +14,7 @@
 #include <Poco/MongoDB/OpMsgCursor.h>
 #include <Poco/MongoDB/ObjectId.h>
 
+#include <Common/DateLUTImpl.h>
 #include <Common/logger_useful.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>

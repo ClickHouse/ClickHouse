@@ -392,9 +392,9 @@ elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
 elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
-else()
-    link_libraries(global-group)
 endif ()
+link_libraries(global-group)
+target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
 
 option (ENABLE_GWP_ASAN "Enable Gwp-Asan" ON)
 # We use mmap for allocations more heavily in debug builds,
