@@ -1,45 +1,44 @@
 #pragma once
 
 #include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeTuple.h>
+
 
 namespace DB
 {
 
-class DataTypeArrayT final : public DataTypeTuple
+class DataTypeArrayT final : public IDataType
 {
 private:
-    DataTypes elems;
-    Strings names;
-    bool have_explicit_names;
+    /* Type of the elements in the vector: BFloat16, Float32, Float64 */
+    DataTypePtr type;
+    /* Size of the vector element: 16, 32, 64 */
+    size_t size;
+    /* Number of elements in the vector */
+    size_t n;
 
 public:
-    // TODO overwrite constructors
-    // TODO overwrite getDefault
-    // TODO remove for each child
-    // TODO where is deserialisation
-    // TODO remove all the logic related to names
+    DataTypeArrayT(const DataTypePtr & type_, size_t size, size_t n);
 
-    explicit DataTypeArrayT(const DataTypes & elems);
-    DataTypeArrayT(const DataTypes & elems, const Strings & names);
-
-    TypeIndex getTypeId() const override { return TypeIndex::Tuple; }
+    TypeIndex getTypeId() const override { return TypeIndex::ArrayT; }
     std::string doGetName() const override;
-    std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "ArrayT"; }
-    DataTypePtr getNormalizedType() const override;
-
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createColumn(const ISerialization & serialization) const override;
 
     void insertDefaultInto(IColumn & column) const override;
-    // TODO rewrite
-    // const DataTypePtr & getElement(size_t i) const { return elems[i]; }
-    // const DataTypes & getElements() const { return elems; }
-    // const Strings & getElementNames() const { return names; }
-    // String getNameByPosition(size_t i) const;
+
+    Field getDefault() const override;
+    bool equals(const IDataType & rhs) const override;
+
+    bool isParametric() const override { return true; }
+    bool haveSubtypes() const override { return true; }
+
+    const DataTypePtr & getType() const { return type; }
+    size_t getSize() const { return size; }
+    size_t getN() const { return n; }
+    size_t getSizeOfValueInMemory() const override;
+
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 }
-

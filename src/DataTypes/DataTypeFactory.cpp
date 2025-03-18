@@ -263,6 +263,7 @@ DataTypeFactory::DataTypeFactory()
     registerDataTypeFixedString(*this);
     registerDataTypeEnum(*this);
     registerDataTypeArray(*this);
+    registerDataTypeArrayT(*this);
     registerDataTypeTuple(*this);
     registerDataTypeNullable(*this);
     registerDataTypeNothing(*this);

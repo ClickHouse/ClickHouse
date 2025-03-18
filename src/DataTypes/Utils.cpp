@@ -154,6 +154,8 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
 
             return false;
         }
+        case TypeIndex::ArrayT:
+            return to_which_type.isArrayT();
         case TypeIndex::Map:
         {
             if (to_which_type.isMap())

@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeArrayT.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -180,6 +181,21 @@ DataTypePtr FieldToDataType<on_error>::operator() (const Tuple & tuple) const
         element_types.push_back(applyVisitor(*this, element));
 
     return std::make_shared<DataTypeTuple>(element_types);
+}
+
+template <LeastSupertypeOnError on_error>
+DataTypePtr FieldToDataType<on_error>::operator()(const ArrayT & x) const
+{
+    DataTypes element_types;
+    element_types.reserve(x.size());
+
+    for (const Field & elem : x)
+        element_types.emplace_back(applyVisitor(*this, elem));
+
+    auto type = getLeastSupertype<on_error>(element_types);
+    const size_t size = type->getTypeId() == TypeIndex::BFloat16 ? 16 : type->getTypeId() == TypeIndex::Float32 ? 32 : 64;
+
+    return std::make_shared<DataTypeArrayT>(type, size, x.size());
 }
 
 template <LeastSupertypeOnError on_error>

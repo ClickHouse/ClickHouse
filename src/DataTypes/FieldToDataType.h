@@ -33,6 +33,7 @@ public:
     DataTypePtr operator() (const Float64 & x) const;
     DataTypePtr operator() (const String & x) const;
     DataTypePtr operator() (const Array & x) const;
+    DataTypePtr operator() (const ArrayT & x) const;
     DataTypePtr operator() (const Tuple & tuple) const;
     DataTypePtr operator() (const Map & map) const;
     DataTypePtr operator() (const Object & map) const;

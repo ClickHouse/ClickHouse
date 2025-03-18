@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeArrayT.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeFunction.h>
@@ -40,6 +41,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -101,6 +103,7 @@ enum class BinaryTypeIndex : uint8_t
     Nested = 0x2F,
     JSON = 0x30,
     BFloat16 = 0x31,
+    ArrayT = 0x32,
 };
 
 /// In future we can introduce more arguments in the JSON data type definition.
@@ -194,6 +197,8 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::UUID;
         case TypeIndex::Array:
             return BinaryTypeIndex::Array;
+        case TypeIndex::ArrayT:
+            return BinaryTypeIndex::ArrayT;
         case TypeIndex::Tuple:
         {
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
@@ -403,6 +408,20 @@ void encodeDataType(const DataTypePtr & type, WriteBuffer & buf)
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*type);
             encodeDataType(array_type.getNestedType(), buf);
+            break;
+        }
+        case BinaryTypeIndex::ArrayT:
+        {
+            const auto & array_t = assert_cast<const DataTypeArrayT &>(*type);
+            const auto & size = array_t.getSize();
+            const auto & n = array_t.getN();
+
+            writeVarUInt(size, buf);
+            writeVarUInt(n, buf);
+
+            for (size_t i = 0; i < size; i++)
+                encodeDataType(array_t.getType(), buf);
+
             break;
         }
         case BinaryTypeIndex::NamedTuple:
@@ -637,6 +656,26 @@ DataTypePtr decodeDataType(ReadBuffer & buf)
             return std::make_shared<DataTypeUUID>();
         case BinaryTypeIndex::Array:
             return std::make_shared<DataTypeArray>(decodeDataType(buf));
+        case BinaryTypeIndex::ArrayT:
+        {
+            size_t size;
+            UInt64 n;
+            readVarUInt(size, buf);
+            readVarUInt(n, buf);
+
+            switch (size)
+            {
+                case 16:
+                    return std::make_shared<DataTypeArrayT>(DataTypeFactory::instance().get("BFloat16"), size, n);
+                case 32:
+                    return std::make_shared<DataTypeArrayT>(DataTypeFactory::instance().get("Float32"), size, n);
+                case 64:
+                    return std::make_shared<DataTypeArrayT>(DataTypeFactory::instance().get("Float64"), size, n);
+                default:
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "The data type width received during ArrayT type decoding is not supported: {}. Possible: 16, 32, 64", size);
+            }
+        }
         case BinaryTypeIndex::NamedTuple:
         {
             size_t size;
