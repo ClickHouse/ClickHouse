@@ -1788,6 +1788,22 @@ CONV_FN(GenerateSeriesFunc, gsf)
     ret += ")";
 }
 
+static void FlatExprSchemaTableToString(String & ret, const ExprSchemaTable & est)
+{
+    ret += "'";
+    if (est.has_database())
+    {
+        DatabaseToString(ret, est.database());
+    }
+    else
+    {
+        ret += "default";
+    }
+    ret += "', '";
+    TableToString(ret, est.table());
+    ret += "'";
+}
+
 CONV_FN(TableFunction, tf);
 
 static void TableOrFunctionToString(String & ret, const bool tudf, const TableOrFunction & tof)
@@ -1798,20 +1814,7 @@ static void TableOrFunctionToString(String & ret, const bool tudf, const TableOr
         case TableOrFunctionType::kEst:
             if (tudf)
             {
-                const ExprSchemaTable & est = tof.est();
-
-                ret += "'";
-                if (est.has_database())
-                {
-                    DatabaseToString(ret, est.database());
-                }
-                else
-                {
-                    ret += "default";
-                }
-                ret += "', '";
-                TableToString(ret, est.table());
-                ret += "'";
+                FlatExprSchemaTableToString(ret, tof.est());
             }
             else
             {
@@ -1988,11 +1991,8 @@ CONV_FN(ClusterFunc, cluster)
 
 CONV_FN(MergeTreeIndexFunc, mfunc)
 {
-    ret += "mergeTreeIndex('";
-    ret += mfunc.mdatabase();
-    ret += "', '";
-    ret += mfunc.mtable();
-    ret += "'";
+    ret += "mergeTreeIndex(";
+    FlatExprSchemaTableToString(ret, mfunc.est());
     if (mfunc.has_with_marks())
     {
         ret += ", with_marks = ";

@@ -2505,9 +2505,8 @@ message ClusterFunc {
 }
 
 message MergeTreeIndexFunc {
-    required string mdatabase = 1;
-    required string mtable = 2;
-    optional bool with_marks = 3;
+    required ExprSchemaTable est = 1;
+    optional bool with_marks = 2;
 }
 
 message GenerateRandomFunc {

@@ -614,8 +614,7 @@ bool StatementGenerator::joinedTableOrFunction(
         MergeTreeIndexFunc * mtudf = tf->mutable_mtindex();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_mergetree_table_lambda));
 
-        mtudf->set_mdatabase("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
-        mtudf->set_mtable("t" + std::to_string(t.tname));
+        t.setName(mtudf->mutable_est(), true);
         if (rg.nextBool())
         {
             mtudf->set_with_marks(rg.nextBool());
