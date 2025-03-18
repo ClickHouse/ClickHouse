@@ -11,6 +11,8 @@
 #include <Columns/ColumnSet.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SetSerialization.h>
 #include <Storages/StorageSet.h>
@@ -108,7 +110,8 @@ void QueryPlan::serializeSets(SerializedSetsRegistry & registry, WriteBuffer & o
 
                 encodeDataType(types[col], out);
                 auto serialization = types[col]->getSerialization(ISerialization::Kind::DEFAULT);
-                serialization->serializeBinaryBulk(*columns[col], out, 0, num_rows);
+                NativeWriter::writeData(*serialization, columns[col], out, {}, 0, 0, 0);
+                // serialization->serializeBinaryBulk(*columns[col], out, 0, num_rows);
             }
         }
         else if (auto * from_subquery = typeid_cast<FutureSetFromSubquery *>(set.get()))
@@ -176,8 +179,9 @@ QueryPlanAndSets QueryPlan::deserializeSets(
             {
                 auto type = decodeDataType(in);
                 auto serialization = type->getSerialization(ISerialization::Kind::DEFAULT);
-                auto column = type->createColumn();
-                serialization->deserializeBinaryBulk(*column, in, num_rows, 0);
+                ColumnPtr column = type->createColumn();
+                NativeReader::readData(*serialization, column, in, {}, num_rows, 0);
+                // serialization->deserializeBinaryBulk(*column, in, num_rows, 0);
 
                 set_columns.emplace_back(std::move(column), std::move(type), String{});
             }
