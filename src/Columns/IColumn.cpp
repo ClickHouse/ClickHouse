@@ -2,6 +2,7 @@
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnArrayT.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
@@ -448,6 +449,7 @@ template class IColumnHelper<ColumnLowCardinality, IColumn>;
 template class IColumnHelper<ColumnNullable, IColumn>;
 template class IColumnHelper<ColumnConst, IColumn>;
 template class IColumnHelper<ColumnArray, IColumn>;
+template class IColumnHelper<ColumnArrayT, IColumn>;
 template class IColumnHelper<ColumnTuple, IColumn>;
 template class IColumnHelper<ColumnMap, IColumn>;
 template class IColumnHelper<ColumnSparse, IColumn>;
