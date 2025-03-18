@@ -806,6 +806,20 @@ void sanityChecks(Server & server)
             Context::WarningType::SETTING_ZERO_COPY_REPLICATION_ENABLED,
             PreformattedMessage::create(message_format_string));
     }
+
+    try
+    {
+#if POSITION_INDEPENDENT_EXECUTABLE
+    constexpr auto message_format_string
+        = "ClickHouse is built as position-independent exexutable (PIE), after restart system.trace_log will contain invalid addresses after server restart.";
+    server.context()->addOrUpdateWarningMessage(
+        Context::WarningType::INVALID_ADDRESSES_IN_SYSTEM_TRACE_LOG_AFTER_RESTART,
+            PreformattedMessage::create(message_format_string));
+#endif
+    }
+    catch (...) // NOLINT(bugprone-empty-catch)
+    {
+    }
 }
 
 }
