@@ -7,7 +7,6 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <iostream>
 
 
 namespace DB
