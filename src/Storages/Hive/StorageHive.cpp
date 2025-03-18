@@ -120,7 +120,11 @@ public:
                 {DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumn(),
                  std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
                  "_file"});
-
+        if (source_info->need_file_column)
+            header.insert(
+                {DataTypeLowCardinality{std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
+                 std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())),
+                 "_tags"});
         return header;
     }
 
@@ -131,6 +135,8 @@ public:
             columns_description.add({"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())});
         if (source_info->need_file_column)
             columns_description.add({"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())});
+        if (source_info->need_file_column)
+            columns_description.add({"_tags", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()))});
         return columns_description;
     }
 
@@ -378,6 +384,14 @@ public:
                 auto file_column
                     = DataTypeLowCardinality{std::make_shared<DataTypeString>()}.createColumnConst(num_rows, std::move(file_name));
                 result_columns.emplace_back(file_column->convertToFullColumnIfConst());
+                continue;
+            }
+
+            // Enrich virtual column _tags
+            if (column.name == "_tags")
+            {
+                auto path_column = DataTypeLowCardinality{std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())}.createColumnConst(num_rows, current_path);
+                result_columns.emplace_back(path_column->convertToFullColumnIfConst());
                 continue;
             }
 
@@ -897,6 +911,8 @@ void StorageHive::read(
         if (column == "_path")
             sources_info->need_path_column = true;
         if (column == "_file")
+            sources_info->need_file_column = true;
+        if (column == "_tags")
             sources_info->need_file_column = true;
     }
 

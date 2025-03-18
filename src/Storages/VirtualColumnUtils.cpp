@@ -134,6 +134,7 @@ static NamesAndTypesList getCommonVirtualsForFileLikeStorage()
 {
     return {{"_path", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
             {"_file", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())},
+            {"_tags", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
             {"_size", makeNullable(std::make_shared<DataTypeUInt64>())},
             {"_time", makeNullable(std::make_shared<DataTypeDateTime>())},
             {"_etag", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())}};
@@ -229,6 +230,9 @@ static void addPathAndFileToVirtualColumns(Block & block, const String & path, s
         block.getByName("_file").column->assumeMutableRef().insert(file);
     }
 
+    if (block.has("_tags"))
+            block.getByName("_tags").column->assumeMutableRef().insert(path);
+
     if (use_hive_partitioning)
     {
         auto keys_and_values = parseHivePartitioningKeysAndValues(path);
@@ -254,7 +258,7 @@ std::optional<ActionsDAG> createPathAndFileFilterDAG(const ActionsDAG::Node * pr
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path" || column.name == "_tags" || !common_virtuals.contains(column.name))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
 
@@ -268,7 +272,7 @@ ColumnPtr getFilterByPathAndFileIndexes(const std::vector<String> & paths, const
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
     for (const auto & column : virtual_columns)
     {
-        if (column.name == "_file" || column.name == "_path" || !common_virtuals.contains(column.name))
+        if (column.name == "_file" || column.name == "_path" || column.name == "_tags" || !common_virtuals.contains(column.name))
             block.insert({column.type->createColumn(), column.type, column.name});
     }
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
@@ -307,6 +311,10 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 auto filename_from_path = virtual_values.path.substr(last_slash_pos + 1);
                 chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), filename_from_path)->convertToFullColumnIfConst());
             }
+        }
+        else if (virtual_column.name == "_tags")
+        {
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), virtual_values.path)->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_size")
         {
