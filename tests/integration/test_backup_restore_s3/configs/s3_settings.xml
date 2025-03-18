@@ -14,7 +14,7 @@
         <limited>
             <endpoint>http://minio1:9001/root/data/backups/limited/</endpoint>
             <access_key_id>minio</access_key_id>
-            <secret_access_key>minio123</secret_access_key>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
             <user>superuser1</user>
             <user>superuser2</user>
         </limited>

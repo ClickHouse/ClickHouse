@@ -199,7 +199,7 @@ public:
         bool use_skip_indexes,
         bool find_exact_ranges);
 
-    /// If WHERE or PREWHERE condition is deterministic, try to use query condition cache to filter parts, delete invalid mark ranges.
+    /// Filter parts using query condition cache.
     static void filterPartsByQueryConditionCache(
         RangesInDataParts & parts_with_ranges,
         const SelectQueryInfo & select_query_info,

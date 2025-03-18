@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/integrations/ExternalDistributed
+description: 'The `ExternalDistributed` engine allows to perform `SELECT` queries
+  on data that is stored on a remote servers MySQL or PostgreSQL. Accepts MySQL or
+  PostgreSQL engines as an argument so sharding is possible.'
+sidebar_label: 'ExternalDistributed'
 sidebar_position: 55
-sidebar_label: ExternalDistributed
-title: ExternalDistributed
-description: "The `ExternalDistributed` engine allows to perform `SELECT` queries on data that is stored on a remote servers MySQL or PostgreSQL. Accepts MySQL or PostgreSQL engines as an argument so sharding is possible."
+slug: /engines/table-engines/integrations/ExternalDistributed
+title: 'ExternalDistributed'
 ---
 
 The `ExternalDistributed` engine allows to perform `SELECT` queries on data that is stored on a remote servers MySQL or PostgreSQL. Accepts [MySQL](../../../engines/table-engines/integrations/mysql.md) or [PostgreSQL](../../../engines/table-engines/integrations/postgresql.md) engines as an argument so sharding is possible.

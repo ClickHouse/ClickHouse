@@ -162,6 +162,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        /// Fast path when data is empty
+        if (input_rows_count == 0)
+            return result_type->createColumn();
+
         ColumnsWithTypeAndName arguments = args;
         executeShortCircuitArguments(arguments);
         /** We will gather values from columns in branches to result column,
@@ -239,21 +243,14 @@ public:
         }
 
         /// Special case if first instruction condition is always true and source is constant
-        if (instructions.size() == 1 && instructions.front().source_is_constant && instructions.front().condition_always_true)
+        if (instructions.size() == 1 && instructions.front().source_is_constant
+            && instructions.front().condition_always_true)
         {
             MutableColumnPtr res = return_type->createColumn();
             auto & instruction = instructions.front();
             res->insertFrom(assert_cast<const ColumnConst &>(*instruction.source).getDataColumn(), 0);
             return ColumnConst::create(std::move(res), instruction.source->size());
         }
-
-        /// Fast path when data is empty.
-        /// We should account for the above case when the result is constant, otherwise we might produce a full column instead of a
-        /// ColumnConst. But only for the header (while building pipeline, i.e. when input_rows_count==0), then we will get on with a
-        /// normal execution and return ColumnConst from the happy path.
-        /// It will break code that creates some data structures based on the input header column types.
-        if (input_rows_count == 0)
-            return result_type->createColumn();
 
         const WhichDataType which(removeNullable(result_type));
         bool execute_multiif_columnar = allow_execute_multiif_columnar && instructions.size() <= std::numeric_limits<UInt8>::max()

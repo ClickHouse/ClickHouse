@@ -105,7 +105,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def download_corpus(path: str):
+def download_corpus(path):
     logging.info("Download corpus...")
 
     try:
@@ -131,7 +131,7 @@ def download_corpus(path: str):
     logging.info("...downloaded %d units", units)
 
 
-def upload_corpus(path: str):
+def upload_corpus(path):
     with zipfile.ZipFile(f"{path}/corpus.zip", "w", zipfile.ZIP_DEFLATED) as zipf:
         zipdir(f"{path}/corpus/", zipf)
     s3.upload_file(

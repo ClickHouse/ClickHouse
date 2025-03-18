@@ -120,7 +120,7 @@ ColumnPtr getFilteredTables(
         }
         else
         {
-            for (auto table_it = database->getTablesIterator(context); table_it->isValid(); table_it->next())
+            for (auto table_it = database->getLightweightTablesIterator(context); table_it->isValid(); table_it->next())
             {
                 database_column->insert(table_it->name());
                 if (engine_column)
@@ -394,7 +394,7 @@ protected:
             const bool need_to_check_access_for_tables = need_to_check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesIterator(context);
+                tables_it = database->getLightweightTablesIterator(context);
 
             const bool need_table = needTable(database, getPort().getHeader());
 

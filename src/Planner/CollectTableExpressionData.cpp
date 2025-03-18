@@ -114,11 +114,9 @@ public:
                     throw Exception(ErrorCodes::LOGICAL_ERROR,
                         "Correlated subquery in alias column expression {}. Actual {}", column_node->dumpTree(), outputs.size());
 
-                auto & alias_node = outputs[0];
                 const auto & column_name = column_node->getColumnName();
-                alias_node = &alias_column_actions_dag.addAlias(*alias_node, column_name);
-
-                alias_column_actions_dag.getOutputs() = std::move(outputs);
+                const auto & alias_node = alias_column_actions_dag.addAlias(*outputs[0], column_name);
+                alias_column_actions_dag.addOrReplaceInOutputs(alias_node);
                 table_expression_data.addAliasColumn(column_node->getColumn(), column_identifier, std::move(alias_column_actions_dag), select_added_columns);
             }
             else
