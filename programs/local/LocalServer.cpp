@@ -1,7 +1,7 @@
 #include "LocalServer.h"
 
 #include <sys/resource.h>
-#include <Common/QuillLoggerHelper.h>
+#include <Common/QuillLogger.h>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
@@ -651,7 +651,7 @@ catch (...)
 void LocalServer::updateLoggerLevel(const String & logs_level)
 {
     getClientConfiguration().setString("logger.level", logs_level);
-    // updateLevels(getClientConfiguration(), logger());
+    updateLevels(getClientConfiguration());
 }
 
 void LocalServer::processConfig()
@@ -686,7 +686,7 @@ void LocalServer::processConfig()
     {
         auto log_level = parseQuillLogLevel(level);
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
-        auto logger = createLogger("root", {quill::Frontend::create_or_get_sink<quill::FileSink>(server_logs_file)});
+        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::FileSink>(server_logs_file)});
         logger->getQuillLogger()->set_log_level(log_level);
     }
     else
@@ -694,7 +694,7 @@ void LocalServer::processConfig()
         getClientConfiguration().setString("logger", "logger");
         auto log_level_default = logging ? level : "fatal";
         getClientConfiguration().setString("logger.level", getClientConfiguration().getString("log-level", getClientConfiguration().getString("send_logs_level", log_level_default)));
-        buildLoggers(getClientConfiguration(), logger(), "clickhouse-local");
+        buildLoggers(getClientConfiguration(), "clickhouse-local");
     }
 
     shared_context = Context::createShared();

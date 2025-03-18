@@ -318,8 +318,8 @@ void SignalListener::run()
         if (sig == SIGHUP)
         {
             LOG_DEBUG(log, "Received signal to close logs.");
-            BaseDaemon::instance().closeLogs(BaseDaemon::instance().logger());
-            log->getQuillLogger()->flush_log();
+            log->flushLogs();
+            BaseDaemon::instance().closeLogs();
             LOG_INFO(log, "Opened new log file after received signal.");
         }
         else if (sig == StdTerminate)
@@ -613,7 +613,7 @@ try
         }
     }
 
-    log->getQuillLogger()->flush_log();
+    log->flushLogs();
 
     /// When everything is done, we will try to send these error messages to the client.
     if (thread_ptr)

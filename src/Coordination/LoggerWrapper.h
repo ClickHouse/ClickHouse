@@ -2,6 +2,7 @@
 
 #include <Core/LogsLevel.h>
 #include <libnuraft/nuraft.hxx>
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -26,10 +27,10 @@ private:
 
 public:
     LoggerWrapper(const std::string & name, LogsLevel level_)
-        : log(getLogger(name, "RaftInstance"))
+        : log(getLogger(name, LoggerComponent::RaftInstance))
         , level(level_)
     {
-        log->getQuillLogger()->set_log_level(LEVELS.at(level));
+        log->setLogLevel(LEVELS.at(level));
     }
 
     void put_details(
@@ -47,7 +48,7 @@ public:
     {
         level_ = std::min(LEVEL_MAX, std::max(LEVEL_MIN, level_));
         level = static_cast<LogsLevel>(level_);
-        log->getQuillLogger()->set_log_level(LEVELS.at(level));
+        log->setLogLevel(LEVELS.at(level));
     }
 
     int get_level() override

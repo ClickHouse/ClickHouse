@@ -2,14 +2,14 @@
 
 #include <Common/tests/gtest_global_context.h>
 
-#include <quill/Backend.h>
+#include <Common/QuillLogger.h>
 
 class ContextEnvironment : public testing::Environment
 {
 public:
     void SetUp() override
     {
-        quill::Backend::start();
+        DB::startQuillBackend();
         getContext();
     }
     void TearDown() override { disableLogging(); }

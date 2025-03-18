@@ -585,7 +585,7 @@ try
         unused_event,
         [&](ConfigurationPtr config, bool /* initial_loading */)
         {
-            // updateLevels(*config, logger());
+            updateLevels(*config);
 
             updateMemorySoftLimitInConfig(*config);
 
@@ -640,7 +640,7 @@ try
     });
 
 
-    buildLoggers(config(), logger());
+    buildLoggers(config());
     main_config_reloader->start();
 
     std::optional<CgroupsMemoryUsageObserver> cgroups_memory_usage_observer;

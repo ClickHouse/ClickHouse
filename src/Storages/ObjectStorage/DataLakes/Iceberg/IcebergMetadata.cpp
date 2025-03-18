@@ -237,7 +237,7 @@ getLatestMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const S
     return *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
 }
 
-static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration, Poco::Logger * log)
+static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration, LoggerRawPtr log)
 {
     auto explicit_metadata_path = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].value;
     std::pair<Int32, String> result;

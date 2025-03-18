@@ -3,7 +3,7 @@
 #include <Client/ReplxxLineReader.h>
 #include "Common/Exception.h"
 #include "Common/Logger.h"
-#include "Common/QuillLoggerHelper.h"
+#include <Common/QuillLogger.h>
 #include "Common/filesystemHelpers.h"
 #include <Common/Config/ConfigProcessor.h>
 #include "DisksClient.h"
@@ -494,20 +494,20 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     config().keys(keys);
     initializeHistoryFile();
 
-    quill::Backend::start();
+    DB::startQuillBackend();
     if (config().has("save-logs"))
     {
         auto log_level = config().getString("log-level", "trace");
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
-        auto logger = createLogger("root", {quill::Frontend::create_or_get_sink<quill::FileSink>(log_path)});
+        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::FileSink>(log_path)});
         logger->getQuillLogger()->set_log_level(parseQuillLogLevel(log_level));
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
     }
     else
     {
         auto log_level = config().getString("log-level", "none");
-        auto logger = createLogger("root", {quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink")});
+        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink")});
         logger->getQuillLogger()->set_log_level(parseQuillLogLevel(log_level));
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
     }

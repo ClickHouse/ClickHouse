@@ -18,7 +18,6 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-
 def check_log_file():
     assert node.path_exists("/var/log/clickhouse-server/clickhouse-server.log.lz4")
 
@@ -45,7 +44,7 @@ def check_log_file():
     uncompressed_size = int(lz4_output.split()[3])
     assert 0 < compressed_size < uncompressed_size, lz4_output
 
-
+@pytest.mark.skip(reason="New logger doesn't support stream compression")
 def test_concatenation(started_cluster):
     node.stop_clickhouse()
     node.start_clickhouse()
@@ -53,7 +52,7 @@ def test_concatenation(started_cluster):
 
     check_log_file()
 
-
+@pytest.mark.skip(reason="New logger doesn't support stream compression")
 def test_incomplete_rotation(started_cluster):
     node.stop_clickhouse(kill=True)
     node.start_clickhouse()

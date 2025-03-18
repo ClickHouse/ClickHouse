@@ -10,6 +10,7 @@
 #include <Common/Concepts.h>
 #include <Common/CurrentThreadHelpers.h>
 #include <Common/Logger.h>
+#include <Common/QuillLogger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -94,7 +95,7 @@ namespace impl
         return logger.getName();
     }
 
-    [[maybe_unused]] inline std::string_view getLoggerName(QuillLoggerPtr logger)
+    [[maybe_unused]] inline std::string_view getLoggerName(DB::QuillLoggerPtr logger)
     {
         return logger->get_logger_name();
     }
@@ -103,33 +104,33 @@ namespace impl
     /////////////////// getQuillLogger ///////////////////
     template <typename TLogger>
     requires DB::is_any_of<TLogger, LoggerPtr, LoggerRawPtr>
-    inline QuillLoggerPtr getQuillLogger(const TLogger & logger)
+    inline DB::QuillLoggerPtr getQuillLogger(const TLogger & logger)
     {
         return logger->getQuillLogger();
     }
 
     template <typename TLogger>
     requires DB::is_any_of<TLogger, LogToStrImpl, LogFrequencyLimiterImpl>
-    inline QuillLoggerPtr getQuillLogger(const TLogger & logger)
+    inline DB::QuillLoggerPtr getQuillLogger(const TLogger & logger)
     {
         return getQuillLogger(logger.getLogger());
     }
 
     template <typename TLogger>
     requires DB::is_any_of<TLogger, LogSeriesLimiter *, LogSeriesLimiterPtr>
-    inline QuillLoggerPtr getQuillLogger(const TLogger & logger)
+    inline DB::QuillLoggerPtr getQuillLogger(const TLogger & logger)
     {
         return getQuillLogger(logger->getLogger());
     }
 
-    [[maybe_unused]] inline QuillLoggerPtr getQuillLogger(QuillLoggerPtr logger)
+    [[maybe_unused]] inline DB::QuillLoggerPtr getQuillLogger(DB::QuillLoggerPtr logger)
     {
         return logger;
     }
     /////////////////// getQuillLogger ///////////////////
 
     /////////////////// shouldLog ///////////////////
-    [[maybe_unused]] inline bool shouldLog(QuillLoggerPtr quill_logger, DB::LogsLevel level)
+    [[maybe_unused]] inline bool shouldLog(DB::QuillLoggerPtr quill_logger, DB::LogsLevel level)
     {
         return quill_logger && quill_logger->should_log_statement(::impl::logLevelToQuillLogLevel(level));
     }
@@ -202,9 +203,6 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
         if (!isLoggingEnabled())                                                                                                           \
             break;                                                                                                                         \
         auto _logger = ::impl::getLoggerHelper(logger);                                                                                    \
-        auto * _formatter = Logger::getFormatter();                                                                                        \
-        if (!_formatter)                                                                                                                   \
-            break;                                                                                                                         \
         const bool _is_clients_log = DB::currentThreadHasGroup() && DB::currentThreadLogsLevel() >= (level);                               \
         if (!_is_clients_log && !::impl::shouldLog(_logger, level, nullptr))                                                               \
             break;                                                                                                                         \
@@ -259,10 +257,12 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
             if (_should_log)                                                                                                               \
             {                                                                                                                              \
                 std::string _text;                                                                                                         \
-                _formatter->formatExtended(_msg_ext, _text);                                                                               \
+                if (auto * _formatter = Logger::getFormatter(); _formatter)                                                                \
+                    _formatter->formatExtended(_msg_ext, _text);                                                                           \
+                                                                                                                                           \
                 QUILL_DEFINE_MACRO_METADATA(__PRETTY_FUNCTION__, "{}", nullptr, quill::LogLevel::Dynamic);                                 \
                 ::impl::getQuillLogger(_logger)->template log_statement<QUILL_IMMEDIATE_FLUSH, true>(                                      \
-                    ::impl::logLevelToQuillLogLevel(level), &macro_metadata, _text);                                                       \
+                    ::impl::logLevelToQuillLogLevel(level), &macro_metadata, _text.empty() ? _msg_ext.base.getText() : _text);             \
             }                                                                                                                              \
             Logger::getTextLogSink().log(_msg_ext, _should_log);                                                                           \
         }                                                                                                                                  \

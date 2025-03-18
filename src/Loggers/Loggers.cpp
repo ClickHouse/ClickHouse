@@ -4,8 +4,6 @@
 #include <Loggers/OwnJSONPatternFormatter.h>
 #include <Loggers/TextLogSink.h>
 
-#include <atomic>
-#include <exception>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -13,39 +11,23 @@
 #include <IO/ReadHelpers.h>
 #include <quill/core/LogLevel.h>
 #include <quill/sinks/Sink.h>
-#include "Common/Logger.h"
-#include <Common/QuillLoggerHelper.h>
+#include <Common/Logger.h>
+#include <Common/QuillLogger.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
 #include <Common/LockMemoryExceptionInThread.h>
-#include "IO/WriteBufferFromString.h"
 
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Net/RemoteSyslogChannel.h>
 #include <Poco/SyslogChannel.h>
 #include <Poco/Util/AbstractConfiguration.h>
-#define POCO_UNBUNDLED_ZLIB 1
-#include <Poco/DeflatingStream.h>
-#undef POCO_UNBUNDLED_ZLIB
-#include <Poco/StreamCopier.h>
-#include <Poco/FileStream.h>
-#include <Poco/File.h>
-
-
-#include <quill/Backend.h>
-#include <quill/Frontend.h>
-#include <quill/sinks/ConsoleSink.h>
-#include <quill/sinks/FileSink.h>
-#include <quill/sinks/StreamSink.h>
-#include <base/terminalColors.h>
 
 #ifndef WITHOUT_TEXT_LOG
     #include <Interpreters/TextLog.h>
 #endif
 
 #include <filesystem>
-#include <future>
 
 namespace fs = std::filesystem;
 
@@ -60,65 +42,8 @@ namespace ErrorCodes
 
 }
 
-namespace CurrentMetrics
-{
-    extern const Metric LogCompressionThreads;
-    extern const Metric LogCompressionActiveThreads;
-    extern const Metric LogCompressionScheduledThreads;
-}
-
 namespace
 {
-bool renameFile(const fs::path & previous_file, const fs::path & new_file) noexcept
-{
-    std::error_code ec;
-    fs::rename(previous_file, new_file, ec);
-    return ec.value() == 0;
-}
-
-bool removeFile(const fs::path & filename) noexcept
-{
-    std::error_code ec;
-    fs::remove(filename, ec);
-    return ec.value() == 0;
-}
-
-bool compressLog(const std::string & path, const std::string & compressed_path)
-{
-    Poco::FileInputStream istr(path);
-    Poco::FileOutputStream ostr(compressed_path);
-    try
-    {
-        Poco::DeflatingOutputStream deflater(ostr, Poco::DeflatingStreamBuf::STREAM_GZIP);
-        Poco::StreamCopier::copyStream(istr, static_cast<std::ostream &>(deflater));
-        if (!deflater.good() || !ostr.good()) throw Poco::WriteFileException(compressed_path);
-        deflater.close();
-        ostr.close();
-        istr.close();
-    }
-    catch (...)
-    {
-        // deflating failed - remove gz file and leave uncompressed log file
-        ostr.close();
-        Poco::File gzf(compressed_path);
-        gzf.remove();
-        return false;
-    }
-    Poco::File f(path);
-    f.remove();
-    return true;
-}
-
-class RotatingSinkConfiguration : public quill::FileSinkConfig
-{
-public:
-    size_t max_file_size = 0;
-    size_t max_backup_files = 0;
-    bool compress = false;
-    std::optional<quill::LogLevel> log_level_filter;
-    bool rotate_on_open = false;
-};
-
 
 // TODO: move to libcommon
 std::string createDirectory(const std::string & file)
@@ -158,452 +83,16 @@ size_t getLogFileMaxSize(const std::string & max_size_str)
 
 }
 
-class ConsoleSink : public quill::StreamSink
-{
-public:
-    enum class Stream
-    {
-        STDOUT,
-        STDERR,
-    };
-
-    constexpr std::string_view streamToString(Stream stream)
-    {
-        switch (stream)
-        {
-            case Stream::STDOUT: return "stdout";
-            case Stream::STDERR: return "stderr";
-        }
-    }
-
-    explicit ConsoleSink(Stream stream, bool enable_colors_)
-        : StreamSink{streamToString(stream), nullptr}
-        , enable_colors(enable_colors_)
-    {
-    }
-
-    ~ConsoleSink() override = default;
-
-    QUILL_ATTRIBUTE_HOT void write_log(
-        quill::MacroMetadata const * log_metadata,
-        uint64_t log_timestamp,
-        std::string_view thread_id,
-        std::string_view thread_name,
-        std::string const & process_id,
-        std::string_view logger_name,
-        quill::LogLevel log_level,
-        std::string_view log_level_description,
-        std::string_view log_level_short_code,
-        std::vector<std::pair<std::string, std::string>> const * named_args,
-        std::string_view log_message,
-        std::string_view log_statement) override
-    {
-        if (!enable_colors)
-        {
-            // Write record to file
-            StreamSink::write_log(
-                log_metadata,
-                log_timestamp,
-                thread_id,
-                thread_name,
-                process_id,
-                logger_name,
-                log_level,
-                log_level_description,
-                log_level_short_code,
-                named_args,
-                log_message,
-                log_statement);
-            return;
-        }
-
-        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-        std::string colored_log;
-        /// reset color takes 7 bytes
-        /// color can be at most 19 bytes
-        colored_log.resize(log_statement.size() + 5 * 26);
-        DB::WriteBufferFromString buf(colored_log);
-        auto write_string = [&](std::string_view str)
-        {
-            buf.write(str.data(), str.size());
-            //safe_fwrite(str.data(), sizeof(char), str.size(), _file);
-        };
-
-        std::string_view reset_color = resetColor();
-
-        size_t thread_id_start = log_statement.find('[') + 2;
-        write_string(log_statement.substr(0, thread_id_start));
-        log_statement.remove_prefix(thread_id_start);
-
-        size_t thread_id_end = log_statement.find(' ');
-        auto thread_id_str = log_statement.substr(0, thread_id_end);
-        auto thread_id_color = setColor(std::hash<std::string_view>()(thread_id_str));
-        write_string(thread_id_color);
-        write_string(thread_id_str);
-        write_string(reset_color);
-        log_statement.remove_prefix(thread_id_str.size());
-
-        auto query_id_start = log_statement.find('{') + 1;
-        write_string(log_statement.substr(0, query_id_start));
-        log_statement.remove_prefix(query_id_start);
-
-        auto query_id_end = log_statement.find('}');
-        auto query_id_str = log_statement.substr(0, query_id_end);
-        if (!query_id_str.empty())
-        {
-            auto query_id_color = setColor(std::hash<std::string_view>()(query_id_str));
-            write_string(query_id_color);
-            write_string(query_id_str);
-            write_string(reset_color);
-            log_statement.remove_prefix(query_id_str.size());
-        }
-
-        auto priority_start = log_statement.find('<') + 1;
-        write_string(log_statement.substr(0, priority_start));
-        log_statement.remove_prefix(priority_start);
-
-        auto level_end = log_statement.find('>');
-        auto level_str = log_statement.substr(0, level_end);
-        auto level_color = getLogLevelColor(log_level_short_code);
-        write_string(level_color);
-        write_string(level_str);
-        write_string(reset_color);
-        write_string("> ");
-        log_statement.remove_prefix(level_str.size() + 2);
-
-        auto logger_name_end = log_statement.find(": ");
-        auto logger_name_str = log_statement.substr(0, logger_name_end);
-        auto logger_name_color = setColor(std::hash<std::string_view>()(logger_name_str));
-        write_string(logger_name_color);
-        write_string(logger_name_str);
-        write_string(reset_color);
-        log_statement.remove_prefix(logger_name_str.size());
-
-        write_string(log_statement);
-
-        buf.finalize();
-
-        // Write record to file
-        StreamSink::write_log(
-            log_metadata,
-            log_timestamp,
-            thread_id,
-            thread_name,
-            process_id,
-            logger_name,
-            log_level,
-            log_level_description,
-            log_level_short_code,
-            named_args,
-            log_message,
-            colored_log);
-    }
-private:
-    std::string_view getLogLevelColor(std::string_view log_level_short_code)
-    {
-        if (log_level_short_code == "C")
-            return "\033[1;41m";
-
-        if (log_level_short_code == "E")
-            return "\033[1;31m";
-
-        if (log_level_short_code == "W")
-            return "\033[0;31m";
-
-        if (log_level_short_code == "I")
-            return "\033[1m";
-
-        if (log_level_short_code == "D")
-            return "";
-
-        if (log_level_short_code == "T1")
-            return "\033[2m";
-
-        return "";
-    }
-
-    bool enable_colors = false;
-};
-
-
-class RotatingFileSink : public quill::FileSink
-{
-    using Base = quill::FileSink;
-public:
-    explicit RotatingFileSink(const fs::path & filename, RotatingSinkConfiguration config_)
-        : Base(filename, static_cast<const quill::FileSinkConfig &>(config_), quill::FileEventNotifier{}, /*do_fopen=*/false)
-        , config(config_)
-    {
-        recoverFiles();
-
-        this->open_file(this->_filename, "a");
-        created_files.emplace_front(this->_filename, 0);
-
-        if (!this->is_null())
-            current_log_size = fs::file_size(this->_filename);
-
-        if (config.compress)
-            pool.emplace(
-                CurrentMetrics::LogCompressionThreads,
-                CurrentMetrics::LogCompressionActiveThreads,
-                CurrentMetrics::LogCompressionScheduledThreads,
-                /*max_threads_=*/1);
-
-        if (config.rotate_on_open)
-            rotateFiles();
-    }
-
-    QUILL_ATTRIBUTE_HOT void write_log(
-        quill::MacroMetadata const * log_metadata,
-        uint64_t log_timestamp,
-        std::string_view thread_id,
-        std::string_view thread_name,
-        std::string const & process_id,
-        std::string_view logger_name,
-        quill::LogLevel log_level,
-        std::string_view log_level_description,
-        std::string_view log_level_short_code,
-        std::vector<std::pair<std::string, std::string>> const * named_args,
-        std::string_view log_message,
-        std::string_view log_statement) override
-    {
-        if (config.log_level_filter && log_level < *config.log_level_filter)
-            return;
-
-        LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
-        if (this->is_null())
-        {
-            Base::write_log(
-                log_metadata,
-                log_timestamp,
-                thread_id,
-                thread_name,
-                process_id,
-                logger_name,
-                log_level,
-                log_level_description,
-                log_level_short_code,
-                named_args,
-                log_message,
-                log_statement);
-            return;
-        }
-
-        if (config.max_file_size && current_log_size + log_statement.size() > config.max_file_size)
-            rotateFiles();
-
-        Base::write_log(
-            log_metadata,
-            log_timestamp,
-            thread_id,
-            thread_name,
-            process_id,
-            logger_name,
-            log_level,
-            log_level_description,
-            log_level_short_code,
-            named_args,
-            log_message,
-            log_statement);
-
-        current_log_size += log_statement.size();
-    }
-
-    QUILL_ATTRIBUTE_HOT void flush_sink() override
-    {
-        if (close_current_file.exchange(false, std::memory_order_relaxed))
-            rotateFiles();
-
-        Base::flush_sink();
-    }
-
-    void closeFile()
-    {
-        close_current_file.store(true, std::memory_order_relaxed);
-    }
-private:
-    void recoverFiles()
-    {
-        for (const auto & entry : fs::directory_iterator(fs::current_path() / this->_filename.parent_path()))
-        {
-            if (entry.is_directory())
-                continue;
-
-            const auto extension = entry.path().extension().string();
-
-            if (extension == ".gz")
-            {
-                if (!entry.path().filename().string().starts_with(this->_filename.filename().string() + "."))
-                    continue;
-            }
-            else if (extension == this->_filename.extension().string())
-            {
-                if (!entry.path().filename().string().starts_with(this->_filename.stem().string() + "."))
-                    continue;
-            }
-            else
-            {
-                continue;
-            }
-
-            if (const size_t pos = entry.path().stem().string().find_last_of('.'); pos != std::string::npos)
-            {
-                const std::string index = entry.path().stem().string().substr(pos + 1, entry.path().stem().string().length());
-                std::string current_filename = entry.path().filename().string().substr(0, pos) + extension;
-                fs::path current_file = entry.path().parent_path();
-                current_file.append(current_filename);
-
-                try
-                {
-                    created_files.emplace_front(current_file, static_cast<size_t>(DB::parseFromString<size_t>(index) + 1));
-                }
-                catch (...) /// NOLINT(bugprone-empty-catch)
-                {
-                    /// this not the file we are looking for
-                }
-            }
-        }
-
-        // finally we need to sort the deque
-        std::sort(created_files.begin(), created_files.end(), [](FileInfo const & a, FileInfo const & b) { return a.index < b.index; });
-    }
-
-    void rotateFiles()
-    {
-        if (!current_log_size)
-            return;
-
-        Base::flush_sink();
-        Base::fsync_file(/*force_fsync=*/true);
-
-        this->close_file();
-
-        for (auto it = created_files.rbegin(); it != created_files.rend(); ++it)
-        {
-            if (config.compress && it->index == 1)
-            {
-                if (compression_result.has_value())
-                {
-                    try
-                    {
-                        if (compression_result->get())
-                            it->base_filename += ".gz";
-                    }
-                    catch (...)
-                    {
-                        std::cerr << "Failed to fetch compression result: " << DB::getCurrentExceptionMessage(true) << std::endl;
-                    }
-                    compression_result.reset();
-                }
-            }
-
-            fs::path existing_file = getFilename(it->base_filename, it->index);
-
-            // increment the index if needed and rename the file
-            uint32_t index_to_use = it->index + 1;
-            fs::path renamed_file = getFilename(it->base_filename, index_to_use);
-            it->index = index_to_use;
-            renameFile(existing_file, renamed_file);
-
-            if (config.compress && it->index == 1)
-            {
-                chassert(!compression_result.has_value());
-
-                auto compression_result_promise = std::make_shared<std::promise<bool>>();
-                compression_result.emplace(compression_result_promise->get_future());
-                auto compressed_path = getFilename(existing_file.string() + ".gz", it->index);
-                try
-                {
-                    pool->scheduleOrThrowOnError(
-                        [current_path = std::move(renamed_file),
-                         new_path = std::move(compressed_path),
-                         compression_result_promise]() mutable
-                        {
-                            try
-                            {
-                                compression_result_promise->set_value(compressLog(current_path, new_path));
-                            }
-                            catch (...)
-                            {
-                                std::cerr << "Failed to compress log: " << DB::getCurrentExceptionMessage(true) << std::endl;
-                                compression_result_promise->set_exception(std::current_exception());
-                            }
-                        });
-                }
-                catch (...)
-                {
-                    compression_result.reset();
-                    compression_result_promise.reset();
-                    std::cerr << "Failed to schedule thread for log compression: " << DB::getCurrentExceptionMessage(true) << std::endl;
-                }
-            }
-        }
-
-        // Check if we have too many files in the queue remove_file the oldest one
-        if (created_files.size() > config.max_backup_files)
-        {
-            // remove_file that file from the system and also pop it from the queue
-            const fs::path removed_file = getFilename(
-                created_files.back().base_filename, created_files.back().index);
-            removeFile(removed_file);
-            created_files.pop_back();
-        }
-
-        // add the current file back to the list with index 0
-        created_files.emplace_front(this->_filename, 0);
-
-        // Open file for logging
-        this->open_file(this->_filename, "w");
-        current_log_size = 0;
-    }
-
-    static fs::path appendIndexToFilename(const fs::path & filename, size_t index)
-    {
-        if (index == 0)
-            return filename;
-
-        auto const [stem, ext] = Base::extract_stem_and_extension(filename);
-        return fs::path{stem + "." + std::to_string(index - 1) + ext};
-    }
-
-    static fs::path getFilename(fs::path base_filename, size_t index)
-    {
-        if (index > 0)
-            return appendIndexToFilename(base_filename, index);
-        return base_filename;
-    }
-
-    struct FileInfo
-    {
-        FileInfo(fs::path base_filename_, uint32_t index_)
-            : base_filename{std::move(base_filename_)}, index{index_}
-        {
-        }
-
-        fs::path base_filename;
-        uint32_t index;
-    };
-
-    std::deque<FileInfo> created_files;
-    size_t current_log_size{0};
-    RotatingSinkConfiguration config;
-
-    std::optional<FreeThreadPool> pool;
-    std::optional<std::future<bool>> compression_result;
-
-    std::atomic<bool> close_current_file{false};
-};
-
 /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
-void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & /*_root*/, const std::string & /*cmd_name*/)
+void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, const std::string & /*cmd_name*/, bool allow_console_only)
 {
+    /// if we are remaping executable, we can start another thread only AFTER we are done
+    /// with remapping
     if (!config.getBool("remap_executable", false))
-        quill::Backend::start();
+        DB::startQuillBackend();
 
     std::vector<std::shared_ptr<quill::Sink>> sinks;
-
-    CustomFrontendOptions::initial_queue_capacity = 256 * 1024;
 
     auto current_logger = config.getString("logger", "");
     if (config_logger.has_value())// && *config_logger == current_logger)
@@ -628,7 +117,7 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
 
     const auto log_path_prop = config.getString("logger.log", "");
-    if (!log_path_prop.empty())
+    if (!log_path_prop.empty() && !allow_console_only)
     {
         const auto log_path = renderFileNameTemplate(now, log_path_prop);
         createDirectory(log_path);
@@ -638,19 +127,20 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         auto log_level = DB::parseQuillLogLevel(log_level_string);
         min_log_level = std::min(log_level, min_log_level);
 
-        RotatingSinkConfiguration file_config;
+        DB::RotatingSinkConfiguration file_config;
         file_config.compress = config.getBool("logger.compress", true);
         file_config.max_backup_files = config.getUInt64("logger.count", 1);
-        file_config.max_file_size = getLogFileMaxSize(config.getString("logger.size", "100M")); /// TODO: support readable size like 100M
+        file_config.max_file_size = getLogFileMaxSize(config.getString("logger.size", "100M"));
         file_config.rotate_on_open = config.getBool("logger.rotateOnOpen", false);
 
-        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<RotatingFileSink>(fs::weakly_canonical(log_path), file_config));
-
-        log_file = std::static_pointer_cast<RotatingFileSink>(sink);
+        auto & sink
+            = sinks.emplace_back(DB::QuillFrontend::create_or_get_sink<DB::RotatingFileSink>(fs::weakly_canonical(log_path), file_config));
+        log_file = std::static_pointer_cast<DB::RotatingFileSink>(sink);
+        log_file->set_log_level_filter(log_level);
     }
 
     const auto errorlog_path_prop = config.getString("logger.errorlog", "");
-    if (!errorlog_path_prop.empty())
+    if (!errorlog_path_prop.empty() && !allow_console_only)
     {
         const auto errorlog_path = renderFileNameTemplate(now, errorlog_path_prop);
         createDirectory(errorlog_path);
@@ -666,14 +156,14 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
         std::cerr << "Logging errors to " << errorlog_path << ext << std::endl;
 
-        RotatingSinkConfiguration file_config;
+        DB::RotatingSinkConfiguration file_config;
         file_config.compress = config.getBool("logger.compress", true);
         file_config.max_backup_files = config.getUInt64("logger.count", 1);
         file_config.max_file_size = getLogFileMaxSize(config.getString("logger.size", "100M")); /// TODO: support readable size like 100M
 
-        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<RotatingFileSink>(fs::weakly_canonical(errorlog_path), file_config));
+        auto & sink = sinks.emplace_back(DB::QuillFrontend::create_or_get_sink<DB::RotatingFileSink>(fs::weakly_canonical(errorlog_path), file_config));
         sink->set_log_level_filter(errorlog_level);
-        error_log_file = std::static_pointer_cast<RotatingFileSink>(sink);
+        error_log_file = std::static_pointer_cast<DB::RotatingFileSink>(sink);
     }
 
     // if (config.getBool("logger.use_syslog", false))
@@ -727,18 +217,16 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
         auto console_log_level = DB::parseQuillLogLevel(console_log_level_string);
         min_log_level = std::min(console_log_level, min_log_level);
-        auto & sink = sinks.emplace_back(quill::Frontend::create_or_get_sink<ConsoleSink>("ConsoleSink", ConsoleSink::Stream::STDERR, color_enabled));
+        auto & sink = sinks.emplace_back(DB::QuillFrontend::create_or_get_sink<DB::ConsoleSink>("ConsoleSink", DB::ConsoleSink::Stream::STDERR, color_enabled));
         sink->set_log_level_filter(console_log_level);
+        console_sink = std::static_pointer_cast<DB::ConsoleSink>(sink);
     }
 
-    if (config.getString("logger.formatting.type", "") == "json")
-        Logger::setFormatter(std::make_unique<OwnJSONPatternFormatter>(config));
-    else
-        Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
+    auto logger = createRootLogger(sinks);
+    logger->setLogLevel(min_log_level);
 
-
-    auto logger = createLogger("root", sinks);
-    logger->getQuillLogger()->set_log_level(min_log_level);
+    if (allow_console_only)
+        return;
 
     // // Set level and channel to all already created loggers
     // std::vector<std::string> names;
@@ -817,44 +305,40 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 #endif
 }
 
-void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Logger &)
+void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config)
 {
-    //int max_log_level = 0;
+    quill::LogLevel min_log_level = quill::LogLevel::None;
 
     const auto log_level_string = config.getString("logger.level", "trace");
-    auto quill_level = DB::parseQuillLogLevel(log_level_string);
-    for (auto * quill_logger : quill::FrontendImpl<CustomFrontendOptions>::get_all_loggers())
+
+    if (log_file)
     {
-        quill_logger->set_log_level(quill_level);
+        auto level = DB::parseQuillLogLevel(log_level_string);
+        min_log_level = std::min(level, min_log_level);
+        log_file->set_log_level_filter(level);
     }
 
-    // int log_level = Poco::Logger::parseLevel(log_level_string);
-    // max_log_level = std::max(log_level, max_log_level);
+    // Set level to console
+    bool is_daemon = config.getBool("application.runAsDaemon", false);
+    bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
+    if (config.getBool("logger.console", false)
+        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
+    {
+        auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
+        auto console_log_level = DB::parseQuillLogLevel(console_log_level_string);
+        min_log_level = std::min(console_log_level, min_log_level);
+        console_sink->set_log_level_filter(console_log_level);
+    }
+    else if (console_sink)
+        console_sink->set_log_level_filter(quill::LogLevel::None);
 
-    // if (log_file)
-    //     split->setLevel("log", log_level);
-
-    // // Set level to console
-    // bool is_daemon = config.getBool("application.runAsDaemon", false);
-    // bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
-    // if (config.getBool("logger.console", false)
-    //     || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
-    // {
-    //     auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
-    //     auto console_log_level = Poco::Logger::parseLevel(console_log_level_string);
-    //     max_log_level = std::max(console_log_level, max_log_level);
-    //     split->setLevel("console", console_log_level);
-    // }
-    // else
-    //     split->setLevel("console", 0);
-
-    // // Set level to errorlog
-    // if (error_log_file)
-    // {
-    //     int errorlog_level = Poco::Logger::parseLevel(config.getString("logger.errorlog_level", "notice"));
-    //     max_log_level = std::max(errorlog_level, max_log_level);
-    //     split->setLevel("errorlog", errorlog_level);
-    // }
+    // Set level to errorlog
+    if (error_log_file)
+    {
+        auto errorlog_level = DB::parseQuillLogLevel(config.getString("logger.errorlog_level", "notice"));
+        min_log_level = std::min(errorlog_level, min_log_level);
+        error_log_file->set_log_level_filter(errorlog_level);
+    }
 
     // // Set level to syslog
     // int syslog_level = 0;
@@ -865,8 +349,8 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
     // }
     // split->setLevel("syslog", syslog_level);
 
-    // // Global logging level (it can be overridden for specific loggers).
-    // logger.setLevel(max_log_level);
+    // Global logging level (it can be overridden for specific loggers).
+    getRootLogger()->setLogLevel(min_log_level);
 
     // // Set level to all already created loggers
     // std::vector<std::string> names;
@@ -905,14 +389,10 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
 
 /// NOLINTEND(readability-static-accessed-through-instance)
 
-void Loggers::closeLogs(Poco::Logger & logger)
+void Loggers::closeLogs()
 {
     if (log_file)
         log_file->closeFile();
     if (error_log_file)
         error_log_file->closeFile();
-    // Shouldn't syslog_channel be closed here too?
-
-    if (!log_file)
-        logger.warning("Logging to console but received signal to close log file (ignoring).");
 }

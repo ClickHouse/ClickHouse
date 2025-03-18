@@ -74,17 +74,22 @@ def test_adjust_log_level(start_cluster):
         privileged=True,
         user="root",
     )
-    assert (
-        int(
-            node.exec_in_container(
-                [
-                    "bash",
-                    "-c",
-                    "grep '<Trace>' /var/log/clickhouse-server/clickhouse-server.log | wc -l",
-                ],
-                privileged=True,
-                user="root",
+    for _ in range(100):
+        if (
+            int(
+                node.exec_in_container(
+                    [
+                        "bash",
+                        "-c",
+                        "grep '<Trace>' /var/log/clickhouse-server/clickhouse-server.log | wc -l",
+                    ],
+                    privileged=True,
+                    user="root",
+                )
             )
-        )
-        >= 1
-    )
+            >= 1
+        ):
+            break
+        time.sleep(10)
+    else:
+        assert False

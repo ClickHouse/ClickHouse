@@ -252,7 +252,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
     fatal_log->getQuillLogger()->set_log_level(quill::LogLevel::Critical);
     Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
 
-    quill::Backend::start();
+    DB::startQuillBackend();
 
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);

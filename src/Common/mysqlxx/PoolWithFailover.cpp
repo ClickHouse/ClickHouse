@@ -9,6 +9,7 @@
 #include <Common/randomSeed.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
+#include <Common/logger_useful.h>
 
 namespace DB::ErrorCodes
 {
@@ -33,17 +34,18 @@ auto connectionReestablisher(std::weak_ptr<Pool> pool, bool shareable)
             try
             {
                 shared_pool->get();
-                Poco::Util::Application::instance().logger().information("Reestablishing connection to " + shared_pool->getDescription() + " has succeeded.");
+                LOG_INFO(getRootLogger(), "Reestablishing connection to {} has succeeded.", shared_pool->getDescription());
             }
             catch (const Poco::Exception & e)
             {
                 if (interval_milliseconds >= 1000)
-                    Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed: " + e.displayText());
+                    LOG_WARNING(
+                        getRootLogger(), "Reestablishing connection to {} has failed: {}", shared_pool->getDescription(), e.displayText());
             }
             catch (...)
             {
                 if (interval_milliseconds >= 1000)
-                    Poco::Util::Application::instance().logger().warning("Reestablishing connection to " + shared_pool->getDescription() + " has failed.");
+                    LOG_WARNING(getRootLogger(), "Reestablishing connection to {} has failed.", shared_pool->getDescription());
             }
         }
 

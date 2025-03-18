@@ -64,7 +64,13 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     if (color)
         writeCString(resetColor(), wb);
     writeCString(": ", wb);
-    DB::writeString(msg.getText(), wb);
+    const auto & msg_text = msg.getText();
+    if (msg_text.ends_with('\n'))
+        DB::writeString(std::string_view{msg_text.data(), msg_text.size() - 1}, wb);
+    else
+        DB::writeString(msg_text, wb);
+
+    wb.finalize();
 }
 
 void OwnPatternFormatter::format(const Poco::Message & msg, std::string & text)

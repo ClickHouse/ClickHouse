@@ -24,8 +24,7 @@ public:
     void SetUp() override
     {
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
-        auto logger = createLogger(
-            "root",
+        auto logger = createRootLogger(
             {quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink", quill::ConsoleSink::ColourMode::Never, "stderr")});
         logger->getQuillLogger()->set_log_level(quill::LogLevel::TraceL1);
 

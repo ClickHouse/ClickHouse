@@ -13,6 +13,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include "Common/Logger.h"
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -908,7 +909,7 @@ static void initializeAzureSDKLogger(
         {quill::LogLevel::TraceL3, AzureLogsLevel::Verbose},
     };
 
-    static const LoggerPtr azure_sdk_logger = getLogger("AzureSDK", "Azure");
+    static const LoggerPtr azure_sdk_logger = getLogger("AzureSDK");
 
     auto azure_log_level = AzureLogsLevel::Warning;
     if (server_logs_level <= quill::LogLevel::Debug)
@@ -1466,7 +1467,7 @@ try
         {
             LOG_DEBUG(log, "Will remap executable in memory.");
             size_t size = remapExecutable();
-            quill::Backend::start();
+            DB::startQuillBackend();
             LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
         }
 
@@ -1916,7 +1917,7 @@ try
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
-            updateLevels(*config, logger());
+            updateLevels(*config);
             global_context->setClustersConfig(config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
@@ -2429,8 +2430,8 @@ try
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
-        buildLoggers(config(), logger());
-        initializeAzureSDKLogger(server_settings, getLogger("Server")->getQuillLogger()->get_log_level());
+        buildLoggers(config());
+        initializeAzureSDKLogger(server_settings, getRootLogger()->getQuillLogger()->get_log_level());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
@@ -2720,6 +2721,7 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
+                getRootLogger()->flushLogs();
                 safeExit(0);
             }
         });
