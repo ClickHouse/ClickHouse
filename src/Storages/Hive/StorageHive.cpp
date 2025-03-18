@@ -233,7 +233,6 @@ public:
                     return generateChunkFromMetadata();
                 }
 
-                String uri_with_path = hdfs_namenode_url + current_path;
                 auto compression = chooseCompressionMethod(current_path, compression_method);
                 std::unique_ptr<ReadBuffer> raw_read_buf;
                 try
