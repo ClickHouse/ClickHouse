@@ -24,6 +24,7 @@ public:
     bool operator() (Null &) const;
     bool operator() (String &) const;
     bool operator() (Array &) const;
+    bool operator() (ArrayT &) const;
     bool operator() (Tuple &) const;
     bool operator() (Map &) const;
     bool operator() (Object &) const;

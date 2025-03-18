@@ -119,6 +119,15 @@ namespace
             for (const auto & elem : x)
                 applyVisitor(*this, elem);
         }
+        void operator() (const ArrayT & x) const
+        {
+            UInt8 type = Field::Types::ArrayT;
+            hash.update(type);
+            hash.update(x.size());
+
+            for (const auto & elem : x)
+                applyVisitor(*this, elem);
+        }
         void operator() (const Tuple & x) const
         {
             UInt8 type = Field::Types::Tuple;

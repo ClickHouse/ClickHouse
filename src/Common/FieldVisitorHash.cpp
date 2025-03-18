@@ -108,6 +108,16 @@ void FieldVisitorHash::operator() (const Array & x) const
         applyVisitor(*this, elem);
 }
 
+void FieldVisitorHash::operator() (const ArrayT & x) const 
+{
+    UInt8 type = Field::Types::ArrayT;
+    hash.update(type);
+    hash.update(x.size());
+
+    for (const auto & elem : x)
+        applyVisitor(*this, elem);
+}
+
 void FieldVisitorHash::operator() (const Object & x) const
 {
     UInt8 type = Field::Types::Object;

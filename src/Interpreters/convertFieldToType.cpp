@@ -18,6 +18,7 @@
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeArrayT.h>
 
 #include <Core/AccurateComparison.h>
 
@@ -433,6 +434,31 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             }
 
             return have_unconvertible_element ? Field(Null()) : Field(res);
+        }
+    }
+    else if (const DataTypeArrayT * type_arrayt = typeid_cast<const DataTypeArrayT *>(&type))
+    {
+        if (src.getType() == Field::Types::ArrayT)
+        {
+            const auto & src_arrayt = src.safeGet<ArrayT>();
+            size_t src_size = src_arrayt.size();
+            size_t dst_size = type_arrayt->getSize();
+
+            if (dst_size != src_size)
+                throw Exception(
+                    ErrorCodes::TYPE_MISMATCH,
+                    "Bad size of ArrayT in IN or VALUES section. Expected size: {}, actual size: {}",
+                    dst_size,
+                    src_size);
+
+            ArrayT res(dst_size);
+            const auto & element_type = *(type_arrayt->getType());
+            for (size_t i = 0; i < dst_size; ++i)
+            {
+                res[i] = convertFieldToType(src_arrayt[i], element_type, nullptr, format_settings);
+            }
+
+            return Field(res);
         }
     }
     else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))

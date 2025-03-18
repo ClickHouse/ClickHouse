@@ -35,6 +35,11 @@ public:
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert Array to {}", demangle(typeid(T).name()));
     }
 
+    T operator() (const ArrayT &) const
+    {
+        throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert ArrayT to {}", demangle(typeid(T).name()));
+    }
+
     T operator() (const Tuple &) const
     {
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert Tuple to {}", demangle(typeid(T).name()));

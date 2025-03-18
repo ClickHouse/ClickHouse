@@ -42,6 +42,19 @@ void FieldVisitorWriteBinary::operator() (const Array & x, WriteBuffer & buf) co
     }
 }
 
+void FieldVisitorWriteBinary::operator() (const ArrayT & x, WriteBuffer & buf) const
+{
+    const size_t size = x.size();
+    writeBinary(size, buf);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        const UInt8 type = x[i].getType();
+        writeBinary(type, buf);
+        Field::dispatch([&buf] (const auto & value) { FieldVisitorWriteBinary()(value, buf); }, x[i]);
+    }
+}
+
 void FieldVisitorWriteBinary::operator() (const Tuple & x, WriteBuffer & buf) const
 {
     const size_t size = x.size();

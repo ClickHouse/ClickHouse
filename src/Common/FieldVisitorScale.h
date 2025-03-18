@@ -22,6 +22,7 @@ public:
     void operator() (Null &) const;
     [[noreturn]] void operator() (String &) const;
     [[noreturn]] void operator() (Array &) const;
+    [[noreturn]] void operator() (ArrayT &) const;
     [[noreturn]] void operator() (Tuple &) const;
     [[noreturn]] void operator() (Map &) const;
     [[noreturn]] void operator() (Object &) const;

@@ -125,6 +125,22 @@ String FieldVisitorToString::operator() (const Array & x) const
     return wb.str();
 }
 
+String FieldVisitorToString::operator()(const ArrayT & x) const
+{
+    WriteBufferFromOwnString wb;
+
+    wb << '[';
+    for (Array::const_iterator it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb.write(", ", 2);
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ']';
+
+    return wb.str();
+}
+
 String FieldVisitorToString::operator() (const Tuple & x) const
 {
     WriteBufferFromOwnString wb;

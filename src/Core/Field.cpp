@@ -110,6 +110,12 @@ Field getBinaryValue(UInt8 type, ReadBuffer & buf)
             readBinaryArray(value, buf);
             return value;
         }
+        case Field::Types::ArrayT:
+        {
+            ArrayT value;
+            readBinary(value, buf);
+            return value;
+        }
         case Field::Types::Tuple:
         {
             Tuple value;
@@ -170,6 +176,30 @@ void writeBinaryArray(const Array & x, WriteBuffer & buf)
 }
 
 void writeText(const Array & x, WriteBuffer & buf)
+{
+    String res = applyVisitor(FieldVisitorToString(), Field(x));
+    buf.write(res.data(), res.size());
+}
+
+void readBinary(ArrayT & x, ReadBuffer & buf)
+{
+    size_t size;
+    readBinary(size, buf);
+
+    for (size_t index = 0; index < size; ++index)
+        x.push_back(readFieldBinary(buf));
+}
+
+void writeBinary(const ArrayT & x, WriteBuffer & buf)
+{
+    size_t size = x.size();
+    writeBinary(size, buf);
+
+    for (const auto & elem : x)
+        writeFieldBinary(elem, buf);
+}
+
+void writeText(const ArrayT & x, WriteBuffer & buf)
 {
     String res = applyVisitor(FieldVisitorToString(), Field(x));
     buf.write(res.data(), res.size());
@@ -599,6 +629,7 @@ std::string_view fieldTypeToString(Field::Types::Which type)
     {
         case Field::Types::Which::Null: return "Null"sv;
         case Field::Types::Which::Array: return "Array"sv;
+        case Field::Types::Which::ArrayT: return "ArrayT"sv;
         case Field::Types::Which::Tuple: return "Tuple"sv;
         case Field::Types::Which::Map: return "Map"sv;
         case Field::Types::Which::Object: return "Object"sv;

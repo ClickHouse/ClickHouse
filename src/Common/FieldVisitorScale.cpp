@@ -17,6 +17,7 @@ void FieldVisitorScale::operator() (Null &) const { /*Do not scale anything*/ }
 
 void FieldVisitorScale::operator() (String &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale Strings"); }
 void FieldVisitorScale::operator() (Array &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale Arrays"); }
+void FieldVisitorScale::operator() (ArrayT &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale ArrayTs"); }
 void FieldVisitorScale::operator() (Tuple &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale Tuples"); }
 void FieldVisitorScale::operator() (Map &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale Maps"); }
 void FieldVisitorScale::operator() (Object &) const { throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot scale Objects"); }

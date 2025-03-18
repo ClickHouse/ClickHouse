@@ -38,6 +38,7 @@ enum class TypeIndex : uint8_t
     Decimal256,
     UUID,
     Array,
+    ArrayT,
     Tuple,
     Set,
     Interval,

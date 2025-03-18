@@ -84,6 +84,7 @@ bool ConstantNode::requiresCastCall(Field::Types::Which type, const DataTypePtr 
         case Field::Types::Decimal256:
         case Field::Types::AggregateFunctionState:
         case Field::Types::Array:
+        case Field::Types::ArrayT:
         case Field::Types::Tuple:
         case Field::Types::Map:
         case Field::Types::UUID:

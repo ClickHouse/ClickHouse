@@ -28,6 +28,7 @@ public:
     void operator() (const Float64 & x) const;
     void operator() (const String & x) const;
     void operator() (const Array & x) const;
+    void operator() (const ArrayT & x) const;
     void operator() (const Tuple & x) const;
     void operator() (const Map & x) const;
     void operator() (const Object & x) const;

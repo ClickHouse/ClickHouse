@@ -39,6 +39,7 @@ enum class FieldBinaryTypeIndex: uint8_t
     Bool = 0x13,
     Object = 0x14,
     AggregateFunctionState = 0x15,
+    ArrayT = 0x16,
 
     NegativeInfinity = 0xFE,
     PositiveInfinity = 0xFF,
@@ -70,6 +71,7 @@ public:
     void operator() (const AggregateFunctionStateData & x, WriteBuffer & buf) const;
     [[noreturn]] void operator() (const CustomType & x, WriteBuffer & buf) const;
     void operator() (const bool & x, WriteBuffer & buf) const;
+    void operator() (const ArrayT & x, WriteBuffer & buf) const;
 };
 
 void FieldVisitorEncodeBinary::operator() (const Null & x, WriteBuffer & buf) const
@@ -190,6 +192,15 @@ void FieldVisitorEncodeBinary::operator() (const Array & x, WriteBuffer & buf) c
     writeVarUInt(size, buf);
     for (size_t i = 0; i < size; ++i)
         Field::dispatch([&buf] (const auto & value) { FieldVisitorEncodeBinary()(value, buf); }, x[i]);
+}
+
+void FieldVisitorEncodeBinary::operator()(const ArrayT & x, WriteBuffer & buf) const
+{
+    writeBinary(UInt8(FieldBinaryTypeIndex::ArrayT), buf);
+    size_t size = x.size();
+    writeVarUInt(size, buf);
+    for (size_t i = 0; i < size; ++i)
+        Field::dispatch([&buf](const auto & value) { FieldVisitorEncodeBinary()(value, buf); }, x[i]);
 }
 
 void FieldVisitorEncodeBinary::operator() (const Tuple & x, WriteBuffer & buf) const
@@ -344,6 +355,8 @@ Field decodeField(ReadBuffer & buf)
         }
         case FieldBinaryTypeIndex::Array:
             return decodeArrayLikeField<Array>(buf);
+        case FieldBinaryTypeIndex::ArrayT:
+            return decodeArrayLikeField<ArrayT>(buf);
         case FieldBinaryTypeIndex::Tuple:
             return decodeArrayLikeField<Tuple>(buf);
         case FieldBinaryTypeIndex::Map:

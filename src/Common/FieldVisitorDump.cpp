@@ -65,6 +65,22 @@ String FieldVisitorDump::operator() (const Array & x) const
     return wb.str();
 }
 
+String FieldVisitorDump::operator() (const ArrayT & x) const
+{
+    WriteBufferFromOwnString wb;
+
+    wb << "ArrayT_[";
+    for (auto it = x.begin(); it != x.end(); ++it)
+    {
+        if (it != x.begin())
+            wb << ", ";
+        wb << applyVisitor(*this, *it);
+    }
+    wb << ']';
+
+    return wb.str();
+}
+
 String FieldVisitorDump::operator() (const Tuple & x) const
 {
     WriteBufferFromOwnString wb;

@@ -44,6 +44,7 @@ struct X : public FieldVector \
 
 DEFINE_FIELD_VECTOR(Array);
 DEFINE_FIELD_VECTOR(Tuple);
+DEFINE_FIELD_VECTOR(ArrayT);
 /// NOLINTEND(modernize-type-traits)
 
 /// An array with the following structure: [(key1, value1), (key2, value2), ...]
@@ -261,6 +262,7 @@ template <> struct NearestFieldTypeImpl<const char *> { using Type = String; };
 template <> struct NearestFieldTypeImpl<std::string_view> { using Type = String; };
 template <> struct NearestFieldTypeImpl<String> { using Type = String; };
 template <> struct NearestFieldTypeImpl<Array> { using Type = Array; };
+template <> struct NearestFieldTypeImpl<ArrayT> { using Type = ArrayT; };
 template <> struct NearestFieldTypeImpl<Tuple> { using Type = Tuple; };
 template <> struct NearestFieldTypeImpl<Map> { using Type = Map; };
 template <> struct NearestFieldTypeImpl<Object> { using Type = Object; };
@@ -338,6 +340,7 @@ public:
             IPv4 = 30,
             IPv6 = 31,
             CustomType = 32,
+            ArrayT   = 33,
         };
     };
 
@@ -515,6 +518,7 @@ public:
                 return FloatCompareHelper<Float64>::less(get<Float64>(), rhs.get<Float64>(), nan_direction_hint);
             case Types::String:  return get<String>()  < rhs.get<String>();
             case Types::Array:   return get<Array>()   < rhs.get<Array>();
+            case Types::ArrayT:   return get<ArrayT>()   < rhs.get<ArrayT>();
             case Types::Tuple:   return get<Tuple>()   < rhs.get<Tuple>();
             case Types::Map:     return get<Map>()     < rhs.get<Map>();
             case Types::Object:  return get<Object>()  < rhs.get<Object>();
@@ -564,6 +568,7 @@ public:
             }
             case Types::String:  return get<String>()  <= rhs.get<String>();
             case Types::Array:   return get<Array>()   <= rhs.get<Array>();
+            case Types::ArrayT:   return get<ArrayT>()   <= rhs.get<ArrayT>();
             case Types::Tuple:   return get<Tuple>()   <= rhs.get<Tuple>();
             case Types::Map:     return get<Map>()     <= rhs.get<Map>();
             case Types::Object:  return get<Object>()  <= rhs.get<Object>();
@@ -604,6 +609,7 @@ public:
             case Types::IPv6:    return get<IPv6>()    == rhs.get<IPv6>();
             case Types::String:  return get<String>()  == rhs.get<String>();
             case Types::Array:   return get<Array>()   == rhs.get<Array>();
+            case Types::ArrayT:   return get<ArrayT>()   == rhs.get<ArrayT>();
             case Types::Tuple:   return get<Tuple>()   == rhs.get<Tuple>();
             case Types::Map:     return get<Map>()     == rhs.get<Map>();
             case Types::Object:  return get<Object>()  == rhs.get<Object>();
@@ -647,6 +653,7 @@ public:
             case Types::Float64: return f(field.template get<Float64>());
             case Types::String:  return f(field.template get<String>());
             case Types::Array:   return f(field.template get<Array>());
+            case Types::ArrayT:  return f(field.template get<ArrayT>());
             case Types::Tuple:   return f(field.template get<Tuple>());
             case Types::Map:     return f(field.template get<Map>());
             case Types::Bool:
@@ -671,7 +678,7 @@ private:
     AlignedUnionT<DBMS_MIN_FIELD_SIZE - sizeof(Types::Which),
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
-        AggregateFunctionStateData, CustomType
+        AggregateFunctionStateData, CustomType, ArrayT
         > storage;
 
     Types::Which which;
@@ -782,6 +789,9 @@ private:
             case Types::Array:
                 destroy<Array>();
                 break;
+            case Types::ArrayT:
+                destroy<ArrayT>();
+                break;
             case Types::Tuple:
                 destroy<Tuple>();
                 break;
@@ -831,6 +841,7 @@ template <> struct Field::TypeToEnum<IPv6>    { static constexpr Types::Which va
 template <> struct Field::TypeToEnum<Float64> { static constexpr Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String>  { static constexpr Types::Which value = Types::String; };
 template <> struct Field::TypeToEnum<Array>   { static constexpr Types::Which value = Types::Array; };
+template <> struct Field::TypeToEnum<ArrayT>   { static constexpr Types::Which value = Types::ArrayT; };
 template <> struct Field::TypeToEnum<Tuple>   { static constexpr Types::Which value = Types::Tuple; };
 template <> struct Field::TypeToEnum<Map>     { static constexpr Types::Which value = Types::Map; };
 template <> struct Field::TypeToEnum<Object>  { static constexpr Types::Which value = Types::Object; };
@@ -856,6 +867,7 @@ template <> struct Field::EnumToType<Field::Types::IPv6>    { using Type = IPv6;
 template <> struct Field::EnumToType<Field::Types::Float64> { using Type = Float64; };
 template <> struct Field::EnumToType<Field::Types::String>  { using Type = String; };
 template <> struct Field::EnumToType<Field::Types::Array>   { using Type = Array; };
+template <> struct Field::EnumToType<Field::Types::ArrayT>   { using Type = ArrayT; };
 template <> struct Field::EnumToType<Field::Types::Tuple>   { using Type = Tuple; };
 template <> struct Field::EnumToType<Field::Types::Map>     { using Type = Map; };
 template <> struct Field::EnumToType<Field::Types::Object>  { using Type = Object; };
@@ -961,6 +973,14 @@ void readBinaryArray(Array & x, ReadBuffer & buf);
 void writeBinaryArray(const Array & x, WriteBuffer & buf);
 void writeText(const Array & x, WriteBuffer & buf);
 [[noreturn]] inline void writeQuoted(const Array &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Array quoted."); }
+
+void readBinary(ArrayT & x, ReadBuffer & buf);
+[[noreturn]] inline void readText(ArrayT &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Tuple."); }
+[[noreturn]] inline void readQuoted(ArrayT &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Tuple."); }
+
+void writeBinary(const ArrayT & x, WriteBuffer & buf);
+void writeText(const ArrayT & x, WriteBuffer & buf);
+[[noreturn]] inline void writeQuoted(const ArrayT &, WriteBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot write Tuple quoted."); }
 
 void readBinary(Tuple & x, ReadBuffer & buf);
 [[noreturn]] inline void readText(Tuple &, ReadBuffer &) { throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot read Tuple."); }

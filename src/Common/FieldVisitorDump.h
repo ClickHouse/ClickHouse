@@ -22,6 +22,7 @@ public:
     String operator() (const Float64 & x) const;
     String operator() (const String & x) const;
     String operator() (const Array & x) const;
+    String operator() (const ArrayT & x) const;
     String operator() (const Tuple & x) const;
     String operator() (const Map & x) const;
     String operator() (const Object & x) const;
