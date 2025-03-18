@@ -2490,6 +2490,40 @@ bool ParserTTLElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ttl_element->group_by_key = std::move(group_by_key->children);
         if (group_by_assignments)
             ttl_element->group_by_assignments = std::move(group_by_assignments->children);
+
+        std::vector<String> identifiers_used_by_group_by;
+
+        for (auto & key : ttl_element->group_by_key)
+        {
+            if (key->as<ASTIdentifier>())
+            {
+                identifiers_used_by_group_by.push_back(key->as<ASTIdentifier>()->getColumnName());
+            }
+            else if (key->as<ASTFunction>() && key->children.size() > 0)
+            {
+                auto expression = key->children.front();
+                for (auto key_children: expression->children)
+                {
+                    if (key_children->as<ASTIdentifier>())
+                    {
+                        identifiers_used_by_group_by.push_back(key_children->as<ASTIdentifier>()->getColumnName());
+                    }
+
+                }
+            }
+        }
+
+        for (auto & assignment : ttl_element->group_by_assignments)
+        {
+            if (assignment->as<ASTAssignment>())
+            {
+                if (std::find(identifiers_used_by_group_by.begin(), identifiers_used_by_group_by.end(),assignment->as<ASTAssignment>()->column_name) != identifiers_used_by_group_by.end())
+                {
+                    throw Exception(ErrorCodes::SYNTAX_ERROR, "It is forbidden to define column in SET sections which is already defined in GROUP BY section");
+                }
+
+            }
+        }
     }
 
     if (mode == TTLMode::RECOMPRESS)
