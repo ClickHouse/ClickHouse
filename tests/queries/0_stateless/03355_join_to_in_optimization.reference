@@ -30,3 +30,4 @@ Expression ((Project names + Projection))
     CreatingSet (Create set for subquery)
       Expression ((JOIN keys + Change column names to column identifiers))
         ReadFromSystemOneBlock
+0

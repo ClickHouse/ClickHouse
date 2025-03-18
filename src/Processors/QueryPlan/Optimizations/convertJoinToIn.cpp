@@ -226,7 +226,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     //auto unused_columns = findUnusedInputs(*join_expression_actions.post_join_actions);
 
     // const auto & left_input_header = join->getInputHeaders().front();
-    // const auto & right_input_header = join->getInputHeaders().back();
+    const auto & right_input_header = join->getInputHeaders().back();
 
     /// Apply pre-join actions to input headers before checking for required columns.
     // auto left_header = join_expression_actions.left_pre_join_actions->updateHeader(left_input_header);
@@ -234,17 +234,17 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
     bool build_set_from_left_part = false;
 
-    // if (isInnerOrLeft(join_info.kind) && !hasAnyInSet(right_input_header, required_output_columns_set))
-    // {
-    //     /// Transform right to IN
-    // }
+    if (isInnerOrLeft(join_info.kind) && !hasAnyInSet(right_input_header, required_output_columns_set))
+    {
+        /// Transform right to IN
+    }
     // else if (isInnerOrRight(join_info.kind) && !hasAnyInSet(left_input_header, required_output_columns_set))
     // {
     //     /// Transform left to IN
     //     build_set_from_left_part = true;
     // }
-    // else
-    //     return 0;
+    else
+        return 0;
 
     JoinActionRef unused_post_filter(nullptr);
     join->appendRequiredOutputsToActions(unused_post_filter);
