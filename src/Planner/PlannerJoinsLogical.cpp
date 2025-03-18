@@ -40,7 +40,9 @@
 
 #include <Planner/PlannerActionsVisitor.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/Utils.h>
+
 #include <Processors/QueryPlan/JoinStepLogical.h>
 
 #include <Core/Settings.h>
@@ -72,7 +74,9 @@ const ActionsDAG::Node * appendExpression(
     const PlannerContextPtr & planner_context)
 {
     PlannerActionsVisitor join_expression_visitor(planner_context);
-    auto join_expression_dag_node_raw_pointers = join_expression_visitor.visit(dag, expression);
+    auto [join_expression_dag_node_raw_pointers, correlated_subtrees] = join_expression_visitor.visit(dag, expression);
+    correlated_subtrees.assertEmpty("in join expression");
+
     if (join_expression_dag_node_raw_pointers.size() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "Expression {} expected be a single node, got {}",

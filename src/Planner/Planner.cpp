@@ -69,20 +69,22 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 
-#include <Planner/findQueryForParallelReplicas.h>
-#include <Planner/Utils.h>
-#include <Planner/PlannerContext.h>
-#include <Planner/PlannerActionsVisitor.h>
-#include <Planner/PlannerJoins.h>
-#include <Planner/PlannerAggregation.h>
-#include <Planner/PlannerSorting.h>
-#include <Planner/PlannerWindowFunctions.h>
+#include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
-#include <Planner/PlannerJoinTree.h>
+#include <Planner/findQueryForParallelReplicas.h>
+#include <Planner/PlannerActionsVisitor.h>
+#include <Planner/PlannerAggregation.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerExpressionAnalysis.h>
-#include <Planner/CollectColumnIdentifiers.h>
+#include <Planner/PlannerJoins.h>
+#include <Planner/PlannerJoinTree.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+#include <Planner/PlannerSorting.h>
+#include <Planner/PlannerWindowFunctions.h>
+#include <Planner/Utils.h>
+
 
 namespace ProfileEvents
 {
@@ -398,9 +400,15 @@ void addExpressionStep(QueryPlan & query_plan,
 
 void addFilterStep(QueryPlan & query_plan,
     FilterAnalysisResult & filter_analysis_result,
+    const SelectQueryOptions & select_query_options,
     const std::string & step_description,
     UsefulSets & useful_sets)
 {
+    for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
+    {
+        buildQueryPlanForCorrelatedSubquery(correlated_subquery, select_query_options);
+    }
+
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
     if (filter_analysis_result.filter_actions->project_input)
         actions.appendInputsForUnusedColumns(query_plan.getCurrentHeader());
@@ -795,13 +803,15 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
 
                 PlannerActionsVisitor planner_actions_visitor(planner_context);
-                auto expression_to_interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
+                auto [expression_to_interpolate_expression_nodes, expression_to_interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getExpression());
+                expression_to_interpolate_correlated_subtrees.assertEmpty("in expression to interpolate");
                 if (expression_to_interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expression to interpolate expected to have single action node");
 
-                auto interpolate_expression_nodes = planner_actions_visitor.visit(interpolate_actions_dag,
+                auto [interpolate_expression_nodes, interpolate_correlated_subtrees] = planner_actions_visitor.visit(interpolate_actions_dag,
                     interpolate_node_typed.getInterpolateExpression());
+                interpolate_correlated_subtrees.assertEmpty("in interpolate expression");
                 if (interpolate_expression_nodes.size() != 1)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Interpolate expression expected to have single action node");
 
@@ -1585,6 +1595,18 @@ void Planner::buildPlanForQueryNode()
 
     auto useful_sets = std::move(join_tree_query_plan.useful_sets);
 
+    if (expression_analysis_result.hasCorrelatedColumns())
+    {
+        auto add_correlated_columns_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+        add_correlated_columns_actions->project_input = true;
+
+        addExpressionStep(
+            query_plan,
+            expression_analysis_result.getCorrelatedColumns().input_actions,
+            "Add correlated columns as inputs",
+            useful_sets);
+    }
+
     for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {
         if (table_expression_data.getPrewhereFilterActions())
@@ -1614,7 +1636,7 @@ void Planner::buildPlanForQueryNode()
     if (query_processing_info.isFirstStage())
     {
         if (expression_analysis_result.hasWhere())
-            addFilterStep(query_plan, expression_analysis_result.getWhere(), "WHERE", useful_sets);
+            addFilterStep(query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets);
 
         if (expression_analysis_result.hasAggregation())
         {
@@ -1704,7 +1726,7 @@ void Planner::buildPlanForQueryNode()
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
-                addFilterStep(query_plan, expression_analysis_result.getHaving(), "HAVING", useful_sets);
+                addFilterStep(query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
         }
 
         if (query_processing_info.isFromAggregationState())
@@ -1725,7 +1747,7 @@ void Planner::buildPlanForQueryNode()
             }
 
             if (expression_analysis_result.hasQualify())
-                addFilterStep(query_plan, expression_analysis_result.getQualify(), "QUALIFY", useful_sets);
+                addFilterStep(query_plan, expression_analysis_result.getQualify(), select_query_options, "QUALIFY", useful_sets);
 
             auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);

@@ -718,6 +718,13 @@ static const ActionsDAG::Node & cloneASTWithInversionPushDown(
                     }
                 }
             }
+            break;
+        }
+        case ActionsDAG::ActionType::PLACEHOLDER:
+        {
+            /// I guess it should work as INPUT.
+            res = &inverted_dag.addPlaceholder(node.result_name, node.result_type);
+            break;
         }
     }
 

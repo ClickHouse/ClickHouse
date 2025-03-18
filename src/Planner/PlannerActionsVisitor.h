@@ -15,8 +15,14 @@
 namespace DB
 {
 
+struct CorrelatedSubtrees;
+
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
+
+class ColumnNode;
+using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+using ColumnNodes = std::vector<ColumnNodePtr>;
 
 /** Planner actions visitor is responsible for adding necessary actions to calculate query tree expression node
   * into actions dag.
@@ -40,7 +46,9 @@ public:
       * Necessary actions are not added in actions dag output.
       * Returns query tree expression node actions dag nodes.
       */
-    ActionsDAG::NodeRawConstPtrs visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node);
+    std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node);
+
+    ActionsDAG::NodeRawConstPtrs visitCorrelatedColumns(ActionsDAG & actions_dag, const ColumnNodes & correlated_columns);
 
 private:
     const PlannerContextPtr planner_context;

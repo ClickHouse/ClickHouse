@@ -6,10 +6,11 @@
 
 #include <Interpreters/ActionsDAG.h>
 
-#include <Planner/PlannerContext.h>
 #include <Planner/PlannerAggregation.h>
-#include <Planner/PlannerWindowFunctions.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerQueryProcessingInfo.h>
+#include <Planner/PlannerWindowFunctions.h>
 
 namespace DB
 {
@@ -22,9 +23,15 @@ struct ProjectionAnalysisResult
     ActionsAndProjectInputsFlagPtr project_names_actions;
 };
 
+struct CorrelatedColumnsAnalysisResult
+{
+    ActionsAndProjectInputsFlagPtr input_actions;
+};
+
 struct FilterAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr filter_actions;
+    CorrelatedSubtrees correlated_subtrees;
     std::string filter_column_name;
     bool remove_filter_column = false;
 };
@@ -66,6 +73,21 @@ public:
     ProjectionAnalysisResult & getProjection()
     {
         return projection_analysis_result;
+    }
+
+    bool hasCorrelatedColumns() const noexcept
+    {
+        return correlated_columns_analysis_result.input_actions != nullptr;
+    }
+
+    CorrelatedColumnsAnalysisResult & getCorrelatedColumns()
+    {
+        return correlated_columns_analysis_result;
+    }
+
+    void addCorrelatedColumns(CorrelatedColumnsAnalysisResult correlated_columns_analysis_result_)
+    {
+        correlated_columns_analysis_result = std::move(correlated_columns_analysis_result_);
     }
 
     bool hasWhere() const
@@ -174,6 +196,7 @@ public:
     }
 
 private:
+    CorrelatedColumnsAnalysisResult correlated_columns_analysis_result;
     ProjectionAnalysisResult projection_analysis_result;
     FilterAnalysisResult where_analysis_result;
     AggregationAnalysisResult aggregation_analysis_result;

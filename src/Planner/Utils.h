@@ -16,6 +16,7 @@
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 
 #include <Storages/SelectQueryInfo.h>
 
@@ -49,7 +50,8 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
   * Inputs are not used for actions dag outputs.
   * Only root query tree expression node is used as actions dag output.
   */
-ActionsDAG buildActionsDAGFromExpressionNode(const QueryTreeNodePtr & expression_node,
+std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
+    const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
     const PlannerContextPtr & planner_context);
 
