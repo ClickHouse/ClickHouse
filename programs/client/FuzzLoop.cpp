@@ -1,4 +1,3 @@
-#include <Parsers/formatAST.h>
 #include <base/scope_guard.h>
 #include "Client.h"
 
@@ -404,12 +403,10 @@ bool Client::processWithFuzzing(const String & full_query)
     for (const auto & query : queries_for_fuzzed_tables)
     {
         std::cout << std::endl;
-        WriteBufferFromOStream ast_buf(std::cout, 4096);
-        formatAST(*query, ast_buf, false /*highlight*/);
-        ast_buf.finalize();
+        std::cout << query->formatWithSecretsOneLine() << std::endl;
         if (const auto * insert = query->as<ASTInsertQuery>())
         {
-            /// For inserts with data it's really useful to have the data itself available in the logs, as formatAST doesn't print it
+            /// For inserts with data it's really useful to have the data itself available in the logs
             if (insert->hasInlinedData())
             {
                 String bytes;
@@ -475,7 +472,7 @@ bool Client::processBuzzHouseQuery(const String & full_query)
 
         if ((orig_ast = parseQuery(begin, begin + full_query.size(), client_context->getSettingsRef(), false)))
         {
-            String query_to_execute = orig_ast->formatForAnything();
+            String query_to_execute = orig_ast->formatWithSecretsOneLine();
             const auto res = processFuzzingStep(query_to_execute, orig_ast, false);
             server_up &= res.value_or(true);
         }

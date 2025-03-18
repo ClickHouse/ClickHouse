@@ -89,7 +89,3 @@ find $ROOT_PATH/{src,base,programs,utils,tests,docs,cmake} -name '*.md' -or -nam
 
 # DOS/Windows newlines
 find $ROOT_PATH/{base,src,programs,utils,docs} -name '*.md' -or -name '*.h' -or -name '*.cpp' -or -name '*.js' -or -name '*.py' -or -name '*.html' | xargs grep -l -P '\r$' && echo "^ Files contain DOS/Windows newlines (\r\n instead of \n)."
-
-# # workflows check
-# act --list --directory="$ROOT_PATH" 1>/dev/null 2>&1 || act --list --directory="$ROOT_PATH" 2>&1
-# actionlint -ignore 'reusable workflow call.+' || :

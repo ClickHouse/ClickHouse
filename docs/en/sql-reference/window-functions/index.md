@@ -80,7 +80,7 @@ These functions can be used only as a window function.
 
 - [`row_number()`](./row_number.md) - Number the current row within its partition starting from 1.
 - [`first_value(x)`](./first_value.md) - Return the first value evaluated within its ordered frame.
-- [`last_value(x)`](./last_value.md) -	Return the last value evaluated within its ordered frame.
+- [`last_value(x)`](./last_value.md) -    Return the last value evaluated within its ordered frame.
 - [`nth_value(x, offset)`](./nth_value.md) - Return the first non-NULL value evaluated against the nth row (offset) in its ordered frame.
 - [`rank()`](./rank.md) - Rank the current row within its partition with gaps.
 - [`dense_rank()`](./dense_rank.md) - Rank the current row within its partition without gaps.

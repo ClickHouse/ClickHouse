@@ -1885,7 +1885,7 @@ When new credentials are applied to all replicas, old credentials may be removed
 
 ## keep_alive_timeout {#keep_alive_timeout}
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection.
+The number of seconds that ClickHouse waits for incoming requests for HTTP protocol before closing the connection.
 
 **Example**
 
