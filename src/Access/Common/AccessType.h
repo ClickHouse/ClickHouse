@@ -241,6 +241,7 @@ enum class AccessType : uint8_t
     M(URL, "", GLOBAL, SOURCES) \
     M(REMOTE, "", GLOBAL, SOURCES) \
     M(MONGO, "", GLOBAL, SOURCES) \
+    M(YTSAURUS, "", GLOBAL, SOURCES) \
     M(REDIS, "", GLOBAL, SOURCES) \
     M(MYSQL, "", GLOBAL, SOURCES) \
     M(POSTGRES, "", GLOBAL, SOURCES) \

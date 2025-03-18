@@ -69,6 +69,9 @@ void registerStorageMySQL(StorageFactory & factory);
 void registerStorageMongoDB(StorageFactory & factory);
 void registerStorageMongoDBPocoLegacy(StorageFactory & factory);
 #endif
+#if USE_YTSAURUS
+void registerStorageYTsaurus(StorageFactory & factory);
+#endif
 
 void registerStorageRedis(StorageFactory & factory);
 
@@ -175,6 +178,7 @@ void registerStorages(bool use_legacy_mongodb_integration [[maybe_unused]])
         registerStorageMongoDB(factory);
     #endif
 
+    registerStorageYTsaurus(factory);
     registerStorageRedis(factory);
 
     #if USE_RDKAFKA
