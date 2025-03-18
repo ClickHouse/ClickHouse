@@ -12,15 +12,15 @@ table2:
 20
 table3:
 30	unknown
-30	unknown
-31	unknown
 31	unknown
 32	unknown
-32	unknown
+33	unknown
+34	unknown
+35	unknown
 mv_table3:
-30	300
-31	310
-32	320
+33	330
+34	340
+35	350
 tables exist:
 0
 0

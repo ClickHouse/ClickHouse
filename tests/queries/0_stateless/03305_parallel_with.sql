@@ -41,7 +41,7 @@ SELECT
     y * 10 AS y_times_ten
 FROM table3;
 
-INSERT INTO table3(y) SELECT number FROM numbers(30, 3)
+INSERT INTO table3(y) SELECT number FROM numbers(33, 3)
 PARALLEL WITH
 ALTER TABLE table3 ADD COLUMN z String DEFAULT 'unknown';
 
