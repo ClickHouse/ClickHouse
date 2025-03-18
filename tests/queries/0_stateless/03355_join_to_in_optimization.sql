@@ -46,7 +46,29 @@ INNER JOIN
 (
     SELECT *
     FROM system.one
-) AS c USING (dummy);
+) AS c USING (dummy)
+SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;
+
+-- check type, modified from 02988_join_using_prewhere_pushdown
+SET allow_suspicious_low_cardinality_types = 1;
+
+DROP TABLE IF EXISTS t;
+CREATE TABLE t (`id` UInt16, `u` LowCardinality(Int32), `s` LowCardinality(String))
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO t VALUES (1,1,'a'),(2,2,'b');
+
+SELECT
+    u,
+    s
+FROM t
+INNER JOIN
+(
+    SELECT CAST(number, 'Int32') AS u
+    FROM numbers(10)
+) AS t1 USING (u)
+FORMAT Null
+SETTINGS query_plan_use_new_logical_join_step = true, query_plan_convert_join_to_in = true;
 
 -- from fuzzer
 SELECT 10

@@ -225,7 +225,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     const auto & join_expression_actions = join->getExpressionActions();
     //auto unused_columns = findUnusedInputs(*join_expression_actions.post_join_actions);
 
-    // const auto & left_input_header = join->getInputHeaders().front();
+    const auto & left_input_header = join->getInputHeaders().front();
     const auto & right_input_header = join->getInputHeaders().back();
 
     /// Apply pre-join actions to input headers before checking for required columns.
@@ -245,6 +245,15 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     // }
     else
         return 0;
+
+    const auto & output_header = join->getOutputHeader();
+
+    for (const auto & column_type_and_name : output_header)
+    {
+        /// Check input and output type
+        if (!left_input_header.getByName(column_type_and_name.name).type->equals(*column_type_and_name.type))
+            return 0;
+    }
 
     JoinActionRef unused_post_filter(nullptr);
     join->appendRequiredOutputsToActions(unused_post_filter);
