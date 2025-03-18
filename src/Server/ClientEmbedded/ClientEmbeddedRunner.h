@@ -30,12 +30,13 @@ public:
     bool hasStarted() const;
     bool hasFinished() const;
     int getExitCode() const;
-    void run(const NameToNameMap & envs, const String & starting_query = "");
-    IClientDescriptorSet::DescriptorSet getDescriptorsForServer() { return client_descriptors->getDescriptorsForServer(); }
+    IClientDescriptorSet::DescriptorSet getDescriptorsForServer();
+    void closeStdIn() const;
     bool hasPty() const { return client_descriptors->isPty(); }
     // Sets new window size for tty. Works only if IClientDescriptorSet is pty
     void changeWindowSize(int width, int height, int width_pixels, int height_pixels);
 
+    void run(const NameToNameMap & envs, const String & starting_query = "");
 private:
     void clientRoutine(NameToNameMap envs, String starting_query);
 

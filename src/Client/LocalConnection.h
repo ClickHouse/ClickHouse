@@ -78,6 +78,7 @@ public:
 
     explicit LocalConnection(
         std::unique_ptr<Session> && session_,
+        ReadBuffer * in_,
         bool send_progress_ = false,
         bool send_profile_events_ = false,
         const String & server_display_name_ = "");
@@ -97,6 +98,7 @@ public:
     static ServerConnectionPtr createConnection(
         const ConnectionParameters & connection_parameters,
         std::unique_ptr<Session> && session,
+        ReadBuffer * in_,
         bool send_progress = false,
         bool send_profile_events = false,
         const String & server_display_name = "");

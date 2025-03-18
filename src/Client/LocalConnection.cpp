@@ -62,12 +62,13 @@ LocalConnection::LocalConnection(ContextPtr context_, ReadBuffer * in_, bool sen
 }
 
 LocalConnection::LocalConnection(
-    std::unique_ptr<Session> && session_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
+    std::unique_ptr<Session> && session_, ReadBuffer * in_, bool send_progress_, bool send_profile_events_, const String & server_display_name_)
     : WithContext(session_->sessionContext())
     , session(std::move(session_))
     , send_progress(send_progress_)
     , send_profile_events(send_profile_events_)
     , server_display_name(server_display_name_)
+    , in(in_)
 {
 }
 
@@ -229,6 +230,7 @@ void LocalConnection::sendQuery(
                 current_format = insert->format;
         }
 
+        chassert(in, "ReadBuffer should be initialized");
         auto source = context->getInputFormat(current_format, *in, sample, context->getSettingsRef()[Setting::max_insert_block_size]);
         Pipe pipe(source);
 
@@ -750,11 +752,12 @@ ServerConnectionPtr LocalConnection::createConnection(
 ServerConnectionPtr LocalConnection::createConnection(
     const ConnectionParameters &,
     std::unique_ptr<Session> && session,
+    ReadBuffer * in,
     bool send_progress,
     bool send_profile_events,
     const String & server_display_name)
 {
-    return std::make_unique<LocalConnection>(std::move(session), send_progress, send_profile_events, server_display_name);
+    return std::make_unique<LocalConnection>(std::move(session), in, send_progress, send_profile_events, server_display_name);
 }
 
 

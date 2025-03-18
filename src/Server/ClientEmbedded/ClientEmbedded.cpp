@@ -93,7 +93,7 @@ void ClientEmbedded::connect()
     }
     connection_parameters = ConnectionParameters::createForEmbedded(session->sessionContext()->getUserName(), default_database);
     connection = LocalConnection::createConnection(
-        connection_parameters, std::move(session), need_render_progress, need_render_profile_events, server_display_name);
+        connection_parameters, std::move(session), std_in.get(), need_render_progress, need_render_profile_events, server_display_name);
     if (!default_database.empty())
     {
         connection->setDefaultDatabase(default_database);

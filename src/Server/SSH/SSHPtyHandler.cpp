@@ -93,6 +93,7 @@ public:
         channel_cb.channel_pty_request_function = ptyRequestAdapter<ssh_session, ssh_channel, const char *, int, int, int, int>;
         channel_cb.channel_shell_request_function = shellRequestAdapter<ssh_session, ssh_channel>;
         channel_cb.channel_data_function = dataFunctionAdapter<ssh_session, ssh_channel, void *, uint32_t, int>;
+        channel_cb.channel_eof_function = eofFunctionAdapter<ssh_session, ssh_channel>;
         channel_cb.channel_pty_window_change_function = ptyResizeAdapter<ssh_session, ssh_channel, int, int, int, int>;
         channel_cb.channel_env_request_function = envRequestAdapter<ssh_session, ssh_channel, const char *, const char*>;
         channel_cb.channel_exec_request_function = execRequestAdapter<ssh_session, ssh_channel, const char *>;
@@ -169,6 +170,16 @@ private:
     }
 
     GENERATE_ADAPTER_FUNCTION(ChannelCallback, dataFunction, int)
+
+    void eofFunction(ssh_session, ssh_channel) const noexcept
+    {
+        if (!client_runner.has_value())
+            return;
+
+        client_runner->closeStdIn();
+    }
+
+    GENERATE_ADAPTER_FUNCTION(ChannelCallback, eofFunction, void)
 
     int subsystemRequest(ssh_session, ssh_channel, const char * subsystem) noexcept
     {

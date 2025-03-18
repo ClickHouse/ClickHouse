@@ -91,7 +91,7 @@ def test_no_inserts_from_infile(started_cluster):
 
 
 def test_create_table(started_cluster):
-    def execute_command_and_get_output(command):
+    def execute_command_and_get_output(command, input=""):
         # StrictHostKeyChecking=no means we will not warn and ask to add a public key of a server to .known_hosts
         ssh_command = f'ssh -o StrictHostKeyChecking=no lucy@{instance.ip_address} -p 9022 -i {SCRIPT_DIR}/keys/lucy_ed25519 "{command}"'
 
@@ -99,6 +99,7 @@ def test_create_table(started_cluster):
             ssh_command,
             shell=True,
             text=True,
+            input = input,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
@@ -110,8 +111,9 @@ def test_create_table(started_cluster):
         "CREATE TABLE test (a UInt64) ENGINE=MergeTree() ORDER BY a;"
     )
     execute_command_and_get_output("INSERT INTO test VALUES (1), (2), (3);")
-    result = execute_command_and_get_output("SELECT * FROM test;")
-    assert result.replace("\n\x00", "\n") == "1\n2\n3\n"
+    execute_command_and_get_output("INSERT INTO test FORMAT TSV", input="4\n5\n6")
+    result = execute_command_and_get_output("SELECT * FROM test ORDER BY a;")
+    assert result.replace("\n\x00", "\n") == "1\n2\n3\n4\n5\n6\n"
     execute_command_and_get_output("TRUNCATE test;")
     result = execute_command_and_get_output("SELECT * FROM test;")
     # Output should be empty

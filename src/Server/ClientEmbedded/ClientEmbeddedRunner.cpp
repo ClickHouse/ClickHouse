@@ -27,6 +27,16 @@ int ClientEmbeddedRunner::getExitCode() const
     return exit_code;
 }
 
+IClientDescriptorSet::DescriptorSet ClientEmbeddedRunner::getDescriptorsForServer()
+{
+    return client_descriptors->getDescriptorsForServer();
+}
+
+void ClientEmbeddedRunner::closeStdIn() const
+{
+    client_descriptors->closeStdIn();
+}
+
 void ClientEmbeddedRunner::run(const NameToNameMap & envs, const String & starting_query)
 {
     if (started.test_and_set())
