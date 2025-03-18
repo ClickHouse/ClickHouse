@@ -715,7 +715,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                 ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(bottomName);
                 first = false;
             }
-            grf->set_structure(std::move(buf));
+            grf->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
             grf->set_random_seed(rg.nextRandomUInt64());
             grf->set_max_string_length(string_length_dist(rg.generator));
             grf->set_max_array_length(nested_rows_dist(rg.generator));

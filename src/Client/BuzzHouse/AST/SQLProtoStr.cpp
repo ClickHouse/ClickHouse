@@ -2003,8 +2003,8 @@ CONV_FN(MergeTreeIndexFunc, mfunc)
 
 CONV_FN(GenerateRandomFunc, grfunc)
 {
-    ret += "generateRandom('";
-    ret += grfunc.structure();
+    ret += "generateRandom(";
+    ExprToString(ret, grfunc.structure());
     ret += "'";
     if (grfunc.has_random_seed())
     {

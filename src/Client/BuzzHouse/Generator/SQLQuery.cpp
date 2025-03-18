@@ -335,9 +335,10 @@ bool StatementGenerator::joinedTableOrFunction(
         = 5 * static_cast<uint32_t>(!fc.clusters.empty() && this->allow_engine_udf && (can_recurse || has_table || has_view));
     const uint32_t merge_index_udf = 3 * static_cast<uint32_t>(has_mergetree_table && this->allow_engine_udf);
     const uint32_t loop_udf = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf && can_recurse);
-    const uint32_t values = 2 * static_cast<uint32_t>(can_recurse);
+    const uint32_t values = 3 * static_cast<uint32_t>(can_recurse);
+    const uint32_t random_data = 3 * static_cast<uint32_t>(fc.allow_infinite_tables && this->allow_engine_udf);
     const uint32_t prob_space = derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf
-        + cluster_udf + merge_index_udf + loop_udf + values;
+        + cluster_udf + merge_index_udf + loop_udf + values + random_data;
     std::uniform_int_distribution<uint32_t> next_dist(1, prob_space);
     const uint32_t nopt = next_dist(rg.generator);
 
@@ -700,6 +701,70 @@ bool StatementGenerator::joinedTableOrFunction(
         {
             rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i + 1)}));
         }
+        this->levels[this->current_level].rels.emplace_back(rel);
+    }
+    else if (
+        random_data
+        && nopt
+            < (derived_table + cte + table + view + engine_udf + generate_series_udf + system_table + merge_udf + cluster_udf
+               + merge_index_udf + loop_udf + values + random_data + 1))
+    {
+        SQLRelation rel(rel_name);
+        const uint32_t ncols = (rg.nextSmallNumber() < 8) ? rg.nextSmallNumber() : rg.nextMediumNumber();
+        GenerateRandomFunc * grf = tof->mutable_tfunc()->mutable_grandom();
+        std::uniform_int_distribution<uint64_t> string_length_dist(1, 8192);
+        std::uniform_int_distribution<uint64_t> nested_rows_dist(fc.min_nested_rows, fc.max_nested_rows);
+
+        if (rg.nextBool())
+        {
+            /// Use generateRandomStructure function
+            SQLFuncCall * sfc = grf->mutable_structure()->mutable_comp_expr()->mutable_func_call();
+            sfc->mutable_func()->set_catalog_func(FUNCgenerateRandomStructure);
+
+            /// Number of columns parameter
+            sfc->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(ncols));
+            /// Seed parameter
+            sfc->add_args()->mutable_expr()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64());
+            for (uint32_t i = 0; i < ncols; i++)
+            {
+                rel.cols.emplace_back(SQLRelationCol(rel_name, {"c" + std::to_string(i + 1)}));
+            }
+        }
+        else
+        {
+            /// Use BuzzHouse approach
+            String buf;
+            bool first = true;
+            uint32_t col_counter = 0;
+            std::unordered_map<uint32_t, std::unique_ptr<SQLType>> centries;
+
+            for (uint32_t i = 0; i < ncols; i++)
+            {
+                const uint32_t ncame = col_counter++;
+                auto tp = std::unique_ptr<SQLType>(randomNextType(rg, next_type_mask, col_counter, nullptr));
+
+                buf += fmt::format("{}{} {}", first ? "" : ", ", ncame, tp->typeName(true));
+                first = false;
+                centries[ncame] = std::move(tp);
+            }
+            grf->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
+            flatColumnPath(flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, centries);
+            for (const auto & entry : this->table_entries)
+            {
+                DB::Strings names;
+
+                names.reserve(entry.path.size());
+                for (const auto & path : entry.path)
+                {
+                    names.push_back(path.cname);
+                }
+                rel.cols.emplace_back(SQLRelationCol(rel_name, std::move(names)));
+            }
+            this->table_entries.clear();
+        }
+        grf->set_random_seed(rg.nextRandomUInt64());
+        grf->set_max_string_length(string_length_dist(rg.generator));
+        grf->set_max_array_length(nested_rows_dist(rg.generator));
         this->levels[this->current_level].rels.emplace_back(rel);
     }
     else

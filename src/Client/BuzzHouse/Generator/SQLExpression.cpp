@@ -84,8 +84,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
 
                 const uint32_t type_mask_backup = this->next_type_mask;
                 this->next_type_mask = fc.type_mask & ~(allow_nested);
-                SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type());
-                delete tp;
+                auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, tpn->mutable_type()));
                 this->next_type_mask = type_mask_backup;
             }
         }
@@ -95,8 +94,8 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
 
             const uint32_t type_mask_backup = this->next_type_mask;
             this->next_type_mask = fc.type_mask & ~(allow_nested);
-            SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type());
-            delete tp;
+            auto tp = std::unique_ptr<SQLType>(
+                randomNextType(rg, this->next_type_mask, col_counter, expr->mutable_dynamic_subtype()->mutable_type()));
             this->next_type_mask = type_mask_backup;
         }
         if (nsuboption < 6)
@@ -826,8 +825,8 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
 
         this->depth++;
         this->next_type_mask = fc.type_mask & ~(allow_nested);
-        SQLType * tp = randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type());
-        delete tp;
+        auto tp
+            = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, casexpr->mutable_type_name()->mutable_type()));
         this->next_type_mask = type_mask_backup;
         this->generateExpression(rg, casexpr->mutable_expr());
         this->depth--;

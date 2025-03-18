@@ -95,14 +95,28 @@ void StatementGenerator::flatTableColumnPath(const uint32_t flags, const SQLTabl
                                                    : (((flags & to_remote_entries) != 0) ? this->remote_entries : this->entries);
 
     chassert(res.empty());
-    for (const auto & entry : t.cols)
+    for (const auto & [key, val] : t.cols)
     {
-        if (col_filter(entry.second))
+        if (col_filter(val))
         {
-            ColumnPathChain cpc(entry.second.nullable, entry.second.special, entry.second.dmod, {});
+            ColumnPathChain cpc(val.nullable, val.special, val.dmod, {});
 
-            collectColumnPaths("c" + std::to_string(entry.first), entry.second.tp, flags, cpc, res);
+            collectColumnPaths("c" + std::to_string(key), val.tp, flags, cpc, res);
         }
+    }
+}
+
+void StatementGenerator::flatColumnPath(const uint32_t flags, const std::unordered_map<uint32_t, std::unique_ptr<SQLType>> & centries)
+{
+    auto & res = ((flags & to_table_entries) != 0) ? this->table_entries
+                                                   : (((flags & to_remote_entries) != 0) ? this->remote_entries : this->entries);
+
+    chassert(res.empty());
+    for (const auto & [key, val] : centries)
+    {
+        ColumnPathChain cpc(hasType<Nullable>(false, false, false, val.get()), ColumnSpecial::NONE, std::nullopt, {});
+
+        collectColumnPaths("c" + std::to_string(key), val.get(), flags, cpc, res);
     }
 }
 
