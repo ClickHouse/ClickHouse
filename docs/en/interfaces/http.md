@@ -8,6 +8,7 @@ title: 'HTTP Interface'
 ---
 
 import PlayUI from '@site/static/images/play.png';
+import Image from '@theme/IdealImage';
 
 # HTTP Interface
 
@@ -34,7 +35,7 @@ It has a secret feature for displaying charts and graphs for query pipelines.
 
 Web UI is designed for professionals like you.
 
-<img src={PlayUI} alt="ClickHouse Web UI screenshot" />
+<Image img={PlayUI} size="md" alt="ClickHouse Web UI screenshot" />
 
 In health-check scripts use `GET /ping` request. This handler always returns "Ok." (with a line feed at the end). Available from version 18.12.13. See also `/replicas_status` to check replica's delay.
 
