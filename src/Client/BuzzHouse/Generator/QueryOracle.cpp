@@ -142,13 +142,8 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
     SelectStatementCore * sel = ts->mutable_sel()->mutable_select_core();
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
     OrderByList * obs = sel->mutable_orderby()->mutable_olist();
-    ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
 
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(jtf->mutable_tof()->mutable_est(), false);
     jtf->set_final(t.supportsFinal());
     gen.flatTableColumnPath(0, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
@@ -224,26 +219,14 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
 
     /// Set the table on select
     JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-    ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
 
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(jtf->mutable_tof()->mutable_est(), false);
     jtf->set_final(t.supportsFinal());
 }
 
 void QueryOracle::generateClearQuery(const SQLTable & t, SQLQuery & sq3)
 {
-    Truncate * trunc = sq3.mutable_explain()->mutable_inner_query()->mutable_trunc();
-    ExprSchemaTable * est = trunc->mutable_est();
-
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(sq3.mutable_explain()->mutable_inner_query()->mutable_trunc()->mutable_est(), false);
 }
 
 void QueryOracle::generateImportQuery(
@@ -252,14 +235,9 @@ void QueryOracle::generateImportQuery(
     Insert * ins = sq4.mutable_explain()->mutable_inner_query()->mutable_insert();
     InsertFromFile * iff = ins->mutable_insert_file();
     const FileFunc & ff = sq2.explain().inner_query().insert().tfunction().file();
-    ExprSchemaTable * est = ins->mutable_est();
     const OutFormat & outf = ff.outformat();
 
-    if (t.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(t.tname));
+    t.setName(ins->mutable_est(), false);
     gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
     for (const auto & entry : gen.entries)
     {
@@ -649,12 +627,8 @@ void QueryOracle::replaceQueryWithTablePeers(
         // Then insert the data
         gen.setTableRemote(rg, false, t, ins->mutable_tfunction());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-        ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
-        if (t.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+
+        t.setName(jtf->mutable_tof()->mutable_est(), false);
         jtf->set_final(t.supportsFinal());
         gen.flatTableColumnPath(skip_nested_node | flat_nested, t, [](const SQLColumn & c) { return c.canBeInserted(); });
         for (const auto & colRef : gen.entries)

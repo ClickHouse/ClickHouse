@@ -243,11 +243,7 @@ private:
     {
         const T & t = rg.pickRandomly(filterCollection<T>(f));
 
-        if (t.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        t.setName(est, false);
     }
 
 public:

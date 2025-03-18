@@ -209,11 +209,9 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
     {
         const ServerCredentials & sc = fc.clickhouse_server.value();
         RemoteFunc * rfunc = tfunc->mutable_remote();
-        ExprSchemaTable * est = rfunc->mutable_tof()->mutable_est();
 
         rfunc->set_address(sc.hostname + ":" + std::to_string(sc.port));
-        est->mutable_database()->set_database("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        t.setName(rfunc->mutable_tof()->mutable_est(), true);
         rfunc->set_user(sc.user);
         rfunc->set_password(sc.password);
     }
@@ -286,10 +284,8 @@ void StatementGenerator::setTableRemote(RandomGenerator & rg, const bool table_e
 
         chassert(table_engine);
         rfunc->set_address(fc.getConnectionHostAndPort());
-        ExprSchemaTable * est = rfunc->mutable_tof()->mutable_est();
 
-        est->mutable_database()->set_database("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        t.setName(rfunc->mutable_tof()->mutable_est(), true);
     }
 }
 
@@ -374,27 +370,17 @@ bool StatementGenerator::joinedTableOrFunction(
     }
     else if (table && nopt < (derived_table + cte + table + 1))
     {
-        ExprSchemaTable * est = tof->mutable_est();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
 
-        if (t.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        est->mutable_table()->set_table("t" + std::to_string(t.tname));
+        t.setName(tof->mutable_est(), false);
         set_final = t.supportsFinal() && (this->enforce_final || rg.nextSmallNumber() < 3);
         addTableRelation(rg, true, rel_name, t);
     }
     else if (view && nopt < (derived_table + cte + table + view + 1))
     {
-        ExprSchemaTable * est = tof->mutable_est();
         const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(has_view_lambda));
 
-        if (v.db)
-        {
-            est->mutable_database()->set_database("d" + std::to_string(v.db->dname));
-        }
-        est->mutable_table()->set_table("v" + std::to_string(v.tname));
+        v.setName(tof->mutable_est(), false);
         set_final = !v.is_materialized && (this->enforce_final || rg.nextSmallNumber() < 3);
         addViewRelation(rel_name, v);
     }
@@ -417,12 +403,10 @@ bool StatementGenerator::joinedTableOrFunction(
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
             RemoteFunc * rfunc = tof->mutable_tfunc()->mutable_remote();
-            ExprSchemaTable * est = rfunc->mutable_tof()->mutable_est();
             const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(has_view_lambda));
 
             rfunc->set_address(fc.getConnectionHostAndPort());
-            est->mutable_database()->set_database("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
-            est->mutable_table()->set_table("v" + std::to_string(v.tname));
+            v.setName(rfunc->mutable_tof()->mutable_est(), true);
             addViewRelation(rel_name, v);
         }
         else if (recurse && nopt2 < (remote_table + remote_view + recurse + 1))
@@ -583,11 +567,9 @@ bool StatementGenerator::joinedTableOrFunction(
         cdf->set_ccluster(rg.pickRandomly(fc.clusters));
         if (remote_table && nopt2 < (remote_table + 1))
         {
-            ExprSchemaTable * est = cdf->mutable_tof()->mutable_est();
             const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(has_table_lambda));
 
-            est->mutable_database()->set_database("d" + (t.db ? std::to_string(t.db->dname) : "efault"));
-            est->mutable_table()->set_table("t" + std::to_string(t.tname));
+            t.setName(cdf->mutable_tof()->mutable_est(), true);
             if (rg.nextBool())
             {
                 /// Optional sharding key
@@ -599,11 +581,9 @@ bool StatementGenerator::joinedTableOrFunction(
         }
         else if (remote_view && nopt2 < (remote_table + remote_view + 1))
         {
-            ExprSchemaTable * est = cdf->mutable_tof()->mutable_est();
             const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(has_view_lambda));
 
-            est->mutable_database()->set_database("d" + (v.db ? std::to_string(v.db->dname) : "efault"));
-            est->mutable_table()->set_table("v" + std::to_string(v.tname));
+            v.setName(cdf->mutable_tof()->mutable_est(), true);
             if (rg.nextBool())
             {
                 cdf->set_sharding_key("c" + std::to_string(rg.randomInt<uint32_t>(0, 5)));

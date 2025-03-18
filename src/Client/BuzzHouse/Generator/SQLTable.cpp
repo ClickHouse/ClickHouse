@@ -1508,7 +1508,6 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     uint32_t tname = 0;
     bool added_pkey = false;
     TableEngine * te = ct->mutable_engine();
-    ExprSchemaTable * est = ct->mutable_est();
     const bool replace = collectionCount<SQLTable>(replace_table_lambda) > 3 && rg.nextMediumNumber() < 16;
 
     next.is_temp = rg.nextMediumNumber() < 11;
@@ -1531,11 +1530,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     ct->set_create_opt(
         replace ? CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace
                 : CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create);
-    if (next.db)
-    {
-        est->mutable_database()->set_database("d" + std::to_string(next.db->dname));
-    }
-    est->mutable_table()->set_table("t" + std::to_string(next.tname));
+    next.setName(ct->mutable_est(), false);
     if (!collectionHas<SQLTable>(table_like_lambda) || rg.nextSmallNumber() < 9)
     {
         /// Create table with definition
@@ -1655,7 +1650,6 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     {
         /// Create table as
         CreateTableAs * cta = ct->mutable_table_as();
-        ExprSchemaTable * aest = cta->mutable_est();
         const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(table_like_lambda));
         std::uniform_int_distribution<size_t> table_engine(0, rg.nextSmallNumber() < 8 ? 3 : (like_engs.size() - 1));
         TableEngineValues val = like_engs[table_engine(rg.generator)];
@@ -1664,11 +1658,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         te->set_engine(val);
         next.is_deterministic = rg.nextSmallNumber() < 9;
         cta->set_clone(next.isMergeTreeFamily() && t.isMergeTreeFamily() && rg.nextBool());
-        if (t.db)
-        {
-            aest->mutable_database()->set_database("d" + std::to_string(t.db->dname));
-        }
-        aest->mutable_table()->set_table("t" + std::to_string(t.tname));
+        t.setName(cta->mutable_est(), false);
         for (const auto & col : t.cols)
         {
             next.cols[col.first] = col.second;
