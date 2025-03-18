@@ -888,12 +888,10 @@ class JobConfigs:
         timeout=3600,
     ).parametrize(
         parameter=[
-            "arm_release",
             "amd_debug",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_ARM, RunnerLabels.FUNC_TESTER_AMD],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD],
         requires=[
-            [ArtifactNames.CH_ARM_RELEASE],
             [ArtifactNames.CH_AMD_DEBUG],
         ],
     )

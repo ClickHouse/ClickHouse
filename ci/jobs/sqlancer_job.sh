@@ -11,6 +11,7 @@ OUTPUT_PATH="$TMP_PATH/sqlancer_output"
 PID_FILE="$TMP_PATH/clickhouse-server.pid"
 CLICKHOUSE_BIN="$TMP_PATH/clickhouse"
 RESULT_FILE="$TMP_PATH/result.json"
+ATTACHED_FILES="["
 
 mkdir -p $OUTPUT_PATH
 
@@ -44,7 +45,7 @@ cat <<EOF > $RESULT_FILE
   "results": [
     TEST_CASE_RESULT
   ],
-  "files": [],
+  "files": ATTACHED_FILES,
   "info": ""
 }
 EOF
@@ -76,11 +77,15 @@ for TEST in "${TESTS[@]}"; do
         OVERALL_STATUS="failure"
     fi
     sed -i "s/TEST_CASE_RESULT/$test_case_result\n,TEST_CASE_RESULT/" $RESULT_FILE
+    ATTACHED_FILES="$ATTACHED_FILES \"${error_output_file}\","
 done
+
+ATTACHED_FILES="$ATTACHED_FILES \"$OUTPUT_PATH/clickhouse-server.log\", \"$OUTPUT_PATH/clickhouse-server.log.err\"]"
 
 sed -i "s/OVERALL_STATUS/$OVERALL_STATUS/" $RESULT_FILE
 sed -i "s/,TEST_CASE_RESULT//" $RESULT_FILE
 sed -i "s/TEST_CASE_RESULT//" $RESULT_FILE
+sed -i "s|ATTACHED_FILES|$ATTACHED_FILES|" $RESULT_FILE
 
 ls "$OUTPUT_PATH"
 pkill clickhouse
