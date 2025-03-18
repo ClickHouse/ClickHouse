@@ -6104,6 +6104,9 @@ Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
     DECLARE(Bool, allow_experimental_database_unity_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
 Enable Kusto Query Language (KQL) - an alternative to SQL.
 )", EXPERIMENTAL) \

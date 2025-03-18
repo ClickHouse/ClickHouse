@@ -1,6 +1,8 @@
 #include "Interpreters/Cache/QueryResultCache.h"
 
 #include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
@@ -55,9 +57,24 @@ struct HasNonDeterministicFunctionsMatcher
 
         if (const auto * function = node->as<ASTFunction>())
         {
-            const auto func = FunctionFactory::instance().tryGet(function->name, data.context);
-            if (func && !func->isDeterministic())
+            if (const auto func = FunctionFactory::instance().tryGet(function->name, data.context))
+            {
+                if (!func->isDeterministic())
+                    data.has_non_deterministic_functions = true;
+                return;
+            }
+            if (const auto udf_sql = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
+            {
+                /// ClickHouse currently doesn't know if SQL-based UDFs are deterministic or not. We must assume they are non-deterministic.
                 data.has_non_deterministic_functions = true;
+                return;
+            }
+            if (const auto udf_executable = UserDefinedExecutableFunctionFactory::tryGet(function->name, data.context))
+            {
+                if (!udf_executable->isDeterministic())
+                    data.has_non_deterministic_functions = true;
+                return;
+            }
         }
     }
 };
