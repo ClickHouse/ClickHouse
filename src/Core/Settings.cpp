@@ -5926,12 +5926,12 @@ Enable pushing user roles from originator to other nodes while performing a quer
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 )", 0) \
     \
-    DECLARE(Bool, allow_experimental_variant_type, false, R"(
+    DECLARE(Bool, allow_experimental_variant_type, true, R"(
 Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
-)", BETA) ALIAS(enable_variant_type) \
-    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
+)", 0) ALIAS(enable_variant_type) \
+    DECLARE(Bool, allow_experimental_dynamic_type, true, R"(
 Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data type.
-)", BETA) ALIAS(enable_dynamic_type) \
+)", 0) ALIAS(enable_dynamic_type) \
     DECLARE(Bool, allow_experimental_json_type, true, R"(
 Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
 )", 0) ALIAS(enable_json_type) \
