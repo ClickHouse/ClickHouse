@@ -107,7 +107,7 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="ClickHouse Fast Test Job")
-    parser.add_argument("--test", help="Optional test_case name to run", default=None)
+    parser.add_argument("--test", help="Optional test_case name to run", default="")
     parser.add_argument("--param", help="Optional custom job start stage", default=None)
     return parser.parse_args()
 
@@ -129,12 +129,12 @@ def main():
     if Info().is_local_run:
         if clickhouse_bin_path.exists():
             print(
-                "NOTE: It's a local run and clickhouse binary is found - skip the build"
+                f"NOTE: It's a local run and clickhouse binary is found [{clickhouse_bin_path}] - skip the build"
             )
             stages = [JobStages.CONFIG, JobStages.TEST]
         else:
             print(
-                "NOTE: It's a local run and clickhouse binary is not found - will be built"
+                f"NOTE: It's a local run and clickhouse binary is not found [{clickhouse_bin_path}] - will be built"
             )
             time.sleep(5)
 
@@ -142,6 +142,7 @@ def main():
 
     res = True
     results = []
+    attach_files = []
 
     if res and JobStages.CHECKOUT_SUBMODULES in stages:
         Shell.check(f"rm -rf {build_dir} && mkdir -p {build_dir}")
@@ -235,16 +236,18 @@ def main():
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
-        res = res and CH.run_fast_test(test=args.test)
+        res = res and CH.run_fast_test(test=args.test or "")
         if res:
             results.append(FTResultsProcessor(wd=Settings.OUTPUT_DIR).run())
+        else:
+            attach_files.append(f"{temp_dir}/build/programs/clickhouse")
         results[-1].set_timing(stopwatch=stop_watch_)
 
     CH.terminate()
 
-    Result.create_from(results=results, stopwatch=stop_watch).add_job_summary_to_info(
-        with_local_run_command=True
-    ).complete_job()
+    Result.create_from(
+        results=results, stopwatch=stop_watch, files=attach_files
+    ).add_job_summary_to_info(with_local_run_command=True, with_test_in_run_command=True).complete_job()
 
 
 if __name__ == "__main__":

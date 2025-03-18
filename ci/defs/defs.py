@@ -504,11 +504,6 @@ class ArtifactConfigs:
             ArtifactNames.UNITTEST_AMD_BINARY,
         ]
     )
-    fast_test = Artifact.Config(
-        name=ArtifactNames.FAST_TEST,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*",
-    )
     fuzzers = Artifact.Config(
         name=ArtifactNames.FUZZERS,
         type=Artifact.Type.S3,
@@ -567,7 +562,6 @@ class Jobs:
                 "./src",
             ],
         ),
-        provides=[ArtifactNames.FAST_TEST],
     )
 
     build_jobs = Job.Config(

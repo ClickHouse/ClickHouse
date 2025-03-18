@@ -197,14 +197,21 @@ class Result(MetaClasses.Serializable):
         self, with_local_run_command=False, with_test_in_run_command=False
     ):
         if not self.is_ok():
-            failed = [r.name for r in self.results if not r.is_ok()]
+            failed = [r for r in self.results if not r.is_ok()]
             if failed:
-                failed_str = ",".join(failed)
-                summary_info = (
-                    f"Failed: {failed_str}"
-                    if len(failed_str) < 80
-                    else f"Failed: {len(failed)} tests"
-                )
+                if (
+                    len(failed) == 1
+                    and failed[0].name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
+                    and failed[0].info
+                ):
+                    summary_info = failed[0].info
+                else:
+                    failed_str = ",".join([f.name for f in failed])
+                    summary_info = (
+                        f"Failed: {failed_str}"
+                        if len(failed_str) < 80
+                        else f"Failed: {len(failed)} tests"
+                    )
             else:
                 summary_info = "Failed"
         else:
@@ -213,11 +220,11 @@ class Result(MetaClasses.Serializable):
         self.set_info(summary_info)
 
         if with_local_run_command and not self.is_ok():
-            command_info = f'To test locally: python -m ci.praktika run "{self.name}"'
+            command_info = f'To run locally: python -m ci.praktika run "{self.name}"'
             first_failed_test = next((r for r in self.results if not r.is_ok()), None)
             if (
                 first_failed_test
-                and first_failed_test.name in Settings.SUB_RESULT_NAMES_WITH_TESTS
+                and first_failed_test.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS
             ):
                 first_failed_test = next(
                     (r for r in first_failed_test.results if not r.is_ok()), None

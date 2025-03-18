@@ -165,7 +165,7 @@ jobs:
           fi
 
   fast_test:
-    runs-on: [self-hosted, builder]
+    runs-on: [self-hosted, builder-aarch64]
     needs: [config_workflow, dockers_build_amd_and_merge]
     if: ${{ !failure() && !cancelled() && !contains(fromJson(needs.config_workflow.outputs.data).cache_success_base64, 'RmFzdCB0ZXN0') }}
     name: "Fast test"
