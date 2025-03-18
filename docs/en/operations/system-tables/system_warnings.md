@@ -56,7 +56,7 @@ For warning when the number of attached views exceeds the specified value.
 <max_view_num_to_warn>500</max_view_num_to_warn>
 ```
 
-### Maximum number of parts {#max_num_of_tables}
+### Maximum number of parts {#max_num_of_parts}
 
 For warning when the number of active parts exceeds the specified value.
 
