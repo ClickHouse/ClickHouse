@@ -202,6 +202,7 @@ Contrib
 CountMin
 Covid
 Cramer's
+Cramer
 Criteo
 Crotty
 Crowdsourced
@@ -1000,6 +1001,7 @@ SimpleAggregateFunction
 SimpleState
 SipHash
 Smirnov's
+Smirnov
 Smirnov'test
 Soundex
 SpanKind
@@ -1041,6 +1043,8 @@ SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
+SvelteKit
+Tauri
 TABLUM
 TAVG
 TCPConnection
@@ -1084,6 +1088,7 @@ TemporaryFilesUnknown
 Testflows
 Tgz
 Theil's
+Theils
 ThreadMonotonic
 ThreadPoolFSReaderThreads
 ThreadPoolFSReaderThreadsActive
@@ -1175,6 +1180,7 @@ Vose
 WALs
 WSFG
 Welch's
+Welch
 Werror
 Wether
 WikiStat
@@ -1485,6 +1491,7 @@ charset
 charsets
 chartdb
 chconn
+chdb
 cheatsheet
 checkouting
 checksummed
@@ -3231,7 +3238,3 @@ znode
 znodes
 zookeeperSessionUptime
 zstd
-Cramer
-Smirnov
-Theils
-Welch
