@@ -451,6 +451,9 @@ bool LocalConnection::poll(size_t)
 
     if (state->exception)
     {
+        if (needSendLogs())
+            return true;
+
         next_packet_type = Protocol::Server::Exception;
         return true;
     }
@@ -512,6 +515,9 @@ bool LocalConnection::poll(size_t)
 
     if (state->is_finished)
     {
+        if (needSendLogs())
+            return true;
+
         finishQuery();
         return true;
     }

@@ -1813,10 +1813,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         {
             /// If structure was received (thus, server has not thrown an exception),
             /// send our data with that structure.
-            if (!isEmbeeddedClient())
-            {
-                setInsertionTable(parsed_insert_query);
-            }
+            setInsertionTable(parsed_insert_query);
 
             sendData(sample, columns_description, parsed_query);
             receiveEndOfQuery();
@@ -3304,7 +3301,7 @@ void ClientBase::runInteractive()
             /// (e.g. if we need to reconnect and show a password prompt).
             /// (Alternatively, we could make the password input ignore the control sequences.)
             lr->enableBracketedPaste();
-            SCOPE_EXIT({ lr->disableBracketedPaste(); });
+            SCOPE_EXIT_SAFE({ lr->disableBracketedPaste(); });
 
             input = lr->readLine(getPrompt(), ":-] ");
         }

@@ -180,6 +180,8 @@ try
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
     }
 
+    load_suggestions = true;
+    wait_for_suggestions_to_load = true;
     server_display_name = getFQDNOrHostName();
     prompt = fmt::format("{} :) ", server_display_name);
     query_processing_stage = QueryProcessingStage::Enum::Complete;
