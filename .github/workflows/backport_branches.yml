@@ -29,10 +29,6 @@ jobs:
           filter: tree:0
       - name: Debug Info
         uses: ./.github/actions/debug
-      - name: Labels check
-        run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
-          python3 run_check.py
       - name: Python unit tests
         run: |
           cd "$GITHUB_WORKSPACE/tests/ci"
