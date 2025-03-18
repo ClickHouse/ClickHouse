@@ -10,6 +10,7 @@
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
 #include <Core/Settings.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/RemoteHostFilter.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/Pipe.h>
