@@ -48,7 +48,7 @@ private:
     std::unique_ptr<Session> db_session;
     Poco::Logger * log;
 
-    int exit_code = 0;
+    int exit_code = 1;
 };
 
 }

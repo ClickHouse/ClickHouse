@@ -24,7 +24,6 @@ bool ClientEmbeddedRunner::hasFinished() const
 
 int ClientEmbeddedRunner::getExitCode() const
 {
-    chassert(hasFinished());
     return exit_code;
 }
 
