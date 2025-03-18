@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/ip-address-functions
+description: 'Documentation for Functions for Working with IPv4 and IPv6 Addresses'
+sidebar_label: 'IP Addresses'
 sidebar_position: 95
-sidebar_label: IP Addresses
+slug: /sql-reference/functions/ip-address-functions
+title: 'Functions for Working with IPv4 and IPv6 Addresses'
 ---
 
 # Functions for Working with IPv4 and IPv6 Addresses

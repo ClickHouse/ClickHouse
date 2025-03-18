@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/functions/tuple-map-functions
+description: 'Documentation for Tuple Map Functions'
+sidebar_label: 'Maps'
 sidebar_position: 120
-sidebar_label: Maps
-title: Map Functions
+slug: /sql-reference/functions/tuple-map-functions
+title: 'Map Functions'
 ---
 
 ## map {#map}
@@ -786,7 +787,7 @@ SELECT mapExists((k, v) -> (v = 1), map('k1', 1, 'k2', 2)) AS res
 
 Result:
 
-```
+```response
 ┌─res─┐
 │   1 │
 └─────┘
@@ -811,7 +812,7 @@ SELECT mapAll((k, v) -> (v = 1), map('k1', 1, 'k2', 2)) AS res
 
 Result:
 
-```
+```response
 ┌─res─┐
 │   0 │
 └─────┘

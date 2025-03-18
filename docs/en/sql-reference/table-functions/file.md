@@ -1,9 +1,12 @@
 ---
-slug: /sql-reference/table-functions/file
+description: 'A table engine which provides a table-like interface to SELECT from
+  and INSERT into files, similar to the s3 table function. Use `file()` when working
+  with local files, and `s3()` when working with buckets in object storage such as
+  S3, GCS, or MinIO.'
+sidebar_label: 'file'
 sidebar_position: 60
-sidebar_label: file
-title: "file"
-description: "A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the s3 table function. Use `file()` when working with local files, and `s3()` when working with buckets in object storage such as S3, GCS, or MinIO."
+slug: /sql-reference/table-functions/file
+title: 'file'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -48,9 +51,9 @@ As a result, the data is written into the file `test.tsv`:
 
 ```bash
 # cat /var/lib/clickhouse/user_files/test.tsv
-1	2	3
-3	2	1
-1	3	2
+1    2    3
+3    2    1
+1    3    2
 ```
 
 ### Partitioned write to multiple TSV files {#partitioned-write-to-multiple-tsv-files}
@@ -68,13 +71,13 @@ As a result, the data is written into three files: `test_1.tsv`, `test_2.tsv`, a
 
 ```bash
 # cat /var/lib/clickhouse/user_files/test_1.tsv
-3	2	1
+3    2    1
 
 # cat /var/lib/clickhouse/user_files/test_2.tsv
-1	3	2
+1    3    2
 
 # cat /var/lib/clickhouse/user_files/test_3.tsv
-1	2	3
+1    2    3
 ```
 
 ## Examples for Reading from a File {#examples-for-reading-from-a-file}

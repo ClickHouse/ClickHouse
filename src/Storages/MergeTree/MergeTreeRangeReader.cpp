@@ -968,7 +968,7 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
             {
                 result.addRows(stream.finalize(result.columns));
                 if (current_mark && *current_mark < stream.last_mark)
-                    result.addReadRange(MarkRange{*current_mark, stream.last_mark});
+                    result.addReadRange(MarkRange(*current_mark, stream.last_mark));
 
                 stream = Stream(ranges.front().begin, ranges.front().end, current_task_last_mark, merge_tree_reader);
                 result.addRange(ranges.front());

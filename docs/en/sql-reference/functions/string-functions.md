@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/string-functions
+description: 'Documentation for Functions for Working with Strings'
+sidebar_label: 'Strings'
 sidebar_position: 170
-sidebar_label: Strings
+slug: /sql-reference/functions/string-functions
+title: 'Functions for Working with Strings'
 ---
 
 import VersionBadge from '@theme/badges/VersionBadge';
@@ -1048,7 +1050,7 @@ SELECT 'Täglich grüßt das Murmeltier.' AS str,
 ```
 
 ```response
-Täglich grüßt das Murmeltier.	grüßt das Murmeltier.	grüßt
+Täglich grüßt das Murmeltier.    grüßt das Murmeltier.    grüßt
 ```
 
 ## substringIndex {#substringindex}

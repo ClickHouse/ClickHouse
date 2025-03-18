@@ -41,7 +41,6 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTRenameQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -468,7 +467,7 @@ SystemLog<LogElement>::SystemLog(
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
     , storage_def(settings_.engine)
-    , create_query(serializeAST(*getCreateTableQuery()))
+    , create_query(getCreateTableQuery()->formatWithSecretsOneLine())
 {
     assert(settings_.queue_settings.database == DatabaseCatalog::SYSTEM_DATABASE);
 }
@@ -606,7 +605,7 @@ void SystemLog<LogElement>::prepareTable()
     {
         if (old_create_query.empty())
         {
-            old_create_query = serializeAST(*getCreateTableQueryClean(table_id, getContext()));
+            old_create_query = getCreateTableQueryClean(table_id, getContext())->formatWithSecretsOneLine();
             if (old_create_query.empty())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty CREATE QUERY for {}", backQuoteIfNeed(table_id.table_name));
         }

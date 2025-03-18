@@ -397,6 +397,10 @@ DirectoryIteratorPtr DiskObjectStorage::iterateDirectory(const String & path) co
     return metadata_storage->iterateDirectory(path);
 }
 
+bool DiskObjectStorage::isDirectoryEmpty(const String & path) const
+{
+    return metadata_storage->isDirectoryEmpty(path);
+}
 
 void DiskObjectStorage::listFiles(const String & path, std::vector<String> & file_names) const
 {
@@ -739,7 +743,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         std::move(read_buffer_creator),
         storage_objects,
         read_settings,
-        global_context->getFilesystemCacheLog(),
         use_external_buffer_for_gather,
         /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
 

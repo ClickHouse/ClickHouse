@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/sumwithoverflow
+description: 'Computes the sum of the numbers, using the same data type for the result
+  as for the input parameters. If the sum exceeds the maximum value for this data
+  type, it is calculated with overflow.'
 sidebar_position: 200
-title: "sumWithOverflow"
-description: "Computes the sum of the numbers, using the same data type for the result as for the input parameters. If the sum exceeds the maximum value for this data type, it is calculated with overflow."
+slug: /sql-reference/aggregate-functions/reference/sumwithoverflow
+title: 'sumWithOverflow'
 ---
 
 # sumWithOverflow

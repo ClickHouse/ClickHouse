@@ -1,10 +1,11 @@
 ---
-slug: /engines/table-engines/mergetree-family/collapsingmergetree
-sidebar_position: 70
-sidebar_label: CollapsingMergeTree
+description: 'Inherits from MergeTree but adds logic for collapsing rows during the
+  merge process.'
 keywords: ['updates', 'collapsing']
-title: "CollapsingMergeTree"
-description: "Inherits from MergeTree but adds logic for collapsing rows during the merge process."
+sidebar_label: 'CollapsingMergeTree'
+sidebar_position: 70
+slug: /engines/table-engines/mergetree-family/collapsingmergetree
+title: 'CollapsingMergeTree'
 ---
 
 # CollapsingMergeTree
