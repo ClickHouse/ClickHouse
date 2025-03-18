@@ -26,7 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 SettingsChanges ExplainPlanOptions::toSettingsChanges() const
