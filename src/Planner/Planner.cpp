@@ -1303,20 +1303,10 @@ void Planner::buildQueryPlanIfNeeded()
         QueryProcessingStage::toString(select_query_options.to_stage),
         select_query_options.only_analyze ? " only analyze" : "");
 
-    try
-    {
-        if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
-            buildPlanForUnionNode();
-        else
-            buildPlanForQueryNode();
-    }
-    catch (Exception & e)
-    {
-        if (e.code() == ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK && query_plan.isInitialized())
-            e.addMessage("while building query plan:\n{}", dumpQueryPlan(query_plan));
-        throw;
-    }
-
+    if (query_tree->getNodeType() == QueryTreeNodeType::UNION)
+        buildPlanForUnionNode();
+    else
+        buildPlanForQueryNode();
     extendQueryContextAndStoragesLifetime(query_plan, planner_context);
 }
 
