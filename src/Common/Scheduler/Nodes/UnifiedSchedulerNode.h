@@ -326,14 +326,14 @@ private:
             SchedulerNodePtr node = branch.initialize(event_queue_);
             if (settings.hasSemaphore())
             {
-                semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, settings.max_requests, settings.max_cost);
+                semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, settings.getSemaphoreMaxRequests(), settings.getSemaphoreMaxCost());
                 semaphore->basename = "semaphore";
                 reparent(node, semaphore);
                 node = semaphore;
             }
             if (settings.hasThrottler())
             {
-                throttler = std::make_shared<ThrottlerConstraint>(event_queue_, SchedulerNodeInfo{}, settings.max_speed, settings.max_burst);
+                throttler = std::make_shared<ThrottlerConstraint>(event_queue_, SchedulerNodeInfo{}, settings.getThrottlerMaxSpeed(), settings.getThrottlerMaxBurst());
                 throttler->basename = "throttler";
                 reparent(node, throttler);
                 node = throttler;
@@ -382,7 +382,7 @@ private:
 
             if (!settings.hasSemaphore() && new_settings.hasSemaphore()) // Add semaphore
             {
-                semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, new_settings.max_requests, new_settings.max_cost);
+                semaphore = std::make_shared<SemaphoreConstraint>(event_queue_, SchedulerNodeInfo{}, new_settings.getSemaphoreMaxRequests(), new_settings.getSemaphoreMaxCost());
                 semaphore->basename = "semaphore";
                 reparent(node, semaphore);
                 node = semaphore;
@@ -394,13 +394,13 @@ private:
             }
             else if (settings.hasSemaphore() && new_settings.hasSemaphore()) // Update semaphore
             {
-                static_cast<SemaphoreConstraint&>(*semaphore).updateConstraints(semaphore, new_settings.max_requests, new_settings.max_cost);
+                static_cast<SemaphoreConstraint&>(*semaphore).updateConstraints(semaphore, new_settings.getSemaphoreMaxRequests(), new_settings.getSemaphoreMaxCost());
                 node = semaphore;
             }
 
             if (!settings.hasThrottler() && new_settings.hasThrottler()) // Add throttler
             {
-                throttler = std::make_shared<ThrottlerConstraint>(event_queue_, SchedulerNodeInfo{}, new_settings.max_speed, new_settings.max_burst);
+                throttler = std::make_shared<ThrottlerConstraint>(event_queue_, SchedulerNodeInfo{}, new_settings.getThrottlerMaxSpeed(), new_settings.getThrottlerMaxBurst());
                 throttler->basename = "throttler";
                 reparent(node, throttler);
                 node = throttler;
@@ -412,7 +412,7 @@ private:
             }
             else if (settings.hasThrottler() && new_settings.hasThrottler()) // Update throttler
             {
-                static_cast<ThrottlerConstraint&>(*throttler).updateConstraints(new_settings.max_speed, new_settings.max_burst);
+                static_cast<ThrottlerConstraint&>(*throttler).updateConstraints(new_settings.getThrottlerMaxSpeed(), new_settings.getThrottlerMaxBurst());
                 node = throttler;
             }
 

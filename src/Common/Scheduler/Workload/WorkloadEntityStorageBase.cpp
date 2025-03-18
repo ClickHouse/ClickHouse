@@ -397,8 +397,11 @@ bool WorkloadEntityStorageBase::storeEntity(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'PARENT {}' clause.", root_name);
             }
 
-            SchedulingSettings validator;
-            validator.updateFromChanges(workload->changes);
+            SchedulingSettings io_validator;
+            io_validator.updateFromChanges(SchedulingSettings::Type::Io, workload->changes);
+
+            SchedulingSettings cpu_validator;
+            cpu_validator.updateFromChanges(SchedulingSettings::Type::Cpu, workload->changes);
         }
 
         // Validate resource
@@ -440,8 +443,16 @@ bool WorkloadEntityStorageBase::storeEntity(
                             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload settings should reference resource in FOR clause, not '{}'.", target);
 
                         // Validate that we could parse the settings for specific resource
-                        SchedulingSettings validator;
-                        validator.updateFromChanges(workload->changes, target);
+                        if (target == cpu_name)
+                        {
+                            SchedulingSettings cpu_validator;
+                            cpu_validator.updateFromChanges(SchedulingSettings::Type::Cpu, workload->changes, target);
+                        }
+                        else
+                        {
+                            SchedulingSettings io_validator;
+                            io_validator.updateFromChanges(SchedulingSettings::Type::Io, workload->changes, target);
+                        }
                         break;
                     }
                 }
