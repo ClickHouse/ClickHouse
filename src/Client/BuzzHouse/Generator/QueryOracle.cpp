@@ -14,6 +14,40 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
+static const std::unordered_map<OutFormat, InFormat> out_in{
+    {OutFormat::OUT_CSV, InFormat::IN_CSV},
+    {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
+    {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
+    {OutFormat::OUT_Values, InFormat::IN_Values},
+    {OutFormat::OUT_JSON, InFormat::IN_JSON},
+    {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
+    {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
+    {OutFormat::OUT_JSONCompact, InFormat::IN_JSONCompact},
+    {OutFormat::OUT_JSONCompactColumns, InFormat::IN_JSONCompactColumns},
+    {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
+    {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
+    {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
+    {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
+    {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
+    {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
+    {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
+    {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
+    {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
+    {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
+    {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
+    {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
+    {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
+    {OutFormat::OUT_Avro, InFormat::IN_Avro},
+    {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
+    {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
+    {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
+    {OutFormat::OUT_ORC, InFormat::IN_ORC},
+    {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
+    {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
+    {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
+    {OutFormat::OUT_Native, InFormat::IN_Native},
+    {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack}};
+
 /// Correctness query oracle
 /// SELECT COUNT(*) FROM <FROM_CLAUSE> WHERE <PRED>;
 /// or
@@ -58,7 +92,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.enforceFinal(false);
     gen.setAllowEngineUDF(true);
 
-    ts->set_format(OutFormat::OUT_CSV);
+    ts->set_format(rg.pickRandomly(out_in));
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
@@ -94,7 +128,7 @@ void QueryOracle::generateCorrectnessTestSecondQuery(SQLQuery & sq1, SQLQuery & 
 
         sfc2->add_args()->set_allocated_expr(expr.release_expr());
     }
-    ts->set_format(OutFormat::OUT_CSV);
+    ts->set_format(sq1.explain().inner_query().select().format());
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
@@ -136,44 +170,10 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
         first = false;
     }
     gen.entries.clear();
-    ts->set_format(OutFormat::OUT_CSV);
+    ts->set_format(rg.pickRandomly(out_in));
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
-
-static const std::unordered_map<OutFormat, InFormat> out_in{
-    {OutFormat::OUT_CSV, InFormat::IN_CSV},
-    {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
-    {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
-    {OutFormat::OUT_Values, InFormat::IN_Values},
-    {OutFormat::OUT_JSON, InFormat::IN_JSON},
-    {OutFormat::OUT_JSONColumns, InFormat::IN_JSONColumns},
-    {OutFormat::OUT_JSONColumnsWithMetadata, InFormat::IN_JSONColumnsWithMetadata},
-    {OutFormat::OUT_JSONCompact, InFormat::IN_JSONCompact},
-    {OutFormat::OUT_JSONCompactColumns, InFormat::IN_JSONCompactColumns},
-    {OutFormat::OUT_JSONEachRow, InFormat::IN_JSONEachRow},
-    {OutFormat::OUT_JSONStringsEachRow, InFormat::IN_JSONStringsEachRow},
-    {OutFormat::OUT_JSONCompactEachRow, InFormat::IN_JSONCompactEachRow},
-    {OutFormat::OUT_JSONCompactEachRowWithNames, InFormat::IN_JSONCompactEachRowWithNames},
-    {OutFormat::OUT_JSONCompactEachRowWithNamesAndTypes, InFormat::IN_JSONCompactEachRowWithNamesAndTypes},
-    {OutFormat::OUT_JSONCompactStringsEachRow, InFormat::IN_JSONCompactStringsEachRow},
-    {OutFormat::OUT_JSONCompactStringsEachRowWithNames, InFormat::IN_JSONCompactStringsEachRowWithNames},
-    {OutFormat::OUT_JSONCompactStringsEachRowWithNamesAndTypes, InFormat::IN_JSONCompactStringsEachRowWithNamesAndTypes},
-    {OutFormat::OUT_JSONObjectEachRow, InFormat::IN_JSONObjectEachRow},
-    {OutFormat::OUT_BSONEachRow, InFormat::IN_BSONEachRow},
-    {OutFormat::OUT_TSKV, InFormat::IN_TSKV},
-    {OutFormat::OUT_Protobuf, InFormat::IN_Protobuf},
-    {OutFormat::OUT_ProtobufSingle, InFormat::IN_ProtobufSingle},
-    {OutFormat::OUT_Avro, InFormat::IN_Avro},
-    {OutFormat::OUT_Parquet, InFormat::IN_Parquet},
-    {OutFormat::OUT_Arrow, InFormat::IN_Arrow},
-    {OutFormat::OUT_ArrowStream, InFormat::IN_ArrowStream},
-    {OutFormat::OUT_ORC, InFormat::IN_ORC},
-    {OutFormat::OUT_RowBinary, InFormat::IN_RowBinary},
-    {OutFormat::OUT_RowBinaryWithNames, InFormat::IN_RowBinaryWithNames},
-    {OutFormat::OUT_RowBinaryWithNamesAndTypes, InFormat::IN_RowBinaryWithNamesAndTypes},
-    {OutFormat::OUT_Native, InFormat::IN_Native},
-    {OutFormat::OUT_MsgPack, InFormat::IN_MsgPack}};
 
 void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator & gen, const SQLTable & t, SQLQuery & sq2)
 {
@@ -388,7 +388,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
             LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         }
         ff->set_path(qfile.generic_string());
-        ff->set_outformat(OutFormat::OUT_CSV);
+        ff->set_outformat(rg.pickRandomly(out_in));
         sel = ins->mutable_select();
     }
 
