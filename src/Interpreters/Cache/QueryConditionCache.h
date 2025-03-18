@@ -84,6 +84,8 @@ public:
 private:
     Cache cache;
     LoggerPtr logger = getLogger("QueryConditionCache");
+
+    friend class StorageSystemQueryConditionCache;
 };
 
 using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;

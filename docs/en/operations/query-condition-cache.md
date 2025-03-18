@@ -1,5 +1,5 @@
 ---
-slug: /operations/query-cache
+slug: /operations/query-condition-cache
 sidebar_position: 64
 sidebar_label: Query Condition Cache
 ---
@@ -55,6 +55,7 @@ The query condition cache is not retained between restarts of ClickHouse.
 To clear the query condition cache, run [`SYSTEM DROP QUERY CONDITION CACHE`](../sql-reference/statements/system.md#drop-query-condition-cache).
 
 The content of the cache is displayed in system table [system.query_condition_cache](system-tables/query_condition_cache.md).
+To calculate the current size of the query condition cache in MB, run `SELECT formatReadableSize(sum(entry_size)) FROM system.query_condition_cache`.
 
 The number of query condition cache hits and misses since database start are shown as events "QueryConditionCacheHits" and "QueryConditionCacheMisses" in system table [system.events](system-tables/events.md).
 Both counters are only updated for `SELECT` queries which run with setting `use_query_condition_cache = true`, other queries do not affect "QueryCacheMisses".
