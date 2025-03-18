@@ -85,6 +85,7 @@ public:
 
     bool hasClickhouseTableSchemaById(Int32 id) const;
 
+    static DataTypePtr getSimpleType(const String & type_name);
 private:
     std::unordered_map<Int32, Poco::JSON::Object::Ptr> iceberg_table_schemas_by_ids;
     std::unordered_map<Int32, std::shared_ptr<NamesAndTypesList>> clickhouse_table_schemas_by_ids;
@@ -100,7 +101,6 @@ private:
         String & current_full_name = default_link,
         bool is_subfield_of_root = false);
 
-    static DataTypePtr getSimpleType(const String & type_name);
 
     std::optional<Int32> current_schema_id = 0;
 

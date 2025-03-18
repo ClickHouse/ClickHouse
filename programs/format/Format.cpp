@@ -13,7 +13,6 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/obfuscateQueries.h>
 #include <Parsers/parseQuery.h>
 #include <Common/ErrorCodes.h>

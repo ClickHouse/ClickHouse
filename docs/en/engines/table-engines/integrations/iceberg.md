@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/iceberg
+description: 'This engine provides a read-only integration with existing Apache Iceberg
+  tables in Amazon S3, Azure, HDFS and locally stored tables.'
+sidebar_label: 'Iceberg'
 sidebar_position: 90
-sidebar_label: Iceberg
-title: "Iceberg Table Engine"
-description: "This engine provides a read-only integration with existing Apache Iceberg tables in Amazon S3, Azure, HDFS and locally stored tables."
+slug: /engines/table-engines/integrations/iceberg
+title: 'Iceberg Table Engine'
 ---
 
 # Iceberg Table Engine {#iceberg-table-engine}

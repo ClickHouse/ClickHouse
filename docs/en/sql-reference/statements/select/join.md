@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for JOIN Clause'
+sidebar_label: 'Joining Tables'
 slug: /sql-reference/statements/select/join
-sidebar_label: Joining Tables
+title: 'JOIN Clause'
 ---
 
 # JOIN Clause
@@ -210,16 +212,16 @@ SELECT t1.*, t2.* from t1 LEFT JOIN t2 ON t1.key = t2.key and (t1.a < t2.a) ORDE
 ```
 
 ```response
-key1	a	1	1	2	key1	B	2	1	2
-key1	a	1	1	2	key1	C	3	4	5
-key1	a	1	1	2	key1	D	4	1	6
-key1	b	2	3	2	key1	C	3	4	5
-key1	b	2	3	2	key1	D	4	1	6
-key1	c	3	2	1	key1	D	4	1	6
-key1	d	4	7	2			0	0	\N
-key1	e	5	5	5			0	0	\N
-key2	a2	1	1	1			0	0	\N
-key4	f	2	3	4			0	0	\N
+key1    a    1    1    2    key1    B    2    1    2
+key1    a    1    1    2    key1    C    3    4    5
+key1    a    1    1    2    key1    D    4    1    6
+key1    b    2    3    2    key1    C    3    4    5
+key1    b    2    3    2    key1    D    4    1    6
+key1    c    3    2    1    key1    D    4    1    6
+key1    d    4    7    2            0    0    \N
+key1    e    5    5    5            0    0    \N
+key2    a2    1    1    1            0    0    \N
+key4    f    2    3    4            0    0    \N
 ```
 
 

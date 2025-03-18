@@ -1,9 +1,11 @@
 ---
-description: "System table containing a list of user accounts configured on the server."
+description: 'System table containing a list of user accounts configured on the server.'
+keywords: ['system table', 'users']
 slug: /operations/system-tables/users
-title: "system.users"
-keywords: ["system table", "users"]
+title: 'system.users'
 ---
+
+# system.users
 
 Contains a list of [user accounts](../../guides/sre/user-management/index.md#user-account-management) configured on the server.
 

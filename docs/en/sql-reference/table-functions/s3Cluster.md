@@ -1,9 +1,11 @@
 ---
-slug: /sql-reference/table-functions/s3Cluster
+description: 'An extension to the s3 table function, which allows processing files
+  from Amazon S3 and Google Cloud Storage in parallel with many nodes in a specified
+  cluster.'
+sidebar_label: 's3Cluster'
 sidebar_position: 181
-sidebar_label: s3Cluster
-title: "s3Cluster"
-description: "An extension to the s3 table function, which allows processing files from Amazon S3 and Google Cloud Storage in parallel with many nodes in a specified cluster."
+slug: /sql-reference/table-functions/s3Cluster
+title: 's3Cluster'
 ---
 
 # s3Cluster Table Function
@@ -51,7 +53,7 @@ SELECT * FROM s3Cluster(
     'cluster_simple',
     'http://minio1:9001/root/data/{clickhouse,database}/*',
     'minio',
-    'minio123',
+    'ClickHouse_Minio_P@ssw0rd',
     'CSV',
     'name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
 ) ORDER BY (name, value, polygon);
@@ -68,7 +70,7 @@ For production use cases, it is recommended to use [named collections](operation
 
 CREATE NAMED COLLECTION creds AS
         access_key_id = 'minio',
-        secret_access_key = 'minio123';
+        secret_access_key = 'ClickHouse_Minio_P@ssw0rd';
 SELECT count(*) FROM s3Cluster(
     'cluster_simple', creds, url='https://s3-object-url.csv',
     format='CSV', structure='name String, value UInt32, polygon Array(Array(Tuple(Float64, Float64)))'
