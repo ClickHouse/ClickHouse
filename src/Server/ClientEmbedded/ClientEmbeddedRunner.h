@@ -27,8 +27,9 @@ public:
     }
     ~ClientEmbeddedRunner();
 
-    bool hasStarted() { return started.test(); }
-    bool hasFinished() { return finished.test(); }
+    bool hasStarted() const;
+    bool hasFinished() const;
+    int getExitCode() const;
     void run(const NameToNameMap & envs, const String & starting_query = "");
     IClientDescriptorSet::DescriptorSet getDescriptorsForServer() { return client_descriptors->getDescriptorsForServer(); }
     bool hasPty() const { return client_descriptors->isPty(); }
@@ -46,6 +47,8 @@ private:
     ThreadFromGlobalPool client_thread;
     std::unique_ptr<Session> db_session;
     Poco::Logger * log;
+
+    int exit_code = 0;
 };
 
 }

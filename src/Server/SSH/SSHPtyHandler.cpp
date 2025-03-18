@@ -101,6 +101,7 @@ public:
     }
 
     bool hasClientFinished() { return client_runner.has_value() && client_runner->hasFinished(); }
+    int getClientExitCode() { return client_runner.has_value() && client_runner->getExitCode(); }
 
 
     DescriptorSet client_input_output;
@@ -455,14 +456,11 @@ void SSHPtyHandler::run()
         /* If the user has used up all attempts, or if he hasn't been able to
          * authenticate in auth_timeout_seconds, disconnect. */
         if (sdata.auth_attempts >= options.max_auth_attempts || n >= max_iterations)
-        {
             return;
-        }
 
         if (server.isCancelled())
-        {
             return;
-        }
+
         event.poll(options.event_poll_interval_milliseconds);
         n++;
     }
@@ -477,22 +475,20 @@ void SSHPtyHandler::run()
         /* If client's stdout/stderr has been registered with the event,
          * or the client hasn't started yet, continue. */
         if (fds_set || sdata.channel_callback->client_input_output.out == -1)
-        {
             continue;
-        }
+
         /* Executed only once, once the client starts. */
         fds_set = true;
 
         /* If stdout valid, add stdout to be monitored by the poll event. */
         if (sdata.channel_callback->client_input_output.out != -1)
-        {
             event.addFd(sdata.channel_callback->client_input_output.out, POLLIN, process_stdout, sdata.channel_callback->channel.getCChannelPtr());
-        }
+
         if (sdata.channel_callback->client_input_output.err != -1)
-        {
             event.addFd(sdata.channel_callback->client_input_output.err, POLLIN, process_stderr, sdata.channel_callback->channel.getCChannelPtr());
-        }
-    } while (sdata.channel_callback->channel.isOpen() && !sdata.channel_callback->hasClientFinished() && !server.isCancelled());
+
+    }
+    while (sdata.channel_callback->channel.isOpen() && !sdata.channel_callback->hasClientFinished() && !server.isCancelled());
 
     LOG_DEBUG(
         log,
@@ -505,15 +501,13 @@ void SSHPtyHandler::run()
 
 
     sdata.channel_callback->channel.sendEof();
-    sdata.channel_callback->channel.sendExitStatus(0);
+    sdata.channel_callback->channel.sendExitStatus(sdata.channel_callback->getClientExitCode());
     sdata.channel_callback->channel.close();
 
     /* Wait up to finish_timeout_seconds seconds for the client to terminate the session. */
     max_iterations = options.finish_timeout_seconds * 1000 / options.event_poll_interval_milliseconds;
     for (n = 0; n < max_iterations && !session.hasFinished(); n++)
-    {
         event.poll(options.event_poll_interval_milliseconds);
-    }
 
     LOG_DEBUG(log, "Connection closed");
 }

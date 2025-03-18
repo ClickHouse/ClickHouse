@@ -230,16 +230,17 @@ catch (const DB::Exception & e)
     cleanup();
 
     error_stream << getExceptionMessage(e, print_stack_trace, true) << std::endl;
-    return e.code() ? e.code() : -1;
+    auto code = DB::getCurrentExceptionCode();
+    return static_cast<UInt8>(code) ? code : 1;
 }
 catch (...)
 {
     cleanup();
 
     error_stream << getCurrentExceptionMessage(false) << std::endl;
-    return getCurrentExceptionCode();
+    auto code = DB::getCurrentExceptionCode();
+    return static_cast<UInt8>(code) ? code : 1;
 }
-
 
 }
 

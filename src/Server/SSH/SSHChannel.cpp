@@ -85,7 +85,6 @@ bool SSHChannel::isOpen()
 
 void SSHChannel::deleter(ssh_channel ch)
 {
-    UNUSED(ch);
     ssh_channel_free(ch);
 }
 
