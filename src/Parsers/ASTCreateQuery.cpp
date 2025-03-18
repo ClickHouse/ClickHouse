@@ -7,7 +7,6 @@
 #include <Common/quoteString.h>
 #include <Interpreters/StorageID.h>
 #include <IO/Operators.h>
-#include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 
 

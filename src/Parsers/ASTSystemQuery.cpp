@@ -5,8 +5,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
-#include <base/EnumReflection.h>
-
 
 namespace DB
 {
