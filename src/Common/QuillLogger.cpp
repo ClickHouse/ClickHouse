@@ -1,4 +1,3 @@
-#include "Common/Arena.h"
 #include <Common/QuillLogger.h>
 
 #include <boost/algorithm/string/predicate.hpp>

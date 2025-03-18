@@ -1356,7 +1356,7 @@ static String getOldALias(const ASTPtr & input)
     }
     else
     {
-        chassert(0);
+        chassert(false);
         return "";
     }
 }

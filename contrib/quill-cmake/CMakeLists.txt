@@ -103,7 +103,4 @@ set(HEADER_FILES
         ${LIBRARY_DIR}/include/quill/Utility.h
 )
 
-if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.19)
-    # cmake prior to 3.19 does not support target_sources for interface libraries
-    target_sources(_quill PRIVATE ${HEADER_FILES})
-endif ()
+target_sources(_quill PRIVATE ${HEADER_FILES})

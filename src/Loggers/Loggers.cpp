@@ -72,10 +72,20 @@ size_t getLogFileMaxSize(const std::string & max_size_str)
 
     std::string_view max_size_view{max_size_str};
     size_t multiplier = 1;
-    if (max_size_view.ends_with('M'))
+    if (max_size_view.ends_with('K'))
+    {
+        max_size_view.remove_suffix(1);
+        multiplier = 1_KiB;
+    }
+    else if (max_size_view.ends_with('M'))
     {
         max_size_view.remove_suffix(1);
         multiplier = 1_MiB;
+    }
+    else if (max_size_view.ends_with('G'))
+    {
+        max_size_view.remove_suffix(1);
+        multiplier = 1_GiB;
     }
 
     return DB::parse<size_t>(max_size_view) * multiplier;
@@ -87,7 +97,7 @@ size_t getLogFileMaxSize(const std::string & max_size_str)
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, const std::string & /*cmd_name*/, bool allow_console_only)
 {
-    /// if we are remaping executable, we can start another thread only AFTER we are done
+    /// if we are remapping executable, we can start another thread only AFTER we are done
     /// with remapping
     if (!config.getBool("remap_executable", false))
         DB::startQuillBackend();
