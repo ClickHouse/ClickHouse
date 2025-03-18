@@ -395,7 +395,7 @@
         <!-- <check_exit_code>1</check_exit_code> -->
     </function>
 
-    <!-- Define UDFs with explicit deterministic flags -->
+    <!-- The next two UDFs have an explicit 'deterministic' tag defined -->
     <function>
         <type>executable</type>
         <name>test_function_bash_deterministic</name>
@@ -410,7 +410,7 @@
 
     <function>
         <type>executable</type>
-        <name>test_function_bash_nodeterministic</name>
+        <name>test_function_bash_nondeterministic</name>
         <return_type>String</return_type>
         <argument>
             <type>UInt64</type>

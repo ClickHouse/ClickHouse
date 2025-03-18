@@ -39,7 +39,7 @@ A function configuration contains the following settings:
 - `send_chunk_header` - controls whether to send row count before sending a chunk of data to process. Optional. Default value is `false`.
 - `execute_direct` - If `execute_direct` = `1`, then `command` will be searched inside user_scripts folder specified by [user_scripts_path](../../operations/server-configuration-parameters/settings.md#user_scripts_path). Additional script arguments can be specified using whitespace separator. Example: `script_name arg1 arg2`. If `execute_direct` = `0`, `command` is passed as argument for `bin/sh -c`. Default value is `1`. Optional parameter.
 - `lifetime` - the reload interval of a function in seconds. If it is set to `0` then the function is not reloaded. Default value is `0`. Optional parameter.
-- `deterministic` - Specify if the function will be considered deterministic.
+- `deterministic` - if the function is deterministic (returns the same result for the same input). Default value is `false`. Optional parameter.
 
 The command must read arguments from `STDIN` and must output the result to `STDOUT`. The command must process arguments iteratively. That is after processing a chunk of arguments it must wait for the next chunk.
 
@@ -66,6 +66,7 @@ File `test_function.xml` (`/etc/clickhouse-server/test_function.xml` with defaul
         <format>TabSeparated</format>
         <command>cd /; clickhouse-local --input-format TabSeparated --output-format TabSeparated --structure 'x UInt64, y UInt64' --query "SELECT x + y FROM table"</command>
         <execute_direct>0</execute_direct>
+        <deterministic>true</deterministic>
     </function>
 </functions>
 ```
