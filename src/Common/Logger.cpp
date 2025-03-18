@@ -18,6 +18,9 @@ std::unique_ptr<OwnPatternFormatter> formatter;
 std::atomic<OwnPatternFormatter *> formatter_ptr = nullptr;
 }
 
+uint32_t CustomFrontendOptions::initial_queue_capacity = 128 * 1024;
+using CustomFrontend = quill::FrontendImpl<CustomFrontendOptions>;
+
 Logger::Logger(std::string_view name_, QuillLoggerPtr logger_)
     : name(name_)
     , logger(logger_)
@@ -45,7 +48,7 @@ void Logger::setFormatter(std::unique_ptr<OwnPatternFormatter> formatter_)
 QuillLoggerPtr Logger::getQuillLogger()
 {
     if (!logger)
-        logger = quill::Frontend::get_logger("root");
+        logger = CustomFrontend::get_logger("root");
 
     return logger;
 }
@@ -63,7 +66,7 @@ LoggerPtr getLogger(const char * name, const char * component_name)
 
 LoggerPtr getLogger(std::string_view name, const char * component_name)
 {
-    auto * logger = quill::Frontend::get_logger("root");
+    auto * logger = CustomFrontend::get_logger("root");
     if (component_name)
     {
         if (!logger)
@@ -71,7 +74,7 @@ LoggerPtr getLogger(std::string_view name, const char * component_name)
                 DB::ErrorCodes::LOGICAL_ERROR,
                 "Cannot create logger for component '{}' because root logger is not initialized",
                 component_name);
-        logger = quill::Frontend::create_or_get_logger(component_name, logger);
+        logger = CustomFrontend::create_or_get_logger(component_name, logger);
     }
 
     return std::make_shared<Logger>(name, logger);
@@ -79,7 +82,7 @@ LoggerPtr getLogger(std::string_view name, const char * component_name)
 
 LoggerPtr getLogger(std::string name, const char * component_name)
 {
-    auto * logger = quill::Frontend::get_logger("root");
+    auto * logger = CustomFrontend::get_logger("root");
     if (component_name)
     {
         if (!logger)
@@ -87,7 +90,7 @@ LoggerPtr getLogger(std::string name, const char * component_name)
                 DB::ErrorCodes::LOGICAL_ERROR,
                 "Cannot create logger for component '{}' because root logger is not initialized",
                 component_name);
-        logger = quill::Frontend::create_or_get_logger(component_name, logger);
+        logger = CustomFrontend::create_or_get_logger(component_name, logger);
     }
 
     return std::make_shared<Logger>(std::move(name), logger);
@@ -97,7 +100,7 @@ LoggerPtr createLogger(const std::string & name, std::vector<std::shared_ptr<qui
 {
     return std::make_shared<Logger>(
         name,
-        quill::Frontend::create_or_get_logger(
+        CustomFrontend::create_or_get_logger(
             name,
             sinks,
             quill::PatternFormatterOptions{
@@ -109,12 +112,12 @@ LoggerPtr createLogger(const std::string & name, std::vector<std::shared_ptr<qui
 
 QuillLoggerPtr getQuillLogger(const std::string & name)
 {
-    auto * root = quill::Frontend::get_logger("root");
+    auto * root = CustomFrontend::get_logger("root");
 
     if (!root)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Root logger is not initialized");
 
-    return quill::Frontend::create_or_get_logger(name, root);
+    return CustomFrontend::create_or_get_logger(name, root);
 }
 
 static constinit std::atomic<bool> allow_logging{true};

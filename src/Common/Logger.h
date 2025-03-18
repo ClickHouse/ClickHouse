@@ -6,6 +6,8 @@
 
 #include <Common/Logger_fwd.h>
 
+#include <quill/core/Common.h>
+
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 
@@ -29,7 +31,30 @@ class LoggerImpl;
 }
 }
 
-using QuillLoggerPtr =  quill::v8::LoggerImpl<quill::v8::FrontendOptions> *;
+struct CustomFrontendOptions
+{
+
+  static constexpr quill::QueueType queue_type = quill::QueueType::UnboundedBlocking;
+
+  /**
+   * Initial capacity of the queue. Used for UnboundedBlocking, UnboundedDropping, and
+   * UnboundedUnlimited. Also serves as the capacity for BoundedBlocking and BoundedDropping.
+   */
+  static uint32_t initial_queue_capacity; // 128 KiB
+
+  /**
+   * Interval for retrying when using BoundedBlocking or UnboundedBlocking.
+   * Applicable only when using BoundedBlocking or UnboundedBlocking.
+   */
+  static constexpr uint32_t blocking_queue_retry_interval_ns = 800;
+
+  /**
+   * Enables huge pages on the frontend queues to reduce TLB misses. Available only for Linux.
+   */
+  static constexpr bool huge_pages_enabled = false;
+};
+
+using QuillLoggerPtr =  quill::v8::LoggerImpl<CustomFrontendOptions> *;
 
 namespace DB
 {

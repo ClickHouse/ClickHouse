@@ -13,6 +13,7 @@
 #include <IO/ReadHelpers.h>
 #include <quill/core/LogLevel.h>
 #include <quill/sinks/Sink.h>
+#include "Common/Logger.h"
 #include <Common/QuillLoggerHelper.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
@@ -602,6 +603,8 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     std::vector<std::shared_ptr<quill::Sink>> sinks;
 
+    CustomFrontendOptions::initial_queue_capacity = 256 * 1024;
+
     auto current_logger = config.getString("logger", "");
     if (config_logger.has_value())// && *config_logger == current_logger)
         return;
@@ -820,7 +823,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
 
     const auto log_level_string = config.getString("logger.level", "trace");
     auto quill_level = DB::parseQuillLogLevel(log_level_string);
-    for (auto * quill_logger : quill::Frontend::get_all_loggers())
+    for (auto * quill_logger : quill::FrontendImpl<CustomFrontendOptions>::get_all_loggers())
     {
         quill_logger->set_log_level(quill_level);
     }

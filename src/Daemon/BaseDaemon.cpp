@@ -1,3 +1,4 @@
+#include "Common/Logger.h"
 #pragma clang diagnostic ignored "-Wreserved-identifier"
 
 #include <base/defines.h>
