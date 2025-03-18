@@ -635,3 +635,44 @@ INSERT INTO test SELECT randomString(200);
             break
         time.sleep(1)
     assert elements <= expected
+
+
+def test_filesystem_cache_log(cluster):
+    node = cluster.instances["node"]
+    node.query(
+        """
+DROP TABLE IF EXISTS test;
+
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(type = cache,
+            max_size = '10Gi',
+            path = "test_filesystem_cache_log",
+            disk = hdd_blob),
+        min_bytes_for_wide_part = 10485760;
+    """
+    )
+
+    node.query(
+        """
+INSERT INTO test SELECT 1, 'test';
+    """
+    )
+
+    query_id = "system_filesystem_cache_log"
+    node.query(
+        "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 0",
+        query_id=query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert 0 == int(node.query(f"SELECT count() FROM system.filesystem_cache_log WHERE query_id = '{query_id}'"))
+
+    query_id = "system_filesystem_cache_log_2"
+    node.query(
+        "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1",
+        query_id=query_id,
+    )
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert 0 < int(node.query(f"SELECT count() FROM system.filesystem_cache_log WHERE query_id = '{query_id}'"))
