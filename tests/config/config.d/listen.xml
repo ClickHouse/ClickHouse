@@ -1,1 +1,4 @@
-<clickhouse><listen_host>::</listen_host></clickhouse>
+<clickhouse>
+    <listen_host>::</listen_host>
+    <listen_try>true</listen_try>
+</clickhouse>
