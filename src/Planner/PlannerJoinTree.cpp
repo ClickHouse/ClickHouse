@@ -1280,6 +1280,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
         {
             if (select_query_options.ignore_rename_columns)
             {
+                /// In case of plan serialization, only storage source column names are required.
+                /// Still, Interpreter up to FetchColumns is created for this (to support distributed over distributed).
+                /// Apparently, FetchColumns returns not the source coulmns, but identifiers (with prefix e.g. __table1.)
+                /// So, here (under the special option) we rename back. Hopefullt this will be removed someday.
                 const auto * column_name = table_expression_data.getColumnNameOrNull(output_node->result_name);
                 if (!column_name)
                     updated_actions_dag_outputs.push_back(output_node);
@@ -1290,9 +1294,20 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             {
                 const auto * column_identifier = table_expression_data.getColumnIdentifierOrNull(output_node->result_name);
                 if (!column_identifier)
-                    continue;
-
-                updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_identifier));
+                {
+                    /// This is needed only for distributed over distributed case with plan serialization as well.
+                    /// StorageDistributed::read apparently returns column identifiers instread of column names for
+                    /// to_stage == QueryProcessingStage::FetchColumns (unlike other storages, which do not aware about identifiers).
+                    /// So, we do not rename but just pass names as is.
+                    ///
+                    /// Overall, IStorage::read    -> FetchColumns returns normal column names (except Distributed, which is inconsistent)
+                    /// Interpreter::getQueryPlan  -> FetchColumns returns identifiers (why?) and this the reason for the bug ^ in Distributed
+                    /// Hopefully there is no other case when we read from Distributed up to FetchColumns.
+                    if (table_node && table_node->getStorage()->isRemote() && select_query_options.to_stage == QueryProcessingStage::FetchColumns)
+                        updated_actions_dag_outputs.push_back(output_node);
+                }
+                else
+                    updated_actions_dag_outputs.push_back(&rename_actions_dag.addAlias(*output_node, *column_identifier));
             }
         }
 
