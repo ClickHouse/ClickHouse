@@ -21,6 +21,7 @@
 #include <expected>
 
 #include "StringHelpers.h"
+#include <iostream>
 
 namespace DB
 {
@@ -1602,7 +1603,8 @@ namespace
             static PosOrError jodaYearOfEra(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year_of_era;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, true, repetitions, repetitions, fragment, year_of_era)))
+                size_t max_digits = repetitions > 2 ? std::max<size_t>(repetitions, std::numeric_limits<decltype(year_of_era)>::digits10) : repetitions;
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, false, false, true, repetitions, max_digits, fragment, year_of_era)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year_of_era, true))
                 return cur;
             }
@@ -1611,7 +1613,8 @@ namespace
             static PosOrError jodaWeekYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 week_year;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, week_year)))
+                size_t max_digits = repetitions > 2 ? std::max<size_t>(repetitions, std::numeric_limits<decltype(week_year)>::digits10) : repetitions;
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, max_digits, fragment, week_year)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(week_year, false, true))
                 return cur;
             }
@@ -1670,7 +1673,8 @@ namespace
             static PosOrError jodaYear(size_t repetitions, Pos cur, Pos end, const String & fragment, ParsedValue<error_handling, return_type> & parsed_value)
             {
                 Int32 year;
-                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, repetitions, fragment, year)))
+                size_t max_digits = repetitions > 2 ? std::max<size_t>(repetitions, std::numeric_limits<decltype(year)>::digits10) : repetitions;
+                ASSIGN_RESULT_OR_RETURN_ERROR(cur, (readNumberWithVariableLength(cur, end, true, true, true, repetitions, max_digits, fragment, year)))
                 RETURN_ERROR_IF_FAILED(parsed_value.setYear(year))
                 return cur;
             }
