@@ -210,6 +210,31 @@ struct GetACLResponse : virtual Response
     size_t bytesSize() const override { return sizeof(Stat) + acl.size() * sizeof(ACL); }
 };
 
+struct SetWatchRequest : virtual Request
+{
+    int64_t zxid;
+    std::vector<String> data_watches;
+	std::vector<String> exist_watches;
+	std::vector<String> child_watches;
+
+    size_t bytesSize() const override 
+    {
+        size_t result = sizeof(zxid);
+        result += sizeof(Int32);
+        for (const auto & elem : data_watches)
+            result += sizeof(Int32) + elem.size();
+
+        result += sizeof(Int32);
+        for (const auto & elem : exist_watches)
+            result += sizeof(Int32) + elem.size();
+    
+        result += sizeof(Int32);
+        for (const auto & elem : child_watches)
+            result += sizeof(Int32) + elem.size();
+        return result;  
+    }
+};
+
 struct CreateRequest : virtual Request
 {
     String path;

@@ -34,8 +34,11 @@ enum class OpNum : int32_t
     Multi = 14,
     Create2 = 15,
     Reconfig = 16,
+    CheckWatches = 17,
+    RemoveWatches = 18,
     MultiRead = 22,
     Auth = 100,
+    SetWatches = 106,
 
     // CH Keeper specific operations
     FilteredList = 500,

@@ -11,6 +11,7 @@
 #include <fmt/format.h>
 #include <Common/logger_useful.h>
 
+#include <format>
 #include <iostream>
 
 namespace Coordination
@@ -625,6 +626,62 @@ void ZooKeeperGetACLResponse::readImpl(ReadBuffer & in)
 {
     Coordination::read(acl, in);
     Coordination::read(stat, in);
+}
+
+void ZooKeeperSetWatchRequest::readImpl(ReadBuffer & in)
+{
+    Coordination::read(zxid, in);
+    
+    Coordination::read(data_watches, in);
+    Coordination::read(exist_watches, in);
+    Coordination::read(child_watches, in);
+}
+
+void ZooKeeperSetWatchRequest::writeImpl(WriteBuffer & out) const
+{
+    Coordination::write(zxid, out);
+    
+    Coordination::write(data_watches, out);
+    Coordination::write(exist_watches, out);
+    Coordination::write(child_watches, out);
+}
+
+size_t ZooKeeperSetWatchRequest::sizeImpl() const
+{
+    return sizeof(zxid) + Coordination::size(data_watches) + Coordination::size(exist_watches) + Coordination::size(child_watches);
+}
+
+std::string ZooKeeperSetWatchRequest::toStringImpl(bool /*short_format*/) const
+{
+    String result = std::format("zxid: {}\n", zxid);
+    
+    for (const auto & elem : data_watches)
+        result += std::format("data_watch: {}\n", elem);
+
+    for (const auto & elem : exist_watches)
+        result += std::format("exist_watch: {}\n", elem);
+
+    for (const auto & elem : child_watches)
+        result += std::format("child_watch: {}\n", elem);
+    return result;
+}
+
+ZooKeeperResponsePtr ZooKeeperSetWatchRequest::makeResponse() const
+{
+    return std::make_shared<ZooKeeperSetWatchResponse>();
+}
+
+void ZooKeeperSetWatchResponse::readImpl(ReadBuffer &)
+{
+}
+
+void ZooKeeperSetWatchResponse::writeImpl(WriteBuffer &) const
+{
+}
+
+size_t ZooKeeperSetWatchResponse::sizeImpl() const
+{
+    return 0;
 }
 
 void ZooKeeperCheckRequest::writeImpl(WriteBuffer & out) const

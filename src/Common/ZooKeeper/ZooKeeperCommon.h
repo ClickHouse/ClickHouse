@@ -578,6 +578,52 @@ struct ZooKeeperGetACLResponse final : GetACLResponse, ZooKeeperResponse
     size_t bytesSize() const override { return GetACLResponse::bytesSize() + sizeof(xid) + sizeof(zxid); }
 };
 
+struct ZooKeeperSetWatchRequest : SetWatchRequest, ZooKeeperRequest
+{
+    OpNum getOpNum() const override { return OpNum::SetWatches; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperSetWatchResponse : ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    OpNum getOpNum() const override { return OpNum::SetWatches; }
+
+    size_t bytesSize() const override { return sizeof(xid) + sizeof(zxid); }
+};
+
+struct ZooKeeperCheckWatchRequest : ZooKeeperRequest
+{
+    OpNum getOpNum() const override { return OpNum::CheckWatches; }
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    void readImpl(ReadBuffer & in) override;
+    std::string toStringImpl(bool short_format) const override;
+    ZooKeeperResponsePtr makeResponse() const override;
+    bool isReadRequest() const override { return true; }
+
+    size_t bytesSize() const override { return sizeof(xid); }
+};
+
+struct ZooKeeperCheckWatchResponse : ZooKeeperResponse
+{
+    void readImpl(ReadBuffer & in) override;
+    void writeImpl(WriteBuffer & out) const override;
+    size_t sizeImpl() const override;
+    OpNum getOpNum() const override { return OpNum::CheckWatches; }
+
+    size_t bytesSize() const override { return sizeof(xid) + sizeof(zxid); }
+};
+
 struct ZooKeeperMultiRequest final : MultiRequest<ZooKeeperRequestPtr>, ZooKeeperRequest
 {
     OpNum getOpNum() const override;
