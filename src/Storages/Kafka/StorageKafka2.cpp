@@ -857,6 +857,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     std::optional<std::string> exception_message;
     size_t total_rows = 0;
     size_t failed_poll_attempts = 0;
+    bool is_dead_letter = false;
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
@@ -865,7 +866,6 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
         switch (getHandleKafkaErrorMode())
         {
             case StreamingHandleErrorMode::STREAM:
-            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
             {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
@@ -876,7 +876,19 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                     // all data columns will get default value in case of error
                     result_columns[i]->insertDefault();
                 }
-                break;
+                return 1;
+            }
+            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            {
+                exception_message = e.message();
+                for (size_t i = 0; i < result_columns.size(); ++i)
+                {
+                    // We could already push some rows to result_columns before exception, we need to fix it.
+                    result_columns[i]->rollback(*checkpoints[i]);
+                }
+
+                is_dead_letter = true;
+                return 0;
             }
             case StreamingHandleErrorMode::DEFAULT:
             {
@@ -888,7 +900,6 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                 throw std::move(e);
             }
         }
-        return 1;
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, std::move(on_error));
@@ -921,7 +932,7 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
             new_rows = executor.execute(*buf);
         }
 
-        if (new_rows)
+        if (new_rows || is_dead_letter)
         {
             ProfileEvents::increment(ProfileEvents::KafkaRowsRead, new_rows);
 
@@ -978,31 +989,28 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
                         virtual_columns[9]->insertDefault();
                     }
                 }
-                else if (getHandleKafkaErrorMode() == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
-                {
-                    if (exception_message)
-                    {
-                        const auto time_now = std::chrono::system_clock::now();
-                        auto storage_id = getStorageID();
+            }
 
-                        auto dead_letter_queue = getContext()->getDeadLetterQueue();
-                        dead_letter_queue->add(
-                            DeadLetterQueueElement{
-                                .stream_type = DeadLetterQueueElement::StreamType::Kafka,
-                                .event_time = timeInSeconds(time_now),
-                                .event_time_microseconds = timeInMicroseconds(time_now),
-                                .database_name = storage_id.database_name,
-                                .table_name = storage_id.table_name,
-                                .raw_message = consumer.currentPayload(),
-                                .error = exception_message.value(),
-                                .details = DeadLetterQueueElement::KafkaDetails{
-                                    .topic_name = consumer.currentTopic(),
-                                    .partition = consumer.currentPartition(),
-                                    .offset = consumer.currentPartition(),
-                                    .key = consumer.currentKey()}});
-                    }
+            if (is_dead_letter && exception_message)
+            {
+                const auto time_now = std::chrono::system_clock::now();
+                auto storage_id = getStorageID();
 
-                }
+                auto dead_letter_queue = getContext()->getDeadLetterQueue();
+                dead_letter_queue->add(
+                    DeadLetterQueueElement{
+                        .stream_type = DeadLetterQueueElement::StreamType::Kafka,
+                        .event_time = timeInSeconds(time_now),
+                        .event_time_microseconds = timeInMicroseconds(time_now),
+                        .database_name = storage_id.database_name,
+                        .table_name = storage_id.table_name,
+                        .raw_message = consumer.currentPayload(),
+                        .error = exception_message.value(),
+                        .details = DeadLetterQueueElement::KafkaDetails{
+                            .topic_name = consumer.currentTopic(),
+                            .partition = consumer.currentPartition(),
+                            .offset = consumer.currentPartition(),
+                            .key = consumer.currentKey()}});
             }
 
             total_rows = total_rows + new_rows;

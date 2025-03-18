@@ -148,21 +148,29 @@ def view_test(expected_num_messages, *_):
 
 # check_method for bad_messages_parsing_mode
 def dead_letter_queue_test(expected_num_messages, topic_name):
-    view_test(expected_num_messages)
+    # we have a problem:
+    #  it make sense to flush logs when data already processed,
+    #  but since nothing goes to target MV we don't know when it happens
     instance.query("SYSTEM FLUSH LOGS")
+
+
+    attempt = 0
+    rows = 0
+    while attempt < 500:
+        time.sleep(0.1)
+        rows = int(instance.query(f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}'"))
+        if rows == expected_num_messages:
+            break
+        attempt += 1
+    assert rows == expected_num_messages
 
     result = instance.query(
         f"SELECT * FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}' FORMAT Vertical"
     )
     logging.debug(f"system.dead_letter_queue contains {result}")
 
-    rows = int(
-        instance.query(
-            f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}'"
-        )
-    )
-    assert rows == expected_num_messages
-
+    # nothing goes to target table
+    view_test(0)
 
 def bad_messages_parsing_mode(
     kafka_cluster, handle_error_mode, additional_dml, check_method
