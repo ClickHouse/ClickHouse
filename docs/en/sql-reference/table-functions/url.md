@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/table-functions/url
+description: 'Creates a table from the `URL` with given `format` and `structure`'
+sidebar_label: 'url'
 sidebar_position: 200
-sidebar_label: url
-title: "url"
-description: "Creates a table from the `URL` with given `format` and `structure`"
+slug: /sql-reference/table-functions/url
+title: 'url'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -24,7 +24,7 @@ url(URL [,format] [,structure] [,headers])
 **Parameters**
 
 - `URL` — HTTP or HTTPS server address, which can accept `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly). Type: [String](../../sql-reference/data-types/string.md).
-- `format` — [Format](../../interfaces/formats.md#formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
+- `format` — [Format](/sql-reference/formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
 - `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
 - `headers` - Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.
 

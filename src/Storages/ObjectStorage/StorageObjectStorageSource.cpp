@@ -28,6 +28,8 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheKey.h>
 
+#include <fmt/ranges.h>
+
 
 namespace fs = std::filesystem;
 namespace ProfileEvents
@@ -127,16 +129,24 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     const ActionsDAG::Node * predicate,
     const NamesAndTypesList & virtual_columns,
     ObjectInfos * read_keys,
-    std::function<void(FileProgress)> file_progress_callback)
+    std::function<void(FileProgress)> file_progress_callback,
+    bool ignore_archive_globs)
 {
+    const bool is_archive = configuration->isArchive();
+
     if (distributed_processing)
-        return std::make_shared<ReadTaskIterator>(local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+    {
+        auto distributed_iterator = std::make_unique<ReadTaskIterator>(local_context->getReadTaskCallback(), local_context->getSettingsRef()[Setting::max_threads]);
+
+        if (is_archive)
+            return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(distributed_iterator), local_context, nullptr);
+
+        return distributed_iterator;
+    }
 
     if (configuration->isNamespaceWithGlobs())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Expression can not have wildcards inside {} name", configuration->getNamespaceType());
-
-    const bool is_archive = configuration->isArchive();
 
     std::unique_ptr<IObjectIterator> iterator;
     if (configuration->isPathWithGlobs())
@@ -188,7 +198,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
 
     if (is_archive)
     {
-        return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(iterator), local_context, read_keys);
+        return std::make_shared<ArchiveIterator>(object_storage, configuration, std::move(iterator), local_context, read_keys, ignore_archive_globs);
     }
 
     return iterator;
@@ -537,9 +547,8 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     if (!object_info.metadata)
     {
         if (!use_cache)
-        {
             return object_storage->readObject(StoredObject(object_info.getPath()), read_settings);
-        }
+
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath());
     }
 
@@ -644,6 +653,7 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);
     }
+
     return impl;
 }
 
@@ -826,7 +836,7 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::KeysIterator::ne
     {
         size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
         if (current_index >= keys.size())
-            return {};
+            return nullptr;
 
         auto key = keys[current_index];
 
@@ -896,8 +906,10 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
     for (auto & key_future : keys)
     {
         auto key = key_future.get();
-        if (!key.empty())
-            buffer.emplace_back(std::make_shared<ObjectInfo>(key, std::nullopt));
+        if (key.empty())
+            continue;
+
+        buffer.emplace_back(std::make_shared<ObjectInfo>(key, std::nullopt));
     }
 }
 
@@ -905,7 +917,13 @@ StorageObjectStorage::ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator
 {
     size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
     if (current_index >= buffer.size())
-        return std::make_shared<ObjectInfo>(callback());
+    {
+        auto key = callback();
+        if (key.empty())
+            return nullptr;
+
+        return std::make_shared<ObjectInfo>(key, std::nullopt);
+    }
 
     return buffer[current_index];
 }
@@ -936,7 +954,8 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     ConfigurationPtr configuration_,
     std::unique_ptr<IObjectIterator> archives_iterator_,
     ContextPtr context_,
-    ObjectInfos * read_keys_)
+    ObjectInfos * read_keys_,
+    bool ignore_archive_globs_)
     : WithContext(context_)
     , object_storage(object_storage_)
     , is_path_in_archive_with_globs(configuration_->isPathInArchiveWithGlobs())
@@ -945,6 +964,7 @@ StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
     , log(getLogger("ArchiveIterator"))
     , path_in_archive(is_path_in_archive_with_globs ? "" : configuration_->getPathInArchive())
     , read_keys(read_keys_)
+    , ignore_archive_globs(ignore_archive_globs_)
 {
 }
 
@@ -975,12 +995,15 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 if (!archive_object)
                     return {};
 
+                if (!archive_object->metadata)
+                    archive_object->metadata = object_storage->getObjectMetadata(archive_object->getPath());
+
                 archive_reader = createArchiveReader(archive_object);
                 file_enumerator = archive_reader->firstFile();
                 if (!file_enumerator)
                     continue;
             }
-            else if (!file_enumerator->nextFile())
+            else if (!file_enumerator->nextFile() || ignore_archive_globs)
             {
                 file_enumerator.reset();
                 continue;

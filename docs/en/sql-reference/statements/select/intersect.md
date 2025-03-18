@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for INTERSECT Clause'
+sidebar_label: 'INTERSECT'
 slug: /sql-reference/statements/select/intersect
-sidebar_label: INTERSECT
+title: 'INTERSECT Clause'
 ---
 
 # INTERSECT Clause
@@ -153,5 +155,5 @@ Result:
 
 **See Also**
 
-- [UNION](union.md#union-clause)
-- [EXCEPT](except.md#except-clause)
+- [UNION](/sql-reference/statements/select/union)
+- [EXCEPT](/sql-reference/statements/select/except)

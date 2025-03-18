@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/dictionary
+description: 'Displays the dictionary data as a ClickHouse table. Works the same way
+  as the Dictionary engine.'
+sidebar_label: 'dictionary'
 sidebar_position: 47
-sidebar_label: dictionary
-title: "dictionary"
-description: "Displays the dictionary data as a ClickHouse table. Works the same way as the Dictionary engine."
+slug: /sql-reference/table-functions/dictionary
+title: 'dictionary'
 ---
 
 # dictionary Table Function
@@ -59,4 +60,4 @@ Result:
 
 **See Also**
 
-- [Dictionary engine](../../engines/table-engines/special/dictionary.md#dictionary)
+- [Dictionary engine](/engines/table-engines/special/dictionary)
