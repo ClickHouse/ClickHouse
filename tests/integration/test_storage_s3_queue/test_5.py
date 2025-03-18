@@ -403,10 +403,10 @@ def test_filtering_files(started_cluster, mode):
     node2.query("DROP DATABASE IF EXISTS r")
 
     node1.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb4', 'shard1', 'node1')"
+        f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node1')"
     )
     node2.query(
-        "CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/replicateddb4', 'shard1', 'node2')"
+        f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node2')"
     )
 
     create_table(
@@ -499,9 +499,9 @@ def test_filtering_files(started_cluster, mode):
 def test_failed_commit(started_cluster):
     node = started_cluster.instances["instance"]
 
-    table_name = f"test_failed_commit"
+    table_name = f"test_failed_commit_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
-    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
     files_to_generate = 1
 
