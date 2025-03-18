@@ -92,7 +92,7 @@ void QueryOracle::generateCorrectnessTestFirstQuery(RandomGenerator & rg, Statem
     gen.enforceFinal(false);
     gen.setAllowEngineUDF(true);
 
-    ts->set_format(rg.pickRandomly(out_in));
+    ts->set_format(OutFormat::OUT_CSV);
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
