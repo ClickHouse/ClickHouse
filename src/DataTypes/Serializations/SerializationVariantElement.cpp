@@ -252,6 +252,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     if (variant_limit == 0 || variant_element_state->variant->empty())
     {
         mutable_column->insertManyDefaults(num_new_discriminators);
+        variant_element_state->num_rows_read = result_column->size();
         return;
     }
 

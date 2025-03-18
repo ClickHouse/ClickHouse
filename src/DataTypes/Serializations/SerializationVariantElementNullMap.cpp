@@ -181,6 +181,8 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
         for (size_t i = discriminators_offset; i != discriminators_data.size(); ++i)
             data.push_back(discriminators_data[i] != variant_discriminator);
     }
+
+    variant_element_null_map_state->num_rows_read = result_column->size();
 }
 
 SerializationVariantElementNullMap::VariantNullMapSubcolumnCreator::VariantNullMapSubcolumnCreator(
