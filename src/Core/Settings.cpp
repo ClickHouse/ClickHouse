@@ -218,7 +218,7 @@ The maximum number of threads to parse data in input formats that support parall
     DECLARE(UInt64, max_download_buffer_size, 10*1024*1024, R"(
 The maximal size of buffer for parallel downloading (e.g. for URL engine) per each thread.
 )", 0) \
-    DECLARE(UInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
+    DECLARE(NonZeroUInt64, max_read_buffer_size, DBMS_DEFAULT_BUFFER_SIZE, R"(
 The maximum size of the buffer to read from the filesystem.
 )", 0) \
     DECLARE(UInt64, max_read_buffer_size_local_fs, 128*1024, R"(
