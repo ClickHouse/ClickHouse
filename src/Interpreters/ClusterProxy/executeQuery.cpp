@@ -65,6 +65,7 @@ namespace Setting
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
     extern const SettingsBool use_hedged_requests;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace DistributedSetting
@@ -767,6 +768,8 @@ void executeQueryWithParallelReplicasCustomKey(
         = ClusterProxy::SelectStreamFactory(header, columns_object, snapshot, processed_stage);
 
     auto shard_filter_generator = getShardFilterGeneratorForCustomKey(*query_info.getCluster(), context, columns);
+    if (shard_filter_generator && context->getSettingsRef()[Setting::serialize_query_plan])
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Parallel replicas with custom key are not supported with serialize_query_plan enabled");
 
     ClusterProxy::executeQuery(
         query_plan,
