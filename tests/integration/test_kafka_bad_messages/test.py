@@ -153,12 +153,15 @@ def dead_letter_queue_test(expected_num_messages, topic_name):
     #  but since nothing goes to target MV we don't know when it happens
     instance.query("SYSTEM FLUSH LOGS")
 
-
     attempt = 0
     rows = 0
     while attempt < 500:
         time.sleep(0.1)
-        rows = int(instance.query(f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}'"))
+        rows = int(
+            instance.query(
+                f"SELECT count() FROM system.dead_letter_queue WHERE kafka_topic_name = '{topic_name}'"
+            )
+        )
         if rows == expected_num_messages:
             break
         attempt += 1
@@ -171,6 +174,7 @@ def dead_letter_queue_test(expected_num_messages, topic_name):
 
     # nothing goes to target table
     view_test(0)
+
 
 def bad_messages_parsing_mode(
     kafka_cluster, handle_error_mode, additional_dml, check_method
