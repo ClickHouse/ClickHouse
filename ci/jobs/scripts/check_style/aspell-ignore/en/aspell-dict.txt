@@ -3235,3 +3235,6 @@ Cramer
 Smirnov
 Theils
 Welch
+chdb
+SvelteKit
+Tauri
