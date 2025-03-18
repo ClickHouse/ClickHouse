@@ -363,7 +363,8 @@ void updateGlobalConfiguration(
 #endif // USE_KRB5
     // No need to add any prefix, messages can be distinguished
     kafka_config.set_log_callback(
-        [log = params.log, sink = exception_info_sink_ptr](cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
+        [log = params.log, sink = exception_info_sink_ptr](
+            cppkafka::KafkaHandleBase & handle, int level, const std::string & facility, const std::string & message)
         {
             auto [poco_level, client_logs_level] = parseSyslogLevel(level);
             const auto & kafka_object_config = handle.get_configuration();
@@ -380,7 +381,7 @@ void updateGlobalConfiguration(
             if (client_logs_level <= DB::LogsLevel::error)
             {
                 if (auto sink_shared_ptr = sink.lock())
-                    sink_shared_ptr->setExceptionInfo(message);
+                    sink_shared_ptr->setExceptionInfo(message, /* with_stacktrace = */ true);
             }
         });
 

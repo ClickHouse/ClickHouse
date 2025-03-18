@@ -10,19 +10,19 @@ namespace DB
 class IKafkaExceptionInfoSink
 {
 public:
-    virtual void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace = true)
+    virtual void setExceptionInfo(const cppkafka::Error & err, bool with_stacktrace)
     {
         UNUSED(err);
         UNUSED(with_stacktrace);
     }
 
-    virtual void setExceptionInfo(const std::string & text, bool with_stacktrace = true)
+    virtual void setExceptionInfo(const std::string & text, bool with_stacktrace)
     {
         UNUSED(text);
         UNUSED(with_stacktrace);
     }
 
-    virtual ~IKafkaExceptionInfoSink() {}
+    virtual ~IKafkaExceptionInfoSink() = default;
 };
 
 using IKafkaExceptionInfoSinkPtr = std::shared_ptr<IKafkaExceptionInfoSink>;
