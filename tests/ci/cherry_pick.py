@@ -533,6 +533,8 @@ class Backport:
             query=f"type:pr repo:{self._repo_name} {query_suffix}",
             label=f"{Labels.PR_BACKPORT},{Labels.PR_CHERRYPICK}",
         )
+        if bp_cp_prs:
+            print(f"Found backport and cherry-pick PRs: [{bp_cp_prs}]")
         for br in branches:
             bp_cp_prs = br.pop_prs(bp_cp_prs)
         assert not bp_cp_prs, "BUG!"
