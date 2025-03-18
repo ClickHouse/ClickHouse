@@ -52,7 +52,7 @@ def test_backup_scheduler_settings(
     node.query(
         f"CREATE OR REPLACE RESOURCE network_read (READ DISK {storage_policy}, WRITE DISK {storage_policy})"
     )
-    node.query(f"CREATE OR REPLACE WORKLOAD backup SETTINGS max_requests = 10")
+    node.query(f"CREATE OR REPLACE WORKLOAD backup SETTINGS max_io_requests = 10")
 
     query_id = f"{storage_policy}_{allow_s3_native_copy}_{random_string(10)}"
     node.query(

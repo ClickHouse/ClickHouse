@@ -12,15 +12,67 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void SchedulingSettings::updateFromChanges(const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name)
+bool SchedulingSettings::hasThrottler() const
 {
+    switch (type) {
+        case Type::Io: return max_bytes_per_second != 0;
+        case Type::Cpu: return false;
+    }
+}
+
+Float64 SchedulingSettings::getThrottlerMaxSpeed() const
+{
+    switch (type) {
+        case Type::Io: return max_io_requests;
+        case Type::Cpu: return 0;
+    }
+}
+
+Float64 SchedulingSettings::getThrottlerMaxBurst() const
+{
+    switch (type) {
+        case Type::Io: return max_burst_bytes;
+        case Type::Cpu: return 0;
+    }
+}
+
+bool SchedulingSettings::hasSemaphore() const
+{
+    switch (type) {
+        case Type::Io: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
+        case Type::Cpu: return max_additional_threads != unlimited;
+    }
+}
+
+Int64 SchedulingSettings::getSemaphoreMaxRequests() const
+{
+    switch (type) {
+        case Type::Io: return max_io_requests;
+        case Type::Cpu: return max_additional_threads;
+    }
+}
+
+Int64 SchedulingSettings::getSemaphoreMaxCost() const
+{
+    switch (type) {
+        case Type::Io: return max_bytes_inflight;
+        case Type::Cpu: return unlimited;
+    }
+}
+
+void SchedulingSettings::updateFromChanges(Type type_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name)
+{
+    // Set resource type
+    type = type_;
+
     struct {
         std::optional<Float64> new_weight;
         std::optional<Priority> new_priority;
-        std::optional<Float64> new_max_speed;
-        std::optional<Float64> new_max_burst;
-        std::optional<Int64> new_max_requests;
-        std::optional<Int64> new_max_cost;
+        std::optional<Float64> new_max_bytes_per_second;
+        std::optional<Float64> new_max_burst_bytes;
+        std::optional<Int64> new_max_io_requests;
+        std::optional<Int64> new_max_bytes_inflight;
+        std::optional<Int64> new_max_additional_threads;
 
         static Float64 getNotNegativeFloat64(const String & name, const Field & field)
         {
@@ -71,18 +123,21 @@ void SchedulingSettings::updateFromChanges(const ASTCreateWorkloadQuery::Setting
 
         void read(const String & name, const Field & value)
         {
+            // Note that the second workload setting name options are provided for backward-compatibility
             if (name == "weight")
                 new_weight = getNotNegativeFloat64(name, value);
             else if (name == "priority")
                 new_priority = Priority{value.safeGet<Priority::Value>()};
-            else if (name == "max_speed")
-                new_max_speed = getNotNegativeFloat64(name, value);
-            else if (name == "max_burst")
-                new_max_burst = getNotNegativeFloat64(name, value);
-            else if (name == "max_requests")
-                new_max_requests = getNotNegativeInt64(name, value);
-            else if (name == "max_cost")
-                new_max_cost = getNotNegativeInt64(name, value);
+            else if (name == "max_bytes_per_second" || name == "max_speed")
+                new_max_bytes_per_second = getNotNegativeFloat64(name, value);
+            else if (name == "max_burst_bytes" || name == "max_burst")
+                new_max_burst_bytes = getNotNegativeFloat64(name, value);
+            else if (name == "max_io_requests" || name == "max_requests")
+                new_max_io_requests = getNotNegativeInt64(name, value);
+            else if (name == "max_bytes_inflight" || name == "max_cost")
+                new_max_bytes_inflight = getNotNegativeInt64(name, value);
+            else if (name == "max_additional_threads")
+                new_max_additional_threads = getNotNegativeInt64(name, value);
         }
     } regular, specific;
 
@@ -115,16 +170,16 @@ void SchedulingSettings::updateFromChanges(const ASTCreateWorkloadQuery::Setting
     // Previous values are left intentionally for ALTER query to be able to skip not mentioned setting values
     weight = get_value(specific.new_weight, regular.new_weight, weight);
     priority = get_value(specific.new_priority, regular.new_priority, priority);
-    if (specific.new_max_speed || regular.new_max_speed)
+    if (specific.new_max_bytes_per_second || regular.new_max_bytes_per_second)
     {
-        max_speed = get_value(specific.new_max_speed, regular.new_max_speed, max_speed);
-        // We always set max_burst if max_speed is changed.
-        // This is done for users to be able to ignore more advanced max_burst setting and rely only on max_speed
-        max_burst = default_burst_seconds * max_speed;
+        max_bytes_per_second = get_value(specific.new_max_bytes_per_second, regular.new_max_bytes_per_second, max_bytes_per_second);
+        // We always set max_burst_bytes if max_bytes_per_second is changed.
+        // This is done for users to be able to ignore more advanced max_burst_bytes setting and rely only on max_bytes_per_second
+        max_burst_bytes = default_burst_seconds * max_bytes_per_second;
     }
-    max_burst = get_value(specific.new_max_burst, regular.new_max_burst, max_burst);
-    max_requests = get_value(specific.new_max_requests, regular.new_max_requests, max_requests);
-    max_cost = get_value(specific.new_max_cost, regular.new_max_cost, max_cost);
+    max_burst_bytes = get_value(specific.new_max_burst_bytes, regular.new_max_burst_bytes, max_burst_bytes);
+    max_io_requests = get_value(specific.new_max_io_requests, regular.new_max_io_requests, max_io_requests);
+    max_bytes_inflight = get_value(specific.new_max_bytes_inflight, regular.new_max_bytes_inflight, max_bytes_inflight);
 }
 
 }

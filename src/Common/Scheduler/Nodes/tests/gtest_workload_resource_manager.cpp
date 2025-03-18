@@ -201,7 +201,7 @@ TEST(SchedulerWorkloadResourceManager, Smoke)
     ResourceTest t;
 
     t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
-    t.query("CREATE WORKLOAD all SETTINGS max_requests = 10");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 10");
     t.query("CREATE WORKLOAD A in all");
     t.query("CREATE WORKLOAD B in all SETTINGS weight = 3");
 
@@ -239,7 +239,7 @@ TEST(SchedulerWorkloadResourceManager, Fairness)
     ResourceTest t(2 * threads_per_queue + 1);
 
     t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
-    t.query("CREATE WORKLOAD all SETTINGS max_requests = 1");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
     t.query("CREATE WORKLOAD A IN all");
     t.query("CREATE WORKLOAD B IN all");
     t.query("CREATE WORKLOAD leader IN all");
@@ -286,7 +286,7 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueue)
     ResourceTest t;
 
     t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
-    t.query("CREATE WORKLOAD all SETTINGS max_requests = 1");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
     t.query("CREATE WORKLOAD intermediate IN all");
 
     std::barrier sync_before_enqueue(2);
@@ -321,7 +321,7 @@ TEST(SchedulerWorkloadResourceManager, DropNotEmptyQueueLong)
     ResourceTest t;
 
     t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
-    t.query("CREATE WORKLOAD all SETTINGS max_requests = 1");
+    t.query("CREATE WORKLOAD all SETTINGS max_io_requests = 1");
     t.query("CREATE WORKLOAD intermediate IN all");
 
     static constexpr int queue_size = 100;
@@ -514,7 +514,7 @@ TEST(SchedulerWorkloadResourceManager, CpuSlotsAllocationRoundRobin)
     ResourceTest t;
 
     t.query("CREATE RESOURCE cpu (CPU)");
-    t.query("CREATE WORKLOAD all SETTINGS max_requests = 4");
+    t.query("CREATE WORKLOAD all SETTINGS max_additional_threads = 4");
 
     std::vector<TestQueryPtr> queries;
     for (int query = 0; query < 2; query++)
