@@ -213,12 +213,17 @@ class Result(MetaClasses.Serializable):
         self.set_info(summary_info)
 
         if with_local_run_command and not self.is_ok():
-            command_info = f'For local test: python -m ci.praktika run "{self.name}"'
-            first_failed_test = next(
-                (r.name for r in self.results if not r.is_ok()), None
-            )
+            command_info = f'To test locally: python -m ci.praktika run "{self.name}"'
+            first_failed_test = next((r for r in self.results if not r.is_ok()), None)
+            if (
+                first_failed_test
+                and first_failed_test.name in Settings.SUB_RESULT_NAMES_WITH_TESTS
+            ):
+                first_failed_test = next(
+                    (r for r in first_failed_test.results if not r.is_ok()), None
+                )
             if with_test_in_run_command and first_failed_test:
-                command_info += f" --test {first_failed_test}"
+                command_info += f" --test {first_failed_test.name}"
             self.set_info(command_info)
 
         return self
