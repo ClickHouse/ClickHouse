@@ -110,7 +110,7 @@ struct Quantize16BitImpl
     }
 };
 
-struct Quantize8BitImpl
+struct QuantizeSFP8BitImpl
 {
     static uint32_t float32ToFloat8(float input_f)
     {
@@ -159,6 +159,72 @@ struct Quantize8BitImpl
         for (size_t i = 0; i < size; ++i)
         {
             output[i] = static_cast<uint8_t>(float32ToFloat8(static_cast<float>(input[i])) & 0xFF);
+        }
+    }
+};
+
+struct QuantizeMini8BitImpl
+{
+    static uint8_t float32ToMinifloat8(float f)
+    {
+        // Handle special cases
+        if (f == 0.0f)
+            return (std::signbit(f) ? 0x80 : 0x00); // Signed zero
+
+        if (std::isnan(f))
+            return 0xF1; // A sample NaN value (exponent 15, non-zero mantissa)
+
+        if (std::isinf(f))
+            return (f < 0) ? 0xF8 : 0x78; // Signed infinity
+
+        // Get the absolute value and sign bit
+        bool sign = (f < 0);
+        float abs_f = std::fabs(f);
+
+        // Determine exponent and normalized mantissa
+        int exp = static_cast<int>(std::floor(std::log2(abs_f))); // Explicit cast here
+        float normalized = abs_f / std::pow(2.0f, static_cast<float>(exp)); // Explicit cast
+
+        // Adjust for exponent bias and range
+        exp += 7; // Bias is 7
+
+        // Handle subnormal numbers
+        if (exp <= 0)
+        {
+            // Subnormal representation (exponent field is 0)
+            // Scale mantissa to 2^(-6) range (smallest normalized exponent is -6)
+            float mantissa = abs_f / std::pow(2.0f, -6.0f);
+            uint8_t frac = static_cast<uint8_t>(std::round(mantissa * 8.0f)) & 0x7;
+            return (sign ? 0x80 : 0x00) | frac;
+        }
+
+        // Handle exponent overflow
+        if (exp >= 15)
+        {
+            return (sign ? 0xF8 : 0x78); // Infinity
+        }
+
+        // Calculate mantissa bits (3 bits)
+        float mantissa_val = (normalized - 1.0f) * 8.0f;
+        uint8_t mantissa = static_cast<uint8_t>(std::round(mantissa_val)) & 0x7;
+
+        // Combine components
+        return (sign ? 0x80 : 0x00) | ((static_cast<uint8_t>(exp) & 0xF) << 3) | mantissa;
+    }
+
+    static void execute(const Float32 * input, UInt8 * output, size_t size)
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            output[i] = float32ToMinifloat8(input[i]);
+        }
+    }
+
+    static void execute(const Float64 * input, UInt8 * output, size_t size)
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            output[i] = float32ToMinifloat8(static_cast<float>(input[i]));
         }
     }
 };
@@ -296,9 +362,16 @@ struct Quantize16BitTraits
     static constexpr size_t divider = 1;
 };
 
-struct Quantize8BitTraits
+struct QuantizeSFP8BitTraits
 {
-    static constexpr const char * name = "quantize8Bit";
+    static constexpr const char * name = "quantizeSFP8Bit";
+    static constexpr size_t multiplier = 1;
+    static constexpr size_t divider = 1;
+};
+
+struct QuantizeMini8BitTraits
+{
+    static constexpr const char* name = "quantizeMini8Bit";
     static constexpr size_t multiplier = 1;
     static constexpr size_t divider = 1;
 };
@@ -318,7 +391,8 @@ struct Quantize1BitTraits
 };
 
 using FunctionQuantize16Bit = FunctionQuantizeBase<Quantize16BitTraits, Quantize16BitImpl>;
-using FunctionQuantize8Bit = FunctionQuantizeBase<Quantize8BitTraits, Quantize8BitImpl>;
+using FunctionQuantizeSFP8Bit = FunctionQuantizeBase<QuantizeSFP8BitTraits, QuantizeSFP8BitImpl>;
+using FunctionQuantizeMini8Bit = FunctionQuantizeBase<QuantizeMini8BitTraits, QuantizeMini8BitImpl>;
 using FunctionQuantize4Bit = FunctionQuantizeBase<Quantize4BitTraits, Quantize4BitImpl>;
 using FunctionQuantize1Bit = FunctionQuantizeBase<Quantize1BitTraits, Quantize1BitImpl>;
 
@@ -327,9 +401,14 @@ REGISTER_FUNCTION(Quantize16Bit)
     factory.registerFunction<FunctionQuantize16Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
 }
 
-REGISTER_FUNCTION(Quantize8Bit)
+REGISTER_FUNCTION(QuantizeSFP8Bit)
 {
-    factory.registerFunction<FunctionQuantize8Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
+    factory.registerFunction<FunctionQuantizeSFP8Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
+}
+
+REGISTER_FUNCTION(QuantizeMini8Bit)
+{
+    factory.registerFunction<FunctionQuantizeMini8Bit>(FunctionDocumentation{.description = R"(Quantize function.)"});
 }
 
 REGISTER_FUNCTION(Quantize4Bit)

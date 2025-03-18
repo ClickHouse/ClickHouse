@@ -14,16 +14,17 @@ struct L2Accumulate16Bit
     }
 };
 
+template <typename Lookup>
 struct L2Accumulate8Bit
 {
-    static constexpr std::array<float, 256 * 256> distance_lookup alignas(64) = []() constexpr
+    static inline std::array<float, 256 * 256> distance_lookup alignas(64) = []()
     {
         std::array<float, 256 * 256> table{};
         for (size_t i = 0; i < 256; ++i)
         {
             for (size_t j = 0; j < 256; ++j)
             {
-                float diff = Lookup8Bit::dequantize_lookup[i] - Lookup8Bit::dequantize_lookup[j];
+                float diff = Lookup::dequantize_lookup[i] - Lookup::dequantize_lookup[j];
                 table[i * 256 + j] = diff * diff;
             }
         }
@@ -135,27 +136,28 @@ struct CosineProduct16Bit
     static inline float product(UInt16 x) { return square_lookup[x]; }
 };
 
+template <typename Lookup>
 struct CosineProduct8Bit
 {
-    static constexpr std::array<float, 256 * 256> product_lookup alignas(64) = []() constexpr
+    static inline std::array<float, 256 * 256> product_lookup alignas(64) = []()
     {
         std::array<float, 256 * 256> table{};
         for (size_t i = 0; i < 256; ++i)
         {
             for (size_t j = 0; j < 256; ++j)
             {
-                table[i * 256 + j] = Lookup8Bit::dequantize_lookup[i] * Lookup8Bit::dequantize_lookup[j];
+                table[i * 256 + j] = Lookup::dequantize_lookup[i] * Lookup::dequantize_lookup[j];
             }
         }
         return table;
     }();
 
-    static constexpr std::array<float, 256> square_lookup alignas(64) = []() constexpr
+    static inline std::array<float, 256> square_lookup alignas(64) = []()
     {
         std::array<float, 256> table{};
         for (size_t i = 0; i < 256; ++i)
         {
-            float val = Lookup8Bit::dequantize_lookup[i];
+            float val = Lookup::dequantize_lookup[i];
             table[i] = val * val;
         }
         return table;
@@ -283,10 +285,17 @@ REGISTER_FUNCTION(Quantized16BitL2Distance)
         FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
 }
 
-REGISTER_FUNCTION(Quantized8BitL2Distance)
+REGISTER_FUNCTION(QuantizedSFP8BitL2Distance)
 {
-    static constexpr char name[] = "quantized8BitL2Distance";
-    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate8Bit>, name>>(
+    static constexpr char name[] = "quantizedSFP8BitL2Distance";
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate8Bit<LookupSFP8Bit>>, name>>(
+        FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
+}
+
+REGISTER_FUNCTION(QuantizedMini8BitL2Distance)
+{
+    static constexpr char name[] = "quantizedMini8BitL2Distance";
+    factory.registerFunction<FunctionQuantizedDistance<L2DistanceGeneric<UInt8, L2Accumulate8Bit<LookupMini8Bit>>, name>>(
         FunctionDocumentation{.description = R"(Quantized L2 distance function.)"});
 }
 
@@ -311,10 +320,17 @@ REGISTER_FUNCTION(Quantized16BitCosineDistance)
         FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
 }
 
-REGISTER_FUNCTION(Quantized8BitCosineDistance)
+REGISTER_FUNCTION(QuantizedSFP8BitCosineDistance)
 {
-    static constexpr char name[] = "quantized8BitCosineDistance";
-    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct8Bit>, name>>(
+    static constexpr char name[] = "quantizedSFP8BitCosineDistance";
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct8Bit<LookupSFP8Bit>>, name>>(
+        FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
+}
+
+REGISTER_FUNCTION(QuantizedMini8BitCosineDistance)
+{
+    static constexpr char name[] = "quantizedMini8BitCosineDistance";
+    factory.registerFunction<FunctionQuantizedDistance<CosineDistanceGeneric<UInt8, CosineProduct8Bit<LookupMini8Bit>>, name>>(
         FunctionDocumentation{.description = R"(Quantized cosine distance function.)"});
 }
 

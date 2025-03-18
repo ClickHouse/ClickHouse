@@ -42,6 +42,23 @@ public:
 
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionQuantizeBase>(); }
 
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, expected 1",
+                getName(),
+                arguments.size());
+        const DataTypeArray * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+        if (!array_type)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must be an array", getName());
+        const auto * nested_type = array_type->getNestedType().get();
+        if (!isFloat(nested_type->getTypeId()))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Array elements must be Float32 or Float64");
+        return std::make_shared<DataTypeFixedString>(1);
+    }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         if (arguments.size() != 1)
@@ -52,7 +69,13 @@ public:
                 arguments.size());
 
         if (arguments[0].column == nullptr)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column can't be nullptr");
+        {
+            DataTypes data_types(arguments.size());
+            for (size_t i = 0; i < arguments.size(); ++i)
+                data_types[i] = arguments[i].type;
+
+            return getReturnTypeImpl(data_types);
+        }
 
         const ColumnArray * col_array = nullptr;
         if (const auto * col_const = checkAndGetColumnConst<ColumnArray>(arguments[0].column.get()))

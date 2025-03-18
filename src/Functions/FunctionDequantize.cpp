@@ -16,13 +16,24 @@ struct Dequantize16BitImpl
     }
 };
 
-struct Dequantize8BitImpl
+struct DequantizeSFP8BitImpl
 {
     static void execute(const UInt8 * input, float * output, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
         {
-            output[i] = Lookup8Bit::dequantize_lookup[input[i]];
+            output[i] = LookupSFP8Bit::dequantize_lookup[input[i]];
+        }
+    }
+};
+
+struct DequantizeMini8BitImpl
+{
+    static void execute(const UInt8 * input, float * output, size_t size)
+    {
+        for (size_t i = 0; i < size; ++i)
+        {
+            output[i] = LookupMini8Bit::dequantize_lookup[input[i]];
         }
     }
 };
@@ -70,9 +81,16 @@ struct Dequantize16BitTraits
     static constexpr size_t divisor = 2;
 };
 
-struct Dequantize8BitTraits
+struct DequantizeSFP8BitTraits
 {
-    static constexpr const char * name = "dequantize8Bit";
+    static constexpr const char * name = "dequantizeSFP8Bit";
+    static constexpr size_t multiplier = 1;
+    static constexpr size_t divisor = 1;
+};
+
+struct DequantizeMini8BitTraits
+{
+    static constexpr const char * name = "dequantizeMini8Bit";
     static constexpr size_t multiplier = 1;
     static constexpr size_t divisor = 1;
 };
@@ -92,7 +110,8 @@ struct Dequantize1BitTraits
 };
 
 using FunctionDequantize16Bit = FunctionDequantizeBase<Dequantize16BitTraits, Dequantize16BitImpl>;
-using FunctionDequantize8Bit = FunctionDequantizeBase<Dequantize8BitTraits, Dequantize8BitImpl>;
+using FunctionDequantizeSFP8Bit = FunctionDequantizeBase<DequantizeSFP8BitTraits, DequantizeSFP8BitImpl>;
+using FunctionDequantizeMini8Bit = FunctionDequantizeBase<DequantizeMini8BitTraits, DequantizeMini8BitImpl>;
 using FunctionDequantize4Bit = FunctionDequantizeBase<Dequantize4BitTraits, Dequantize4BitImpl>;
 using FunctionDequantize1Bit = FunctionDequantizeBase<Dequantize1BitTraits, Dequantize1BitImpl>;
 
@@ -101,9 +120,14 @@ REGISTER_FUNCTION(Dequantize16Bit)
     factory.registerFunction<FunctionDequantize16Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
 }
 
-REGISTER_FUNCTION(Dequantize8Bit)
+REGISTER_FUNCTION(DequantizeSFP8Bit)
 {
-    factory.registerFunction<FunctionDequantize8Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
+    factory.registerFunction<FunctionDequantizeSFP8Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
+}
+
+REGISTER_FUNCTION(DequantizeMini8Bit)
+{
+    factory.registerFunction<FunctionDequantizeMini8Bit>(FunctionDocumentation{.description = R"(Dequantize function.)"});
 }
 
 REGISTER_FUNCTION(Dequantize4Bit)

@@ -98,13 +98,55 @@ static constexpr float f32FromSfP8(uint32_t sfp)
     return std::bit_cast<float>(binary32);
 }
 
-struct Lookup8Bit
+struct LookupSFP8Bit
 {
     static constexpr std::array<float, 256> dequantize_lookup alignas(64) = []() constexpr
     {
         std::array<float, 256> table{};
         for (size_t i = 0; i < 256; ++i)
             table[i] = f32FromSfP8(static_cast<uint32_t>(i));
+        return table;
+    }();
+};
+
+static float minifloat8ToFloat32(uint8_t val)
+{
+    uint8_t sign = (val >> 7) & 0x1;
+    uint8_t exp = (val >> 3) & 0xF;
+    uint8_t frac = val & 0x7;
+
+    if (exp == 0 && frac == 0)
+        return sign ? -0.0f : 0.0f;
+
+    if (exp == 0xF)
+    {
+        if (frac == 0)
+            return sign ? -std::numeric_limits<float>::infinity() : std::numeric_limits<float>::infinity();
+        else
+            return std::numeric_limits<float>::quiet_NaN();
+    }
+
+    float result;
+
+    if (exp == 0)
+    {
+        result = static_cast<float>(frac) / 8.0f * std::pow(2.0f, -6.0f);
+    }
+    else
+    {
+        result = (1.0f + static_cast<float>(frac) / 8.0f) * std::pow(2.0f, static_cast<float>(exp) - 7.0f);
+    }
+
+    return sign ? -result : result;
+}
+
+struct LookupMini8Bit
+{
+    static inline const std::array<float, 256> dequantize_lookup alignas(64) = []()
+    {
+        std::array<float, 256> table{};
+        for (size_t i = 0; i < 256; ++i)
+            table[i] = minifloat8ToFloat32(static_cast<uint8_t>(i));
         return table;
     }();
 };
