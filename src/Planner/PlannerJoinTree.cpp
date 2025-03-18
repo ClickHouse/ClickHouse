@@ -1282,8 +1282,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
             {
                 /// In case of plan serialization, only storage source column names are required.
                 /// Still, Interpreter up to FetchColumns is created for this (to support distributed over distributed).
-                /// Apparently, FetchColumns returns not the source coulmns, but identifiers (with prefix e.g. __table1.)
-                /// So, here (under the special option) we rename back. Hopefullt this will be removed someday.
+                /// Apparently, FetchColumns returns not the source columns, but identifiers (with prefix e.g. __table1.)
+                /// So, here (under the special option) we rename back. Hopefully this will be removed someday.
                 const auto * column_name = table_expression_data.getColumnNameOrNull(output_node->result_name);
                 if (!column_name)
                     updated_actions_dag_outputs.push_back(output_node);
@@ -1296,7 +1296,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(QueryTreeNodePtr table_expres
                 if (!column_identifier)
                 {
                     /// This is needed only for distributed over distributed case with plan serialization as well.
-                    /// StorageDistributed::read apparently returns column identifiers instread of column names for
+                    /// StorageDistributed::read apparently returns column identifiers instead of column names for
                     /// to_stage == QueryProcessingStage::FetchColumns (unlike other storages, which do not aware about identifiers).
                     /// So, we do not rename but just pass names as is.
                     ///

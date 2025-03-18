@@ -79,6 +79,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_CLUSTER;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace ClusterProxy
