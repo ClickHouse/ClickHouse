@@ -1,8 +1,6 @@
 #include <Processors/Transforms/DistinctTransform.h>
 #include "Interpreters/BloomFilter.h"
 
-
-
 namespace DB
 {
 
@@ -60,7 +58,6 @@ void DistinctTransform::buildFilter(
             /// Emit the record if there is no such key in the current set yet.
             /// Skip it otherwise.
             filter[i] = emplace_result.isInserted();
-
         } else
         {
             filter[i] = true;
