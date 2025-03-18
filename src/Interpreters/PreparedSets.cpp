@@ -198,8 +198,6 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
     if (set_and_key->set->isCreated())
         return nullptr;
 
-    //const auto & settings = context->getSettingsRef();
-
     auto plan = std::move(source);
 
     if (!plan)
@@ -211,8 +209,6 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
         external_table,
         network_transfer_limits,
         prepared_sets_cache);
-        //SizeLimits(settings[Setting::max_rows_to_transfer], settings[Setting::max_bytes_to_transfer], settings[Setting::transfer_overflow_mode]),
-        //context);
     creating_set->setStepDescription("Create set for subquery");
     plan->addStep(std::move(creating_set));
     return plan;
