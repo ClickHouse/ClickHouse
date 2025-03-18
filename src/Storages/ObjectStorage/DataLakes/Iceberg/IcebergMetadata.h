@@ -143,10 +143,7 @@ private:
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
     std::optional<Iceberg::ManifestFileIterator> tryGetManifestFile(const String & filename) const;
-
-    std::string getManifestListBySnapshotId(const Poco::JSON::Object::Ptr & metadata, Int64 snapshot_id) const;
 };
-
 }
 
 #endif
