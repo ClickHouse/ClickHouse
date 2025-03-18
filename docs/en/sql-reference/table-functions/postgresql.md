@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/postgresql
+description: 'Allows `SELECT` and `INSERT` queries to be performed on data that is
+  stored on a remote PostgreSQL server.'
+sidebar_label: 'postgresql'
 sidebar_position: 160
-sidebar_label: postgresql
-title: "postgresql"
-description: "Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server."
+slug: /sql-reference/table-functions/postgresql
+title: 'postgresql'
 ---
 
 # postgresql Table Function
@@ -147,7 +148,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
-- [Using PostgreSQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
+- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#postgresql)
 
 ## Related content {#related-content}
 

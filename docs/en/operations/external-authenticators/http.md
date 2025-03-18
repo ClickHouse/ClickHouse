@@ -1,7 +1,9 @@
 ---
+description: 'Documentation for Http'
 slug: /operations/external-authenticators/http
-title: "HTTP"
+title: 'HTTP'
 ---
+
 import SelfManaged from '@site/docs/_snippets/_self_managed_only_no_roadmap.md';
 
 <SelfManaged />
@@ -25,6 +27,11 @@ To define HTTP authentication server you must add `http_authentication_servers` 
           <max_tries>3</max_tries>
           <retry_initial_backoff_ms>50</retry_initial_backoff_ms>
           <retry_max_backoff_ms>1000</retry_max_backoff_ms>
+          <forward_headers>
+            <name>Custom-Auth-Header-1</name>
+            <name>Custom-Auth-Header-2</name>
+          </forward_headers>
+
         </basic_auth_server>
     </http_authentication_servers>
 </clickhouse>
@@ -45,6 +52,10 @@ Retry parameters:
 - `max_tries` - The maximum number of attempts to make an authentication request. Default: 3
 - `retry_initial_backoff_ms` - The backoff initial interval on retry. Default: 50 ms
 - `retry_max_backoff_ms` - The maximum backoff interval. Default: 1000 ms
+
+Forward headers:
+
+The part defines which headers will be forwarded from client request headers to external HTTP authenticator
 
 ### Enabling HTTP authentication in `users.xml` {#enabling-http-auth-in-users-xml}
 
@@ -74,7 +85,7 @@ Note that HTTP authentication cannot be used alongside with any other authentica
 
 ### Enabling HTTP authentication using SQL {#enabling-http-auth-using-sql}
 
-When [SQL-driven Access Control and Account Management](/guides/sre/user-management/index.md#access-control) is enabled in ClickHouse, users identified by HTTP authentication can also be created using SQL statements.
+When [SQL-driven Access Control and Account Management](/operations/access-rights#access-control-usage) is enabled in ClickHouse, users identified by HTTP authentication can also be created using SQL statements.
 
 ```sql
 CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'Basic'

@@ -56,8 +56,7 @@ public:
     static DataLakeMetadataPtr create(
         const ObjectStoragePtr & object_storage,
         const ConfigurationObserverPtr & configuration,
-        const ContextPtr & local_context,
-        bool allow_experimental_delta_kernel_rs);
+        const ContextPtr & local_context);
 
     size_t getVersion() const { return current_metadata_version; }
 
@@ -104,6 +103,7 @@ private:
     Int32 format_version;
     Int32 current_schema_id;
     std::optional<Iceberg::IcebergSnapshot> current_snapshot;
+    String table_location;
 
     mutable std::optional<Strings> cached_unprunned_files_for_current_snapshot;
 

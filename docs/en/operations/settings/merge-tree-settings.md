@@ -1,7 +1,7 @@
 ---
+description: 'Settings for MergeTree which are in `system.merge_tree_settings`'
 slug: /operations/settings/merge-tree-settings
-title: "MergeTree tables settings"
-description: "Settings for MergeTree which are in `system.merge_tree_settings`"
+title: 'MergeTree tables settings'
 ---
 
 System table `system.merge_tree_settings` shows the globally set MergeTree settings.
@@ -73,7 +73,7 @@ Enables or disables transitioning to control the granule size with the `index_gr
 
 ## use_minimalistic_part_header_in_zookeeper {#use_minimalistic_part_header_in_zookeeper}
 
-Storage method of the data parts headers in ZooKeeper. If enabled, ZooKeeper stores less data. For details, see [here](../server-configuration-parameters/settings.md/#server-settings-use_minimalistic_part_header_in_zookeeper).
+Storage method of the data parts headers in ZooKeeper. If enabled, ZooKeeper stores less data. For details, see [here](/operations/server-configuration-parameters/settings#use_minimalistic_part_header_in_zookeeper).
 
 ## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
@@ -126,13 +126,13 @@ You can set one, both or none of these settings.
 ## max_compress_block_size {#max_compress_block_size}
 
 Maximum size of blocks of uncompressed data before compressing for writing to a table.
-You can also specify this setting in the global settings (see [max_compress_block_size](/operations/settings/settings.md/#max-compress-block-size) setting).
+You can also specify this setting in the global settings (see [max_compress_block_size](/operations/settings/merge-tree-settings#max_compress_block_size) setting).
 The value specified when table is created overrides the global value for this setting.
 
 ## min_compress_block_size {#min_compress_block_size}
 
 Minimum size of blocks of uncompressed data required for compression when writing the next mark.
-You can also specify this setting in the global settings (see [min_compress_block_size](/operations/settings/settings.md/#min-compress-block-size) setting).
+You can also specify this setting in the global settings (see [min_compress_block_size](/operations/settings/merge-tree-settings#min_compress_block_size) setting).
 The value specified when table is created overrides the global value for this setting.
 
 ## max_merge_selecting_sleep_ms {#max_merge_selecting_sleep_ms}
@@ -296,7 +296,7 @@ Possible values:
 
 Default value: 10000.
 
-The [Async Insert](./settings.md#async-insert) command will be cached in one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md), when writing into replicated tables, ClickHouse writes the hash sums of each insert into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window_for_async_inserts` blocks. The oldest hash sums are removed from ClickHouse Keeper.
+The [Async Insert](/operations/settings/settings#async_insert) command will be cached in one or more blocks (parts). For [insert deduplication](../../engines/table-engines/mergetree-family/replication.md), when writing into replicated tables, ClickHouse writes the hash sums of each insert into ClickHouse Keeper. Hash sums are stored only for the most recent `replicated_deduplication_window_for_async_inserts` blocks. The oldest hash sums are removed from ClickHouse Keeper.
 A large number of `replicated_deduplication_window_for_async_inserts` slows down `Async Inserts` because it needs to compare more entries.
 The hash sum is calculated from the composition of the field names and types and the data of the insert (stream of bytes).
 
@@ -560,7 +560,7 @@ Default value: 0.
 
 ## max_replicated_fetches_network_bandwidth {#max_replicated_fetches_network_bandwidth}
 
-Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches. This setting is applied to a particular table, unlike the [max_replicated_fetches_network_bandwidth_for_server](settings.md#max_replicated_fetches_network_bandwidth_for_server) setting, which is applied to the server.
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) fetches. This setting is applied to a particular table, unlike the [max_replicated_fetches_network_bandwidth_for_server](/operations/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth) setting, which is applied to the server.
 
 You can limit both server network and network for a particular table, but for this the value of the table-level setting should be less than server-level one. Otherwise the server considers only the `max_replicated_fetches_network_bandwidth_for_server` setting.
 
@@ -579,7 +579,7 @@ Could be used for throttling speed when replicating data to add or replace new n
 
 ## max_replicated_sends_network_bandwidth {#max_replicated_sends_network_bandwidth}
 
-Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends. This setting is applied to a particular table, unlike the [max_replicated_sends_network_bandwidth_for_server](settings.md#max_replicated_sends_network_bandwidth_for_server) setting, which is applied to the server.
+Limits the maximum speed of data exchange over the network in bytes per second for [replicated](../../engines/table-engines/mergetree-family/replication.md) sends. This setting is applied to a particular table, unlike the [max_replicated_sends_network_bandwidth_for_server](/operations/settings/merge-tree-settings#max_replicated_sends_network_bandwidth) setting, which is applied to the server.
 
 You can limit both server network and network for a particular table, but for this the value of the table-level setting should be less than server-level one. Otherwise the server considers only the `max_replicated_sends_network_bandwidth_for_server` setting.
 
@@ -757,6 +757,15 @@ Default value: 25
 
 The value of the `number_of_free_entries_in_pool_to_execute_optimize_entire_partition` setting should be less than the value of the [background_pool_size](/operations/server-configuration-parameters/settings.md/#background_pool_size) * [background_merges_mutations_concurrency_ratio](/operations/server-configuration-parameters/settings.md/#background_merges_mutations_concurrency_ratio). Otherwise, ClickHouse throws an exception.
 
+## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge {#enable_replacing_merge_with_cleanup_for_min_age_to_force_merge}
+
+Whether to use CLEANUP merges for ReplacingMergeTree when merging partitions down to a single part. Requires `allow_experimental_replacing_merge_with_cleanup`, `min_age_to_force_merge_seconds` and `min_age_to_force_merge_on_partition_only` to be enabled.
+
+Possible values:
+
+- true, false
+
+Default value: false
 
 ## allow_floating_point_partition_key {#allow_floating_point_partition_key}
 
@@ -1205,3 +1214,11 @@ Default: true
 When enabled, unique part identifier will be assigned for every new part. Before enabling, check that all replicas support UUID version 4.
 
 Default: 0.
+
+## allow_experimental_replacing_merge_with_cleanup {#allow_experimental_replacing_merge_with_cleanup}
+
+Allow experimental CLEANUP merges for ReplacingMergeTree with `is_deleted` column. When enabled, allows using `OPTIMIZE ... FINAL CLEANUP` to manually merge all parts in a partition down to a single part and removing any deleted rows.
+
+Also allows enabling such merges to happen automatically in the background with settings `min_age_to_force_merge_seconds`, `min_age_to_force_merge_on_partition_only` and `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`.
+
+Default value: false

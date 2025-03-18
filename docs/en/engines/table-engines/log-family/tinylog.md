@@ -1,7 +1,9 @@
 ---
+description: 'Documentation for TinyLog'
 slug: /engines/table-engines/log-family/tinylog
 toc_priority: 34
-toc_title: TinyLog
+toc_title: 'TinyLog'
+title: 'TinyLog'
 ---
 
 # TinyLog
@@ -31,7 +33,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = TinyLog
 ```
 
-See the detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See the detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 ## Writing the Data {#table_engines-tinylog-writing-the-data}
 

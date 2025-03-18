@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/skewsamp
+description: 'Computes the sample skewness of a sequence.'
 sidebar_position: 186
-title: "skewSamp"
-description: "Computes the sample skewness of a sequence."
+slug: /sql-reference/aggregate-functions/reference/skewsamp
+title: 'skewSamp'
 ---
 
 # skewSamp
@@ -17,7 +17,7 @@ skewSamp(expr)
 
 **Arguments**
 
-`expr` — [Expression](../../../sql-reference/syntax.md#syntax-expressions) returning a number.
+`expr` — [Expression](/sql-reference/syntax#expressions) returning a number.
 
 **Returned value**
 

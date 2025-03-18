@@ -19,7 +19,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/typeid_cast.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 
 
 namespace DB
@@ -759,7 +759,7 @@ namespace
                 for (size_t i = 0; i < size; ++i)
                 {
                     if (which.isEnum() /// The correctness of strings are already checked by casting them to the Enum type.
-                        || applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncast)[i]))
+                        || accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
                         UInt64 key = 0;
                         auto * dst = reinterpret_cast<char *>(&key);
@@ -782,7 +782,7 @@ namespace
                 auto & table = *cache.table_string_to_idx;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncast)[i]))
+                    if (accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
                         StringRef ref = cache.from_column->getDataAt(i);
                         table.insertIfNotPresent(ref, i);
@@ -795,7 +795,7 @@ namespace
                 auto & table = *cache.table_anything_to_idx;
                 for (size_t i = 0; i < size; ++i)
                 {
-                    if (applyVisitor(FieldVisitorAccurateEquals(), (*cache.from_column)[i], (*from_column_uncast)[i]))
+                    if (accurateEquals((*cache.from_column)[i], (*from_column_uncast)[i]))
                     {
                         SipHash hash;
                         cache.from_column->updateHashWithValue(i, hash);

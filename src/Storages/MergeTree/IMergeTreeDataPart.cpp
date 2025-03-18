@@ -19,8 +19,8 @@
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -31,7 +31,7 @@
 #include <base/JSON.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
@@ -204,10 +204,8 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
             hyperrectangle.emplace_back(min_value, true, max_value, true);
         else
         {
-            hyperrectangle[i].left
-                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].left, min_value) ? hyperrectangle[i].left : min_value;
-            hyperrectangle[i].right
-                = applyVisitor(FieldVisitorAccurateLess(), hyperrectangle[i].right, max_value) ? max_value : hyperrectangle[i].right;
+            hyperrectangle[i].left = accurateLess(hyperrectangle[i].left, min_value) ? hyperrectangle[i].left : min_value;
+            hyperrectangle[i].right = accurateLess(hyperrectangle[i].right, max_value) ? max_value : hyperrectangle[i].right;
         }
     }
 
@@ -1698,7 +1696,7 @@ void IMergeTreeDataPart::storeVersionMetadata(bool force) const
     if (!wasInvolvedInTransaction() && !force)
         return;
 
-    LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {}, creation csn {})", name, version.creation_tid, version.removal_tid, version.creation_csn);
+    LOG_TEST(storage.log, "Writing version for {} (creation: {}, removal {}, creation csn {})", name, version.creation_tid, version.removal_tid, version.creation_csn.load());
     assert(storage.supportsTransactions());
 
     writeVersionMetadata(version, (*storage.getSettings())[MergeTreeSetting::fsync_part_directory]);
@@ -1882,7 +1880,7 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
         WriteBufferFromOwnString expected;
         version.write(expected);
         tryLogCurrentException(storage.log, fmt::format("File {} contains:\n{}\nexpected:\n{}\nlock: {}\nname: {}",
-                                                        version_file_name, content, expected.str(), version.removal_tid_lock, name));
+                                                        version_file_name, content, expected.str(), version.removal_tid_lock.load(), name));
         return false;
     }
 }
@@ -2220,7 +2218,7 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
             "state: {}, is_unexpected_local_part: {}, is_frozen: {}, is_duplicate: {}",
             stateString(),
             is_unexpected_local_part,
-            is_frozen,
+            is_frozen.load(),
             is_duplicate,
             is_temp);
 

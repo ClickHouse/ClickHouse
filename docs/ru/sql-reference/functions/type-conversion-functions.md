@@ -25,7 +25,7 @@ sidebar_label: "Функции преобразования типов"
 
 **Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее число или строку с десятичным представление числа. Бинарное, восьмеричное и шестнадцатеричное представление числа не поддержаны. Ведущие нули обрезаются.
+-   `expr` — [выражение](/sql-reference/syntax#expressions) возвращающее число или строку с десятичным представление числа. Бинарное, восьмеричное и шестнадцатеричное представление числа не поддержаны. Ведущие нули обрезаются.
 
 **Возвращаемое значение**
 
@@ -123,7 +123,7 @@ SELECT toInt64OrDefault('123123', cast('-1' as Int64)), toInt8OrDefault('123qwe1
 
 **Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее число или строку с десятичным представление числа. Бинарное, восьмеричное и шестнадцатеричное представление числа не поддержаны. Ведущие нули обрезаются.
+-   `expr` — [выражение](/sql-reference/syntax#expressions) возвращающее число или строку с десятичным представление числа. Бинарное, восьмеричное и шестнадцатеричное представление числа не поддержаны. Ведущие нули обрезаются.
 
 **Возвращаемое значение**
 
@@ -532,7 +532,7 @@ SELECT
 
 **Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
+-   `expr` — [выражение](/sql-reference/syntax#expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
 -   `S` — количество десятичных знаков в результирующем значении.
 
 **Возвращаемое значение**
@@ -585,7 +585,7 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val);
 
 **Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
+-   `expr` — [выражение](/sql-reference/syntax#expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
 -   `S` — количество десятичных знаков в результирующем значении.
 
 **Возвращаемое значение**
@@ -638,7 +638,7 @@ SELECT toDecimal32OrDefault(toString(-1.111), 2) AS val, toTypeName(val);
 
 **Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
+-   `expr` — [выражение](/sql-reference/syntax#expressions), возвращающее значение типа [String](../../sql-reference/functions/type-conversion-functions.md). ClickHouse ожидает текстовое представление десятичного числа. Например, `'1.111'`.
 -   `S` — количество десятичных знаков в результирующем значении.
 
 **Возвращаемое значение**
@@ -1018,7 +1018,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null;
 
 Преобразует входное значение `x` в указанный тип данных `T`.
 
-В отличие от функции [cast(x, T)](#type_conversion_function-cast), `accurateCast` не допускает переполнения при преобразовании числовых типов. Например, `accurateCast(-1, 'UInt8')` вызовет исключение.
+В отличие от функции [cast(x, T)](/sql-reference/functions/type-conversion-functions#cast), `accurateCast` не допускает переполнения при преобразовании числовых типов. Например, `accurateCast(-1, 'UInt8')` вызовет исключение.
 
 **Примеры**
 
@@ -1052,7 +1052,7 @@ Code: 70. DB::Exception: Received from localhost:9000. DB::Exception: Value in c
 
 Преобразует входное значение `x` в указанный тип данных `T`.
 
-Всегда возвращает тип [Nullable](../../sql-reference/data-types/nullable.md). Если исходное значение не может быть преобразовано к целевому типу, возвращает [NULL](../../sql-reference/syntax.md#null-literal).
+Всегда возвращает тип [Nullable](../../sql-reference/data-types/nullable.md). Если исходное значение не может быть преобразовано к целевому типу, возвращает [NULL](/operations/settings/formats#input_format_null_as_default).
 
 **Синтаксис**
 
@@ -1438,7 +1438,7 @@ FORMAT PrettyCompactMonoBlock;
 
 Преобразует входные данные в версию [LowCardinality](../data-types/lowcardinality.md) того же типа данных.
 
-Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](#type_conversion_function-cast). Например, `CAST(x as String)`.
+Чтобы преобразовать данные из типа `LowCardinality`, используйте функцию [CAST](/sql-reference/functions/type-conversion-functions#cast). Например, `CAST(x as String)`.
 
 **Синтаксис**
 
@@ -1448,7 +1448,7 @@ toLowCardinality(expr)
 
 **Аргументы**
 
--   `expr` — [выражение](../syntax.md#syntax-expressions), которое в результате преобразуется в один из [поддерживаемых типов данных](../data-types/index.md#data_types).
+-   `expr` — [выражение](/sql-reference/syntax#expressions), которое в результате преобразуется в один из [поддерживаемых типов данных](/sql-reference/data-types).
 
 **Возвращаемое значение**
 
