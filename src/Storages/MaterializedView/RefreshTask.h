@@ -303,5 +303,4 @@ struct OwnedRefreshTask
     RefreshTask& operator*() const { return *ptr; }
     explicit operator bool() const { return ptr != nullptr; }
 };
-
 }
