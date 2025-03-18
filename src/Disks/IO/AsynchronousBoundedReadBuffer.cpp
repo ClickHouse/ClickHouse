@@ -121,6 +121,19 @@ IAsynchronousReader::Result AsynchronousBoundedReadBuffer::readSync(char * data,
     return reader.execute(request);
 }
 
+size_t AsynchronousBoundedReadBuffer::calculateBufferSizeForNextRead() const
+{
+    size_t read_size = buffer_size;
+    /// Adjust allocated buffer size if there are fewer bytes left to read than the buffer size.
+    if (read_until_position)
+    {
+        const size_t bytes_till_end = *read_until_position > file_offset_of_buffer_end ? *read_until_position - file_offset_of_buffer_end : 0;
+        read_size = std::min(read_size, bytes_till_end);
+    }
+
+    return read_size;
+}
+
 void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
 {
     if (prefetch_future.valid())
@@ -132,7 +145,7 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
     last_prefetch_info.submit_time = std::chrono::system_clock::now();
     last_prefetch_info.priority = priority;
 
-    prefetch_buffer.resize(buffer_size);
+    prefetch_buffer.resize(calculateBufferSizeForNextRead());
     prefetch_future = readAsync(prefetch_buffer.data(), prefetch_buffer.size(), priority);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
@@ -233,7 +246,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     }
     else
     {
-        memory.resize(buffer_size);
+        memory.resize(calculateBufferSizeForNextRead());
 
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
@@ -242,15 +255,6 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
 
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedBytes, result.size);
-    }
-
-    /// Trim buffer if it is much larger than the read result.
-    if (memory.size() > result.size * 1.5)
-    {
-        Memory<> shrunk;
-        shrunk.resize(result.size);
-        memcpy(shrunk.data(), memory.data(), result.size);
-        memory.swap(shrunk);
     }
 
     bytes_to_ignore = 0;
