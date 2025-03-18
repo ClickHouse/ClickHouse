@@ -736,17 +736,20 @@ bool StatementGenerator::joinedTableOrFunction(
             String buf;
             bool first = true;
             uint32_t col_counter = 0;
+            const uint32_t type_mask_backup = this->next_type_mask;
             std::unordered_map<uint32_t, std::unique_ptr<SQLType>> centries;
 
+            this->next_type_mask = fc.type_mask;
             for (uint32_t i = 0; i < ncols; i++)
             {
                 const uint32_t ncame = col_counter++;
-                auto tp = std::unique_ptr<SQLType>(randomNextType(rg, next_type_mask, col_counter, nullptr));
+                auto tp = std::unique_ptr<SQLType>(randomNextType(rg, this->next_type_mask, col_counter, nullptr));
 
-                buf += fmt::format("{}{} {}", first ? "" : ", ", ncame, tp->typeName(true));
+                buf += fmt::format("{}c{} {}", first ? "" : ", ", ncame, tp->typeName(false));
                 first = false;
                 centries[ncame] = std::move(tp);
             }
+            this->next_type_mask = type_mask_backup;
             grf->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
             flatColumnPath(flat_tuple | flat_nested | flat_json | to_table_entries | collect_generated, centries);
             for (const auto & entry : this->table_entries)

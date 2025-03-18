@@ -638,7 +638,7 @@ String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
     const uint32_t type_mask_backup = gen.next_type_mask;
 
     gen.next_type_mask = gen.fc.type_mask & ~(allow_dynamic | allow_nested);
-    SQLType * next = gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr);
+    auto next = std::unique_ptr<SQLType>(gen.randomNextType(rg, gen.next_type_mask, col_counter, nullptr));
     gen.next_type_mask = type_mask_backup;
     String ret = next->appendRandomRawValue(rg, gen);
 
@@ -647,7 +647,6 @@ String DynamicType::appendRandomRawValue(RandomGenerator & rg, StatementGenerato
         ret += "::";
         ret += next->typeName(false);
     }
-    delete next;
     return ret;
 }
 

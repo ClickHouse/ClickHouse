@@ -2005,7 +2005,6 @@ CONV_FN(GenerateRandomFunc, grfunc)
 {
     ret += "generateRandom(";
     ExprToString(ret, grfunc.structure());
-    ret += "'";
     if (grfunc.has_random_seed())
     {
         ret += ", ";
