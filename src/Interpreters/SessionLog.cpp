@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
 #include <Core/Protocol.h>
 #include <DataTypes/DataTypeArray.h>
