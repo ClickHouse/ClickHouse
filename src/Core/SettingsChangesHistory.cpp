@@ -68,11 +68,14 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.3",
         {
+            {"allow_experimental_database_unity_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"},
+            {"allow_experimental_database_glue_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"},
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
             {"use_query_condition_cache", false, false, "New setting."},
             {"enable_json_type", false, true, "Enable JSON type by default"},
             {"enable_variant_type", false, true, "Enable JSON type by default"},
             {"enable_dynamic_type", false, true, "Enable JSON type by default"},
+            {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {

@@ -4,7 +4,6 @@
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/queryToString.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Common/NamedCollections/NamedCollections.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -79,7 +78,7 @@ std::pair<String, Field> getKeyValueFromAST(ASTPtr ast, ContextPtr context)
     auto res = getKeyValueFromASTImpl(ast, true, context);
 
     if (!res || !std::holds_alternative<Field>(res->second))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to get key value from ast '{}'", queryToString(ast));
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to get key value from ast '{}'", ast->formatForErrorMessage());
 
     return {res->first, std::get<Field>(res->second)};
 }

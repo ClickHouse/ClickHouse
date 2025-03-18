@@ -1,9 +1,11 @@
 ---
-slug: /sql-reference/data-types/newjson
+description: 'Documentation for the JSON data type in ClickHouse, which provides native
+  support for working with JSON data'
+keywords: ['json', 'data type']
+sidebar_label: 'JSON'
 sidebar_position: 63
-sidebar_label: JSON
-keywords: [json, data type]
-title: "JSON Data Type"
+slug: /sql-reference/data-types/newjson
+title: 'JSON Data Type'
 ---
 
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.

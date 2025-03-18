@@ -15,11 +15,17 @@ class _Settings:
     WORKFLOWS_DIRECTORY: str = f"{CI_PATH}/workflows"
     SETTINGS_DIRECTORY: str = f"{CI_PATH}/settings"
     CI_CONFIG_JOB_NAME = "Config Workflow"
-    DOCKER_BUILD_JOB_NAME = "Docker Builds"
+
+    # Enables a single job (DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME) for building all platforms and merge
+    ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB = False
+    DOCKER_BUILD_ARM_LINUX_JOB_NAME = "Dockers Build (arm)"
+    DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME = "Dockers Build (amd) and Merge"
+    DOCKER_BUILD_AND_MERGE_RUNS_ON: Optional[List[str]] = None
+    DOCKER_BUILD_ARM_RUNS_ON: Optional[List[str]] = None
+
     FINISH_WORKFLOW_JOB_NAME = "Finish Workflow"
     READY_FOR_MERGE_CUSTOM_STATUS_NAME = ""
     CI_CONFIG_RUNS_ON: Optional[List[str]] = None
-    DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
     DISABLED_WORKFLOWS: Optional[List[str]] = None
     ENABLED_WORKFLOWS: Optional[List[str]] = None
@@ -98,8 +104,6 @@ class _Settings:
         "Tests",
     ]
 
-    DISABLE_MERGE_COMMIT = True
-
 
 _USER_DEFINED_SETTINGS = [
     "S3_ARTIFACT_PATH",
@@ -111,7 +115,9 @@ _USER_DEFINED_SETTINGS = [
     "OUTPUT_DIR",
     "INPUT_DIR",
     "CI_CONFIG_RUNS_ON",
-    "DOCKER_BUILD_RUNS_ON",
+    "DOCKER_BUILD_AND_MERGE_RUNS_ON",
+    "DOCKER_BUILD_ARM_RUNS_ON",
+    "ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB",
     "CI_CONFIG_JOB_NAME",
     "PYTHON_INTERPRETER",
     "PYTHON_VERSION",
@@ -135,7 +141,6 @@ _USER_DEFINED_SETTINGS = [
     "SECRET_GH_APP_ID",
     "SECRET_GH_APP_PEM_KEY",
     "MAIN_BRANCH",
-    "DISABLE_MERGE_COMMIT",
     "DISABLED_WORKFLOWS",
     "ENABLED_WORKFLOWS",
     "PYTHONPATHS",
