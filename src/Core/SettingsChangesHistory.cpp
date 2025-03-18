@@ -70,6 +70,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
             {"use_query_condition_cache", false, false, "New setting."},
+            {"enable_json_type", false, true, "Enable JSON type by default"},
+            {"enable_variant_type", false, true, "Enable JSON type by default"},
+            {"enable_dynamic_type", false, true, "Enable JSON type by default"},
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
