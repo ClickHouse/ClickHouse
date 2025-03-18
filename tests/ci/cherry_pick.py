@@ -159,7 +159,7 @@ close it.
             self.cherrypick_pr.merge()
             # The PR needs update, since PR.merge doesn't update the object
             self.cherrypick_pr.update()
-        if self.cherrypick_pr.merged:
+        if self.cherrypick_pr.merged and not self.backport_pr:
             if dry_run:
                 logging.info(
                     "DRY RUN: Would create backport PR for #%s", self.pr.number
