@@ -109,7 +109,7 @@ void TerminalKeystrokeInterceptor::run(TerminalKeystrokeInterceptor::CallbackMap
         {
             runImpl(map);
         }
-        catch(...)
+        catch (...)
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
