@@ -741,7 +741,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         std::move(read_buffer_creator),
         storage_objects,
         read_settings,
-        global_context->getFilesystemCacheLog(),
         use_external_buffer_for_gather,
         /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
 

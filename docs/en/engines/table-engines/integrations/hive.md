@@ -116,7 +116,7 @@ Time taken: 36.025 seconds
 
 hive > select * from test.test_orc;
 OK
-1	2	3	4	5	6.11	7.22	8	2021-11-05 12:38:16.314	2021-11-05	hello world	hello world	hello world                                                                                         	true	hello world	[1,2,3]	["hello world","hello world"]	[1.1,1.2]	[[1,2],[3,4]]	[["a","b"],["c","d"]]	[[1.11,2.22],[3.33,4.44]]	2021-09-18
+1    2    3    4    5    6.11    7.22    8    2021-11-05 12:38:16.314    2021-11-05    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
 Time taken: 0.295 seconds, Fetched: 1 row(s)
 ```
 
@@ -239,7 +239,7 @@ Time taken: 36.025 seconds
 
 hive > select * from test.test_parquet;
 OK
-1	2	3	4	5	6.11	7.22	8	2021-12-14 17:54:56.743	2021-12-14	hello world	hello world	hello world                                                                                         	true	hello world	[1,2,3]	["hello world","hello world"]	[1.1,1.2]	[[1,2],[3,4]]	[["a","b"],["c","d"]]	[[1.11,2.22],[3.33,4.44]]	2021-09-18
+1    2    3    4    5    6.11    7.22    8    2021-12-14 17:54:56.743    2021-12-14    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
 Time taken: 0.766 seconds, Fetched: 1 row(s)
 ```
 
@@ -362,7 +362,7 @@ Time taken: 36.025 seconds
 
 hive > select * from test.test_text;
 OK
-1	2	3	4	5	6.11	7.22	8	2021-12-14 18:11:17.239	2021-12-14	hello world	hello world	hello world                                                                                         	true	hello world	[1,2,3]	["hello world","hello world"]	[1.1,1.2]	[[1,2],[3,4]]	[["a","b"],["c","d"]]	[[1.11,2.22],[3.33,4.44]]	2021-09-18
+1    2    3    4    5    6.11    7.22    8    2021-12-14 18:11:17.239    2021-12-14    hello world    hello world    hello world                                                                                             true    hello world    [1,2,3]    ["hello world","hello world"]    [1.1,1.2]    [[1,2],[3,4]]    [["a","b"],["c","d"]]    [[1.11,2.22],[3.33,4.44]]    2021-09-18
 Time taken: 0.624 seconds, Fetched: 1 row(s)
 ```
 
