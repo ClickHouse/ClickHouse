@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/type-conversion-functions
+description: 'Documentation for Type Conversion Functions'
+sidebar_label: 'Type Conversion'
 sidebar_position: 185
-sidebar_label: Type Conversion
+slug: /sql-reference/functions/type-conversion-functions
+title: 'Type Conversion Functions'
 ---
 
 # Type Conversion Functions
@@ -3494,7 +3496,7 @@ toFloat64OrDefault('abc', CAST('0', 'Float64')): 0
 
 ## toBFloat16 {#tobfloat16}
 
-Converts an input value to a value of type [`BFloat16`](../data-types/float.md/#bfloat16). 
+Converts an input value to a value of type [`BFloat16`](/sql-reference/data-types/float#bfloat16). 
 Throws an exception in case of an error.
 
 **Syntax**
@@ -3515,7 +3517,7 @@ Supported arguments:
 
 **Returned value**
 
-- 16-bit brain-float value. [BFloat16](../data-types/float.md/#bfloat16).
+- 16-bit brain-float value. [BFloat16](/sql-reference/data-types/float#bfloat16).
 
 **Example**
 
@@ -3540,7 +3542,7 @@ SELECT toBFloat16('42.7');
 
 ## toBFloat16OrZero {#tobfloat16orzero}
 
-Converts a String input value to a value of type [`BFloat16`](../data-types/float.md/#bfloat16).
+Converts a String input value to a value of type [`BFloat16`](/sql-reference/data-types/float#bfloat16).
 If the string does not represent a floating point value, the function returns zero.
 
 **Syntax**
@@ -3564,7 +3566,7 @@ Unsupported arguments (return `0`):
 
 **Returned value**
 
-- 16-bit brain-float value, otherwise `0`. [BFloat16](../data-types/float.md/#bfloat16).
+- 16-bit brain-float value, otherwise `0`. [BFloat16](/sql-reference/data-types/float#bfloat16).
 
 :::note
 The function allows a silent loss of precision while converting from the string representation.
@@ -3593,7 +3595,7 @@ SELECT toBFloat16OrZero('12.3456789');
 
 ## toBFloat16OrNull {#tobfloat16ornull}
 
-Converts a String input value to a value of type [`BFloat16`](../data-types/float.md/#bfloat16) 
+Converts a String input value to a value of type [`BFloat16`](/sql-reference/data-types/float#bfloat16) 
 but if the string does not represent a floating point value, the function returns `NULL`.
 
 **Syntax**
@@ -3617,7 +3619,7 @@ Unsupported arguments (return `NULL`):
 
 **Returned value**
 
-- 16-bit brain-float value, otherwise `NULL` (`\N`). [BFloat16](../data-types/float.md/#bfloat16).
+- 16-bit brain-float value, otherwise `NULL` (`\N`). [BFloat16](/sql-reference/data-types/float#bfloat16).
 
 :::note
 The function allows a silent loss of precision while converting from the string representation.
@@ -7723,13 +7725,13 @@ Result:
 ```response
 ┌─formatRow('CustomSeparated', number, 'good')─┐
 │ <prefix>
-0	good
+0    good
 <suffix>                   │
 │ <prefix>
-1	good
+1    good
 <suffix>                   │
 │ <prefix>
-2	good
+2    good
 <suffix>                   │
 └──────────────────────────────────────────────┘
 ```

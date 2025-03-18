@@ -65,7 +65,7 @@ KafkaSource::~KafkaSource()
         return;
 
     if (broken)
-        consumer->unsubscribe();
+        consumer->markDirty();
 
     storage.pushConsumer(consumer);
 }

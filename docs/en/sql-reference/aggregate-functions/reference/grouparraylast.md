@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparraylast
+description: 'Creates an array of the last argument values.'
 sidebar_position: 142
-title: "groupArrayLast"
-description: "Creates an array of the last argument values."
+slug: /sql-reference/aggregate-functions/reference/grouparraylast
+title: 'groupArrayLast'
 ---
 
 # groupArrayLast

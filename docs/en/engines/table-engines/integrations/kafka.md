@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/integrations/kafka
+description: 'The Kafka engine works with Apache Kafka and lets you publish or subscribe
+  to data flows, organize fault-tolerant storage, and process streams as they become
+  available.'
+sidebar_label: 'Kafka'
 sidebar_position: 110
-sidebar_label: Kafka
-title: "Kafka"
-description: "The Kafka engine works with Apache Kafka and lets you publish or subscribe to data flows, organize fault-tolerant storage, and process streams as they become available."
+slug: /engines/table-engines/integrations/kafka
+title: 'Kafka'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -228,12 +230,12 @@ ClickHouse is able to maintain Kerberos credentials using a keytab file. Conside
 Example:
 
 ``` xml
-  <!-- Kerberos-aware Kafka -->
-  <kafka>
-    <security_protocol>SASL_PLAINTEXT</security_protocol>
-	<sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
-	<sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
-  </kafka>
+<!-- Kerberos-aware Kafka -->
+<kafka>
+  <security_protocol>SASL_PLAINTEXT</security_protocol>
+  <sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+  <sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+</kafka>
 ```
 
 ## Virtual Columns {#virtual-columns}

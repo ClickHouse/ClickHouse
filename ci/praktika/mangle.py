@@ -49,8 +49,11 @@ def _get_workflows(
                     continue
             if file and str(file) not in str(py_file):
                 continue
-        else:
-            name = Settings.DEFAULT_LOCAL_TEST_WORKFLOW
+        elif py_file.name != Settings.DEFAULT_LOCAL_TEST_WORKFLOW:
+            print(
+                f"--workflow is not set. Default workflow is [{Settings.DEFAULT_LOCAL_TEST_WORKFLOW}]. Skip [{py_file.name}]"
+            )
+            continue
         module_name = py_file.name.removeprefix(".py")
         spec = importlib.util.spec_from_file_location(
             module_name, f"{Settings.WORKFLOWS_DIRECTORY}/{module_name}"
@@ -106,23 +109,46 @@ def _update_workflow_artifacts(workflow):
 
 
 def _update_workflow_with_native_jobs(workflow):
-    if workflow.dockers:
-        from .native_jobs import _docker_build_job
+    if workflow.dockers and not workflow.disable_dockers_build:
+        from .native_jobs import _docker_build_arm_linux_job, _docker_build_job
 
-        print(f"Enable native job [{_docker_build_job.name}] for [{workflow.name}]")
+        workflow.jobs = [copy.deepcopy(j) for j in workflow.jobs]
+
+        enable_arm_linux = True
+        if Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB:
+            for docker in workflow.dockers:
+                if docker.has_arm_linux():
+                    enable_arm_linux = True
+                elif docker.has_amd_linux() or not docker.platforms:
+                    continue
+                else:
+                    Utils.raise_with_error(
+                        f"Unsupported docker platform [{docker.platforms}]"
+                    )
+
         aux_job = copy.deepcopy(_docker_build_job)
+        print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
         if workflow.enable_cache:
             print(f"Add automatic digest config for [{aux_job.name}] job")
             docker_digest_config = Job.CacheDigestConfig()
             for docker_config in workflow.dockers:
                 docker_digest_config.include_paths.append(docker_config.path)
             aux_job.digest_config = docker_digest_config
-
         workflow.jobs.insert(0, aux_job)
         for job in workflow.jobs[1:]:
-            if not job.requires:
-                job.requires = []
             job.requires.append(aux_job.name)
+
+        if enable_arm_linux:
+            aux_job = copy.deepcopy(_docker_build_arm_linux_job)
+            print(f"Enable praktika job [{aux_job.name}] for [{workflow.name}]")
+            if workflow.enable_cache:
+                print(f"Add automatic digest config for [{aux_job.name}] job")
+                docker_digest_config = Job.CacheDigestConfig()
+                for docker_config in workflow.dockers:
+                    docker_digest_config.include_paths.append(docker_config.path)
+                aux_job.digest_config = docker_digest_config
+            workflow.jobs.insert(0, aux_job)
+            workflow.jobs[1].requires.append(aux_job.name)
 
     if (
         workflow.enable_cache
@@ -135,8 +161,6 @@ def _update_workflow_with_native_jobs(workflow):
         aux_job = copy.deepcopy(_workflow_config_job)
         workflow.jobs.insert(0, aux_job)
         for job in workflow.jobs[1:]:
-            if not job.requires:
-                job.requires = []
             job.requires.append(aux_job.name)
 
     if workflow.enable_merge_ready_status or workflow.post_hooks:
