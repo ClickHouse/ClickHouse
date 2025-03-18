@@ -21,7 +21,6 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
@@ -128,7 +127,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
     }
 
     if (!table)
@@ -177,7 +176,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
                     if (!mut_command)
                         throw Exception(ErrorCodes::LOGICAL_ERROR,
                             "Alter command '{}' is rewritten to invalid command '{}'",
-                            queryToString(*command_ast), queryToString(*rewritten_command_ast));
+                            command_ast->formatForErrorMessage(), rewritten_command_ast->formatForErrorMessage());
                 }
             }
 

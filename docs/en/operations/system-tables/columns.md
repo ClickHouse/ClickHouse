@@ -1,8 +1,8 @@
 ---
-description: "System table containing information about columns in all tables"
-slug: /en/operations/system-tables/columns
-title: "columns"
-keywords: ["system table", "columns"]
+description: 'System table containing information about columns in all tables'
+keywords: ['system table', 'columns']
+slug: /operations/system-tables/columns
+title: 'system.columns'
 ---
 
 Contains information about columns in all tables.

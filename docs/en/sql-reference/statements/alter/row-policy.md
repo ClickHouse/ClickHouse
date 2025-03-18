@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/statements/alter/row-policy
+description: 'Documentation for ALTER ROW POLICY'
+sidebar_label: 'ROW POLICY'
 sidebar_position: 47
-sidebar_label: ROW POLICY
+slug: /sql-reference/statements/alter/row-policy
+title: 'ALTER ROW POLICY'
 ---
 
 # ALTER ROW POLICY

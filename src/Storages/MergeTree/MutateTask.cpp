@@ -9,12 +9,12 @@
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/Statistics/Statistics.h>
 #include <Columns/ColumnsNumber.h>
-#include <Parsers/queryToString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Transforms/TTLTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/DistinctSortedTransform.h>
@@ -972,7 +972,7 @@ void finalizeMutatedPart(
 
     {
         auto out_comp = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, 4096, context->getWriteSettings());
-        DB::writeText(queryToString(codec->getFullCodecDesc()), *out_comp);
+        DB::writeText(codec->getFullCodecDesc()->formatWithSecretsOneLine(), *out_comp);
         written_files.push_back(std::move(out_comp));
     }
 
@@ -1602,8 +1602,13 @@ private:
 
         if (ctx->metadata_snapshot->hasPrimaryKey() || ctx->metadata_snapshot->hasSecondaryIndices())
         {
+            auto indices_expression_dag = ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)->getActionsDAG().clone();
+            auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(builder->getHeader(), indices_expression_dag.getRequiredColumnsNames(), ctx->context);
+            if (!extracting_subcolumns_dag.getNodes().empty())
+                indices_expression_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(indices_expression_dag));
+
             builder->addTransform(std::make_shared<ExpressionTransform>(
-                builder->getHeader(), ctx->data->getPrimaryKeyAndSkipIndicesExpression(ctx->metadata_snapshot, skip_indices)));
+                builder->getHeader(), std::make_shared<ExpressionActions>(std::move(indices_expression_dag))));
 
             builder->addTransform(std::make_shared<MaterializingTransform>(builder->getHeader()));
         }
@@ -2228,6 +2233,8 @@ bool MutateTask::prepare()
     /// Skip using large sets in KeyCondition
     context_for_reading->setSetting("use_index_for_in_with_subqueries_max_values", 100000);
     context_for_reading->setSetting("use_concurrency_control", false);
+    /// disable parallel replicas for mutations
+    context_for_reading->setSetting("enable_parallel_replicas", false);
 
     for (const auto & command : *ctx->commands)
         if (!canSkipMutationCommandForPart(ctx->source_part, command, context_for_reading))

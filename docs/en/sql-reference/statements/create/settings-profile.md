@@ -1,8 +1,9 @@
 ---
-slug: /en/sql-reference/statements/create/settings-profile
+description: 'Documentation for Settings Profile'
+sidebar_label: 'SETTINGS PROFILE'
 sidebar_position: 43
-sidebar_label: SETTINGS PROFILE
-title: "CREATE SETTINGS PROFILE"
+slug: /sql-reference/statements/create/settings-profile
+title: 'CREATE SETTINGS PROFILE'
 ---
 
 Creates [settings profiles](../../../guides/sre/user-management/index.md#settings-profiles-management) that can be assigned to a user or a role.
@@ -19,7 +20,7 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
 `ON CLUSTER` clause allows creating settings profiles on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
 
-## Example
+## Example {#example}
 
 Create a user:
 ```sql

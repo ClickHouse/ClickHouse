@@ -1,7 +1,11 @@
 ---
-slug: /en/engines/table-engines/special/buffer
+description: 'Buffers the data to write in RAM, periodically flushing it to another
+  table. During the read operation, data is read from the buffer and the other table
+  simultaneously.'
+sidebar_label: 'Buffer'
 sidebar_position: 120
-sidebar_label:  Buffer
+slug: /engines/table-engines/special/buffer
+title: 'Buffer Table Engine'
 ---
 
 # Buffer Table Engine
@@ -9,34 +13,34 @@ sidebar_label:  Buffer
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
 :::note
-A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/docs/en/guides/best-practices/asyncinserts.md).
+A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/guides/best-practices/asyncinserts.md).
 :::
 
 ``` sql
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
 ```
 
-### Engine parameters:
+### Engine parameters: {#engine-parameters}
 
-#### database
+#### database {#database}
 
 `database` – Database name. You can use `currentDatabase()` or another constant expression that returns a string.
 
-#### table
+#### table {#table}
 
 `table` – Table to flush data to.
 
-#### num_layers
+#### num_layers {#num_layers}
 
 `num_layers` – Parallelism layer. Physically, the table will be represented as `num_layers` of independent buffers.
 
-#### min_time, max_time, min_rows, max_rows, min_bytes, and max_bytes
+#### min_time, max_time, min_rows, max_rows, min_bytes, and max_bytes {#min_time-max_time-min_rows-max_rows-min_bytes-and-max_bytes}
 
 Conditions for flushing data from the buffer.
 
-### Optional engine parameters:
+### Optional engine parameters: {#optional-engine-parameters}
 
-#### flush_time, flush_rows, and flush_bytes
+#### flush_time, flush_rows, and flush_bytes {#flush_time-flush_rows-and-flush_bytes}
 
 Conditions for flushing data from the buffer in the background (omitted or zero means no `flush*` parameters).
 
@@ -44,15 +48,15 @@ Data is flushed from the buffer and written to the destination table if all the 
 
 Also, if at least one `flush*` condition is met, a flush is initiated in the background. This differs from `max*` since `flush*` allows you to configure background flushes separately to avoid adding latency for `INSERT` queries into Buffer tables.
 
-#### min_time, max_time, and flush_time
+#### min_time, max_time, and flush_time {#min_time-max_time-and-flush_time}
 
 Condition for the time in seconds from the moment of the first write to the buffer.
 
-#### min_rows, max_rows, and flush_rows
+#### min_rows, max_rows, and flush_rows {#min_rows-max_rows-and-flush_rows}
 
 Condition for the number of rows in the buffer.
 
-#### min_bytes, max_bytes, and flush_bytes
+#### min_bytes, max_bytes, and flush_bytes {#min_bytes-max_bytes-and-flush_bytes}
 
 Condition for the number of bytes in the buffer.
 

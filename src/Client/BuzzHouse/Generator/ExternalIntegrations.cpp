@@ -80,12 +80,8 @@ bool ClickHouseIntegratedDatabase::performCreatePeerTable(
 
             newd.set_if_not_exists(true);
             deng->set_engine(t.db->deng);
-            if (t.db->isReplicatedDatabase())
-            {
-                deng->set_zoo_path(t.db->zoo_path_counter);
-            }
             newd.mutable_database()->set_database("d" + std::to_string(t.db->dname));
-
+            t.db->finishDatabaseSpecification(deng);
             CreateDatabaseToString(buf, newd);
             res &= performQuery(buf + ";");
         }
@@ -206,16 +202,17 @@ String MySQLIntegration::truncateStatement()
 
 bool MySQLIntegration::optimizeTableForOracle(const PeerTableDatabase pt, const SQLTable & t)
 {
-    bool success = true;
-
     chassert(t.hasDatabasePeer());
     if (is_clickhouse && t.isMergeTreeFamily())
     {
-        success &= performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
-        success &= performQueryOnServerOrRemote(
+        /// Sometimes the optimize step doesn't have to do anything, then throws error. Ignore it
+        auto u = performQueryOnServerOrRemote(pt, fmt::format("ALTER TABLE {} APPLY DELETED MASK;", getTableName(t.db, t.tname)));
+        auto v = performQueryOnServerOrRemote(
             pt, fmt::format("OPTIMIZE TABLE {}{};", getTableName(t.db, t.tname), t.supportsFinal() ? " FINAL" : ""));
+        UNUSED(u);
+        UNUSED(v);
     }
-    return success;
+    return true;
 }
 
 bool MySQLIntegration::performQuery(const String & query)
@@ -720,7 +717,7 @@ void MongoDBIntegration::documentAppendBottomType(RandomGenerator & rg, const St
     }
     else if ((etp = dynamic_cast<EnumType *>(tp)))
     {
-        const EnumValue & nvalue = rg.pickRandomlyFromVector(etp->values);
+        const EnumValue & nvalue = rg.pickRandomly(etp->values);
 
         if constexpr (is_document<T>)
         {
@@ -932,7 +929,7 @@ void MongoDBIntegration::documentAppendAnyValue(
         }
         else
         {
-            documentAppendAnyValue(rg, cname, document, rg.pickRandomlyFromVector(vtp->subtypes));
+            documentAppendAnyValue(rg, cname, document, rg.pickRandomly(vtp->subtypes));
         }
     }
     else
@@ -1135,13 +1132,23 @@ bool MinIOIntegration::sendRequest(const String & resource)
     return true;
 }
 
+String MinIOIntegration::getConnectionURL()
+{
+    return "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/";
+}
+
 void MinIOIntegration::setEngineDetails(RandomGenerator &, const SQLBase & b, const String & tname, TableEngine * te)
 {
-    te->add_params()->set_svalue(
-        "http://" + sc.hostname + ":" + std::to_string(sc.port) + sc.database + "/file" + tname.substr(1)
-        + (b.isS3QueueEngine() ? "/*" : ""));
+    te->add_params()->set_svalue(getConnectionURL() + "file" + tname.substr(1) + (b.isS3QueueEngine() ? "/*" : ""));
     te->add_params()->set_svalue(sc.user);
     te->add_params()->set_svalue(sc.password);
+}
+
+void MinIOIntegration::setBackupDetails(const String & filename, BackupRestore * br)
+{
+    br->add_out_params(getConnectionURL() + filename);
+    br->add_out_params(sc.user);
+    br->add_out_params(sc.password);
 }
 
 bool MinIOIntegration::performIntegration(
@@ -1295,6 +1302,11 @@ void ExternalIntegrations::dropPeerTableOnRemote(const SQLTable & t)
     }
 }
 
+void ExternalIntegrations::setBackupDetails(const String & filename, BackupRestore * br)
+{
+    minio->setBackupDetails(filename, br);
+}
+
 bool ExternalIntegrations::performQuery(const PeerTableDatabase pt, const String & query)
 {
     switch (pt)
@@ -1329,26 +1341,24 @@ std::filesystem::path ExternalIntegrations::getDatabaseDataDir(const PeerTableDa
     }
 }
 
-bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
-    const PeerTableDatabase pt, uint64_t & query_duration_ms, uint64_t & memory_usage)
+bool ExternalIntegrations::getPerformanceMetricsForLastQuery(const PeerTableDatabase pt, PerformanceResult & res)
 {
     String buf;
+    std::error_code ec;
     const std::filesystem::path out_path = this->getDatabaseDataDir(pt);
-
-    if (std::remove(out_path.generic_string().c_str()) && errno != ENOENT)
+    res.metrics.clear();
+    if (!std::filesystem::remove(out_path, ec) && ec)
     {
-        char buffer[1024];
-
-        strerror_r(errno, buffer, sizeof(buffer));
-        LOG_ERROR(fc.log, "Could not remove file: {}", buffer);
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         return false;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(fc.flush_log_wait_time));
     if (clickhouse->performQueryOnServerOrRemote(
             pt,
             fmt::format(
-                "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64') SELECT query_duration_ms, memory_usage FROM "
-                "system.query_log WHERE used_privileges = [] ORDER BY event_time_microseconds DESC LIMIT 1;",
+                "INSERT INTO TABLE FUNCTION file('{}', 'TabSeparated', 'c0 UInt64, c1 UInt64, c2 UInt64') SELECT query_duration_ms, "
+                "memory_usage, read_bytes FROM system.query_log WHERE log_comment = 'measure_performance' AND type = 'QueryFinish' ORDER "
+                "BY event_time_microseconds DESC LIMIT 1;",
                 out_path.generic_string())))
     {
         std::ifstream infile(out_path);
@@ -1358,10 +1368,14 @@ bool ExternalIntegrations::getPerformanceMetricsForLastQuery(
             {
                 buf.pop_back();
             }
-            const auto tabchar = buf.find('\t');
+            const auto tabchar1 = buf.find('\t');
+            const auto substr = buf.substr(tabchar1 + 1);
+            const auto tabchar2 = substr.find('\t');
 
-            query_duration_ms = static_cast<uint64_t>(std::stoull(buf));
-            memory_usage = static_cast<uint64_t>(std::stoull(buf.substr(tabchar + 1)));
+            res.metrics.insert(
+                {{"query_time", static_cast<uint64_t>(std::stoull(buf))},
+                 {"query_memory", static_cast<uint64_t>(std::stoull(buf.substr(tabchar1 + 1)))},
+                 {"query_bytes_read", static_cast<uint64_t>(std::stoull(substr.substr(tabchar2 + 1)))}});
             return true;
         }
     }
@@ -1382,6 +1396,13 @@ void ExternalIntegrations::replicateSettings(const PeerTableDatabase pt)
 {
     String buf;
     String replaced;
+    std::error_code ec;
+
+    if (!std::filesystem::remove(fc.fuzz_out, ec) && ec)
+    {
+        LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
+        return;
+    }
     if (fc.processServerQuery(fmt::format(
             "SELECT `name`, `value` FROM system.settings WHERE changed = 1 INTO OUTFILE '{}' TRUNCATE FORMAT TabSeparated;",
             fc.fuzz_out.generic_string())))

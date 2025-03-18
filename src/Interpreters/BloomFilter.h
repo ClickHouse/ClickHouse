@@ -52,8 +52,6 @@ public:
     /// For debug.
     UInt64 isEmpty() const;
 
-    size_t memoryUsageBytes() const;
-
     friend bool operator== (const BloomFilter & a, const BloomFilter & b);
 private:
 

@@ -22,7 +22,6 @@
 #    include <Parsers/ASTIdentifier.h>
 #    include <Parsers/ParserCreateQuery.h>
 #    include <Parsers/parseQuery.h>
-#    include <Parsers/queryToString.h>
 #    include <Processors/Executors/PullingPipelineExecutor.h>
 #    include <Processors/Sources/MySQLSource.h>
 #    include <QueryPipeline/QueryPipelineBuilder.h>
@@ -521,7 +520,7 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     const auto & origin_create_query = getCreateTableQuery(table_name, getContext());
     origin_create_query->as<ASTCreateQuery>()->attach = true;
 
-    if (queryToString(origin_create_query) != queryToString(create_query))
+    if (origin_create_query->formatWithSecretsOneLine() != create_query->formatWithSecretsOneLine())
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
                         "The MySQL database engine can only execute attach statements "
                         "of type attach table database_name.table_name");

@@ -1,7 +1,11 @@
 ---
-slug: /en/engines/table-engines/integrations/s3queue
+description: 'This engine provides integration with the Amazon S3 ecosystem and allows
+  streaming imports. Similar to the Kafka and RabbitMQ engines, but provides S3-specific
+  features.'
+sidebar_label: 'S3Queue'
 sidebar_position: 181
-sidebar_label: S3Queue
+slug: /engines/table-engines/integrations/s3queue
+title: 'S3Queue Table Engine'
 ---
 
 import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
@@ -194,12 +198,12 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
 
-## S3 role-based access
+## S3 role-based access {#s3-role-based-access}
 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
 The s3Queue table engine supports role-based access.
-Refer to the documentation [here](/docs/en/cloud/security/secure-s3) for steps to configure a role to access your bucket.
+Refer to the documentation [here](/cloud/security/secure-s3) for steps to configure a role to access your bucket.
 
 Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
 ```sql

@@ -1,7 +1,9 @@
 ---
-slug: /en/development/developer-instruction
+description: 'Prerequisites and setup instructions for ClickHouse development'
+sidebar_label: 'Prerequisites'
 sidebar_position: 5
-sidebar_label: Prerequisites
+slug: /development/developer-instruction
+title: 'Developer Prerequisites'
 ---
 
 # Prerequisites
@@ -9,7 +11,7 @@ sidebar_label: Prerequisites
 ClickHouse can be build on Linux, FreeBSD and macOS.
 If you use Windows, you can still build ClickHouse in a virtual machine running Linux, e.g. [VirtualBox](https://www.virtualbox.org/) with Ubuntu.
 
-## Create a Repository on GitHub
+## Create a Repository on GitHub {#create-a-repository-on-github}
 
 To start developing for ClickHouse you will need a [GitHub](https://www.github.com/) account.
 Please also generate an SSH key locally (if you don't have one already) and upload the public key to GitHub as this is a prerequisite for contributing patches.
@@ -28,7 +30,7 @@ sudo apt install git
 A Git cheatsheet can be found [here](https://education.github.com/git-cheat-sheet-education.pdf).
 A detailed Git manual is [here](https://git-scm.com/book/en/v2).
 
-## Clone the Repository to Your Development Machine
+## Clone the Repository to Your Development Machine {#clone-the-repository-to-your-development-machine}
 
 First, download the source files to your working machine, i.e. clone the repository:
 
@@ -88,42 +90,29 @@ Please do not use verbatim `git push`, you may push to the wrong remote and/or t
 It is better to specify the remote and branch names explicitly, e.g. `git push origin my_branch_name`.
 :::
 
-## Writing Code
+## Writing Code {#writing-code}
 
 Below you can find some quick links which may be useful when writing code for ClickHouse:
 
-- [ClickHouse Architecture](/docs/en/development/architecture/).
-- [Code style guide](/docs/en/development/style/).
-- [Third-party libraries](/docs/en/development/contrib/#adding-third-party-libraries)
-- [Writing tests](/docs/en/development/tests/)
+- [ClickHouse Architecture](/development/architecture/).
+- [Code style guide](/development/style/).
+- [Third-party libraries](/development/contrib#adding-and-maintaining-third-party-libraries)
+- [Writing tests](/development/tests/)
 - [Open issues](https://github.com/ClickHouse/ClickHouse/issues?q=is%3Aopen+is%3Aissue+label%3A%22easy+task%22)
 
-### IDE
+### IDE {#ide}
 
-**CLion (recommended)**
+[Visual Studio Code](https://code.visualstudio.com/) and [Neovim](https://neovim.io/) are two options that have worked well in the past for developing ClickHouse. If you are using VS Code, we recommend using the [clangd extension](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) to replace IntelliSense as it is much more performant.
 
-If you do not know which IDE to use, we recommend that you use [CLion](https://www.jetbrains.com/clion/).
-CLion is commercial software, but it offers a 30 day free trial.
-It is also free of charge for students.
-CLion can be used on both Linux and macOS.
-
-A few things to know when using CLion to develop ClickHouse:
+[CLion](https://www.jetbrains.com/clion/) is another great alternative. However, it can be slower on larger projects like ClickHouse. A few things to keep in mind when using CLion:
 
 - CLion creates a `build` path on its own and automatically selects `debug` for the build type
 - It uses a version of CMake that is defined in CLion and not the one installed by you
 - CLion will use `make` to run build tasks instead of `ninja` (this is normal behavior)
 
-**Alternatives**
+Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Qt Creator](https://www.qt.io/product/development-tools), or [Kate](https://kate-editor.org/).
 
-[KDevelop](https://kdevelop.org/) and [QTCreator](https://www.qt.io/product/development-tools) are other great alternative IDEs for developing ClickHouse.
-While KDevelop is a great IDE, it is sometimes unstable.
-If KDevelop crashes when opening a project, you should click the "Stop All" button as soon as it has opened the list of project's files.
-After doing so, KDevelop should be fine to work with.
-
-Other IDEs you can use are [Sublime Text](https://www.sublimetext.com/), [Visual Studio Code](https://code.visualstudio.com/), or [Kate](https://kate-editor.org/) (all of which are available on Linux).
-If you are using VS Code, we recommend using the [clangd extension](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) to replace IntelliSense as it is much more performant.
-
-## Create A Pull Request
+## Create A Pull Request {#create-a-pull-request}
 
 Navigate to your fork repository in GitHub's UI.
 If you have been developing in a branch, you need to select that branch.
@@ -144,7 +133,7 @@ The system will prepare ClickHouse binary builds for your pull request individua
 To retrieve these builds click the "Details" link next to "Builds" entry in the list of checks.
 There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
 
-## Write Documentation
+## Write Documentation {#write-documentation}
 
 Every pull request which adds a new feature must come with proper documentation.
 If you'd like to preview your documentation changes the instructions for how to build the documentation page locally are available in the README.md file [here](https://github.com/ClickHouse/clickhouse-docs).
@@ -192,7 +181,7 @@ Response:
 \```
 ```
 
-## Using Test Data
+## Using Test Data {#using-test-data}
 
 Developing ClickHouse often requires loading realistic datasets.
 This is particularly important for performance testing.

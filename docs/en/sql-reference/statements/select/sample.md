@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/statements/select/sample
-sidebar_label: SAMPLE
+description: 'Documentation for SAMPLE Clause'
+sidebar_label: 'SAMPLE'
+slug: /sql-reference/statements/select/sample
+title: 'SAMPLE Clause'
 ---
 
 # SAMPLE Clause
@@ -34,7 +36,7 @@ For the `SAMPLE` clause the following syntax is supported:
 | `SAMPLE k OFFSET m`  | Here `k` and `m` are the numbers from 0 to 1. The query is executed on a sample of `k` fraction of the data. The data used for the sample is offset by `m` fraction. [Read more](#sample-k-offset-m)                                           |
 
 
-## SAMPLE K
+## SAMPLE K {#sample-k}
 
 Here `k` is the number from 0 to 1 (both fractional and decimal notations are supported). For example, `SAMPLE 1/2` or `SAMPLE 0.5`.
 
@@ -54,7 +56,7 @@ ORDER BY PageViews DESC LIMIT 1000
 
 In this example, the query is executed on a sample from 0.1 (10%) of data. Values of aggregate functions are not corrected automatically, so to get an approximate result, the value `count()` is manually multiplied by 10.
 
-## SAMPLE N
+## SAMPLE N {#sample-n}
 
 Here `n` is a sufficiently large integer. For example, `SAMPLE 10000000`.
 
@@ -90,7 +92,7 @@ FROM visits
 SAMPLE 10000000
 ```
 
-## SAMPLE K OFFSET M
+## SAMPLE K OFFSET M {#sample-k-offset-m}
 
 Here `k` and `m` are numbers from 0 to 1. Examples are shown below.
 

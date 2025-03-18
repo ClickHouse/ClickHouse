@@ -4,7 +4,6 @@
 #include <Common/SipHash.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -74,7 +73,7 @@ std::string getOrCreateCustomDisk(DiskConfigurationPtr config, const std::string
                 "The disk `{}` is already configured as a custom disk in another table. It can't be redefined with different settings.",
                 disk_name);
 
-    if (!attach && !disk->isRemote())
+    if (!attach && !disk->isRemote() && disk->getName() != "backup")
     {
         static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
         auto disk_path_expected_prefix = context->getConfigRef().getString(custom_local_disks_base_dir_in_config, "");
@@ -114,7 +113,7 @@ public:
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
             const auto & function_args = function_args_expr->children;
             auto config = getDiskConfigurationFromAST(function_args, data.context);
-            auto disk_setting_string = serializeAST(*function);
+            auto disk_setting_string = function->formatWithSecretsOneLine();
             auto disk_name = getOrCreateCustomDisk(config, disk_setting_string, data.context, data.attach);
             ast = std::make_shared<ASTLiteral>(disk_name);
         }

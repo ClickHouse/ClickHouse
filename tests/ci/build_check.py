@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=line-too-long
 
 import argparse
 import logging
@@ -36,6 +37,16 @@ def _can_export_binaries(build_config: CI.BuildConfig) -> bool:
     if build_config.debug_build:
         return True
     return False
+
+
+# Copy of packager.is_release_build()
+def with_performance_artifacts(build_config: CI.BuildConfig) -> bool:
+    return (
+        not build_config.debug_build
+        and build_config.package_type == "deb"
+        and build_config.sanitizer == ""
+        and not build_config.coverage
+    )
 
 
 def get_packager_cmd(
@@ -161,8 +172,9 @@ def main():
     pr_info = PRInfo()
 
     if Shell.get_output("git rev-parse --is-shallow-repository") == "true":
-        print("Unshallow repo")
-        unshallow()
+        thin_unshallow = not with_performance_artifacts(build_config)
+        print(f"Unshallow repo (thin: {thin_unshallow})")
+        unshallow(thin_unshallow)
 
     print("Fetch submodules")
     # TODO: test sparse checkout: update-submodules.sh?
@@ -253,7 +265,9 @@ def main():
         status=build_status,
         start_time=stopwatch.start_time_str,
         duration=elapsed,
-        additional_files=[log_path],
+        additional_files=[
+            str(log_path),
+        ],
         build_dir_for_upload=build_output_path,
         version=version.describe,
     ).dump()

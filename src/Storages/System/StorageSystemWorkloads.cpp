@@ -1,7 +1,6 @@
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context.h>
-#include <Parsers/queryToString.h>
 #include <Storages/System/StorageSystemWorkloads.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
@@ -30,7 +29,7 @@ void StorageSystemWorkloads::fillData(MutableColumns & res_columns, ContextPtr c
         auto & workload = typeid_cast<ASTCreateWorkloadQuery &>(*ast);
         res_columns[0]->insert(workload_name);
         res_columns[1]->insert(workload.getWorkloadParent());
-        res_columns[2]->insert(queryToString(ast));
+        res_columns[2]->insert(ast->formatForLogging());
     }
 }
 

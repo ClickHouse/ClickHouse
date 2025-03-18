@@ -1,7 +1,10 @@
 ---
-slug: /en/sql-reference/data-types/datetime64
+description: 'Documentation for the DateTime64 data type in ClickHouse, which stores
+  timestamps with sub-second precision'
+sidebar_label: 'DateTime64'
 sidebar_position: 18
-sidebar_label: DateTime64
+slug: /sql-reference/data-types/datetime64
+title: 'DateTime64'
 ---
 
 # DateTime64
@@ -23,7 +26,7 @@ Supported range of values: \[1900-01-01 00:00:00, 2299-12-31 23:59:59.99999999\]
 
 Note: The precision of the maximum value is 8. If the maximum precision of 9 digits (nanoseconds) is used, the maximum supported value is `2262-04-11 23:47:16` in UTC.
 
-## Examples
+## Examples {#examples}
 
 1. Creating a table with `DateTime64`-type column and inserting data into it:
 

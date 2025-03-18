@@ -1,6 +1,7 @@
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <Parsers/ASTFunction.h>
@@ -8,9 +9,7 @@
 #include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTProjectionSelectQuery.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 
 #include <Columns/ColumnConst.h>
 #include <Core/Defines.h>
@@ -85,7 +84,7 @@ ProjectionsDescription ProjectionsDescription::clone() const
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name && queryToString(definition_ast) == queryToString(other.definition_ast);
+    return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
 }
 
 ProjectionDescription
@@ -299,7 +298,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
 
     ASTPtr query_ast_copy = nullptr;
     /// Respect the _row_exists column.
-    if (block.findByName("_row_exists"))
+    if (block.has(RowExistsColumn::name))
     {
         query_ast_copy = query_ast->clone();
         auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
@@ -308,7 +307,7 @@ Block ProjectionDescription::calculate(const Block & block, ContextPtr context) 
 
         select_row_exists->setExpression(
             ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("equals", std::make_shared<ASTIdentifier>("_row_exists"), std::make_shared<ASTLiteral>(1)));
+            makeASTFunction("equals", std::make_shared<ASTIdentifier>(RowExistsColumn::name), std::make_shared<ASTLiteral>(1)));
     }
 
     auto builder = InterpreterSelectQuery(
@@ -347,7 +346,7 @@ String ProjectionsDescription::toString() const
     for (const auto & projection : projections)
         list.children.push_back(projection.definition_ast);
 
-    return serializeAST(list);
+    return list.formatWithSecretsOneLine();
 }
 
 ProjectionsDescription ProjectionsDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr query_context)

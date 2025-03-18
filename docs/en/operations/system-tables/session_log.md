@@ -1,10 +1,14 @@
 ---
-description: "System table containing information about all successful and failed login and logout events."
-slug: /en/operations/system-tables/session_log
-title: "session_log"
-keywords: ["system table", "session_log"]
+description: 'System table containing information about all successful and failed
+  login and logout events.'
+keywords: ['system table', 'session_log']
+slug: /operations/system-tables/session_log
+title: 'system.session_log'
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
+
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.session_log
 
 <SystemTableCloud/>
 

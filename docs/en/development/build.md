@@ -1,7 +1,9 @@
 ---
-slug: /en/development/build
+description: 'Step-by-step guide for building ClickHouse from source on Linux systems'
+sidebar_label: 'Build on Linux'
 sidebar_position: 10
-sidebar_label: Build on Linux
+slug: /development/build
+title: 'How to Build ClickHouse on Linux'
 ---
 
 # How to Build ClickHouse on Linux
@@ -18,14 +20,14 @@ ClickHouse can be build on the following platforms:
 - s390/x (experimental)
 - RISC-V 64 (experimental)
 
-## Assumptions
+## Assumptions {#assumptions}
 
 The following tutorial is based on Ubuntu Linux but it should also work on any other Linux distribution with appropriate changes.
 The minimum recommended Ubuntu version for development is 24.04 LTS.
 
 The tutorial assumes that you have the ClickHouse repository and all submodules locally checked out.
 
-## Install Prerequisites
+## Install Prerequisites {#install-prerequisites}
 
 ClickHouse uses CMake and Ninja for building.
 
@@ -36,7 +38,7 @@ sudo apt-get update
 sudo apt-get install git cmake ccache python3 ninja-build nasm yasm gawk lsb-release wget software-properties-common gnupg
 ```
 
-## Install the Clang compiler
+## Install the Clang compiler {#install-the-clang-compiler}
 
 To install Clang on Ubuntu/Debian, use LLVM's automatic installation script from [here](https://apt.llvm.org/).
 
@@ -46,10 +48,10 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 For other Linux distributions, check if you can install any of LLVM's [prebuild packages](https://releases.llvm.org/download.html).
 
-As of January 2025, Clang 18 or higher is required.
+As of March 2025, Clang 19 or higher is required.
 GCC or other compilers are not supported.
 
-## Install the Rust compiler (optional)
+## Install the Rust compiler (optional) {#install-the-rust-compiler-optional}
 
 :::note
 Rust is an optional dependency of ClickHouse.
@@ -67,7 +69,7 @@ rustup toolchain install nightly-2024-12-01
 rustup default nightly-2024-12-01
 rustup component add rust-src
 ```
-## Build ClickHouse
+## Build ClickHouse {#build-clickhouse}
 
 We recommend to create a separate directory `build` inside `ClickHouse` which contains all build artifacts:
 
@@ -120,7 +122,7 @@ cmake --build build  # compile
 ```
 :::
 
-## Running the ClickHouse Executable
+## Running the ClickHouse Executable {#running-the-clickhouse-executable}
 
 After the build completed successfully, you find the executable in `ClickHouse/<build_dir>/programs/`:
 
@@ -135,7 +137,7 @@ If you get `Connection refused` message on macOS or FreeBSD, try specifying host
 clickhouse client --host 127.0.0.1
 ```
 
-## Advanced Options
+## Advanced Options {#advanced-options}
 
 ### Minimal Build {#minimal-build}
 
@@ -153,7 +155,7 @@ Rust requires an internet connection. To disable Rust support:
 cmake -DENABLE_RUST=OFF
 ```
 
-### Running the ClickHouse Executable
+### Running the ClickHouse Executable {#running-the-clickhouse-executable-1}
 
 You can replace the production version of ClickHouse binary installed in your system with the compiled ClickHouse binary.
 To do that, install ClickHouse on your machine following the instructions from the official website.
@@ -172,9 +174,9 @@ You can also run your custom-built ClickHouse binary with the config file from t
 ```bash
 sudo service clickhouse-server stop
 sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
-````
+```
 
-### Building on Any Linux
+### Building on Any Linux {#building-on-any-linux}
 
 Install prerequisites on OpenSUSE Tumbleweed:
 
@@ -197,7 +199,7 @@ cmake -S . -B build
 cmake --build build
 ```
 
-### Building in docker
+### Building in docker {#building-in-docker}
 
 We use the docker image `clickhouse/binary-builder` for builds in CI.
 It contains everything necessary to build the binary and packages.

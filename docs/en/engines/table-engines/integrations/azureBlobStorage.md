@@ -1,14 +1,16 @@
 ---
-slug: /en/engines/table-engines/integrations/azureBlobStorage
+description: 'This engine provides an integration with Azure Blob Storage ecosystem.'
+sidebar_label: 'Azure Blob Storage'
 sidebar_position: 10
-sidebar_label: Azure Blob Storage
+slug: /engines/table-engines/integrations/azureBlobStorage
+title: 'AzureBlobStorage Table Engine'
 ---
 
 # AzureBlobStorage Table Engine
 
 This engine provides an integration with [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) ecosystem.
 
-## Create Table
+## Create Table {#create-table}
 
 ``` sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -17,7 +19,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-### Engine parameters
+### Engine parameters {#engine-parameters}
 
 - `endpoint` — AzureBlobStorage endpoint URL with container & prefix. Optionally can contain account_name if the authentication method used needs it. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) or these parameters can be provided separately using storage_account_url, account_name & container. For specifying prefix, endpoint should be used.
 - `endpoint_contains_account_name` - This flag is used to specify if endpoint contains account_name as it is only needed for certain authentication methods. (Default : true)
@@ -26,7 +28,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `blobpath` - file path. Supports following wildcards in readonly mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.
 - `account_name` - if storage_account_url is used, then account name can be specified here
 - `account_key` - if storage_account_url is used, then account key can be specified here
-- `format` — The [format](/docs/en/interfaces/formats.md) of the file.
+- `format` — The [format](/interfaces/formats.md) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
 
 **Example**
@@ -58,17 +60,17 @@ SELECT * FROM test_table;
 - `_size` — Size of the file in bytes. Type: `Nullable(UInt64)`. If the size is unknown, the value is `NULL`.
 - `_time` — Last modified time of the file. Type: `Nullable(DateTime)`. If the time is unknown, the value is `NULL`.
 
-## Authentication
+## Authentication {#authentication}
 
 Currently there are 3 ways to authenticate:
 - `Managed Identity` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`.
-- `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/docs/en/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
+- `SAS Token` - Can be used by providing an `endpoint`, `connection_string` or `storage_account_url`. It is identified by presence of '?' in the url. See [azureBlobStorage](/sql-reference/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) for examples.
 - `Workload Identity` - Can be used by providing an `endpoint` or `storage_account_url`. If `use_workload_identity` parameter is set in config, ([workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications)) is used for authentication.
 
 ### Data cache {#data-cache}
 
 `Azure` table engine supports data caching on local disk.
-See filesystem cache configuration options and usage in this [section](/docs/en/operations/storing-data.md/#using-local-cache).
+See filesystem cache configuration options and usage in this [section](/operations/storing-data.md/#using-local-cache).
 Caching is made depending on the path and ETag of the storage object, so clickhouse will not read a stale cache version.
 
 To enable caching use a setting `filesystem_cache_name = '<name>'` and `enable_filesystem_cache = 1`.
@@ -92,8 +94,8 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 </clickhouse>
 ```
 
-2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/docs/en/operations/storing-data.md/#using-local-cache)
+2. reuse cache configuration (and therefore cache storage) from clickhouse `storage_configuration` section, [described here](/operations/storing-data.md/#using-local-cache)
 
-## See also
+## See also {#see-also}
 
-[Azure Blob Storage Table Function](/docs/en/sql-reference/table-functions/azureBlobStorage)
+[Azure Blob Storage Table Function](/sql-reference/table-functions/azureBlobStorage)

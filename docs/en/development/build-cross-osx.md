@@ -1,7 +1,9 @@
 ---
-slug: /en/development/build-cross-osx
+description: 'Guide for cross-compiling ClickHouse from Linux for macOS systems'
+sidebar_label: 'Build on Linux for macOS'
 sidebar_position: 20
-sidebar_label: Build on Linux for macOS
+slug: /development/build-cross-osx
+title: 'Build on Linux for macOS'
 ---
 
 # How to Build ClickHouse on Linux for macOS

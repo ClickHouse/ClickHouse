@@ -30,8 +30,6 @@ ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime && echo "$TZ" > /etc/timezone
 
 run_with_retry 3 dpkg -i package_folder/clickhouse-common-static_*.deb
 run_with_retry 3 dpkg -i package_folder/clickhouse-common-static-dbg_*.deb
-run_with_retry 3 dpkg -i package_folder/clickhouse-odbc-bridge_*.deb
-run_with_retry 3 dpkg -i package_folder/clickhouse-library-bridge_*.deb
 run_with_retry 3 dpkg -i package_folder/clickhouse-server_*.deb
 run_with_retry 3 dpkg -i package_folder/clickhouse-client_*.deb
 
@@ -385,35 +383,22 @@ echo "Files in root directory"
 ls -la /
 
 clickhouse-client -q "system flush logs" ||:
+if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+    clickhouse-client --port 19000 -q "system flush logs" ||:
+    clickhouse-client --port 29000 -q "system flush logs" ||:
+fi
+if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+    clickhouse-client --port 19000 -q "system flush logs" ||:
+fi
 
 # stop logs replication to make it possible to dump logs tables via clickhouse-local
 stop_logs_replication
 
+# Remove all limits to avoid TOO_MANY_ROWS_OR_BYTES while gathering system.*_log tables
+rm /etc/clickhouse-server/users.d/limits.yaml
+clickhouse-client -q "system reload config" ||:
+
 logs_saver_client_options="--max_block_size 8192 --max_memory_usage 10G --max_threads 1 --max_result_rows 0 --max_result_bytes 0 --max_bytes_to_read 0"
-
-# Try to get logs while server is running
-failed_to_save_logs=0
-for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latecy_log
-do
-    if ! clickhouse-client ${logs_saver_client_options} -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"; then
-        failed_to_save_logs=1
-    fi
-    if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-        if ! clickhouse-client ${logs_saver_client_options} --port 19000 -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes"; then
-            failed_to_save_logs=1
-        fi
-        if ! clickhouse-client ${logs_saver_client_options} --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
-            failed_to_save_logs=1
-        fi
-    fi
-
-    if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-        if ! clickhouse-client ${logs_saver_client_options} --port 29000 -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"; then
-            failed_to_save_logs=1
-        fi
-    fi
-done
-
 
 # collect minio audit and server logs
 # wait for minio to flush its batch if it has any
@@ -451,49 +436,48 @@ zstd --threads=0 < /var/log/clickhouse-server/clickhouse-server.log > /test_outp
 
 data_path_config="--path=/var/lib/clickhouse/"
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
-    # We need s3 storage configuration (but it's more likely that clickhouse-local will fail for some reason)
+    # We need s3 storage configuration
     data_path_config="--config-file=/etc/clickhouse-server/config.xml"
 fi
 
 
-# If server crashed dump system logs with clickhouse-local
-if [ $failed_to_save_logs -ne 0 ]; then
-    # Compress tables.
-    #
-    # NOTE:
-    # - that due to tests with s3 storage we cannot use /var/lib/clickhouse/data
-    #   directly
-    # - even though ci auto-compress some files (but not *.tsv) it does this only
-    #   for files >64MB, we want this files to be compressed explicitly
-    for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latency_log
-    do
-        clickhouse-local ${logs_saver_client_options} "$data_path_config" --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.tsv.zst ||:
+# Save system.*_log as artifacts
+#
+# NOTE:
+# - that due to tests with s3 storage we cannot use /var/lib/clickhouse/data
+#   directly
+# - even though ci auto-compress some files (but not *.tsv) it does this only
+#   for files >64MB, we want this files to be compressed explicitly
+function clickhouse_local_system()
+{
+    local args=(
+        ${logs_saver_client_options}
+        "$@"
+        --only-system-tables
+        --stacktrace
+        --
+        # FIXME: Hack for s3_with_keeper (note, that we don't need the disk,
+        # the problem is that whenever we need disks all disks will be
+        # initialized [1])
+        #
+        #   [1]: https://github.com/ClickHouse/ClickHouse/issues/77320
+        --zookeeper.implementation=testkeeper
+    )
+    clickhouse-local "${args[@]}"
+}
 
-        if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
-            clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
-            clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse2/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.2.tsv.zst ||:
-        fi
-
-        if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
-            clickhouse-local ${logs_saver_client_options} --path /var/lib/clickhouse1/ --only-system-tables --stacktrace -q "select * from system.$table format TSVWithNamesAndTypes" | zstd --threads=0 > /test_output/$table.1.tsv.zst ||:
-        fi
-    done
-fi
-
-# Also export trace log in flamegraph-friendly format.
-for trace_type in CPU Memory Real
+for table in query_log zookeeper_log trace_log transactions_info_log metric_log blob_storage_log error_log query_metric_log part_log latency_log
 do
-    clickhouse-local "$data_path_config" --only-system-tables -q "
-            select
-                arrayStringConcat((arrayMap(x -> concat(splitByChar('/', addressToLine(x))[-1], '#', demangle(addressToSymbol(x)) ), trace)), ';') AS stack,
-                count(*) AS samples
-            from system.trace_log
-            where trace_type = '$trace_type'
-            group by trace
-            order by samples desc
-            settings allow_introspection_functions = 1
-            format TabSeparated" \
-        | zstd --threads=0 > "/test_output/trace-log-$trace_type-flamegraph.tsv.zst" ||:
+    clickhouse_local_system "$data_path_config" -q "select * from system.$table into outfile '/test_output/$table.tsv.zst' format TSVWithNamesAndTypes"
+
+    if [[ "$USE_DATABASE_REPLICATED" -eq 1 ]]; then
+        clickhouse_local_system --path /var/lib/clickhouse1/ -q "select * from system.$table into outfile '/test_output/$table.1.tsv.zst' format TSVWithNamesAndTypes"
+        clickhouse_local_system --path /var/lib/clickhouse2/ -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"
+    fi
+
+    if [[ "$USE_SHARED_CATALOG" -eq 1 ]]; then
+        clickhouse_local_system --path /var/lib/clickhouse1/ -q "select * from system.$table into outfile '/test_output/$table.2.tsv.zst' format TSVWithNamesAndTypes"
+    fi
 done
 
 # Grep logs for sanitizer asserts, crashes and other critical errors
