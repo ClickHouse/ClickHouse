@@ -96,8 +96,7 @@ public:
 private:
     static void untransposeBits(const Float32 * in_floats, Float32 * out_floats, size_t length, size_t p)
     {
-        if (p > 32)
-            p = 32;
+        p = std::min<size_t>(p, 32);
 
         const auto * in_u32 = reinterpret_cast<const UInt32 *>(in_floats);
         auto * out_u32 = reinterpret_cast<UInt32 *>(out_floats);
@@ -105,9 +104,9 @@ private:
         for (size_t i = 0; i < length; i++)
             out_u32[i] = 0;
 
-        for (size_t j = 0; j < length; j++)
+        for (size_t bit = 0; bit < p; bit++)
         {
-            for (size_t bit = 0; bit < p; bit++)
+            for (size_t j = 0; j < length; j++)
             {
                 const size_t in_bit_index = bit * length + j;
                 const size_t in_word_index = in_bit_index >> 5; // / 32
