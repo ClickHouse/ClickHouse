@@ -3,9 +3,7 @@ set -x -e
 
 exec &> >(ts)
 
-ccache_status () {
-    ccache --show-config ||:
-    ccache --show-stats ||:
+sccache_status () {
     SCCACHE_NO_DAEMON=1 sccache --show-stats ||:
 }
 
@@ -39,9 +37,7 @@ if [ -n "$MAKE_DEB" ]; then
 fi
 
 
-ccache_status
-# clear cache stats
-ccache --zero-stats ||:
+sccache_status
 
 function check_prebuild_exists() {
   local path="$1"
@@ -103,7 +99,7 @@ git submodule foreach --quiet git ls-files --others --exclude-standard | grep . 
 
 ls -la ./programs
 
-ccache_status
+sccache_status
 
 if [ -n "$MAKE_DEB" ]; then
   # No quotes because I want it to expand to nothing if empty.
@@ -192,20 +188,6 @@ then
     mv "$COMBINED_OUTPUT.tar.zst" /output
 fi
 
-ccache_status
-ccache --evict-older-than 1d
-
-if [ "${CCACHE_DEBUG:-}" == "1" ]
-then
-    find . -name '*.ccache-*' -print0 \
-        | tar -c -I pixz -f /output/ccache-debug.txz --null -T -
-fi
-
-if [ -n "$CCACHE_LOGFILE" ]
-then
-    # Compress the log as well, or else the CI will try to compress all log
-    # files in place, and will fail because this directory is not writable.
-    tar -cv -I pixz -f /output/ccache.log.txz "$CCACHE_LOGFILE"
-fi
+sccache_status
 
 ls -l /output
