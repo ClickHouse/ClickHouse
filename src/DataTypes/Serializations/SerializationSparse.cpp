@@ -233,6 +233,11 @@ void SerializationSparse::serializeBinaryBulkWithMultipleStreams(
             nested->serializeBinaryBulkWithMultipleStreams(*values, 0, values->size(), settings, state);
         }
     }
+    else
+    {
+        auto empty_column = column.cloneEmpty()->convertToFullColumnIfSparse();
+        nested->serializeBinaryBulkWithMultipleStreams(*empty_column, 0, 0, settings, state);
+    }
 
     settings.path.pop_back();
 }

@@ -67,6 +67,13 @@ void SerializationVariant::enumerateStreams(
     auto discriminators_serialization = std::make_shared<SerializationNamed>(std::make_shared<SerializationNumber<ColumnVariant::Discriminator>>(), "discr", SubstreamType::NamedVariantDiscriminators);
     auto local_discriminators = column_variant ? column_variant->getLocalDiscriminatorsPtr() : nullptr;
 
+    if (settings.use_specialized_prefixes_substreams)
+    {
+        settings.path.push_back(Substream::VariantDiscriminatorsPrefix);
+        callback(settings.path);
+        settings.path.pop_back();
+    }
+
     settings.path.push_back(Substream::VariantDiscriminators);
     auto discriminators_data = SubstreamData(discriminators_serialization)
                              .withType(type_variant ? std::make_shared<DataTypeNumber<ColumnVariant::Discriminator>>() : nullptr)
@@ -128,7 +135,7 @@ void SerializationVariant::serializeBinaryBulkStatePrefix(
     SerializeBinaryBulkSettings & settings,
     SerializeBinaryBulkStatePtr & state) const
 {
-    settings.path.push_back(Substream::VariantDiscriminators);
+    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::VariantDiscriminatorsPrefix : Substream::VariantDiscriminators);
     auto * discriminators_stream = settings.getter(settings.path);
     settings.path.pop_back();
 
@@ -202,7 +209,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationVariant::deserializeD
     DeserializeBinaryBulkSettings & settings,
     SubstreamsDeserializeStatesCache * cache)
 {
-    settings.path.push_back(Substream::VariantDiscriminators);
+    settings.path.push_back(settings.use_specialized_prefixes_substreams ? Substream::VariantDiscriminatorsPrefix : Substream::VariantDiscriminators);
 
     DeserializeBinaryBulkStatePtr discriminators_state = nullptr;
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
@@ -246,7 +253,17 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
 
     /// Don't write anything if column is empty.
     if (limit == 0)
+    {
+        settings.path.push_back(Substream::VariantElements);
+        for (size_t i = 0; i != variants.size(); ++i)
+        {
+            addVariantElementToPath(settings.path, i);
+            variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), col.getVariantByGlobalDiscriminator(i).size(), 0, settings, variant_state->variant_states[i]);
+            settings.path.pop_back();
+        }
+        settings.path.pop_back();
         return;
+    }
 
     /// Write number of rows in this granule in compact mode.
     if (variant_state->discriminators_mode.value == DiscriminatorsSerializationMode::COMPACT)
@@ -272,12 +289,18 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
         }
 
         settings.path.push_back(Substream::VariantElements);
-        addVariantElementToPath(settings.path, non_empty_global_discr);
-        /// We can use the same offset/limit as for whole Variant column
-        variants[non_empty_global_discr]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(non_empty_global_discr), offset, limit, settings, variant_state->variant_states[non_empty_global_discr]);
+        for (size_t i = 0; i != variants.size(); ++i)
+        {
+            addVariantElementToPath(settings.path, i);
+            /// We can use the same offset/limit as for whole Variant column
+            if (i == non_empty_global_discr)
+                variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), offset, limit, settings, variant_state->variant_states[i]);
+            else
+                variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), col.getVariantByGlobalDiscriminator(i).size(), 0, settings, variant_state->variant_states[i]);
+            settings.path.pop_back();
+        }
         variants_statistics[variant_names[non_empty_global_discr]] += limit;
         total_size_of_variants += limit;
-        settings.path.pop_back();
         settings.path.pop_back();
         return;
     }
@@ -296,6 +319,15 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
             for (size_t i = 0; i < limit; ++i)
                 writeBinaryLittleEndian(ColumnVariant::NULL_DISCRIMINATOR, *discriminators_stream);
         }
+
+        settings.path.push_back(Substream::VariantElements);
+        for (size_t i = 0; i != variants.size(); ++i)
+        {
+            addVariantElementToPath(settings.path, i);
+            variants[i]->serializeBinaryBulkWithMultipleStreams(col.getVariantByGlobalDiscriminator(i), col.getVariantByGlobalDiscriminator(i).size(), 0, settings, variant_state->variant_states[i]);
+            settings.path.pop_back();
+        }
+        settings.path.pop_back();
         return;
     }
 
@@ -389,20 +421,16 @@ void SerializationVariant::serializeBinaryBulkWithMultipleStreamsAndUpdateVarian
     settings.path.push_back(Substream::VariantElements);
     for (size_t i = 0; i != variants.size(); ++i)
     {
-        /// Serialize variant only if we have its discriminator in the range.
-        if (variant_offsets_and_limits[i].second)
-        {
-            addVariantElementToPath(settings.path, i);
-            variants[i]->serializeBinaryBulkWithMultipleStreams(
-                col.getVariantByGlobalDiscriminator(i),
-                variant_offsets_and_limits[i].first,
-                variant_offsets_and_limits[i].second,
-                settings,
-                variant_state->variant_states[i]);
-            variants_statistics[variant_names[i]] += variant_offsets_and_limits[i].second;
-            total_size_of_variants += variant_offsets_and_limits[i].second;
-            settings.path.pop_back();
-        }
+        addVariantElementToPath(settings.path, i);
+        variants[i]->serializeBinaryBulkWithMultipleStreams(
+            col.getVariantByGlobalDiscriminator(i),
+            variant_offsets_and_limits[i].second ? variant_offsets_and_limits[i].first : col.getVariantByGlobalDiscriminator(i).size(),
+            variant_offsets_and_limits[i].second,
+            settings,
+            variant_state->variant_states[i]);
+        variants_statistics[variant_names[i]] += variant_offsets_and_limits[i].second;
+        total_size_of_variants += variant_offsets_and_limits[i].second;
+        settings.path.pop_back();
     }
     settings.path.pop_back();
 }

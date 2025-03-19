@@ -176,6 +176,7 @@ public:
             NamedNullMap,
 
             DictionaryKeys,
+            DictionaryKeysPrefix,
             DictionaryIndexes,
 
             SparseElements,
@@ -185,6 +186,7 @@ public:
             DeprecatedObjectData,
 
             VariantDiscriminators,
+            VariantDiscriminatorsPrefix,
             NamedVariantDiscriminators,
             VariantOffsets,
             VariantElements,
@@ -250,6 +252,8 @@ public:
         /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
         /// It may be needed when dynamic subcolumns are processed separately.
         bool enumerate_dynamic_streams = true;
+
+        bool use_specialized_prefixes_substreams = false;
     };
 
     virtual void enumerateStreams(
@@ -291,6 +295,8 @@ public:
 
         bool native_format = false;
         const FormatSettings * format_settings = nullptr;
+
+        bool use_specialized_prefixes_substreams = false;
     };
 
     struct DeserializeBinaryBulkSettings
@@ -317,6 +323,8 @@ public:
         StreamCallback prefixes_prefetch_callback;
         /// ThreadPool that can be used to read prefixes of subcolumns in parallel.
         ThreadPool * prefixes_deserialization_thread_pool = nullptr;
+
+        bool use_specialized_prefixes_substreams = false;
     };
 
     /// Call before serializeBinaryBulkWithMultipleStreams chain to write something before first mark.

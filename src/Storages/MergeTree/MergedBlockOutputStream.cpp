@@ -362,6 +362,18 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->getColumns().writeText(buffer);
     });
 
+    const auto & columns_substreams = writer->getColumnsSubstreams();
+    if (!columns_substreams.empty())
+    {
+        write_plain_file("columns_substreams.txt", [&](auto & buffer)
+        {
+            columns_substreams.writeText(buffer);
+        });
+
+        LOG_DEBUG(getLogger("MergedBlockOutputStream"), "Set columns substreams to par {}/{}", new_part->getNameWithState(), UInt64(new_part.get()));
+        new_part->setColumnsSubstreams(columns_substreams);
+    }
+
     write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {
         writeIntText(new_part->getMetadataVersion(), buffer);

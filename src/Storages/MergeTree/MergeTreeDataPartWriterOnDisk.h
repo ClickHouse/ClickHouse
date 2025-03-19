@@ -135,6 +135,7 @@ public:
     void cancel() noexcept override;
 
     const Block & getColumnsSample() const override { return block_sample; }
+    const ColumnsSubstreams & getColumnsSubstreams() const override { return columns_substreams; }
 
 protected:
      /// Count index_granularity for block and store in `index_granularity`
@@ -212,6 +213,10 @@ protected:
 
     bool is_dynamic_streams_initialized = false;
     Block block_sample;
+
+    /// List of substreams for each column in order of serialization.
+    /// Right now used only in Compact parts.
+    ColumnsSubstreams columns_substreams;
 
 private:
     void initSkipIndices();

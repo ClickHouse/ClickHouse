@@ -38,7 +38,7 @@ public:
     virtual void seekToMark(size_t row_index) = 0;
 
     /// Seeks to exact mark in file.
-    void seekToMarkAndColumn(size_t row_index, size_t column_position);
+    void seekToMarkAndColumn(size_t row_index, size_t stream_position);
 
     /// Seeks to the start of the file.
     void seekToStart();
