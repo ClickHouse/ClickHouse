@@ -766,10 +766,37 @@ void StatementGenerator::generateFromElement(RandomGenerator & rg, const uint32_
     jtof->set_final(joinedTableOrFunction(rg, name, allowed_clauses, false, jtof->mutable_tof()));
 }
 
-void StatementGenerator::addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr)
+static const std::unordered_map<BinaryOperator, SQLFunc> binopToFunc{
+    {BinaryOperator::BINOP_LE, SQLFunc::FUNCless},
+    {BinaryOperator::BINOP_LEQ, SQLFunc::FUNClessOrEquals},
+    {BinaryOperator::BINOP_GR, SQLFunc::FUNCgreater},
+    {BinaryOperator::BINOP_GREQ, SQLFunc::FUNCgreaterOrEquals},
+    {BinaryOperator::BINOP_EQ, SQLFunc::FUNCequals},
+    {BinaryOperator::BINOP_EQEQ, SQLFunc::FUNCequals},
+    {BinaryOperator::BINOP_NOTEQ, SQLFunc::FUNCnotEquals},
+    {BinaryOperator::BINOP_LEGR, SQLFunc::FUNCnotEquals},
+    {BinaryOperator::BINOP_IS_NOT_DISTINCT_FROM, SQLFunc::FUNCisNotDistinctFrom},
+    {BinaryOperator::BINOP_LEEQGR, SQLFunc::FUNCisNotDistinctFrom},
+    {BinaryOperator::BINOP_AND, SQLFunc::FUNCand},
+    {BinaryOperator::BINOP_OR, SQLFunc::FUNCor},
+    {BinaryOperator::BINOP_CONCAT, SQLFunc::FUNCconcat},
+    {BinaryOperator::BINOP_STAR, SQLFunc::FUNCmultiply},
+    {BinaryOperator::BINOP_SLASH, SQLFunc::FUNCdivide},
+    {BinaryOperator::BINOP_PERCENT, SQLFunc::FUNCmodulo},
+    {BinaryOperator::BINOP_PLUS, SQLFunc::FUNCplus},
+    {BinaryOperator::BINOP_MINUS, SQLFunc::FUNCminus},
+    {BinaryOperator::BINOP_DIV, SQLFunc::FUNCdivide},
+    {BinaryOperator::BINOP_MOD, SQLFunc::FUNCmodulo}};
+
+void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
 {
+    Expr * expr1 = nullptr;
+    Expr * expr2 = nullptr;
     const SQLRelation * rel1 = &rg.pickRandomly(this->levels[this->current_level].rels);
     const SQLRelation * rel2 = &this->levels[this->current_level].rels.back();
+    const auto & op = rg.nextSmallNumber() < 9
+        ? BinaryOperator::BINOP_EQ
+        : static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEEQGR)) + 1);
 
     if (rel1->name == rel2->name)
     {
@@ -782,14 +809,26 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr)
         rel1 = rel2;
         rel2 = rel3;
     }
-    bexpr->set_op(
-        rg.nextSmallNumber() < 9
-            ? BinaryOperator::BINOP_EQ
-            : static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEEQGR)) + 1));
     const SQLRelationCol & col1 = rg.pickRandomly(rel1->cols);
     const SQLRelationCol & col2 = rg.pickRandomly(rel2->cols);
-    Expr * expr1 = bexpr->mutable_lhs();
-    Expr * expr2 = bexpr->mutable_rhs();
+
+    if (rg.nextSmallNumber() < 9)
+    {
+        BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+
+        bexpr->set_op(op);
+        expr1 = bexpr->mutable_lhs();
+        expr2 = bexpr->mutable_rhs();
+    }
+    else
+    {
+        /// Sometimes do the function call instead
+        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+
+        sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
+        expr1 = sfc->add_args()->mutable_expr();
+        expr2 = sfc->add_args()->mutable_expr();
+    }
     ExprSchemaTableColumn * estc1 = expr1->mutable_comp_expr()->mutable_expr_stc();
     ExprSchemaTableColumn * estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
     ExprColumn * ecol1 = estc1->mutable_col();
@@ -813,7 +852,7 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, BinaryExpr * bexpr)
 
 void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool allow_using, JoinConstraint * jc)
 {
-    if (rg.nextSmallNumber() < 9)
+    if (rg.nextSmallNumber() < 8)
     {
         bool generated = false;
 
@@ -864,19 +903,56 @@ void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool
         {
             /// Joining clause
             const uint32_t nclauses = std::min(this->fc.max_width - this->width, rg.nextSmallNumber() % 3) + UINT32_C(1);
-            BinaryExpr * bexpr = jc->mutable_on_expr()->mutable_comp_expr()->mutable_binary_expr();
+            Expr * expr = jc->mutable_on_expr();
 
             for (uint32_t i = 0; i < nclauses; i++)
             {
+                if (rg.nextSmallNumber() < 3)
+                {
+                    /// Negate clause
+                    if (rg.nextSmallNumber() < 9)
+                    {
+                        UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
+
+                        uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
+                        expr = uexpr->mutable_expr();
+                    }
+                    else
+                    {
+                        /// Sometimes do the function call instead
+                        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+
+                        sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
+                        expr = sfc->add_args()->mutable_expr();
+                    }
+                }
                 if (i == nclauses - 1)
                 {
-                    addJoinClause(rg, bexpr);
+                    addJoinClause(rg, expr);
                 }
                 else
                 {
-                    addJoinClause(rg, bexpr->mutable_lhs()->mutable_comp_expr()->mutable_binary_expr());
-                    bexpr->set_op(rg.nextSmallNumber() < 9 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR);
-                    bexpr = bexpr->mutable_rhs()->mutable_comp_expr()->mutable_binary_expr();
+                    Expr * predicate = nullptr;
+                    const auto & op = rg.nextSmallNumber() < 8 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR;
+
+                    if (rg.nextSmallNumber() < 9)
+                    {
+                        BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+
+                        bexpr->set_op(op);
+                        predicate = bexpr->mutable_lhs();
+                        expr = bexpr->mutable_rhs();
+                    }
+                    else
+                    {
+                        /// Sometimes do the function call instead
+                        SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+
+                        sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
+                        predicate = sfc->add_args()->mutable_expr();
+                        expr = sfc->add_args()->mutable_expr();
+                    }
+                    addJoinClause(rg, predicate);
                 }
             }
         }
@@ -916,10 +992,29 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     if (noption < 761)
     {
         /// Binary expr
-        BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
-        Expr * lexpr = bexpr->mutable_lhs();
-        Expr * rexpr = bexpr->mutable_rhs();
+        Expr * lexpr = nullptr;
+        Expr * rexpr = nullptr;
+        const auto & op = rg.nextSmallNumber() < 7
+            ? BinaryOperator::BINOP_EQ
+            : static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEGR)) + 1);
 
+        if (rg.nextSmallNumber() < 9)
+        {
+            BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+
+            bexpr->set_op(op);
+            lexpr = bexpr->mutable_lhs();
+            rexpr = bexpr->mutable_rhs();
+        }
+        else
+        {
+            /// Sometimes do the function call instead
+            SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+
+            sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
+            lexpr = sfc->add_args()->mutable_expr();
+            rexpr = sfc->add_args()->mutable_expr();
+        }
         if (rg.nextSmallNumber() < 9)
         {
             refColumn(rg, gcol, lexpr);
@@ -930,10 +1025,6 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
             addWhereSide(rg, available_cols, lexpr);
             refColumn(rg, gcol, rexpr);
         }
-        bexpr->set_op(
-            rg.nextSmallNumber() < 7
-                ? BinaryOperator::BINOP_EQ
-                : static_cast<BinaryOperator>((rg.nextRandomUInt32() % static_cast<uint32_t>(BinaryOperator::BINOP_LEGR)) + 1));
     }
     else if (noption < 901)
     {
@@ -967,21 +1058,54 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     else if (noption < 971)
     {
         /// Is null expr
-        ExprNullTests * enull = expr->mutable_comp_expr()->mutable_expr_null_tests();
+        Expr * isexpr = nullptr;
 
-        enull->set_not_(rg.nextBool());
-        refColumn(rg, gcol, enull->mutable_expr());
+        if (rg.nextSmallNumber() < 8)
+        {
+            ExprNullTests * enull = expr->mutable_comp_expr()->mutable_expr_null_tests();
+
+            enull->set_not_(rg.nextBool());
+            isexpr = enull->mutable_expr();
+        }
+        else
+        {
+            /// Sometimes do the function call instead
+            SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+            static const auto & nullFuncs
+                = {SQLFunc::FUNCisNull, SQLFunc::FUNCisNullable, SQLFunc::FUNCisNotNull, SQLFunc::FUNCisZeroOrNull};
+
+            sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nullFuncs));
+            isexpr = sfc->add_args()->mutable_expr();
+        }
+        refColumn(rg, gcol, isexpr);
     }
     else if (noption < 981)
     {
         /// Like expr
-        ExprLike * elike = expr->mutable_comp_expr()->mutable_expr_like();
-        Expr * expr2 = elike->mutable_expr2();
+        Expr * expr1 = nullptr;
+        Expr * expr2 = nullptr;
 
-        elike->set_not_(rg.nextBool());
-        elike->set_keyword(
-            static_cast<ExprLike_PossibleKeywords>((rg.nextRandomUInt32() % static_cast<uint32_t>(ExprLike::PossibleKeywords_MAX)) + 1));
-        refColumn(rg, gcol, elike->mutable_expr1());
+        if (rg.nextSmallNumber() < 8)
+        {
+            ExprLike * elike = expr->mutable_comp_expr()->mutable_expr_like();
+
+            elike->set_not_(rg.nextBool());
+            elike->set_keyword(static_cast<ExprLike_PossibleKeywords>(
+                (rg.nextRandomUInt32() % static_cast<uint32_t>(ExprLike::PossibleKeywords_MAX)) + 1));
+            expr1 = elike->mutable_expr1();
+            expr2 = elike->mutable_expr2();
+        }
+        else
+        {
+            /// Sometimes do the function call instead
+            SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+            static const auto & likeFuncs = {SQLFunc::FUNClike, SQLFunc::FUNCnotLike, SQLFunc::FUNCilike, SQLFunc::FUNCnotILike};
+
+            sfc->mutable_func()->set_catalog_func(rg.pickRandomly(likeFuncs));
+            expr1 = sfc->add_args()->mutable_expr();
+            expr2 = sfc->add_args()->mutable_expr();
+        }
+        refColumn(rg, gcol, expr1);
         if (rg.nextSmallNumber() < 5)
         {
             expr2->mutable_lit_val()->set_no_quote_str(rg.nextString("'", true, rg.nextRandomUInt32() % 1009));
@@ -994,17 +1118,33 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
     else if (noption < 991)
     {
         /// In expr
-        const uint32_t nclauses = rg.nextSmallNumber();
-        ExprIn * ein = expr->mutable_comp_expr()->mutable_expr_in();
-        ExprList * elist = ein->mutable_exprs();
+        Expr * expr1 = nullptr;
 
-        ein->set_not_(rg.nextBool());
-        ein->set_global(rg.nextBool());
-        refColumn(rg, gcol, ein->mutable_expr()->mutable_expr());
-        for (uint32_t i = 0; i < nclauses; i++)
+        if (rg.nextSmallNumber() < 8)
         {
-            addWhereSide(rg, available_cols, elist->mutable_expr());
+            const uint32_t nclauses = rg.nextSmallNumber();
+            ExprIn * ein = expr->mutable_comp_expr()->mutable_expr_in();
+            ExprList * elist = ein->mutable_exprs();
+
+            ein->set_not_(rg.nextBool());
+            ein->set_global(rg.nextBool());
+            expr1 = ein->mutable_expr()->mutable_expr();
+            for (uint32_t i = 0; i < nclauses; i++)
+            {
+                addWhereSide(rg, available_cols, elist->mutable_expr());
+            }
         }
+        else
+        {
+            /// Sometimes do the function call instead
+            SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+            static const auto & inFuncs = {SQLFunc::FUNCin, SQLFunc::FUNCnotIn, SQLFunc::FUNCglobalIn, SQLFunc::FUNCglobalNotIn};
+
+            sfc->mutable_func()->set_catalog_func(rg.pickRandomly(inFuncs));
+            expr1 = sfc->add_args()->mutable_expr();
+            addWhereSide(rg, available_cols, sfc->add_args()->mutable_expr());
+        }
+        refColumn(rg, gcol, expr1);
     }
     else
     {
@@ -1044,22 +1184,58 @@ void StatementGenerator::generateWherePredicate(RandomGenerator & rg, Expr * exp
         for (uint32_t i = 0; i < nclauses; i++)
         {
             this->width++;
+
+            if (rg.nextSmallNumber() < 3)
+            {
+                /// Negate clause
+                if (rg.nextSmallNumber() < 9)
+                {
+                    UnaryExpr * uexpr = expr->mutable_comp_expr()->mutable_unary_expr();
+
+                    uexpr->set_unary_op(UnaryOperator::UNOP_NOT);
+                    expr = uexpr->mutable_expr();
+                }
+                else
+                {
+                    /// Sometimes do the function call instead
+                    SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+
+                    sfc->mutable_func()->set_catalog_func(SQLFunc::FUNCnot);
+                    expr = sfc->add_args()->mutable_expr();
+                }
+            }
             if (i == nclauses - 1)
             {
                 addWhereFilter(rg, available_cols, expr);
             }
             else
             {
-                BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+                Expr * predicate = nullptr;
+                const auto & op = rg.nextSmallNumber() < 8 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR;
 
-                addWhereFilter(rg, available_cols, bexpr->mutable_lhs());
-                bexpr->set_op(rg.nextSmallNumber() < 8 ? BinaryOperator::BINOP_AND : BinaryOperator::BINOP_OR);
-                expr = bexpr->mutable_rhs();
+                if (rg.nextSmallNumber() < 9)
+                {
+                    BinaryExpr * bexpr = expr->mutable_comp_expr()->mutable_binary_expr();
+
+                    bexpr->set_op(op);
+                    predicate = bexpr->mutable_lhs();
+                    expr = bexpr->mutable_rhs();
+                }
+                else
+                {
+                    /// Sometimes do the function call instead
+                    SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
+
+                    sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
+                    predicate = sfc->add_args()->mutable_expr();
+                    expr = sfc->add_args()->mutable_expr();
+                }
+                addWhereFilter(rg, available_cols, predicate);
             }
         }
         this->width -= nclauses;
     }
-    else if (noption < 9)
+    else if (noption < 8)
     {
         /// Predicate
         generatePredicate(rg, expr);
