@@ -580,10 +580,8 @@ try
         /// Advice the user to send it manually.
         if (std::string_view(VERSION_OFFICIAL).contains("official build"))
         {
-            const auto & date_lut = DateLUT::instance();
-
             /// Approximate support period, upper bound.
-            if (time(nullptr) - date_lut.makeDate(2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
+            if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
             {
                 LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
             }

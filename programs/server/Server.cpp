@@ -1608,7 +1608,7 @@ try
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
     DateLUT::serverTimezoneInstance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", getDateLUTTimeZone(DateLUT::serverTimezoneInstance()));
 
     /// Storage with temporary data for processing of heavy queries.
     if (!server_settings[ServerSetting::tmp_policy].value.empty())

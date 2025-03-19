@@ -193,8 +193,13 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
     LoggerPtr log_)
 {
     const auto zk_client = getZooKeeper();
-    const auto bucket_lock_path = zk_path / "buckets" / toString(bucket) / "lock";
-    const auto bucket_lock_id_path = zk_path / "buckets" / toString(bucket) / "lock_id";
+    const auto create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
+
+    const auto bucket_path = zk_path / "buckets" / toString(bucket);
+    chassert(zk_client->exists(bucket_path), fmt::format("Bucket path {} does not exist", bucket_path.string()));
+    const auto bucket_lock_path = bucket_path / "lock";
+    const auto bucket_lock_id_path = bucket_path / "lock_id";
+
     const auto processor_info = getProcessorInfo(processor);
 
     while (true)
@@ -207,7 +212,6 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
         /// Create bucket lock id node as persistent node if it does not exist yet.
         /// Update bucket lock id path. We use its version as a version of ephemeral bucket lock node.
         /// (See comment near ObjectStorageQueueIFileMetadata::processing_node_version).
-        bool create_if_not_exists_enabled = zk_client->isFeatureEnabled(DB::KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
         if (create_if_not_exists_enabled)
         {
             requests.push_back(
@@ -245,9 +249,15 @@ ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrdered
             return nullptr;
 
         if (create_if_not_exists_enabled)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}", code);
+        {
+            auto failed_idx = zkutil::getFailedOpIndex(code, responses);
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR, "Unexpected error: {}, path: {} (failed idx: {})",
+                code, requests[failed_idx]->getPath(), failed_idx);
+        }
 
-        LOG_INFO(log_, "Bucket lock id path was probably created or removed while acquiring the bucket (error code: {}), will retry", code);
+        LOG_INFO(log_, "Bucket lock id path was probably created or removed "
+                 "while acquiring the bucket (error code: {}), will retry", code);
     }
 }
 
