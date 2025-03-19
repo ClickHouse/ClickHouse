@@ -293,10 +293,13 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         settings.network_transfer_limits,
         settings.use_index_for_in_with_subqueries_max_values);
 
-    auto filter_name = in_conversion.dag.getOutputs().front()->result_name;
-    lhs_in_node = makeExpressionNodeOnTopOf(lhs_in_node, std::move(in_conversion.dag), filter_name, nodes);
+    {
+        auto filter_name = in_conversion.dag.getOutputs().front()->result_name;
+        const auto & header = lhs_in_node->step->getOutputHeader();
+        auto step = std::make_unique<FilterStep>(header, std::move(in_conversion.dag), filter_name, true);
+        lhs_in_node = &nodes.emplace_back(QueryPlan::Node{std::move(step), {lhs_in_node}});
+    }
 
-    //auto post_actions = dropInputs(*join_expression_actions.post_join_actions, right_header);
     lhs_in_node = makeExpressionNodeOnTopOf(lhs_in_node, std::move(*join_expression_actions.post_join_actions), {}, nodes);
 
     auto creating_sets_step = std::make_unique<DelayedCreatingSetsStep>(
