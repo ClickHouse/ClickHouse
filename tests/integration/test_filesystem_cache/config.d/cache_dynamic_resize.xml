@@ -8,7 +8,7 @@
             <cache_dynamic_resize>
                 <type>cache</type>
                 <disk>hdd_blob</disk>
-                <max_size>100Ki</max_size>
+                <max_size>100000</max_size>
                 <max_elements>100</max_elements>
                 <max_file_segment_size>10</max_file_segment_size>
                 <boundary_alignment>10</boundary_alignment>
