@@ -1,0 +1,9 @@
+<clickhouse>
+    <nb_models>
+        <model>
+            <name>test</name>
+            <type>sentiment</type>
+            <path>/etc/clickhouse-server/config.d/naive_bayes_test.txt</path>
+        </model>
+    </nb_models>
+</clickhouse>
