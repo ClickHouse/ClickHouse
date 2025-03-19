@@ -467,7 +467,7 @@ void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(Coordin
     prepareProcessedRequests(requests, zk_client, processed_node_path, /* ignore_if_exists */false);
 }
 
-void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string & zk_path, size_t value)
+void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string & zk_path, size_t value, size_t prev_value)
 {
     auto zk_client = getZooKeeper();
     const auto log = getLogger("ObjectStorageQueueOrderedFileMetadata");
@@ -476,9 +476,17 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
 
     Coordination::Requests requests;
     Coordination::Responses responses;
+
+    chassert(prev_value == 0 || prev_value == 1);
+
     for (size_t try_num = 0; try_num <= retries; ++try_num)
     {
-        const auto old_processed_path = getProcessedPathWithoutBucket(zk_path);
+        requests.clear();
+
+        const auto old_processed_path = prev_value == 0
+            ? getProcessedPathWithoutBucket(zk_path)
+            : getProcessedPathWithBucket(zk_path, 0);
+
         NodeMetadata processed_node;
         Coordination::Stat processed_node_stat;
         bool has_processed_node = ObjectStorageQueueOrderedFileMetadata::getMaxProcessedFile(
@@ -493,7 +501,6 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
             return;
         }
 
-        requests.clear();
         requests.push_back(zkutil::makeRemoveRequest(old_processed_path, processed_node_stat.version));
 
         for (size_t i = 0; i < value; ++i)
@@ -540,19 +547,29 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
         {
             LOG_TRACE(log,
                       "Old processed node no longer exists, "
-                      "metadata must have been migrated concurrently, will recheck");
+                      "metadata must have been migrated concurrently by another replica, will recheck");
             continue;
         }
 
-        [[maybe_unused]] auto it = std::find_if(
-            responses.begin(), responses.end(),
-            [](const auto & response) { return response->error != Coordination::Error::ZOK; });
-
-        chassert(it != responses.end());
+        const auto failed_idx = zkutil::getFailedOpIndex(code, responses);
+        if (prev_value != 0
+            /// idx=0 - for delete node request
+            /// idx=1 - for create bucket 0 request
+            /// idx=2 - for create bucket 1 request
+            /// Failed idx=2 means that metadata was updated concurrently by another replica,
+            /// in this case we just quit.
+            && failed_idx == 2
+            && code == Coordination::Error::ZNODEEXISTS)
+        {
+            LOG_TRACE(log,
+                      "Bucket node already exists, "
+                      "metadata must have been migrated concurrently by another replica");
+            return;
+        }
 
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Unexpected error: {} (failed request id: {})",
-                        code, std::distance(responses.begin(), responses.end()));
+                        "Unexpected error: {} (failed request id: {}, path: {})",
+                        code, failed_idx, requests[failed_idx]->getPath());
     }
 
     throw zkutil::KeeperMultiException(code, requests, responses);

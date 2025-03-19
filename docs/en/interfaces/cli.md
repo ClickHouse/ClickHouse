@@ -6,6 +6,7 @@ slug: /interfaces/cli
 title: 'ClickHouse Client'
 ---
 
+import Image from '@theme/IdealImage';
 import cloud_connect_button from '@site/static/images/_snippets/cloud-connect-button.png';
 import connection_details_native from '@site/static/images/_snippets/connection-details-native.png'
 
@@ -71,19 +72,19 @@ For a complete list of command-line options, see [Command Line Options](#command
 
 The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console. Select the service that you want to connect to and click **Connect**:
 
-<img src={cloud_connect_button}
-  class="image"
+<Image img={cloud_connect_button}
+  size="md"
   alt="ClickHouse Cloud service connect button"
-  style={{width: '30em'}} />
+/>
 
 <br/><br/>
 
 Choose **Native**, and the details are shown with an example `clickhouse-client` command:
 
-<img src={connection_details_native}
-  class="image"
+<Image img={connection_details_native}
+  size="md"
   alt="ClickHouse Cloud Native TCP connection details"
-  style={{width: '40em'}} />
+/>
 
 
 ### Storing connections in a configuration file {#connection-credentials}
@@ -109,7 +110,6 @@ See the [section on configuration files](#configuration_files) for more informat
 :::note
 To concentrate on the query syntax, the rest of the examples leave off the connection details (`--host`, `--port`, etc.). Remember to add them when you use the commands.
 :::
-
 
 ## Batch mode {#batch-mode}
 
