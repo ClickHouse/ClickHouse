@@ -289,7 +289,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
 
                 const auto & gin_filters = element.set_gin_filters[column];
                 for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = result[row] && granule->gin_filters[key_idx].contains(gin_filters[row], cache_store);
+                    result[row] = granule->gin_filters[key_idx].contains(gin_filters[row], cache_store);
             }
 
             rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
@@ -303,7 +303,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
             const auto & gin_filters = element.set_gin_filters[0];
 
             for (size_t row = 0; row < gin_filters.size(); ++row)
-                result[row] = result[row] && granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
+                result[row] = granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
 
             rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
         }
@@ -317,7 +317,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranuleInPart(MergeTreeIndexGranuleP
                 const auto & gin_filters = element.set_gin_filters[0];
 
                 for (size_t row = 0; row < gin_filters.size(); ++row)
-                    result[row] = result[row] && granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
+                    result[row] = granule->gin_filters[element.key_column].contains(gin_filters[row], cache_store);
 
                 rpn_stack.emplace_back(std::find(std::cbegin(result), std::cend(result), true) != std::end(result), true);
             }
