@@ -1,5 +1,4 @@
 -- Obsolete server settings
-use_legacy_mongodb_integration
 -- Obsolete general settings
 1
 -- Obsolete merge tree settings
