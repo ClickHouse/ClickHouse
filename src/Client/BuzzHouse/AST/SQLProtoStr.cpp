@@ -765,6 +765,55 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
         case BottomTypeNameType::kIPv6:
             ret += "IPv6";
             break;
+        case BottomTypeNameType::kDecimal: {
+            const Decimal & dec = btn.decimal();
+
+            ret += "Decimal";
+            if (dec.has_decimaln())
+            {
+                uint32_t precision = 0;
+                const DecimalN & dn = dec.decimaln();
+
+                switch (dn.precision())
+                {
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
+                        precision = 9;
+                        break;
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
+                        precision = 18;
+                        break;
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
+                        precision = 38;
+                        break;
+                    case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
+                        precision = 76;
+                        break;
+                }
+                ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
+                ret += "(";
+                ret += std::to_string(dn.scale() % (precision + 1));
+                ret += ")";
+            }
+            else if (dec.has_decimal_simple())
+            {
+                const DecimalSimple & ds = dec.decimal_simple();
+
+                if (ds.has_precision())
+                {
+                    const uint32_t precision = std::max<uint32_t>(1, ds.precision() % 77);
+
+                    ret += "(";
+                    ret += std::to_string(precision);
+                    if (ds.has_scale())
+                    {
+                        ret += ",";
+                        ret += std::to_string(ds.scale() % (precision + 1));
+                    }
+                    ret += ")";
+                }
+            }
+        }
+        break;
         default: {
             if (lcard)
             {
@@ -774,55 +823,6 @@ static void BottomTypeNameToString(String & ret, const uint32_t quote, const boo
             {
                 switch (btn.bottom_one_of_case())
                 {
-                    case BottomTypeNameType::kDecimal: {
-                        const Decimal & dec = btn.decimal();
-
-                        ret += "Decimal";
-                        if (dec.has_decimaln())
-                        {
-                            uint32_t precision = 0;
-                            const DecimalN & dn = dec.decimaln();
-
-                            switch (dn.precision())
-                            {
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D32:
-                                    precision = 9;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D64:
-                                    precision = 18;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D128:
-                                    precision = 38;
-                                    break;
-                                case DecimalN_DecimalPrecision::DecimalN_DecimalPrecision_D256:
-                                    precision = 76;
-                                    break;
-                            }
-                            ret += DecimalN_DecimalPrecision_Name(dn.precision()).substr(1);
-                            ret += "(";
-                            ret += std::to_string(dn.scale() % (precision + 1));
-                            ret += ")";
-                        }
-                        else if (dec.has_decimal_simple())
-                        {
-                            const DecimalSimple & ds = dec.decimal_simple();
-
-                            if (ds.has_precision())
-                            {
-                                const uint32_t precision = std::max<uint32_t>(1, ds.precision() % 77);
-
-                                ret += "(";
-                                ret += std::to_string(precision);
-                                if (ds.has_scale())
-                                {
-                                    ret += ",";
-                                    ret += std::to_string(ds.scale() % (precision + 1));
-                                }
-                                ret += ")";
-                            }
-                        }
-                    }
-                    break;
                     case BottomTypeNameType::kJdef: {
                         const JSONDef & jdef = btn.jdef();
 
