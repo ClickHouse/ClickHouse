@@ -3998,14 +3998,6 @@ The path to a ZooKeeper node, which is used as a storage for all `CREATE WORKLOA
 - [Workload Hierarchy](/operations/workload-scheduling.md#workloads)
 - [workload_path](#workload_path)
 
-## use_legacy_mongodb_integration {#use_legacy_mongodb_integration}
-
-Use the legacy MongoDB integration implementation. Deprecated.
-
-Type: `Bool`
-
-Default: `true`.
-
 ## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
 The maximum number of authentication methods a user can be created with or altered to.

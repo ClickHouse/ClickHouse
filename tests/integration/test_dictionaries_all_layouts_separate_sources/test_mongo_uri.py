@@ -34,7 +34,6 @@ def source(secure_connection, cluster):
         "root",
         mongo_pass,
         secure=secure_connection,
-        legacy=False,
     )
 
 
