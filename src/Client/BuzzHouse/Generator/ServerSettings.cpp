@@ -26,6 +26,15 @@ std::unordered_map<String, CHSetting> performanceSettings
        {"compile_aggregate_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"compile_expressions", CHSetting(trueOrFalse, {"0", "1"}, false)},
        {"compile_sort_description", CHSetting(trueOrFalse, {"0", "1"}, false)},
+       {"concurrent_threads_scheduler",
+        CHSetting(
+            [](RandomGenerator & rg)
+            {
+                const DB::Strings & choices = {"'round_robin'", "'fair_round_robin'"};
+                return rg.pickRandomly(choices);
+            },
+            {"'round_robin'", "'fair_round_robin'"},
+            false)},
        {"count_distinct_implementation",
         CHSetting(
             [](RandomGenerator & rg)
@@ -255,6 +264,8 @@ std::unordered_map<String, CHSetting> serverSettings = {
     {"compatibility_ignore_collation_in_create_table", CHSetting(trueOrFalse, {}, false)},
     {"composed_data_type_output_format_mode",
      CHSetting([](RandomGenerator & rg) { return rg.nextBool() ? "'default'" : "'spark'"; }, {}, false)},
+    {"concurrent_threads_soft_limit_num", threadRange},
+    {"concurrent_threads_soft_limit_ratio_to_cores", CHSetting(probRange, {}, false)},
     {"convert_query_to_cnf", CHSetting(trueOrFalse, {}, false)},
     {"create_replicated_merge_tree_fault_injection_probability", CHSetting(probRange, {}, false)},
     {"create_table_empty_primary_key_by_default", CHSetting(trueOrFalse, {}, false)},

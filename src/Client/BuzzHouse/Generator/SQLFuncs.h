@@ -148,6 +148,7 @@ const std::vector<CHAggregate> CHAggrs = {
     CHAggregate(SQLFunc::FUNCsparkBar, 1, 3, 2, 2, false),
     CHAggregate(SQLFunc::FUNCsumCount, 0, 0, 1, 1, false),
     CHAggregate(SQLFunc::FUNClargestTriangleThreeBuckets, 1, 1, 2, 2, false),
+    CHAggregate(SQLFunc::FUNCestimateCompressionRatio, 2, 2, 1, 1, false),
     /// JSON and Dynamic tyoes
     CHAggregate(SQLFunc::FUNCdistinctDynamicTypes, 0, 0, 1, 1, false),
     CHAggregate(SQLFunc::FUNCdistinctJSONPaths, 0, 0, 1, 1, false),
@@ -287,6 +288,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNCarrayShiftRight, 0, 0, 2, 3),
     CHFunction(SQLFunc::FUNCindexOfAssumeSorted, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCarrayNormalizedGini, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCarraySymmetricDifference, 0, 0, 1, ulimited_params),
     // Bit functions
     CHFunction(SQLFunc::FUNCbitAnd, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCbitOr, 0, 0, 2, 2),
@@ -493,6 +495,7 @@ const std::vector<CHFunction> CHFuncs = {
     CHFunction(SQLFunc::FUNChiveHash, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCmetroHash64, 0, 0, 1, ulimited_params),
     CHFunction(SQLFunc::FUNCjumpConsistentHash, 0, 0, 2, 2),
+    CHFunction(SQLFunc::FUNCkeccak256, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCkostikConsistentHash, 0, 0, 2, 2),
     CHFunction(SQLFunc::FUNCripeMD160, 0, 0, 1, 1),
     CHFunction(SQLFunc::FUNCmurmurHash2_32, 0, 0, 1, ulimited_params),
