@@ -121,7 +121,7 @@ All scenarios are written in Spark because CH doesn't support writing to Iceberg
 
 Consider this sequence of operations:
 
- ```
+ ```sql
  -- Create a table with two columns
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
   order_number int, 
@@ -185,7 +185,7 @@ Query results at different timestamps:
 A time travel query at a current moment might show a different schema than the current table:
 
 
-```
+```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
   order_number int, 
@@ -229,7 +229,7 @@ This happens because `ALTER TABLE` doesn't create a new snapshot but for the cur
 
 The second one is that while doing time travel you can't get state of table before any data was written to it:
 
-```
+```sql
 -- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
   order_number int, 
