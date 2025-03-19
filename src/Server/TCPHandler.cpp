@@ -684,7 +684,9 @@ void TCPHandler::runImpl()
                     CompletedPipelineExecutor executor(query_state->io.pipeline);
 
                     /// Should not check for cancel in case of input.
-                    if (!query_state->need_receive_data_for_input)
+                    /// And for parallel distributed insert select from *Cluster table functions as well,
+                    /// because it need receiving ReadTaskResponse from Client.
+                    if (!query_state->need_receive_data_for_input && interactive_delay > 1000)
                     {
                         auto callback = [this, &query_state]()
                         {
@@ -2420,6 +2422,7 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state)
     after_check_cancelled.restart();
 
     /// During request execution the only packet that can come from the client is stopping the query.
+    /// (Except in case of input and parallel distributed insert select from *Cluster table functions.)
     if (in->poll(0))
     {
         if (in->eof())

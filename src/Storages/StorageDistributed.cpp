@@ -1160,6 +1160,7 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     QueryPipeline pipeline;
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
+    query_context->setSetting("interactive_delay", Field(0));
 
     const auto & current_settings = query_context->getSettingsRef();
     auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
