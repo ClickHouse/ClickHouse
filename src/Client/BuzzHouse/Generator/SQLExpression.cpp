@@ -175,7 +175,7 @@ static const std::vector<SQLFunc> nonSargablFuncs
 
 void StatementGenerator::addSargableColRef(RandomGenerator & rg, const SQLRelationCol & rel_col, Expr * expr)
 {
-    if (rg.nextMediumNumber() < 18)
+    if (rg.nextMediumNumber() < 16)
     {
         /// Add non sargable reference
         SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
@@ -1125,7 +1125,7 @@ void StatementGenerator::generateExpression(RandomGenerator & rg, Expr * expr)
         }
         if (!this->allow_not_deterministic || (this->width < this->fc.max_width && rg.nextSmallNumber() < 4))
         {
-            generateOrderBy(rg, 0, true, wdf->mutable_order_by());
+            generateOrderBy(rg, 0, true, false, wdf->mutable_order_by());
         }
         if (this->width < this->fc.max_width && rg.nextSmallNumber() < 4)
         {

@@ -1405,9 +1405,10 @@ bool StatementGenerator::generateGroupBy(
     return true;
 }
 
-void StatementGenerator::generateOrderBy(RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, OrderByStatement * ob)
+void StatementGenerator::generateOrderBy(
+    RandomGenerator & rg, const uint32_t ncols, const bool allow_settings, const bool allow_all, OrderByStatement * ob)
 {
-    if (allow_settings && rg.nextSmallNumber() < 3)
+    if (allow_settings && allow_all && rg.nextSmallNumber() < 3)
     {
         ob->set_oall(true);
     }
@@ -1767,7 +1768,7 @@ void StatementGenerator::generateSelect(
             && (!this->allow_not_deterministic || force_order_by || rg.nextSmallNumber() < 4))
         {
             this->depth++;
-            generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), ssc->mutable_orderby());
+            generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), true, ssc->mutable_orderby());
             this->depth--;
         }
         if ((allowed_clauses & allow_limit) && (this->allow_not_deterministic || ssc->has_orderby()) && rg.nextSmallNumber() < 4)
