@@ -163,7 +163,7 @@ public:
         if (field == nullptr)
             return;
 
-        const auto child = children.begin();
+        auto * const child = children.begin();
         while (child != children.end())
         {
             if (child->get() == field)
