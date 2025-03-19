@@ -105,7 +105,15 @@ void TerminalKeystrokeInterceptor::run(TerminalKeystrokeInterceptor::CallbackMap
     std::unique_lock lock(stop_requested_mutex);
     while (!stop_requested)
     {
-        runImpl(map);
+        try
+        {
+            runImpl(map);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+
         stop_requested_cv.wait_for(lock, intercept_interval_ms, [map, this] { return stop_requested; });
     }
 }
