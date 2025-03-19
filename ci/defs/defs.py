@@ -63,13 +63,13 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
+    Docker.Config(
+        name="clickhouse/fasttest",
+        path="./ci/docker/fasttest",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
     # new images
-    # Docker.Config(
-    #     name="clickhouse/fasttest",
-    #     path="./ci/docker/fasttest",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
     # Docker.Config(
     #     name="clickhouse/binary-builder",
     #     path="./ci/docker/binary-builder",
@@ -82,12 +82,6 @@ DOCKERS = [
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=[],
     # ),
-    Docker.Config(
-        name="clickhouse/fasttest",
-        path="./docker/test/fasttest",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-util"],
-    ),
     # TODO: fix build failure:
     # 7 58.76 In file included from ./../code-sign-blobs/superblob.h:7:
     # 7 58.76 ./../code-sign-blobs/blob.h:185:60: error: no member named 'clone' in 'Security::BlobCore'
@@ -140,16 +134,10 @@ DOCKERS = [
         depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
-        name="clickhouse/stateful-test",
-        path="./docker/test/stateful",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/stateless-test"],
-    ),
-    Docker.Config(
         name="clickhouse/stress-test",
         path="./docker/test/stress",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/stateful-test"],
+        depends_on=["clickhouse/stateless-test"],
     ),
     Docker.Config(
         name="clickhouse/fuzzer",
@@ -516,11 +504,6 @@ class ArtifactConfigs:
             ArtifactNames.UNITTEST_AMD_BINARY,
         ]
     )
-    fast_test = Artifact.Config(
-        name=ArtifactNames.FAST_TEST,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*",
-    )
     fuzzers = Artifact.Config(
         name=ArtifactNames.FUZZERS,
         type=Artifact.Type.S3,
@@ -579,7 +562,6 @@ class Jobs:
                 "./src",
             ],
         ),
-        provides=[ArtifactNames.FAST_TEST],
     )
 
     build_jobs = Job.Config(

@@ -7,6 +7,7 @@
 
 #include <base/hex.h>
 #include <base/interpolate.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/MemoryTracker.h>
