@@ -303,6 +303,9 @@ def test_pause(started_cluster):
         "2\n",
     )
 
+    node1.query("drop database re sync")
+    node2.query("drop database re sync")
+
 backup_id_counter = 0
 
 def new_backup_destination():
@@ -358,6 +361,10 @@ def do_test_backup(to_table):
         f"select * from re.{target} order by x",
         "1\n2\n",
     )
+
+    node1.query("drop database re sync")
+    node2.query("drop database re sync")
+
 
 def test_backup_outer_table(started_cluster):
     do_test_backup(True)
