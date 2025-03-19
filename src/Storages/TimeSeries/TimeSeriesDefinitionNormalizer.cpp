@@ -1,5 +1,6 @@
 #include <Storages/TimeSeries/TimeSeriesDefinitionNormalizer.h>
 
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -96,7 +97,7 @@ void TimeSeriesDefinitionNormalizer::reorderColumns(ASTCreateQuery & create) con
     const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
     for (const auto & tag_name_and_column_name : tags_to_columns)
     {
-        const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
         const auto & column_name = tuple.at(1).safeGet<String>();
         add_column_in_correct_order(column_name);
     }
@@ -209,7 +210,7 @@ void TimeSeriesDefinitionNormalizer::addMissingColumns(ASTCreateQuery & create) 
     const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
     for (const auto & tag_name_and_column_name : tags_to_columns)
     {
-        const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
         const auto & column_name = tuple.at(1).safeGet<String>();
         if (!is_next_column_named(column_name))
             make_new_column(column_name, get_string_type());
@@ -301,7 +302,7 @@ ASTPtr TimeSeriesDefinitionNormalizer::chooseIDAlgorithm(const ASTColumnDeclarat
         const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
         for (const auto & tag_name_and_column_name : tags_to_columns)
         {
-            const auto & tuple = tag_name_and_column_name.safeGet<const Tuple &>();
+            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
             const auto & column_name = tuple.at(1).safeGet<String>();
             arguments_for_hash_function.push_back(std::make_shared<ASTIdentifier>(column_name));
         }

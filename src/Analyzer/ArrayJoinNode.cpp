@@ -8,6 +8,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Common/assert_cast.h>
+#include <Common/SipHash.h>
 
 namespace DB
 {
@@ -66,15 +67,14 @@ ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
         auto * column_node = array_join_expression->as<ColumnNode>();
         if (column_node && column_node->getExpression())
         {
-            if (const auto * function_node = column_node->getExpression()->as<FunctionNode>(); function_node && function_node->getFunctionName() == "nested")
-                array_join_expression_ast = array_join_expression->toAST(options);
-            else
-                array_join_expression_ast = column_node->getExpression()->toAST(options);
+            array_join_expression_ast = column_node->getExpression()->toAST(options);
         }
         else
             array_join_expression_ast = array_join_expression->toAST(options);
 
-        array_join_expression_ast->setAlias(array_join_expression->getAlias());
+        /// We must check that it has an alias (not empty) as otherwise we try to set it and not all IAST classes support it (LOGICAL_ERROR)
+        if (array_join_expression->hasAlias())
+            array_join_expression_ast->setAlias(array_join_expression->getAlias());
         array_join_expressions_ast->children.push_back(std::move(array_join_expression_ast));
     }
 

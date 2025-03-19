@@ -57,14 +57,19 @@ private:
 
     /// Tries to get a replicated table and restart it
     /// Returns pointer to a newly created table if the restart was successful
-    StoragePtr tryRestartReplica(const StorageID & replica, ContextMutablePtr context);
+    ///
+    /// @param throw_on_error - set to true for SYSTEM RESTART REPLICA, and false for SYSTEM RESTART REPLICAS
+    StoragePtr doRestartReplica(const StorageID & replica, ContextMutablePtr context, bool throw_on_error);
 
     void restartReplica(const StorageID & replica, ContextMutablePtr system_context);
     void restartReplicas(ContextMutablePtr system_context);
     void syncReplica(ASTSystemQuery & query);
     void setReplicaReadiness(bool ready);
     void waitLoadingParts();
+
+    void loadPrimaryKeys();
     void unloadPrimaryKeys();
+    void loadOrUnloadPrimaryKeysImpl(bool load);
 
     void syncReplicatedDatabase(ASTSystemQuery & query);
 

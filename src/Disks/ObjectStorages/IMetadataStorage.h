@@ -135,6 +135,8 @@ public:
     /// Create empty file in metadata storage
     virtual void createEmptyMetadataFile(const std::string & path) = 0;
 
+    virtual void createEmptyFile(const std::string & /* path */) {}
+
     /// Create metadata file on paths with content (blob_name, size_in_bytes)
     virtual void createMetadataFile(const std::string & path, ObjectStorageKey key, uint64_t size_in_bytes) = 0;
 
@@ -181,6 +183,11 @@ public:
 
     virtual MetadataStorageType getType() const = 0;
 
+    /// Returns true if empty file can be created without any blobs in the corresponding object storage.
+    /// E.g. metadata storage can store the empty list of blobs corresponding to a file without actually storing any blobs.
+    /// But if the metadata storage just relies on for example local FS to store data under logical path, then a file has to be created even if it's empty.
+    virtual bool supportsEmptyFilesWithoutBlobs() const { return false; }
+
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
     virtual bool existsFile(const std::string & path) const = 0;
@@ -222,6 +229,11 @@ public:
 
     virtual DirectoryIteratorPtr iterateDirectory(const std::string & path) const = 0;
 
+    virtual bool isDirectoryEmpty(const std::string & path) const
+    {
+        return !iterateDirectory(path)->isValid();
+    }
+
     virtual uint32_t getHardlinkCount(const std::string & path) const = 0;
 
     /// Read metadata file to string from path
@@ -239,6 +251,14 @@ public:
     virtual void shutdown()
     {
         /// This method is overridden for specific metadata implementations in ClickHouse Cloud.
+    }
+
+    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
+    /// Note: for performance reasons, it's allowed to assume that only some subset of changes are possible
+    /// (those that MergeTree tables can make).
+    virtual void refresh()
+    {
+        /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
     }
 
     virtual ~IMetadataStorage() = default;

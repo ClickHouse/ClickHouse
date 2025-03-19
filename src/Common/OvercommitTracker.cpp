@@ -1,10 +1,11 @@
 #include "OvercommitTracker.h"
 
-#include <chrono>
-#include <mutex>
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Interpreters/ProcessList.h>
+
+#include <chrono>
+#include <shared_mutex>
 
 namespace CurrentMetrics
 {
@@ -46,7 +47,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     // always called with already acquired global mutex in
     // ProcessListEntry::~ProcessListEntry().
     DB::ProcessList::Lock global_lock(process_list->getMutex());
-    std::unique_lock<std::mutex> lk(overcommit_m);
+    std::unique_lock lk(overcommit_m);
 
     size_t id = next_id++;
 
@@ -115,7 +116,13 @@ void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
     if (OvercommitTrackerBlockerInThread::isBlocked())
         return;
 
-    std::lock_guard guard(overcommit_m);
+    {
+        std::shared_lock read_lock(overcommit_m);
+        if (cancellation_state == QueryCancellationState::NONE)
+            return;
+    }
+
+    std::lock_guard lk(overcommit_m);
     if (cancellation_state != QueryCancellationState::NONE)
     {
         freed_memory += amount;
@@ -127,6 +134,12 @@ void OvercommitTracker::tryContinueQueryExecutionAfterFree(Int64 amount)
 void OvercommitTracker::onQueryStop(MemoryTracker * tracker)
 {
     DENY_ALLOCATIONS_IN_SCOPE;
+
+    {
+        std::shared_lock read_lock(overcommit_m);
+        if (picked_tracker != tracker)
+            return;
+    }
 
     std::lock_guard lk(overcommit_m);
     if (picked_tracker == tracker)

@@ -3,7 +3,6 @@
 #include <list>
 #include <memory>
 
-#include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/filesystemHelpers.h>
 #include <Formats/MarkInCompressedFile.h>
@@ -194,6 +193,7 @@ private:
         NamesAndTypesList merging_columns{};
         NamesAndTypesList storage_columns{};
         MergeTreeData::DataPart::Checksums checksums_gathered_columns{};
+        ColumnsWithTypeAndName gathered_columns_samples{};
 
         IndicesDescription merging_skip_indexes;
         std::unordered_map<String, IndicesDescription> skip_indexes_by_column;

@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 #include <Common/logger_useful.h>
+#include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
 #include <Parsers/IAST.h>
 #include <Formats/FormatFactory.h>
@@ -174,7 +175,8 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args,
     const String & structure_,
     const String & format_,
-    ContextPtr context)
+    ContextPtr context,
+    bool with_structure)
 {
     if (auto collection = tryGetNamedCollectionWithOverrides(args, context))
     {
@@ -186,7 +188,7 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
             auto format_equal_func = makeASTFunction("equals", std::move(format_equal_func_args));
             args.push_back(format_equal_func);
         }
-        if (collection->getOrDefault<String>("structure", "auto") == "auto")
+        if (with_structure && collection->getOrDefault<String>("structure", "auto") == "auto")
         {
             ASTs structure_equal_func_args = {std::make_shared<ASTIdentifier>("structure"), std::make_shared<ASTLiteral>(structure_)};
             auto structure_equal_func = makeASTFunction("equals", std::move(structure_equal_func_args));
@@ -209,23 +211,26 @@ void StorageHDFSConfiguration::addStructureAndFormatToArgsIfNeeded(
         if (count == 1)
         {
             /// Add format=auto before structure argument.
-            args.push_back(std::make_shared<ASTLiteral>("auto"));
-            args.push_back(structure_literal);
+            args.push_back(format_literal);
+            if (with_structure)
+                args.push_back(structure_literal);
         }
         /// hdfs(url, format)
         else if (count == 2)
         {
             if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
                 args.back() = format_literal;
-            args.push_back(structure_literal);
+            if (with_structure)
+                args.push_back(structure_literal);
         }
         /// hdfs(url, format, structure)
         /// hdfs(url, format, structure, compression_method)
+        /// hdfs(url, format, compression_method)
         else if (count >= 3)
         {
             if (checkAndGetLiteralArgument<String>(args[1], "format") == "auto")
                 args[1] = format_literal;
-            if (checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
+            if (with_structure && checkAndGetLiteralArgument<String>(args[2], "structure") == "auto")
                 args[2] = structure_literal;
         }
     }

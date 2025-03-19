@@ -25,6 +25,7 @@ public:
         const StorageSnapshotPtr & storage_snapshot_,
         UncompressedCache * uncompressed_cache_,
         MarkCache * mark_cache_,
+        DeserializationPrefixesCache * deserialization_prefixes_cache_,
         MarkRanges mark_ranges_,
         MergeTreeReaderSettings settings_,
         ValueSizeMap avg_value_size_hints_,
@@ -35,23 +36,18 @@ public:
 
 protected:
     void fillColumnPositions();
-    NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
-    void findPositionForMissedNested(size_t pos);
 
     using InputStreamGetter = ISerialization::InputStreamGetter;
 
     void readData(
-        const NameAndTypePair & name_and_type,
+        size_t column_idx,
         ColumnPtr & column,
         size_t rows_to_read,
-        const InputStreamGetter & getter,
-        ISerialization::SubstreamsCache & cache);
+        MergeTreeReaderStream & stream,
+        ISerialization::SubstreamsCache & cache,
+        std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns);
 
-    void readPrefix(
-        const NameAndTypePair & name_and_type,
-        const InputStreamGetter & buffer_getter,
-        const InputStreamGetter & buffer_getter_for_prefix,
-        const ColumnNameLevel & name_level_for_offsets);
+    void readPrefix(size_t column_idx, MergeTreeReaderStream & stream);
 
     void createColumnsForReading(Columns & res_columns) const;
     bool needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const;
@@ -74,11 +70,21 @@ protected:
 
     /// Should we read full column or only it's offsets.
     /// Element of the vector is the level of the alternative stream.
-    std::vector<ColumnNameLevel> columns_for_offsets;
+    std::vector<std::optional<ColumnForOffsets>> columns_for_offsets;
 
     /// Mark to read in next 'readRows' call in case,
     /// when 'continue_reading' is true.
     size_t next_mark = 0;
+
+private:
+    void readPrefix(
+        const NameAndTypePair & name_and_type,
+        const SerializationPtr & serialization,
+        ISerialization::DeserializeBinaryBulkStatePtr & state,
+        const InputStreamGetter & buffer_getter);
+
+    NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
+    void findPositionForMissedNested(size_t pos);
 };
 
 }

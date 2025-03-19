@@ -11,21 +11,23 @@
 #include <Common/Logger.h>
 #include <Common/LoggingFormatStringHelpers.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 
 
-#define LogToStr(x, y) std::make_unique<LogToStrImpl>(x, y)
-#define LogFrequencyLimiter(x, y) std::make_unique<LogFrequencyLimiterImpl>(x, y)
+#define LogToStr(x, y) LogToStrImpl(x, y)
+#define LogFrequencyLimiter(x, y) LogFrequencyLimiterImpl(x, y)
 
 using LogSeriesLimiterPtr = std::shared_ptr<LogSeriesLimiter>;
 
 namespace impl
 {
     [[maybe_unused]] inline LoggerPtr getLoggerHelper(const LoggerPtr & logger) { return logger; }
-    [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
     [[maybe_unused]] inline const ::Poco::Logger * getLoggerHelper(const ::Poco::Logger * logger) { return logger; }
-    [[maybe_unused]] inline std::unique_ptr<LogToStrImpl> getLoggerHelper(std::unique_ptr<LogToStrImpl> && logger) { return logger; }
-    [[maybe_unused]] inline std::unique_ptr<LogFrequencyLimiterImpl> getLoggerHelper(std::unique_ptr<LogFrequencyLimiterImpl> && logger) { return logger; }
+    [[maybe_unused]] inline LoggerPtr getLoggerHelper(const DB::AtomicLogger & logger) { return logger.load(); }
+    [[maybe_unused]] inline LogToStrImpl getLoggerHelper(LogToStrImpl && logger) { return logger; }
+    [[maybe_unused]] inline LogFrequencyLimiterImpl getLoggerHelper(LogFrequencyLimiterImpl && logger) { return logger; }
     [[maybe_unused]] inline LogSeriesLimiterPtr getLoggerHelper(LogSeriesLimiterPtr & logger) { return logger; }
+    [[maybe_unused]] inline LogSeriesLimiter * getLoggerHelper(LogSeriesLimiter & logger) { return &logger; }
 }
 
 #define LOG_IMPL_FIRST_ARG(X, ...) X
@@ -62,13 +64,21 @@ namespace impl
 ///  and the latter arguments are treated as values to substitute.
 /// If only one argument is provided, it is treated as a message without substitutions.
 
+constexpr bool constexprContains(std::string_view haystack, std::string_view needle)
+{
+    return haystack.find(needle) != std::string_view::npos;
+}
+
 #define LOG_IMPL(logger, priority, PRIORITY, ...) do                                                                \
 {                                                                                                                   \
+    static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsOneLine"), "Think twice!");                    \
+    static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsMultiLine"), "Think twice!");                  \
     auto _logger = ::impl::getLoggerHelper(logger);                                                                 \
     const bool _is_clients_log = DB::currentThreadHasGroup() && DB::currentThreadLogsLevel() >= (priority);         \
     if (!_is_clients_log && !_logger->is((PRIORITY)))                                                               \
         break;                                                                                                      \
                                                                                                                     \
+    Stopwatch _logger_watch;                                                                                        \
     try                                                                                                             \
     {                                                                                                               \
         ProfileEvents::incrementForLogMessage(PRIORITY);                                                            \
@@ -122,6 +132,7 @@ namespace impl
     {                                                                                                               \
         ::write(STDERR_FILENO, static_cast<const void *>(MESSAGE_FOR_EXCEPTION_ON_LOGGING), sizeof(MESSAGE_FOR_EXCEPTION_ON_LOGGING)); \
     }                                                                                                               \
+    ProfileEvents::incrementLoggerElapsedNanoseconds(_logger_watch.elapsedNanoseconds());                           \
 } while (false)
 
 

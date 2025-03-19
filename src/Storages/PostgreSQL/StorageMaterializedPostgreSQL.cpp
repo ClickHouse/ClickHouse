@@ -26,7 +26,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
-#include <Parsers/formatAST.h>
 
 #include <Interpreters/applyTableOverride.h>
 #include <Interpreters/InterpreterDropQuery.h>
@@ -623,13 +622,14 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
     };
 
     factory.registerStorage(
-            "MaterializedPostgreSQL",
-            creator_fn,
-            StorageFactory::StorageFeatures{
-                .supports_settings = true,
-                .supports_sort_order = true,
-                .source_access_type = AccessType::POSTGRES,
-    });
+        "MaterializedPostgreSQL",
+        creator_fn,
+        StorageFactory::StorageFeatures{
+            .supports_settings = true,
+            .supports_sort_order = true,
+            .source_access_type = AccessType::POSTGRES,
+            .has_builtin_setting_fn = MaterializedPostgreSQLSettings::hasBuiltin,
+        });
 }
 
 }

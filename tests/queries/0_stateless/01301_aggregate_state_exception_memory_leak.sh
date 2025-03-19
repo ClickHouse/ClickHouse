@@ -16,5 +16,5 @@ for _ in {1..1000}; do
     if [[ $elapsed -gt 30 ]]; then
         break
     fi
-done 2>&1 | grep -o -P 'Query memory limit exceeded' | sed -r -e 's/(.*):([a-Z ]*)([mM]emory limit exceeded)(.*)/\2\3/' | uniq
+done 2>&1 | grep -o 'Query memory limit exceeded' | head -n1
 echo 'Ok'

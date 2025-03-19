@@ -6,6 +6,7 @@
 #include <DataTypes/IDataType.h>
 #include <Core/Types.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Functions/FunctionDateOrDateTimeAddInterval.h>
 #include <Common/FieldVisitorScale.h>
 #include <Common/FieldVisitorSum.h>
@@ -93,7 +94,7 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
             return getStepFunction<UInt32>(step_kind.value(), step.safeGet<Int64>(), date_time->getTimeZone());
         else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
         {
-            const auto & step_dec = step.safeGet<const DecimalField<Decimal64> &>();
+            const auto & step_dec = step.safeGet<DecimalField<Decimal64>>();
             Int64 converted_step = DecimalUtils::convertTo<Int64>(step_dec.getValue(), step_dec.getScale());
             static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
 
@@ -205,6 +206,22 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
     return true;
 }
 
+SortDescription deduplicateSortDescription(const SortDescription & sort_description, const Block & header)
+{
+    SortDescription result;
+    std::unordered_set<std::string> unique_columns;
+    for (const auto & desc : sort_description)
+    {
+        if (header.findByName(desc.column_name) == nullptr)
+            continue;
+        const auto & [_, inserted] = unique_columns.insert(desc.column_name);
+        if (!inserted)
+            continue;
+        result.push_back(desc);
+    }
+    return result;
+}
+
 FillingTransform::FillingTransform(
     const Block & header_,
     const SortDescription & sort_description_,
@@ -212,7 +229,7 @@ FillingTransform::FillingTransform(
     InterpolateDescriptionPtr interpolate_description_,
     const bool use_with_fill_by_sorting_prefix_)
     : ISimpleTransform(header_, transformHeader(header_, fill_description_), true)
-    , sort_description(sort_description_)
+    , sort_description(deduplicateSortDescription(sort_description_, header_))
     , fill_description(fill_description_)
     , interpolate_description(interpolate_description_)
     , filling_row(fill_description_)

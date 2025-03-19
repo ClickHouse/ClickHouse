@@ -237,7 +237,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
     }
 }
 
-HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, String query_id, std::chrono::milliseconds acquire_timeout, const Names & required_columns_names) const
 {
     auto metadata_snapshot = getInMemoryMetadataPtr();
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
@@ -302,11 +302,20 @@ HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join,
         right_sample_block.insert(getRightSampleBlock().getByName(name));
     HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, right_sample_block);
 
-    RWLockImpl::LockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Read, context);
+    RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, acquire_timeout);
     join_clone->setLock(holder);
     join_clone->reuseJoinedData(*join);
 
     return join_clone;
+}
+
+HashJoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, ContextPtr context, const Names & required_columns_names) const
+{
+    const String query_id = context ? context->getInitialQueryId() : RWLockImpl::NO_QUERY;
+    const std::chrono::milliseconds acquire_timeout
+        = context ? context->getSettingsRef()[Setting::lock_acquire_timeout] : std::chrono::seconds(DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC);
+
+    return getJoinLocked(analyzed_join, query_id, acquire_timeout, required_columns_names);
 }
 
 void StorageJoin::insertBlock(const Block & block, ContextPtr context)
@@ -363,6 +372,20 @@ void StorageJoin::convertRightBlock(Block & block) const
 
 void registerStorageJoin(StorageFactory & factory)
 {
+    auto has_builtin_fn = [](std::string_view name)
+    {
+        static const std::unordered_set<std::string_view> valid_settings
+            = {"join_use_nulls",
+               "max_rows_in_join",
+               "max_bytes_in_join",
+               "join_overflow_mode",
+               "join_any_take_last_row",
+               "any_join_distinct_right_table_keys",
+               "disk",
+               "persistent"};
+        return valid_settings.contains(name);
+    };
+
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
         /// Join(ANY, LEFT, k1, k2, ...)
@@ -490,7 +513,13 @@ void registerStorageJoin(StorageFactory & factory)
             persistent);
     };
 
-    factory.registerStorage("Join", creator_fn, StorageFactory::StorageFeatures{ .supports_settings = true, });
+    factory.registerStorage(
+        "Join",
+        creator_fn,
+        StorageFactory::StorageFeatures{
+            .supports_settings = true,
+            .has_builtin_setting_fn = has_builtin_fn,
+        });
 }
 
 template <typename T>

@@ -180,15 +180,15 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     for (size_t i = 0; i < 2; ++i)
     {
-        if (!query_with_output.format && s_format.ignore(pos, expected))
+        if (!query_with_output.format_ast && s_format.ignore(pos, expected))
         {
             ParserIdentifier format_p;
 
-            if (!format_p.parse(pos, query_with_output.format, expected))
+            if (!format_p.parse(pos, query_with_output.format_ast, expected))
                 return false;
-            setIdentifierSpecial(query_with_output.format);
+            setIdentifierSpecial(query_with_output.format_ast);
 
-            query_with_output.children.push_back(query_with_output.format);
+            query_with_output.children.push_back(query_with_output.format_ast);
         }
         else if (!query_with_output.settings_ast && s_settings.ignore(pos, expected))
         {

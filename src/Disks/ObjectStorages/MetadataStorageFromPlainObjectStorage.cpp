@@ -1,22 +1,16 @@
 #include "MetadataStorageFromPlainObjectStorage.h"
 
 #include <Disks/IDisk.h>
-#include <Disks/ObjectStorages/IObjectStorage.h>
-#include <Disks/ObjectStorages/InMemoryDirectoryPathMap.h>
 #include <Disks/ObjectStorages/MetadataStorageFromPlainObjectStorageOperations.h>
 #include <Disks/ObjectStorages/StaticDirectoryIterator.h>
 #include <Disks/ObjectStorages/StoredObject.h>
 #include <Common/ObjectStorageKey.h>
 #include <Common/SipHash.h>
+#include <Common/logger_useful.h>
 
 #include <Common/filesystemHelpers.h>
 
 #include <filesystem>
-#include <memory>
-#include <optional>
-#include <tuple>
-#include <unordered_set>
-#include <Poco/Timestamp.h>
 
 
 namespace DB
@@ -146,6 +140,7 @@ DirectoryIteratorPtr MetadataStorageFromPlainObjectStorage::iterateDirectory(con
 {
     /// Required for MergeTree
     auto paths = listDirectory(path);
+
     /// Prepend path, since iterateDirectory() includes path, unlike listDirectory()
     std::for_each(paths.begin(), paths.end(), [&](auto & child) { child = fs::path(path) / child; });
     std::vector<std::filesystem::path> fs_paths(paths.begin(), paths.end());

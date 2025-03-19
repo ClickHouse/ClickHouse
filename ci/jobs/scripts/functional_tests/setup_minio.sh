@@ -120,6 +120,12 @@ setup_aws_credentials() {
   local minio_root_user=${MINIO_ROOT_USER:-clickhouse}
   local minio_root_password=${MINIO_ROOT_PASSWORD:-clickhouse}
   mkdir -p ~/.aws
+  if [[ -f ~/.aws/credentials ]]; then
+    if grep -q "^\[default\]" ~/.aws/credentials; then
+        echo "The credentials file contains a [default] section."
+        return
+    fi
+  fi
   cat <<EOT >> ~/.aws/credentials
 [default]
 aws_access_key_id=${minio_root_user}

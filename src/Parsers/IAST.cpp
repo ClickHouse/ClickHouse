@@ -179,13 +179,57 @@ String IAST::formatWithPossiblyHidingSensitiveData(
     IdentifierQuotingStyle identifier_quoting_style) const
 {
     WriteBufferFromOwnString buf;
-    FormatSettings settings(buf, one_line);
+    FormatSettings settings(one_line);
     settings.show_secrets = show_secrets;
     settings.print_pretty_type_names = print_pretty_type_names;
     settings.identifier_quoting_rule = identifier_quoting_rule;
     settings.identifier_quoting_style = identifier_quoting_style;
-    format(settings);
+    format(buf, settings);
     return wipeSensitiveDataAndCutToLength(buf.str(), max_length);
+}
+
+String IAST::formatForLogging(size_t max_length) const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/max_length,
+        /*one_line=*/true,
+        /*show_secrets=*/false,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
+String IAST::formatForErrorMessage() const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        /*show_secrets=*/false,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
+String IAST::formatWithSecretsOneLine() const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/true,
+        /*show_secrets=*/true,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
+}
+
+String IAST::formatWithSecretsMultiLine() const
+{
+    return formatWithPossiblyHidingSensitiveData(
+        /*max_length=*/0,
+        /*one_line=*/false,
+        /*show_secrets=*/true,
+        /*print_pretty_type_names=*/false,
+        /*identifier_quoting_rule=*/IdentifierQuotingRule::WhenNecessary,
+        /*identifier_quoting_style=*/IdentifierQuotingStyle::Backticks);
 }
 
 bool IAST::childrenHaveSecretParts() const
@@ -221,7 +265,7 @@ String IAST::getColumnNameWithoutAlias() const
 }
 
 
-void IAST::FormatSettings::writeIdentifier(const String & name, bool ambiguous) const
+void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & name, bool ambiguous) const
 {
     checkIdentifier(name);
     bool must_quote

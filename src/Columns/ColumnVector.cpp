@@ -1,18 +1,18 @@
 #include "ColumnVector.h"
 
+#include <base/bit_cast.h>
+#include <base/scope_guard.h>
+#include <base/sort.h>
+#include <base/unaligned.h>
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
 #include <IO/WriteHelpers.h>
-#include <Processors/Transforms/ColumnGathererTransform.h>
-#include <base/bit_cast.h>
-#include <base/scope_guard.h>
-#include <base/sort.h>
-#include <base/unaligned.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/NaNUtils.h>
@@ -23,9 +23,9 @@
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
+#include <DataTypes/FieldToDataType.h>
 
 #include <bit>
-#include <cmath>
 #include <cstring>
 
 #if defined(__SSE2__)
@@ -283,7 +283,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), data_size, reverse, res.data());
 
-                /// Radix sort treats all NaNs to be greater than all numbers.
+                /// Radix sort treats all positive NaNs to be greater than all numbers.
                 /// If the user needs the opposite, we must move them accordingly.
                 if (is_floating_point<T> && nan_direction_hint < 0)
                 {
@@ -452,6 +452,14 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
     }
 
     return res;
+}
+
+template <typename T>
+std::pair<String, DataTypePtr> ColumnVector<T>::getValueNameAndType(size_t n) const
+{
+    chassert(n < data.size()); /// This assert is more strict than the corresponding assert inside PODArray.
+    const auto & val = castToNearestFieldType(data[n]);
+    return {FieldVisitorToString()(val), FieldToDataType()(val)};
 }
 
 template <typename T>
@@ -951,7 +959,7 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max) const
 }
 
 template <typename T>
-ColumnPtr ColumnVector<T>::compress() const
+ColumnPtr ColumnVector<T>::compress(bool force_compression) const
 {
     const size_t data_size = data.size();
     const size_t source_size = data_size * sizeof(T);
@@ -960,7 +968,7 @@ ColumnPtr ColumnVector<T>::compress() const
     if (source_size < 4096) /// A wild guess.
         return ColumnCompressed::wrap(this->getPtr());
 
-    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, false);
+    auto compressed = ColumnCompressed::compressBuffer(data.data(), source_size, force_compression);
 
     if (!compressed)
         return ColumnCompressed::wrap(this->getPtr());
@@ -1075,7 +1083,8 @@ DECLARE_AVX512VBMI_SPECIFIC_CODE(
 
             __m512i table1 = _mm512_loadu_epi8(data_pos);
             __m512i table2 = _mm512_loadu_epi8(data_pos + 64);
-            __m512i table3, table4;
+            __m512i table3;
+            __m512i table4;
             if (data_size <= 192)
             {
                 /// only 3 tables need to load if size <= 192

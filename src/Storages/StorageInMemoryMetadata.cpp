@@ -13,9 +13,11 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
+#include <Parsers/ASTSQLSecurity.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 
 
@@ -461,6 +463,16 @@ Block StorageInMemoryMetadata::getSampleBlock() const
     return res;
 }
 
+Block StorageInMemoryMetadata::getSampleBlockWithSubcolumns() const
+{
+    Block res;
+
+    for (const auto & column : getColumns().get(GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns()))
+        res.insert({column.type->createColumn(), column.type, column.name});
+
+    return res;
+}
+
 const KeyDescription & StorageInMemoryMetadata::getPartitionKey() const
 {
     return partition_key;
@@ -510,6 +522,13 @@ Names StorageInMemoryMetadata::getSortingKeyColumns() const
 {
     if (hasSortingKey())
         return sorting_key.column_names;
+    return {};
+}
+
+std::vector<bool> StorageInMemoryMetadata::getSortingKeyReverseFlags() const
+{
+    if (hasSortingKey())
+        return sorting_key.reverse_flags;
     return {};
 }
 

@@ -2,12 +2,12 @@ import dataclasses
 import json
 from pathlib import Path
 
-from praktika import Artifact, Job, Workflow
-from praktika._environment import _Environment
-from praktika.digest import Digest
-from praktika.s3 import S3
-from praktika.settings import Settings
-from praktika.utils import Utils
+from . import Artifact, Job, Workflow
+from ._environment import _Environment
+from .digest import Digest
+from .s3 import S3
+from .settings import Settings
+from .utils import Utils
 
 
 class Cache:
@@ -39,7 +39,7 @@ class Cache:
         self.success = {}  # type Dict[str, Any]
 
     @classmethod
-    def push_success_record(cls, job_name, job_digest, sha):
+    def push_success_record(cls, job_name, job_digest, sha, if_not_exist):
         type_ = Cache.CacheRecord.Type.SUCCESS
         record = Cache.CacheRecord(
             type=type_,
@@ -50,10 +50,12 @@ class Cache:
         assert (
             Settings.CACHE_S3_PATH
         ), f"Setting CACHE_S3_PATH must be defined with enabled CI Cache"
-        record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}"
+        record_path = f"{Settings.CACHE_S3_PATH}/v{Settings.CACHE_VERSION}/{Utils.normalize_string(job_name)}/{job_digest}/{type_}"
         record_file = Path(Settings.TEMP_DIR) / type_
         record.dump(record_file)
-        S3.copy_file_to_s3(s3_path=record_path, local_path=record_file)
+        S3.put(
+            s3_path=record_path, local_path=record_file, if_none_matched=if_not_exist
+        )
         record_file.unlink()
 
     def fetch_success(self, job_name, job_digest):
@@ -67,12 +69,9 @@ class Cache:
         )
         Path(record_file_local_dir).mkdir(parents=True, exist_ok=True)
 
-        if S3.head_object(record_path):
-            res = S3.copy_file_from_s3(
-                s3_path=record_path, local_path=record_file_local_dir
-            )
-        else:
-            res = None
+        res = S3.copy_file_from_s3(
+            s3_path=record_path, local_path=record_file_local_dir
+        )
 
         if res:
             print(f"Cache record found, job [{job_name}], digest [{job_digest}]")

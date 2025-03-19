@@ -15,9 +15,13 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
-#if (defined(OS_DARWIN) || defined(OS_FREEBSD)) && defined(__GNUC__)
+#if defined(OS_DARWIN) && defined(__GNUC__)
 #   include <machine/endian.h>
+#elif defined(OS_FREEBSD) && defined(__GNUC__)
+#   include <machine/endian.h>
+#   include <sys/endian.h>
 #else
 #   include <endian.h>
 #endif
@@ -52,7 +56,8 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
 /// decompress data from in_fd into out_fd
 int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
 {
-    off_t in_pointer = start, out_pointer = 0;
+    off_t in_pointer = start;
+    off_t out_pointer = 0;
     off_t size = 0;
     off_t max_block_size = 1ull<<27;
     off_t decompressed_size = 0;
@@ -240,32 +245,32 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
         size_t file_path_len = path ? strlen(path) + 1 + file_name_len : file_name_len;
 
-        char file_name[file_path_len];
-        memset(file_name, '\0', file_path_len);
+        std::vector<char> file_name(file_path_len);
+        memset(file_name.data(), '\0', file_path_len);
         if (path)
         {
-            strcat(file_name, path); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
-            strcat(file_name, "/"); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
+            strcat(file_name.data(), path); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
+            strcat(file_name.data(), "/"); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
         }
 
         bool same_name = false;
         if (file_info.exec)
         {
             has_exec = true;
-            strcat(file_name, name); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
+            strcat(file_name.data(), name); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
         }
         else
         {
             if (strcmp(name, input + files_pointer) == 0)
                 same_name = true;
-            strcat(file_name, input + files_pointer); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
+            strcat(file_name.data(), input + files_pointer); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
         }
 
         files_pointer += le64toh(file_info.name_length);
         if (file_info.exec || same_name)
         {
-            strcat(file_name, ".decompressed.XXXXXX"); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
-            int fd = mkstemp(file_name);
+            strcat(file_name.data(), ".decompressed.XXXXXX"); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
+            int fd = mkstemp(file_name.data());
             if (fd == -1)
             {
                 perror("mkstemp");
@@ -273,12 +278,12 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             }
             if (0 != close(fd))
                 perror("close");
-            strncpy(decompressed_suffix, file_name + strlen(file_name) - 6, 6);
+            strncpy(decompressed_suffix, file_name.data() + strlen(file_name.data()) - 6, 6);
             *decompressed_umask = le64toh(file_info.umask);
             have_compressed_analoge = true;
         }
 
-        int output_fd = open(file_name, O_RDWR | O_CREAT, le64toh(file_info.umask));
+        int output_fd = open(file_name.data(), O_RDWR | O_CREAT, le64toh(file_info.umask));
 
         if (output_fd == -1)
         {
@@ -330,7 +335,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
             perror("close");
 
         if (is_sudo)
-            chown(file_name, info_in.st_uid, info_in.st_gid);
+            chown(file_name.data(), info_in.st_uid, info_in.st_gid);
     }
 
     if (0 != munmap(input, info_in.st_size))
@@ -345,10 +350,10 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     int read_exe_path(char *exe, size_t buf_sz)
     {
         uint32_t size = static_cast<uint32_t>(buf_sz);
-        char apple[size];
-        if (_NSGetExecutablePath(apple, &size) != 0)
+        std::vector<char> apple(size);
+        if (_NSGetExecutablePath(apple.data(), &size) != 0)
             return 1;
-        if (realpath(apple, exe) == nullptr)
+        if (realpath(apple.data(), exe) == nullptr)
             return 1;
         return 0;
     }
@@ -395,7 +400,11 @@ uint64_t getInode(const char * self)
     for (std::string line; std::getline(maps, line);)
     {
         std::stringstream ss(line); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        std::string addr, mode, offset, id, path;
+        std::string addr;
+        std::string mode;
+        std::string offset;
+        std::string id;
+        std::string path;
         uint64_t inode = 0;
         if (ss >> addr >> mode >> offset >> id >> inode >> path && path == self)
             return inode;
@@ -415,19 +424,19 @@ int main(int/* argc*/, char* argv[])
         return 1;
     }
 
-    char file_path[strlen(self) + 1];
-    strcpy(file_path, self); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
+    std::vector<char> file_path(strlen(self) + 1);
+    strcpy(file_path.data(), self); // NOLINT(clang-analyzer-security.insecureAPI.strcpy)
 
     char * path = nullptr;
-    char * name = strrchr(file_path, '/');
+    char * name = strrchr(file_path.data(), '/');
     if (name)
     {
-        path = file_path;
+        path = file_path.data();
         *name = 0;
         ++name;
     }
     else
-        name = file_path;
+        name = file_path.data();
 
     struct stat input_info;
     if (0 != stat(self, &input_info))
@@ -526,20 +535,20 @@ int main(int/* argc*/, char* argv[])
     {
         const char * const decompressed_name_fmt = "%s.decompressed.%s";
         int decompressed_name_len = snprintf(nullptr, 0, decompressed_name_fmt, self, decompressed_suffix);
-        char decompressed_name[decompressed_name_len + 1];
-        (void)snprintf(decompressed_name, decompressed_name_len + 1, decompressed_name_fmt, self, decompressed_suffix);
+        std::vector<char> decompressed_name(decompressed_name_len + 1);
+        (void)snprintf(decompressed_name.data(), decompressed_name_len + 1, decompressed_name_fmt, self, decompressed_suffix);
 
 #if defined(OS_DARWIN)
         // We can't just rename it on Mac due to security issues, so we copy it...
         std::error_code ec;
-        std::filesystem::copy_file(static_cast<char *>(decompressed_name), static_cast<char *>(self), ec);
+        std::filesystem::copy_file(static_cast<char *>(decompressed_name.data()), static_cast<char *>(self), ec);
         if (ec)
         {
             std::cerr << ec.message() << std::endl;
             return 1;
         }
 #else
-        if (link(decompressed_name, self))
+        if (link(decompressed_name.data(), self))
         {
             perror("link");
             return 1;
@@ -551,7 +560,7 @@ int main(int/* argc*/, char* argv[])
             return 1;
         }
 
-        if (unlink(decompressed_name))
+        if (unlink(decompressed_name.data()))
         {
             perror("unlink");
             return 1;

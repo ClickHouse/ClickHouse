@@ -1,9 +1,8 @@
 #pragma once
 #include <Common/CacheBase.h>
 #include <Common/ProfileEvents.h>
-#include <Common/SipHash.h>
 #include <Common/HashTable/Hash.h>
-#include <Columns/IColumn.h>
+#include <Columns/IColumn_fwd.h>
 
 namespace ProfileEvents
 {
@@ -22,13 +21,7 @@ struct PrimaryIndexWeightFunction
     /// We spent additional bytes on key in hashmap, linked lists, shared pointers, etc ...
     static constexpr size_t PRIMARY_INDEX_CACHE_OVERHEAD = 128;
 
-    size_t operator()(const PrimaryIndex & index) const
-    {
-        size_t res = 0;
-        for (const auto & column : index)
-            res += column->byteSize();
-        return res;
-    }
+    size_t operator()(const PrimaryIndex & index) const;
 };
 
 extern template class CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>;
@@ -49,12 +42,7 @@ public:
     }
 
     /// Calculate key from path to file and offset.
-    static UInt128 hash(const String & part_path)
-    {
-        SipHash hash;
-        hash.update(part_path.data(), part_path.size() + 1);
-        return hash.get128();
-    }
+    static UInt128 hash(const String & part_path);
 
     template <typename LoadFunc>
     MappedPtr getOrSet(const Key & key, LoadFunc && load)

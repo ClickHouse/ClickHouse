@@ -4,11 +4,7 @@
 #include <cstdio>
 #include <limits>
 #include <algorithm>
-#include <iterator>
-#include <concepts>
 #include <bit>
-
-#include <pcg-random/pcg_random.hpp>
 
 #include <Common/StackTrace.h>
 #include <Common/formatIPv6.h>
@@ -18,19 +14,13 @@
 #include <Common/transformEndianness.h>
 #include <base/find_symbols.h>
 #include <base/StringRef.h>
-#include <base/DecomposedFloat.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
-#include <Core/UUID.h>
 #include <base/IPv4andIPv6.h>
 
-#include <Common/Exception.h>
-#include <Common/StringUtils.h>
 #include <Common/NaNUtils.h>
-#include <Common/typeid_cast.h>
 
-#include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>
 #include <IO/VarInt.h>
@@ -38,23 +28,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-parameter"
-#pragma clang diagnostic ignored "-Wsign-compare"
-#include <dragonbox/dragonbox_to_chars.h>
-#pragma clang diagnostic pop
-
 #include <Formats/FormatSettings.h>
-
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
-}
-
+class Exception;
 
 /// Helper functions for formatted and binary output.
 
@@ -151,41 +130,11 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
 
 template <typename T>
 requires is_floating_point<T>
-inline size_t writeFloatTextFastPath(T x, char * buffer)
-{
-    Int64 result = 0;
+size_t writeFloatTextFastPath(T x, char * buffer);
 
-    if constexpr (std::is_same_v<T, Float64>)
-    {
-        /// The library Ryu has low performance on integers.
-        /// This workaround improves performance 6..10 times.
-
-        if (DecomposedFloat64(x).isIntegerInRepresentableRange())
-            result = itoa(Int64(x), buffer) - buffer;
-        else
-            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
-    }
-    else if constexpr (std::is_same_v<T, Float32>)
-    {
-        if (DecomposedFloat32(x).isIntegerInRepresentableRange())
-            result = itoa(Int32(x), buffer) - buffer;
-        else
-            result = jkj::dragonbox::to_chars_n(x, buffer) - buffer;
-    }
-    else if constexpr (std::is_same_v<T, BFloat16>)
-    {
-        Float32 f32 = Float32(x);
-
-        if (DecomposedFloat32(f32).isIntegerInRepresentableRange())
-            result = itoa(Int32(f32), buffer) - buffer;
-        else
-            result = jkj::dragonbox::to_chars_n(f32, buffer) - buffer;
-    }
-
-    if (result <= 0)
-        throw Exception(ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER, "Cannot print floating point number");
-    return result;
-}
+extern template size_t writeFloatTextFastPath(Float64 x, char * buffer);
+extern template size_t writeFloatTextFastPath(Float32 x, char * buffer);
+extern template size_t writeFloatTextFastPath(BFloat16 x, char * buffer);
 
 template <typename T>
 requires is_floating_point<T>
@@ -1012,32 +961,6 @@ inline void writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64 
     writeDateTimeText<'-', ':', ' ', '.', true>(datetime64, scale, buf, time_zone);
 }
 
-/// In the RFC 1123 format: "Tue, 03 Dec 2019 00:11:50 GMT". You must provide GMT DateLUT.
-/// This is needed for HTTP requests.
-inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
-{
-    const auto & values = time_zone.getValues(datetime);
-
-    static const char week_days[3 * 8 + 1] = "XXX" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun";
-    static const char months[3 * 13 + 1] = "XXX" "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec";
-
-    buf.write(&week_days[values.day_of_week * 3], 3);
-    buf.write(", ", 2);
-    buf.write(&digits100[values.day_of_month * 2], 2);
-    buf.write(' ');
-    buf.write(&months[values.month * 3], 3);
-    buf.write(' ');
-    buf.write(&digits100[values.year / 100 * 2], 2);
-    buf.write(&digits100[values.year % 100 * 2], 2);
-    buf.write(' ');
-    buf.write(&digits100[time_zone.toHour(datetime) * 2], 2);
-    buf.write(':');
-    buf.write(&digits100[time_zone.toMinute(datetime) * 2], 2);
-    buf.write(':');
-    buf.write(&digits100[time_zone.toSecond(datetime) * 2], 2);
-    buf.write(" GMT", 4);
-}
-
 inline void writeDateTimeTextISO(time_t datetime, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)
 {
     writeDateTimeText<'-', ':', 'T'>(datetime, buf, utc_time_zone);
@@ -1195,7 +1118,7 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
 }
 
 template <typename T>
-void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros,
+void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zeros = false,
                bool fixed_fractional_length = false, UInt32 fractional_length = 0)
 {
     T part = DecimalUtils::getWholePart(x, scale);
@@ -1379,6 +1302,14 @@ inline String toString(const T & x)
     return buf.str();
 }
 
+template <is_decimal T>
+inline String toString(const T & x, UInt32 scale)
+{
+    WriteBufferFromOwnString buf;
+    writeText(x, scale, buf);
+    return buf.str();
+}
+
 inline String toString(const CityHash_v1_0_2::uint128 & hash)
 {
     WriteBufferFromOwnString buf;
@@ -1431,19 +1362,6 @@ inline void writeBinaryBigEndian(T x, WriteBuffer & buf)
 {
     writeBinaryEndian<std::endian::big>(x, buf);
 }
-
-
-struct PcgSerializer
-{
-    static void serializePcg32(const pcg32_fast & rng, WriteBuffer & buf)
-    {
-        writeText(pcg32_fast::multiplier(), buf);
-        writeChar(' ', buf);
-        writeText(pcg32_fast::increment(), buf);
-        writeChar(' ', buf);
-        writeText(rng.state_, buf);
-    }
-};
 
 void writePointerHex(const void * ptr, WriteBuffer & buf);
 

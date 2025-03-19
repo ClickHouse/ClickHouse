@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
+#include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
 #include <Core/Protocol.h>
 #include <DataTypes/DataTypeArray.h>
@@ -25,7 +26,10 @@
 #include <Access/SettingsProfilesInfo.h>
 #include <Interpreters/Context.h>
 
+#include <Poco/Net/SocketAddress.h>
+
 #include <cassert>
+
 
 namespace
 {
@@ -194,8 +198,8 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
         offsets.push_back(settings_tuple_col.size());
     }
 
-    columns[i++]->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
-    columns[i++]->insert(client_info.current_address.port());
+    columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
+    columns[i++]->insert(client_info.current_address->port());
 
     columns[i++]->insert(client_info.interface);
 

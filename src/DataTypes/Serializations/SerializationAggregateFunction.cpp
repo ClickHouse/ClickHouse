@@ -16,14 +16,14 @@ namespace DB
 
 void SerializationAggregateFunction::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings &) const
 {
-    const AggregateFunctionStateData & state = field.safeGet<const AggregateFunctionStateData &>();
+    const AggregateFunctionStateData & state = field.safeGet<AggregateFunctionStateData>();
     writeBinary(state.data, ostr);
 }
 
 void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
     field = AggregateFunctionStateData();
-    AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData &>();
+    AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData>();
     readBinary(s.data, istr);
     s.name = type_name;
 }
@@ -60,12 +60,11 @@ void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column,
     const ColumnAggregateFunction & real_column = typeid_cast<const ColumnAggregateFunction &>(column);
     const ColumnAggregateFunction::Container & vec = real_column.getData();
 
-    ColumnAggregateFunction::Container::const_iterator it = vec.begin() + offset;
-    ColumnAggregateFunction::Container::const_iterator end = limit ? it + limit : vec.end();
+    size_t end = vec.size();
+    if (limit)
+        end = std::min(end, offset + limit);
 
-    end = std::min(end, vec.end());
-    for (; it != end; ++it)
-        function->serialize(*it, ostr, version);
+    function->serializeBatch(vec, offset, end, ostr, version);
 }
 
 void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
@@ -80,27 +79,11 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
     size_t size_of_state = function->sizeOfData();
     size_t align_of_state = function->alignOfData();
 
-    for (size_t i = 0; i < limit; ++i)
-    {
-        if (istr.eof())
-            break;
+    /// Adjust the size of state to make all states aligned in vector.
+    size_t total_size_of_state = (size_of_state + align_of_state - 1) / align_of_state * align_of_state;
+    char * place = arena.alignedAlloc(total_size_of_state * limit, align_of_state);
 
-        AggregateDataPtr place = arena.alignedAlloc(size_of_state, align_of_state);
-
-        function->create(place);
-
-        try
-        {
-            function->deserialize(place, istr, version, &arena);
-        }
-        catch (...)
-        {
-            function->destroy(place);
-            throw;
-        }
-
-        vec.push_back(place);
-    }
+    function->createAndDeserializeBatch(vec, place, total_size_of_state, limit, istr, version, &arena);
 }
 
 static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num, size_t version)

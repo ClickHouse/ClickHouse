@@ -28,26 +28,21 @@
 #include <Common/typeid_cast.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Port.h>
 #include <Formats/FormatFactory.h>
 
 #include <base/getFQDNOrHostName.h>
-#include <base/scope_guard.h>
+#include <base/isSharedPtrUnique.h>
 #include <Server/HTTP/HTTPResponse.h>
 #include <Server/HTTP/authenticateUserByHTTP.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTP/setReadOnlyIfHTTPMethodIdempotent.h>
-#include <boost/container/flat_set.hpp>
 
 #include <Poco/Net/HTTPMessage.h>
 
-#include "config.h"
-
 #include <algorithm>
-#include <chrono>
-#include <iterator>
 #include <memory>
 #include <optional>
-#include <sstream>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
@@ -80,6 +75,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
 
     extern const int INVALID_SESSION_TIMEOUT;
+    extern const int INVALID_CONFIG_PARAMETER;
     extern const int HTTP_LENGTH_REQUIRED;
 }
 
@@ -148,12 +144,10 @@ static std::chrono::steady_clock::duration parseSessionTimeout(
 
 HTTPHandlerConnectionConfig::HTTPHandlerConnectionConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix)
 {
-    if (config.has(config_prefix + ".handler.user") || config.has(config_prefix + ".handler.password"))
-    {
-        credentials.emplace(
-            config.getString(config_prefix + ".handler.user", "default"),
-            config.getString(config_prefix + ".handler.password", ""));
-    }
+    if (config.has(config_prefix + ".handler.password"))
+        throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "{}.handler.password will be ignored. Please remove it from config.", config_prefix);
+    if (config.has(config_prefix + ".handler.user"))
+        credentials.emplace(config.getString(config_prefix + ".handler.user", "default"));
 }
 
 void HTTPHandler::pushDelayedResults(Output & used_output)
@@ -232,12 +226,15 @@ void HTTPHandler::processQuery(
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
 
-    SCOPE_EXIT({ session->releaseSessionID(); });
-
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
     const auto & config = server.config();
+
+    /// Close http session (if any) after processing the request
+    bool close_session = false;
+    if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
+        close_session = true;
 
     if (session_is_set)
     {
@@ -248,9 +245,19 @@ void HTTPHandler::processQuery(
     }
     else
     {
+        session_id = "";
         /// We should create it even if we don't have a session_id
         session->makeSessionContext();
     }
+
+    /// We need to have both releasing/closing a session here and below. The problem with having it only as a SCOPE_EXIT
+    /// is that it will be invoked after finalizing the buffer in the end of processQuery, and that technically means that
+    /// the client has received all the data, but the session is not released yet. And it can (and sometimes does) happen
+    /// that we'll try to acquire the same session in another request before releasing the session here, and the session for
+    /// the following request will be technically locked, while it shouldn't be.
+    /// Also, SCOPE_EXIT is still needed to release a session in case of any exception. If the exception occurs at some point
+    /// after releasing the session below, this whole call will be no-op (due to named_session being nullptr already inside a session).
+    SCOPE_EXIT_SAFE({ releaseOrCloseSession(session_id, close_session); });
 
     auto context = session->makeQueryContext();
 
@@ -524,9 +531,12 @@ void HTTPHandler::processQuery(
 
         if (details.timezone)
             response.add("X-ClickHouse-Timezone", *details.timezone);
+
+        for (const auto & [name, value] : details.additional_headers)
+            response.set(name, value);
     };
 
-    auto handle_exception_in_output_format = [&](IOutputFormat & current_output_format,
+    auto handle_exception_in_output_format = [&, session_id, close_session](IOutputFormat & current_output_format,
                                                  const String & format_name,
                                                  const ContextPtr & context_,
                                                  const std::optional<FormatSettings> & format_settings)
@@ -540,18 +550,30 @@ void HTTPHandler::processQuery(
             if (buffer_until_eof)
             {
                 auto header = current_output_format.getPort(IOutputFormat::PortKind::Main).getHeader();
-                used_output.exception_writer = [&, format_name, header, context_, format_settings](WriteBuffer & buf, int code, const String & message)
+                used_output.exception_writer = [&, format_name, header, context_, format_settings, session_id, close_session](WriteBuffer & buf, int code, const String & message)
                 {
+                    if (used_output.out_holder->isCanceled())
+                    {
+                        chassert(buf.isCanceled());
+                        return;
+                    }
+
                     drainRequestIfNeeded(request, response);
                     used_output.out_holder->setExceptionCode(code);
+
                     auto output_format = FormatFactory::instance().getOutputFormat(format_name, buf, header, context_, format_settings);
                     output_format->setException(message);
                     output_format->finalize();
+                    releaseOrCloseSession(session_id, close_session);
                     used_output.finalize();
+                    used_output.exception_is_written = true;
                 };
             }
             else
             {
+                if (used_output.out_holder->isCanceled())
+                    return;
+
                 bool with_stacktrace = (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true));
                 ExecutionStatus status = ExecutionStatus::fromCurrentException("", with_stacktrace);
 
@@ -559,6 +581,7 @@ void HTTPHandler::processQuery(
                 used_output.out_holder->setExceptionCode(status.code);
                 current_output_format.setException(status.message);
                 current_output_format.finalize();
+                releaseOrCloseSession(session_id, close_session);
                 used_output.finalize();
                 used_output.exception_is_written = true;
             }
@@ -575,7 +598,7 @@ void HTTPHandler::processQuery(
         {},
         handle_exception_in_output_format);
 
-    session->releaseSessionID();
+    releaseOrCloseSession(session_id, close_session);
 
     if (used_output.hasDelayed())
     {
@@ -608,7 +631,7 @@ try
         auto write_buffers = used_output.out_delayed_and_compressed_holder->getResultBuffers();
         /// cancel the rest unused buffers
         for (auto & wb : write_buffers)
-            if (wb.unique())
+            if (isSharedPtrUnique(wb))
                 wb->cancel();
 
         used_output.out_maybe_delayed_and_compressed = used_output.out_maybe_compressed;
@@ -658,14 +681,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
     /// In case of exception, send stack trace to client.
     bool with_stacktrace = false;
-    /// Close http session (if any) after processing the request
-    bool close_session = false;
-    String session_id;
-
-    SCOPE_EXIT_SAFE({
-        if (close_session && !session_id.empty())
-            session->closeSession(session_id);
-    });
 
     OpenTelemetry::TracingContextHolderPtr thread_trace_context;
     SCOPE_EXIT({
@@ -703,8 +718,12 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
             context->getOpenTelemetrySpanLog());
         thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context->root_span.addAttribute("clickhouse.uri", request.getURI());
+        thread_trace_context->root_span.addAttribute("http.referer", request.get("Referer", ""));
+        thread_trace_context->root_span.addAttribute("http.user.agent", request.get("User-Agent", ""));
+        thread_trace_context->root_span.addAttribute("http.method", request.getMethod());
 
         response.setContentType("text/plain; charset=UTF-8");
+        response.add("Access-Control-Expose-Headers", "X-ClickHouse-Query-Id,X-ClickHouse-Summary,X-ClickHouse-Server-Display-Name,X-ClickHouse-Format,X-ClickHouse-Timezone,X-ClickHouse-Exception-Code");
         response.set("X-ClickHouse-Server-Display-Name", server_display_name);
 
         if (!request.get("Origin", "").empty())
@@ -718,12 +737,6 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         if (params.getParsed<bool>("stacktrace", false) && server.config().getBool("enable_http_stacktrace", true))
             with_stacktrace = true;
-
-        if (params.getParsed<bool>("close_session", false) && server.config().getBool("enable_http_close_session", true))
-            close_session = true;
-
-        if (close_session)
-            session_id = params.get("session_id");
 
         /// FIXME: maybe this check is already unnecessary.
         /// Workaround. Poco does not detect 411 Length Required case.
@@ -761,11 +774,18 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
 
         if (thread_trace_context)
             thread_trace_context->root_span.addAttribute(status);
-
-        return;
     }
+}
 
-    used_output.finalize();
+void HTTPHandler::releaseOrCloseSession(const String & session_id, bool close_session)
+{
+    if (!session_id.empty())
+    {
+        if (close_session)
+            session->closeSession(session_id);
+        else
+            session->releaseSessionID();
+    }
 }
 
 DynamicQueryHandler::DynamicQueryHandler(
@@ -875,9 +895,9 @@ void PredefinedQueryHandler::customizeContext(HTTPServerRequest & request, Conte
     {
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
 
-        std::string_view matches[num_captures];
+        std::vector<std::string_view> matches(num_captures);
         std::string_view input(begin, end - begin);
-        if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches, num_captures))
+        if (compiled_regex->Match(input, 0, end - begin, re2::RE2::Anchor::ANCHOR_BOTH, matches.data(), num_captures))
         {
             for (const auto & [capturing_name, capturing_index] : compiled_regex->NamedCapturingGroups())
             {

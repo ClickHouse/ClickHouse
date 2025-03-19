@@ -63,7 +63,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::findLastRevision()
             revision += "0";
     }
     revision_counter = static_cast<UInt64>(std::bitset<64>(revision).to_ullong());
-    LOG_INFO(disk->log, "Found last revision number {} for disk {}", revision_counter, disk->name);
+    LOG_INFO(disk->log, "Found last revision number {} for disk {}", revision_counter.load(), disk->name);
 }
 
 int DiskObjectStorageRemoteMetadataRestoreHelper::readSchemaVersion(IObjectStorage * object_storage, const String & source_path)
@@ -367,7 +367,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFiles(IObjectStorage *
             LOG_INFO(disk->log, "Calling restore for key for disk {}", object->relative_path);
 
             /// Skip file operations objects. They will be processed separately.
-            if (object->relative_path.find("/operations/") != String::npos)
+            if (object->relative_path.contains("/operations/"))
                 continue;
 
             const auto [revision, _] = extractRevisionAndOperationFromKey(object->relative_path);
@@ -541,7 +541,7 @@ void DiskObjectStorageRemoteMetadataRestoreHelper::restoreFileOperations(IObject
         for (const auto & path : renames)
         {
             /// Skip already detached parts.
-            if (path.find("/detached/") != std::string::npos)
+            if (path.contains("/detached/"))
                 continue;
 
             /// Skip not finished parts. They shouldn't be in 'detached' directory, because CH wouldn't be able to finish processing them.

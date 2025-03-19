@@ -4,6 +4,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Compression/CompressionFactory.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Core/ProtocolDefines.h>
 

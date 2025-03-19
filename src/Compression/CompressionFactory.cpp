@@ -8,7 +8,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Poco/String.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -99,7 +98,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
         return std::make_shared<CompressionCodecNone>();
     }
 
-    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", queryToString(ast));
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", ast->formatForErrorMessage());
 }
 
 
@@ -176,6 +175,9 @@ void registerCodecZSTD(CompressionCodecFactory & factory);
 void registerCodecZSTDQAT(CompressionCodecFactory & factory);
 #endif
 void registerCodecMultiple(CompressionCodecFactory & factory);
+#if USE_QPL
+void registerCodecDeflateQpl(CompressionCodecFactory & factory);
+#endif
 
 /// Keeper use only general-purpose codecs, so we don't need these special codecs
 /// in standalone build
@@ -203,6 +205,9 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecGorilla(*this);
     registerCodecEncrypted(*this);
     registerCodecFPC(*this);
+#if USE_QPL
+    registerCodecDeflateQpl(*this);
+#endif
     registerCodecGCD(*this);
 
     default_codec = get("LZ4", {});

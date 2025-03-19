@@ -83,7 +83,7 @@ namespace ErrorCodes
 String dumpQueryPlan(const QueryPlan & query_plan)
 {
     WriteBufferFromOwnString query_plan_buffer;
-    query_plan.explainPlan(query_plan_buffer, QueryPlan::ExplainPlanOptions{true, true, true, true});
+    query_plan.explainPlan(query_plan_buffer, ExplainPlanOptions{true, true, true, true});
 
     return query_plan_buffer.str();
 }
@@ -300,6 +300,14 @@ bool queryHasArrayJoinInJoinTree(const QueryTreeNodePtr & query_node)
             {
                 return true;
             }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
+                for (const auto & expr : cross_join_node.getTableExpressions())
+                    join_tree_nodes_to_process.push_back(expr);
+
+                break;
+            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = join_tree_node_to_process->as<JoinNode &>();
@@ -366,6 +374,14 @@ bool queryHasWithTotalsInAnySubqueryInJoinTree(const QueryTreeNodePtr & query_no
                 join_tree_nodes_to_process.push_back(array_join_node.getTableExpression());
                 break;
             }
+            case QueryTreeNodeType::CROSS_JOIN:
+            {
+                auto & cross_join_node = join_tree_node_to_process->as<CrossJoinNode &>();
+                for (const auto & expr : cross_join_node.getTableExpressions())
+                    join_tree_nodes_to_process.push_back(expr);
+
+                break;
+            }
             case QueryTreeNodeType::JOIN:
             {
                 auto & join_node = join_tree_node_to_process->as<JoinNode &>();
@@ -413,13 +429,17 @@ QueryTreeNodePtr replaceTableExpressionsWithDummyTables(
         {
             const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
             auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withExtendedObjects().withVirtuals();
+            const auto & storage = storage_snapshot->storage;
 
-            StoragePtr storage_dummy = std::make_shared<StorageDummy>(
-                storage_snapshot->storage.getStorageID(),
+            auto storage_dummy = std::make_shared<StorageDummy>(
+                storage.getStorageID(),
                 ColumnsDescription(storage_snapshot->getColumns(get_column_options)),
-                storage_snapshot);
+                storage_snapshot,
+                storage.supportsReplication());
 
             auto dummy_table_node = std::make_shared<TableNode>(std::move(storage_dummy), context);
+            if (table_node && table_node->hasTableExpressionModifiers())
+                dummy_table_node->getTableExpressionModifiers() = table_node->getTableExpressionModifiers();
 
             if (result_replacement_map)
                 result_replacement_map->emplace(table_expression, dummy_table_node);

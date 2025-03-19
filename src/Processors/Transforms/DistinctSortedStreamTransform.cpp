@@ -62,7 +62,7 @@ void DistinctSortedStreamTransform::initChunkProcessing(const Columns & input_co
 }
 
 template <bool clear_data>
-size_t DistinctSortedStreamTransform::ordinaryDistinctOnRange(IColumn::Filter & filter, const size_t range_begin, const size_t range_end)
+size_t DistinctSortedStreamTransform::ordinaryDistinctOnRange(IColumnFilter & filter, const size_t range_begin, const size_t range_end)
 {
     size_t count = 0;
     switch (data.type)
@@ -85,7 +85,7 @@ size_t DistinctSortedStreamTransform::ordinaryDistinctOnRange(IColumn::Filter & 
 
 template <typename Method>
 size_t DistinctSortedStreamTransform::buildFilterForRange(
-    Method & method, IColumn::Filter & filter, const size_t range_begin, const size_t range_end)
+    Method & method, IColumnFilter & filter, const size_t range_begin, const size_t range_end)
 {
     typename Method::State state(other_columns, other_columns_sizes, nullptr);
 
@@ -174,7 +174,7 @@ size_t DistinctSortedStreamTransform::getRangeEnd(size_t begin, size_t end, Pred
     return end;
 }
 
-std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(const size_t chunk_rows, IColumn::Filter & filter)
+std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(const size_t chunk_rows, IColumnFilter & filter)
 {
     /// prev_chunk_latest_key is empty on very first transform() call
     /// or first row doesn't match a key from previous transform()
@@ -201,6 +201,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
         return;
 
     convertToFullIfSparse(chunk);
+    convertToFullIfConst(chunk);
 
     Columns input_columns = chunk.detachColumns();
     /// split input columns into sorted and other("non-sorted") columns

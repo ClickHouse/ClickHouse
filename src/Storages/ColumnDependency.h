@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Common/SipHash.h>
 #include <base/types.h>
 #include <unordered_set>
 
@@ -48,13 +47,7 @@ struct ColumnDependency
 
     struct Hash
     {
-        UInt64 operator()(const ColumnDependency & dependency) const
-        {
-            SipHash hash;
-            hash.update(dependency.column_name);
-            hash.update(dependency.kind);
-            return hash.get64();
-        }
+        UInt64 operator()(const ColumnDependency & dependency) const;
     };
 };
 

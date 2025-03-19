@@ -1,39 +1,40 @@
 #include "config.h"
 
 #if USE_MYSQL
+#    include <filesystem>
 #    include <string>
-#    include <base/isSharedPtrUnique.h>
-#    include <Databases/DatabaseFactory.h>
+#    include <Columns/IColumn.h>
+#    include <Core/Settings.h>
 #    include <DataTypes/DataTypeDateTime.h>
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
 #    include <DataTypes/DataTypesNumber.h>
 #    include <DataTypes/convertMySQLDataType.h>
+#    include <Databases/DatabaseFactory.h>
 #    include <Databases/MySQL/DatabaseMySQL.h>
 #    include <Databases/MySQL/FetchTablesColumnsList.h>
-#    include <Processors/Sources/MySQLSource.h>
-#    include <Processors/Executors/PullingPipelineExecutor.h>
-#    include <QueryPipeline/QueryPipelineBuilder.h>
+#    include <Disks/IDisk.h>
 #    include <IO/Operators.h>
 #    include <Interpreters/Context.h>
 #    include <Interpreters/evaluateConstantExpression.h>
 #    include <Parsers/ASTCreateQuery.h>
 #    include <Parsers/ASTFunction.h>
+#    include <Parsers/ASTIdentifier.h>
 #    include <Parsers/ParserCreateQuery.h>
 #    include <Parsers/parseQuery.h>
-#    include <Parsers/queryToString.h>
-#    include <Storages/StorageMySQL.h>
-#    include <Storages/MySQL/MySQLSettings.h>
+#    include <Processors/Executors/PullingPipelineExecutor.h>
+#    include <Processors/Sources/MySQLSource.h>
+#    include <QueryPipeline/QueryPipelineBuilder.h>
 #    include <Storages/MySQL/MySQLHelpers.h>
+#    include <Storages/MySQL/MySQLSettings.h>
 #    include <Storages/NamedCollectionsHelpers.h>
+#    include <Storages/StorageMySQL.h>
+#    include <base/isSharedPtrUnique.h>
 #    include <Common/escapeForFileName.h>
+#    include <Common/filesystemHelpers.h>
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
-#    include <Core/Settings.h>
-#    include <filesystem>
-#    include <Common/filesystemHelpers.h>
-#    include <Parsers/ASTIdentifier.h>
 
 namespace fs = std::filesystem;
 
@@ -83,6 +84,7 @@ DatabaseMySQL::DatabaseMySQL(
     , database_name_in_mysql(database_name_in_mysql_)
     , mysql_settings(std::move(settings_))
     , mysql_pool(std::move(pool)) /// NOLINT
+    , db_disk(getContext()->getDatabaseDisk())
 {
     try
     {
@@ -96,8 +98,7 @@ DatabaseMySQL::DatabaseMySQL(
         else
             throw;
     }
-
-    fs::create_directories(metadata_path);
+    db_disk->createDirectories(metadata_path);
 
     thread = ThreadFromGlobalPool{&DatabaseMySQL::cleanOutdatedTables, this};
 }
@@ -354,7 +355,7 @@ void DatabaseMySQL::shutdown()
 
 void DatabaseMySQL::drop(ContextPtr /*context*/)
 {
-    (void)fs::remove_all(getMetadataPath());
+    db_disk->removeRecursive(getMetadataPath());
 }
 
 void DatabaseMySQL::cleanOutdatedTables()
@@ -402,8 +403,7 @@ void DatabaseMySQL::attachTable(ContextPtr /* context_ */, const String & table_
     remove_or_detach_tables.erase(table_name);
     fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
 
-    if (fs::exists(remove_flag))
-        (void)fs::remove(remove_flag);
+    db_disk->removeFileIfExists(remove_flag);
 }
 
 StoragePtr DatabaseMySQL::detachTable(ContextPtr /* context */, const String & table_name)
@@ -430,13 +430,15 @@ String DatabaseMySQL::getMetadataPath() const
 void DatabaseMySQL::loadStoredObjects(ContextMutablePtr, LoadingStrictnessLevel /*mode*/)
 {
     std::lock_guard lock{mutex};
-    fs::directory_iterator iter(getMetadataPath());
-
-    for (fs::directory_iterator end; iter != end; ++iter)
+    for (const auto it = db_disk->iterateDirectory(metadata_path); it->isValid(); it->next())
     {
-        if (fs::is_regular_file(iter->path()) && endsWith(iter->path().filename(), suffix))
+        auto path = fs::path(it->path());
+        if (path.filename().empty())
+            path = path.parent_path();
+
+        if (db_disk->existsFile(path) && endsWith(path.filename(), suffix))
         {
-            const auto & filename = iter->path().filename().string();
+            const auto & filename = path.filename().filename().string();
             const auto & table_name = unescapeForFileName(filename.substr(0, filename.size() - strlen(suffix)));
             remove_or_detach_tables.emplace(table_name);
         }
@@ -452,7 +454,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
     if (remove_or_detach_tables.contains(table_name))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {}.{} is dropped", backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
-    if (fs::exists(remove_flag))
+    if (db_disk->existsFile(remove_flag))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The remove flag file already exists but the {}.{} does not exist remove tables, it is bug.",
                         backQuoteIfNeed(database_name), backQuoteIfNeed(table_name));
 
@@ -465,7 +467,7 @@ void DatabaseMySQL::detachTablePermanently(ContextPtr, const String & table_name
     try
     {
         table_iter->second.second->drop();
-        FS::createFile(remove_flag);
+        db_disk->createFile(remove_flag);
     }
     catch (...)
     {
@@ -518,7 +520,7 @@ void DatabaseMySQL::createTable(ContextPtr local_context, const String & table_n
     const auto & origin_create_query = getCreateTableQuery(table_name, getContext());
     origin_create_query->as<ASTCreateQuery>()->attach = true;
 
-    if (queryToString(origin_create_query) != queryToString(create_query))
+    if (origin_create_query->formatWithSecretsOneLine() != create_query->formatWithSecretsOneLine())
         throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE,
                         "The MySQL database engine can only execute attach statements "
                         "of type attach table database_name.table_name");

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from praktika import Workflow
+from . import Workflow
 
 
 class HookInterface(ABC):

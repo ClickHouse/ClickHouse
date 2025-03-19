@@ -45,6 +45,7 @@ class WriteBuffer;
 #define COMMON_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
     M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DateTimeInputFormat) \
@@ -85,8 +86,8 @@ class WriteBuffer;
     M(CLASS_NAME, ParallelReplicasCustomKeyFilterType) \
     M(CLASS_NAME, ParquetCompression) \
     M(CLASS_NAME, ParquetVersion) \
-    M(CLASS_NAME, QueryCacheNondeterministicFunctionHandling) \
-    M(CLASS_NAME, QueryCacheSystemTableHandling) \
+    M(CLASS_NAME, QueryResultCacheNondeterministicFunctionHandling) \
+    M(CLASS_NAME, QueryResultCacheSystemTableHandling) \
     M(CLASS_NAME, SchemaInferenceMode) \
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, SetOperationMode) \
@@ -141,6 +142,8 @@ struct Settings
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);
+    /// Equivalent to Settings().write(out, <any format>) but faster.
+    static void writeEmpty(WriteBuffer & out);
 
     void addToProgramOptions(boost::program_options::options_description & options);
     void addToProgramOptions(std::string_view setting_name, boost::program_options::options_description & options);

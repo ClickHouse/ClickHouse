@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
-#include <Columns/ColumnArray.h>
 #include <IO/WriteSettings.h>
 #include <Storages/Statistics/Statistics.h>
 
@@ -24,6 +23,7 @@ public:
         CompressionCodecPtr default_codec_,
         MergeTreeIndexGranularityPtr index_granularity_ptr,
         TransactionID tid,
+        size_t part_uncompressed_bytes,
         bool reset_columns_ = false,
         bool blocks_are_granules_size = false,
         const WriteSettings & write_settings = {});
@@ -54,7 +54,7 @@ public:
         ~Finalizer();
 
         void finish();
-        void cancel();
+        void cancel() noexcept;
     };
 
     /// Finalize writing part and fill inner structures
@@ -63,13 +63,15 @@ public:
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list = nullptr,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
+        ColumnsWithTypeAndName * additional_columns_samples = nullptr);
 
     void finalizePart(
         const MergeTreeMutableDataPartPtr & new_part,
         bool sync,
         const NamesAndTypesList * total_columns_list = nullptr,
-        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr);
+        MergeTreeData::DataPart::Checksums * additional_column_checksums = nullptr,
+        ColumnsWithTypeAndName * additional_columns_samples = nullptr);
 
 private:
     /** If `permutation` is given, it rearranges the values in the columns when writing.

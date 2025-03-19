@@ -1,11 +1,16 @@
 #pragma once
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
-#include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <IO/WriteBufferFromString.h>
+#include <base/defines.h>
+
+#include <Poco/Util/AbstractConfiguration.h>
+
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <memory>
+#include <variant>
 
 namespace rocksdb
 {
@@ -45,6 +50,7 @@ public:
 
     bool digestEnabled() const;
     void setDigestEnabled(bool digest_enabled_);
+    bool digestEnabledOnCommit() const;
 
     DiskPtr getLatestLogDisk() const;
     DiskPtr getLogDisk() const;
@@ -131,6 +137,7 @@ private:
 
     bool ignore_system_path_on_startup{false};
     bool digest_enabled{true};
+    bool digest_enabled_on_commit{false};
 
     std::shared_ptr<DiskSelector> disk_selector;
 

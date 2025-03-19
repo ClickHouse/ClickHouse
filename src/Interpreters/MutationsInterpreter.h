@@ -1,10 +1,9 @@
 #pragma once
 
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/InterpreterSelectQuery.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
 
 
@@ -111,6 +110,10 @@ public:
 
     MutationKind::MutationKindEnum getMutationKind() const { return mutation_kind.mutation_kind; }
 
+    /// Returns a chain of actions that can be
+    /// applied to block to execute mutation commands.
+    std::vector<MutationActions> getMutationActions() const;
+
     /// Internal class which represents a data part for MergeTree
     /// or just storage for other storages.
     /// The main idea is to create a dedicated reading from MergeTree part.
@@ -120,7 +123,7 @@ public:
         StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_) const;
         StoragePtr getStorage() const;
         const MergeTreeData * getMergeTreeData() const;
-
+        MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
         bool supportsLightweightDelete() const;
         bool materializeTTLRecalculateOnly() const;
         bool hasSecondaryIndex(const String & name) const;
@@ -170,12 +173,18 @@ private:
     Source source;
     StorageMetadataPtr metadata_snapshot;
     MutationCommands commands;
+
+    /// List of columns in table or in data part that can be updated by mutation.
+    /// If mutation affects all columns (e.g. DELETE), all of this columns
+    /// must be returned by pipeline created in MutationsInterpreter.
     Names available_columns;
+
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
 
     LoggerPtr logger;
+
 
     /// A sequence of mutation commands is executed as a sequence of stages. Each stage consists of several
     /// filters, followed by updating values of some columns. Commands can reuse expressions calculated by the

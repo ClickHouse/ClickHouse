@@ -3,6 +3,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
@@ -17,6 +18,7 @@
 #include <Common/escapeForFileName.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
@@ -68,7 +70,7 @@ protected:
         const auto & part_name_column = StorageMergeTreeIndex::part_name_column;
         const auto & mark_number_column = StorageMergeTreeIndex::mark_number_column;
         const auto & rows_in_granule_column = StorageMergeTreeIndex::rows_in_granule_column;
-        const auto & index = part->getIndex();
+        IMergeTreeDataPart::IndexPtr index_ptr;
 
         Columns result_columns(num_columns);
         for (size_t pos = 0; pos < num_columns; ++pos)
@@ -78,18 +80,20 @@ protected:
 
             if (index_header.has(column_name))
             {
+                if (!index_ptr)
+                    index_ptr = part->getIndex();
+
                 size_t index_position = index_header.getPositionByName(column_name);
 
                 /// Some of the columns from suffix of primary index may be not loaded
                 /// according to setting 'primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns'.
-                if (index_position < index->size())
+                if (index_position < index_ptr->size())
                 {
-                    result_columns[pos] = index->at(index_position);
+                    result_columns[pos] = index_ptr->at(index_position);
                 }
                 else
                 {
-                    const auto & index_type = index_header.getByPosition(index_position).type;
-                    auto index_column = index_type->createColumnConstWithDefaultValue(num_rows);
+                    auto index_column = column_type->createColumnConstWithDefaultValue(num_rows);
                     result_columns[pos] = index_column->convertToFullColumnIfConst();
                 }
             }

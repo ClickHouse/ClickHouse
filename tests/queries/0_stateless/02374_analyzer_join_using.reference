@@ -4,18 +4,20 @@ SELECT 'JOIN INNER';
 JOIN INNER
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id);
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id)
+ORDER BY ALL;
 0	UInt16	0	UInt16	Join_1_Value_0	String	0	UInt16	Join_2_Value_0	String
 1	UInt16	1	UInt16	Join_1_Value_1	String	1	UInt16	Join_2_Value_1	String
 SELECT '--';
 --
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id);
+FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id)
+ORDER BY ALL;
 Join_1_Value_0	String	Join_2_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id);
+SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) ORDER BY ALL;
 1
 1
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
@@ -24,20 +26,22 @@ SELECT 'JOIN LEFT';
 JOIN LEFT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id);
+FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id)
+ORDER BY ALL;
 0	UInt16	0	UInt16	Join_1_Value_0	String	0	UInt16	Join_2_Value_0	String
 1	UInt16	1	UInt16	Join_1_Value_1	String	1	UInt16	Join_2_Value_1	String
 2	UInt16	2	UInt16	Join_1_Value_2	String	0	UInt16		String
 SELECT '--';
 --
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id);
+FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id)
+ORDER BY ALL;
 Join_1_Value_0	String	Join_2_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String
 Join_1_Value_2	String		String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id);
+SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) ORDER BY ALL;
 1
 1
 1
@@ -47,20 +51,22 @@ SELECT 'JOIN RIGHT';
 JOIN RIGHT
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id);
+FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id)
+ORDER BY ALL;
 0	UInt16	0	UInt16	Join_1_Value_0	String	0	UInt16	Join_2_Value_0	String
 1	UInt16	1	UInt16	Join_1_Value_1	String	1	UInt16	Join_2_Value_1	String
 3	UInt16	0	UInt16		String	3	UInt16	Join_2_Value_3	String
 SELECT '--';
 --
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id);
+FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id)
+ORDER BY ALL;
+	String	Join_2_Value_3	String
 Join_1_Value_0	String	Join_2_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String
-	String	Join_2_Value_3	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id);
+SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) ORDER BY ALL;
 1
 1
 1
@@ -70,22 +76,24 @@ SELECT 'JOIN FULL';
 JOIN FULL
 SELECT id AS using_id, toTypeName(using_id), t1.id AS t1_id, toTypeName(t1_id), t1.value AS t1_value, toTypeName(t1_value),
 t2.id AS t2_id, toTypeName(t2_id), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id);
+FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id)
+ORDER BY ALL;
+0	UInt16	0	UInt16		String	3	UInt16	Join_2_Value_3	String
 0	UInt16	0	UInt16	Join_1_Value_0	String	0	UInt16	Join_2_Value_0	String
 1	UInt16	1	UInt16	Join_1_Value_1	String	1	UInt16	Join_2_Value_1	String
 2	UInt16	2	UInt16	Join_1_Value_2	String	0	UInt16		String
-0	UInt16	0	UInt16		String	3	UInt16	Join_2_Value_3	String
 SELECT '--';
 --
 SELECT t1.value AS t1_value, toTypeName(t1_value), t2.value AS t2_value, toTypeName(t2_value)
-FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id);
+FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id)
+ORDER BY ALL;
+	String	Join_2_Value_3	String
 Join_1_Value_0	String	Join_2_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String
 Join_1_Value_2	String		String
-	String	Join_2_Value_3	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id);
+SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) ORDER BY ALL;
 1
 1
 1
@@ -109,7 +117,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
@@ -130,7 +138,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 SELECT id FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 ON t1.id = t2.id LEFT JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
@@ -153,7 +161,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1
@@ -177,7 +185,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 INNER JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1
@@ -199,7 +207,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 SELECT id FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
@@ -222,7 +230,7 @@ Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 Join_1_Value_2	String		String		String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1
@@ -246,7 +254,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1
@@ -272,7 +280,7 @@ Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 Join_1_Value_2	String		String		String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 LEFT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1
@@ -295,7 +303,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 SELECT id FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
@@ -318,7 +326,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1
@@ -342,7 +350,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1
@@ -368,7 +376,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 RIGHT JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1
@@ -392,7 +400,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) INNER JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 SELECT id FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 ON t1.id = t2.id INNER JOIN test_table_join_3 AS t3 USING (id); -- { serverError AMBIGUOUS_IDENTIFIER }
@@ -417,7 +425,7 @@ Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 Join_1_Value_2	String		String		String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) LEFT JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1
@@ -443,7 +451,7 @@ Join_1_Value_0	String	Join_2_Value_0	String	Join_3_Value_0	String
 Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) RIGHT JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1
@@ -471,7 +479,7 @@ Join_1_Value_1	String	Join_2_Value_1	String	Join_3_Value_1	String
 Join_1_Value_2	String		String		String
 SELECT '--';
 --
-SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id);
+SELECT 1 FROM test_table_join_1 AS t1 FULL JOIN test_table_join_2 AS t2 USING (id) FULL JOIN test_table_join_3 AS t3 USING(id) ORDER BY ALL;
 1
 1
 1

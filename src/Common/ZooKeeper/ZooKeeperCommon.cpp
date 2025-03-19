@@ -1,4 +1,5 @@
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperIO.h>
@@ -206,7 +207,7 @@ std::string ZooKeeperAuthRequest::toStringImpl(bool /*short_format*/) const
 void ZooKeeperCreateRequest::writeImpl(WriteBuffer & out) const
 {
     /// See https://github.com/ClickHouse/clickhouse-private/issues/3029
-    if (path.starts_with("/clickhouse/tables/") && path.find("/parts/") != std::string::npos)
+    if (path.starts_with("/clickhouse/tables/") && path.contains("/parts/"))
     {
         LOG_TRACE(getLogger(__PRETTY_FUNCTION__), "Creating part at path {}", path);
     }
@@ -927,6 +928,17 @@ size_t ZooKeeperMultiResponse::sizeImpl() const
     int32_t error_read = - 1;
 
     return total_size + Coordination::size(op_num) + Coordination::size(done) + Coordination::size(error_read);
+}
+
+OpNum ZooKeeperWatchResponse::getOpNum() const
+{
+    chassert(false);
+    throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "OpNum for watch response doesn't exist");
+}
+
+void ZooKeeperCloseResponse::readImpl(ReadBuffer &)
+{
+    throw Exception::fromMessage(Error::ZRUNTIMEINCONSISTENCY, "Received response for close request");
 }
 
 ZooKeeperResponsePtr ZooKeeperHeartbeatRequest::makeResponse() const { return std::make_shared<ZooKeeperHeartbeatResponse>(); }

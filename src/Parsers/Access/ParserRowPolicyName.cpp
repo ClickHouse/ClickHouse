@@ -25,7 +25,8 @@ namespace
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            String res_database, res_table_name;
+            String res_database;
+            String res_table_name;
 
             bool wildcard = false;
             bool default_database = false;
@@ -78,7 +79,8 @@ namespace
 
             auto parse_db_and_table_name = [&]
             {
-                String database, table_name;
+                String database;
+                String table_name;
                 if (!parseDBAndTableName(pos, expected, database, table_name))
                     return false;
                 res.emplace_back(std::move(database), std::move(table_name));
@@ -127,7 +129,8 @@ namespace
             }
             else
             {
-                String database, table_name;
+                String database;
+                String table_name;
                 if (!parseOnDBAndTableName(pos, expected, database, table_name))
                     return false;
                 database_and_table_names.emplace_back(std::move(database), std::move(table_name));

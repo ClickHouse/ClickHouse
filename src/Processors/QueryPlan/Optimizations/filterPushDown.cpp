@@ -12,6 +12,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/CubeStep.h>
@@ -19,6 +20,7 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Storages/StorageMerge.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -197,15 +199,38 @@ static size_t simplePushDownOverStep(QueryPlan::Node * parent_node, QueryPlan::N
     return 0;
 }
 
+static void buildEquialentSetsForJoinStepLogical(
+    std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_column,
+    std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_column,
+    const JoinInfo & join_info)
+{
+    if (!join_info.expression.disjunctive_conditions.empty())
+        return;
+
+    for (const auto & predicate : join_info.expression.condition.predicates)
+    {
+        auto left_column = predicate.left_node.getColumn();
+        auto right_column = predicate.right_node.getColumn();
+
+        if (predicate.op != PredicateOperator::Equals && predicate.op != PredicateOperator::NullSafeEquals)
+            continue;
+        if (!left_column.type->equals(*right_column.type))
+            continue;
+        equivalent_left_column[left_column.name] = right_column;
+        equivalent_right_column[right_column.name] = left_column;
+    }
+}
+
 static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr & child)
 {
     auto & parent = parent_node->step;
     auto * filter = assert_cast<FilterStep *>(parent.get());
 
+    auto * logical_join = typeid_cast<JoinStepLogical *>(child.get());
     auto * join = typeid_cast<JoinStep *>(child.get());
     auto * filled_join = typeid_cast<FilledJoinStep *>(child.get());
 
-    if (!join && !filled_join)
+    if (!join && !filled_join && !logical_join)
         return 0;
 
     /** For equivalent JOIN with condition `ON lhs.x_1 = rhs.y_1 AND lhs.x_2 = rhs.y_2 ...`, we can build equivalent sets of columns and this
@@ -229,21 +254,27 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
       */
 
     const auto & join_header = child->getOutputHeader();
-    const auto & table_join = join ? join->getJoin()->getTableJoin() : filled_join->getJoin()->getTableJoin();
+    const TableJoin * table_join_ptr = nullptr;
+    if (join)
+        table_join_ptr = &join->getJoin()->getTableJoin();
+    else if (filled_join)
+        table_join_ptr = &filled_join->getJoin()->getTableJoin();
+
     const auto & left_stream_input_header = child->getInputHeaders().front();
     const auto & right_stream_input_header = child->getInputHeaders().back();
 
-    if (table_join.kind() == JoinKind::Full)
+    if (table_join_ptr && table_join_ptr->kind() == JoinKind::Full)
+        return 0;
+    if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Full)
         return 0;
 
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_left_stream_column_to_right_stream_column;
     std::unordered_map<std::string, ColumnWithTypeAndName> equivalent_right_stream_column_to_left_stream_column;
 
-    bool has_single_clause = table_join.getClauses().size() == 1;
-
+    bool has_single_clause = table_join_ptr && table_join_ptr->getClauses().size() == 1;
     if (has_single_clause && !filled_join)
     {
-        const auto & join_clause = table_join.getClauses()[0];
+        const auto & join_clause = table_join_ptr->getClauses()[0];
         size_t key_names_size = join_clause.key_names_left.size();
 
         for (size_t i = 0; i < key_names_size; ++i)
@@ -259,6 +290,13 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             equivalent_left_stream_column_to_right_stream_column[left_table_key_name] = right_table_column;
             equivalent_right_stream_column_to_left_stream_column[right_table_key_name] = left_table_column;
         }
+    }
+    else if (logical_join)
+    {
+        buildEquialentSetsForJoinStepLogical(
+            equivalent_left_stream_column_to_right_stream_column,
+            equivalent_right_stream_column_to_left_stream_column,
+            logical_join->getJoinInfo());
     }
 
     auto get_available_columns_for_filter = [&](bool push_to_left_stream, bool filter_push_down_input_columns_available)
@@ -289,16 +327,24 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     bool left_stream_filter_push_down_input_columns_available = true;
     bool right_stream_filter_push_down_input_columns_available = true;
 
-    if (table_join.kind() == JoinKind::Left)
+    if (table_join_ptr && table_join_ptr->kind() == JoinKind::Left)
         right_stream_filter_push_down_input_columns_available = false;
-    else if (table_join.kind() == JoinKind::Right)
+    else if (table_join_ptr && table_join_ptr->kind() == JoinKind::Right)
+        left_stream_filter_push_down_input_columns_available = false;
+
+    if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Left)
+        right_stream_filter_push_down_input_columns_available = false;
+    else if (logical_join && logical_join->getJoinInfo().kind == JoinKind::Right)
         left_stream_filter_push_down_input_columns_available = false;
 
     /** We disable push down to right table in cases:
       * 1. Right side is already filled. Example: JOIN with Dictionary.
       * 2. ASOF Right join is not supported.
       */
-    bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join.strictness() != JoinStrictness::Asof;
+    bool allow_push_down_to_right = join && join->allowPushDownToRight() && table_join_ptr && table_join_ptr->strictness() != JoinStrictness::Asof;
+    if (logical_join)
+        allow_push_down_to_right = !logical_join->hasPreparedJoinStorage() && logical_join->getJoinInfo().strictness != JoinStrictness::Asof;
+
     if (!allow_push_down_to_right)
         right_stream_filter_push_down_input_columns_available = false;
 
@@ -391,7 +437,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes)
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -400,6 +446,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     auto & parent = parent_node->step;
     auto & child = child_node->step;
+
     auto * filter = typeid_cast<FilterStep *>(parent.get());
 
     if (!filter)
@@ -408,14 +455,18 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (filter->getExpression().hasStatefulFunctions())
         return 0;
 
-    if (auto * aggregating = typeid_cast<AggregatingStep *>(child.get()))
+    const auto * merging_aggregated = typeid_cast<MergingAggregatedStep *>(child.get());
+    const auto * aggregating = typeid_cast<AggregatingStep *>(child.get());
+
+    if (aggregating || merging_aggregated)
     {
         /// If aggregating is GROUPING SETS, and not all the identifiers exist in all
         /// of the grouping sets, we could not push the filter down.
-        if (aggregating->isGroupingSets())
+        bool is_grouping_sets = aggregating ? aggregating->isGroupingSets() : merging_aggregated->isGroupingSets();
+        if (is_grouping_sets)
         {
-            /// Cannot push down filter if type has been changed.
-            if (aggregating->isGroupByUseNulls())
+            /// Cannot push down filter if type has been changed. MergingAggregated does not change types.
+            if (aggregating && aggregating->isGroupByUseNulls())
                 return 0;
 
             const auto & actions = filter->getExpression();
@@ -423,11 +474,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
             auto identifiers_in_predicate = findIdentifiersOfNode(&filter_node);
 
-            if (!identifiersIsAmongAllGroupingSets(aggregating->getGroupingSetsParamsList(), identifiers_in_predicate))
+            const auto & grouping_sets = aggregating ? aggregating->getGroupingSetsParamsList() : merging_aggregated->getGroupingSetsParamsList();
+            if (!identifiersIsAmongAllGroupingSets(grouping_sets, identifiers_in_predicate))
                 return 0;
         }
 
-        const auto & params = aggregating->getParams();
+        const auto & params = aggregating ? aggregating->getParams() : merging_aggregated->getParams();
         const auto & keys = params.keys;
         /** The filter is applied either to aggregation keys or aggregation result
           * (columns under aggregation is not available in outer scope, so we can't have a filter for them).
@@ -441,8 +493,10 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
         const bool filter_column_is_not_among_aggregation_keys
             = std::find(keys.begin(), keys.end(), filter->getFilterColumnName()) == keys.end();
-        const bool can_remove_filter = filter_column_is_not_among_aggregation_keys
-            && filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
+
+        /// When we only merging aggregated data, we do not need aggregation arguments.
+        bool filter_is_not_among_aggregates_arguments = merging_aggregated || filterColumnIsNotAmongAggregatesArguments(params.aggregates, filter->getFilterColumnName());
+        const bool can_remove_filter = filter_column_is_not_among_aggregation_keys && filter_is_not_among_aggregates_arguments;
 
         if (auto updated_steps = tryAddNewFilterStep(parent_node, nodes, keys, can_remove_filter))
             return updated_steps;

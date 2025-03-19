@@ -13,10 +13,10 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
         cloned.out_file = out_file->clone();
         cloned.children.push_back(cloned.out_file);
     }
-    if (format)
+    if (format_ast)
     {
-        cloned.format = format->clone();
-        cloned.children.push_back(cloned.format);
+        cloned.format_ast = format_ast->clone();
+        cloned.children.push_back(cloned.format_ast);
     }
     if (settings_ast)
     {
@@ -35,37 +35,37 @@ void ASTQueryWithOutput::cloneOutputOptions(ASTQueryWithOutput & cloned) const
     }
 }
 
-void ASTQueryWithOutput::formatImpl(const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTQueryWithOutput::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
-    formatQueryImpl(s, state, frame);
+    formatQueryImpl(ostr, s, state, frame);
 
     std::string indent_str = s.one_line ? "" : std::string(4u * frame.indent, ' ');
 
     if (out_file)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
-        out_file->formatImpl(s, state, frame);
+        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "INTO OUTFILE " << (s.hilite ? hilite_none : "");
+        out_file->format(ostr, s, state, frame);
 
-        s.ostr << (s.hilite ? hilite_keyword : "");
+        ostr << (s.hilite ? hilite_keyword : "");
         if (is_outfile_append)
-            s.ostr << " APPEND";
+            ostr << " APPEND";
         if (is_outfile_truncate)
-            s.ostr << " TRUNCATE";
+            ostr << " TRUNCATE";
         if (is_into_outfile_with_stdout)
-            s.ostr << " AND STDOUT";
-        s.ostr << (s.hilite ? hilite_none : "");
+            ostr << " AND STDOUT";
+        ostr << (s.hilite ? hilite_none : "");
     }
 
-    if (format)
+    if (format_ast)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
-        format->formatImpl(s, state, frame);
+        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "FORMAT " << (s.hilite ? hilite_none : "");
+        format_ast->format(ostr, s, state, frame);
     }
 
-    if (settings_ast && assert_cast<ASTSetQuery *>(settings_ast.get())->print_in_format)
+    if (settings_ast)
     {
-        s.ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
-        settings_ast->formatImpl(s, state, frame);
+        ostr << (s.hilite ? hilite_keyword : "") << s.nl_or_ws << indent_str << "SETTINGS " << (s.hilite ? hilite_none : "");
+        settings_ast->format(ostr, s, state, frame);
     }
 }
 
@@ -86,7 +86,7 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
         };
 
         remove_if_exists(ast_with_output->out_file);
-        remove_if_exists(ast_with_output->format);
+        remove_if_exists(ast_with_output->format_ast);
         remove_if_exists(ast_with_output->settings_ast);
         remove_if_exists(ast_with_output->compression);
         remove_if_exists(ast_with_output->compression_level);

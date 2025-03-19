@@ -16,9 +16,10 @@ struct ProxyConfigurationResolver;
 struct S3RequestSettingsImpl;
 struct Settings;
 
-/// List of available types supported in MaterializedMySQLSettings object
+/// List of available types supported in the Settings object
 #define S3REQUEST_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, BoolAuto) \
     M(CLASS_NAME, UInt64) \
     M(CLASS_NAME, String)
 

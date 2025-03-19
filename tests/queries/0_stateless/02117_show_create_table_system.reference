@@ -22,7 +22,8 @@ CREATE TABLE system.asynchronous_metrics
 (
     `metric` String,
     `value` Float64,
-    `description` String
+    `description` String,
+    `name` String ALIAS metric
 )
 ENGINE = SystemAsynchronousMetrics
 COMMENT 'Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.'
@@ -37,6 +38,7 @@ CREATE TABLE system.clusters
 (
     `cluster` String,
     `shard_num` UInt32,
+    `shard_name` String,
     `shard_weight` UInt32,
     `internal_replication` UInt8,
     `replica_num` UInt32,
@@ -87,7 +89,8 @@ CREATE TABLE system.columns
     `numeric_precision` Nullable(UInt64),
     `numeric_precision_radix` Nullable(UInt64),
     `numeric_scale` Nullable(UInt64),
-    `datetime_precision` Nullable(UInt64)
+    `datetime_precision` Nullable(UInt64),
+    `serialization_hint` Nullable(String)
 )
 ENGINE = SystemColumns
 COMMENT 'Lists all columns from all tables of the current server.'
@@ -116,7 +119,7 @@ CREATE TABLE system.data_skipping_indices
     `granularity` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,
-    `marks` UInt64
+    `marks_bytes` UInt64
 )
 ENGINE = SystemDataSkippingIndices
 COMMENT 'Contains all the information about all the data skipping indices in tables, similar to system.columns.'
@@ -280,7 +283,8 @@ CREATE TABLE system.formats
     `is_input` UInt8,
     `is_output` UInt8,
     `supports_parallel_parsing` UInt8,
-    `supports_parallel_formatting` UInt8
+    `supports_parallel_formatting` UInt8,
+    `is_tty_friendly` UInt8
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'
@@ -336,6 +340,7 @@ CREATE TABLE system.merge_tree_settings
 (
     `name` String,
     `value` String,
+    `default` String,
     `changed` UInt8,
     `description` String,
     `min` Nullable(String),
@@ -413,7 +418,8 @@ CREATE TABLE system.mutations
     `is_killed` UInt8,
     `latest_failed_part` String,
     `latest_fail_time` DateTime,
-    `latest_fail_reason` String
+    `latest_fail_reason` String,
+    `latest_fail_error_code_name` String
 )
 ENGINE = SystemMutations
 COMMENT 'Contains a list of mutations and their progress. Each mutation command is represented by a single row.'
@@ -629,6 +635,7 @@ CREATE TABLE system.processes
     `memory_usage` Int64,
     `peak_memory_usage` Int64,
     `query` String,
+    `normalized_query_hash` UInt64,
     `query_kind` String,
     `thread_ids` Array(UInt64),
     `ProfileEvents` Map(String, UInt64),
@@ -900,7 +907,7 @@ CREATE TABLE system.replicas
     `last_queue_update_exception` String,
     `zookeeper_exception` String,
     `replica_is_active` Map(String, UInt8),
-    `readonly_duration` Nullable(DateTime) ALIAS if(readonly_start_time IS NULL, NULL, now() - readonly_start_time)
+    `readonly_duration` Nullable(UInt64) ALIAS if(readonly_start_time IS NULL, NULL, now() - readonly_start_time)
 )
 ENGINE = SystemReplicas
 COMMENT 'Contains information and status of all table replicas on current server. Each replica is represented by a single row.'
@@ -929,6 +936,7 @@ CREATE TABLE system.replicated_merge_tree_settings
 (
     `name` String,
     `value` String,
+    `default` String,
     `changed` UInt8,
     `description` String,
     `min` Nullable(String),
@@ -1118,6 +1126,8 @@ CREATE TABLE system.tables
     `parts` Nullable(UInt64),
     `active_parts` Nullable(UInt64),
     `total_marks` Nullable(UInt64),
+    `active_on_fly_data_mutations` UInt64,
+    `active_on_fly_metadata_mutations` UInt64,
     `lifetime_rows` Nullable(UInt64),
     `lifetime_bytes` Nullable(UInt64),
     `comment` String,
@@ -1168,7 +1178,8 @@ ENGINE = SystemUsers
 COMMENT 'Contains a list of all users profiles either configured at the server through a configuration file or created via SQL.'
 CREATE TABLE system.warnings
 (
-    `message` String
+    `message` String,
+    `message_format_string` LowCardinality(String)
 )
 ENGINE = SystemWarnings
 COMMENT 'Contains warnings about server configuration to be displayed by clickhouse-client right after it connects to the server.'

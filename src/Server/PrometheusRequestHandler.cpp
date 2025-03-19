@@ -1,13 +1,15 @@
 #include <Server/PrometheusRequestHandler.h>
 
-#include <Common/logger_useful.h>
-#include <Common/setThreadName.h>
 #include <IO/HTTPCommon.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
+#include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
-#include <Server/HTTPHandler.h>
+#include <base/scope_guard.h>
+#include <Poco/Net/HTTPResponse.h>
+#include <Common/logger_useful.h>
+#include <Common/setThreadName.h>
 #include "config.h"
 
 #include <Access/Credentials.h>
@@ -137,7 +139,7 @@ protected:
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
     {
-        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, HTTPHandlerConnectionConfig{}, server().context(), log());
+        return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
     }
 
     void makeContext(HTTPServerRequest & request)
@@ -229,7 +231,8 @@ public:
         if (write_request.metadata_size())
             protocol.writeMetricsMetadata(write_request.metadata());
 
-        response.setContentType("text/plain; charset=UTF-8");
+        response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
+        response.setChunkedTransferEncoding(false);
         response.send();
 
 #else

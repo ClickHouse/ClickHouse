@@ -1,8 +1,9 @@
 ---
-slug: /en/sql-reference/statements/check-table
+description: 'Documentation for Check Table'
+sidebar_label: 'CHECK TABLE'
 sidebar_position: 41
-sidebar_label: CHECK TABLE
-title: "CHECK TABLE Statement"
+slug: /sql-reference/statements/check-table
+title: 'CHECK TABLE Statement'
 ---
 
 The `CHECK TABLE` query in ClickHouse is used to perform a validation check on a specific table or its partitions. It ensures the integrity of the data by verifying the checksums and other internal data structures.
@@ -14,7 +15,7 @@ The `CHECK TABLE`` query may read all the data in the table and hold some resour
 Consider the potential impact on performance and resource utilization before executing this query.
 :::
 
-## Syntax
+## Syntax {#syntax}
 
 The basic syntax of the query is as follows:
 
@@ -27,8 +28,8 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 - `part_name`: (Optional) If you want to check a specific part in the table, you can add string literal to specify a part name.
 - `FORMAT format`: (Optional) Allows you to specify the output format of the result.
 - `SETTINGS`: (Optional) Allows additional settings.
-	- **`check_query_single_value_result`**: (Optional) This setting allows you to toggle between a detailed result (`0`) or a summarized result (`1`).
-	- Other settings can be applied as well. If you don't require a deterministic order for the results, you can set max_threads to a value greater than one to speed up the query.
+    - **`check_query_single_value_result`**: (Optional) This setting allows you to toggle between a detailed result (`0`) or a summarized result (`1`).
+    - Other settings can be applied as well. If you don't require a deterministic order for the results, you can set max_threads to a value greater than one to speed up the query.
 
 
 The query response depends on the value of contains `check_query_single_value_result` setting.
@@ -50,7 +51,7 @@ Performed over the tables with another table engines causes an `NOT_IMPLEMENTED`
 
 Engines from the `*Log` family do not provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
 
-## Examples
+## Examples {#examples}
 
 By default `CHECK TABLE` query shows the general table check status:
 
@@ -109,7 +110,7 @@ CHECK TABLE t0 PART '201003_111_222_0'
 DB::Exception: No such data part '201003_111_222_0' to check in table 'default.t0'. (NO_SUCH_DATA_PART)
 ```
 
-### Receiving a 'Corrupted' Result
+### Receiving a 'Corrupted' Result {#receiving-a-corrupted-result}
 
 :::warning
 Disclaimer: The procedure described here, including the manual manipulating or removing files directly from the data directory, is for experimental or development environments only. Do **not** attempt this on a production server, as it may lead to data loss or other unintended consequences.
@@ -161,7 +162,7 @@ SETTINGS check_query_single_value_result = 0
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
 
-## If the Data Is Corrupted
+## If the Data Is Corrupted {#if-the-data-is-corrupted}
 
 If the table is corrupted, you can copy the non-corrupted data to another table. To do this:
 

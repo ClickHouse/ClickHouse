@@ -8,7 +8,6 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
-#include <Formats/FormatSettings.h>
 #include <Common/StringHashForHeterogeneousLookup.h>
 #include <Common/WeakHash.h>
 
@@ -107,6 +106,7 @@ public:
 
     Field operator[](size_t n) const override;
     void get(size_t n, Field & res) const override;
+    std::pair<String, DataTypePtr> getValueNameAndType(size_t n) const override;
 
     bool isDefaultAt(size_t n) const override;
     StringRef getDataAt(size_t n) const override;
@@ -145,11 +145,12 @@ public:
     void getPermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &) const override;
     void updatePermutation(PermutationSortDirection, PermutationSortStability, size_t, int, Permutation &, EqualRanges &) const override {}
 
-    /// Values of ColumnObject are not comparable.
+    /// Values of ColumnObject are not comparable for less and greater functions.
+    /// But we still support equal comparison.
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
-    int compareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+    int compareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
 #else
-    int doCompareAt(size_t, size_t, const IColumn &, int) const override { return 0; }
+    int doCompareAt(size_t, size_t, const IColumn &, int nan_direction_hint) const override;
 #endif
     bool equalsAt(size_t, size_t, const IColumn &) const override { return true; }
 
@@ -167,16 +168,21 @@ public:
     void updateCheckpoint(ColumnCheckpoint & checkpoint) const override;
     void rollback(const ColumnCheckpoint & checkpoint) override;
 
-    void forEachSubcolumn(MutableColumnCallback callback) override;
+    void forEachMutableSubcolumn(MutableColumnCallback callback) override;
 
-    void forEachSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+    void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override;
+
+    void forEachSubcolumn(ColumnCallback callback) const override;
+
+    void forEachSubcolumnRecursively(RecursiveColumnCallback callback) const override;
 
     bool structureEquals(const IColumn & rhs) const override;
 
-    ColumnPtr compress() const override;
+    ColumnPtr compress(bool force_compression) const override;
 
     void finalize() override;
     bool isFinalized() const override;
+    bool canBeInsideNullable() const override { return true; }
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
@@ -233,8 +239,8 @@ public:
     void setGlobalMaxDynamicPaths(size_t global_max_dynamic_paths_);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
-    void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n);
-    void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column) const;
+    static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const IColumn & column, size_t n);
+    static void deserializeValueFromSharedData(const ColumnString * shared_data_values, size_t n, IColumn & column);
 
     /// Paths in shared data are sorted in each row. Use this method to find the lower bound for specific path in the row.
     static size_t findPathLowerBoundInSharedData(StringRef path, const ColumnString & shared_data_paths, size_t start, size_t end);

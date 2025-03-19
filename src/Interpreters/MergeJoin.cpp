@@ -517,8 +517,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
         size_limits.max_bytes = table_join->defaultMaxBytes();
         if (!size_limits.max_bytes)
             throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                            "No limit for MergeJoin (max_rows_in_join, max_bytes_in_join "
-                            "or default_max_bytes_in_join have to be set)");
+                            "No limit for MergeJoin (max_rows_in_join or max_bytes_in_join settings must be set)");
     }
 
     if (!table_join->oneDisjunct())
@@ -603,7 +602,18 @@ void MergeJoin::mergeInMemoryRightBlocks()
 
     /// TODO: there should be no split keys by blocks for RIGHT|FULL JOIN
     builder.addTransform(std::make_shared<MergeSortingTransform>(
-        builder.getHeader(), right_sort_description, max_rows_in_right_block, 0, 0, false, 0, 0, 0, nullptr, 0));
+        builder.getHeader(),
+        right_sort_description,
+        max_rows_in_right_block,
+        /*max_block_bytes=*/0,
+        /*limit_=*/0,
+        /*increase_sort_description_compile_attempts=*/false,
+        /*max_bytes_before_remerge_*/0,
+        /*remerge_lowered_memory_bytes_ratio_*/0,
+        /*min_external_sort_block_bytes_*/0,
+        /*max_bytes_before_external_sort_*/0,
+        /*tmp_data_*/nullptr,
+        /*min_free_disk_space_*/0));
 
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
     PullingPipelineExecutor executor(pipeline);
