@@ -34,7 +34,8 @@ enum class ChangeType : uint8_t
 enum class TransformType : uint8_t
 {
     STRUCT,
-    ARRAY
+    ARRAY,
+    MAP
 };
 
 class IcebergChangeSchemaOperation
@@ -93,7 +94,7 @@ public:
     std::vector<size_t> permutation;
 };
 
-using ComplexNode = std::variant<Tuple, Array>;
+using ComplexNode = std::variant<Tuple, Array, Map>;
 
 class IIcebergSchemaTransform
 {

@@ -1,5 +1,5 @@
-#include <optional>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
@@ -10,11 +10,11 @@
 
 #include <IO/ReadBufferFromString.h>
 #include <Common/Exception.h>
-#include "Columns/IColumn.h"
-#include "base/scope_guard.h"
 #include <Common/logger_useful.h>
+#include "Columns/IColumn.h"
 #include "Core/Field.h"
 #include "Functions/IFunction.h"
+#include "base/scope_guard.h"
 #include "base/types.h"
 
 #include <DataTypes/DataTypeArray.h>
@@ -313,9 +313,10 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
         if (old_node_it != old_schema_entries.end())
         {
             auto [old_json, old_node] = old_node_it->second;
-            if (field->isObject("type") &&
-                (field->getObject("type")->getValue<std::string>("type") == "struct"
-                || field->getObject("type")->getValue<std::string>("type") == "list"))
+            if (field->isObject("type")
+                && (field->getObject("type")->getValue<std::string>("type") == "struct"
+                    || field->getObject("type")->getValue<std::string>("type") == "list"
+                    || field->getObject("type")->getValue<std::string>("type") == "map"))
             {
                 auto old_type = getFieldType(old_json, "type", required);
                 auto transform = std::make_shared<EvolutionFunctionStruct>(std::vector{type}, std::vector{old_type}, old_json, field);
@@ -396,7 +397,8 @@ std::shared_ptr<const ActionsDAG> IcebergSchemaProcessor::getSchemaTransformatio
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Schema with schema-id {} is unknown", new_id);
     }
-    return transform_dags_by_ids[{old_id, new_id}] = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id);
+    return transform_dags_by_ids[{old_id, new_id}]
+        = getSchemaTransformationDag(old_schema_it->second, new_schema_it->second, old_id, new_id);
 }
 
 std::shared_ptr<NamesAndTypesList> IcebergSchemaProcessor::getClickhouseTableSchemaById(Int32 id)

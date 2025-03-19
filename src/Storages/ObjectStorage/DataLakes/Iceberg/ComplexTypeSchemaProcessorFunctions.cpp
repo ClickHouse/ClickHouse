@@ -11,6 +11,7 @@
 #include "Common/Exception.h"
 #include "Columns/IColumn.h"
 #include "DataTypes/DataTypeArray.h"
+#include "DataTypes/DataTypeMap.h"
 #include "DataTypes/DataTypeTuple.h"
 
 namespace DB
@@ -46,54 +47,106 @@ std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const
         walk_stack.pop();
 
         size_t height = current_path.size();
-        if (path[height].parent_type == TransformType::STRUCT)
+        switch (path[height].parent_type)
         {
-            current_path.push_back(index_path[height]);
-
-            if (current_path.size() == index_path.size())
-            {
-                result.push_back(current_path);
-                continue;
-            }
-            auto next_val = std::get<Tuple>(current_value)[index_path[height]];
-            Tuple tmp_node_tuple;
-            Array tmp_node_array;
-            if (next_val.tryGet(tmp_node_tuple))
-            {
-                current_value = std::move(tmp_node_tuple);
-            }
-            else if (next_val.tryGet(tmp_node_array))
-            {
-                current_value = std::move(tmp_node_array);
-            }
-            walk_stack.push({current_path, current_value});
-        }
-        else
-        {
-            for (size_t i = 0; i < std::get<Array>(current_value).size(); ++i)
-            {
-                current_path.push_back(i);
+            case TransformType::STRUCT: {
+                current_path.push_back(index_path[height]);
 
                 if (current_path.size() == index_path.size())
                 {
                     result.push_back(current_path);
-                    current_path.pop_back();
                     continue;
                 }
-                auto next_val = std::get<Array>(current_value)[i];
+                auto next_val = std::get<Tuple>(current_value)[index_path[height]];
                 Tuple tmp_node_tuple;
                 Array tmp_node_array;
-                ComplexNode result_node;
+                Map tmp_node_map;
+
                 if (next_val.tryGet(tmp_node_tuple))
                 {
-                    result_node = std::move(tmp_node_tuple);
+                    current_value = std::move(tmp_node_tuple);
                 }
                 else if (next_val.tryGet(tmp_node_array))
                 {
-                    result_node = std::move(tmp_node_array);
+                    current_value = std::move(tmp_node_array);
                 }
-                walk_stack.push({current_path, result_node});
-                current_path.pop_back();
+                else if (next_val.tryGet(tmp_node_map))
+                {
+                    current_value = std::move(tmp_node_map);
+                }
+
+                walk_stack.push({current_path, current_value});
+                break;
+            }
+            case TransformType::ARRAY: {
+                for (size_t i = 0; i < std::get<Array>(current_value).size(); ++i)
+                {
+                    current_path.push_back(i);
+
+                    if (current_path.size() == index_path.size())
+                    {
+                        result.push_back(current_path);
+                        current_path.pop_back();
+                        continue;
+                    }
+                    auto next_val = std::get<Array>(current_value)[i];
+                    Tuple tmp_node_tuple;
+                    Array tmp_node_array;
+                    Map tmp_node_map;
+
+                    ComplexNode result_node;
+                    if (next_val.tryGet(tmp_node_tuple))
+                    {
+                        result_node = std::move(tmp_node_tuple);
+                    }
+                    else if (next_val.tryGet(tmp_node_array))
+                    {
+                        result_node = std::move(tmp_node_array);
+                    }
+                    else if (next_val.tryGet(tmp_node_map))
+                    {
+                        result_node = std::move(tmp_node_map);
+                    }
+
+                    walk_stack.push({current_path, result_node});
+                    current_path.pop_back();
+                }
+                break;
+            }
+            case TransformType::MAP: {
+                for (size_t i = 0; i < std::get<Map>(current_value).size(); ++i)
+                {
+                    current_path.push_back(i);
+
+                    if (current_path.size() == index_path.size())
+                    {
+                        result.push_back(current_path);
+                        current_path.pop_back();
+                        continue;
+                    }
+                    auto next_val = std::get<Map>(current_value)[i];
+
+                    Tuple tmp_node_tuple;
+                    Array tmp_node_array;
+                    Map tmp_node_map;
+
+                    ComplexNode result_node;
+                    if (next_val.tryGet(tmp_node_tuple))
+                    {
+                        result_node = std::move(tmp_node_tuple);
+                    }
+                    else if (next_val.tryGet(tmp_node_array))
+                    {
+                        result_node = std::move(tmp_node_array);
+                    }
+                    else if (next_val.tryGet(tmp_node_map))
+                    {
+                        result_node = std::move(tmp_node_map);
+                    }
+                    walk_stack.push({current_path, result_node});
+                    current_path.pop_back();
+                }
+                break;
             }
         }
     }
@@ -113,65 +166,128 @@ void IIcebergSchemaTransform::transform(ComplexNode & initial_node)
             auto subfield_index = path_to_transform[i];
             auto edge_type = path[i].parent_type;
             nodes_in_path.push_back(current_node);
-            if (edge_type == TransformType::STRUCT)
+
+            switch (edge_type)
             {
-                auto current_tuple = std::get<Tuple>(current_node);
-                Tuple tmp_node_tuple;
-                Array tmp_node_array;
-                if (current_tuple[subfield_index].tryGet(tmp_node_tuple))
-                {
-                    current_node = std::move(tmp_node_tuple);
+                case TransformType::STRUCT: {
+                    auto current_tuple = std::get<Tuple>(current_node);
+                    Tuple tmp_node_tuple;
+                    Array tmp_node_array;
+                    Map tmp_node_map;
+
+                    if (current_tuple[subfield_index].tryGet(tmp_node_tuple))
+                    {
+                        current_node = std::move(tmp_node_tuple);
+                    }
+                    else if (current_tuple[subfield_index].tryGet(tmp_node_array))
+                    {
+                        current_node = std::move(tmp_node_array);
+                    }
+                    else if (current_tuple[subfield_index].tryGet(tmp_node_map))
+                    {
+                        current_node = std::move(tmp_node_map);
+                    }
+
+                    else
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Incorrect type in iceberg complex schema transform {}",
+                            current_tuple[subfield_index].getTypeName());
+                    break;
                 }
-                else if (current_tuple[subfield_index].tryGet(tmp_node_array))
-                {
-                    current_node = std::move(tmp_node_array);
+                case TransformType::ARRAY: {
+                    auto current_tuple = std::get<Array>(current_node);
+                    Tuple tmp_node_tuple;
+                    Array tmp_node_array;
+                    Map tmp_node_map;
+
+                    if (current_tuple[subfield_index].tryGet(tmp_node_tuple))
+                    {
+                        current_node = std::move(tmp_node_tuple);
+                    }
+                    else if (current_tuple[subfield_index].tryGet(tmp_node_array))
+                    {
+                        current_node = std::move(tmp_node_array);
+                    }
+                    else if (current_tuple[subfield_index].tryGet(tmp_node_map))
+                    {
+                        current_node = std::move(tmp_node_array);
+                    }
+
+                    else
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type in iceberg complex schema transform");
+                    break;
                 }
-                else
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Incorrect type in iceberg complex schema transform {}",
-                        current_tuple[subfield_index].getTypeName());
-            }
-            else
-            {
-                auto current_tuple = std::get<Array>(current_node);
-                Tuple tmp_node_tuple;
-                Array tmp_node_array;
-                if (current_tuple[subfield_index].tryGet(tmp_node_tuple))
-                {
-                    current_node = std::move(tmp_node_tuple);
+                case TransformType::MAP: {
+                    auto current_tuple = std::get<Map>(current_node);
+
+                    Tuple tmp_node_tuple;
+                    Array tmp_node_array;
+                    Map tmp_node_map;
+
+                    if (current_tuple[subfield_index].safeGet<Tuple>()[1].tryGet(tmp_node_tuple))
+                    {
+                        current_node = std::move(tmp_node_tuple);
+                    }
+                    else if (current_tuple[subfield_index].safeGet<Tuple>()[1].tryGet(tmp_node_array))
+                    {
+                        current_node = std::move(tmp_node_array);
+                    }
+                    else if (current_tuple[subfield_index].safeGet<Tuple>()[1].tryGet(tmp_node_map))
+                    {
+                        current_node = std::move(tmp_node_map);
+                    }
+                    else
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type in iceberg complex schema transform");
+                    break;
                 }
-                else if (current_tuple[subfield_index].tryGet(tmp_node_array))
-                {
-                    current_node = std::move(tmp_node_array);
-                }
-                else
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect type in iceberg complex schema transform");
             }
         }
 
         transformChildNode(std::get<Tuple>(current_node));
         ComplexNode fixed_node = std::move(current_node);
+        if (path_to_transform.empty())
+            initial_node = fixed_node;
         for (int j = static_cast<int>(path_to_transform.size()) - 1; j >= 0; --j)
         {
-            if (path[j].parent_type == TransformType::STRUCT)
+            switch (path[j].parent_type)
             {
-                if (std::holds_alternative<Tuple>(fixed_node))
-                    std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(fixed_node);
-                else
-                    std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Array>(fixed_node);
-                fixed_node = nodes_in_path[j];
+                case TransformType::STRUCT: {
+                    if (std::holds_alternative<Tuple>(fixed_node))
+                        std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(fixed_node);
+                    else if (std::holds_alternative<Array>(fixed_node))
+                        std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Array>(fixed_node);
+                    else if (std::holds_alternative<Map>(fixed_node))
+                        std::get<Tuple>(nodes_in_path[j])[path_to_transform[j]] = std::get<Map>(fixed_node);
+
+                    fixed_node = nodes_in_path[j];
+                    break;
+                }
+                case TransformType::ARRAY: {
+                    if (std::holds_alternative<Tuple>(fixed_node))
+                        std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(fixed_node);
+                    else if (std::holds_alternative<Array>(fixed_node))
+                        std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Array>(fixed_node);
+                    else if (std::holds_alternative<Map>(fixed_node))
+                        std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Map>(fixed_node);
+
+                    fixed_node = nodes_in_path[j];
+                    break;
+                }
+                case TransformType::MAP: {
+                    if (std::holds_alternative<Tuple>(fixed_node))
+                        std::get<Map>(nodes_in_path[j])[path_to_transform[j]].safeGet<Tuple>()[1] = std::get<Tuple>(fixed_node);
+                    else if (std::holds_alternative<Array>(fixed_node))
+                        std::get<Map>(nodes_in_path[j])[path_to_transform[j]].safeGet<Tuple>()[1] = std::get<Array>(fixed_node);
+                    else if (std::holds_alternative<Map>(fixed_node))
+                        std::get<Map>(nodes_in_path[j])[path_to_transform[j]].safeGet<Tuple>()[1] = std::get<Map>(fixed_node);
+
+                    fixed_node = nodes_in_path[j];
+                    break;
+                }
             }
-            else
-            {
-                if (std::holds_alternative<Tuple>(fixed_node))
-                    std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Tuple>(fixed_node);
-                else
-                    std::get<Array>(nodes_in_path[j])[path_to_transform[j]] = std::get<Array>(fixed_node);
-                fixed_node = nodes_in_path[j];
-            }
+            initial_node = fixed_node;
         }
-        initial_node = fixed_node;
     }
 }
 
@@ -183,30 +299,42 @@ public:
     {
         for (const auto & path : operation_.getPath())
         {
-            if (path.parent_type == TransformType::STRUCT)
+            switch (path.parent_type)
             {
-                auto current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
-                auto element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
+                case TransformType::STRUCT: {
+                    auto current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
+                    auto element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
 
-                size_t result_index = current_types.size();
-                for (size_t i = 0; i < current_types.size(); ++i)
-                {
-                    if (element_names[i] == path.path)
+                    size_t result_index = current_types.size();
+                    for (size_t i = 0; i < current_types.size(); ++i)
                     {
-                        result_index = i;
-                        break;
+                        if (element_names[i] == path.path)
+                        {
+                            result_index = i;
+                            break;
+                        }
                     }
-                }
-                if (result_index == current_types.size())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in data", path.path);
+                    if (result_index == current_types.size())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in data", path.path);
 
-                index_path.push_back(static_cast<Int32>(result_index));
-                old_type = current_types[result_index];
-            }
-            else
-            {
-                index_path.push_back(-1);
-                old_type = std::static_pointer_cast<const DataTypeArray>(old_type)->getNestedType();
+                    index_path.push_back(static_cast<Int32>(result_index));
+                    old_type = current_types[result_index];
+                    break;
+                }
+                case TransformType::ARRAY: {
+                    index_path.push_back(-1);
+                    old_type = std::static_pointer_cast<const DataTypeArray>(old_type)->getNestedType();
+                    break;
+                }
+                case TransformType::MAP: {
+                    index_path.push_back(-1);
+                    old_type = std::static_pointer_cast<const DataTypeTuple>(
+                                   std::static_pointer_cast<const DataTypeArray>(
+                                       std::static_pointer_cast<const DataTypeMap>(old_type)->getNestedType())
+                                       ->getNestedType())
+                                   ->getElement(1);
+                    break;
+                }
             }
         }
 
@@ -240,48 +368,65 @@ public:
     {
         for (const auto & path : operation_.getPath())
         {
-            if (path.parent_type == TransformType::STRUCT)
+            switch (path.parent_type)
             {
-                auto old_current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
-                auto old_element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
+                case TransformType::STRUCT: {
+                    auto old_current_types = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElements();
+                    auto old_element_names = std::static_pointer_cast<const DataTypeTuple>(old_type)->getElementNames();
 
-                size_t old_result_index = old_current_types.size();
-                for (size_t i = 0; i < old_current_types.size(); ++i)
-                {
-                    if (old_element_names[i] == path.path)
+                    size_t old_result_index = old_current_types.size();
+                    for (size_t i = 0; i < old_current_types.size(); ++i)
                     {
-                        old_result_index = i;
-                        break;
+                        if (old_element_names[i] == path.path)
+                        {
+                            old_result_index = i;
+                            break;
+                        }
                     }
-                }
-                if (old_result_index == old_current_types.size())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in old data", path.path);
+                    if (old_result_index == old_current_types.size())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in old data", path.path);
 
-                index_path.push_back(static_cast<Int32>(old_result_index));
-                old_type = old_current_types[old_result_index];
+                    index_path.push_back(static_cast<Int32>(old_result_index));
+                    old_type = old_current_types[old_result_index];
 
-                current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
-                auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
+                    current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
+                    auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
 
-                size_t result_index = current_types.size();
-                for (size_t i = 0; i < current_types.size(); ++i)
-                {
-                    if (element_names[i] == path.new_path)
+                    size_t result_index = current_types.size();
+                    for (size_t i = 0; i < current_types.size(); ++i)
                     {
-                        result_index = i;
-                        break;
+                        if (element_names[i] == path.new_path)
+                        {
+                            result_index = i;
+                            break;
+                        }
                     }
-                }
-                if (result_index == current_types.size())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in new data", path.new_path);
+                    if (result_index == current_types.size())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in new data", path.new_path);
 
-                type = current_types[result_index];
-            }
-            else
-            {
-                index_path.push_back(-1);
-                old_type = std::static_pointer_cast<const DataTypeArray>(old_type)->getNestedType();
-                type = std::static_pointer_cast<const DataTypeArray>(type)->getNestedType();
+                    type = current_types[result_index];
+                    break;
+                }
+                case TransformType::ARRAY: {
+                    index_path.push_back(-1);
+                    old_type = std::static_pointer_cast<const DataTypeArray>(old_type)->getNestedType();
+                    type = std::static_pointer_cast<const DataTypeArray>(type)->getNestedType();
+                    break;
+                }
+                case TransformType::MAP: {
+                    index_path.push_back(-1);
+                    old_type = std::static_pointer_cast<const DataTypeTuple>(
+                                   std::static_pointer_cast<const DataTypeArray>(
+                                       std::static_pointer_cast<const DataTypeMap>(old_type)->getNestedType())
+                                       ->getNestedType())
+                                   ->getElement(1);
+                    type = std::static_pointer_cast<const DataTypeTuple>(
+                               std::static_pointer_cast<const DataTypeArray>(
+                                   std::static_pointer_cast<const DataTypeMap>(type)->getNestedType())
+                                   ->getNestedType())
+                               ->getElement(1);
+                    break;
+                }
             }
         }
 
@@ -318,30 +463,42 @@ public:
     {
         for (const auto & path : operation_.getPath())
         {
-            if (path.parent_type == TransformType::STRUCT)
+            switch (path.parent_type)
             {
-                current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
-                auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
+                case TransformType::STRUCT: {
+                    current_types = std::static_pointer_cast<const DataTypeTuple>(type)->getElements();
+                    auto element_names = std::static_pointer_cast<const DataTypeTuple>(type)->getElementNames();
 
-                size_t result_index = current_types.size();
-                for (size_t i = 0; i < current_types.size(); ++i)
-                {
-                    if (element_names[i] == path.path)
+                    size_t result_index = current_types.size();
+                    for (size_t i = 0; i < current_types.size(); ++i)
                     {
-                        result_index = i;
-                        break;
+                        if (element_names[i] == path.path)
+                        {
+                            result_index = i;
+                            break;
+                        }
                     }
-                }
-                if (result_index == current_types.size())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in data", path.path);
+                    if (result_index == current_types.size())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not find path {} in data", path.path);
 
-                index_path.push_back(static_cast<Int32>(result_index));
-                type = current_types[result_index];
-            }
-            else
-            {
-                index_path.push_back(-1);
-                type = std::static_pointer_cast<const DataTypeArray>(type)->getNestedType();
+                    index_path.push_back(static_cast<Int32>(result_index));
+                    type = current_types[result_index];
+                    break;
+                }
+                case TransformType::ARRAY: {
+                    index_path.push_back(-1);
+                    type = std::static_pointer_cast<const DataTypeArray>(type)->getNestedType();
+                    break;
+                }
+                case TransformType::MAP: {
+                    index_path.push_back(-1);
+                    type = std::static_pointer_cast<const DataTypeTuple>(
+                               std::static_pointer_cast<const DataTypeArray>(
+                                   std::static_pointer_cast<const DataTypeMap>(type)->getNestedType())
+                                   ->getNestedType())
+                               ->getElement(1);
+                    break;
+                }
             }
         }
     }
@@ -378,6 +535,8 @@ ColumnPtr ExecutableEvolutionFunction::executeImpl(
     {
         Tuple current_tuple_node;
         Array current_array_node;
+        Map current_map_node;
+
         Field column_field;
         column->get(i, column_field);
         if (column_field.tryGet(current_tuple_node))
@@ -394,6 +553,14 @@ ColumnPtr ExecutableEvolutionFunction::executeImpl(
             for (const auto & transform : transforms)
                 transform->transform(tuple_node);
             Array result_node = std::get<Array>(tuple_node);
+            result_column->insert(result_node);
+        }
+        else if (column_field.tryGet(current_map_node))
+        {
+            ComplexNode tuple_node = current_map_node;
+            for (const auto & transform : transforms)
+                transform->transform(tuple_node);
+            Map result_node = std::get<Map>(tuple_node);
             result_column->insert(result_node);
         }
     }
@@ -431,7 +598,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
         Poco::JSON::Array::Ptr old_subfields = nullptr;
         Poco::JSON::Array::Ptr fields = nullptr;
         std::vector<IcebergChangeSchemaOperation::Edge> current_path = {};
-        bool is_struct = false;
+        TransformType type;
     };
 
     std::stack<TraverseItem> walk_stack;
@@ -440,7 +607,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
         auto subfields = field->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
         auto old_subfields = old_json->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
 
-        walk_stack.push(TraverseItem{old_subfields, subfields, {}, true});
+        walk_stack.push(TraverseItem{old_subfields, subfields, {}, TransformType::STRUCT});
     }
     else if (
         old_json->isObject("type") && old_json->getObject("type")->getValue<std::string>("type") == "list"
@@ -449,22 +616,31 @@ void ExecutableEvolutionFunction::lazyInitialize() const
         auto subfields = field->getObject("type")->getObject("element");
         auto old_subfields = old_json->getObject("type")->getObject("element");
 
-        walk_stack.push({makeArrayFromObject(old_subfields), makeArrayFromObject(subfields), {}, false});
+        walk_stack.push({makeArrayFromObject(old_subfields), makeArrayFromObject(subfields), {}, TransformType::ARRAY});
+    }
+    else if (
+        old_json->isObject("type") && old_json->getObject("type")->getValue<std::string>("type") == "map"
+        && old_json->getObject("type")->isObject("value"))
+    {
+        auto subfields = field->getObject("type")->getObject("value");
+        auto old_subfields = old_json->getObject("type")->getObject("value");
+
+        walk_stack.push({makeArrayFromObject(old_subfields), makeArrayFromObject(subfields), {}, TransformType::MAP});
     }
 
     std::map<size_t, std::vector<std::shared_ptr<IIcebergSchemaTransform>>> per_layer_transforms;
 
     while (!walk_stack.empty())
     {
-        auto [old_subfields, subfields, current_path, is_struct] = walk_stack.top();
+        auto [old_subfields, subfields, current_path, transform_type] = walk_stack.top();
         walk_stack.pop();
 
-        if (!is_struct)
+        if (transform_type != TransformType::STRUCT)
         {
             auto old_subfield = old_subfields->getObject(static_cast<UInt32>(0));
             auto subfield = subfields->getObject(static_cast<UInt32>(0));
 
-            current_path.push_back({"", "", TransformType::ARRAY});
+            current_path.push_back({"", "", transform_type});
 
             if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "struct")
             {
@@ -472,7 +648,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
                     {old_subfield->get("fields").extract<Poco::JSON::Array::Ptr>(),
                      subfield->get("fields").extract<Poco::JSON::Array::Ptr>(),
                      current_path,
-                     true});
+                     TransformType::STRUCT});
             }
             if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "list" && old_subfield->isObject("element"))
             {
@@ -480,8 +656,17 @@ void ExecutableEvolutionFunction::lazyInitialize() const
                     {makeArrayFromObject(old_subfield->getObject("element")),
                      makeArrayFromObject(subfield->getObject("element")),
                      current_path,
-                     true});
+                     TransformType::ARRAY});
             }
+            if (old_subfield->has("type") && old_subfield->getValue<std::string>("type") == "map" && old_subfield->isObject("value"))
+            {
+                walk_stack.push(
+                    {makeArrayFromObject(old_subfield->getObject("value")),
+                     makeArrayFromObject(subfield->getObject("value")),
+                     current_path,
+                     TransformType::MAP});
+            }
+
             current_path.pop_back();
 
             continue;
@@ -569,7 +754,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
                 auto child_old_subfields = old_subfield->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
                 current_path.push_back(
                     {old_subfield->getValue<std::string>("name"), subfield->getValue<std::string>("name"), TransformType::STRUCT});
-                walk_stack.push({child_old_subfields, child_subfields, current_path, true});
+                walk_stack.push({child_old_subfields, child_subfields, current_path, TransformType::STRUCT});
                 current_path.pop_back();
             }
             else if (
@@ -579,7 +764,19 @@ void ExecutableEvolutionFunction::lazyInitialize() const
                 auto child_subfield = subfield->getObject("type")->getObject("element");
                 auto child_old_subfield = old_subfield->getObject("type")->getObject("element");
                 current_path.push_back({"", "", TransformType::ARRAY});
-                walk_stack.push({makeArrayFromObject(child_old_subfield), makeArrayFromObject(child_subfield), current_path, false});
+                walk_stack.push(
+                    {makeArrayFromObject(child_old_subfield), makeArrayFromObject(child_subfield), current_path, TransformType::ARRAY});
+                current_path.pop_back();
+            }
+            else if (
+                subfield->isObject("type") && subfield->getObject("type")->getValue<std::string>("type") == "map"
+                && subfield->getObject("type")->isObject("value"))
+            {
+                auto child_subfield = subfield->getObject("type")->getObject("value");
+                auto child_old_subfield = old_subfield->getObject("type")->getObject("value");
+                current_path.push_back({"", "", TransformType::MAP});
+                walk_stack.push(
+                    {makeArrayFromObject(child_old_subfield), makeArrayFromObject(child_subfield), current_path, TransformType::MAP});
                 current_path.pop_back();
             }
         }

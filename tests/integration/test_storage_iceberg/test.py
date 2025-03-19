@@ -1640,6 +1640,12 @@ def test_array_evolved_nested(
         """
     )
 
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(named_struct('zip', ARRAY(411,421), 'city', named_struct('foo', 'some_value1', 'bar', 401), 'zap', 3), named_struct('zip', ARRAY(21,31,41), 'city', named_struct('foo', 'some_value21', 'bar', 11), 'zap', 4)));
+        """
+    )
+
     check_schema_and_data(
         instance,
         table_function,
@@ -1647,13 +1653,20 @@ def test_array_evolved_nested(
             ['address', 'Array(Tuple(\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        foo Nullable(String),\\n        bar Nullable(Int32)),\\n    zap Nullable(Int32)))']
         ],
         [
-            ["[([41,42],('some_value',40),NULL),([2,3,4],('some_value2',1),NULL)]"]
+            ["[([41,42],('some_value',40),NULL),([2,3,4],('some_value2',1),NULL)]"],
+            ["[([411,421],('some_value1',401),3),([21,31,41],('some_value21',11),4)]"]
         ],
     )
 
     execute_spark_query(
         f"""
             ALTER TABLE {TABLE_NAME} DROP COLUMN address.element.city.foo;
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(named_struct('zip', ARRAY(4111,4211), 'city', named_struct('bar', 4011), 'zap', 31), named_struct('zip', ARRAY(211,311,411), 'city', named_struct('bar', 111), 'zap', 41)));
         """
     )
 
@@ -1664,13 +1677,21 @@ def test_array_evolved_nested(
             ['address', 'Array(Tuple(\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        bar Nullable(Int32)),\\n    zap Nullable(Int32)))']
         ],
         [
-            ["[([41,42],(40),NULL),([2,3,4],(1),NULL)]"]
+            ["[([41,42],(40),NULL),([2,3,4],(1),NULL)]"],
+            ["[([411,421],(401),3),([21,31,41],(11),4)]"],
+            ["[([4111,4211],(4011),31),([211,311,411],(111),41)]"]
         ],
     )
 
     execute_spark_query(
         f"""
             ALTER TABLE {TABLE_NAME} ALTER COLUMN address.element.zap FIRST;
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(named_struct('zap', 32, 'zip', ARRAY(4112,4212), 'city', named_struct('bar', 4012)), named_struct('zap', 42, 'zip', ARRAY(212,312,412), 'city', named_struct('bar', 112))));
         """
     )
 
@@ -1681,7 +1702,10 @@ def test_array_evolved_nested(
             ['address', 'Array(Tuple(\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        bar Nullable(Int32))))']
         ],
         [
-            ["[(NULL,[41,42],(40)),(NULL,[2,3,4],(1))]"]
+            ["[(3,[411,421],(401)),(4,[21,31,41],(11))]"],
+            ["[(31,[4111,4211],(4011)),(41,[211,311,411],(111))]"],
+            ["[(32,[4112,4212],(4012)),(42,[212,312,412],(112))]"],
+            ["[(NULL,[41,42],(40)),(NULL,[2,3,4],(1))]"],
         ],
     )
 
@@ -1690,6 +1714,13 @@ def test_array_evolved_nested(
             ALTER TABLE {TABLE_NAME} ADD COLUMNS ( address.element.city.newbar INT );
         """
     )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(named_struct('zap', 33, 'zip', ARRAY(4113,4213), 'city', named_struct('bar', 4013, 'newbar', 5013)), named_struct('zap', 43, 'zip', ARRAY(213,313,413), 'city', named_struct('bar', 113, 'newbar', 513))));
+        """
+    )
+
     check_schema_and_data(
         instance,
         table_function,
@@ -1697,13 +1728,23 @@ def test_array_evolved_nested(
             ['address', 'Array(Tuple(\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        bar Nullable(Int32),\\n        newbar Nullable(Int32))))']
         ],
         [
-            ["[(NULL,[41,42],(40,NULL)),(NULL,[2,3,4],(1,NULL))]"]
+            ["[(3,[411,421],(401,NULL)),(4,[21,31,41],(11,NULL))]"],
+            ["[(31,[4111,4211],(4011,NULL)),(41,[211,311,411],(111,NULL))]"],
+            ["[(32,[4112,4212],(4012,NULL)),(42,[212,312,412],(112,NULL))]"],
+            ["[(33,[4113,4213],(4013,5013)),(43,[213,313,413],(113,513))]"],
+            ["[(NULL,[41,42],(40,NULL)),(NULL,[2,3,4],(1,NULL))]"],
         ],
     )
 
     execute_spark_query(
         f"""
             ALTER TABLE {TABLE_NAME} ADD COLUMNS ( address.element.new_tuple struct<new_tuple_elem:INT, new_tuple_elem2:INT> );
+        """
+    )
+
+    execute_spark_query(
+        f"""
+            INSERT INTO {TABLE_NAME} VALUES (ARRAY(named_struct('zap', 34, 'zip', ARRAY(4114,4214), 'city', named_struct('bar', 4014, 'newbar', 5014), 'new_tuple', named_struct('new_tuple_elem',4,'new_tuple_elem2',4)), named_struct('zap', 44, 'zip', ARRAY(214,314,414), 'city', named_struct('bar', 114, 'newbar', 514), 'new_tuple', named_struct('new_tuple_elem',4,'new_tuple_elem2',4))));
         """
     )
 
@@ -1714,7 +1755,12 @@ def test_array_evolved_nested(
             ['address', 'Array(Tuple(\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        bar Nullable(Int32),\\n        newbar Nullable(Int32)),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
         ],
         [
-            ["[(NULL,[41,42],(40,NULL),(NULL,NULL)),(NULL,[2,3,4],(1,NULL),(NULL,NULL))]"]
+            ["[(3,[411,421],(401,NULL),(NULL,NULL)),(4,[21,31,41],(11,NULL),(NULL,NULL))]"],
+            ["[(31,[4111,4211],(4011,NULL),(NULL,NULL)),(41,[211,311,411],(111,NULL),(NULL,NULL))]"],
+            ["[(32,[4112,4212],(4012,NULL),(NULL,NULL)),(42,[212,312,412],(112,NULL),(NULL,NULL))]"],
+            ["[(33,[4113,4213],(4013,5013),(NULL,NULL)),(43,[213,313,413],(113,513),(NULL,NULL))]"],
+            ["[(34,[4114,4214],(4014,5014),(4,4)),(44,[214,314,414],(114,514),(4,4))]"],
+            ["[(NULL,[41,42],(40,NULL),(NULL,NULL)),(NULL,[2,3,4],(1,NULL),(NULL,NULL))]"],
         ],
     )
 
@@ -1731,7 +1777,12 @@ def test_array_evolved_nested(
             ['address', 'Array(Tuple(\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    city Tuple(\\n        newbar Nullable(Int32),\\n        bar Nullable(Int32)),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
         ],
         [
-            ["[(NULL,[41,42],(NULL,40),(NULL,NULL)),(NULL,[2,3,4],(NULL,1),(NULL,NULL))]"]
+            ["[(3,[411,421],(NULL,401),(NULL,NULL)),(4,[21,31,41],(NULL,11),(NULL,NULL))]"],
+            ["[(31,[4111,4211],(NULL,4011),(NULL,NULL)),(41,[211,311,411],(NULL,111),(NULL,NULL))]"],
+            ["[(32,[4112,4212],(NULL,4012),(NULL,NULL)),(42,[212,312,412],(NULL,112),(NULL,NULL))]"],
+            ["[(33,[4113,4213],(5013,4013),(NULL,NULL)),(43,[213,313,413],(513,113),(NULL,NULL))]"],
+            ["[(34,[4114,4214],(5014,4014),(4,4)),(44,[214,314,414],(514,114),(4,4))]"],
+            ["[(NULL,[41,42],(NULL,40),(NULL,NULL)),(NULL,[2,3,4],(NULL,1),(NULL,NULL))]"],
         ],
     )
 
@@ -1748,7 +1799,12 @@ def test_array_evolved_nested(
             ['address', 'Array(Tuple(\\n    city Tuple(\\n        newbar Nullable(Int32),\\n        bar Nullable(Int32)),\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
         ],
         [
-            ["[((NULL,40),NULL,[41,42],(NULL,NULL)),((NULL,1),NULL,[2,3,4],(NULL,NULL))]"]
+            ["[((5013,4013),33,[4113,4213],(NULL,NULL)),((513,113),43,[213,313,413],(NULL,NULL))]"],
+            ["[((5014,4014),34,[4114,4214],(4,4)),((514,114),44,[214,314,414],(4,4))]"],
+            ["[((NULL,40),NULL,[41,42],(NULL,NULL)),((NULL,1),NULL,[2,3,4],(NULL,NULL))]"],
+            ["[((NULL,401),3,[411,421],(NULL,NULL)),((NULL,11),4,[21,31,41],(NULL,NULL))]"],
+            ["[((NULL,4011),31,[4111,4211],(NULL,NULL)),((NULL,111),41,[211,311,411],(NULL,NULL))]"],
+            ["[((NULL,4012),32,[4112,4212],(NULL,NULL)),((NULL,112),42,[212,312,412],(NULL,NULL))]"],
         ],
     )
 
@@ -1765,7 +1821,12 @@ def test_array_evolved_nested(
             ['address', 'Array(Tuple(\\n    city Tuple(\\n        newbar Nullable(Int32)),\\n    zap Nullable(Int32),\\n    zip Array(Nullable(Int64)),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
         ],
         [
-            ["[((NULL),NULL,[41,42],(NULL,NULL)),((NULL),NULL,[2,3,4],(NULL,NULL))]"]
+            ["[((5013),33,[4113,4213],(NULL,NULL)),((513),43,[213,313,413],(NULL,NULL))]"],
+            ["[((5014),34,[4114,4214],(4,4)),((514),44,[214,314,414],(4,4))]"],
+            ["[((NULL),3,[411,421],(NULL,NULL)),((NULL),4,[21,31,41],(NULL,NULL))]"],
+            ["[((NULL),31,[4111,4211],(NULL,NULL)),((NULL),41,[211,311,411],(NULL,NULL))]"],
+            ["[((NULL),32,[4112,4212],(NULL,NULL)),((NULL),42,[212,312,412],(NULL,NULL))]"],
+            ["[((NULL),NULL,[41,42],(NULL,NULL)),((NULL),NULL,[2,3,4],(NULL,NULL))]"],
         ],
     )
 
@@ -1782,7 +1843,12 @@ def test_array_evolved_nested(
             ['address', 'Array(Tuple(\\n    city Tuple(\\n        newbar Nullable(Int32)),\\n    zap Nullable(Int32),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
         ],
         [
-            ["[((NULL),NULL,(NULL,NULL)),((NULL),NULL,(NULL,NULL))]"]
+            ["[((5013),33,(NULL,NULL)),((513),43,(NULL,NULL))]"],
+            ["[((5014),34,(4,4)),((514),44,(4,4))]"],
+            ["[((NULL),3,(NULL,NULL)),((NULL),4,(NULL,NULL))]"],
+            ["[((NULL),31,(NULL,NULL)),((NULL),41,(NULL,NULL))]"],
+            ["[((NULL),32,(NULL,NULL)),((NULL),42,(NULL,NULL))]"],
+            ["[((NULL),NULL,(NULL,NULL)),((NULL),NULL,(NULL,NULL))]"],
         ],
     )
 
@@ -1799,7 +1865,12 @@ def test_array_evolved_nested(
             ['address', 'Array(Tuple(\\n    zap Nullable(Int32),\\n    new_tuple Tuple(\\n        new_tuple_elem Nullable(Int32),\\n        new_tuple_elem2 Nullable(Int32))))']
         ],
         [
-            ["[(NULL,(NULL,NULL)),(NULL,(NULL,NULL))]"]
+            ["[(3,(NULL,NULL)),(4,(NULL,NULL))]"],
+            ["[(31,(NULL,NULL)),(41,(NULL,NULL))]"],
+            ["[(32,(NULL,NULL)),(42,(NULL,NULL))]"],
+            ["[(33,(NULL,NULL)),(43,(NULL,NULL))]"],
+            ["[(34,(4,4)),(44,(4,4))]"],
+            ["[(NULL,(NULL,NULL)),(NULL,(NULL,NULL))]"],
         ],
     )
 
@@ -1953,6 +2024,276 @@ def test_tuple_evolved_nested(
             ['1', "(1.23,(NULL,4.559999942779541))", '(1,2)']
         ],
     )
+
+@pytest.mark.parametrize("format_version", ["2"])
+@pytest.mark.parametrize("storage_type", ["local"])
+@pytest.mark.parametrize("is_table_function", [False])
+def test_map_evolved_nested(
+    started_cluster, format_version, storage_type, is_table_function
+):
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    TABLE_NAME = (
+        "test_tuple_evolved_nested_"
+        + format_version
+        + "_"
+        + storage_type
+        + "_"
+        + get_uuid_str()
+    )
+
+    def execute_spark_query(query: str):
+        spark.sql(query)
+        default_upload_directory(
+            started_cluster,
+            storage_type,
+            f"/iceberg_data/default/{TABLE_NAME}/",
+            f"/iceberg_data/default/{TABLE_NAME}/",
+        )
+        return
+
+    execute_spark_query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+    execute_spark_query(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+            b Map<INT, INT>,
+            a Map<INT, Struct<
+                c : INT,
+                d : String
+            >>,
+            c Struct <
+                e : Map<Int, String>
+            >
+        )
+        USING iceberg 
+        OPTIONS ('format-version'='2')
+    """)
+
+    execute_spark_query(f"INSERT INTO {TABLE_NAME} VALUES (MAP(1, 2), Map(3, named_struct('c', 4, 'd', 'ABBA')), named_struct('e', MAP(5, 'foo')))")
+
+    table_creation_expression = get_creation_expression(
+        storage_type,
+        TABLE_NAME,
+        started_cluster,
+        table_function=is_table_function,
+        allow_dynamic_metadata_for_data_lakes=True,
+    )
+
+    table_select_expression = (
+        TABLE_NAME if not is_table_function else table_creation_expression
+    )
+
+    if not is_table_function:
+        instance.query(table_creation_expression)
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN b.value TYPE long;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    c Nullable(Int32),\\n    d Nullable(String)))'],
+            ['c', 'Tuple(\\n    e Map(Int32, Nullable(String)))']
+        ],
+        [
+            ['{1:2}', "{3:(4,'ABBA')}", "({5:'foo'})"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN c.e TO f;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    c Nullable(Int32),\\n    d Nullable(String)))'],
+            ['c', 'Tuple(\\n    f Map(Int32, Nullable(String)))']
+        ],
+        [
+            ['{1:2}', "{3:(4,'ABBA')}", "({5:'foo'})"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN a.value.d FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    d Nullable(String),\\n    c Nullable(Int32)))'],
+            ['c', 'Tuple(\\n    f Map(Int32, Nullable(String)))']
+        ],
+        [
+            ['{1:2}', "{3:('ABBA',4)}", "({5:'foo'})"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMN a.value.g int;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    d Nullable(String),\\n    c Nullable(Int32),\\n    g Nullable(Int32)))'],
+            ['c', 'Tuple(\\n    f Map(Int32, Nullable(String)))']
+        ],
+        [
+            ['{1:2}', "{3:('ABBA',4,NULL)}", "({5:'foo'})"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN a.value.g FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    g Nullable(Int32),\\n    d Nullable(String),\\n    c Nullable(Int32)))'],
+            ['c', 'Tuple(\\n    f Map(Int32, Nullable(String)))']
+        ],
+        [
+            ['{1:2}', "{3:(NULL,'ABBA',4)}", "({5:'foo'})"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN a.value.c;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    g Nullable(Int32),\\n    d Nullable(String)))'],
+            ['c', 'Tuple(\\n    f Map(Int32, Nullable(String)))']
+        ],
+        [
+            ['{1:2}', "{3:(NULL,'ABBA')}", "({5:'foo'})"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} RENAME COLUMN a.value.g TO c;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    c Nullable(Int32),\\n    d Nullable(String)))'],
+            ['c', 'Tuple(\\n    f Map(Int32, Nullable(String)))']
+        ],
+        [
+            ['{1:2}', "{3:(NULL,'ABBA')}", "({5:'foo'})"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN c FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['c', 'Tuple(\\n    f Map(Int32, Nullable(String)))'],
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    c Nullable(Int32),\\n    d Nullable(String)))']
+        ],
+        [
+            ["({5:'foo'})", '{1:2}', "{3:(NULL,'ABBA')}"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ADD COLUMN c.g int;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['c', 'Tuple(\\n    f Map(Int32, Nullable(String)),\\n    g Nullable(Int32))'],
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    c Nullable(Int32),\\n    d Nullable(String)))']
+        ],
+        [
+            ["({5:'foo'},NULL)", '{1:2}', "{3:(NULL,'ABBA')}"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} ALTER COLUMN c.g FIRST;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['c', 'Tuple(\\n    g Nullable(Int32),\\n    f Map(Int32, Nullable(String)))'],
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    c Nullable(Int32),\\n    d Nullable(String)))']
+        ],
+        [
+            ["(NULL,{5:'foo'})", '{1:2}', "{3:(NULL,'ABBA')}"]
+        ],
+    )
+
+    execute_spark_query(
+        f"""
+            ALTER TABLE {TABLE_NAME} DROP COLUMN c.f;
+        """
+    )
+
+    check_schema_and_data(
+        instance,
+        table_select_expression,
+        [
+            ['c', 'Tuple(\\n    g Nullable(Int32))'],
+            ['b', 'Map(Int32, Nullable(Int64))'], 
+            ['a', 'Map(Int32, Tuple(\\n    c Nullable(Int32),\\n    d Nullable(String)))']
+        ],
+        [
+            ["(NULL)", '{1:2}', "{3:(NULL,'ABBA')}"]
+        ],
+    )
+
 
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
