@@ -52,54 +52,18 @@ size_t AvroForIcebergDeserializer::rows() const
 
 bool AvroForIcebergDeserializer::hasPath(const std::string & path) const
 {
-    std::vector<std::string> path_components;
-    splitInto<'.'>(path_components, path);
-
-    DataTypePtr current_data_type = parsed_column_data_type;
-    for (const auto & subpath : path_components)
-    {
-        current_data_type = current_data_type->tryGetSubcolumnType(subpath);
-        if (current_data_type == nullptr)
-            return false;
-    }
-    return true;
+    return parsed_column_data_type->hasSubcolumn(path);
 }
 
 TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) const
 {
-    std::vector<std::string> path_components;
-    splitInto<'.'>(path_components, path);
-
-    DataTypePtr current_data_type = parsed_column_data_type;
-    for (const auto & subpath : path_components)
-    {
-        current_data_type = current_data_type->tryGetSubcolumnType(subpath);
-        if (current_data_type == nullptr)
-            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Key {} doesn't exists in file {}", path, manifest_file_path);
-    }
-    return WhichDataType(current_data_type).idx;
+    return WhichDataType(parsed_column_data_type->getSubcolumnType(path)).idx;
 }
 
 Field AvroForIcebergDeserializer::getValueFromRowByName(size_t row_num, const std::string & path, std::optional<TypeIndex> expected_type) const
 {
-    std::vector<std::string> path_components;
-    splitInto<'.'>(path_components, path);
-    ColumnPtr current_column = parsed_column;
-    DataTypePtr current_data_type = parsed_column_data_type;
-    std::string current_path;
-    for (const auto & subpath : path_components)
-    {
-        if (current_path.empty())
-            current_path += subpath;
-        else
-            current_path += "." + subpath;
-
-        current_column = current_data_type->tryGetSubcolumn(subpath, current_column);
-        if (current_column == nullptr)
-            throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Key {} doesn't exists in file {}", current_path, manifest_file_path);
-
-        current_data_type = current_data_type->tryGetSubcolumnType(subpath);
-    }
+    auto current_column = parsed_column_data_type->getSubcolumn(path, parsed_column);
+    auto current_data_type = parsed_column_data_type->getSubcolumnType(path);
 
     if (expected_type && WhichDataType(current_data_type).idx != *expected_type)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
