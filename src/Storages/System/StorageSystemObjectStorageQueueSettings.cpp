@@ -45,16 +45,24 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
     auto add_table = [&](
         const DatabaseTablesIteratorPtr & it, StorageObjectStorageQueue & storage)
     {
-        if (!it)
-            return;
-
         if (storage.getType() != type)
             return;
 
         auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
         const auto & constraints = constraints_and_current_profiles->constraints;
         MutableColumnsAndConstraints params(res_columns, constraints);
-        storage.getSettings().dumpToSystemEngineSettingsColumns(params, it->name(), it->databaseName(), storage);
+        try
+        {
+            // getSettings() populates table settings from the results of getTableMetadata()
+            // which might sometimes be empty. Better to catch any errors that happens calling
+            // getSettings() to better avoid segfaults.
+            const auto & settings = storage.getSettings();
+            settings.dumpToSystemEngineSettingsColumns(params, it->name(), it->databaseName(), storage);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
     };
 
     const auto access = context->getAccess();
