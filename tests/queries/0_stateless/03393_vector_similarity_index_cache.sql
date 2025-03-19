@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest, no-ordinary-database
 -- no-parallel: looks at server-wide metrics
 
 -- Tests the vector index cache.
