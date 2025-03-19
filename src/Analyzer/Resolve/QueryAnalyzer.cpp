@@ -3922,7 +3922,13 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     /// Most likely only the root scope can have an aggregate function, but let's check all just in case.
     bool in_aggregate_function_scope = false;
     for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
+    {
         in_aggregate_function_scope = in_aggregate_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
+
+        /// Check parent scopes until find current query scope.
+        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
+            break;
+    }
 
     if (!in_aggregate_function_scope)
     {
