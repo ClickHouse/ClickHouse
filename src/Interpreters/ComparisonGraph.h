@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Core/Field.h>
+#include <Parsers/IAST_fwd.h>
 #include <Parsers/IASTHash.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/CNFQueryAtomicFormula.h>
@@ -8,9 +10,9 @@
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
-#include <type_traits>
-#include <unordered_map>
 #include <map>
+#include <set>
+#include <unordered_map>
 #include <vector>
 
 namespace DB

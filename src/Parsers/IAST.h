@@ -8,9 +8,7 @@
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
 
-#include <algorithm>
 #include <set>
-#include <list>
 
 
 class SipHash;
@@ -165,10 +163,12 @@ public:
         if (field == nullptr)
             return;
 
-        const auto child = std::find_if(children.begin(), children.end(), [field](const auto & p)
+        const auto child = children.begin();
+        while (child != children.end())
         {
-           return p.get() == field;
-        });
+            if (child->get() == field)
+                break;
+        }
 
         if (child == children.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "AST subtree not found in children");

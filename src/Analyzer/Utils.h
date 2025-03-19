@@ -6,6 +6,8 @@
 
 #include <Analyzer/IQueryTreeNode.h>
 
+#include <Core/Names.h>
+
 namespace DB
 {
 

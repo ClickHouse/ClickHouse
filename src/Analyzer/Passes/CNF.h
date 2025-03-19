@@ -5,6 +5,8 @@
 
 #include <Interpreters/Context_fwd.h>
 
+#include <set>
+
 namespace DB::Analyzer
 {
 

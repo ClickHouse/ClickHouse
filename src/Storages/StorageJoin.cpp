@@ -4,6 +4,7 @@
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Core/ColumnNumbers.h>
