@@ -88,6 +88,10 @@ void TableFunctionObjectStorage<Definition, Configuration>::parseArguments(const
     settings = std::make_shared<StorageObjectStorageSettings>();
 
     auto & args = args_func.at(0)->children;
+    /// Support storage settings in table function,
+    /// e.g. `s3(endpoint, ..., SETTINGS setting=value, ..., setting=value)`
+    /// We do similarly for some other table functions
+    /// whose storage implementation supports storage settings (for example, MySQL).
     for (auto * it = args.begin(); it != args.end(); ++it)
     {
         ASTSetQuery * settings_ast = (*it)->as<ASTSetQuery>();

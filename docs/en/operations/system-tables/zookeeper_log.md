@@ -42,7 +42,7 @@ Columns with request response parameters:
     - `ZOK` — The request was executed successfully.
     - `ZCONNECTIONLOSS` — The connection was lost.
     - `ZOPERATIONTIMEOUT` — The request execution timeout has expired.
-	- `ZSESSIONEXPIRED` — The session has expired.
+    - `ZSESSIONEXPIRED` — The session has expired.
     - `NULL` — The request is completed.
 - `watch_type` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — The type of the `watch` event (for responses with `op_num` = `Watch`), for the remaining responses: `NULL`.
 - `watch_state` ([Nullable(Enum)](../../sql-reference/data-types/nullable.md)) — The status of the `watch` event (for responses with `op_num` = `Watch`), for the remaining responses: `NULL`.

@@ -241,7 +241,7 @@ In this case, you can omit arguments when creating tables:
 
 ``` sql
 CREATE TABLE table_name (
-	x UInt32
+    x UInt32
 ) ENGINE = ReplicatedMergeTree
 ORDER BY x;
 ```
@@ -250,7 +250,7 @@ It is equivalent to:
 
 ``` sql
 CREATE TABLE table_name (
-	x UInt32
+    x UInt32
 ) ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/{database}/table_name', '{replica}')
 ORDER BY x;
 ```
