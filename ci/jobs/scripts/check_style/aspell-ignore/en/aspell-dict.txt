@@ -203,6 +203,7 @@ CountMin
 Covid
 Cramer
 Cramer's
+Cramer
 Criteo
 Crotty
 Crowdsourced
@@ -1002,6 +1003,7 @@ SimpleState
 SipHash
 Smirnov
 Smirnov's
+Smirnov
 Smirnov'test
 Soundex
 SpanKind
@@ -1043,6 +1045,8 @@ SystemLogParameters
 SystemReplicasThreads
 SystemReplicasThreadsActive
 SystemTableCloud
+SvelteKit
+Tauri
 TABLUM
 TAVG
 TCPConnection
@@ -1179,6 +1183,7 @@ WALs
 WSFG
 Welch
 Welch's
+Welch
 Werror
 Wether
 WikiStat
@@ -1490,6 +1495,7 @@ charset
 charsets
 chartdb
 chconn
+chdb
 cheatsheet
 checkouting
 checksummed

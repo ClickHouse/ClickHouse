@@ -80,6 +80,7 @@ public:
     void clear();
 
     void setMaxSizeInBytes(size_t max_size_in_bytes);
+    size_t maxSizeInBytes();
 
 private:
     Cache cache;
