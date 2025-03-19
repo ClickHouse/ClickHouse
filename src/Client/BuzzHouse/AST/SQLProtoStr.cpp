@@ -89,8 +89,9 @@ CONV_FN(Function, func)
 
 CONV_FN(Cluster, clust)
 {
-    ret += " ON CLUSTER ";
+    ret += " ON CLUSTER '";
     ret += clust.cluster();
+    ret += "'";
 }
 
 CONV_FN(Window, win)

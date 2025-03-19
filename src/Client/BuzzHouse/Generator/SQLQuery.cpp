@@ -1072,7 +1072,8 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
         {
             /// Sometimes do the function call instead
             SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
-            static const auto & likeFuncs = {SQLFunc::FUNClike, SQLFunc::FUNCnotLike, SQLFunc::FUNCilike, SQLFunc::FUNCnotILike};
+            static const auto & likeFuncs
+                = {SQLFunc::FUNClike, SQLFunc::FUNCnotLike, SQLFunc::FUNCilike, SQLFunc::FUNCnotILike, SQLFunc::FUNCmatch};
 
             sfc->mutable_func()->set_catalog_func(rg.pickRandomly(likeFuncs));
             expr1 = sfc->add_args()->mutable_expr();
