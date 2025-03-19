@@ -143,7 +143,21 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , log(getLogger("StorageObjectStorageQueue(" + zookeeper_path_.string() + ")"))
     , local_file_statuses(std::make_shared<LocalFileStatuses>())
 {
-    if (mode == ObjectStorageQueueMode::UNORDERED
+    LOG_TRACE(
+        log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
+        table_metadata.mode, table_metadata.buckets.load(),
+        table_metadata.processing_threads_num.load(), buckets_num);
+}
+
+ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
+{
+    shutdown();
+}
+
+void ObjectStorageQueueMetadata::startup()
+{
+    if (!task
+        && mode == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
@@ -155,15 +169,8 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
-    LOG_TRACE(log, "Mode: {}, buckets: {}, processing threads: {}, result buckets num: {}",
-              table_metadata.mode, table_metadata.buckets.load(), table_metadata.processing_threads_num.load(), buckets_num);
-
-    update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
-}
-
-ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
-{
-    shutdown();
+    if (!update_registry_thread)
+        update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
 
 void ObjectStorageQueueMetadata::shutdown()
