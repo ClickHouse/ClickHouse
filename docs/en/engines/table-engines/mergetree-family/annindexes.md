@@ -149,8 +149,8 @@ To search using a different value of HNSW parameter `hnsw_candidate_list_size_fo
 original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), run the `SELECT` query with `SETTINGS hnsw_candidate_list_size_for_search
 = <value>`.
 
-Repeated reads from vector similarity indexes benefit from a large skipping index cache. If needed, you can increase the default cache size
-using server setting [skipping_index_cache_size](../../../operations/server-configuration-parameters/settings.md#skipping_index_cache_size).
+Repeated reads from vector similarity indexes benefit from a large index cache. If needed, you can increase the default cache size
+using server setting [vector_similarity_index_cache_size](../../../operations/server-configuration-parameters/settings.md#vector_similarity_index_cache_size).
 
 **Restrictions**: Approximate vector search algorithms require a limit, hence queries without `LIMIT` clause cannot utilize vector
 similarity indexes. The limit must also be smaller than setting `max_limit_for_ann_queries` (default: 100).

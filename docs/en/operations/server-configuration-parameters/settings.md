@@ -375,17 +375,17 @@ Type: `Double`
 
 Default: `0.5`
 
-## skipping_index_cache_policy {#skipping_index_cache_policy}
+## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
 
-Skipping index cache policy name.
+Vector similarity index cache policy name.
 
 Type: `String`
 
 Default: `SLRU`
 
-## skipping_index_cache_size {#skipping_index_cache_size}
+## vector_similarity_index_cache_size {#vector_similarity_index_cache_size}
 
-Size of cache for skipping indexes. Zero means disabled.
+Size of cache for vector similarity indexes. Zero means disabled.
 
 :::note
 This setting can be modified at runtime and will take effect immediately.
@@ -395,17 +395,17 @@ Type: `UInt64`
 
 Default: `5368709120` (= 5 GiB)
 
-## skipping_index_cache_size_ratio {#skipping_index_cache_size_ratio}
+## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}
 
-The size of the protected queue (in case of SLRU policy) in the skipping index cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.
 
 Type: `Double`
 
 Default: `0.5`
 
-## skipping_index_cache_max_entries {#skipping_index_cache_max_entries}
+## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
 
-The maximum number of entries in the skipping index cache.
+The maximum number of entries in the vector similarity index cache.
 
 Type: `UInt64`
 

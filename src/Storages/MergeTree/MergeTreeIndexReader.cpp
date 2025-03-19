@@ -1,7 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
-#include <Storages/MergeTree/SkippingIndexCache.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 
 namespace
 {
@@ -54,7 +54,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     const MarkRanges & all_mark_ranges_,
     MarkCache * mark_cache_,
     UncompressedCache * uncompressed_cache_,
-    SkippingIndexCache * skipping_index_cache_,
+    VectorSimilarityIndexCache * vector_similarity_index_cache_,
     MergeTreeReaderSettings settings_)
     : index(index_)
     , part(std::move(part_))
@@ -62,7 +62,7 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     , all_mark_ranges(all_mark_ranges_)
     , mark_cache(mark_cache_)
     , uncompressed_cache(uncompressed_cache_)
-    , skipping_index_cache(skipping_index_cache_)
+    , vector_similarity_index_cache(vector_similarity_index_cache_)
     , settings(std::move(settings_))
 {
 }
@@ -103,11 +103,14 @@ MergeTreeIndexGranulePtr MergeTreeIndexReader::read(size_t mark)
         return granule;
     };
 
-    UInt128 key = SkippingIndexCache::hash(
+    if (!index->isVectorSimilarityIndex())
+        return load_func();
+
+    UInt128 key = VectorSimilarityIndexCache::hash(
         part->getDataPartStorage().getFullPath(),
         index->getFileName(),
         mark);
-    return skipping_index_cache->getOrSet(key, load_func);
+    return vector_similarity_index_cache->getOrSet(key, load_func);
 }
 
 }
