@@ -54,11 +54,11 @@ public:
 class GroupCol
 {
 public:
-    SQLRelationCol col;
-    Expr * gexpr = nullptr;
+    std::optional<SQLRelationCol> col;
+    const Expr * gexpr = nullptr;
 
     GroupCol() = default;
-    GroupCol(SQLRelationCol c, Expr * g)
+    GroupCol(std::optional<SQLRelationCol> c, Expr * g)
         : col(c)
         , gexpr(g)
     {
@@ -325,6 +325,7 @@ private:
 
     void addFieldAccess(RandomGenerator & rg, Expr * expr, uint32_t nested_prob);
     void addColNestedAccess(RandomGenerator & rg, ExprColumn * expr, uint32_t nested_prob);
+    void addSargableColRef(RandomGenerator & rg, const SQLRelationCol & rel_col, Expr * expr);
     void refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr);
     void generateSubquery(RandomGenerator & rg, ExplainQuery * eq);
     void generateColRef(RandomGenerator & rg, Expr * expr);

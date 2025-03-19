@@ -122,17 +122,7 @@ void StatementGenerator::generateArrayJoin(RandomGenerator & rg, ArrayJoin * aj)
 
         if (!available_cols.empty() && rg.nextSmallNumber() < 8)
         {
-            const SQLRelationCol & rel_col = available_cols[i];
-            ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
-            ExprColumn * ecol = estc->mutable_col();
-
-            if (!rel_col.rel_name.empty())
-            {
-                estc->mutable_table()->set_table(rel_col.rel_name);
-            }
-            rel_col.AddRef(ecol);
-            addFieldAccess(rg, expr, 6);
-            addColNestedAccess(rg, ecol, 6);
+            addSargableColRef(rg, available_cols[i], expr);
         }
         else
         {
@@ -829,25 +819,8 @@ void StatementGenerator::addJoinClause(RandomGenerator & rg, Expr * expr)
         expr1 = sfc->add_args()->mutable_expr();
         expr2 = sfc->add_args()->mutable_expr();
     }
-    ExprSchemaTableColumn * estc1 = expr1->mutable_comp_expr()->mutable_expr_stc();
-    ExprSchemaTableColumn * estc2 = expr2->mutable_comp_expr()->mutable_expr_stc();
-    ExprColumn * ecol1 = estc1->mutable_col();
-    ExprColumn * ecol2 = estc2->mutable_col();
-
-    if (!rel1->name.empty())
-    {
-        estc1->mutable_table()->set_table(rel1->name);
-    }
-    if (!rel2->name.empty())
-    {
-        estc2->mutable_table()->set_table(rel2->name);
-    }
-    col1.AddRef(ecol1->mutable_path());
-    col2.AddRef(ecol2->mutable_path());
-    addFieldAccess(rg, expr1, 6);
-    addFieldAccess(rg, expr2, 6);
-    addColNestedAccess(rg, ecol1, 6);
-    addColNestedAccess(rg, ecol2, 6);
+    addSargableColRef(rg, col1, expr1);
+    addSargableColRef(rg, col2, expr2);
 }
 
 void StatementGenerator::generateJoinConstraint(RandomGenerator & rg, const bool allow_using, JoinConstraint * jc)
@@ -1318,16 +1291,8 @@ void StatementGenerator::generateGroupByExpr(
     if (!available_cols.empty() && (enforce_having || next_option < 8))
     {
         const SQLRelationCol & rel_col = available_cols[offset];
-        ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
-        ExprColumn * ecol = estc->mutable_col();
 
-        if (!rel_col.rel_name.empty())
-        {
-            estc->mutable_table()->set_table(rel_col.rel_name);
-        }
-        rel_col.AddRef(ecol);
-        addFieldAccess(rg, expr, 6);
-        addColNestedAccess(rg, ecol, 6);
+        addSargableColRef(rg, rel_col, expr);
         gcols.emplace_back(GroupCol(rel_col, expr));
     }
     else if (ncols && next_option < 9)
@@ -1339,6 +1304,7 @@ void StatementGenerator::generateGroupByExpr(
     else
     {
         generateExpression(rg, expr);
+        gcols.emplace_back(GroupCol(std::nullopt, expr));
     }
 }
 

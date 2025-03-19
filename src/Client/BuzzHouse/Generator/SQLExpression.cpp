@@ -118,33 +118,32 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
     }
 }
 
-void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr)
+void StatementGenerator::addSargableColRef(RandomGenerator & rg, const SQLRelationCol & rel_col, Expr * expr)
 {
     ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
     ExprColumn * ecol = estc->mutable_col();
 
-    if (!gcol.col.rel_name.empty())
+    if (!rel_col.rel_name.empty())
     {
-        estc->mutable_table()->set_table(gcol.col.rel_name);
+        estc->mutable_table()->set_table(rel_col.rel_name);
     }
-    gcol.col.AddRef(ecol);
-    if (gcol.gexpr == nullptr)
+    rel_col.AddRef(ecol);
+    addFieldAccess(rg, expr, 6);
+    addColNestedAccess(rg, ecol, 6);
+}
+
+void StatementGenerator::refColumn(RandomGenerator & rg, const GroupCol & gcol, Expr * expr)
+{
+    chassert(gcol.col.has_value() || gcol.gexpr);
+    if (gcol.gexpr)
     {
-        addFieldAccess(rg, expr, 6);
-        addColNestedAccess(rg, ecol, 6);
+        /// Use grouping column
+        expr->CopyFrom(*(gcol.gexpr));
     }
     else
     {
-        const ExprColumn & gecol = gcol.gexpr->comp_expr().expr_stc().col();
-
-        if (gcol.gexpr->has_field())
-        {
-            expr->mutable_field()->CopyFrom(gcol.gexpr->field());
-        }
-        if (gecol.has_subcols())
-        {
-            ecol->mutable_subcols()->CopyFrom(gecol.subcols());
-        }
+        //// Otherwise reference the column
+        addSargableColRef(rg, gcol.col.value(), expr);
     }
 }
 
