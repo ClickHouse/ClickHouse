@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/uuid-functions
+description: 'Documentation for Functions for Working with UUIDs'
+sidebar_label: 'UUIDs'
 sidebar_position: 205
-sidebar_label: UUIDs
+slug: /sql-reference/functions/uuid-functions
+title: 'Functions for Working with UUIDs'
 ---
 
 import DeprecatedBadge from '@theme/badges/DeprecatedBadge';
@@ -20,7 +22,7 @@ generateUUIDv4([expr])
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](../syntax.md#syntax-expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
+- `expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -92,7 +94,7 @@ generateUUIDv7([expr])
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](../syntax.md#syntax-expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
+- `expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned UUID. Optional.
 
 **Returned value**
 
@@ -140,7 +142,7 @@ empty(UUID)
 
 The UUID is considered empty if it contains all zeros (zero UUID).
 
-The function also works for [Arrays](array-functions.md#function-empty) and [Strings](string-functions.md#empty).
+The function also works for [Arrays](/sql-reference/functions/array-functions#empty) and [Strings](string-functions.md#empty).
 
 **Arguments**
 
@@ -180,7 +182,7 @@ notEmpty(UUID)
 
 The UUID is considered empty if it contains all zeros (zero UUID).
 
-The function also works for [Arrays](array-functions.md#function-notempty) or [Strings](string-functions.md#notempty).
+The function also works for [Arrays](/sql-reference/functions/array-functions#notempty) or [Strings](string-functions.md#notempty).
 
 **Arguments**
 
@@ -347,7 +349,7 @@ UUIDStringToNum(string[, variant = 1])
 
 **Arguments**
 
-- `string` — A [String](../syntax.md#syntax-string-literal) of 36 characters or [FixedString](../syntax.md#syntax-string-literal)
+- `string` — A [String](/sql-reference/data-types/string) of 36 characters or [FixedString](/sql-reference/data-types/string)
 - `variant` — Integer, representing a variant as specified by [RFC4122](https://datatracker.ietf.org/doc/html/rfc4122#section-4.1.1). 1 = `Big-endian` (default), 2 = `Microsoft`.
 
 **Returned value**
@@ -574,7 +576,7 @@ generateSnowflakeID([expr, [machine_id]])
 
 **Arguments**
 
-- `expr` — An arbitrary [expression](../../sql-reference/syntax.md#syntax-expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
+- `expr` — An arbitrary [expression](/sql-reference/syntax#expressions) used to bypass [common subexpression elimination](/sql-reference/functions/overview#common-subexpression-elimination) if the function is called multiple times in a query. The value of the expression has no effect on the returned Snowflake ID. Optional.
 - `machine_id` — A machine ID, the lowest 10 bits are used. [Int64](../data-types/int-uint.md). Optional.
 
 **Returned value**
@@ -933,4 +935,4 @@ Result:
 
 ## See also {#see-also}
 
-- [dictGetUUID](../functions/ext-dict-functions.md#ext_dict_functions-other)
+- [dictGetUUID](/sql-reference/functions/ext-dict-functions#other-functions)

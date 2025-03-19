@@ -1,10 +1,14 @@
 ---
-description: "System table containing information about executed queries, for example, start time, duration of processing, error messages."
+description: 'System table containing information about executed queries, for example,
+  start time, duration of processing, error messages.'
+keywords: ['system table', 'query_log']
 slug: /operations/system-tables/query_log
-title: "system.query_log"
-keywords: ["system table", "query_log"]
+title: 'system.query_log'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.query_log
 
 <SystemTableCloud/>
 
@@ -16,7 +20,7 @@ This table does not contain the ingested data for `INSERT` queries.
 
 You can change settings of queries logging in the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) section of the server configuration.
 
-You can disable queries logging by setting [log_queries = 0](/sql-reference/functions/hash-functions#siphash128/operations/settings/settings#log_queries). We do not recommend to turn off logging because information in this table is important for solving issues.
+You can disable queries logging by setting [log_queries = 0](/operations/settings/settings#log_queries). We do not recommend to turn off logging because information in this table is important for solving issues.
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_log](../../operations/server-configuration-parameters/settings.md#query-log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/sql-reference/statements/system#flush-logs) query.
 

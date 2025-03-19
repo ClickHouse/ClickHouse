@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/column
+description: 'Documentation for Column'
+sidebar_label: 'COLUMN'
 sidebar_position: 37
-sidebar_label: COLUMN
-title: "Column Manipulations"
+slug: /sql-reference/statements/alter/column
+title: 'Column Manipulations'
 ---
 
 A set of queries that allow changing the table structure.
@@ -36,7 +37,7 @@ These actions are described in detail below.
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/sql-reference/statements/create/table.md/#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/sql-reference/statements/create/table#default_values)).
 
 If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -326,7 +327,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 **See Also**
 
-- [MATERIALIZED](/sql-reference/statements/create/table.md/#materialized).
+- [MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
 
 ## Limitations {#limitations}
 

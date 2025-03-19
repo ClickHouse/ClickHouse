@@ -4,6 +4,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
@@ -40,7 +41,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_thread_pool_size>12000</max_thread_pool_size>
     ```
     )", 0) \
@@ -49,7 +50,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_thread_pool_free_size>1200</max_thread_pool_free_size>
     ```
     )", 0) \
@@ -62,7 +63,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <thread_pool_queue_size>12000</thread_pool_queue_size>
     ```
     )", 0) \
@@ -433,7 +434,7 @@ namespace DB
     DECLARE(Double, cache_size_to_ram_max_ratio, 0.5, R"(Set cache size to RAM max ratio. Allows lowering the cache size on low-memory systems.)", 0) \
     DECLARE(String, uncompressed_cache_policy, DEFAULT_UNCOMPRESSED_CACHE_POLICY, R"(Uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, uncompressed_cache_size, DEFAULT_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
-    Maximum size (in bytes) for uncompressed data used by table engines from the MergeTree family.
+    Cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
 
     There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option use_uncompressed_cache is enabled.
 
@@ -445,7 +446,7 @@ namespace DB
     This setting can be modified at runtime and will take effect immediately.
     :::
     )", 0) \
-    DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, uncompressed_cache_size_ratio, DEFAULT_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue in the uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, mark_cache_policy, DEFAULT_MARK_CACHE_POLICY, R"(Mark cache policy name.)", 0) \
     DECLARE(UInt64, mark_cache_size, DEFAULT_MARK_CACHE_MAX_SIZE, R"(
     Maximum size of cache for marks (index of [`MergeTree`](/engines/table-engines/mergetree-family) family of tables).
@@ -454,19 +455,15 @@ namespace DB
     This setting can be modified at runtime and will take effect immediately.
     :::
     )", 0) \
-    DECLARE(Double, mark_cache_size_ratio, DEFAULT_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, mark_cache_size_ratio, DEFAULT_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue in the mark cache relative to the cache's total size.)", 0) \
     DECLARE(Double, mark_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
     DECLARE(String, primary_index_cache_policy, DEFAULT_PRIMARY_INDEX_CACHE_POLICY, R"(Primary index cache policy name.)", 0) \
-    DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Maximum size of cache for primary index (index of MergeTree family of tables).)", 0) \
-    DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the primary index cache relative to the cache's total size.)", 0) \
+    DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Size of cache for primary index (index of MergeTree family of tables).)", 0) \
+    DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue in the primary index cache relative to the cache's total size.)", 0) \
     DECLARE(Double, primary_index_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
-    DECLARE(String, skipping_index_cache_policy, DEFAULT_SKIPPING_INDEX_CACHE_POLICY, "Skipping index cache policy name.", 0) \
-    DECLARE(UInt64, skipping_index_cache_size, DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE, "Size of cache for secondary index in bytes. Zero means disabled.", 0) \
-    DECLARE(UInt64, skipping_index_cache_max_entries, DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES, "Size of cache for secondary index in entries. Zero means disabled.", 0) \
-    DECLARE(Double, skipping_index_cache_size_ratio, DEFAULT_SKIPPING_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the skipping index cache relative to the cache's total size.", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
-    Maximum size of cache for uncompressed blocks of `MergeTree` indices.
+    Size of cache for uncompressed blocks of `MergeTree` indices.
 
     :::note
     A value of `0` means disabled.
@@ -474,10 +471,10 @@ namespace DB
     This setting can be modified at runtime and will take effect immediately.
     :::
     )", 0) \
-    DECLARE(Double, index_uncompressed_cache_size_ratio, DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index uncompressed cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, index_uncompressed_cache_size_ratio, DEFAULT_INDEX_UNCOMPRESSED_CACHE_SIZE_RATIO, R"(The size of the protected queue in the secondary index uncompressed cache relative to the cache's total size.)", 0) \
     DECLARE(String, index_mark_cache_policy, DEFAULT_INDEX_MARK_CACHE_POLICY, R"(Secondary index mark cache policy name.)", 0) \
     DECLARE(UInt64, index_mark_cache_size, DEFAULT_INDEX_MARK_CACHE_MAX_SIZE, R"(
-    Maximum size of cache for index marks.
+    Size of cache for index marks.
 
     :::note
 
@@ -487,11 +484,14 @@ namespace DB
     :::
     )", 0) \
     DECLARE(Double, index_mark_cache_size_ratio, DEFAULT_INDEX_MARK_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the secondary index mark cache relative to the cache's total size.)", 0) \
-    DECLARE(UInt64, page_cache_chunk_size, 2 << 20, R"(Bytes per chunk in userspace page cache. Rounded up to a multiple of page size (typically 4 KiB) or huge page size (typically 2 MiB, only if page_cache_use_thp is enabled).)", 0) \
-    DECLARE(UInt64, page_cache_mmap_size, 1 << 30, R"(Bytes per memory mapping in userspace page cache. Not important.)", 0) \
-    DECLARE(UInt64, page_cache_size, 0, R"(Amount of virtual memory to map for userspace page cache. If page_cache_use_madv_free is enabled, it's recommended to set this higher than the machine's RAM size. Use 0 to disable userspace page cache.)", 0) \
-    DECLARE(Bool, page_cache_use_madv_free, DBMS_DEFAULT_PAGE_CACHE_USE_MADV_FREE, R"(If true, the userspace page cache will allow the OS to automatically reclaim memory from the cache on memory pressure (using MADV_FREE).)", 0) \
-    DECLARE(Bool, page_cache_use_transparent_huge_pages, true, R"(Userspace will attempt to use transparent huge pages on Linux. This is best-effort.)", 0) \
+    DECLARE(UInt64, page_cache_block_size, 1 << 20, "Size of file chunks to store in the userspace page cache, in bytes. All reads that go through the cache will be rounded up to a multiple of this size.", 0) \
+    DECLARE(UInt64, page_cache_history_window_ms, 1000, "Delay before freed memory can be used by userspace page cache.", 0) \
+    DECLARE(String, page_cache_policy, DEFAULT_PAGE_CACHE_POLICY, "Userspace page cache policy name.", 0) \
+    DECLARE(Double, page_cache_size_ratio, DEFAULT_PAGE_CACHE_SIZE_RATIO, "The size of the protected queue in the userspace page cache relative to the cache's total size.", 0) \
+    DECLARE(UInt64, page_cache_min_size, DEFAULT_PAGE_CACHE_MIN_SIZE, "Minimum size of the userspace page cache.", 0) \
+    DECLARE(UInt64, page_cache_max_size, DEFAULT_PAGE_CACHE_MAX_SIZE, "Maximum size of the userspace page cache. Set to 0 to disable the cache. If greater than page_cache_min_size, the cache size will be continuously adjusted within this range, to use most of the available memory while keeping the total memory usage below the limit (max_server_memory_usage[_to_ram_ratio]).", 0) \
+    DECLARE(Double, page_cache_free_memory_ratio, 0.15, "Fraction of the memory limit to keep free from the userspace page cache. Analogous to Linux min_free_kbytes setting.", 0) \
+    DECLARE(UInt64, page_cache_lookahead_blocks, 16, "On userspace page cache miss, read up to this many consecutive blocks (page_cache_block_size) at once from the underlying storage, if they're also not in the cache.", 0) \
     DECLARE(UInt64, mmap_cache_size, DEFAULT_MMAP_CACHE_MAX_SIZE, R"(
     Sets the cache size (in bytes) for mapped files. This setting allows avoiding frequent open/close calls (which are very expensive due to consequent page faults), and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files).
 
@@ -510,10 +510,14 @@ namespace DB
     :::
     )", 0) \
     DECLARE(UInt64, compiled_expression_cache_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_SIZE, R"(Sets the cache size (in bytes) for [compiled expressions](../../operations/caches.md).)", 0) \
-    \
     DECLARE(UInt64, compiled_expression_cache_elements_size, DEFAULT_COMPILED_EXPRESSION_CACHE_MAX_ENTRIES, R"(Sets the cache size (in elements) for [compiled expressions](../../operations/caches.md).)", 0) \
     DECLARE(String, query_condition_cache_policy, DEFAULT_QUERY_CONDITION_CACHE_POLICY, "Query condition cache policy name.", 0) \
-    DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, "Size of the query condition cache.", 0) \
+    DECLARE(UInt64, query_condition_cache_size, DEFAULT_QUERY_CONDITION_CACHE_MAX_SIZE, R"(
+    Maximum size of the query condition cache.
+    :::note
+    This setting can be modified at runtime and will take effect immediately.
+    :::
+    )", 0) \
     DECLARE(Double, query_condition_cache_size_ratio, DEFAULT_QUERY_CONDITION_CACHE_SIZE_RATIO, "The size of the protected queue in the query condition cache relative to the cache's total size.", 0) \
     \
     DECLARE(Bool, disable_internal_dns_cache, false, "Disable internal DNS caching at all.", 0) \
@@ -536,7 +540,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_table_size_to_drop>0</max_table_size_to_drop>
     ```
     )", 0) \
@@ -554,7 +558,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_partition_size_to_drop>0</max_partition_size_to_drop>
     ```
     )", 0) \
@@ -563,8 +567,17 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_table_num_to_warn>400</max_table_num_to_warn>
+    ```
+    )", 0) \
+    DECLARE(UInt64, max_pending_mutations_to_warn, 500lu, R"(
+    If the number of pending mutations exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+
+    **Example**
+
+    ```xml
+    <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
     ```
     )", 0) \
     DECLARE(UInt64, max_view_num_to_warn, 10000lu, R"(
@@ -572,7 +585,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_view_num_to_warn>400</max_view_num_to_warn>
     ```
     )", 0) \
@@ -581,7 +594,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
     ```
     )", 0) \
@@ -590,7 +603,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_database_num_to_warn>50</max_database_num_to_warn>
     ```
     )", 0) \
@@ -599,7 +612,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_part_num_to_warn>400</max_part_num_to_warn>
     ```
     )", 0) \
@@ -699,6 +712,14 @@ namespace DB
     :::
     )", 0) \
     DECLARE(UInt64, concurrent_threads_soft_limit_ratio_to_cores, 0, "Same as concurrent_threads_soft_limit_num, but with ratio to cores.", 0) \
+    DECLARE(String, concurrent_threads_scheduler, "round_robin", R"(
+    The policy on how to perform a scheduling of CPU slots in Concurrency Control. Algorithm used to govern how limited number `concurrent_threads_soft_limit` of CPU slots are distributed among concurrent queries. Scheduler may be changed at runtime without server restart.
+
+    Possible values:
+
+    - `round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads` CPU slots. One slot per thread. On contention CPU slot are granted to queries using round-robin. Note that the first slot is granted unconditionally, which could lead to unfairness and increased latency of queries having high `max_threads` in presence of high number of queries with `max_threads` = 1.
+    - `fair_round_robin` — Every query with setting `use_concurrency_control` = 1 allocates up to `max_threads - 1` CPU slots. Variation of `round_robin` that does not require a CPU slot for the first thread of every query. This way queries having `max_threads` = 1 do not require any slot and could not unfairly allocate all slots. There are no slots granted unconditionally.
+    )", 0) \
     DECLARE(UInt64, background_pool_size, 16, R"(
     Sets the number of threads performing background merges and mutations for tables with MergeTree engines.
 
@@ -774,7 +795,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <async_load_databases>true</async_load_databases>
     ```
     )", 0) \
@@ -786,7 +807,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <async_load_system_database>true</async_load_system_database>
     ```
     )", 0) \
@@ -804,11 +825,11 @@ namespace DB
     - `1` — Enabled.
     )", 0) \
     DECLARE(Seconds, keep_alive_timeout, DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT, R"(
-    The number of seconds that ClickHouse waits for incoming requests before closing the connection.
+    The number of seconds that ClickHouse waits for incoming requests for HTTP protocol before closing the connection.
 
     **Example**
 
-    ``` xml
+    ```xml
     <keep_alive_timeout>10</keep_alive_timeout>
     ```
     )", 0) \
@@ -817,7 +838,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_keep_alive_requests>10</max_keep_alive_requests>
     ```
     )", 0) \
@@ -852,7 +873,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
     ```
     )", 0) \
@@ -861,7 +882,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <default_replica_name>{replica}</default_replica_name>
     ```
     )", 0) \
@@ -898,7 +919,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <throw_on_unknown_workload>true</throw_on_unknown_workload>
     ```
 
@@ -920,6 +941,7 @@ namespace DB
     DECLARE(Bool, memory_worker_correct_memory_tracker, 0, R"(
     Whether background memory worker should correct internal memory tracker based on the information from external sources like jemalloc and cgroups
     )", 0) \
+    DECLARE(Bool, memory_worker_use_cgroup, true, "Use current cgroup memory usage information to correct memory tracking.", 0) \
     DECLARE(Bool, disable_insertion_and_mutation, false, R"(
     Disable all insert/alter/delete queries. This setting will be enabled if someone needs read-only nodes to prevent insertion and mutation affect reading performance.
     )", 0) \
@@ -939,6 +961,7 @@ namespace DB
     Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.
     )", 0) \
     \
+    DECLARE(String, license_key, "", "License key for ClickHouse Enterprise Edition", 0) \
     DECLARE(UInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
     DECLARE(UInt64, prefetch_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
     DECLARE(UInt64, load_marks_threadpool_pool_size, 50, R"(Size of background pool for marks loading)", 0) \
@@ -973,7 +996,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <dictionaries_lazy_load>true</dictionaries_lazy_load>
     ```
     )", 0) \
@@ -992,7 +1015,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
     ```
     )", 0) \
@@ -1104,6 +1127,7 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_waiting_queries", {std::to_string(context->getProcessList().getMaxWaitingQueriesAmount()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_soft_limit_num", {std::to_string(context->getConcurrentThreadsSoftLimitNum()), ChangeableWithoutRestart::Yes}},
             {"concurrent_threads_soft_limit_ratio_to_cores", {std::to_string(context->getConcurrentThreadsSoftLimitRatioToCores()), ChangeableWithoutRestart::Yes}},
+            {"concurrent_threads_scheduler", {context->getConcurrentThreadsScheduler(), ChangeableWithoutRestart::Yes}},
 
             {"background_buffer_flush_schedule_pool_size",
                 {std::to_string(CurrentMetrics::get(CurrentMetrics::BackgroundBufferFlushSchedulePoolSize)), ChangeableWithoutRestart::IncreaseOnly}},
@@ -1117,9 +1141,9 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"mark_cache_size", {std::to_string(context->getMarkCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"uncompressed_cache_size", {std::to_string(context->getUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"index_mark_cache_size", {std::to_string(context->getIndexMarkCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
-            {"index_uncompressed_cache_size",
-                {std::to_string(context->getIndexUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"index_uncompressed_cache_size", {std::to_string(context->getIndexUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},

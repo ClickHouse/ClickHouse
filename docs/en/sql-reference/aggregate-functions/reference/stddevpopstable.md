@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/stddevpopstable
+description: 'The result is equal to the square root of varPop. Unlike stddevPop,
+  this function uses a numerically stable algorithm.'
 sidebar_position: 189
-title: "stddevPopStable"
-description: "The result is equal to the square root of varPop. Unlike stddevPop, this function uses a numerically stable algorithm."
+slug: /sql-reference/aggregate-functions/reference/stddevpopstable
+title: 'stddevPopStable'
 ---
 
 # stddevPopStable

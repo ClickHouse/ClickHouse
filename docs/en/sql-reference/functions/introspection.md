@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/introspection
+description: 'Documentation for Introspection Functions'
+sidebar_label: 'Introspection'
 sidebar_position: 100
-sidebar_label: Introspection
+slug: /sql-reference/functions/introspection
+title: 'Introspection Functions'
 ---
 
 # Introspection Functions
@@ -164,7 +166,7 @@ WHERE
     query_id = '5e173544-2020-45de-b645-5deebe2aae54';
 ```
 
-The [arrayJoin](../../sql-reference/functions/array-functions.md#array-functions-join) functions will split array to rows.
+The [arrayJoin](/sql-reference/functions/array-join) functions will split array to rows.
 
 ``` text
 ┌────────ta─┬─addressToLineWithInlines(arrayJoin(trace))───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -443,7 +445,7 @@ logTrace('message')
 
 **Arguments**
 
-- `message` — Message that is emitted to server log. [String](../data-types/string.md#string).
+- `message` — Message that is emitted to server log. [String](/sql-reference/data-types/string).
 
 **Returned value**
 

@@ -1,10 +1,11 @@
 ---
-title: MySQLDump
-slug: /interfaces/formats/MySQLDump
-keywords: [MySQLDump]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the MySQLDump format'
+input_format: true
+keywords: ['MySQLDump']
+output_format: false
+slug: /interfaces/formats/MySQLDump
+title: 'MySQLDump'
 ---
 
 | Input | Output  | Alias |

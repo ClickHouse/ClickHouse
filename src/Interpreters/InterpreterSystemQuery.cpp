@@ -401,23 +401,22 @@ BlockIO InterpreterSystemQuery::execute()
             system_context->clearIndexUncompressedCache();
             break;
         case Type::DROP_SKIPPING_INDEX_CACHE:
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_SKIPPING_INDEX_CACHE);
-            system_context->clearSkippingIndexCache();
+            /// No-op. This change was reverted in https://github.com/ClickHouse/ClickHouse/pull/77447
             break;
         case Type::DROP_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
             system_context->clearMMappedFileCache();
             break;
-        case Type::DROP_QUERY_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            getContext()->clearQueryCache(query.query_cache_tag);
-            break;
-        }
         case Type::DROP_QUERY_CONDITION_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
             getContext()->clearQueryConditionCache();
+            break;
+        }
+        case Type::DROP_QUERY_CACHE:
+        {
+            getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CACHE);
+            getContext()->clearQueryResultCache(query.query_result_cache_tag);
             break;
         }
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
@@ -533,8 +532,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::DROP_PAGE_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PAGE_CACHE);
-
-            getContext()->dropPageCache();
+            system_context->clearPageCache();
             break;
         }
         case Type::DROP_SCHEMA_CACHE:
@@ -900,7 +898,7 @@ void InterpreterSystemQuery::restoreReplica()
                              getContext()->getProcessListElementSafe()});
 }
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, ContextMutablePtr system_context)
+StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, ContextMutablePtr system_context, bool throw_on_error)
 {
     LOG_TRACE(log, "Restarting replica {}", replica);
     auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
@@ -910,12 +908,25 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         throw Exception(ErrorCodes::ABORTED, "Database {} is being dropped or detached, will not restart replica {}",
                         backQuoteIfNeed(replica.getDatabaseName()), replica.getNameForLogs());
 
-    auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica, getContext());
+    std::optional<Exception> exception;
+    auto [database, table] = DatabaseCatalog::instance().getTableImpl(replica, getContext(), &exception);
     ASTPtr create_ast;
 
-    /// Detach actions
-    if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    if (!table)
+    {
+        if (throw_on_error)
+            throw Exception(*exception);
+        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: {}", replica.getNameForLogs(), exception->message());
         return nullptr;
+    }
+    const StorageID replica_table_id = table->getStorageID();
+    if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
+        LOG_WARNING(getLogger("InterpreterSystemQuery"), "Cannot RESTART REPLICA {}: not a ReplicatedMergeTree anymore", replica.getNameForLogs());
+        return nullptr;
+    }
 
     SCOPE_EXIT({
         if (table)
@@ -930,9 +941,8 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 
         database->detachTable(system_context, replica.table_name);
     }
-    UUID uuid = table->getStorageID().uuid;
     table.reset();
-    database->waitDetachedTableNotInUse(uuid);
+    database->waitDetachedTableNotInUse(replica_table_id.uuid);
 
     /// Attach actions
     /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
@@ -943,7 +953,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints, columns, system_context);
     auto data_path = database->getTableDataPath(create);
 
-    table = StorageFactory::instance().get(create,
+    auto new_table = StorageFactory::instance().get(create,
         data_path,
         system_context,
         system_context->getGlobalContext(),
@@ -951,18 +961,19 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
         constraints,
         LoadingStrictnessLevel::ATTACH);
 
-    database->attachTable(system_context, replica.table_name, table, data_path);
+    database->attachTable(system_context, replica.table_name, new_table, data_path);
+    if (new_table->getStorageID().uuid != replica_table_id.uuid)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Tables UUID does not match after RESTART REPLICA (old: {}, new: {})", replica_table_id.uuid, new_table->getStorageID().uuid);
 
-    table->startup();
-    LOG_TRACE(log, "Restarted replica {}", replica);
-    return table;
+    new_table->startup();
+    LOG_TRACE(log, "Restarted replica {}", new_table->getStorageID().getNameForLogs());
+    return new_table;
 }
 
 void InterpreterSystemQuery::restartReplica(const StorageID & replica, ContextMutablePtr system_context)
 {
     getContext()->checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
-    if (!tryRestartReplica(replica, system_context))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
+    doRestartReplica(replica, system_context, /*throw_on_error=*/ true);
 }
 
 void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
@@ -998,7 +1009,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
     for (auto & replica : replica_names)
     {
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(replica, system_context); });
+        pool.scheduleOrThrowOnError([&]() { doRestartReplica(replica, system_context, /*throw_on_error=*/ false); });
     }
     pool.wait();
 }
@@ -1439,14 +1450,16 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_MARK_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_CACHE:
         case Type::DROP_QUERY_CONDITION_CACHE:
+        case Type::DROP_QUERY_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
         case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_FILESYSTEM_CACHE:
+        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
+        case Type::DROP_DISTRIBUTED_CACHE:
         case Type::SYNC_FILESYSTEM_CACHE:
         case Type::DROP_PAGE_CACHE:
         case Type::DROP_SCHEMA_CACHE:
@@ -1573,6 +1586,30 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.getDatabase(), query.getTable());
             break;
         }
+        case Type::STOP_REPLICATED_DDL_QUERIES:
+        case Type::START_REPLICATED_DDL_QUERIES:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES);
+            break;
+        }
+        case Type::STOP_VIRTUAL_PARTS_UPDATE:
+        case Type::START_VIRTUAL_PARTS_UPDATE:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::STOP_REDUCE_BLOCKING_PARTS:
+        case Type::START_REDUCE_BLOCKING_PARTS:
+        {
+            if (!query.table)
+                required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS);
+            else
+                required_access.emplace_back(AccessType::SYSTEM_REDUCE_BLOCKING_PARTS, query.getDatabase(), query.getTable());
+            break;
+        }
         case Type::REFRESH_VIEW:
         case Type::WAIT_VIEW:
         case Type::START_VIEW:
@@ -1592,6 +1629,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::DROP_DATABASE_REPLICA:
         {
             required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::DROP_CATALOG_REPLICA:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_DROP_REPLICA);
             break;
         }
         case Type::RESTORE_REPLICA:
@@ -1700,6 +1742,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
                 required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY);
             else
                 required_access.emplace_back(AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, query.getDatabase(), query.getTable());
+            break;
+        }
+        case Type::UNLOCK_SNAPSHOT:
+        {
+            required_access.emplace_back(AccessType::BACKUP);
             break;
         }
         case Type::STOP_THREAD_FUZZER:

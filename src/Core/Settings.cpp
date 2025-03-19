@@ -1,3 +1,4 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/BaseSettings.h>
@@ -435,8 +436,10 @@ Maximum number of files that could be returned in batch by ListObject request
 Enables or disables truncate before inserts in s3 engine tables. If disabled, an exception will be thrown on insert attempts if an S3 object already exists.
 
 Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
+- 0 — `INSERT` query creates a new file or fail if file exists and s3_create_new_file_on_insert is not set.
 - 1 — `INSERT` query replaces existing content of the file with the new data.
+
+See more details [here](/integrations/s3#inserting-data).
 )", 0) \
     DECLARE(Bool, azure_truncate_on_insert, false, R"(
 Enables or disables truncate before insert in azure engine tables.
@@ -447,8 +450,10 @@ Enables or disables creating a new file on each insert in s3 engine tables. If e
 initial: `data.Parquet.gz` -> `data.1.Parquet.gz` -> `data.2.Parquet.gz`, etc.
 
 Possible values:
-- 0 — `INSERT` query appends new data to the end of the file.
-- 1 — `INSERT` query creates a new file.
+- 0 — `INSERT` query creates a new file or fail if file exists and s3_truncate_on_insert is not set.
+- 1 — `INSERT` query creates a new file on each insert using suffix (from the second one) if s3_truncate_on_insert is not set.
+
+See more details [here](/integrations/s3#inserting-data).
 )", 0) \
     DECLARE(Bool, s3_skip_empty_files, true, R"(
 Enables or disables skipping empty files in [S3](../../engines/table-engines/integrations/s3.md) engine tables.
@@ -636,7 +641,7 @@ Possible values:
 - 1 — Initiator will skip read-only replicas before sending data to shards.
 )", 0) \
     DECLARE(Bool, distributed_foreground_insert, false, R"(
-Enables or disables synchronous data insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
+Enables or disables synchronous data insertion into a [Distributed](/engines/table-engines/special/distributed) table.
 
 By default, when inserting data into a `Distributed` table, the ClickHouse server sends data to cluster nodes in background mode. When `distributed_foreground_insert=1`, the data is processed synchronously, and the `INSERT` operation succeeds only after all the data is saved on all shards (at least one replica for each shard if `internal_replication` is true).
 
@@ -649,7 +654,7 @@ Cloud default value: `1`.
 
 **See Also**
 
-- [Distributed Table Engine](../../engines/table-engines/special/distributed.md/#distributed)
+- [Distributed Table Engine](/engines/table-engines/special/distributed)
 - [Managing Distributed Tables](/sql-reference/statements/system#managing-distributed-tables)
 )", 0) ALIAS(insert_distributed_sync) \
     DECLARE(UInt64, distributed_background_insert_timeout, 0, R"(
@@ -712,7 +717,7 @@ Possible values:
 - 1 — Automatic `PREWHERE` optimization is enabled.
 )", 0) \
     DECLARE(Bool, optimize_move_to_prewhere_if_final, false, R"(
-Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](../../sql-reference/statements/select/from.md/#select-from-final) modifier.
+Enables or disables automatic [PREWHERE](../../sql-reference/statements/select/prewhere.md) optimization in [SELECT](../../sql-reference/statements/select/index.md) queries with [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
 
 Works only for [*MergeTree](../../engines/table-engines/mergetree-family/index.md) tables.
 
@@ -784,7 +789,7 @@ See also:
 
 ### Random (by Default) {#load_balancing-random}
 
-``` sql
+```sql
 load_balancing = random
 ```
 
@@ -793,7 +798,7 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 
 ### Nearest Hostname {#load_balancing-nearest_hostname}
 
-``` sql
+```sql
 load_balancing = nearest_hostname
 ```
 
@@ -807,13 +812,13 @@ We can also assume that when sending a query to the same server, in the absence 
 
 ### Hostname levenshtein distance {#load_balancing-hostname_levenshtein_distance}
 
-``` sql
+```sql
 load_balancing = hostname_levenshtein_distance
 ```
 
 Just like `nearest_hostname`, but it compares hostname in a [levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance) manner. For example:
 
-``` text
+```text
 example-clickhouse-0-0 ample-clickhouse-0-0
 1
 
@@ -826,7 +831,7 @@ example-clickhouse-0-0 example-clickhouse-12-0
 
 ### In Order {#load_balancing-in_order}
 
-``` sql
+```sql
 load_balancing = in_order
 ```
 
@@ -835,7 +840,7 @@ This method is appropriate when you know exactly which replica is preferable.
 
 ### First or Random {#load_balancing-first_or_random}
 
-``` sql
+```sql
 load_balancing = first_or_random
 ```
 
@@ -847,7 +852,7 @@ It's possible to explicitly define what the first replica is by using the settin
 
 ### Round Robin {#load_balancing-round_robin}
 
-``` sql
+```sql
 load_balancing = round_robin
 ```
 
@@ -1292,7 +1297,7 @@ Possible values:
     DECLARE(UInt64, merge_tree_max_rows_to_use_cache, (128 * 8192), R"(
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md/#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -1301,7 +1306,7 @@ Possible values:
     DECLARE(UInt64, merge_tree_max_bytes_to_use_cache, (192 * 10 * 1024 * 1024), R"(
 If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it does not use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](../../operations/server-configuration-parameters/settings.md/#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed_cache_size](/operations/server-configuration-parameters/settings#uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -1578,7 +1583,7 @@ Queries sent to ClickHouse with this setup are logged according to the rules in 
 
 Example:
 
-``` text
+```text
 log_queries=1
 ```
 )", 0) \
@@ -1867,7 +1872,7 @@ Example: `SET http_response_headers = '{"Content-Type": "image/png"}'`
 )", 0) \
     \
     DECLARE(String, count_distinct_implementation, "uniqExact", R"(
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](../../sql-reference/aggregate-functions/reference/count.md/#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT ...)](/sql-reference/aggregate-functions/reference/count) construction.
 
 Possible values:
 
@@ -2250,7 +2255,7 @@ Possible values:
 
 See also:
 
-- System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
+- System table [trace_log](/operations/system-tables/trace_log)
 )", 0) \
     DECLARE(Bool, metrics_perf_events_enabled, false, R"(
 If enabled, some of the perf events will be measured throughout queries' execution.
@@ -2718,7 +2723,7 @@ Read more about [memory overcommit](memory-overcommit.md).
 Small allocations and deallocations are grouped in thread local variable and tracked or profiled only when an amount (in absolute value) becomes larger than the specified value. If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.
 )", 0) \
     DECLARE(UInt64, memory_profiler_step, (4 * 1024 * 1024), R"(
-Sets the step of memory profiler. Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stacktrace and will write it into [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log).
+Sets the step of memory profiler. Whenever query memory usage becomes larger than every next step in number of bytes the memory profiler will collect the allocating stacktrace and will write it into [trace_log](/operations/system-tables/trace_log).
 
 Possible values:
 
@@ -2736,7 +2741,7 @@ Collect random allocations of size greater or equal than the specified value wit
 Collect random allocations of size less or equal than the specified value with probability equal to `memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold work as expected.
 )", 0) \
     DECLARE(Bool, trace_profile_events, false, R"(
-Enables or disables collecting stacktraces on each update of profile events along with the name of profile event and the value of increment and sending them into [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log).
+Enables or disables collecting stacktraces on each update of profile events along with the name of profile event and the value of increment and sending them into [trace_log](/operations/system-tables/trace_log).
 
 Possible values:
 
@@ -3016,7 +3021,7 @@ Possible values:
 
 **See Also**
 
-- [ORDER BY Clause](../../sql-reference/statements/select/order-by.md/#optimize_read_in_order)
+- [ORDER BY Clause](/sql-reference/statements/select/order-by#optimization-of-data-reading)
 )", 0) \
     DECLARE(Bool, read_in_order_use_virtual_row, false, R"(
 Use virtual row while reading in order of primary key or its monotonic function fashion. It is useful when searching over multiple parts as only relevant ones are touched.
@@ -3122,7 +3127,7 @@ Exception: Regexp length too large.
 - [max_hyperscan_regexp_total_length](#max_hyperscan_regexp_total_length)
 )", 0) \
     DECLARE(UInt64, max_hyperscan_regexp_total_length, 0, R"(
-Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](../../sql-reference/functions/string-search-functions.md/#multimatchanyhaystack-pattern1-pattern2-patternn).
+Sets the maximum length total of all regular expressions in each [hyperscan multi-match function](/sql-reference/functions/string-search-functions#multimatchany).
 
 Possible values:
 
@@ -3178,7 +3183,7 @@ Possible values:
 **See Also**
 
 - [Sampling Query Profiler](../../operations/optimizing-performance/sampling-query-profiler.md)
-- System table [trace_log](../../operations/system-tables/trace_log.md/#system_tables-trace_log)
+- System table [trace_log](/operations/system-tables/trace_log)
 )", 0) \
     DECLARE(Bool, splitby_max_substrings_includes_remaining_string, false, R"(
 Controls whether function [splitBy*()](../../sql-reference/functions/splitting-merging-functions.md) with argument `max_substrings` > 0 will include the remaining string in the last element of the result array.
@@ -3603,8 +3608,8 @@ These functions can be transformed:
 - [isNull](/sql-reference/functions/functions-for-nulls#isnull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 - [isNotNull](/sql-reference/functions/functions-for-nulls#isnotnull) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
 - [count](/sql-reference/aggregate-functions/reference/count) to read the [null](../../sql-reference/data-types/nullable.md/#finding-null) subcolumn.
-- [mapKeys](/sql-reference/functions/tuple-map-functions#mapkeys) to read the [keys](../../sql-reference/data-types/map.md/#map-subcolumns) subcolumn.
-- [mapValues](/sql-reference/functions/tuple-map-functions#mapvalues) to read the [values](../../sql-reference/data-types/map.md/#map-subcolumns) subcolumn.
+- [mapKeys](/sql-reference/functions/tuple-map-functions#mapkeys) to read the [keys](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
+- [mapValues](/sql-reference/functions/tuple-map-functions#mapvalues) to read the [values](/sql-reference/data-types/map#reading-subcolumns-of-map) subcolumn.
 
 Possible values:
 
@@ -4092,7 +4097,7 @@ SETTINGS index_granularity = 8192 │
 ```
 )", 0) \
     DECLARE(Bool, asterisk_include_materialized_columns, false, R"(
-Include [MATERIALIZED](/sql-reference/statements/create/table#materialized) columns for wildcard query (`SELECT *`).
+Include [MATERIALIZED](/sql-reference/statements/create/view#materialized-view) columns for wildcard query (`SELECT *`).
 
 Possible values:
 
@@ -4168,7 +4173,7 @@ Result:
 └─────────────┘
 ```
 
-Note that this setting influences [Materialized view](../../sql-reference/statements/create/view.md/#materialized) behaviour.
+Note that this setting influences [Materialized view](/sql-reference/statements/create/view#materialized-view) behaviour.
 )", 0) \
     DECLARE(Bool, optimize_use_projections, true, R"(
 Enables or disables [projection](../../engines/table-engines/mergetree-family/mergetree.md/#projections) optimization when processing `SELECT` queries.
@@ -4288,7 +4293,7 @@ Possible values:
 - 0 - Disabled
 - 1 - Enabled
 )", 0) \
-    DECLARE(QueryCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryCacheNondeterministicFunctionHandling::Throw, R"(
+    DECLARE(QueryResultCacheNondeterministicFunctionHandling, query_cache_nondeterministic_function_handling, QueryResultCacheNondeterministicFunctionHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries with non-deterministic functions like `rand()` or `now()`.
 
 Possible values:
@@ -4297,7 +4302,7 @@ Possible values:
 - `'save'` - Cache the query result.
 - `'ignore'` - Don't cache the query result and don't throw an exception.
 )", 0) \
-    DECLARE(QueryCacheSystemTableHandling, query_cache_system_table_handling, QueryCacheSystemTableHandling::Throw, R"(
+    DECLARE(QueryResultCacheSystemTableHandling, query_cache_system_table_handling, QueryResultCacheSystemTableHandling::Throw, R"(
 Controls how the [query cache](../query-cache.md) handles `SELECT` queries against system tables, i.e. tables in databases `system.*` and `information_schema.*`.
 
 Possible values:
@@ -4400,7 +4405,7 @@ Supported only with the analyzer (`enable_analyzer = 1`).
 Rewrite arrayExists() functions to has() when logically equivalent. For example, arrayExists(x -> x = 1, arr) can be rewritten to has(arr, 1)
 )", 0) \
     DECLARE(UInt64, insert_shard_id, 0, R"(
-If not `0`, specifies the shard of [Distributed](/engines/table-engines/special/distributed#distributed) table into which the data will be inserted synchronously.
+If not `0`, specifies the shard of [Distributed](/engines/table-engines/special/distributed) table into which the data will be inserted synchronously.
 
 If `insert_shard_id` value is incorrect, the server will throw an exception.
 
@@ -4413,7 +4418,7 @@ SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
 Possible values:
 
 - 0 — Disabled.
-- Any number from `1` to `shards_num` of corresponding [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table.
+- Any number from `1` to `shards_num` of corresponding [Distributed](/engines/table-engines/special/distributed) table.
 
 **Example**
 
@@ -5059,6 +5064,9 @@ Wait time to lock cache for space reservation for temporary data in filesystem c
     DECLARE(Bool, use_page_cache_for_disks_without_file_cache, false, R"(
 Use userspace page cache for remote disks that don't have filesystem cache enabled.
 )", 0) \
+    DECLARE(Bool, use_page_cache_with_distributed_cache, false, R"(
+Use userspace page cache when distributed cache is used.
+)", 0) \
     DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
 Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
 )", 0) \
@@ -5315,7 +5323,7 @@ Only has an effect in ClickHouse Cloud. A window for sending ACK for DataPacket 
     DECLARE(Bool, distributed_cache_discard_connection_if_unread_data, true, R"(
 Only has an effect in ClickHouse Cloud. Discard connection if some data is unread.
 )", 0) \
-    DECLARE(Bool, distributed_cache_min_bytes_for_seek, 0, R"(
+    DECLARE(UInt64, distributed_cache_min_bytes_for_seek, 0, R"(
 Only has an effect in ClickHouse Cloud. Minimum number of bytes to do seek in distributed cache.
 )", 0) \
     DECLARE(Bool, filesystem_cache_enable_background_download_for_metadata_files_in_packed_storage, true, R"(
@@ -5816,11 +5824,12 @@ Build local plan for local replica
     DECLARE(Bool, parallel_replicas_index_analysis_only_on_coordinator, true, R"(
 Index analysis done only on replica-coordinator and skipped on other replicas. Effective only with enabled parallel_replicas_local_plan
 )", BETA) \
-    \
     DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
 The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
 )", BETA) \
-    \
+    DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
+Replace table function engines with their -Cluster alternatives
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
 )", IMPORTANT) ALIAS(enable_analyzer) \
@@ -6086,7 +6095,13 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
-Allow experimental database engine Iceberg
+Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_unity_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
 Enable Kusto Query Language (KQL) - an alternative to SQL.

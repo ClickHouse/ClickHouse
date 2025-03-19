@@ -1,8 +1,9 @@
 ---
-slug: /operations/storing-data
+description: 'Documentation for highlight-next-line'
+sidebar_label: 'External Disks for Storing Data'
 sidebar_position: 68
-sidebar_label: "External Disks for Storing Data"
-title: "External Disks for Storing Data"
+slug: /operations/storing-data
+title: 'External Disks for Storing Data'
 ---
 
 Data, processed in ClickHouse, is usually stored in the local file system — on the same machine with the ClickHouse server. That requires large-capacity disks, which can be expensive enough. To avoid that you can store the data remotely. Various storages are supported:
@@ -172,12 +173,12 @@ ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 )
 ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
+  -- highlight-start
   SETTINGS disk = disk(
     type=web,
     endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
   );
-  # highlight-end
+  -- highlight-end
 ```
 
 The example below adds cache to external storage.
@@ -202,7 +203,7 @@ ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 )
 ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
+  -- highlight-start
   SETTINGS disk = disk(
     type=cache,
     max_size='1Gi',
@@ -212,7 +213,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
       endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
       )
   );
-  # highlight-end
+  -- highlight-end
 ```
 
 In the settings highlighted below notice that the disk of `type=web` is nested within
@@ -244,7 +245,7 @@ ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 )
 ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
+  -- highlight-start
   SETTINGS disk = disk(
     type=cache,
     max_size='1Gi',
@@ -254,7 +255,7 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
       endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
       )
   );
-  # highlight-end
+  -- highlight-end
 ```
 
 where `web` is a from a server configuration file:
@@ -744,13 +745,13 @@ configuration file.
 :::
 
 :::tip
-A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/operations/storing-data.md/#storing-data-on-webserver)
+A [demo dataset](https://github.com/ClickHouse/web-tables-demo) is hosted in GitHub.  To prepare your own tables for web storage see the tool [clickhouse-static-files-uploader](/operations/utilities/static-files-disk-uploader)
 :::
 
 In this `ATTACH TABLE` query the `UUID` provided matches the directory name of the data, and the endpoint is the URL for the raw GitHub content.
 
 ```sql
-# highlight-next-line
+-- highlight-next-line
 ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 (
     price UInt32,
@@ -770,12 +771,12 @@ ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
 )
 ENGINE = MergeTree
 ORDER BY (postcode1, postcode2, addr1, addr2)
-  # highlight-start
+  -- highlight-start
   SETTINGS disk = disk(
       type=web,
       endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
       );
-  # highlight-end
+  -- highlight-end
 ```
 
 A ready test case. You need to add this configuration to config:

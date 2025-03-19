@@ -1350,7 +1350,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Неподдерживаемые типы данных Parquet: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Parquet. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](/sql-reference/functions/type-conversion-functions#cast) данные к тому типу, который установлен для столбца таблицы.
 
 ### Вставка и выборка данных {#inserting-and-selecting-data}
 
@@ -1402,13 +1402,13 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 Массивы могут быть вложенными и иметь в качестве аргумента значение типа `Nullable`. Типы `Tuple` и `Map` также могут быть вложенными.
 
-Тип `DICTIONARY` поддерживается для запросов `INSERT`. Для запросов `SELECT` есть настройка [output_format_arrow_low_cardinality_as_dictionary](../operations/settings/settings.md#output-format-arrow-low-cardinality-as-dictionary), которая позволяет выводить тип [LowCardinality](../sql-reference/data-types/lowcardinality.md) как `DICTIONARY`.
+Тип `DICTIONARY` поддерживается для запросов `INSERT`. Для запросов `SELECT` есть настройка [output_format_arrow_low_cardinality_as_dictionary](/operations/settings/formats#output_format_arrow_low_cardinality_as_dictionary), которая позволяет выводить тип [LowCardinality](../sql-reference/data-types/lowcardinality.md) как `DICTIONARY`.
 
 ClickHouse поддерживает настраиваемую точность для формата `Decimal`. При выполнении запроса `INSERT` ClickHouse обрабатывает тип данных Arrow `DECIMAL` как `Decimal128`.
 
 Неподдерживаемые типы данных Arrow: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Arrow. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) данные к тому типу, который установлен для столбца таблицы.
+Типы данных столбцов в ClickHouse могут отличаться от типов данных соответствующих полей файла в формате Arrow. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](/sql-reference/functions/type-conversion-functions#cast) данные к тому типу, который установлен для столбца таблицы.
 
 ### Вставка данных {#inserting-data-arrow}
 
@@ -1464,7 +1464,7 @@ ClickHouse поддерживает настраиваемую точность 
 
 Неподдерживаемые типы данных ORC: `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](../sql-reference/functions/type-conversion-functions.md#type_conversion_function-cast) данные к типу, установленному для столбца таблицы ClickHouse.
+Типы данных столбцов в таблицах ClickHouse могут отличаться от типов данных для соответствующих полей ORC. При вставке данных ClickHouse интерпретирует типы данных ORC согласно таблице соответствия, а затем [приводит](/sql-reference/functions/type-conversion-functions#cast) данные к типу, установленному для столбца таблицы ClickHouse.
 
 ### Вставка данных {#inserting-data-2}
 

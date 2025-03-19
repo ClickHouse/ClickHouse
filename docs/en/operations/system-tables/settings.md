@@ -1,9 +1,12 @@
 ---
-description: "System table containing information about session settings for current user."
+description: 'System table containing information about session settings for current
+  user.'
+keywords: ['system table', 'settings']
 slug: /operations/system-tables/settings
-title: "system.settings"
-keywords: ["system table", "settings"]
+title: 'system.settings'
 ---
+
+# system.settings
 
 Contains information about session settings for current user.
 
@@ -141,6 +144,6 @@ SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 **See also**
 
 - [Settings](/operations/system-tables/overview#system-tables-introduction)
-- [Permissions for Queries](../../operations/settings/permissions-for-queries.md#settings_readonly)
+- [Permissions for Queries](/operations/settings/permissions-for-queries)
 - [Constraints on Settings](../../operations/settings/constraints-on-settings.md)
 - [SHOW SETTINGS](../../sql-reference/statements/show.md#show-settings) statement

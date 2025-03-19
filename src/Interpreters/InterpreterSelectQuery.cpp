@@ -43,6 +43,7 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -94,6 +95,7 @@
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
+#include <base/find_symbols.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -425,7 +427,7 @@ ASTPtr parseAdditionalFilterConditionForTable(
             /// Try to parse expression
             ParserExpression parser;
             const auto & settings = context.getSettingsRef();
-            return parseQuery(
+            auto query_ast = parseQuery(
                 parser,
                 filter.data(),
                 filter.data() + filter.size(),
@@ -433,6 +435,13 @@ ASTPtr parseAdditionalFilterConditionForTable(
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
+
+            if (find_first_symbols<'{'>(filter.data(), filter.data() + filter.size()) && !context.getQueryParameters().empty())
+            {
+                ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
+                visitor.visit(query_ast);
+            }
+            return query_ast;
         }
     }
 
@@ -1825,7 +1834,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
                         for (const auto & key_name : key_names)
                             order_descr.emplace_back(key_name);
 
-                        SortingStep::Settings sort_settings(*context);
+                        SortingStep::Settings sort_settings(context->getSettingsRef());
 
                         auto sorting_step = std::make_unique<SortingStep>(
                             plan.getCurrentHeader(),
@@ -2568,7 +2577,7 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             required_columns.size(),
-            settings[Setting::max_columns_to_read]);
+            settings[Setting::max_columns_to_read].value);
 
     /// General limit for the number of threads.
     size_t max_threads_execute_query = settings[Setting::max_threads];
@@ -3051,7 +3060,7 @@ void InterpreterSelectQuery::executeWindow(QueryPlan & query_plan)
         }
         if (need_sort)
         {
-            SortingStep::Settings sort_settings(*context);
+            SortingStep::Settings sort_settings(context->getSettingsRef());
 
             auto sorting_step = std::make_unique<SortingStep>(
                 query_plan.getCurrentHeader(),
@@ -3108,7 +3117,7 @@ void InterpreterSelectQuery::executeOrder(QueryPlan & query_plan, InputOrderInfo
         return;
     }
 
-    SortingStep::Settings sort_settings(*context);
+    SortingStep::Settings sort_settings(context->getSettingsRef());
 
     /// Merge the sorted blocks.
     auto sorting_step = std::make_unique<SortingStep>(

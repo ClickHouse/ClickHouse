@@ -1,9 +1,12 @@
 ---
-slug: /sql-reference/table-functions/file
+description: 'A table engine which provides a table-like interface to SELECT from
+  and INSERT into files, similar to the s3 table function. Use `file()` when working
+  with local files, and `s3()` when working with buckets in object storage such as
+  S3, GCS, or MinIO.'
+sidebar_label: 'file'
 sidebar_position: 60
-sidebar_label: file
-title: "file"
-description: "A table engine which provides a table-like interface to SELECT from and INSERT into files, similar to the s3 table function. Use `file()` when working with local files, and `s3()` when working with buckets in object storage such as S3, GCS, or MinIO."
+slug: /sql-reference/table-functions/file
+title: 'file'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -25,7 +28,7 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 
 - `path` — The relative path to the file from [user_files_path](operations/server-configuration-parameters/settings.md#user_files_path). Supports in read-only mode the following [globs](#globs-in-path): `*`, `?`, `{abc,def}` (with `'abc'` and `'def'` being strings) and `{N..M}` (with `N` and `M` being numbers).
 - `path_to_archive` - The relative path to a zip/tar/7z archive. Supports the same globs as `path`.
-- `format` — The [format](interfaces/formats.md#formats) of the file.
+- `format` — The [format](/interfaces/formats) of the file.
 - `structure` — Structure of the table. Format: `'column1_name column1_type, column2_name column2_type, ...'`.
 - `compression` — The existing compression type when used in a `SELECT` query, or the desired compression type when used in an `INSERT` query. Supported compression types are `gz`, `br`, `xz`, `zst`, `lz4`, and `bz2`.
 
@@ -48,9 +51,9 @@ As a result, the data is written into the file `test.tsv`:
 
 ```bash
 # cat /var/lib/clickhouse/user_files/test.tsv
-1	2	3
-3	2	1
-1	3	2
+1    2    3
+3    2    1
+1    3    2
 ```
 
 ### Partitioned write to multiple TSV files {#partitioned-write-to-multiple-tsv-files}
@@ -68,13 +71,13 @@ As a result, the data is written into three files: `test_1.tsv`, `test_2.tsv`, a
 
 ```bash
 # cat /var/lib/clickhouse/user_files/test_1.tsv
-3	2	1
+3    2    1
 
 # cat /var/lib/clickhouse/user_files/test_2.tsv
-1	3	2
+1    3    2
 
 # cat /var/lib/clickhouse/user_files/test_3.tsv
-1	2	3
+1    2    3
 ```
 
 ## Examples for Reading from a File {#examples-for-reading-from-a-file}
@@ -225,12 +228,11 @@ SELECT * from file('data/path/date=*/country=*/code=*/*.parquet') where _date > 
 
 ## Settings {#settings}
 
-- [engine_file_empty_if_not_exists](operations/settings/settings.md#engine-file-empty_if-not-exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
-- [engine_file_truncate_on_insert](operations/settings/settings.md#engine-file-truncate-on-insert) - allows to truncate file before insert into it. Disabled by default.
+- [engine_file_empty_if_not_exists](/operations/settings/settings#engine_file_empty_if_not_exists) - allows to select empty data from a file that doesn't exist. Disabled by default.
+- [engine_file_truncate_on_insert](/operations/settings/settings#engine_file_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [engine_file_allow_create_multiple_files](operations/settings/settings.md#engine_file_allow_create_multiple_files) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [engine_file_skip_empty_files](operations/settings/settings.md#engine_file_skip_empty_files) - allows to skip empty files while reading. Disabled by default.
-- [storage_file_read_method](operations/settings/settings.md#engine-file-empty_if-not-exists) - method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
-
+- [storage_file_read_method](/operations/settings/settings#engine_file_empty_if_not_exists) - method of reading data from storage file, one of: read, pread, mmap (only for clickhouse-local). Default value: `pread` for clickhouse-server, `mmap` for clickhouse-local.
 
 **See Also**
 

@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/create/
+description: 'Documentation for CREATE Queries'
+sidebar_label: 'CREATE'
 sidebar_position: 34
-sidebar_label: CREATE
+slug: /sql-reference/statements/create/
+title: 'CREATE Queries'
 ---
 
 # CREATE Queries

@@ -16,14 +16,16 @@
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/ExpressionActions.h>
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Utils.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
 #include <Common/ProfileEvents.h>
 
@@ -34,6 +36,11 @@ extern const Event IcebergPartitionPrunnedFiles;
 }
 namespace DB
 {
+
+namespace StorageObjectStorageSetting
+{
+extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+}
 
 namespace ErrorCodes
 {
@@ -186,14 +193,32 @@ Int32 IcebergMetadata::parseTableSchema(
     }
 }
 
+static std::pair<Int32, String> getMetadataFileAndVersion(const std::string & path)
+{
+    String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
+    String version_str;
+    /// v<V>.metadata.json
+    if (file_name.starts_with('v'))
+        version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
+    /// <V>-<random-uuid>.metadata.json
+    else
+        version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
+
+    if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
+
+    return std::make_pair(std::stoi(version_str), path);
+}
+
 /**
  * Each version of table metadata is stored in a `metadata` directory and
  * has one of 2 formats:
  *   1) v<V>.metadata.json, where V - metadata version.
  *   2) <V>-<random-uuid>.metadata.json, where V - metadata version
  */
-std::pair<Int32, String>
-getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration)
+static std::pair<Int32, String>
+getLatestMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration)
 {
     const auto metadata_files = listFiles(*object_storage, configuration, "metadata", ".metadata.json");
     if (metadata_files.empty())
@@ -201,29 +226,37 @@ getMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const Storage
         throw Exception(
             ErrorCodes::FILE_DOESNT_EXIST, "The metadata file for Iceberg table with path {} doesn't exist", configuration.getPath());
     }
-
     std::vector<std::pair<UInt32, String>> metadata_files_with_versions;
     metadata_files_with_versions.reserve(metadata_files.size());
     for (const auto & path : metadata_files)
     {
-        String file_name(path.begin() + path.find_last_of('/') + 1, path.end());
-        String version_str;
-        /// v<V>.metadata.json
-        if (file_name.starts_with('v'))
-            version_str = String(file_name.begin() + 1, file_name.begin() + file_name.find_first_of('.'));
-        /// <V>-<random-uuid>.metadata.json
-        else
-            version_str = String(file_name.begin(), file_name.begin() + file_name.find_first_of('-'));
-
-        if (!std::all_of(version_str.begin(), version_str.end(), isdigit))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "Bad metadata file name: {}. Expected vN.metadata.json where N is a number", file_name);
-        metadata_files_with_versions.emplace_back(std::stoi(version_str), path);
+        metadata_files_with_versions.emplace_back(getMetadataFileAndVersion(path));
     }
 
     /// Get the latest version of metadata file: v<V>.metadata.json
     return *std::max_element(metadata_files_with_versions.begin(), metadata_files_with_versions.end());
 }
+
+static std::pair<Int32, String> getLatestOrExplicitMetadataFileAndVersion(const ObjectStoragePtr & object_storage, const StorageObjectStorage::Configuration & configuration, Poco::Logger * log)
+{
+    auto explicit_metadata_path = configuration.getSettingsRef()[StorageObjectStorageSetting::iceberg_metadata_file_path].value;
+    std::pair<Int32, String> result;
+    if (!explicit_metadata_path.empty())
+    {
+        LOG_TEST(log, "Explicit metadata file path is specified {}, will read from this metadata file", explicit_metadata_path);
+        auto prefix_storage_path = configuration.getPath();
+        if (!explicit_metadata_path.starts_with(prefix_storage_path))
+            explicit_metadata_path = std::filesystem::path(prefix_storage_path) / explicit_metadata_path;
+        result = getMetadataFileAndVersion(explicit_metadata_path);
+    }
+    else
+    {
+        result = getLatestMetadataFileAndVersion(object_storage, configuration);
+    }
+
+    return result;
+}
+
 
 Poco::JSON::Object::Ptr IcebergMetadata::readJSON(const String & metadata_file_path, const ContextPtr & local_context) const
 {
@@ -242,7 +275,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, log.get());
 
     if (metadata_version == current_metadata_version)
         return false;
@@ -304,14 +337,13 @@ std::optional<Int32> IcebergMetadata::getSchemaVersionByFileIfOutdated(String da
 DataLakeMetadataPtr IcebergMetadata::create(
     const ObjectStoragePtr & object_storage,
     const ConfigurationObserverPtr & configuration,
-    const ContextPtr & local_context,
-    bool)
+    const ContextPtr & local_context)
 {
     auto configuration_ptr = configuration.lock();
 
-    const auto [metadata_version, metadata_file_path] = getMetadataFileAndVersion(object_storage, *configuration_ptr);
-
     auto log = getLogger("IcebergMetadata");
+
+    const auto [metadata_version, metadata_file_path] = getLatestOrExplicitMetadataFileAndVersion(object_storage, *configuration_ptr, log.get());
 
     ObjectInfo object_info(metadata_file_path);
     auto buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, local_context, log);
@@ -432,7 +464,9 @@ ManifestFileContent IcebergMetadata::initializeManifestFile(const String & filen
         schema_id,
         schema_processor,
         inherited_sequence_number,
-        table_location);
+        table_location,
+        getContext());
+
     return ManifestFileContent(std::move(manifest_file_impl));
 }
 
@@ -468,24 +502,6 @@ IcebergSnapshot IcebergMetadata::getSnapshot(const String & filename) const
     return IcebergSnapshot{getManifestList(filename)};
 }
 
-std::vector<Int32>
-getRelevantPartitionColumnIds(const ManifestFileIterator & entry, const IcebergSchemaProcessor & schema_processor, Int32 current_schema_id)
-{
-    std::vector<Int32> partition_column_ids;
-    partition_column_ids.reserve(entry->getPartitionColumnInfos().size());
-    for (const auto & partition_column_info : entry->getPartitionColumnInfos())
-    {
-        std::optional<NameAndTypePair> name_and_type
-            = schema_processor.tryGetFieldCharacteristics(current_schema_id, partition_column_info.source_id);
-        if (name_and_type)
-        {
-            partition_column_ids.push_back(partition_column_info.source_id);
-        }
-    }
-    return partition_column_ids;
-}
-
-
 Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
 {
     if (!current_snapshot)
@@ -497,39 +513,30 @@ Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
     Strings data_files;
     for (const auto & manifest_list_entry : *(current_snapshot->manifest_list_iterator))
     {
-        const auto & partition_columns_ids
-            = getRelevantPartitionColumnIds(manifest_list_entry.manifest_file, schema_processor, current_schema_id);
-        const auto & partition_pruning_columns_names_and_types
-            = schema_processor.tryGetFieldsCharacteristics(current_schema_id, partition_columns_ids);
-
-        ExpressionActionsPtr partition_minmax_idx_expr = std::make_shared<ExpressionActions>(
-            ActionsDAG(partition_pruning_columns_names_and_types), ExpressionActionsSettings(getContext()));
-        const KeyCondition partition_key_condition(
-            filter_dag, getContext(), partition_pruning_columns_names_and_types.getNames(), partition_minmax_idx_expr);
-
+        PartitionPruner pruner(schema_processor, current_schema_id, filter_dag, *manifest_list_entry.manifest_file, getContext());
         const auto & data_files_in_manifest = manifest_list_entry.manifest_file->getFiles();
         for (const auto & manifest_file_entry : data_files_in_manifest)
         {
             if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
             {
-                if (partition_key_condition
-                        .checkInHyperrectangle(
-                            manifest_file_entry.getPartitionRanges(partition_columns_ids),
-                            partition_pruning_columns_names_and_types.getTypes())
-                        .can_be_true)
+                if (pruner.canBePruned(manifest_file_entry))
+                {
+                    ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
+                }
+                else
                 {
                     if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
                         data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
                 }
-                else
-                    ProfileEvents::increment(ProfileEvents::IcebergPartitionPrunnedFiles);
             }
         }
     }
 
-
     if (!filter_dag)
-        return (cached_unprunned_files_for_current_snapshot = data_files).value();
+    {
+        cached_unprunned_files_for_current_snapshot = data_files;
+        return cached_unprunned_files_for_current_snapshot.value();
+    }
 
     return data_files;
 }
