@@ -1,7 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/SingleValueData.h>
-#include <DataTypes/IDataType.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/defines.h>
@@ -13,7 +11,6 @@ struct Settings;
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
 extern const int NOT_IMPLEMENTED;
 }
 
@@ -133,25 +130,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if (isEnum(this->argument_types[0]) && !this->data(place).has())
-        {
-            if (checkColumn<typename DataTypeEnum8::ColumnType>(&to))
-            {
-                const auto* type_enum8 = assert_cast<const DataTypeEnum8*>(this->argument_types[0].get());
-                type_enum8->insertDefaultInto(to);
-            }
-            else if (checkColumn<typename DataTypeEnum16::ColumnType>(&to))
-            {
-                const auto* type_enum16 = assert_cast<const DataTypeEnum16*>(this->argument_types[0].get());
-                type_enum16->insertDefaultInto(to);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected enum type: {}", this->argument_types[0]->getName());
-            }
-        }
-        else
-            this->data(place).insertResultInto(to);
+        this->data(place).insertResultInto(to, this->result_type);
     }
 
 #if USE_EMBEDDED_COMPILER
@@ -321,25 +300,7 @@ public:
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
-        if (isEnum(this->argument_types[0]) && !this->data(place).has())
-        {
-            if (checkColumn<typename DataTypeEnum8::ColumnType>(&to))
-            {
-                const auto* type_enum8 = assert_cast<const DataTypeEnum8*>(this->argument_types[0].get());
-                type_enum8->insertDefaultInto(to);
-            }
-            else if (checkColumn<typename DataTypeEnum16::ColumnType>(&to))
-            {
-                const auto* type_enum16 = assert_cast<const DataTypeEnum16*>(this->argument_types[0].get());
-                type_enum16->insertDefaultInto(to);
-            }
-            else
-            {
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected enum type: {}", this->argument_types[0]->getName());
-            }
-        }
-        else
-            this->data(place).insertResultInto(to);
+        this->data(place).insertResultInto(to, this->result_type);
     }
 
 #if USE_EMBEDDED_COMPILER

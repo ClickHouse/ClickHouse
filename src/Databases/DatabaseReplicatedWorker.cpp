@@ -3,6 +3,7 @@
 #include <Databases/DatabaseReplicated.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DDLTask.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -89,7 +90,7 @@ bool DatabaseReplicatedDDLWorker::initializeMainThread()
                 LOG_WARNING(log, "Database got stuck at processing task {}: it failed {} times in a row with the same error. "
                                  "Will reset digest to mark our replica as lost, and trigger recovery from the most up-to-date metadata "
                                  "from ZooKeeper. See max_retries_before_automatic_recovery setting. The error: {}",
-                            current_task, subsequent_errors_count, last_unexpected_error);
+                            current_task, subsequent_errors_count.load(), last_unexpected_error);
 
                 String digest_str;
                 zookeeper->tryGet(database->replica_path + "/digest", digest_str);
@@ -192,7 +193,7 @@ void DatabaseReplicatedDDLWorker::initializeReplication()
 
     {
         std::lock_guard lock{database->metadata_mutex};
-        if (!database->checkDigestValid(context, false))
+        if (!database->checkDigestValid(context))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent database metadata after reconnection to ZooKeeper");
     }
 
@@ -309,7 +310,7 @@ String DatabaseReplicatedDDLWorker::enqueueQueryImpl(const ZooKeeperPtr & zookee
     return node_path;
 }
 
-String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context)
+String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entry, ContextPtr query_context, bool internal_query)
 {
     /// NOTE Possibly it would be better to execute initial query on the most up-to-date node,
     /// but it requires more complex logic around /try node.
@@ -337,10 +338,11 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     assert(!zookeeper->exists(task->getFinishedNodePath()));
     task->is_initial_query = true;
 
-    LOG_DEBUG(log, "Waiting for worker thread to process all entries before {}", entry_name);
     UInt64 timeout = query_context->getSettingsRef()[Setting::database_replicated_initial_query_timeout_sec];
     StopToken cancellation = query_context->getDDLQueryCancellation();
     StopCallback cancellation_callback(cancellation, [&] { wait_current_task_change.notify_all(); });
+    LOG_DEBUG(log, "Waiting for worker thread to process all entries before {} (timeout: {}s{})", entry_name, timeout, cancellation.stop_possible() ? ", cancellable" : "");
+
     {
         std::unique_lock lock{mutex};
         bool processed = wait_current_task_change.wait_for(lock, std::chrono::seconds(timeout), [&]()
@@ -348,10 +350,16 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
             assert(zookeeper->expired() || current_task <= entry_name);
 
             if (zookeeper->expired() || stop_flag)
+            {
+                LOG_TRACE(log, "Not enqueueing query: {}", stop_flag ? "replication stopped" : "ZooKeeper session expired");
                 throw Exception(ErrorCodes::DATABASE_REPLICATION_FAILED, "ZooKeeper session expired or replication stopped, try again");
+            }
 
             if (cancellation.stop_requested())
+            {
+                LOG_TRACE(log, "DDL query was cancelled");
                 throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DDL query was cancelled");
+            }
 
             return current_task == entry_name;
         });
@@ -364,7 +372,7 @@ String DatabaseReplicatedDDLWorker::tryEnqueueAndExecuteEntry(DDLLogEntry & entr
     if (entry.parent_table_uuid.has_value() && !checkParentTableExists(entry.parent_table_uuid.value()))
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Parent table doesn't exist");
 
-    processTask(*task, zookeeper);
+    processTask(*task, zookeeper, internal_query);
 
     if (!task->was_executed)
     {

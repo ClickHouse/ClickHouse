@@ -46,12 +46,12 @@ When writing data, ClickHouse throws an exception if input data contain columns 
 
 Supported formats:
 
-- [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) (and other JSON formats)
-- [BSONEachRow](../../interfaces/formats.md/#bsoneachrow) (and other JSON formats)
-- [TSKV](../../interfaces/formats.md/#tskv)
+- [JSONEachRow](/interfaces/formats/JSONEachRow) (and other JSON formats)
+- [BSONEachRow](/interfaces/formats/BSONEachRow) (and other JSON formats)
+- [TSKV](/interfaces/formats/TSKV)
 - All formats with suffixes WithNames/WithNamesAndTypes
-- [MySQLDump](../../interfaces/formats.md/#mysqldump)
-- [Native](../../interfaces/formats.md/#native)
+- [MySQLDump](/interfaces/formats/MySQLDump)
+- [Native](/interfaces/formats/Native)
 
 Possible values:
 
@@ -65,18 +65,18 @@ To improve insert performance, we recommend disabling this check if you are sure
 
 Supported formats:
 
-- [CSVWithNames](../../interfaces/formats.md/#csvwithnames)
-- [CSVWithNamesAndTypes](../../interfaces/formats.md/#csvwithnamesandtypes)
-- [TabSeparatedWithNames](../../interfaces/formats.md/#tabseparatedwithnames)
-- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md/#tabseparatedwithnamesandtypes)
-- [JSONCompactEachRowWithNames](../../interfaces/formats.md/#jsoncompacteachrowwithnames)
-- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md/#jsoncompacteachrowwithnamesandtypes)
-- [JSONCompactStringsEachRowWithNames](../../interfaces/formats.md/#jsoncompactstringseachrowwithnames)
-- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md/#jsoncompactstringseachrowwithnamesandtypes)
-- [RowBinaryWithNames](../../interfaces/formats.md/#rowbinarywithnames)
-- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md/#rowbinarywithnamesandtypes)
-- [CustomSeparatedWithNames](../../interfaces/formats.md/#customseparatedwithnames)
-- [CustomSeparatedWithNamesAndTypes](../../interfaces/formats.md/#customseparatedwithnamesandtypes)
+- [CSVWithNames](/interfaces/formats/CSVWithNames)
+- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
+- [TabSeparatedWithNames](/interfaces/formats/TabSeparatedWithNames)
+- [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
+- [JSONCompactEachRowWithNames](/interfaces/formats/JSONCompactEachRowWithNames)
+- [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
+- [JSONCompactStringsEachRowWithNames](/interfaces/formats/JSONCompactStringsEachRowWithNames)
+- [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
+- [RowBinaryWithNames](/interfaces/formats/RowBinaryWithNames)
+- [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
+- [CustomSeparatedWithNames](/interfaces/formats/CustomSeparatedWithNames)
+- [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
 
 Possible values:
 
@@ -88,12 +88,12 @@ Controls whether format parser should check if data types from the input data ma
 
 Supported formats:
 
-- [CSVWithNamesAndTypes](../../interfaces/formats.md/#csvwithnamesandtypes)
-- [TabSeparatedWithNamesAndTypes](../../interfaces/formats.md/#tabseparatedwithnamesandtypes)
-- [JSONCompactEachRowWithNamesAndTypes](../../interfaces/formats.md/#jsoncompacteachrowwithnamesandtypes)
-- [JSONCompactStringsEachRowWithNamesAndTypes](../../interfaces/formats.md/#jsoncompactstringseachrowwithnamesandtypes)
-- [RowBinaryWithNamesAndTypes](../../interfaces/formats.md/#rowbinarywithnamesandtypes-rowbinarywithnamesandtypes)
-- [CustomSeparatedWithNamesAndTypes](../../interfaces/formats.md/#customseparatedwithnamesandtypes)
+- [CSVWithNamesAndTypes](/interfaces/formats/CSVWithNamesAndTypes)
+- [TabSeparatedWithNamesAndTypes](/interfaces/formats/TabSeparatedWithNamesAndTypes)
+- [JSONCompactEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactEachRowWithNamesAndTypes)
+- [JSONCompactStringsEachRowWithNamesAndTypes](/interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes)
+- [RowBinaryWithNamesAndTypes](/interfaces/formats/RowBinaryWithNamesAndTypes)
+- [CustomSeparatedWithNamesAndTypes](/interfaces/formats/CustomSeparatedWithNamesAndTypes)
 
 Possible values:
 
@@ -105,7 +105,7 @@ Enables or disables the insertion of JSON data with nested objects.
 
 Supported formats:
 
-- [JSONEachRow](../../interfaces/formats.md/#jsoneachrow)
+- [JSONEachRow](/interfaces/formats/JSONEachRow)
 
 Possible values:
 
@@ -114,10 +114,10 @@ Possible values:
 
 See also:
 
-- [Usage of Nested Structures](../../interfaces/formats.md/#jsoneachrow-nested) with the `JSONEachRow` format.
+- [Usage of Nested Structures](/integrations/data-formats/json/other-formats#accessing-nested-json-objects) with the `JSONEachRow` format.
 )", 0) \
     DECLARE(Bool, input_format_defaults_for_omitted_fields, true, R"(
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) (and other JSON formats), [CSV](../../interfaces/formats.md/#csv), [TabSeparated](../../interfaces/formats.md/#tabseparated), [TSKV](../../interfaces/formats.md/#tskv), [Parquet](../../interfaces/formats.md/#parquet), [Arrow](../../interfaces/formats.md/#arrow), [Avro](../../interfaces/formats.md/#avro), [ORC](../../interfaces/formats.md/#orc), [Native](../../interfaces/formats.md/#native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
+When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option applies to [JSONEachRow](/interfaces/formats/JSONEachRow) (and other JSON formats), [CSV](/interfaces/formats/CSV), [TabSeparated](/interfaces/formats/TabSeparated), [TSKV](/interfaces/formats/TSKV), [Parquet](/interfaces/formats/Parquet), [Arrow](/interfaces/formats/Arrow), [Avro](/interfaces/formats/Avro), [ORC](/interfaces/formats/ORC), [Native](/interfaces/formats/Native) formats and formats with `WithNames`/`WithNamesAndTypes` suffixes.
 
 :::note
 When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
@@ -138,7 +138,7 @@ Treat empty fields in TSV input as default values.
 Treat inserted enum values in TSV formats as enum indices.
 )", 0) \
     DECLARE(Bool, input_format_null_as_default, true, R"(
-Enables or disables the initialization of [NULL](../../sql-reference/syntax.md/#null-literal) fields with [default values](../../sql-reference/statements/create/table.md/#create-default-values), if data type of these fields is not [nullable](../../sql-reference/data-types/nullable.md/#data_type-nullable).
+Enables or disables the initialization of [NULL](/sql-reference/syntax#literals) fields with [default values](/sql-reference/statements/create/table#default_values), if data type of these fields is not [nullable](/sql-reference/data-types/nullable).
 If column type is not nullable and this setting is disabled, then inserting `NULL` causes an exception. If column type is nullable, then `NULL` values are inserted as is, regardless of this setting.
 
 This setting is applicable for most input formats.
@@ -270,7 +270,10 @@ Ignore extra columns in TSV input (if file has more columns than expected) and t
 Ignore extra columns in CustomSeparated input (if file has more columns than expected) and treat missing fields in CustomSeparated input as default values
 )", 0) \
     DECLARE(Bool, input_format_json_compact_allow_variable_number_of_columns, false, R"(
-Ignore extra columns in JSONCompact(EachRow) input (if file has more columns than expected) and treat missing fields in JSONCompact(EachRow) input as default values
+Allow variable number of columns in rows in JSONCompact/JSONCompactEachRow input formats.
+Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
+
+Disabled by default.
 )", 0) \
     DECLARE(Bool, input_format_tsv_detect_header, true, R"(
 Automatically detect header with names and types in TSV format
@@ -329,6 +332,10 @@ Mode of schema inference. 'default' - assume that all files have the same schema
     DECLARE(UInt64Auto, schema_inference_make_columns_nullable, 1, R"(
 Controls making inferred types `Nullable` in schema inference.
 If the setting is enabled, all inferred type will be `Nullable`, if disabled, the inferred type will never be `Nullable`, if set to `auto`, the inferred type will be `Nullable` only if the column contains `NULL` in a sample that is parsed during schema inference or file metadata contains information about column nullability.
+)", 0) \
+    DECLARE(Bool, schema_inference_make_json_columns_nullable, 0, R"(
+Controls making inferred JSON types `Nullable` in schema inference.
+If this setting is enabled together with schema_inference_make_columns_nullable, inferred JSON type will be `Nullable`.
 )", 0) \
     DECLARE(Bool, input_format_json_read_bools_as_numbers, true, R"(
 Allow parsing bools as numbers in JSON input formats.
@@ -487,7 +494,12 @@ When enabled, during parsing JSON object into JSON type duplicated paths will be
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
 )", 0) \
     DECLARE(Bool, input_format_json_empty_as_default, false, R"(
-Treat empty fields in JSON input as default values.
+When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
 )", 0) \
     DECLARE(Bool, input_format_try_infer_integers, true, R"(
 If enabled, ClickHouse will try to infer integers instead of floats in schema inference for text formats. If all numbers in the column from input data are integers, the result type will be `Int64`, if at least one number is float, the result type will be `Float64`.
@@ -511,7 +523,18 @@ When input_format_try_infer_datetimes is enabled, infer only DateTime64 but not 
 Try to infer floats in exponential notation while schema inference in text formats (except JSON, where exponent numbers are always inferred)
 )", 0) \
     DECLARE(Bool, output_format_markdown_escape_special_characters, false, R"(
-Escape special characters in Markdown
+When enabled, escape special characters in Markdown.
+
+[Common Mark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
+
+```
+! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
+```
+
+Possible values:
+
++ 0 — Disable.
++ 1 — Enable.
 )", 0) \
     DECLARE(Bool, input_format_protobuf_flatten_google_wrappers, false, R"(
 Enable Google wrappers for regular non-nested columns, e.g. google.protobuf.StringValue 'str' for String column 'str'. For Nullable columns empty wrappers are recognized as defaults, and missing as nulls
@@ -672,7 +695,7 @@ Write values of [JSON](../../sql-reference/data-types/newjson.md) data type as J
 )", 0) \
     \
     DECLARE(Bool, output_format_json_quote_64bit_integers, true, R"(
-Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](../../interfaces/formats.md/#json) format.
+Controls quoting of 64-bit or bigger [integers](../../sql-reference/data-types/int-uint.md) (like `UInt64` or `Int128`) when they are output in a [JSON](/interfaces/formats/JSON) format.
 Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
 
 Possible values:
@@ -681,7 +704,7 @@ Possible values:
 - 1 — Integers are enclosed in quotes.
 )", 0) \
     DECLARE(Bool, output_format_json_quote_denormals, false, R"str(
-Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](../../interfaces/formats.md/#json) output format.
+Enables `+nan`, `-nan`, `+inf`, `-inf` outputs in [JSON](/interfaces/formats/JSON) output format.
 
 Possible values:
 
@@ -801,7 +824,7 @@ Enabled by default.
 Skip key value pairs with null value when serialize named tuple columns as JSON objects. It is only valid when output_format_json_named_tuples_as_objects is true.
 )", 0) \
     DECLARE(Bool, output_format_json_array_of_rows, false, R"(
-Enables the ability to output all rows as a JSON array in the [JSONEachRow](../../interfaces/formats.md/#jsoneachrow) format.
+Enables the ability to output all rows as a JSON array in the [JSONEachRow](/interfaces/formats/JSONEachRow) format.
 
 Possible values:
 
@@ -850,48 +873,17 @@ Controls validation of UTF-8 sequences in JSON output formats, doesn't impact fo
 Disabled by default.
 )", 0) \
     DECLARE(Bool, output_format_json_pretty_print, true, R"(
-When enabled, values in JSON output format will be printed in pretty format.
+When enabled, values of complex data types like Tuple/Array/Map in JSON output format in 'data' section will be printed in pretty format.
 
 Enabled by default.
 )", 0) \
     \
     DECLARE(String, format_json_object_each_row_column_for_object_name, "", R"(
-The name of column that will be used for storing/writing object names in [JSONObjectEachRow](../../interfaces/formats.md/#jsonobjecteachrow) format.
+The name of column that will be used for storing/writing object names in [JSONObjectEachRow](/interfaces/formats/JSONObjectEachRow) format.
 Column type should be String. If value is empty, default names `row_{i}`will be used for object names.
-
-### input_format_json_compact_allow_variable_number_of_columns {#input_format_json_compact_allow_variable_number_of_columns}
-
-Allow variable number of columns in rows in JSONCompact/JSONCompactEachRow input formats.
-Ignore extra columns in rows with more columns than expected and treat missing columns as default values.
-
-Disabled by default.
-
-### output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
-
-When enabled, escape special characters in Markdown.
-
-[Common Mark](https://spec.commonmark.org/0.30/#example-12) defines the following special characters that can be escaped by \:
-
-```
-! " # $ % & ' ( ) * + , - . / : ; < = > ? @ [ \ ] ^ _ ` { | } ~
-```
-
-Possible values:
-
-+ 0 — Disable.
-+ 1 — Enable.
-
-### input_format_json_empty_as_default {#input_format_json_empty_as_default}
-
-When enabled, replace empty input fields in JSON with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
-
-Possible values:
-
-+ 0 — Disable.
-+ 1 — Enable.
 )", 0) \
     \
-    DECLARE(UInt64, output_format_pretty_max_rows, 10000, R"(
+    DECLARE(UInt64, output_format_pretty_max_rows, 1000, R"(
 Rows limit for Pretty formats.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_max_column_pad_width, 250, R"(
@@ -991,7 +983,24 @@ Target page size in bytes, before compression.
 Check page size every this many rows. Consider decreasing if you have columns with average values size above a few KBs.
 )", 0) \
     DECLARE(Bool, output_format_parquet_write_page_index, true, R"(
-Add a possibility to write page index into parquet files.
+Write column index and offset index (i.e. statistics about each data page, which may be used for filter pushdown on read) into parquet files.
+)", 0) \
+    DECLARE(Bool, output_format_parquet_write_bloom_filter, true, R"(
+Write bloom filters in parquet files. Requires output_format_parquet_use_custom_encoder = true.
+)", 0) \
+    DECLARE(Double, output_format_parquet_bloom_filter_bits_per_value, 10.5, R"(
+Approximate number of bits to use for each distinct value in parquet bloom filters. Estimated false positive rates:
+  *  6   bits - 10%
+  * 10.5 bits -  1%
+  * 16.9 bits -  0.1%
+  * 26.4 bits -  0.01%
+  * 41   bits -  0.001%
+)", 0) \
+    DECLARE(UInt64, output_format_parquet_bloom_filter_flush_threshold_bytes, 128 * 1024 * 1024, R"(
+Where in the parquet file to place the bloom filters. Bloom filters will be written in groups of approximately this size. In particular:
+  * if 0, each row group's bloom filters are written immediately after the row group,
+  * if greater than the total size of all bloom filters, bloom filters for all row groups will be accumulated in memory, then written together near the end of the file,
+  * otherwise, bloom filters will be accumulated in memory and written out whenever their total size goes above this value.
 )", 0) \
     DECLARE(Bool, output_format_parquet_datetime_as_uint32, false, R"(
 Write DateTime values as raw unix timestamp (read back as UInt32), instead of converting to milliseconds (read back as DateTime64(3)).
@@ -1054,7 +1063,7 @@ Method to write Errors to text output.
 )", 0) \
     \
     DECLARE(String, format_schema, "", R"(
-This parameter is useful when you are using formats that require a schema definition, such as [Cap’n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
+This parameter is useful when you are using formats that require a schema definition, such as [Cap'n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
 )", 0) \
     DECLARE(String, format_template_resultset, "", R"(
 Path to file which contains format string for result set (for Template format)
@@ -1128,14 +1137,17 @@ If not, they will be rendered as is, potentially deforming the table (one upside
 If enabled, and the table is wide but short, the Pretty format will output it as the Vertical format does.
 See `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` and `output_format_pretty_fallback_to_vertical_min_table_width` for detailed tuning of this behavior.
 )", 0) \
-    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_max_rows_per_chunk, 100, R"(
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_max_rows_per_chunk, 10, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of records in a chunk is not more than the specified value.
 )", 0) \
     DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_table_width, 250, R"(
 The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the sum of lengths of columns in a table is at least the specified value, or if at least one value contains a newline character.
 )", 0) \
+    DECLARE(UInt64, output_format_pretty_fallback_to_vertical_min_columns, 5, R"(
+The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`) will be activated only if the number of columns is greater than the specified value.
+)", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
-Enables or disables random shard insertion into a [Distributed](../../engines/table-engines/special/distributed.md/#distributed) table when there is no distributed key.
+Enables or disables random shard insertion into a [Distributed](/engines/table-engines/special/distributed) table when there is no distributed key.
 
 By default, when inserting data into a `Distributed` table with more than one shard, the ClickHouse server will reject any insertion request if there is no distributed key. When `insert_distributed_one_random_shard = 1`, insertions are allowed and data is forwarded randomly among all shards.
 
@@ -1201,7 +1213,7 @@ Use autogenerated CapnProto schema when format_schema is not set
 Use autogenerated Protobuf when format_schema is not set
 )", 0) \
     DECLARE(String, output_format_schema, "", R"(
-The path to the file where the automatically generated schema will be saved in [Cap’n Proto](../../interfaces/formats.md#capnproto-capnproto) or [Protobuf](../../interfaces/formats.md#protobuf-protobuf) formats.
+The path to the file where the automatically generated schema will be saved in [Cap'n Proto](/interfaces/formats/CapnProto) or [Protobuf](/interfaces/formats/Protobuf) formats.
 )", 0) \
     \
     DECLARE(String, input_format_mysql_dump_table_name, "", R"(
@@ -1245,7 +1257,7 @@ table functions, and dictionaries.
 User wishing to see secrets must also have
 [`display_secrets_in_show_and_select` server setting](../server-configuration-parameters/settings#display_secrets_in_show_and_select)
 turned on and a
-[`displaySecretsInShowAndSelect`](../../sql-reference/statements/grant#display-secrets) privilege.
+[`displaySecretsInShowAndSelect`](/sql-reference/statements/grant#displaysecretsinshowandselect) privilege.
 
 Possible values:
 

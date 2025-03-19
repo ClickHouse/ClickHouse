@@ -13,6 +13,7 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/FieldInterval.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
@@ -55,7 +56,7 @@ constexpr time_t MAX_DATETIME64_TIMESTAMP = 10413791999LL;    //  1900-01-01 00:
 constexpr time_t MIN_DATETIME64_TIMESTAMP = -2208988800LL;    //  2299-12-31 23:59:59 UTC
 constexpr time_t MAX_DATETIME_TIMESTAMP = 0xFFFFFFFF;
 constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;       // 2149-06-06 23:59:59 UTC
-constexpr time_t MAX_DATETIME_DAY_NUM =  49710;               // 2106-02-07
+constexpr time_t MAX_DATETIME_DAY_NUM =  49709;         // 2106-02-06 America/Hermosillo
 
 [[noreturn]] void throwDateIsNotSupported(const char * name);
 [[noreturn]] void throwDate32IsNotSupported(const char * name);
@@ -988,7 +989,7 @@ struct ToStartOfNanosecondImpl
         }
         if (scale_multiplier <= 1000000000)
         {
-            return datetime64 * (1000000000 / scale_multiplier);
+            return common::mulIgnoreOverflow(datetime64, 1000000000 / scale_multiplier);
         }
 
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type of argument for function {}, DateTime64 expected", name);
@@ -1210,12 +1211,12 @@ struct ToYearImpl
 
     static constexpr bool hasPreimage() { return true; }
 
-    static OptionalFieldInterval getPreimage(const IDataType & type, const Field & point)
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
     {
-        if (point.getType() != Field::Types::UInt64) return std::nullopt;
+        if (point.getType() != Field::Types::UInt64) return nullptr;
 
         auto year = point.safeGet<UInt64>();
-        if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return std::nullopt;
+        if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return nullptr;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
@@ -1223,7 +1224,7 @@ struct ToYearImpl
         auto end_time = date_lut.addYears(start_time, 1);
 
         if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return {std::make_pair(Field(start_time), Field(end_time))};
+            return std::make_shared<FieldInterval>(Field(start_time), Field(end_time));
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
@@ -1734,6 +1735,38 @@ struct ToRelativeYearNumImpl
 };
 
 template <ResultPrecision precision_>
+struct ToYearNumSinceEpochImpl
+{
+    static constexpr auto name = "toYearNumSinceEpoch";
+
+    static auto execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return time_zone.toYearSinceEpoch(t);
+        else
+            return static_cast<UInt16>(time_zone.toYearSinceEpoch(t));
+    }
+    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYearSinceEpoch(static_cast<time_t>(t));
+    }
+    static auto execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return time_zone.toYearSinceEpoch(ExtendedDayNum(d));
+        else
+            return static_cast<UInt16>(time_zone.toYearSinceEpoch(ExtendedDayNum(d)));
+    }
+    static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toYearSinceEpoch(DayNum(d));
+    }
+    static constexpr bool hasPreimage() { return false; }
+
+    using FactorTransform = ZeroTransform;
+};
+
+template <ResultPrecision precision_>
 struct ToRelativeQuarterNumImpl
 {
     static constexpr auto name = "toRelativeQuarterNum";
@@ -1791,6 +1824,38 @@ struct ToRelativeMonthNumImpl
     static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
     {
         return time_zone.toRelativeMonthNum(DayNum(d));
+    }
+    static constexpr bool hasPreimage() { return false; }
+
+    using FactorTransform = ZeroTransform;
+};
+
+template <ResultPrecision precision_>
+struct ToMonthNumSinceEpochImpl
+{
+    static constexpr auto name = "toMonthNumSinceEpoch";
+
+    static auto execute(Int64 t, const DateLUTImpl & time_zone)
+    {
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return time_zone.toMonthNumSinceEpoch(t);
+        else
+            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(t));
+    }
+    static UInt16 execute(UInt32 t, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toMonthNumSinceEpoch(static_cast<time_t>(t));
+    }
+    static auto execute(Int32 d, const DateLUTImpl & time_zone)
+    {
+        if constexpr (precision_ == ResultPrecision::Extended)
+            return time_zone.toMonthNumSinceEpoch(ExtendedDayNum(d));
+        else
+            return static_cast<UInt16>(time_zone.toMonthNumSinceEpoch(ExtendedDayNum(d)));
+    }
+    static UInt16 execute(UInt16 d, const DateLUTImpl & time_zone)
+    {
+        return time_zone.toMonthNumSinceEpoch(DayNum(d));
     }
     static constexpr bool hasPreimage() { return false; }
 
@@ -2013,16 +2078,16 @@ struct ToYYYYMMImpl
     }
     static constexpr bool hasPreimage() { return true; }
 
-    static OptionalFieldInterval getPreimage(const IDataType & type, const Field & point)
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
     {
-        if (point.getType() != Field::Types::UInt64) return std::nullopt;
+        if (point.getType() != Field::Types::UInt64) return nullptr;
 
         auto year_month = point.safeGet<UInt64>();
         auto year = year_month / 100;
         auto month = year_month % 100;
 
         if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_YEAR && month == 12))
-            return std::nullopt;
+            return nullptr;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
@@ -2030,7 +2095,7 @@ struct ToYYYYMMImpl
         auto end_time = date_lut.addMonths(start_time, 1);
 
         if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return {std::make_pair(Field(start_time), Field(end_time))};
+            return std::make_shared<FieldInterval>(Field(start_time), Field(end_time));
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",

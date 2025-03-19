@@ -10,6 +10,7 @@ import signal
 import subprocess
 import sys
 import time
+import traceback
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -122,6 +123,7 @@ class Shell:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            executable="/bin/bash",
         )
         if res.stderr:
             print(f"WARNING: stderr: {res.stderr.strip()}")
@@ -407,7 +409,7 @@ class Utils:
 
     @staticmethod
     def cwd():
-        return Path.cwd()
+        return str(Path.cwd())
 
     @staticmethod
     def cpu_count():
@@ -420,7 +422,7 @@ class Utils:
 
     @staticmethod
     def timestamp():
-        return datetime.utcnow().timestamp()
+        return datetime.now().timestamp()
 
     @staticmethod
     def timestamp_to_str(timestamp):
@@ -469,20 +471,23 @@ class Utils:
         res = string.lower()
         for r in (
             (" ", "_"),
-            ("(", ""),
-            (")", ""),
-            ("{", ""),
-            ("}", ""),
-            ("'", ""),
-            ("[", ""),
-            ("]", ""),
-            (",", ""),
+            ("(", "_"),
+            (")", "_"),
+            ("{", "_"),
+            ("}", "_"),
+            ("'", "_"),
+            ("[", "_"),
+            ("]", "_"),
+            (",", "_"),
             ("/", "_"),
             ("-", "_"),
-            (":", ""),
-            ('"', ""),
+            (":", "_"),
+            ('"', "_"),
+            ("&", "_"),
         ):
             res = res.replace(*r)
+            res = re.sub(r"_+", "_", res)
+            res = res.rstrip("_")
         return res
 
     @staticmethod
@@ -535,16 +540,12 @@ class Utils:
         for path in include_paths:
             included_files_.update(cls.traverse_path(path, file_suffixes=file_suffixes))
 
-        excluded_files = set()
-        for path in exclude_paths:
-            res = cls.traverse_path(path, not_exists_ok=not_exists_ok)
-            if not res:
-                print(
-                    f"WARNING: Utils.traverse_paths excluded 0 files by path [{path}] in exclude_paths"
-                )
-            else:
-                excluded_files.update(res)
-        res = [f for f in included_files_ if f not in excluded_files]
+        exclude_paths = ["./" + p.removeprefix("./") for p in exclude_paths]
+        res = [
+            f
+            for f in included_files_
+            if not any(f.startswith(exclude_path) for exclude_path in exclude_paths)
+        ]
         if sorted:
             res.sort(reverse=True)
         return res
@@ -558,11 +559,11 @@ class Utils:
 
     class Stopwatch:
         def __init__(self):
-            self.start_time = datetime.utcnow().timestamp()
+            self.start_time = datetime.now().timestamp()
 
         @property
         def duration(self) -> float:
-            return datetime.utcnow().timestamp() - self.start_time
+            return datetime.now().timestamp() - self.start_time
 
 
 class TeePopen:

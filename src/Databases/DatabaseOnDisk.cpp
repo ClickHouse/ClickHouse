@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <iterator>
+#include <memory>
 #include <span>
 #include <Core/Settings.h>
 #include <Databases/DatabaseAtomic.h>
@@ -12,6 +13,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
+#include <IO/WriteSettings.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -19,7 +21,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
@@ -54,8 +55,6 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
 }
 
-static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
-
 namespace ErrorCodes
 {
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
@@ -85,7 +84,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     ast_create_query.setDatabase(database_name);
 
     if (ast_create_query.select && ast_create_query.isView())
-        ApplyWithSubqueryVisitor::visit(*ast_create_query.select);
+        ApplyWithSubqueryVisitor(context).visit(*ast_create_query.select);
 
     if (ast_create_query.as_table_function)
     {
@@ -152,7 +151,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     auto * create = query_clone->as<ASTCreateQuery>();
 
     if (!create)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
 
     /// Clean the query from temporary flags.
     cleanupObjectDefinitionFromTemporaryFlags(*create);
@@ -168,7 +167,8 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
         create->setTable(TABLE_WITH_UUID_NAME_PLACEHOLDER);
 
     WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     return statement_buf.str();
 }
@@ -209,7 +209,6 @@ void DatabaseOnDisk::createTable(
 {
     createDirectories();
 
-    const auto & settings = local_context->getSettingsRef();
     const auto & create = query->as<ASTCreateQuery &>();
     assert(table_name == create.getTable());
 
@@ -261,20 +260,14 @@ void DatabaseOnDisk::createTable(
     }
 
     String table_metadata_tmp_path = table_metadata_path + create_suffix;
-    String statement;
 
     {
-        statement = getObjectDefinitionFromCreateQuery(query);
+        String statement = getObjectDefinitionFromCreateQuery(query);
 
         /// Exclusive flags guarantees, that table is not created right now in another thread. Otherwise, exception will be thrown.
-        auto out = db_disk->writeFile(table_metadata_tmp_path, statement.size());
-        writeString(statement, *out);
-
-        out->next();
-        if (settings[Setting::fsync_metadata])
-            out->sync();
-        out->finalize();
-        out.reset();
+        const auto & settings = local_context->getSettingsRef();
+        writeMetadataFile(
+            db_disk, /*file_path=*/table_metadata_tmp_path, /*content=*/statement, /*fsync_metadata=*/settings[Setting::fsync_metadata]);
     }
 
     commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path, local_context);
@@ -544,10 +537,10 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, Contex
     bool is_system_storage = false;
     if (has_table)
         is_system_storage = storage->isSystemStorage();
-    auto table_metadata_path = getObjectMetadataPath(table_name);
+
     try
     {
-        ast = getCreateQueryFromMetadata(table_metadata_path, throw_on_error);
+        ast = getCreateQueryFromMetadata(table_name, throw_on_error);
     }
     catch (const Exception & e)
     {
@@ -751,20 +744,13 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     {
         if (!throw_on_error)
             return nullptr;
-
-        ErrnoException::throwFromPath(
-            errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE,
-            metadata_file_path,
-            "Cannot open file {}",
-            metadata_file_path);
+        int ec = ErrorCodes::FILE_DOESNT_EXIST;
+        if (auto disk_local = std::dynamic_pointer_cast<DiskLocal>(db_disk))
+            ec = errno == ENOENT ? ErrorCodes::FILE_DOESNT_EXIST : ErrorCodes::CANNOT_OPEN_FILE;
+        ErrnoException::throwFromPath(ec, metadata_file_path, "Cannot open file {}", metadata_file_path);
     }
 
-    ReadSettings read_settings = getReadSettings();
-    read_settings.local_fs_method = LocalFSReadMethod::read;
-    read_settings.local_fs_buffer_size = METADATA_FILE_BUFFER_SIZE;
-    auto read_buf = db_disk->readFile(metadata_file_path, read_settings);
-    String query;
-    readStringUntilEOF(query, *read_buf);
+    String query = readMetadataFile(db_disk, metadata_file_path);
 
     /** Empty files with metadata are generated after a rough restart of the server.
       * Remove these files to slightly reduce the work of the admins on startup.
@@ -773,10 +759,21 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     {
         if (logger)
             LOG_ERROR(logger, "File {} is empty. Removing.", metadata_file_path);
+
         db_disk->removeFileIfExists(metadata_file_path);
         return nullptr;
     }
 
+    return parseQueryFromMetadata(logger, local_context, metadata_file_path, query, throw_on_error);
+}
+
+ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
+    LoggerPtr logger,
+    ContextPtr local_context,
+    const String & metadata_file_path,
+    const String & query,
+    bool throw_on_error /*= true*/)
+{
     const auto & settings = local_context->getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
@@ -817,9 +814,9 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metadata_path, bool throw_on_error) const
+ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & table_name, bool throw_on_error) const
 {
-    ASTPtr ast = parseQueryFromMetadata(log, getContext(), database_metadata_path, throw_on_error);
+    ASTPtr ast = parseQueryFromMetadata(log, getContext(), getObjectMetadataPath(table_name), throw_on_error);
 
     if (ast)
     {
@@ -894,7 +891,8 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     create->if_not_exists = false;
 
     WriteBufferFromOwnString statement_buf;
-    formatAST(*create, statement_buf, false);
+    IAST::FormatSettings format_settings(/*one_line=*/false, /*hilite*/false);
+    create->format(statement_buf, format_settings);
     writeChar('\n', statement_buf);
     String statement = statement_buf.str();
 
@@ -902,15 +900,8 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
     fs::path metadata_file_tmp_path = fs::path("metadata") / (database_name_escaped + ".sql.tmp");
     fs::path metadata_file_path = fs::path("metadata") / (database_name_escaped + ".sql");
 
-    auto out = db_disk->writeFile(metadata_file_tmp_path, statement.size());
-
-    writeString(statement, *out);
-
-    out->next();
-    if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-        out->sync();
-    out->finalize();
-    out.reset();
+    writeMetadataFile(
+        db_disk, /*file_path=*/metadata_file_tmp_path, /*content=*/statement, getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     db_disk->replaceFile(metadata_file_tmp_path, metadata_file_path);
 }

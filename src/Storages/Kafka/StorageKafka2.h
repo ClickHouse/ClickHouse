@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Core/BackgroundSchedulePool.h>
-#include <Core/Block.h>
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
+#include <Core/Block_fwd.h>
 #include <Core/StreamingHandleErrorMode.h>
 #include <Core/Types.h>
 #include <Storages/IStorage.h>
@@ -94,6 +94,9 @@ public:
 
     StreamingHandleErrorMode getHandleKafkaErrorMode() const;
 
+    bool supportsDynamicSubcolumns() const override { return true; }
+    bool supportsSubcolumns() const override { return true; }
+
 private:
     using TopicPartition = KafkaConsumer2::TopicPartition;
     using TopicPartitions = KafkaConsumer2::TopicPartitions;
@@ -130,9 +133,9 @@ private:
     // Stream thread
     struct TaskContext
     {
-        BackgroundSchedulePool::TaskHolder holder;
+        BackgroundSchedulePoolTaskHolder holder;
         std::atomic<bool> stream_cancelled{false};
-        explicit TaskContext(BackgroundSchedulePool::TaskHolder && task_) : holder(std::move(task_)) { }
+        explicit TaskContext(BackgroundSchedulePoolTaskHolder && task_) : holder(std::move(task_)) { }
     };
 
     enum class AssignmentChange
@@ -145,7 +148,8 @@ private:
     // Configuration and state
     mutable std::mutex keeper_mutex;
     zkutil::ZooKeeperPtr keeper;
-    String keeper_path;
+    const String keeper_path;
+    const std::filesystem::path fs_keeper_path;
     String replica_path;
     std::unique_ptr<KafkaSettings> kafka_settings;
     Macros::MacroExpansionInfo macros_info;
@@ -176,7 +180,7 @@ private:
     // Handling replica activation.
     std::atomic<bool> is_active = false;
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
-    BackgroundSchedulePool::TaskHolder activating_task;
+    BackgroundSchedulePoolTaskHolder activating_task;
     String active_node_identifier;
     UInt64 consecutive_activate_failures = 0;
     bool activate();

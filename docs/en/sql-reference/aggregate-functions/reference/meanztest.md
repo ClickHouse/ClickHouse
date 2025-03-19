@@ -1,7 +1,9 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/meanztest
+description: 'Applies mean z-test to samples from two populations.'
+sidebar_label: 'meanZTest'
 sidebar_position: 166
-sidebar_label: meanZTest
+slug: /sql-reference/aggregate-functions/reference/meanztest
+title: 'meanZTest'
 ---
 
 # meanZTest

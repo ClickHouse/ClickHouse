@@ -4,6 +4,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Core/Protocol.h>
 #include <Core/Settings.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
@@ -75,6 +76,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
     , stage(stage_)
     , extension(extension_)
     , priority_func(priority_func_)
+    , read_packet_type_separately(context->canUseParallelReplicasOnInitiator() && !context->getSettingsRef()[Setting::use_hedged_requests])
 {
 }
 
@@ -444,7 +446,10 @@ int RemoteQueryExecutor::sendQueryAsync()
         return -1;
 
     if (!read_context)
-        read_context = std::make_unique<ReadContext>(*this, /*suspend_when_query_sent*/ true);
+        read_context = std::make_unique<ReadContext>(
+            *this,
+            /*suspend_when_query_sent*/ true,
+            read_packet_type_separately);
 
     /// If query already sent, do nothing. Note that we cannot use sent_query flag here,
     /// because we can still be in process of sending scalars or external tables.
@@ -514,7 +519,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
-        read_context = std::make_unique<ReadContext>(*this);
+        read_context = std::make_unique<ReadContext>(
+            *this,
+            /*suspend_when_query_sent*/ false,
+            read_packet_type_separately);
         recreate_read_context = false;
     }
 
@@ -524,9 +532,16 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
         if (was_cancelled)
             return ReadResult(Block());
 
-        if (has_postponed_packet)
+        if (packet_in_progress)
         {
-            has_postponed_packet = false;
+            chassert(read_context->readPacketTypeSeparately());
+            chassert(read_context->hasReadTillPacketType());
+
+            /// packet type is handled already, read and parse packet itself
+            if (!read_context->hasReadPacket() && !read_context->read())
+                return ReadResult(read_context->getFileDescriptor());
+
+            packet_in_progress = false;
             auto read_result = processPacket(read_context->getPacket());
             if (read_result.getType() == ReadResult::Type::Data || read_result.getType() == ReadResult::Type::ParallelReplicasToken)
                 return read_result;
@@ -553,6 +568,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::readAsync()
 
         /// Check if packet is not ready yet.
         if (read_context->isInProgress())
+            return ReadResult(read_context->getFileDescriptor());
+
+        /// if reading separately packet header and body enabled, try to read packet itself this time
+        if (read_context->readPacketTypeSeparately() && !read_context->hasReadPacket() && !read_context->read())
             return ReadResult(read_context->getFileDescriptor());
 
         auto read_result = processPacket(read_context->getPacket());
@@ -961,32 +980,32 @@ bool RemoteQueryExecutor::processParallelReplicaPacketIfAny()
 {
 #if defined(OS_LINUX)
 
+    if (!read_context->readPacketTypeSeparately())
+        return false;
+
     OpenTelemetry::SpanHolder span_holder{"RemoteQueryExecutor::processParallelReplicaPacketIfAny"};
 
     std::lock_guard lock(was_cancelled_mutex);
     if (was_cancelled)
         return false;
 
-    if (!read_context || (resent_query && recreate_read_context))
-    {
-        read_context = std::make_unique<ReadContext>(*this);
-        recreate_read_context = false;
-    }
-
-    chassert(!has_postponed_packet);
-
-    read_context->resume();
-    if (read_context->isInProgress()) // <- nothing to process
+    // try to read packet type if hasn't read it yet
+    if (!read_context->hasReadTillPacketType() && !read_context->read())
         return false;
+
+    packet_in_progress = true;
 
     const auto packet_type = read_context->getPacketType();
     if (packet_type == Protocol::Server::MergeTreeReadTaskRequest || packet_type == Protocol::Server::MergeTreeAllRangesAnnouncement)
     {
+        // try to read packet if hasn't read it yet
+        if (!read_context->hasReadPacket() && !read_context->read())
+            return false;
+
+        packet_in_progress = false;
         processPacket(read_context->getPacket());
         return true;
     }
-
-    has_postponed_packet = true;
 
 #endif
 
