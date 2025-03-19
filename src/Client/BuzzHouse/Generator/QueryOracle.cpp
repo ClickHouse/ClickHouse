@@ -630,7 +630,7 @@ void QueryOracle::replaceQueryWithTablePeers(
         Insert * ins = next.mutable_explain()->mutable_inner_query()->mutable_insert();
         SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
 
-        // Then insert the data
+        /// Then insert the data
         gen.setTableRemote(rg, false, t, ins->mutable_tfunction());
         JoinedTableOrFunction * jtf = sel->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
 

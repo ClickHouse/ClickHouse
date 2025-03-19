@@ -6,6 +6,30 @@
 namespace BuzzHouse
 {
 
+StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs)
+    : fc(fuzzc)
+    , connections(conn)
+    , supports_cloud_features(scf)
+    , replica_setup(hrs)
+    , deterministic_funcs_limit(static_cast<size_t>(
+          std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
+    , deterministic_aggrs_limit(static_cast<size_t>(
+          std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
+{
+    chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
+
+    for (size_t i = 0; i < deterministic_funcs_limit; i++)
+    {
+        /// Add single argument functions for non sargable predicates
+        const CHFunction & next = CHFuncs[i];
+
+        if (next.min_lambda_param == 0 && next.min_args == 1)
+        {
+            one_arg_funcs.push_back(next);
+        }
+    }
+}
+
 void StatementGenerator::generateStorage(RandomGenerator & rg, Storage * store) const
 {
     store->set_storage(static_cast<Storage_DataStorage>((rg.nextRandomUInt32() % static_cast<uint32_t>(Storage::DataStorage_MAX)) + 1));

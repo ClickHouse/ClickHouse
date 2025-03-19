@@ -85,7 +85,7 @@ void collectColumnPaths(
             next.path.pop_back();
         }
     }
-    // Remove the last element from the path
+    /// Remove the last element from the path
     next.path.pop_back();
 }
 
@@ -562,6 +562,14 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                         bexpr->set_op(BinaryOperator::BINOP_PERCENT);
                         bexpr->mutable_rhs()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
                             rg.nextRandomUInt32() % (rg.nextBool() ? 1024 : 65536));
+                    }
+                    else if (rg.nextMediumNumber() < 4)
+                    {
+                        /// Use any one arg function
+                        SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
+
+                        func_call->mutable_func()->set_catalog_func(static_cast<SQLFunc>(rg.pickRandomly(this->one_arg_funcs).fnum));
+                        columnPathRef(entry, func_call->add_args()->mutable_expr());
                     }
                     else if (teng != TableEngineValues::SummingMergeTree && rg.nextMediumNumber() < 6)
                     {

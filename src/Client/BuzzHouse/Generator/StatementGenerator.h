@@ -147,6 +147,7 @@ private:
            34,  35,   36,   37,   38,   39,     40,     41,     42,  43,  44,  126, 127, 128, 129, 32766, 32767};
 
     std::vector<uint32_t> ids;
+    std::vector<CHFunction> one_arg_funcs;
     std::vector<ColumnPathChain> entries, table_entries, remote_entries;
     std::vector<std::reference_wrapper<const ColumnPathChain>> filtered_entries;
     std::vector<std::reference_wrapper<const SQLColumn>> filtered_columns;
@@ -423,18 +424,7 @@ public:
     template <bool RequireMergeTree>
     auto getQueryTableLambda();
 
-    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs)
-        : fc(fuzzc)
-        , connections(conn)
-        , supports_cloud_features(scf)
-        , replica_setup(hrs)
-        , deterministic_funcs_limit(static_cast<size_t>(
-              std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
-        , deterministic_aggrs_limit(static_cast<size_t>(
-              std::find_if(CHAggrs.begin(), CHAggrs.end(), StatementGenerator::aggrNotDeterministicIndexLambda) - CHAggrs.begin()))
-    {
-        chassert(enum8_ids.size() > enum_values.size() && enum16_ids.size() > enum_values.size());
-    }
+    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs);
 
     void generateNextCreateTable(RandomGenerator & rg, CreateTable * ct);
     void generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd);
