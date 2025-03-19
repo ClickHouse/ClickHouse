@@ -66,8 +66,13 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.4",
+        {
+
+        });
         addSettingsChanges(settings_changes_history, "25.3",
         {
+            /// Release closed. Please use 25.4
             {"allow_experimental_database_unity_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"},
             {"allow_experimental_database_glue_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"},
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
@@ -75,6 +80,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_timestamp_ms", 0, 0, "New setting."},
             {"iceberg_snapshot_id", 0, 0, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
+            /// Release closed. Please use 25.4
         });
         addSettingsChanges(settings_changes_history, "25.2",
         {
@@ -674,10 +680,17 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "25.4",
+        {
+
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "25.3",
         {
+            /// Release closed. Please use 25.4
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
             {"zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock", 0, 0, "New setting"},
+            {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", false, false, "New setting to allow automatic cleanup merges for ReplacingMergeTree"},
+            /// Release closed. Please use 25.4
         });
         addSettingsChanges(merge_tree_settings_changes_history, "25.2",
         {
@@ -688,7 +701,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"columns_and_secondary_indices_sizes_lazy_calculation", true, true, "New setting to calculate columns and indices sizes lazily"},
             {"table_disk", false, false, "New setting"},
             {"allow_reduce_blocking_parts_task", false, true, "Now SMT will remove stale blocking parts from ZooKeeper by default"},
-            {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", false, false, "New setting to allow automatic cleanup merges for ReplacingMergeTree"},
             {"shared_merge_tree_max_suspicious_broken_parts", 0, 0, "Max broken parts for SMT, if more - deny automatic detach"},
             {"shared_merge_tree_max_suspicious_broken_parts_bytes", 0, 0, "Max size of all broken parts for SMT, if more - deny automatic detach"},
             /// Release closed. Please use 25.3

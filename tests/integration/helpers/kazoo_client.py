@@ -11,6 +11,9 @@ class KazooClientWithImplicitRetries(KazooClient):
     def create(self, *args, **kwargs):
         return self.retry(super().create, *args, **kwargs)
 
+    def delete(self, *args, **kwargs):
+        return self.retry(super().delete, *args, **kwargs)
+
     def get(self, *args, **kwargs):
         return self.retry(super().get, *args, **kwargs)
 

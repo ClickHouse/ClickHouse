@@ -1897,11 +1897,12 @@ def test_partition_pruning(started_cluster, storage_type):
                 date2 DATE,
                 ts TIMESTAMP,
                 ts2 TIMESTAMP,
-                time_struct struct<a : DATE, b : TIMESTAMP>
-
+                time_struct struct<a : DATE, b : TIMESTAMP>,
+                name VARCHAR(50),
+                number BIGINT
             )
             USING iceberg
-            PARTITIONED BY (identity(tag), days(date), years(date2), hours(ts), months(ts2))
+            PARTITIONED BY (identity(tag), days(date), years(date2), hours(ts), months(ts2), TRUNCATE(3, name), TRUNCATE(3, number))
             OPTIONS('format-version'='2')
         """
     )
@@ -1910,13 +1911,13 @@ def test_partition_pruning(started_cluster, storage_type):
         f"""
         INSERT INTO {TABLE_NAME} VALUES
         (1, DATE '2024-01-20', DATE '2024-01-20',
-        TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-01-20', 'b', TIMESTAMP '2024-02-20 10:00:00')),
+        TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-01-20', 'b', TIMESTAMP '2024-02-20 10:00:00'), 'vasya', 5),
         (2, DATE '2024-01-30', DATE '2024-01-30',
-        TIMESTAMP '2024-03-20 15:00:00', TIMESTAMP '2024-03-20 15:00:00', named_struct('a', DATE '2024-03-20', 'b', TIMESTAMP '2024-03-20 14:00:00')),
+        TIMESTAMP '2024-03-20 15:00:00', TIMESTAMP '2024-03-20 15:00:00', named_struct('a', DATE '2024-03-20', 'b', TIMESTAMP '2024-03-20 14:00:00'), 'vasilisa', 6),
         (1, DATE '2024-02-20', DATE '2024-02-20',
-        TIMESTAMP '2024-03-20 20:00:00', TIMESTAMP '2024-03-20 20:00:00', named_struct('a', DATE '2024-02-20', 'b', TIMESTAMP '2024-02-20 10:00:00')),
+        TIMESTAMP '2024-03-20 20:00:00', TIMESTAMP '2024-03-20 20:00:00', named_struct('a', DATE '2024-02-20', 'b', TIMESTAMP '2024-02-20 10:00:00'), 'iceberg', 7),
         (2, DATE '2025-01-20', DATE '2025-01-20',
-        TIMESTAMP '2024-04-30 14:00:00', TIMESTAMP '2024-04-30 14:00:00', named_struct('a', DATE '2024-04-30', 'b', TIMESTAMP '2024-04-30 14:00:00'));
+        TIMESTAMP '2024-04-30 14:00:00', TIMESTAMP '2024-04-30 14:00:00', named_struct('a', DATE '2024-04-30', 'b', TIMESTAMP '2024-04-30 14:00:00'), 'icebreaker', 8);
     """
     )
 
@@ -2025,6 +2026,34 @@ def test_partition_pruning(started_cluster, storage_type):
         == 2
     )
 
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE name == 'vasilisa' ORDER BY ALL"
+        )
+        == 2
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE name < 'kek' ORDER BY ALL"
+        )
+        == 2
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE number == 8 ORDER BY ALL"
+        )
+        == 1
+    )
+
+    assert (
+        check_validity_and_get_prunned_files(
+            f"SELECT * FROM {creation_expression} WHERE number <= 5 ORDER BY ALL"
+        )
+        == 3
+    )
+
     execute_spark_query(f"ALTER TABLE {TABLE_NAME} RENAME COLUMN date TO date3")
 
     assert (
@@ -2053,7 +2082,7 @@ def test_partition_pruning(started_cluster, storage_type):
     )
 
     execute_spark_query(
-        f"INSERT INTO {TABLE_NAME} VALUES (1, DATE '2024-01-20', DATE '2024-01-20', TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-03-15', 'b', TIMESTAMP '2024-02-20 10:00:00'))"
+        f"INSERT INTO {TABLE_NAME} VALUES (1, DATE '2024-01-20', DATE '2024-01-20', TIMESTAMP '2024-02-20 10:00:00', TIMESTAMP '2024-02-20 10:00:00', named_struct('a', DATE '2024-03-15', 'b', TIMESTAMP '2024-02-20 10:00:00'), 'kek', 10)"
     )
 
     assert (
