@@ -998,7 +998,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     size_t exists_function_level = actions_stack.size() - 1;
     actions_stack[exists_function_level].addInputColumnIfNecessary(function_node_name, function_node.getResultType());
-    correlated_subtrees.subqueries.push_back(node);
+    correlated_subtrees.subqueries.emplace_back(function_node.getArguments().getNodes().front(), CorrelatedSubqueryKind::EXISTS);
     return { function_node_name, Levels(exists_function_level) };
 }
 

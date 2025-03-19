@@ -398,7 +398,9 @@ void addExpressionStep(QueryPlan & query_plan,
     query_plan.addStep(std::move(expression_step));
 }
 
-void addFilterStep(QueryPlan & query_plan,
+void addFilterStep(
+    const PlannerContextPtr & planner_context,
+    QueryPlan & query_plan,
     FilterAnalysisResult & filter_analysis_result,
     const SelectQueryOptions & select_query_options,
     const std::string & step_description,
@@ -406,7 +408,7 @@ void addFilterStep(QueryPlan & query_plan,
 {
     for (const auto & correlated_subquery : filter_analysis_result.correlated_subtrees.subqueries)
     {
-        buildQueryPlanForCorrelatedSubquery(correlated_subquery, select_query_options);
+        buildQueryPlanForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options);
     }
 
     auto actions = std::move(filter_analysis_result.filter_actions->dag);
@@ -1644,7 +1646,7 @@ void Planner::buildPlanForQueryNode()
     if (query_processing_info.isFirstStage())
     {
         if (expression_analysis_result.hasWhere())
-            addFilterStep(query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets);
+            addFilterStep(planner_context, query_plan, expression_analysis_result.getWhere(), select_query_options, "WHERE", useful_sets);
 
         if (expression_analysis_result.hasAggregation())
         {
@@ -1734,7 +1736,7 @@ void Planner::buildPlanForQueryNode()
             addCubeOrRollupStepIfNeeded(query_plan, aggregation_analysis_result, query_analysis_result, planner_context, select_query_info, query_node);
 
             if (!having_executed && expression_analysis_result.hasHaving())
-                addFilterStep(query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
+                addFilterStep(planner_context, query_plan, expression_analysis_result.getHaving(), select_query_options, "HAVING", useful_sets);
         }
 
         if (query_processing_info.isFromAggregationState())
@@ -1755,7 +1757,7 @@ void Planner::buildPlanForQueryNode()
             }
 
             if (expression_analysis_result.hasQualify())
-                addFilterStep(query_plan, expression_analysis_result.getQualify(), select_query_options, "QUALIFY", useful_sets);
+                addFilterStep(planner_context, query_plan, expression_analysis_result.getQualify(), select_query_options, "QUALIFY", useful_sets);
 
             auto & projection_analysis_result = expression_analysis_result.getProjection();
             addExpressionStep(query_plan, projection_analysis_result.projection_actions, "Projection", useful_sets);
