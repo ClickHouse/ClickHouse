@@ -42,7 +42,6 @@ n4 = cluster.add_instance(
         "configs/users.d/no_batch.xml",
         "configs/users.d/split.xml",
     ],
-    with_remote_database_disk=False,
 )
 
 batch_params = pytest.mark.parametrize(

@@ -110,6 +110,7 @@ def started_cluster():
                 "AWS_ACCESS_KEY_ID": minio_access_key,
                 "AWS_SECRET_ACCESS_KEY": minio_secret_key,
             },
+            with_remote_database_disk=False,
         )
 
         logging.info("Starting cluster...")

@@ -18,12 +18,11 @@ def started_cluster():
     try:
         run_uuid = uuid.uuid4()
         cluster = ClickHouseCluster(__file__, str(run_uuid))
-
+        # Disable `with_remote_database_disk` as the test does not use the default Keeper.
         cluster.add_instance(
             "node1",
             main_configs=["configs/enable_keeper1.xml"],
             stay_alive=True,
-            with_remote_database_disk=False,
         )
         cluster.add_instance(
             "node2",

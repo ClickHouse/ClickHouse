@@ -1,10 +1,10 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.database_disk import get_database_disk_name, replace_text_in_metadata
+from helpers.database_disk import replace_text_in_metadata
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", stay_alive=True, with_remote_database_disk=False)
+node = cluster.add_instance("node", stay_alive=True)
 
 
 @pytest.fixture(scope="module")
