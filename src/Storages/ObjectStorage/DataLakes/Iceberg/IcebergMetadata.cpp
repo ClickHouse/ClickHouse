@@ -53,7 +53,8 @@ constexpr const char * COLUMN_MANIFEST_FILE_PATH_NAME = "manifest_path";
 constexpr const char * FIELD_FORMAT_VERSION_NAME = "format-version";
 
 std::pair<Int32, Poco::JSON::Object::Ptr>
-parseTableSchemaFromManifestFile(const AvroForIcebergDeserializer & deserializer, const String & manifest_file_name) {
+parseTableSchemaFromManifestFile(const AvroForIcebergDeserializer & deserializer, const String & manifest_file_name)
+{
     auto schema_json_string = deserializer.tryGetAvroMetadataValue("schema");
     if (!schema_json_string.has_value())
         throw Exception(
