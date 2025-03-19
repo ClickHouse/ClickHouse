@@ -243,7 +243,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolReader::submit(Request reques
         ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadBytes, bytes_read);
         ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, request.ignore);
 
-        return Result{ .size = bytes_read, .offset = request.ignore };
+        return Result{ .size = bytes_read, .offset = request.ignore, .page_cache_cell = nullptr };
     }, request.priority);
 }
 

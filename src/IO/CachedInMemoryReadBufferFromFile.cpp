@@ -41,6 +41,19 @@ bool CachedInMemoryReadBufferFromFile::isSeekCheap()
     return available() == 0 || last_read_hit_cache;
 }
 
+bool CachedInMemoryReadBufferFromFile::isContentCached(size_t offset, size_t /*size*/)
+{
+    /// There's a tradeoff here: we waste time doing the cache lookup twice (here, then in nextImpl),
+    /// but save ThreadPoolRemoteFSReader the overhead of passing the task to another thread and back.
+    /// Is this net faster? On the one test I tried it gave a small speedup.
+    /// Would probably be better to change this API to actually perform a read if it's a cache hit,
+    /// then we wouldn't need to look up twice.
+    PageCacheKey temp_key = cache_key;
+    temp_key.offset = offset / block_size * block_size;
+    temp_key.size = std::min(block_size, file_size.value() - temp_key.offset);
+    return cache->contains(temp_key, settings.page_cache_inject_eviction);
+}
+
 off_t CachedInMemoryReadBufferFromFile::seek(off_t off, int whence)
 {
     if (whence != SEEK_SET)
@@ -136,7 +149,11 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                     /// Use aligned groups of blocks (rather than sliding window) to work better
                     /// with distributed cache.
                     size_t lookahead_bytes = block_size * lookahead_blocks;
-                    size_t lookahead_block_end = std::min(file_size.value(), (cache_key.offset / lookahead_bytes + 1) * lookahead_bytes);
+                    size_t lookahead_block_end = std::min(std::min(
+                        file_size.value(),
+                        (cache_key.offset / lookahead_bytes + 1) * lookahead_bytes),
+                        (read_until_position + block_size - 1) / block_size * block_size);
+
                     if (inner_read_until_position < cache_key.offset + cache_key.size ||
                         inner_read_until_position > lookahead_block_end)
                     {

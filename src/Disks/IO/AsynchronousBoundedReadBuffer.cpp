@@ -2,10 +2,12 @@
 
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Common/typeid_cast.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Interpreters/FilesystemReadPrefetchesLog.h>
 #include <Interpreters/Context.h>
 #include <base/getThreadId.h>
@@ -67,6 +69,15 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     , prefetches_log(prefetches_log_)
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
+
+    const auto * cached_impl = typeid_cast<const CachedInMemoryReadBufferFromFile *>(impl.get());
+    if (cached_impl && reader.supportsUserspacePageCache())
+    {
+        /// When using userspace page cache, we directly use memory owned by the cache instead of
+        /// allocating our own buffers.
+        use_page_cache = true;
+        buffer_size = cached_impl->getPageCache()->defaultBlockSize();
+    }
 }
 
 String AsynchronousBoundedReadBuffer::getInfoForLog()
@@ -107,6 +118,7 @@ std::future<IAsynchronousReader::Result> AsynchronousBoundedReadBuffer::readAsyn
     request.offset = file_offset_of_buffer_end;
     request.priority = Priority{read_settings.priority.value + priority.value};
     request.ignore = bytes_to_ignore;
+    request.use_page_cache = use_page_cache;
     return reader.submit(request);
 }
 
@@ -118,6 +130,7 @@ IAsynchronousReader::Result AsynchronousBoundedReadBuffer::readSync(char * data,
     request.size = size;
     request.offset = file_offset_of_buffer_end;
     request.ignore = bytes_to_ignore;
+    request.use_page_cache = use_page_cache;
     return reader.execute(request);
 }
 
@@ -132,8 +145,9 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
     last_prefetch_info.submit_time = std::chrono::system_clock::now();
     last_prefetch_info.priority = priority;
 
-    prefetch_buffer.resize(buffer_size);
-    prefetch_future = readAsync(prefetch_buffer.data(), prefetch_buffer.size(), priority);
+    if (!use_page_cache)
+        prefetch_buffer.resize(buffer_size);
+    prefetch_future = readAsync(prefetch_buffer.data(), buffer_size, priority);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
 
@@ -237,7 +251,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
 
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
-            result = readSync(memory.data(), memory.size());
+            result = readSync(memory.data(), buffer_size);
         }
 
         ProfileEvents::increment(ProfileEvents::RemoteFSUnprefetchedReads);
@@ -250,9 +264,18 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     size_t bytes_read = result.size - result.offset;
     if (bytes_read)
     {
+        if (use_page_cache)
+        {
+            page_cache_cell = result.page_cache_cell;
+            internal_buffer = Buffer(page_cache_cell->data(), page_cache_cell->data() + page_cache_cell->size());
+        }
+        else
+        {
+            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
+        }
+
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-        working_buffer = Buffer(memory.data() + result.offset, memory.data() + result.size);
+        working_buffer = Buffer(internal_buffer.begin() + result.offset, internal_buffer.begin() + result.size);
         pos = working_buffer.begin();
     }
 
@@ -341,6 +364,7 @@ off_t AsynchronousBoundedReadBuffer::seek(off_t offset, int whence)
 
     /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();
+    page_cache_cell = nullptr;
     bytes_to_ignore = 0;
 
     if (read_until_position && new_pos > *read_until_position)
@@ -396,11 +420,11 @@ void AsynchronousBoundedReadBuffer::resetPrefetch(FilesystemPrefetchState state)
     if (!prefetch_future.valid())
         return;
 
-    auto [size, offset, _] = prefetch_future.get();
+    auto result = prefetch_future.get();
     prefetch_future = {};
     last_prefetch_info = {};
 
-    ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, size);
+    ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, result.size);
 
     switch (state)
     {

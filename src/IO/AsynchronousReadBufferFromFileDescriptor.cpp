@@ -56,7 +56,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
     /// This is a workaround of a read pass EOF bug in linux kernel with pread()
     if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
     {
-        return std::async(std::launch::deferred, [] { return IAsynchronousReader::Result{.size = 0, .offset = 0}; });
+        return std::async(std::launch::deferred, [] { return IAsynchronousReader::Result{.size = 0, .offset = 0, .page_cache_cell = nullptr}; });
     }
 
     return reader.submit(request);

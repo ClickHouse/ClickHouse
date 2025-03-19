@@ -2,6 +2,7 @@
 
 #include <IO/AsyncReadCounters.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <base/getThreadId.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -11,6 +12,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include "config.h"
 
 #include <future>
@@ -80,7 +82,8 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     {
         ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
         /// `seek` have to be done before checking `isContentCached`, and `set` have to be done prior to `seek`
-        reader.set(request.buf, request.size);
+        if (!request.use_page_cache)
+            reader.set(request.buf, request.size);
         reader.seek(request.offset, SEEK_SET);
     }
 
@@ -129,7 +132,8 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
         ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
         if (!seek_performed)
         {
-            reader.set(request.buf, request.size);
+            if (!request.use_page_cache)
+                reader.set(request.buf, request.size);
             reader.seek(request.offset, SEEK_SET);
         }
 
@@ -152,8 +156,20 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
     IAsynchronousReader::Result read_result;
     if (result)
     {
-        chassert(reader.buffer().begin() == request.buf);
-        chassert(reader.buffer().end() <= request.buf + request.size);
+        if (request.use_page_cache)
+        {
+            auto & cached_reader = typeid_cast<CachedInMemoryReadBufferFromFile &>(reader);
+            read_result.page_cache_cell = cached_reader.getPageCacheCell();
+
+            chassert(cached_reader.internalBuffer().empty());
+            chassert(read_result.page_cache_cell);
+            chassert(read_result.page_cache_cell->data() == reader.buffer().begin());
+        }
+        else
+        {
+            chassert(reader.buffer().begin() == request.buf);
+            chassert(reader.buffer().end() <= request.buf + request.size);
+        }
         read_result.size = reader.buffer().size();
         read_result.offset = reader.offset();
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, read_result.size);

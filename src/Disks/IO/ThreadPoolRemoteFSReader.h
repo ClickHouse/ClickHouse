@@ -20,6 +20,8 @@ public:
 
     void wait() override;
 
+    bool supportsUserspacePageCache() const override { return true; }
+
 private:
     IAsynchronousReader::Result execute(Request request, bool seek_performed);
 

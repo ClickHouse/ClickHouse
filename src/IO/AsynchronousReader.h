@@ -12,6 +12,9 @@
 namespace DB
 {
 
+class PageCacheCell;
+using PageCacheCellPtr = std::shared_ptr<PageCacheCell>;
+
 /** Interface for asynchronous reads from file descriptors.
   * It can abstract Linux AIO, io_uring or normal reads from separate thread pool,
   * and also reads from non-local filesystems.
@@ -50,6 +53,7 @@ public:
         char * buf = nullptr;
         Priority priority;
         size_t ignore = 0;
+        bool use_page_cache = false;
     };
 
     struct Result
@@ -67,6 +71,8 @@ public:
         /// Optional. Useful when implementation needs to do ignore().
         size_t offset = 0;
 
+        PageCacheCellPtr page_cache_cell;
+
         std::unique_ptr<Stopwatch> execution_watch = {};
 
         explicit operator std::tuple<size_t &, size_t &>() { return {size, offset}; }
@@ -80,6 +86,8 @@ public:
     virtual Result execute(Request request) = 0;
 
     virtual void wait() = 0;
+
+    virtual bool supportsUserspacePageCache() const { return false; }
 
     /// Destructor must wait for all not completed request and ignore the results.
     /// It may also cancel the requests.
