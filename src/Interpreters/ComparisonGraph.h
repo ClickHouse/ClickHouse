@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/IAST.h>
+#include <Parsers/IASTHash.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/CNFQueryAtomicFormula.h>
 
@@ -117,7 +117,7 @@ private:
     {
         struct ASTHash
         {
-            size_t operator() (const IAST::Hash & hash) const
+            size_t operator() (const IASTHash & hash) const
             {
                 return hash.low64;
             }
@@ -131,7 +131,7 @@ private:
                 return QueryTreeNodePtrWithHash{node};
         }
 
-        using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IAST::Hash, size_t, ASTHash>, QueryTreeNodePtrWithHashMap<size_t>>;
+        using NodeHashToComponentContainer = std::conditional_t<with_ast, std::unordered_map<IASTHash, size_t, ASTHash>, QueryTreeNodePtrWithHashMap<size_t>>;
         NodeHashToComponentContainer node_hash_to_component;
         std::vector<EqualComponent> vertices;
         std::vector<std::vector<Edge>> edges;

@@ -3,6 +3,7 @@
 #include <Analyzer/Passes/CNFAtomicFormula.h>
 #include <Interpreters/CNFQueryAtomicFormula.h>
 #include <Interpreters/ComparisonGraph.h>
+#include <Parsers/IASTHash.h>
 
 #include <map>
 #include <memory>
@@ -93,7 +94,7 @@ private:
     ASTs constraints;
 
     std::vector<std::vector<CNFQueryAtomicFormula>> cnf_constraints;
-    std::map<IAST::Hash, AtomIds> ast_to_atom_ids;
+    std::map<IASTHash, AtomIds> ast_to_atom_ids;
 
     std::unique_ptr<ComparisonGraph<ASTPtr>> graph;
 };

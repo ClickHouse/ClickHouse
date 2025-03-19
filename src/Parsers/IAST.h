@@ -1,13 +1,12 @@
 #pragma once
 
 #include <base/types.h>
+#include <Parsers/IASTHash.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/LiteralEscapingStyle.h>
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
-
-#include <city.h>
 
 #include <algorithm>
 #include <set>
@@ -82,8 +81,7 @@ public:
      *  Hashing by default ignores aliases (e.g. identifier aliases, function aliases, literal aliases) which is
      *  useful for common subexpression elimination. Set 'ignore_aliases = false' if you don't want that behavior.
       */
-    using Hash = CityHash_v1_0_2::uint128;
-    Hash getTreeHash(bool ignore_aliases) const;
+    IASTHash getTreeHash(bool ignore_aliases) const;
     void updateTreeHash(SipHash & hash_state, bool ignore_aliases) const;
     virtual void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const;
 
@@ -238,7 +236,7 @@ public:
         std::set<std::tuple<
             const IAST * /* SELECT query node */,
             std::string /* alias */,
-            Hash /* printed content */>> printed_asts_with_alias;
+            IASTHash /* printed content */>> printed_asts_with_alias;
     };
 
     /// The state that is copied when each node is formatted. For example, nesting level.
