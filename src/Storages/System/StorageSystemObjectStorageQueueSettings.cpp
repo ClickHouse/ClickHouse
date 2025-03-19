@@ -45,6 +45,9 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
     auto add_table = [&](
         const DatabaseTablesIteratorPtr & it, StorageObjectStorageQueue & storage)
     {
+        if (!it)
+            return;
+
         if (storage.getType() != type)
             return;
 
