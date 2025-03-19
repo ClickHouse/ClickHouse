@@ -215,7 +215,14 @@ class Result(MetaClasses.Serializable):
             else:
                 summary_info = "Failed"
         else:
-            summary_info = "ok"
+            summary_info = next(
+                (
+                    r.info
+                    for r in self.results
+                    if r.name in Settings.CI_DB_SUB_RESULT_NAMES_WITH_TESTS and r.info
+                ),
+                "ok",
+            )
 
         self.set_info(summary_info)
 

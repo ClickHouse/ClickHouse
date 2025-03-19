@@ -246,7 +246,7 @@ def main():
                     name=step_name,
                     status=Result.Status.ERROR,
                     stopwatch=stop_watch_,
-                    info="Test run error",
+                    info="Tests run error",
                 )
             )
         if not results[-1].is_ok():

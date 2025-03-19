@@ -230,7 +230,7 @@ class FTResultsProcessor:
         else:
             pass
 
-        info = f"Total: {s.total}, Failed: {s.failed}, Skipped: {s.skipped}"
+        info = f"Failed: {s.failed}, Passed: {s.success}, Skipped: {s.skipped}"
 
         # TODO: !!!
         # def test_result_comparator(item):

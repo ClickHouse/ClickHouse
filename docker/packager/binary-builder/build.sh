@@ -13,11 +13,6 @@ if [ "$EXTRACT_TOOLCHAIN_DARWIN" = "1" ]; then
   mkdir -p /build/cmake/toolchain/darwin-x86_64
   tar xJf /MacOSX11.0.sdk.tar.xz -C /build/cmake/toolchain/darwin-x86_64 --strip-components=1
   ln -sf darwin-x86_64 /build/cmake/toolchain/darwin-aarch64
-
-  if [ "$EXPORT_SOURCES_WITH_SUBMODULES" = "1" ]; then
-    cd /build
-    tar --exclude-vcs-ignores --exclude-vcs --exclude build --exclude build_docker --exclude debian --exclude .git --exclude .github --exclude .cache --exclude docs --exclude tests/integration -c . | pigz -9 > /output/source_sub.tar.gz
-  fi
 fi
 
 
