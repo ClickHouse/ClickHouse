@@ -96,6 +96,7 @@ private:
 
     std::atomic<bool> mv_attached = false;
     std::atomic<bool> shutdown_called = false;
+    std::atomic<bool> startup_called = false;
     std::atomic<bool> table_is_being_dropped = false;
 
     LoggerPtr log;
@@ -109,7 +110,12 @@ private:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    const ObjectStorageQueueTableMetadata & getTableMetadata() const { return files_metadata->getTableMetadata(); }
+    const ObjectStorageQueueTableMetadata & getTableMetadata() const
+    {
+        if (!files_metadata)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Files metadata is empty");
+        return files_metadata->getTableMetadata();
+    }
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<ObjectStorageQueueSource> createSource(
