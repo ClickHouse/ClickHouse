@@ -3067,6 +3067,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                             common_type = tryGetLeastSupertype(DataTypes{common_type, arg->getResultType()});
                     }
 
+                    if (!common_type)
+                        throw Exception(ErrorCodes::NO_COMMON_TYPE, "Could not find a common type for all types in the tuple at the right part of the IN statement");
+
                     /// Create a new array node
                     auto array_function_node = std::make_shared<FunctionNode>("array");
                     auto array_arguments_list = std::make_shared<ListNode>();
