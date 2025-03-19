@@ -8,8 +8,6 @@ from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import assert_eq_with_retry, assert_logs_contain
 
-test_recover_staled_replica_run = 1
-
 cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance(
@@ -43,7 +41,14 @@ def started_cluster():
         cluster.shutdown()
 
 
+def cleanup():
+    for node in nodes:
+        node.query(
+            "drop database if exists re sync;"
+            "drop table if exists system.a;")
+
 def test_refreshable_mv_in_replicated_db(started_cluster):
+    cleanup()
     for node in nodes:
         node.query(
             "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
@@ -205,11 +210,11 @@ def test_refreshable_mv_in_replicated_db(started_cluster):
     for node in nodes:
         assert node.query("show tables from re") == ""
 
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
+    cleanup()
 
 
 def test_refreshable_mv_in_system_db(started_cluster):
+    cleanup()
     node1.query(
         "create materialized view system.a refresh every 1 second (x Int64) engine Memory as select number+1 as x from numbers(2);"
         "system refresh view system.a;"
@@ -219,10 +224,11 @@ def test_refreshable_mv_in_system_db(started_cluster):
     node1.query("system refresh view system.a")
     assert node1.query("select count(), sum(x) from system.a") == "2\t3\n"
 
-    node1.query("drop table system.a")
+    cleanup()
 
 
 def test_refresh_vs_shutdown_smoke(started_cluster):
+    cleanup()
     for node in nodes:
         node.query(
             "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
@@ -270,11 +276,11 @@ def test_refresh_vs_shutdown_smoke(started_cluster):
     )
 
     node1.start_clickhouse()
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
+    cleanup()
 
 
 def test_pause(started_cluster):
+    cleanup()
     for node in nodes:
         node.query(
             "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
@@ -303,8 +309,7 @@ def test_pause(started_cluster):
         "2\n",
     )
 
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
+    cleanup()
 
 backup_id_counter = 0
 
@@ -318,6 +323,7 @@ def new_backup_destination():
     )
 
 def do_test_backup(to_table):
+    cleanup()
     for node in nodes:
         node.query(
             "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
@@ -345,7 +351,9 @@ def do_test_backup(to_table):
         f"BACKUP ALL EXCEPT DATABASE system ON CLUSTER 'default' TO {backup_destination};"
     )
     for node in nodes:
-        node.query("drop database re sync")
+        node.query(
+            "drop database re sync;"
+            "drop database if exists re_broken_replicated_tables sync;")
     assert node1.query(tables_exist_query) == "0\n"
 
     node1.query(f"RESTORE ALL ON CLUSTER 'default' FROM {backup_destination};")
@@ -362,8 +370,7 @@ def do_test_backup(to_table):
         "1\n2\n",
     )
 
-    node1.query("drop database re sync")
-    node2.query("drop database re sync")
+    cleanup()
 
 
 def test_backup_outer_table(started_cluster):
