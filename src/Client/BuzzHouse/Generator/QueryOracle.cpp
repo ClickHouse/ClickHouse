@@ -360,13 +360,19 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     {
         ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tfunction()->mutable_file();
+        OutFormat outf = rg.pickRandomly(out_in);
 
         if (!std::filesystem::remove(qfile, ec) && ec)
         {
             LOG_ERROR(fc.log, "Could not remove file: {}", ec.message());
         }
         ff->set_path(qfile.generic_string());
-        ff->set_outformat(rg.pickRandomly(out_in));
+        if (peer_query == PeerQuery::ClickHouseOnly && outf == OutFormat::OUT_Parquet)
+        {
+            /// ClickHouse prints server version on Parquet file, making checksum incompatible between versions
+            outf = OutFormat::OUT_CSV;
+        }
+        ff->set_outformat(outf);
         sel = ins->mutable_select();
     }
 
