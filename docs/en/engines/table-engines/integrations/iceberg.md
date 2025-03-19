@@ -23,7 +23,7 @@ This engine provides a read-only integration with existing Apache [Iceberg](http
 
 Note that the Iceberg table must already exist in the storage, this command does not take DDL parameters to create a new table.
 
-``` sql
+```sql
 CREATE TABLE iceberg_table_s3
     ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression])
 
@@ -52,7 +52,7 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3('http://test.s3.amazonaws.com/clickh
 
 Using named collections:
 
-``` xml
+```xml
 <clickhouse>
     <named_collections>
         <iceberg_conf>

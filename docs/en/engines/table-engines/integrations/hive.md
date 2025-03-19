@@ -23,7 +23,7 @@ The Hive engine allows you to perform `SELECT` queries on HDFS Hive table. Curre
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [ALIAS expr1],
@@ -54,7 +54,7 @@ The table structure can differ from the original Hive table structure:
 We strongly advice you to enable local cache for remote filesystems. Benchmark shows that its almost 2x faster with cache.
 
 Before using cache, add it to `config.xml`
-``` xml
+```xml
 <local_cache_for_remote_fs>
     <enable>true</enable>
     <root_dir>local_cache</root_dir>
@@ -74,7 +74,7 @@ When ClickHouse is started up with local cache for remote filesystem enabled, us
 
 #### Create Table in Hive {#create-table-in-hive}
 
-``` text
+```text
 hive > CREATE TABLE `test`.`test_orc`(
   `f_tinyint` tinyint,
   `f_smallint` smallint,
@@ -123,7 +123,7 @@ Time taken: 0.295 seconds, Fetched: 1 row(s)
 #### Create Table in ClickHouse  {#create-table-in-clickhouse}
 
 Table in ClickHouse, retrieving data from the Hive table created above:
-``` sql
+```sql
 CREATE TABLE test.test_orc
 (
     `f_tinyint` Int8,
@@ -153,11 +153,11 @@ PARTITION BY day
 
 ```
 
-``` sql
+```sql
 SELECT * FROM test.test_orc settings input_format_orc_allow_missing_columns = 1\G
 ```
 
-``` text
+```text
 SELECT *
 FROM test.test_orc
 SETTINGS input_format_orc_allow_missing_columns = 1
@@ -196,7 +196,7 @@ day:                  2021-09-18
 
 #### Create Table in Hive {#create-table-in-hive-1}
 
-``` text
+```text
 hive >
 CREATE TABLE `test`.`test_parquet`(
   `f_tinyint` tinyint,
@@ -246,7 +246,7 @@ Time taken: 0.766 seconds, Fetched: 1 row(s)
 #### Create Table in ClickHouse {#create-table-in-clickhouse-1}
 
 Table in ClickHouse, retrieving data from the Hive table created above:
-``` sql
+```sql
 CREATE TABLE test.test_parquet
 (
     `f_tinyint` Int8,
@@ -276,11 +276,11 @@ ENGINE = Hive('thrift://localhost:9083', 'test', 'test_parquet')
 PARTITION BY day
 ```
 
-``` sql
+```sql
 SELECT * FROM test.test_parquet settings input_format_parquet_allow_missing_columns = 1\G
 ```
 
-``` text
+```text
 SELECT *
 FROM test_parquet
 SETTINGS input_format_parquet_allow_missing_columns = 1
@@ -319,7 +319,7 @@ day:                  2021-09-18
 
 #### Create Table in Hive {#create-table-in-hive-2}
 
-``` text
+```text
 hive >
 CREATE TABLE `test`.`test_text`(
   `f_tinyint` tinyint,
@@ -369,7 +369,7 @@ Time taken: 0.624 seconds, Fetched: 1 row(s)
 #### Create Table in ClickHouse {#create-table-in-clickhouse-2}
 
 Table in ClickHouse, retrieving data from the Hive table created above:
-``` sql
+```sql
 CREATE TABLE test.test_text
 (
     `f_tinyint` Int8,
@@ -392,11 +392,11 @@ ENGINE = Hive('thrift://localhost:9083', 'test', 'test_text')
 PARTITION BY day
 ```
 
-``` sql
+```sql
 SELECT * FROM test.test_text settings input_format_skip_unknown_fields = 1, input_format_with_names_use_header = 1, date_time_input_format = 'best_effort'\G
 ```
 
-``` text
+```text
 SELECT *
 FROM test.test_text
 SETTINGS input_format_skip_unknown_fields = 1, input_format_with_names_use_header = 1, date_time_input_format = 'best_effort'

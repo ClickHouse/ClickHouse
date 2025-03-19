@@ -2631,7 +2631,7 @@ It is disabled by default.
 
 To manually turn on latency history collection [`system.latency_log`](../../operations/system-tables/latency_log.md), create `/etc/clickhouse-server/config.d/latency_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
     <latency_log>
         <database>system</database>
@@ -2650,7 +2650,7 @@ To manually turn on latency history collection [`system.latency_log`](../../oper
 
 To disable `latency_log` setting, you should create the following file `/etc/clickhouse-server/config.d/disable_latency_log.xml` with the following content:
 
-``` xml
+```xml
 <clickhouse>
 <latency_log remove="1" />
 </clickhouse>
@@ -2766,7 +2766,7 @@ Queries are logged in the [system.part_log](/operations/system-tables/part_log) 
 
 **Example**
 
-``` xml
+```xml
 <part_log>
     <database>system</database>
     <table>part_log</table>

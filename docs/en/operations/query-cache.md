@@ -113,7 +113,7 @@ allocate in the query cache and the maximum number of stored query results. For 
 [query_cache_max_entries](/operations/settings/settings#query_cache_max_entries) in a user profile in `users.xml`, then make both settings
 readonly:
 
-``` xml
+```xml
 <profiles>
     <default>
         <!-- The maximum cache size in bytes for user/profile 'default' -->
@@ -136,7 +136,7 @@ readonly:
 To define how long a query must run at least such that its result can be cached, you can use setting
 [query_cache_min_query_duration](/operations/settings/settings#query_cache_min_query_duration). For example, the result of query
 
-``` sql
+```sql
 SELECT some_expensive_calculation(column_1, column_2)
 FROM table
 SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
