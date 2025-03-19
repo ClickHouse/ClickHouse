@@ -3,7 +3,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from ci.praktika.utils import Shell, Utils
+from praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
 

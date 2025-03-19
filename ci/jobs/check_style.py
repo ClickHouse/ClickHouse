@@ -6,8 +6,8 @@ import re
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
-from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
+from praktika.result import Result
+from praktika.utils import Shell, Utils
 
 NPROC = multiprocessing.cpu_count()
 

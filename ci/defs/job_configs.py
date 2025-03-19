@@ -59,7 +59,6 @@ class JobConfigs:
     tidy_build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["..."],
-        # requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
         command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -89,7 +88,6 @@ class JobConfigs:
     build_jobs = Job.Config(
         name=JobNames.BUILD,
         runs_on=["...from params..."],
-        # requires=[JobNames.STYLE_CHECK, JobNames.FAST_TEST],
         command="cd ./tests/ci && eval $(python3 ci_config.py --build-name 'Build ({PARAMETER})' | sed 's/^/export /') && python3 ci.py --run-from-praktika",
         digest_config=Job.CacheDigestConfig(
             include_paths=[

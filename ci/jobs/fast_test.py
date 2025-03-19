@@ -2,13 +2,14 @@ import argparse
 import time
 from pathlib import Path
 
+from praktika.info import Info
+from praktika.result import Result
+from praktika.settings import Settings
+from praktika.utils import MetaClasses, Shell, Utils
+
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
-from ci.praktika.info import Info
-from ci.praktika.result import Result
-from ci.praktika.settings import Settings
-from ci.praktika.utils import MetaClasses, Shell, Utils
 
 current_directory = Utils.cwd()
 build_dir = f"{current_directory}/ci/tmp/build"
@@ -238,9 +239,18 @@ def main():
         res = res and CH.run_fast_test(test=args.test or "")
         if res:
             results.append(FTResultsProcessor(wd=Settings.OUTPUT_DIR).run())
+            results[-1].set_timing(stopwatch=stop_watch_)
         else:
+            results.append(
+                Result.create_from(
+                    name=step_name,
+                    status=Result.Status.ERROR,
+                    stopwatch=stop_watch_,
+                    info="Test run error",
+                )
+            )
+        if not results[-1].is_ok():
             attach_files.append(f"{temp_dir}/build/programs/clickhouse")
-        results[-1].set_timing(stopwatch=stop_watch_)
 
     CH.terminate()
 
