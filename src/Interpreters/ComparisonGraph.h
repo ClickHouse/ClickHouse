@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Parsers/IAST_fwd.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/TreeCNFConverter.h>
 
-#include <Analyzer/Passes/CNF.h>
+#include <Analyzer/Passes/CNFAtomicFormula.h>
 #include <Analyzer/HashUtils.h>
 #include <Analyzer/IQueryTreeNode.h>
 
@@ -39,12 +40,12 @@ class ComparisonGraph
 public:
     static constexpr bool with_ast = std::same_as<Node, ASTPtr>;
     using NodeContainer = std::conditional_t<with_ast, ASTs, QueryTreeNodes>;
-    using CNF = std::conditional_t<with_ast, CNFQuery, Analyzer::CNF>;
+    using Formula = std::conditional_t<with_ast, CNFQuery::AtomicFormula, Analyzer::CNFAtomicFormula>;
 
     /// atomic_formulas are extracted from constraints.
     explicit ComparisonGraph(const NodeContainer & atomic_formulas, ContextPtr context = nullptr);
 
-    static ComparisonGraphCompareResult atomToCompareResult(const typename CNF::AtomicFormula & atom);
+    static ComparisonGraphCompareResult atomToCompareResult(const Formula & atom);
 
     ComparisonGraphCompareResult compare(const Node & left, const Node & right) const;
 

@@ -115,7 +115,7 @@ Field getConstantValue(const Node & node)
     return std::move(*constant);
 }
 
-const auto & getNode(const Analyzer::CNF::AtomicFormula & atom)
+const auto & getNode(const Analyzer::CNFAtomicFormula & atom)
 {
     return atom.node_with_hash.node;
 }
@@ -567,7 +567,7 @@ void ComparisonGraph<Node>::EqualComponent::buildConstants()
 }
 
 template <ComparisonGraphNodeType Node>
-ComparisonGraphCompareResult ComparisonGraph<Node>::atomToCompareResult(const typename CNF::AtomicFormula & atom)
+ComparisonGraphCompareResult ComparisonGraph<Node>::atomToCompareResult(const Formula & atom)
 {
     const auto & node = getNode(atom);
     if (tryGetFunctionNode(node) != nullptr)

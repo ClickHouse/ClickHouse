@@ -1,11 +1,20 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
+#include <memory>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include <city.h>
 
 namespace DB
 {
+
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
+using QueryTreeNodes = std::vector<QueryTreeNodePtr>;
+using QueryTreeNodeWeakPtr = std::weak_ptr<IQueryTreeNode>;
+using QueryTreeWeakNodes = std::vector<QueryTreeNodeWeakPtr>;
 
 /** This structure holds query tree node ptr and its hash. It can be used as hash map key to avoid unnecessary hash
   * recalculations.
