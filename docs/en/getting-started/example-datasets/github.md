@@ -7,6 +7,7 @@ slug: /getting-started/example-datasets/github
 title: 'Writing Queries in ClickHouse using GitHub Data'
 ---
 
+import Image from '@theme/IdealImage';
 import superset_github_lines_added_deleted from './images/superset-github-lines-added-deleted.png'
 import superset_commits_authors from './images/superset-commits-authors.png'
 import superset_authors_matrix from './images/superset-authors-matrix.png'
