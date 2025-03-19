@@ -54,8 +54,8 @@ void StorageSystemObjectStorageQueueSettings<type>::fillData(
         try
         {
             // getSettings() populates table settings from the results of getTableMetadata()
-            // which might sometimes be empty. Better to catch any errors that happens calling
-            // getSettings() to better avoid segfaults.
+            // which might be empty sometimes. Better to catch any errors that happen when
+            // calling getSettings() in order to avoid a possible segfault.
             const auto & settings = storage.getSettings();
             settings.dumpToSystemEngineSettingsColumns(params, it->name(), it->databaseName(), storage);
         }
