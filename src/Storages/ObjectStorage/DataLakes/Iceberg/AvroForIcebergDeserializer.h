@@ -16,7 +16,7 @@ namespace Iceberg
 
 /// In Iceberg manifest files and manifest lists are store in Avro format: https://avro.apache.org/
 /// This format is some kind of mix between JSON and binary schemaful format like protobuf.
-/// It has reach types system, with it's own binary representation and it's really tricky
+/// It has rich types system, with it's own binary representation and it's really tricky
 /// to parse some of them.
 ///
 /// In ClickHouse we already support avro as input format, so we can parse it. The main complexity
