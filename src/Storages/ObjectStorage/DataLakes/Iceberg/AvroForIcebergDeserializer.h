@@ -42,17 +42,16 @@ public:
 
     size_t rows() const;
 
-    /// Allow to access avro pathes like "a.b.c"
+    /// Allow to access avro paths like "a.b.c"
     bool hasPath(const std::string & path) const;
     DB::TypeIndex getTypeForPath(const std::string & path) const;
-    /// Allow to access avro pathes like "a.b.c".
+    /// Allow to access avro paths like "a.b.c".
     /// If expected type is provided will throw an exception if types don't match
     DB::Field getValueFromRowByName(size_t row_num, const std::string & path, std::optional<DB::TypeIndex> expected_type = std::nullopt) const;
 
     std::optional<std::string> tryGetAvroMetadataValue(std::string metadata_key) const;
-
 };
-   
+
 }
 
 #endif

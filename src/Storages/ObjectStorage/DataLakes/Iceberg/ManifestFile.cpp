@@ -14,7 +14,6 @@
 
 namespace DB::ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
     extern const int UNSUPPORTED_METHOD;
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
     extern const int LOGICAL_ERROR;
