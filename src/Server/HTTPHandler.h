@@ -184,6 +184,8 @@ private:
         HTTPServerResponse & response,
         Output & used_output);
 
+    void releaseOrCloseSession(const String & session_id, bool close_session);
+
     static void pushDelayedResults(Output & used_output);
 
 protected:
