@@ -316,6 +316,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 page_cache_max_size;
     extern const ServerSettingsDouble page_cache_free_memory_ratio;
     extern const ServerSettingsUInt64 page_cache_lookahead_blocks;
+    extern const ServerSettingsUInt64 page_cache_shards;
 }
 
 }
@@ -1171,7 +1172,8 @@ try
             server_settings[ServerSetting::page_cache_size_ratio],
             server_settings[ServerSetting::page_cache_min_size],
             server_settings[ServerSetting::page_cache_max_size],
-            server_settings[ServerSetting::page_cache_free_memory_ratio]);
+            server_settings[ServerSetting::page_cache_free_memory_ratio],
+            server_settings[ServerSetting::page_cache_shards]);
         total_memory_tracker.setPageCache(global_context->getPageCache().get());
     }
 
