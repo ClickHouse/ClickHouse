@@ -1,7 +1,10 @@
 ---
-slug: /en/sql-reference/table-functions/urlCluster
+description: 'Allows processing files from URL in parallel from many nodes in a specified
+  cluster.'
+sidebar_label: 'urlCluster'
 sidebar_position: 201
-sidebar_label: urlCluster
+slug: /sql-reference/table-functions/urlCluster
+title: 'urlCluster'
 ---
 
 # urlCluster Table Function
@@ -18,7 +21,7 @@ urlCluster(cluster_name, URL, format, structure)
 
 -   `cluster_name` — Name of a cluster that is used to build a set of addresses and connection parameters to remote and local servers.
 - `URL` — HTTP or HTTPS server address, which can accept `GET` requests. Type: [String](../../sql-reference/data-types/string.md).
-- `format` — [Format](../../interfaces/formats.md#formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
+- `format` — [Format](/sql-reference/formats) of the data. Type: [String](../../sql-reference/data-types/string.md).
 - `structure` — Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](../../sql-reference/data-types/string.md).
 
 **Returned value**
@@ -51,7 +54,7 @@ if __name__ == "__main__":
 SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
 ```
 
-## Globs in URL
+## Globs in URL {#globs-in-url}
 
 Patterns in curly brackets `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements) setting.

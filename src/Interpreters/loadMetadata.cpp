@@ -29,6 +29,8 @@
 
 #include <filesystem>
 
+#include <fmt/ranges.h>
+
 #define ORDINARY_TO_ATOMIC_PREFIX ".tmp_convert."
 
 namespace fs = std::filesystem;
@@ -109,11 +111,7 @@ static void loadDatabase(
     if (db_disk->existsFile(fs::path(database_metadata_file)))
     {
         /// There is .sql file with database creation statement.
-        ReadSettings read_settings = getReadSettings();
-        read_settings.local_fs_method = LocalFSReadMethod::read;
-        read_settings.local_fs_buffer_size = 1024;
-        auto in = db_disk->readFile(database_metadata_file, read_settings);
-        readStringUntilEOF(database_attach_query, *in);
+        database_attach_query = readMetadataFile(db_disk, database_metadata_file);
     }
     else
     {

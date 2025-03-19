@@ -64,27 +64,41 @@ Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
     return metrics;
 }
 
-uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, std::string_view key)
+uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list<std::string_view> keys)
 {
+    uint64_t sum = 0;
+    uint64_t found_mask = 0;
     while (!buf.eof())
     {
         std::string current_key;
         readStringUntilWhitespace(current_key, buf);
-        if (current_key != key)
+
+        const auto * it = std::find(keys.begin(), keys.end(), current_key);
+        if (it == keys.end())
         {
             std::string dummy;
             readStringUntilNewlineInto(dummy, buf);
             buf.ignore();
             continue;
         }
+        if (found_mask & (1l << (it - keys.begin())))
+            LOG_WARNING(LogFrequencyLimiter(getLogger("CgroupsReader"), 300), "Duplicate key '{}' in '{}'", current_key, buf.getFileName());
+        found_mask |= 1ll << (it - keys.begin());
 
         assertChar(' ', buf);
         uint64_t value = 0;
         readIntText(value, buf);
-        return value;
+        sum += value;
     }
-    LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", key, buf.getFileName());
-    return 0;
+    if (found_mask != (1l << keys.size()) - 1)
+    {
+        for (const auto * it = keys.begin(); it != keys.end(); ++it)
+        {
+            if (!(found_mask & (1l << (it - keys.begin()))))
+                LOG_WARNING(LogFrequencyLimiter(getLogger("CgroupsReader"), 300), "Cannot find '{}' in '{}'", *it, buf.getFileName());
+        }
+    }
+    return sum;
 }
 
 struct CgroupsV1Reader : ICgroupsReader
@@ -95,7 +109,7 @@ struct CgroupsV1Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         buf.rewind();
-        return readMetricFromStatFile(buf, "rss");
+        return readMetricsFromStatFile(buf, {"rss"});
     }
 
     std::string dumpAllStats() override
@@ -118,7 +132,7 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        return readMetricFromStatFile(stat_buf, "anon");
+        return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"});
     }
 
     std::string dumpAllStats() override
@@ -196,34 +210,39 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 /// - reading from cgroups' pseudo-files (fastest and most accurate)
 /// - reading jemalloc's resident stat (doesn't take into account allocations that didn't use jemalloc)
 /// Also, different tick rates are used because not all options are equally fast
-MemoryWorker::MemoryWorker(uint64_t period_ms_)
+MemoryWorker::MemoryWorker(uint64_t period_ms_, bool correct_tracker_, bool use_cgroup, std::shared_ptr<PageCache> page_cache_)
     : log(getLogger("MemoryWorker"))
     , period_ms(period_ms_)
+    , correct_tracker(correct_tracker_)
+    , page_cache(page_cache_)
 {
+    if (use_cgroup)
+    {
 #if defined(OS_LINUX)
-    try
-    {
-        static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
+        try
+        {
+            static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
 
-        const auto [cgroup_path, version] = getCgroupsPath();
-        LOG_INFO(
-            getLogger("CgroupsReader"),
-            "Will create cgroup reader from '{}' (cgroups version: {})",
-            cgroup_path,
-            (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
+            const auto [cgroup_path, version] = getCgroupsPath();
+            LOG_INFO(
+                getLogger("CgroupsReader"),
+                "Will create cgroup reader from '{}' (cgroups version: {})",
+                cgroup_path,
+                (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
 
-        cgroups_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
-        source = MemoryUsageSource::Cgroups;
-        if (period_ms == 0)
-            period_ms = cgroups_memory_usage_tick_ms;
+            cgroups_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+            source = MemoryUsageSource::Cgroups;
+            if (period_ms == 0)
+                period_ms = cgroups_memory_usage_tick_ms;
 
-        return;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot use cgroups reader");
-    }
+            return;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot use cgroups reader");
+        }
 #endif
+    }
 
 #if USE_JEMALLOC
     static constexpr uint64_t jemalloc_memory_usage_tick_ms{100};
@@ -302,6 +321,9 @@ void MemoryWorker::backgroundThread()
         Int64 resident = getMemoryUsage();
         MemoryTracker::updateRSS(resident);
 
+        if (page_cache)
+            page_cache->autoResize(resident, total_memory_tracker.getHardLimit());
+
 #if USE_JEMALLOC
         if (resident > total_memory_tracker.getHardLimit())
         {
@@ -310,16 +332,34 @@ void MemoryWorker::backgroundThread()
             ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurge);
             ProfileEvents::increment(ProfileEvents::MemoryAllocatorPurgeTimeMicroseconds, purge_watch.elapsedMicroseconds());
         }
-#endif
 
-#if USE_JEMALLOC
+        /// update MemoryTracker with `allocated` information from jemalloc when:
+        ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
+        ///  - MemoryTracker stores a negative value
+        ///  - `correct_tracker` is set to true
         if (unlikely(first_run || total_memory_tracker.get() < 0))
         {
             if (source != MemoryUsageSource::Jemalloc)
                 epoch_mib.setValue(0);
 
-            MemoryTracker::updateAllocated(allocated_mib.getValue());
+            MemoryTracker::updateAllocated(allocated_mib.getValue(), /*log_change=*/true);
         }
+        else if (correct_tracker)
+        {
+            if (source != MemoryUsageSource::Jemalloc)
+                epoch_mib.setValue(0);
+
+            MemoryTracker::updateAllocated(allocated_mib.getValue(), /*log_change=*/false);
+        }
+#else
+        /// we don't update in the first run if we don't have jemalloc
+        /// because we can only use resident memory information
+        /// resident memory can be much larger than the actual allocated memory
+        /// so we rather ignore the potential difference caused by allocated memory
+        /// before MemoryTracker initialization
+        if (unlikely(total_memory_tracker.get() < 0) || correct_tracker)
+            MemoryTracker::updateAllocated(resident, /*log_change=*/false);
+
 #endif
 
         ProfileEvents::increment(ProfileEvents::MemoryWorkerRun);

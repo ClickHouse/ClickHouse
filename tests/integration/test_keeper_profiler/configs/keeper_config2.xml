@@ -3,7 +3,7 @@
         <s3_snapshot>
             <endpoint>http://minio1:9001/snapshots/</endpoint>
             <access_key_id>minio</access_key_id>
-            <secret_access_key>minio123</secret_access_key>
+            <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
         </s3_snapshot>
         <tcp_port>9181</tcp_port>
         <server_id>2</server_id>

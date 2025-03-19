@@ -1,8 +1,10 @@
 ---
-slug: /en/sql-reference/data-types/geo
+description: 'Documentation for geometric data types in ClickHouse used for representing
+  geographical objects and locations'
+sidebar_label: 'Geo'
 sidebar_position: 54
-sidebar_label: Geo
-title: "Geometric"
+slug: /sql-reference/data-types/geo
+title: 'Geometric'
 ---
 
 ClickHouse supports data types for representing geographical objects — locations, lands, etc.
@@ -10,7 +12,7 @@ ClickHouse supports data types for representing geographical objects — locatio
 **See Also**
 - [Representing simple geographical features](https://en.wikipedia.org/wiki/GeoJSON).
 
-## Point
+## Point {#point}
 
 `Point` is represented by its X and Y coordinates, stored as a [Tuple](tuple.md)([Float64](float.md), [Float64](float.md)).
 
@@ -31,7 +33,7 @@ Result:
 └─────────┴───────────────┘
 ```
 
-## Ring
+## Ring {#ring}
 
 `Ring` is a simple polygon without holes stored as an array of points: [Array](array.md)([Point](#point)).
 
@@ -52,7 +54,7 @@ Result:
 └───────────────────────────────┴───────────────┘
 ```
 
-## LineString
+## LineString {#linestring}
 
 `LineString` is a line stored as an array of points: [Array](array.md)([Point](#point)).
 
@@ -73,7 +75,7 @@ Result:
 └───────────────────────────────┴───────────────┘
 ```
 
-## MultiLineString
+## MultiLineString {#multilinestring}
 
 `MultiLineString` is multiple lines stored as an array of `LineString`: [Array](array.md)([LineString](#linestring)).
 
@@ -94,7 +96,7 @@ Result:
 └─────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-## Polygon
+## Polygon {#polygon}
 
 `Polygon` is a polygon with holes stored as an array of rings: [Array](array.md)([Ring](#ring)). First element of outer array is the outer shape of polygon and all the following elements are holes.
 
@@ -116,7 +118,7 @@ Result:
 └───────────────────────────────────────────────────────────────┴────────────────┘
 ```
 
-## MultiPolygon
+## MultiPolygon {#multipolygon}
 
 `MultiPolygon` consists of multiple polygons and is stored as an array of polygons: [Array](array.md)([Polygon](#polygon)).
 
@@ -137,6 +139,6 @@ Result:
 └─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```
 
-## Related Content
+## Related Content {#related-content}
 
 - [Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)

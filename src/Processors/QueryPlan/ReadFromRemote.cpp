@@ -1,30 +1,45 @@
 #include <Processors/QueryPlan/ReadFromRemote.h>
 
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/Utils.h>
+#include <Planner/PlannerActionsVisitor.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/formatAST.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/RemoteSource.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/PredicateRewriteVisitor.h>
+#include <Interpreters/JoinedTables.h>
+#include <Interpreters/PreparedSets.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Columns/ColumnString.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
+#include <Common/FailPoint.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <Client/ConnectionPool.h>
 #include <Client/ConnectionPoolWithFailover.h>
+#include <Functions/IFunction.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <Parsers/ASTFunction.h>
+#include <Storages/StorageReplicatedMergeTree.h>
 
 #include <fmt/format.h>
 
@@ -39,12 +54,23 @@ namespace Setting
     extern const SettingsSeconds max_execution_time;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_mark_segment_size;
+    extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
+    extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
+    extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
 }
 
 namespace ErrorCodes
 {
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_TABLE;
+    extern const int ALL_REPLICAS_ARE_STALE;
+}
+
+namespace FailPoints
+{
+    extern const char use_delayed_remote_source[];
 }
 
 static void addConvertingActions(Pipe & pipe, const Block & header, bool use_positions_to_match = false)
@@ -125,7 +151,7 @@ ReadFromRemote::ReadFromRemote(
     UInt32 shard_count_,
     std::shared_ptr<const StorageLimitsList> storage_limits_,
     const String & cluster_name_)
-    : ISourceStep(std::move(header_))
+    : SourceStepWithFilterBase(std::move(header_))
     , shards(std::move(shards_))
     , stage(stage_)
     , main_table(std::move(main_table_))
@@ -151,6 +177,254 @@ void ReadFromRemote::enforceAggregationInOrder()
     DB::enforceAggregationInOrder(stage, *context);
 }
 
+ASTSelectQuery & getSelectQuery(ASTPtr ast)
+{
+    if (const auto * explain = ast->as<ASTExplainQuery>())
+        ast = explain->getExplainedQuery();
+
+    return ast->as<ASTSelectQuery &>();
+}
+
+/// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
+/// It should not be needed after we send a full plan for distributed queries.
+static ASTPtr tryBuildAdditionalFilterAST(
+    const ActionsDAG & dag,
+    const std::unordered_set<std::string> & projection_names,
+    const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
+    Tables * external_tables,
+    const ContextPtr & context)
+{
+    std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
+
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child = 0;
+    };
+    std::stack<Frame> stack;
+    stack.push({dag.getOutputs().front()});
+    while (!stack.empty())
+    {
+        auto & frame = stack.top();
+        const auto * node = frame.node;
+
+        if (node_to_ast.contains(node))
+        {
+            stack.pop();
+            continue;
+        }
+
+        /// Labmdas are not supported (converting back to AST is complicated).
+        /// We have two cases here cause function with no capture can be constant-folded.
+        if (WhichDataType(node->result_type).isFunction()
+            || (node->type == ActionsDAG::ActionType::FUNCTION
+                && typeid_cast<const FunctionCapture *>(node->function_base.get())))
+        {
+            node_to_ast[node] = nullptr;
+            stack.pop();
+            continue;
+        }
+
+        /// Support for IN. The stored AST from the Set is taken.
+        if (WhichDataType(node->result_type).isSet())
+        {
+            auto maybe_set = node->column;
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
+                maybe_set = col_const->getDataColumnPtr();
+
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
+                node_to_ast[node] = col_set->getData()->getSourceAST();
+
+            stack.pop();
+            continue;
+        }
+
+        if (node->column && isColumnConst(*node->column))
+        {
+            auto literal = std::make_shared<ASTLiteral>((*node->column)[0]);
+            /// Need to enforce type of the literal, because some type is not comparable to its native type
+            /// E.g. `Date` has native type `UInt32`, but comparing `Date` with `UInt32` is not allowed.
+            auto casted_literal = makeASTFunction("_CAST", literal, std::make_shared<ASTLiteral>(node->result_type->getName()));
+            node_to_ast[node] = std::move(casted_literal);
+            stack.pop();
+            continue;
+        }
+
+        if (frame.next_child < node->children.size())
+        {
+            stack.push({node->children[frame.next_child]});
+            ++frame.next_child;
+            continue;
+        }
+
+        stack.pop();
+        auto & res = node_to_ast[node];
+
+        if (node->type == ActionsDAG::ActionType::INPUT)
+        {
+            /// The column name can be taken from the projection name, or from the projection expression.
+            /// It depends on the predicate and query stage.
+
+            if (projection_names.contains(node->result_name))
+            {
+                /// The input name matches the projection name. Example:
+                /// SELECT x FROM (SELECT number + 1 AS x FROM remote('127.0.0.2', numbers(3))) WHERE x = 1
+                /// In this case, ReadFromRemote has header `x UInt64` and filter DAG has input column with name `x`.
+                /// Here, filter is applied to the whole query, and checking for projection name is reasonable.
+                res = std::make_shared<ASTIdentifier>(node->result_name);
+            }
+            else
+            {
+                /// The input name matches the execution name of the projection. Example:
+                /// SELECT x, y FROM (
+                ///     SELECT number + 1 AS x, sum(number) AS y FROM remote('127.0.0.{1,2}', numbers(3)) GROUP BY x
+                /// ) WHERE x = 1
+                /// In this case, ReadFromRemote has `plus(__table1.number, 1_UInt8) UInt64` in header,
+                /// and filter DAG has input column with name `plus(__table1.number, 1_UInt8)`.
+                /// Here, filter is pushed down before the aggregation, and projection name can't be used.
+                /// However, we can match the input with the execution name of projection query tree.
+                /// Note: this may not cover all the cases.
+                auto it = execution_name_to_projection_query_tree.find(node->result_name);
+                if (it != execution_name_to_projection_query_tree.end())
+                    /// Append full expression as an AST.
+                    /// We rely on plan optimization that the result is (expected to be) valid.
+                    res = it->second->toAST();
+            }
+        }
+
+        if (node->type == ActionsDAG::ActionType::ALIAS)
+            res = node_to_ast[node->children.at(0)];
+
+        if (node->type != ActionsDAG::ActionType::FUNCTION)
+            continue;
+
+        if (!node->function_base->isDeterministic() || node->function_base->isStateful())
+            continue;
+
+        bool has_all_args = true;
+        ASTs arguments;
+        for (const auto * child : node->children)
+        {
+            auto ast = node_to_ast[child];
+            if (!ast)
+                has_all_args = false;
+            else
+                arguments.push_back(std::move(ast));
+        }
+
+        /// Allow to skip children only for AND function.
+        auto func_name = node->function_base->getName();
+        bool is_function_and = func_name == "and";
+        if (!has_all_args && !is_function_and)
+            continue;
+
+        if (is_function_and && arguments.empty())
+            continue;
+
+        /// and() with 1 arg is not allowed. Make it AND(condition, 1)
+        if (is_function_and && arguments.size() == 1)
+            arguments.push_back(std::make_shared<ASTLiteral>(Field(1)));
+
+        /// Support for GLOBAL IN.
+        if (external_tables && isNameOfGlobalInFunction(func_name))
+        {
+            const auto * second_arg = node->children.at(1);
+            auto maybe_set = second_arg->column;
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(maybe_set.get()))
+                maybe_set = col_const->getDataColumnPtr();
+
+            if (const auto * col_set = typeid_cast<const ColumnSet *>(maybe_set.get()))
+            {
+                auto future_set = col_set->getData();
+                if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                {
+                    const auto temporary_table_name = fmt::format("_data_{}", toString(set_from_subquery->getHash()));
+
+                    auto & external_table = (*external_tables)[temporary_table_name];
+                    if (!external_table)
+                    {
+                        /// Here we create a new temporary table and attach it to the FutureSetFromSubquery.
+                        /// At the moment FutureSet is created, temporary table will be filled.
+                        /// This should happen because filter expression on initiator needs the set as well,
+                        /// and it should be built before sending the external tables.
+
+                        auto header = InterpreterSelectQueryAnalyzer::getSampleBlock(set_from_subquery->getSourceAST(), context);
+                        NamesAndTypesList columns = header.getNamesAndTypesList();
+
+                        auto external_storage_holder = TemporaryTableHolder(
+                            context,
+                            ColumnsDescription{columns},
+                            ConstraintsDescription{},
+                            nullptr /*query*/,
+                            true /*create_for_global_subquery*/);
+
+                        external_table = external_storage_holder.getTable();
+                        set_from_subquery->setExternalTable(external_table);
+                    }
+
+                    node_to_ast[second_arg] = std::make_shared<ASTIdentifier>(temporary_table_name);
+                }
+            }
+        }
+
+        auto function = makeASTFunction(node->function_base->getName(), std::move(arguments));
+        res = std::move(function);
+    }
+
+    return node_to_ast[dag.getOutputs().front()];
+}
+
+static void addFilters(
+    Tables * external_tables,
+    const ContextMutablePtr & context,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ActionsDAG & pushed_down_filters)
+{
+    if (!query_tree || !planner_context)
+        return;
+
+    const auto & settings = context->getSettingsRef();
+    if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
+        return;
+
+    const auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node)
+        return;
+
+    /// We are building a set with projection names and a map with execution names here.
+    /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
+
+    std::unordered_set<std::string> projection_names;
+    for (const auto & col : query_node->getProjectionColumns())
+        projection_names.insert(col.name);
+
+    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
+    for (const auto & node : query_node->getProjection())
+        execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
+
+    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context);
+    if (!predicate)
+        return;
+
+    JoinedTables joined_tables(context, getSelectQuery(query_ast), false, false);
+    joined_tables.resolveTables();
+    const auto & tables_with_columns = joined_tables.tablesWithColumns();
+
+    /// Case with JOIN is not supported so far.
+    if (tables_with_columns.size() != 1)
+        return;
+
+    bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
+    bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
+
+    ASTs predicates{predicate};
+    PredicateRewriteVisitor::Data data(context, predicates, tables_with_columns.front(), optimize_final, optimize_with);
+
+    data.rewriteSubquery(getSelectQuery(query_ast), tables_with_columns.front().columns.getNames());
+}
+
 void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
 {
     bool add_agg_info = stage == QueryProcessingStage::WithMergeableState;
@@ -166,13 +440,26 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         add_extremes = context->getSettingsRef()[Setting::extremes];
     }
 
+    std::shared_ptr<const ActionsDAG> pushed_down_filters;
+    if (filter_actions_dag)
+        pushed_down_filters = std::make_shared<const ActionsDAG>(filter_actions_dag->clone());
+
+    const StorageID resolved_id = context->resolveStorageID(shard.main_table ? shard.main_table : main_table);
+    const StoragePtr storage = DatabaseCatalog::instance().tryGetTable(resolved_id, context);
+    if (!storage)
+    {
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Storage with id {} not found", resolved_id);
+    }
+
     auto lazily_create_stream = [
             my_shard = shard, my_shard_count = shard_count, query = shard.query, header = shard.header,
             my_context = context, my_throttler = throttler,
             my_main_table = main_table, my_table_func_ptr = table_func_ptr,
             my_scalars = scalars, my_external_tables = external_tables,
-            my_stage = stage, local_delay = shard.local_delay,
-            add_agg_info, add_totals, add_extremes, async_read, async_query_sending]() mutable
+            my_stage = stage, my_storage = storage,
+            add_agg_info, add_totals, add_extremes, async_read, async_query_sending,
+            query_tree = shard.query_tree, planner_context = shard.planner_context,
+            pushed_down_filters]() mutable
         -> QueryPipelineBuilder
     {
         auto current_settings = my_context->getSettingsRef();
@@ -205,12 +492,38 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
                 max_remote_delay = std::max(try_result.delay, max_remote_delay);
         }
 
-        if (try_results.empty() || local_delay < max_remote_delay)
+        bool use_delayed_remote_source = false;
+        fiu_do_on(FailPoints::use_delayed_remote_source,
         {
-            auto plan = createLocalPlan(
-                query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
+            use_delayed_remote_source = true;
+        });
 
-            return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
+        if (!use_delayed_remote_source)
+        {
+            const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
+            if (!replicated_storage)
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());
+            }
+            const UInt64 local_delay = replicated_storage->getAbsoluteDelay();
+            const UInt64 max_allowed_delay = current_settings[Setting::max_replica_delay_for_distributed_queries];
+
+            if (try_results.empty() && local_delay >= max_allowed_delay)
+            {
+                throw Exception(
+                    ErrorCodes::ALL_REPLICAS_ARE_STALE,
+                    "Failed to connect to other replicas and the local replica's delay is {} which is higher than max_replica_delay_for_distributed_queries",
+                    local_delay
+                );
+            }
+
+            if (try_results.empty() || (local_delay < max_remote_delay && local_delay < max_allowed_delay))
+            {
+                auto plan = createLocalPlan(
+                    query, header, my_context, my_stage, my_shard.shard_info.shard_num, my_shard_count, my_shard.has_missing_objects);
+
+                return std::move(*plan->buildQueryPipeline(QueryPlanOptimizationSettings(my_context), BuildQueryPipelineSettings(my_context)));
+            }
         }
 
         std::vector<IConnectionPool::Entry> connections;
@@ -218,6 +531,12 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
         for (auto & try_result : try_results)
             connections.emplace_back(std::move(try_result.entry));
 
+        /// For the lazy case we are ignoring external tables.
+        /// This is because the set could be build before the lambda call,
+        /// and the temporary table which we are about to send would be empty.
+        /// So that GLOBAL IN would work as local IN in the pushed-down predicate.
+        if (pushed_down_filters)
+            addFilters(nullptr, my_context, query, query_tree, planner_context, *pushed_down_filters);
         String query_string = formattedAST(query);
 
         my_scalars["_shard_num"] = Block{
@@ -233,14 +552,6 @@ void ReadFromRemote::addLazyPipe(Pipes & pipes, const ClusterProxy::SelectStream
 
     pipes.emplace_back(createDelayedPipe(shard.header, lazily_create_stream, add_totals, add_extremes));
     addConvertingActions(pipes.back(), out_header, shard.has_missing_objects);
-}
-
-ASTSelectQuery & getSelectQuery(ASTPtr ast)
-{
-    if (const auto * explain = ast->as<ASTExplainQuery>())
-        ast = explain->getExplainedQuery();
-
-    return ast->as<ASTSelectQuery &>();
 }
 
 void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFactory::Shard & shard, const Header & out_header)
@@ -327,6 +638,9 @@ void ReadFromRemote::addPipe(Pipes & pipes, const ClusterProxy::SelectStreamFact
     }
     else
     {
+        if (filter_actions_dag)
+            addFilters(&external_tables, context, shard.query, shard.query_tree, shard.planner_context, *filter_actions_dag);
+
         const String query_string = formattedAST(shard.query);
 
         auto remote_query_executor = std::make_shared<RemoteQueryExecutor>(

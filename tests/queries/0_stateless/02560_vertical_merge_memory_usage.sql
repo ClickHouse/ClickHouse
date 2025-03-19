@@ -6,7 +6,7 @@ insert into tvm select number + 0, number + 1, number + 2, number + 3, number + 
 
 optimize table tvm final;
 
-system flush logs;
+system flush logs part_log;
 -- should be about 4MB
 select formatReadableSize(peak_memory_usage), * from system.part_log where table = 'tvm' and database = currentDatabase() and event_date >= today() - 1 and event_type = 'MergeParts' and peak_memory_usage > 100000000 format Vertical;
 

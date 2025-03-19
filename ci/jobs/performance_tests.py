@@ -378,7 +378,7 @@ def main():
             res_ = leftCH.start_preconfig()
             leftCH.terminate()
             # wait for termination
-            time.sleep(3)
+            time.sleep(5)
             Shell.check("ps -ef | grep clickhouse", verbose=True)
             return res_
 

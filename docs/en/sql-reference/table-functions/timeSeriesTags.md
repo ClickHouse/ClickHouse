@@ -1,13 +1,16 @@
 ---
-slug: /en/sql-reference/table-functions/timeSeriesTags
+description: 'timeSeriesTags table function returns the tags table use by table `db_name.time_series_table`
+  whose table engine is the TimeSeries engine.'
+sidebar_label: 'timeSeriesTags'
 sidebar_position: 145
-sidebar_label: timeSeriesTags
+slug: /sql-reference/table-functions/timeSeriesTags
+title: 'timeSeriesTags'
 ---
 
-# timeSeriesTags
+# timeSeriesTags Table Function
 
 `timeSeriesTags(db_name.time_series_table)` - Returns the [tags](../../engines/table-engines/integrations/time-series.md#tags-table) table
-used by table `db_name.time_series_table` which table engine is [TimeSeries](../../engines/table-engines/integrations/time-series.md):
+used by table `db_name.time_series_table` whose table engine is the [TimeSeries](../../engines/table-engines/integrations/time-series.md) engine:
 
 ``` sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS tags_table

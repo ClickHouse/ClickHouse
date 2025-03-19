@@ -11,6 +11,10 @@ from subprocess import PIPE, STDOUT, Popen, call, check_output
 from typing import List
 
 
+class ServerDied(Exception):
+    pass
+
+
 def get_options(i: int, upgrade_check: bool) -> str:
     options = []
     client_options = []
@@ -19,6 +23,7 @@ def get_options(i: int, upgrade_check: bool) -> str:
 
     if i % 3 == 2 and not upgrade_check:
         options.append(f'''--db-engine="Replicated('/test/db/test_{i}', 's1', 'r1')"''')
+        client_options.append("enable_deflate_qpl_codec=1")
         client_options.append("enable_zstd_qat_codec=1")
 
     # If database name is not specified, new database is created for each functional test.
@@ -74,7 +79,7 @@ def get_options(i: int, upgrade_check: bool) -> str:
     # TODO: After release 24.3 use ignore_drop_queries_probability for both
     #       stress test and upgrade check
     if not upgrade_check:
-        client_options.append("ignore_drop_queries_probability=0.5")
+        client_options.append("ignore_drop_queries_probability=0.2")
 
     if random.random() < 0.2:
         client_options.append("enable_parallel_replicas=1")
@@ -131,7 +136,7 @@ def call_with_retry(query: str, timeout: int = 30, retry_count: int = 5) -> None
     for i in range(retry_count):
         code = call(query, shell=True, stderr=STDOUT, timeout=timeout)
         if code != 0:
-            logging.info("Command returend %s, retrying", str(code))
+            logging.info("Command returned %s, retrying", str(code))
             time.sleep(i)
         else:
             break
@@ -157,6 +162,9 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
         "timeout 50s tail --pid=$(pidof gdb) -f /dev/null || kill -9 $(pidof gdb) ||:",
         timeout=60,
     )
+    # Ensure that process exists
+    if call("kill -0 $(cat /var/run/clickhouse-server/clickhouse-server.pid)", shell=True) != 0:
+        raise ServerDied("clickhouse-server process does not exist")
     # Sometimes there is a message `Child process was stopped by signal 19` in logs after stopping gdb
     call_with_retry(
         "kill -CONT $(cat /var/run/clickhouse-server/clickhouse-server.pid) && clickhouse client -q 'SELECT 1 FORMAT Null'"
@@ -271,23 +279,6 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
     return True
 
 
-def is_ubsan_build() -> bool:
-    try:
-        query = (
-            'clickhouse client -q "SELECT value FROM system.build_options '
-            "WHERE name = 'CXX_FLAGS'\" "
-        )
-        output = (
-            check_output(query, shell=True, stderr=STDOUT, timeout=30)
-            .decode("utf-8")
-            .strip()
-        )
-        return "-fsanitize=undefined" in output
-    except Exception as e:
-        logging.info("Failed to get build flags: %s", str(e))
-        return False
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="ClickHouse script for running stresstest"
@@ -315,10 +306,6 @@ def main():
         raise argparse.ArgumentTypeError(
             "--drop-databases only used in hung check (--hung-check)"
         )
-
-    # FIXME Hung check with ubsan is temporarily disabled due to
-    # https://github.com/ClickHouse/ClickHouse/issues/45372
-    suppress_hung_check = is_ubsan_build()
 
     func_pipes = []
     func_pipes = run_func_test(
@@ -348,51 +335,63 @@ def main():
     logging.info("Logs compressed")
 
     if args.hung_check:
+        server_died = False
         try:
             have_long_running_queries = prepare_for_hung_check(args.drop_databases)
-        except Exception as ex:
-            have_long_running_queries = True
-            logging.error("Failed to prepare for hung check: %s", str(ex))
-        logging.info("Checking if some queries hung")
-        cmd = " ".join(
-            [
-                args.test_cmd,
-                # Do not track memory allocations up to 1Gi,
-                # this will allow to ignore server memory limit (max_server_memory_usage) for this query.
-                #
-                # NOTE: memory_profiler_step should be also adjusted, because:
-                #
-                #     untracked_memory_limit = min(settings.max_untracked_memory, settings.memory_profiler_step)
-                #
-                # NOTE: that if there will be queries with GROUP BY, this trick
-                # will not work due to CurrentMemoryTracker::check() from
-                # Aggregator code.
-                # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
-                "--client-option",
-                "max_untracked_memory=1Gi",
-                "max_memory_usage_for_user=0",
-                "memory_profiler_step=1Gi",
-                # Use system database to avoid CREATE/DROP DATABASE queries
-                "--database=system",
-                "--hung-check",
-                "--report-logs-stats",
-                "00001_select_1",
-            ]
-        )
-        hung_check_log = args.output_folder / "hung_check.log"  # type: Path
-        with Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE) as tee:
-            res = call(cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600)
-            if tee.stdin is not None:
-                tee.stdin.close()
-        if res != 0 and have_long_running_queries and not suppress_hung_check:
-            logging.info("Hung check failed with exit code %d", res)
-        else:
-            hung_check_status = "No queries hung\tOK\t\\N\t\n"
+        except ServerDied:
+            server_died = True
+            status_message = "Server died\tFAIL\t\\N\t\n"
             with open(
                 args.output_folder / "test_results.tsv", "w+", encoding="utf-8"
             ) as results:
-                results.write(hung_check_status)
-                hung_check_log.unlink()
+                results.write(status_message)
+        except Exception as ex:
+            have_long_running_queries = True
+            logging.error("Failed to prepare for hung check: %s", str(ex))
+
+        if not server_died:
+            logging.info("Checking if some queries hung")
+            cmd = " ".join(
+                [
+                    args.test_cmd,
+                    # Do not track memory allocations up to 1Gi,
+                    # this will allow to ignore server memory limit (max_server_memory_usage) for this query.
+                    #
+                    # NOTE: memory_profiler_step should be also adjusted, because:
+                    #
+                    #     untracked_memory_limit = min(settings.max_untracked_memory, settings.memory_profiler_step)
+                    #
+                    # NOTE: that if there will be queries with GROUP BY, this trick
+                    # will not work due to CurrentMemoryTracker::check() from
+                    # Aggregator code.
+                    # But right now it should work, since neither hung check, nor 00001_select_1 has GROUP BY.
+                    "--client-option",
+                    "max_untracked_memory=1Gi",
+                    "max_memory_usage_for_user=0",
+                    "memory_profiler_step=1Gi",
+                    # Use system database to avoid CREATE/DROP DATABASE queries
+                    "--database=system",
+                    "--hung-check",
+                    "--report-logs-stats",
+                    "00001_select_1",
+                ]
+            )
+            hung_check_log = args.output_folder / "hung_check.log"  # type: Path
+            with Popen(["/usr/bin/tee", hung_check_log], stdin=PIPE) as tee:
+                res = call(
+                    cmd, shell=True, stdout=tee.stdin, stderr=STDOUT, timeout=600
+                )
+                if tee.stdin is not None:
+                    tee.stdin.close()
+            if res != 0 and have_long_running_queries:
+                logging.info("Hung check failed with exit code %d", res)
+            else:
+                hung_check_status = "No queries hung\tOK\t\\N\t\n"
+                with open(
+                    args.output_folder / "test_results.tsv", "w+", encoding="utf-8"
+                ) as results:
+                    results.write(hung_check_status)
+                    hung_check_log.unlink()
 
     logging.info("Stress test finished")
 

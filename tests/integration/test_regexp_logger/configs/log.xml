@@ -1,6 +1,0 @@
-<clickhouse>
-    <logger>
-        <level>trace</level>
-        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
-    </logger>
-</clickhouse>

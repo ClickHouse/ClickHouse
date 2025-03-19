@@ -3,7 +3,9 @@
 #include <Common/StringUtils.h>
 #include <queue>
 #include "KeeperClient.h"
-#include "Parsers/CommonParsers.h"
+
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
 
 
 namespace DB
@@ -567,7 +569,7 @@ void ReconfigCommand::execute(const DB::ASTKeeperQuery * query, DB::KeeperClient
     String leaving;
     String new_members;
 
-    auto operation = query->args[0].safeGet<ReconfigCommand::Operation>();
+    auto operation = query->args[0].safeGet<UInt8>();
     switch (operation)
     {
         case static_cast<UInt8>(ReconfigCommand::Operation::ADD):

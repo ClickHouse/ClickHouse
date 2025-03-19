@@ -2,6 +2,7 @@
 
 #if USE_HDFS
 #include "HDFSCommon.h"
+#include "HDFSErrorWrapper.h"
 #include <Common/Scheduler/ResourceGuard.h>
 #include <IO/Progress.h>
 #include <Common/Throttler.h>
@@ -31,13 +32,12 @@ extern const int UNKNOWN_FILE_SIZE;
 }
 
 
-struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileSize
+struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<SeekableReadBuffer>, public WithFileSize, public HDFSErrorWrapper
 {
     String hdfs_uri;
     String hdfs_file_path;
 
     hdfsFile fin;
-    HDFSBuilderWrapper builder;
     HDFSFSPtr fs;
     ReadSettings read_settings;
 
@@ -54,14 +54,14 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         bool use_external_buffer_,
         std::optional<size_t> file_size_)
         : BufferWithOwnMemory<SeekableReadBuffer>(use_external_buffer_ ? 0 : read_settings_.remote_fs_buffer_size)
+        , HDFSErrorWrapper(hdfs_uri_, config_)
         , hdfs_uri(hdfs_uri_)
         , hdfs_file_path(hdfs_file_path_)
         , read_settings(read_settings_)
         , read_until_position(read_until_position_)
     {
-        builder = createHDFSBuilder(hdfs_uri_, config_);
         fs = createHDFSFS(builder.get());
-        fin = hdfsOpenFile(fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
+        fin = wrapErr<hdfsFile>(hdfsOpenFile, fs.get(), hdfs_file_path.c_str(), O_RDONLY, 0, 0, 0);
 
         if (fin == nullptr)
             throw Exception(ErrorCodes::CANNOT_OPEN_FILE,
@@ -74,7 +74,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
         else
         {
-            auto * file_info = hdfsGetPathInfo(fs.get(), hdfs_file_path.c_str());
+            auto * file_info = wrapErr<hdfsFileInfo *>(hdfsGetPathInfo, fs.get(), hdfs_file_path.c_str());
             if (!file_info)
             {
                 hdfsCloseFile(fs.get(), fin);
@@ -120,7 +120,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         }
 
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, num_bytes_to_read);
-        int bytes_read = hdfsRead(fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
+        int bytes_read = wrapErr<tSize>(hdfsRead, fs.get(), fin, internal_buffer.begin(), safe_cast<int>(num_bytes_to_read));
         rlock.unlock(std::max(0, bytes_read));
 
         if (bytes_read < 0)
@@ -152,7 +152,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
         if (whence != SEEK_SET)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Only SEEK_SET is supported");
 
-        int seek_status = hdfsSeek(fs.get(), fin, file_offset_);
+        int seek_status = wrapErr<int>(hdfsSeek, fs.get(), fin, file_offset_);
         if (seek_status != 0)
             throw Exception(ErrorCodes::CANNOT_SEEK_THROUGH_FILE, "Fail to seek HDFS file: {}, error: {}", hdfs_uri, std::string(hdfsGetLastError()));
         file_offset = file_offset_;
@@ -168,7 +168,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     size_t pread(char * buffer, size_t size, size_t offset)
     {
         ResourceGuard rlock(ResourceGuard::Metrics::getIORead(), read_settings.io_scheduling.read_resource_link, size);
-        auto bytes_read = hdfsPread(fs.get(), fin, buffer, safe_cast<int>(size), offset);
+        auto bytes_read = wrapErr<tSize>(hdfsPread, fs.get(), fin, buffer, safe_cast<int>(size), offset);
         rlock.unlock(std::max(0, bytes_read));
 
         if (bytes_read < 0)
@@ -197,7 +197,7 @@ ReadBufferFromHDFS::ReadBufferFromHDFS(
         size_t read_until_position_,
         bool use_external_buffer_,
         std::optional<size_t> file_size_)
-    : ReadBufferFromFileBase(read_settings_.remote_fs_buffer_size, nullptr, 0)
+    : ReadBufferFromFileBase()
     , impl(std::make_unique<ReadBufferFromHDFSImpl>(
                hdfs_uri_, hdfs_file_path_, config_, read_settings_, read_until_position_, use_external_buffer_, file_size_))
     , use_external_buffer(use_external_buffer_)

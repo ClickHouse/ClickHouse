@@ -1,9 +1,10 @@
 ---
-slug: /en/getting-started/example-datasets/environmental-sensors
-sidebar_label: Environmental Sensors Data
+description: 'Over 20 billion records of data from Sensor.Community, a contributors-driven
+  global sensor network that creates Open Environmental Data.'
+sidebar_label: 'Environmental Sensors Data'
+slug: /getting-started/example-datasets/environmental-sensors
+title: 'Environmental Sensors Data'
 ---
-
-# Environmental Sensors Data
 
 [Sensor.Community](https://sensor.community/en/) is a contributors-driven global sensor network that creates Open Environmental Data. The data is collected from sensors all over the globe. Anyone can purchase a sensor and place it wherever they like. The APIs to download the data is in [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs) and the data is freely available under the [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 

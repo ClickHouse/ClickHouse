@@ -1,9 +1,12 @@
 ---
-slug: /en/operations/system-tables/dropped_tables
+description: 'System table containing information about tables that drop table has
+  been executed on but for which data cleanup has not yet been performed'
+keywords: ['system table', 'dropped_tables']
+slug: /operations/system-tables/dropped_tables
+title: 'system.dropped_tables'
 ---
-# dropped_tables
 
-Contains information about tables that drop table has been executed but data cleanup has not been actually performed.
+Contains information about tables that drop table has been executed on but for which data cleanup has not yet been performed.
 
 Columns:
 
@@ -17,7 +20,7 @@ Columns:
 
 **Example**
 
-The following example shows how to get information about dropped_tables.
+The following example shows how to get information about `dropped_tables`.
 
 ``` sql
 SELECT *

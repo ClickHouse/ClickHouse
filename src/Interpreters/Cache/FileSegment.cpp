@@ -5,6 +5,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Cache/FileCache.h>
 #include <Interpreters/Cache/FileCacheUtils.h>
+#include <base/EnumReflection.h>
 #include <base/getThreadId.h>
 #include <base/hex.h>
 #include <Common/CurrentThread.h>
@@ -13,8 +14,6 @@
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
-
-#include <magic_enum.hpp>
 
 namespace fs = std::filesystem;
 
@@ -429,20 +428,24 @@ void FileSegment::write(char * from, size_t size, size_t offset_in_file)
         e.addMessage(fmt::format("{}, current cache state: {}", e.what(), getInfoForLogUnlocked(lk)));
         setDownloadFailedUnlocked(lk);
 
-        if (downloaded_size == 0 && fs::exists(file_segment_path))
+        if (fs::exists(file_segment_path))
         {
-            fs::remove(file_segment_path);
-        }
-        else if (is_no_space_left_error)
-        {
-            const auto file_size = fs::file_size(file_segment_path);
+            if (downloaded_size == 0)
+            {
+                fs::remove(file_segment_path);
+            }
+            else if (is_no_space_left_error)
+            {
+                const auto file_size = fs::file_size(file_segment_path);
 
-            chassert(downloaded_size <= file_size);
-            chassert(reserved_size >= file_size);
-            chassert(file_size <= range().size());
+                LOG_TRACE(log, "Failed to write to file: no space left on device "
+                          "(file size: {}, downloaded size: {}, reserved size: {})",
+                          file_size, downloaded_size.load(), reserved_size.load());
 
-            if (downloaded_size != file_size)
-                downloaded_size = file_size;
+                chassert(downloaded_size <= file_size && file_size <= reserved_size);
+                if (downloaded_size != file_size)
+                    downloaded_size = file_size;
+            }
         }
 
         throw;
@@ -543,7 +546,7 @@ bool FileSegment::reserve(
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Attempt to reserve space too much space ({}) for file segment with range: {} (downloaded size: {})",
-                size_to_reserve, range().toString(), downloaded_size);
+                size_to_reserve, range().toString(), downloaded_size.load());
         }
 
         chassert(reserved_size >= expected_downloaded_size);
@@ -592,8 +595,9 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock &)
     {
         cache_writer->finalize();
         cache_writer.reset();
-        remote_file_reader.reset();
     }
+
+    remote_file_reader.reset();
 
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
@@ -815,6 +819,10 @@ void FileSegment::complete(bool allow_background_download)
                         cache_writer.reset();
                     }
 
+                    /// Reset the reader so request is not kept alive and with that
+                    /// preventing other operations on the same objects
+                    remote_file_reader.reset();
+
                     shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
             }
@@ -841,6 +849,8 @@ void FileSegment::complete(bool allow_background_download)
                         cache_writer->finalize();
                         cache_writer.reset();
                     }
+
+                    remote_file_reader.reset();
 
                     shrinkFileSegmentToDownloadedSize(*locked_key, segment_lock);
                 }
@@ -916,7 +926,7 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
 
         const auto & entry = it->getEntry();
         if (download_state != State::DOWNLOADING && entry->size != reserved_size)
-            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size, reserved_size));
+            throw_logical(fmt::format("Expected entry.size == reserved_size ({} == {})", entry->size.load(), reserved_size.load()));
 
         chassert(entry->key == key());
         chassert(entry->offset == offset());
@@ -953,6 +963,9 @@ bool FileSegment::assertCorrectnessUnlocked(const FileSegmentGuard::Lock & lock)
             chassert(downloaded_size == reserved_size);
             chassert(downloaded_size == range().size());
             chassert(downloaded_size > 0);
+
+            chassert(!remote_file_reader);
+            chassert(!cache_writer);
 
             auto file_size = fs::file_size(getPath());
             UNUSED(file_size);

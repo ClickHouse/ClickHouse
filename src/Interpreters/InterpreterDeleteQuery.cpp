@@ -11,7 +11,6 @@
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ParserAlterQuery.h>
 #include <Parsers/ASTDeleteQuery.h>
 #include <Storages/AlterCommands.h>
@@ -77,7 +76,7 @@ BlockIO InterpreterDeleteQuery::execute()
     {
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
         guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(query_ptr, getContext());
+        return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {});
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -122,8 +121,8 @@ BlockIO InterpreterDeleteQuery::execute()
         /// Build "ALTER ... UPDATE _row_exists = 0 WHERE predicate" query
         String alter_query = "ALTER TABLE " + table->getStorageID().getFullTableName()
             + (delete_query.cluster.empty() ? "" : " ON CLUSTER " + backQuoteIfNeed(delete_query.cluster)) + " UPDATE `_row_exists` = 0"
-            + (delete_query.partition ? " IN PARTITION " + serializeAST(*delete_query.partition) : "") + " WHERE "
-            + serializeAST(*delete_query.predicate);
+            + (delete_query.partition ? " IN PARTITION " + delete_query.partition->formatWithSecretsOneLine() : "") + " WHERE "
+            + delete_query.predicate->formatWithSecretsOneLine();
 
         ParserAlterQuery parser;
         ASTPtr alter_ast = parseQuery(

@@ -1,4 +1,5 @@
 #include <Processors/IInflatingTransform.h>
+#include <Processors/Port.h>
 
 namespace DB
 {

@@ -1,13 +1,17 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/stochasticlogisticregression
+description: 'This function implements stochastic logistic regression. It can be used
+  for binary classification problem, supports the same custom parameters as stochasticLinearRegression
+  and works the same way.'
 sidebar_position: 193
+slug: /sql-reference/aggregate-functions/reference/stochasticlogisticregression
+title: 'stochasticLogisticRegression'
 ---
 
 # stochasticLogisticRegression
 
 This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
 
-### Parameters
+### Parameters {#parameters}
 
 Parameters are exactly the same as in stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
@@ -21,7 +25,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 <!-- -->
 
-    See the `Fitting` section in the [stochasticLinearRegression](#stochasticlinearregression-usage-fitting) description.
+    See the `Fitting` section in the [stochasticLinearRegression](/sql-reference/aggregate-functions/reference/stochasticlinearregression) description.
 
     Predicted labels have to be in \[-1, 1\].
 
@@ -52,5 +56,5 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
 **See Also**
 
-- [stochasticLinearRegression](../../../sql-reference/aggregate-functions/reference/stochasticlinearregression.md#agg_functions-stochasticlinearregression)
+- [stochasticLinearRegression](/sql-reference/aggregate-functions/reference/stochasticlogisticregression)
 - [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
