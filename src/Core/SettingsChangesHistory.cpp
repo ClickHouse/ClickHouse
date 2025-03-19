@@ -66,6 +66,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
+        addSettingsChanges(settings_changes_history, "25.4",
+        {
+            {"compile_expressions", false, true, "For ci tests"},
+            {"min_count_to_compile_expression", 3, 1, "For ci tests"},
+        });
         addSettingsChanges(settings_changes_history, "25.3",
         {
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
@@ -102,9 +107,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"formatdatetime_f_prints_scale_number_of_digits", true, false, "New setting."},
             {"distributed_cache_connect_max_tries", 20, 20, "Cloud only"},
             {"query_plan_use_new_logical_join_step", false, false, "New join step, internal change"},
-            {"distributed_cache_min_bytes_for_seek", false, false, "New private setting."},
-            {"compile_expressions", false, true, "For ci tests"},
-            {"min_count_to_compile_expression", 3, 1, "For ci tests"},
             {"distributed_cache_min_bytes_for_seek", 0, 0, "New private setting."},
             {"use_iceberg_partition_pruning", false, false, "New setting"},
             {"max_bytes_ratio_before_external_group_by", 0.0, 0.5, "Enable automatic spilling to disk by default."},
