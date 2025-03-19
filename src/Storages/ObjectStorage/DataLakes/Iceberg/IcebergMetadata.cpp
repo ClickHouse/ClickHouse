@@ -1,45 +1,41 @@
-#include "Core/NamesAndTypes.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
 #include "config.h"
 
 #if USE_AVRO
 
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/IColumn.h>
 #include <Core/Settings.h>
+#include <Core/NamesAndTypes.h>
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <Processors/Formats/Impl/AvroRowInputFormat.h>
+
 #include <Storages/ObjectStorage/DataLakes/Common.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
-#include <Common/logger_useful.h>
 #include <Interpreters/ExpressionActions.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
-
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
+#include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
 
 
 namespace ProfileEvents
 {
-extern const Event IcebergPartitionPrunnedFiles;
+    extern const Event IcebergPartitionPrunnedFiles;
 }
+
 namespace DB
 {
 
 namespace StorageObjectStorageSetting
 {
-extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
+    extern const StorageObjectStorageSettingsString iceberg_metadata_file_path;
 }
 
 namespace ErrorCodes

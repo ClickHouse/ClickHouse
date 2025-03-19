@@ -45,7 +45,7 @@ Int32 ManifestFileContent::getSchemaId() const
 using namespace DB;
 
 ManifestFileContent::ManifestFileContent(
-    const DB::AvroForIcebergDeserializer & manifest_file_deserializer,
+    const AvroForIcebergDeserializer & manifest_file_deserializer,
     Int32 format_version_,
     const String & common_path,
     Int32 schema_id_,

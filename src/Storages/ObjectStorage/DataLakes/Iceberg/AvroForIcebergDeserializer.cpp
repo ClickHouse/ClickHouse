@@ -6,13 +6,15 @@
 #include <Common/assert_cast.h>
 #include <base/find_symbols.h>
 
-namespace DB
-{
-
-namespace ErrorCodes
+namespace DB::ErrorCodes
 {
     extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
+
+namespace Iceberg
+{
+
+using namespace DB;
 
 AvroForIcebergDeserializer::AvroForIcebergDeserializer(
     std::unique_ptr<ReadBufferFromFileBase> buffer_,

@@ -79,7 +79,7 @@ class ManifestFileContent
 {
 public:
     explicit ManifestFileContent(
-        const DB::AvroForIcebergDeserializer & manifest_file_deserializer,
+        const AvroForIcebergDeserializer & manifest_file_deserializer,
         Int32 format_version_,
         const String & common_path,
         Int32 schema_id_,
