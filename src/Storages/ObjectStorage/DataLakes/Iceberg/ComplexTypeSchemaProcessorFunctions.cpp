@@ -5,6 +5,7 @@
 
 #include <Core/Field.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ComplexTypeSchemaProcessorFunctions.h>
+#include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Poco/SharedPtr.h>
@@ -13,6 +14,7 @@
 #include "DataTypes/DataTypeArray.h"
 #include "DataTypes/DataTypeMap.h"
 #include "DataTypes/DataTypeTuple.h"
+#include "base/defines.h"
 
 namespace DB
 {
@@ -588,46 +590,103 @@ Poco::JSON::Array::Ptr ExecutableEvolutionFunction::makeArrayFromObject(Poco::JS
     return json_array;
 }
 
+void ExecutableEvolutionFunction::pushNewNode(
+    std::stack<ExecutableEvolutionFunction::TraverseItem> & walk_stack,
+    Poco::JSON::Object::Ptr old_node,
+    Poco::JSON::Object::Ptr new_node,
+    std::vector<IcebergChangeSchemaOperation::Edge> * current_path)
+{
+    if (!old_node->isObject("type"))
+        return;
+
+    if (old_node->getObject("type")->getValue<std::string>("type") == "struct")
+    {
+        Poco::JSON::Array::Ptr subfields = new_node->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
+        Poco::JSON::Array::Ptr old_subfields = old_node->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
+
+        if (current_path)
+            current_path->push_back(
+                {old_node->getValue<std::string>("name"), new_node->getValue<std::string>("name"), TransformType::STRUCT});
+
+        walk_stack.push(TraverseItem{
+            old_subfields,
+            subfields,
+            current_path ? *current_path : std::vector<IcebergChangeSchemaOperation::Edge>{},
+            TransformType::STRUCT});
+        if (current_path)
+            current_path->pop_back();
+    }
+    else if (old_node->getObject("type")->getValue<std::string>("type") == "list" && old_node->getObject("type")->isObject("element"))
+    {
+        auto subfields = new_node->getObject("type")->getObject("element");
+        auto old_subfields = old_node->getObject("type")->getObject("element");
+
+        if (current_path)
+            current_path->push_back({"", "", TransformType::ARRAY});
+
+        walk_stack.push(
+            {makeArrayFromObject(old_subfields),
+             makeArrayFromObject(subfields),
+             current_path ? *current_path : std::vector<IcebergChangeSchemaOperation::Edge>{},
+             TransformType::ARRAY});
+        if (current_path)
+            current_path->pop_back();
+    }
+    else if (old_node->getObject("type")->getValue<std::string>("type") == "map" && old_node->getObject("type")->isObject("value"))
+    {
+        auto subfields = new_node->getObject("type")->getObject("value");
+        auto old_subfields = old_node->getObject("type")->getObject("value");
+        if (current_path)
+            current_path->push_back({"", "", TransformType::MAP});
+
+        walk_stack.push(
+            {makeArrayFromObject(old_subfields),
+             makeArrayFromObject(subfields),
+             current_path ? *current_path : std::vector<IcebergChangeSchemaOperation::Edge>{},
+             TransformType::MAP});
+        if (current_path)
+            current_path->pop_back();
+    }
+}
+
+std::shared_ptr<ReorderingTransform> makeReorderingTransform(
+    const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
+    const std::vector<size_t> & initial_permutation,
+    DataTypePtr old_type)
+{
+    auto operation = IcebergReorderingOperation(current_path, initial_permutation);
+    auto transform = std::make_shared<ReorderingTransform>(operation, old_type);
+    return transform;
+}
+
+std::shared_ptr<DeletingTransform> makeDeletingTransform(
+    const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
+    const std::vector<size_t> & initial_permutation,
+    DataTypePtr old_type,
+    Poco::JSON::Object::Ptr old_subfield)
+{
+    auto operation = IcebergDeletingOperation(current_path, old_subfield->getValue<String>("name"));
+    auto transform = std::make_shared<DeletingTransform>(operation, old_type, initial_permutation);
+    return transform;
+}
+
+
+std::shared_ptr<AddingTransform> makeAddingTransform(
+    const std::vector<IcebergChangeSchemaOperation::Edge> & current_path,
+    DataTypePtr type,
+    DataTypePtr old_type,
+    Poco::JSON::Object::Ptr subfield)
+{
+    auto operation = IcebergAddingOperation(current_path, subfield->getValue<String>("name"));
+    auto transform = std::make_shared<AddingTransform>(operation, type, old_type);
+    return transform;
+}
+
 void ExecutableEvolutionFunction::lazyInitialize() const
 {
-    /// To process schema evolution in case when we have tree-based tuple we use DFS
-    /// and process 3-stage pipeline, which was described above.
-    /// Struct below is state of out DFS algorithm.
-    struct TraverseItem
-    {
-        Poco::JSON::Array::Ptr old_subfields = nullptr;
-        Poco::JSON::Array::Ptr fields = nullptr;
-        std::vector<IcebergChangeSchemaOperation::Edge> current_path = {};
-        TransformType type;
-    };
-
     std::stack<TraverseItem> walk_stack;
-    if (old_json->isObject("type") && old_json->getObject("type")->getValue<std::string>("type") == "struct")
-    {
-        auto subfields = field->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
-        auto old_subfields = old_json->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
-
-        walk_stack.push(TraverseItem{old_subfields, subfields, {}, TransformType::STRUCT});
-    }
-    else if (
-        old_json->isObject("type") && old_json->getObject("type")->getValue<std::string>("type") == "list"
-        && old_json->getObject("type")->isObject("element"))
-    {
-        auto subfields = field->getObject("type")->getObject("element");
-        auto old_subfields = old_json->getObject("type")->getObject("element");
-
-        walk_stack.push({makeArrayFromObject(old_subfields), makeArrayFromObject(subfields), {}, TransformType::ARRAY});
-    }
-    else if (
-        old_json->isObject("type") && old_json->getObject("type")->getValue<std::string>("type") == "map"
-        && old_json->getObject("type")->isObject("value"))
-    {
-        auto subfields = field->getObject("type")->getObject("value");
-        auto old_subfields = old_json->getObject("type")->getObject("value");
-
-        walk_stack.push({makeArrayFromObject(old_subfields), makeArrayFromObject(subfields), {}, TransformType::MAP});
-    }
-
+    chassert(old_json->isObject("type"));
+    pushNewNode(walk_stack, old_json, field, nullptr);
     std::map<size_t, std::vector<std::shared_ptr<IIcebergSchemaTransform>>> per_layer_transforms;
 
     while (!walk_stack.empty())
@@ -668,7 +727,6 @@ void ExecutableEvolutionFunction::lazyInitialize() const
             }
 
             current_path.pop_back();
-
             continue;
         }
 
@@ -699,11 +757,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
         }
 
         fillMissingElementsInPermutation(initial_permutation, old_subfields->size());
-        {
-            auto operation = IcebergReorderingOperation(current_path, initial_permutation);
-            auto transform = std::make_shared<ReorderingTransform>(operation, old_type);
-            per_layer_transforms[current_path.size()].push_back(transform);
-        }
+        per_layer_transforms[current_path.size()].push_back(makeReorderingTransform(current_path, initial_permutation, old_type));
         /// Stage 2: Deleting extra fields in current schema.
         /// All transforms should be ordered by indices of deletion in decreasing order.
         std::vector<std::pair<size_t, std::shared_ptr<DeletingTransform>>> delete_transforms;
@@ -713,8 +767,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
             auto id_old_subfield = old_subfield->getValue<size_t>("id");
             if (!id_to_type.contains(id_old_subfield))
             {
-                auto operation = IcebergDeletingOperation(current_path, old_subfield->getValue<String>("name"));
-                auto transform = std::make_shared<DeletingTransform>(operation, old_type, initial_permutation);
+                auto transform = makeDeletingTransform(current_path, initial_permutation, old_type, old_subfield);
                 delete_transforms.push_back({transform->getDeleteIndex(), transform});
                 continue;
             }
@@ -731,8 +784,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
             auto id_subfield = subfield->getValue<size_t>("id");
             if (!old_types.contains(id_subfield))
             {
-                auto operation = IcebergAddingOperation(current_path, subfield->getValue<String>("name"));
-                auto transform = std::make_shared<AddingTransform>(operation, type, old_type);
+                auto transform = makeAddingTransform(current_path, type, old_type, subfield);
                 per_layer_transforms[current_path.size()].push_back(transform);
             }
         }
@@ -748,37 +800,7 @@ void ExecutableEvolutionFunction::lazyInitialize() const
             }
             auto subfield = id_to_type[id_old_subfield];
 
-            if (subfield->isObject("type") && subfield->getObject("type")->getValue<std::string>("type") == "struct")
-            {
-                auto child_subfields = subfield->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
-                auto child_old_subfields = old_subfield->getObject("type")->get("fields").extract<Poco::JSON::Array::Ptr>();
-                current_path.push_back(
-                    {old_subfield->getValue<std::string>("name"), subfield->getValue<std::string>("name"), TransformType::STRUCT});
-                walk_stack.push({child_old_subfields, child_subfields, current_path, TransformType::STRUCT});
-                current_path.pop_back();
-            }
-            else if (
-                subfield->isObject("type") && subfield->getObject("type")->getValue<std::string>("type") == "list"
-                && subfield->getObject("type")->isObject("element"))
-            {
-                auto child_subfield = subfield->getObject("type")->getObject("element");
-                auto child_old_subfield = old_subfield->getObject("type")->getObject("element");
-                current_path.push_back({"", "", TransformType::ARRAY});
-                walk_stack.push(
-                    {makeArrayFromObject(child_old_subfield), makeArrayFromObject(child_subfield), current_path, TransformType::ARRAY});
-                current_path.pop_back();
-            }
-            else if (
-                subfield->isObject("type") && subfield->getObject("type")->getValue<std::string>("type") == "map"
-                && subfield->getObject("type")->isObject("value"))
-            {
-                auto child_subfield = subfield->getObject("type")->getObject("value");
-                auto child_old_subfield = old_subfield->getObject("type")->getObject("value");
-                current_path.push_back({"", "", TransformType::MAP});
-                walk_stack.push(
-                    {makeArrayFromObject(child_old_subfield), makeArrayFromObject(child_subfield), current_path, TransformType::MAP});
-                current_path.pop_back();
-            }
+            pushNewNode(walk_stack, old_subfield, subfield, &current_path);
         }
     }
 

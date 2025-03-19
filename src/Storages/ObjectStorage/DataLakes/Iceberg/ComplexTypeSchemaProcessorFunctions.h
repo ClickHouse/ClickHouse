@@ -133,7 +133,25 @@ public:
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /*result_type*/, size_t input_rows_count) const override;
 
 private:
+    /// To process schema evolution in case when we have tree-based tuple we use DFS
+    /// and process 3-stage pipeline, which was described above.
+    /// Struct below is state of out DFS algorithm.
+    struct TraverseItem
+    {
+        Poco::JSON::Array::Ptr old_subfields = nullptr;
+        Poco::JSON::Array::Ptr fields = nullptr;
+        std::vector<IcebergChangeSchemaOperation::Edge> current_path = {};
+        TransformType type;
+    };
+
     void lazyInitialize() const;
+
+    static void pushNewNode(
+        std::stack<TraverseItem> & walk_stack,
+        Poco::JSON::Object::Ptr old_node,
+        Poco::JSON::Object::Ptr new_node,
+        std::vector<IcebergChangeSchemaOperation::Edge> * current_path);
+
     static void fillMissingElementsInPermutation(std::vector<size_t> & permutation, size_t target_size);
     static Poco::JSON::Array::Ptr makeArrayFromObject(Poco::JSON::Object::Ptr object);
 
