@@ -12,9 +12,19 @@ from kazoo.exceptions import NoNodeError
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, ClickHouseInstance
-from helpers.s3_queue_common import run_query, random_str, generate_random_files, put_s3_file_content, put_azure_file_content, create_table, create_mv, generate_random_string, add_instances
+from helpers.s3_queue_common import (
+    run_query,
+    random_str,
+    generate_random_files,
+    put_s3_file_content,
+    put_azure_file_content,
+    create_table,
+    create_mv,
+    generate_random_string,
+)
 
 AVAILABLE_MODES = ["unordered", "ordered"]
+
 
 @pytest.fixture(autouse=True)
 def s3_queue_setup_teardown(started_cluster):
@@ -46,7 +56,61 @@ def s3_queue_setup_teardown(started_cluster):
 def started_cluster():
     try:
         cluster = ClickHouseCluster(__file__)
-        add_instances(cluster)
+        cluster.add_instance(
+            "instance",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_azurite=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/zookeeper.xml",
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance2",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/s3queue_log.xml",
+                "configs/remote_servers.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance_23.12",
+            with_zookeeper=True,
+            image="clickhouse/clickhouse-server",
+            tag="23.12",
+            stay_alive=True,
+            with_installed_binary=True,
+            use_old_analyzer=True,
+        )
+        cluster.add_instance(
+            "instance_too_many_parts",
+            user_configs=["configs/users.xml"],
+            with_minio=True,
+            with_zookeeper=True,
+            main_configs=[
+                "configs/s3queue_log.xml",
+                "configs/merge_tree.xml",
+            ],
+            stay_alive=True,
+        )
+        cluster.add_instance(
+            "instance_24.5",
+            with_zookeeper=True,
+            image="clickhouse/clickhouse-server",
+            tag="24.5",
+            stay_alive=True,
+            user_configs=[
+                "configs/users.xml",
+            ],
+            with_installed_binary=True,
+        )
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -213,7 +277,9 @@ def test_processed_file_setting_distributed(started_cluster, processing_threads)
 
 
 def test_upgrade(started_cluster):
-    node = started_cluster.instances["old_instance"]
+    node = started_cluster.instances["instance_23.12"]
+    if "23.12" not in node.query("select version()").strip():
+        node.restart_with_original_version()
 
     table_name = f"test_upgrade"
     dst_table_name = f"{table_name}_dst"
@@ -457,13 +523,23 @@ def test_commit_on_limit(started_cluster, processing_threads):
         assert value in failed
 
     node.query("system flush logs")
-    count = node.query(f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: 10)%' and logger_name ILIKE '%{table_name}%'")
-    count_2 = node.query(f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: 4)%' and logger_name ILIKE '%{table_name}%'")
-    assert int(count) + int(count_2) == int(node.query(f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: %' and logger_name ILIKE '%{table_name}%'"))
+    count = node.query(
+        f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: 10)%' and logger_name ILIKE '%{table_name}%'"
+    )
+    count_2 = node.query(
+        f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: 4)%' and logger_name ILIKE '%{table_name}%'"
+    )
+    assert int(count) + int(count_2) == int(
+        node.query(
+            f"SELECT count() FROM system.text_log WHERE message ILIKE '%successful files: %' and logger_name ILIKE '%{table_name}%'"
+        )
+    )
 
 
 def test_upgrade_2(started_cluster):
     node = started_cluster.instances["instance_24.5"]
+    if "24.5" not in node.query("select version()").strip():
+        node.restart_with_original_version()
     assert "24.5" in node.query("select version()").strip()
 
     table_name = f"test_upgrade_2_{uuid.uuid4().hex[:8]}"
@@ -503,7 +579,9 @@ def test_upgrade_2(started_cluster):
 
     assert expected_rows == get_count()
 
+    # Parallel ordered mode used before 24.6 is not supported.
+    # Users must do ALTER TABLE MODIFY SETTING buckets=N.
+    node.query(f"DROP TABLE {table_name}_mv")
+
     node.restart_with_latest_version()
     assert table_name in node.query("SHOW TABLES")
-
-
