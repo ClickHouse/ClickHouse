@@ -37,6 +37,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"compress_primary_key", CHSetting(trueOrFalse, {}, false)},
     {"concurrent_part_removal_threshold",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.2, 0.3, 0, 100)); }, {}, false)},
+    {"columns_and_secondary_indices_sizes_lazy_calculation", CHSetting(trueOrFalse, {}, false)},
     {"deduplicate_merge_projection_mode",
      CHSetting(
          [](RandomGenerator & rg)
@@ -54,6 +55,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"enable_block_number_column", CHSetting(trueOrFalse, {}, false)},
     {"enable_block_offset_column", CHSetting(trueOrFalse, {}, false)},
     {"enable_index_granularity_compression", CHSetting(trueOrFalse, {}, false)},
+    {"enable_max_bytes_limit_for_min_age_to_force_merge", CHSetting(trueOrFalse, {}, false)},
     {"enable_mixed_granularity_parts", CHSetting(trueOrFalse, {}, false)},
     {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", CHSetting(trueOrFalse, {}, false)},
     {"enable_vertical_merge_algorithm", CHSetting(trueOrFalse, {}, false)},
@@ -184,10 +186,15 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     /// ClickHouse cloud setting
     {"shared_merge_tree_disable_merges_and_mutations_assignment", CHSetting(trueOrFalse, {}, false)},
     /// ClickHouse cloud setting
+    {"shared_merge_tree_enable_keeper_parts_extra_data", CHSetting(trueOrFalse, {}, false)},
+    /// ClickHouse cloud setting
     {"shared_merge_tree_parts_load_batch_size",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }, {}, false)},
+    /// ClickHouse cloud setting
+    {"shared_merge_tree_try_fetch_part_in_memory_data_from_replicas", CHSetting(trueOrFalse, {}, false)},
     {"simultaneous_parts_removal_limit",
      CHSetting([](RandomGenerator & rg) { return std::to_string(rg.thresholdGenerator<uint32_t>(0.3, 0.3, 0, 128)); }, {}, false)},
+    {"table_disk", CHSetting(trueOrFalse, {}, false)},
     {"ttl_only_drop_parts", CHSetting(trueOrFalse, {}, false)},
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", CHSetting(trueOrFalse, {}, false)},
     {"use_async_block_ids_cache", CHSetting(trueOrFalse, {}, false)},
