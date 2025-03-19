@@ -223,6 +223,22 @@ class Result(MetaClasses.Serializable):
         return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
 
     @classmethod
+    def experimental_file_name_static(cls):
+        return f"{Settings.TEMP_DIR}/result.json"
+
+    @classmethod
+    def experimental_from_fs(cls, name):
+        # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+        Shell.check(
+            f"cp {cls.experimental_file_name_static()} {cls.file_name_static(name)}",
+            verbose=True,
+        )
+        result = Result.from_fs(name)
+        result.name = name
+        result.dump()
+        return result
+
+    @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
         sub_results = []
         for result_dict in obj.get("results", []):

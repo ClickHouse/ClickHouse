@@ -65,6 +65,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/ReplaceQueryParameterVisitor.h>
 
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
@@ -79,6 +80,7 @@
 #include <Common/logger_useful.h>
 
 #include <ranges>
+#include <base/find_symbols.h>
 
 namespace DB
 {
@@ -603,6 +605,12 @@ std::optional<FilterDAGInfo> buildAdditionalFiltersIfNeeded(const StoragePtr & s
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
+
+            if (find_first_symbols<'{'>(filter.data(), filter.data() + filter.size()) && !planner_context->getQueryContext()->getQueryParameters().empty())
+            {
+                ReplaceQueryParameterVisitor visitor(planner_context->getQueryContext()->getQueryParameters());
+                visitor.visit(additional_filter_ast);
+            }
             break;
         }
     }
