@@ -2403,7 +2403,42 @@ Alias: `dateTrunc`.
 
 **Returned value**
 
-- Value, truncated to the specified part of date. [DateTime](../data-types/datetime.md).
+1. DataTypeDate
+	-	Returned when datepart_kind is Year, Quarter, Month, or Week.
+	-	The second argument is Date (not Date32).
+	-	If the second argument is Date32, the return type is changed to DataTypeDate32.
+
+2. DataTypeDate32
+	-	Returned when:
+	-	datepart_kind is Year, Quarter, Month, or Week.
+	-	The second argument is Date32 (supports negative values).
+	-	This is an extension from the previous logic, ensuring compatibility with Date32 inputs.
+
+3. DataTypeDateTime
+	-	Returned when datepart_kind is Day, Hour, Minute, or Second.
+	-	The second argument is DateTime.
+
+4. DataTypeDateTime64
+	-	Returned when:
+	-	datepart_kind is Millisecond, Microsecond, or Nanosecond.
+	-	If the second argument is DateTime64, DataTypeDateTime64 is chosen regardless of the datepart_kind.
+	-	If the second argument is DateTime and the datepart_kind is Day, Hour, Minute, or Second, the result type is changed from DateTime to DateTime64 to support negative values.
+	-	The scale is determined based on the datepart_kind:
+        -	Millisecond → scale = 3
+        -	Microsecond → scale = 6
+        -	Nanosecond → scale = 9
+
+⸻
+
+Additional Rules and Edge Cases
+1.	Invalid Combinations:
+	-	If the second argument is Date or Date32, datepart_kind cannot be Hour, Minute, or Second.
+2.	Negative Value Support Adjustments:
+	-	If the second argument is Date32, return type is changed from Date → Date32.
+	-	If the second argument is DateTime64, return type is changed from DateTime → DateTime64.
+
+⸻
+
 
 **Example**
 
