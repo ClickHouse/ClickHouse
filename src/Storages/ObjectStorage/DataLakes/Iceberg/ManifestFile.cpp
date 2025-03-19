@@ -118,9 +118,22 @@ ManifestFileContent::ManifestFileContent(
 
         const auto file_path = getProperFilePathFromMetadataInfo(manifest_file_deserializer.getValueFromRowByName(i, SUBCOLUMN_FILE_PATH_NAME, TypeIndex::String).safeGet<String>(), common_path, table_location);
 
-        DB::Row partition_key_value;
+        /// NOTE: This is weird, because in manifest file partition looks like this:
+        /// {
+        /// ...
+        ///  "data_file": {
+        ///    "partition": {
+        ///      "total_amount_trunc": {
+        ///        "decimal_10_2": "\u0000\u0000\u0000\u0013<U+0086>"
+        ///      }
+        ///    },
+        ///    ....
+        /// However, somehow parser ignores all these nested keys like "total_amount_trunc" or "decimal_10_2" and
+        /// directly returns tuple of partition values. However it's exactly what we need.
         Field partition_value = manifest_file_deserializer.getValueFromRowByName(i, SUBCOLUMN_PARTITION_NAME);
         auto tuple = partition_value.safeGet<Tuple>();
+
+        DB::Row partition_key_value;
         for (const auto & value : tuple)
             partition_key_value.emplace_back(value);
 
