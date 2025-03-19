@@ -686,7 +686,7 @@ void TCPHandler::runImpl()
                     /// Should not check for cancel in case of input.
                     /// And for parallel distributed insert select from *Cluster table functions as well,
                     /// because it need receiving ReadTaskResponse from Client.
-                    if (!query_state->need_receive_data_for_input && interactive_delay > 1000)
+                    if (!query_state->need_receive_data_for_input && interactive_delay >= 1000)
                     {
                         auto callback = [this, &query_state]()
                         {
