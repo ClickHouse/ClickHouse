@@ -78,7 +78,7 @@ GROUP BY
 │           1 │ Bobruisk │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
-### Important note! {#important-note}
+### Important note!
 Using multiple `arrayJoin` with same expression may not produce expected results due to optimizations.
 For that cases, consider modifying repeated array expression with extra operations that do not affect join result - e.g. `arrayJoin(arraySort(arr))`, `arrayJoin(arrayConcat(arr, []))`
 

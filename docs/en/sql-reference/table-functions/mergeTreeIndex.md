@@ -2,13 +2,11 @@
 slug: /sql-reference/table-functions/mergeTreeIndex
 sidebar_position: 77
 sidebar_label: mergeTreeIndex
-title: "mergeTreeIndex"
-description: "Represents the contents of index and marks files of MergeTree tables. It can be used for introspection."
 ---
 
-# mergeTreeIndex Table Function
+# mergeTreeIndex
 
-Represents the contents of index and marks files of MergeTree tables. It can be used for introspection.
+Represents the contents of index and marks files of MergeTree tables. It can be used for introspection
 
 ``` sql
 mergeTreeIndex(database, table, [with_marks = true])
@@ -30,7 +28,7 @@ A table object with columns with values of primary index of source table, column
 
 Marks column may contain `(NULL, NULL)` value in case when column is absent in data part or marks for one of its substreams are not written (e.g. in compact parts).
 
-## Usage Example {#usage-example}
+## Usage Example
 
 ```sql
 CREATE TABLE test_table

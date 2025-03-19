@@ -36,8 +36,6 @@
 #include <Formats/registerFormats.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
-#include <boost/algorithm/string/split.hpp>
-
 namespace DB
 {
 namespace Setting

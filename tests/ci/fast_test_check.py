@@ -123,7 +123,7 @@ def main():
     subprocess.check_call(f"sudo chown -R ubuntu:ubuntu {temp_path}", shell=True)
 
     test_output_files = os.listdir(output_path)
-    additional_files = [f for f in output_path.glob("**/*") if f.is_file()]
+    additional_files = [f for f in output_path.glob('**/*') if f.is_file()]
     additional_files.append(run_log_path)
 
     test_log_exists = (

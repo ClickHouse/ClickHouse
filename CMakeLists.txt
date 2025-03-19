@@ -102,6 +102,8 @@ if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
     set (FUZZER "libfuzzer")
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -nostdlib++")
+    set (ENABLE_CLICKHOUSE_ODBC_BRIDGE OFF)
+    set (ENABLE_LIBRARIES 0)
     set (ENABLE_SSL 1)
     set (ENABLE_EXAMPLES 0)
     set (ENABLE_UTILS 0)
@@ -175,6 +177,8 @@ if (OS_LINUX)
     # We should not export dynamic symbols, because:
     # - The main clickhouse binary does not use dlopen,
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
+    # - The clickhouse-odbc-bridge and clickhouse-library-bridge binaries
+    #   should not expose their symbols to ODBC drivers and libraries.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
 endif ()
 
@@ -509,7 +513,7 @@ macro (clickhouse_add_executable target)
 
     get_target_property (type ${target} TYPE)
     if (${type} STREQUAL EXECUTABLE)
-        # Disabled if memory tracking is disabled
+        # disabled for TSAN and gcc since libtsan.a provides overrides too
         if (TARGET clickhouse_new_delete)
             # operator::new/delete for executables (MemoryTracker stuff)
             target_link_libraries (${target} PRIVATE clickhouse_new_delete)
@@ -594,8 +598,7 @@ if (FUZZER)
     # Instrument all targets fuzzer and link with libfuzzer
     get_all_targets(all_targets)
     foreach(target ${all_targets})
-        # isa-l contrib uses the nasm compiler, which has no fsanitize options
-        if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main" OR target MATCHES ".*isal.*"))
+        if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main"))
             get_target_property(target_type ${target} TYPE)
             if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
                 target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")

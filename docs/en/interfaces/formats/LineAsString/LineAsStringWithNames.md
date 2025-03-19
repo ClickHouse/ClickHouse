@@ -1,7 +1,7 @@
 ---
-title: LineAsStringWithNames
+title : LineAsStringWithNames
 slug: /interfaces/formats/LineAsStringWithNames
-keywords: [LineAsStringWithNames]
+keywords : [LineAsStringWithNames]
 input_format: true
 output_format: true
 alias: []
@@ -11,11 +11,11 @@ alias: []
 |-------|--------|-------|
 | ✗     | ✔      |       |
 
-## Description {#description}
+## Description
 
 The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format but prints the header row with column names.
 
-## Example Usage {#example-usage}
+## Example Usage
 
 ```sql title="Query"
 CREATE TABLE example (
@@ -36,4 +36,4 @@ Jane	25
 Peter	35
 ```
 
-## Format Settings {#format-settings}
+## Format Settings

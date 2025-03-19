@@ -24,7 +24,6 @@
 #include <Storages/StoragePostgreSQL.h>
 #include <Storages/AlterCommands.h>
 #include <Interpreters/Context.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/parseQuery.h>

@@ -1,11 +1,11 @@
 ---
-title: MySQLWire
+title : MySQLWire
 slug: /interfaces/formats/MySQLWire
-keywords: [MySQLWire]
+keywords : [MySQLWire]
 ---
 
-## Description {#description}
+## Description
 
-## Example Usage {#example-usage}
+## Example Usage
 
-## Format Settings {#format-settings}
+## Format Settings

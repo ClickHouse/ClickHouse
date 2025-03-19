@@ -5,7 +5,7 @@ title: clickhouse-compressor
 
 Simple program for data compression and decompression.
 
-### Examples {#examples}
+### Examples
 
 Compress data with LZ4:
 ```bash

@@ -2,7 +2,7 @@ import glob
 from itertools import chain
 from pathlib import Path
 
-from praktika import Artifact, Job
+from praktika import Job
 
 from . import Workflow
 from .mangle import _get_workflows
@@ -20,14 +20,6 @@ class Validator:
                     Path(file).is_file()
                     or Path(f"{Settings.WORKFLOWS_DIRECTORY}/{file}").is_file(),
                     f"Setting DISABLED_WORKFLOWS has non-existing workflow file [{file}]",
-                )
-
-        if Settings.ENABLED_WORKFLOWS:
-            for file in Settings.ENABLED_WORKFLOWS:
-                cls.evaluate_check_simple(
-                    Path(file).is_file()
-                    or Path(f"{Settings.WORKFLOWS_DIRECTORY}/{file}").is_file(),
-                    f"Setting ENABLED_WORKFLOWS has non-existing workflow file [{file}]",
                 )
 
         if Settings.USE_CUSTOM_GH_AUTH:
@@ -94,11 +86,6 @@ class Validator:
 
             if workflow.artifacts:
                 for artifact in workflow.artifacts:
-                    cls.evaluate_check(
-                        isinstance(artifact, Artifact.Config),
-                        f"Must be Artifact.Config type, not {type(artifact)}: [{artifact}]",
-                        workflow.name,
-                    )
                     if artifact.is_s3_artifact():
                         assert (
                             Settings.S3_ARTIFACT_PATH

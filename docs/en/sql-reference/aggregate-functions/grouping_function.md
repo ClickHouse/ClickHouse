@@ -4,7 +4,7 @@ slug: /sql-reference/aggregate-functions/grouping_function
 
 # GROUPING
 
-## GROUPING {#grouping}
+## GROUPING
 
 [ROLLUP](../statements/select/group-by.md/#rollup-modifier) and [CUBE](../statements/select/group-by.md/#cube-modifier) are modifiers to GROUP BY. Both of these calculate subtotals. ROLLUP takes an ordered list of columns, for example `(day, month, year)`, and calculates subtotals at each level of the aggregation and then a grand total. CUBE calculates subtotals across all possible combinations of the columns specified. GROUPING identifies which rows returned by ROLLUP or CUBE are superaggregates, and which are rows that would be returned by an unmodified GROUP BY.
 
@@ -12,13 +12,13 @@ The GROUPING function takes multiple columns as an argument, and returns a bitma
 - `1` indicates that a row returned by a `ROLLUP` or `CUBE` modifier to `GROUP BY` is a subtotal
 - `0` indicates that a row returned by a `ROLLUP` or `CUBE` is a row that is not a subtotal
 
-## GROUPING SETS {#grouping-sets}
+## GROUPING SETS
 
 By default, the CUBE modifier calculates subtotals for all possible combinations of the columns passed to CUBE. GROUPING SETS allows you to specify the specific combinations to calculate.
 
 Analyzing hierarchical data is a good use case for ROLLUP, CUBE, and GROUPING SETS modifiers.  The sample here is a table containing data  about what Linux distribution, and the version of that distribution is installed across two datacenters.  It may be valuable to look at the data by distribution, version, and location.
 
-### Load sample data {#load-sample-data}
+### Load sample data
 
 ```sql
 CREATE TABLE servers ( datacenter VARCHAR(255),
@@ -66,7 +66,7 @@ FROM
 10 rows in set. Elapsed: 0.409 sec.
 ```
 
-### Simple queries {#simple-queries}
+### Simple queries
 
 Get the count of servers in each data center by distribution: 
 ```sql
@@ -145,7 +145,7 @@ FROM
 1 row in set. Elapsed: 0.244 sec. 
 ```
 
-### Comparing multiple GROUP BY statements with GROUPING SETS {#comparing-multiple-group-by-statements-with-grouping-sets}
+### Comparing multiple GROUP BY statements with GROUPING SETS
 
 Breaking down the data without CUBE, ROLLUP, or GROUPING SETS:
 ```sql
@@ -244,7 +244,7 @@ GROUP BY
 9 rows in set. Elapsed: 0.427 sec.
 ```
 
-### Comparing CUBE with GROUPING SETS {#comparing-cube-with-grouping-sets}
+### Comparing CUBE with GROUPING SETS
 
 The CUBE in the next query, `CUBE(datacenter,distro,version)` provides a hierarchy that may not make sense.  It does not make sense to look at Version across the two distributions (as Arch and RHEL do not have the same release cycle or version naming standards).  The GROUPING SETS example following this one is more appropriate as it groups `distro` and `version` in the same set. 
 

@@ -1,6 +1,5 @@
 #include <Storages/Kafka/StorageKafka2.h>
 
-#include <Columns/IColumn.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>

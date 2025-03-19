@@ -365,7 +365,7 @@ try
     std::filesystem::create_directories(path);
 
     /// Check that the process user id matches the owner of the data.
-    assertProcessUserMatchesDataOwner(path, [&](const PreformattedMessage & message){ LOG_WARNING(log, fmt::runtime(message.text)); });
+    assertProcessUserMatchesDataOwner(path, [&](const std::string & message){ LOG_WARNING(log, fmt::runtime(message)); });
 
     DB::ServerUUID::load(path + "/uuid", log);
 
@@ -388,7 +388,7 @@ try
     });
 
     MemoryWorker memory_worker(
-        config().getUInt64("memory_worker_period_ms", 0), config().getBool("memory_worker_correct_memory_tracker", false), /*use_cgroup*/ true, /*page_cache*/ nullptr);
+        config().getUInt64("memory_worker_period_ms", 0), config().getBool("memory_worker_correct_memory_tracker", false));
     memory_worker.start();
 
     static ServerErrorHandler error_handler;

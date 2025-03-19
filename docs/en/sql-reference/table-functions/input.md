@@ -2,15 +2,12 @@
 slug: /sql-reference/table-functions/input
 sidebar_position: 95
 sidebar_label: input
-title: "input"
-description: "Table function that allows effectively converting and inserting data sent to the
-server with a given structure to a table with another structure."
 ---
 
-# input Table Function
+# input
 
-`input(structure)` - table function that allows effectively converting and inserting data sent to the
-server with a given structure to a table with another structure.
+`input(structure)` - table function that allows effectively convert and insert data sent to the
+server with given structure to the table with another structure.
 
 `structure` - structure of data sent to the server in following format `'column1_name column1_type, column2_name column2_type, ...'`.
 For example, `'id UInt32, name String'`.
@@ -18,7 +15,7 @@ For example, `'id UInt32, name String'`.
 This function can be used only in `INSERT SELECT` query and only once but otherwise behaves like ordinary table function
 (for example, it can be used in subquery, etc.).
 
-Data can be sent in any way like for ordinary `INSERT` query and passed in any available [format](/sql-reference/formats)
+Data can be sent in any way like for ordinary `INSERT` query and passed in any available [format](../../interfaces/formats.md#formats)
 that must be specified in the end of query (unlike ordinary `INSERT SELECT`).
 
 The main feature of this function is that when server receives data from client it simultaneously converts it

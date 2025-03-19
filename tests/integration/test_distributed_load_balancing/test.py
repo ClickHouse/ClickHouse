@@ -210,27 +210,28 @@ def test_distributed_replica_max_ignored_errors():
 
     # initiate connection (if started only this test)
     n2.query("SELECT * FROM dist", settings=settings)
+    cluster.pause_container("n1")
 
-    with cluster.pause_container("n1"):
-        # n1 paused -- skipping, and increment error_count for n1
-        # but the query succeeds, no need in query_and_get_error()
-        n2.query("SELECT * FROM dist", settings=settings)
-        # XXX: due to config reloading we need second time (sigh)
-        n2.query("SELECT * FROM dist", settings=settings)
-        # check error_count for n1
-        assert (
-            int(
-                n2.query(
-                    """
-        SELECT errors_count FROM system.clusters
-        WHERE cluster = 'replicas_cluster' AND host_name = 'n1'
-        """,
-                    settings=settings,
-                )
+    # n1 paused -- skipping, and increment error_count for n1
+    # but the query succeeds, no need in query_and_get_error()
+    n2.query("SELECT * FROM dist", settings=settings)
+    # XXX: due to config reloading we need second time (sigh)
+    n2.query("SELECT * FROM dist", settings=settings)
+    # check error_count for n1
+    assert (
+        int(
+            n2.query(
+                """
+    SELECT errors_count FROM system.clusters
+    WHERE cluster = 'replicas_cluster' AND host_name = 'n1'
+    """,
+                settings=settings,
             )
-            == 1
         )
+        == 1
+    )
 
+    cluster.unpause_container("n1")
     # still n2
     assert get_node(n2, settings=settings) == "n2"
     # now n1

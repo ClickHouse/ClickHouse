@@ -285,13 +285,6 @@ void readString(String & s, ReadBuffer & buf)
     readStringInto(s, buf);
 }
 
-void readString(String & s, ReadBuffer & buf, size_t n)
-{
-    s.resize(n);
-    if (n)
-        s.resize(buf.read(s.data(), n));
-}
-
 template void readStringInto<PaddedPODArray<UInt8>>(PaddedPODArray<UInt8> & s, ReadBuffer & buf);
 template void readStringInto<String>(String & s, ReadBuffer & buf);
 template void readStringInto<NullOutput>(NullOutput & s, ReadBuffer & buf);

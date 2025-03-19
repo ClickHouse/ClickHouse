@@ -738,14 +738,13 @@ def test_abrupt_connection_loss_while_heavy_replication(started_cluster):
         thread.join()  # Join here because it takes time for data to reach wal
 
     time.sleep(2)
+    started_cluster.pause_container("postgres1")
 
+    # for i in range(NUM_TABLES):
+    #     result = instance.query(f"SELECT count() FROM test_database.postgresql_replica_{i}")
+    #     print(result) # Just debug
 
-    with started_cluster.pause_container("postgres1"):
-        # for i in range(NUM_TABLES):
-        #     result = instance.query(f"SELECT count() FROM test_database.postgresql_replica_{i}")
-        #     print(result) # Just debug
-        pass
-
+    started_cluster.unpause_container("postgres1")
     check_several_tables_are_synchronized(instance, NUM_TABLES)
 
 

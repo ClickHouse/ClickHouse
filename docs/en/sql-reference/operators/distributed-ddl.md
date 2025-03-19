@@ -1,6 +1,6 @@
 ---
 title: Distributed DDL Queries (ON CLUSTER Clause)
-slug: /sql-reference/other/distributed-ddl
+slug: en/sql-reference/other/distributed-ddl
 description: Page for Distributed DDL
 sidebar_label: Distributed DDL
 ---

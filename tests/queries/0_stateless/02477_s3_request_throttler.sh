@@ -20,7 +20,7 @@ INSERT INTO times SELECT now();
 
 SELECT max(t) - min(t) >= 1 FROM times;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['S3CreateMultipartUpload'] == 1,
        ProfileEvents['S3UploadPart'] == 1,
        ProfileEvents['S3CompleteMultipartUpload'] == 1

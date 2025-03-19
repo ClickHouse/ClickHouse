@@ -7,14 +7,14 @@ title: "Recipes Dataset"
 
 The RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.poznan.pl/dataset). It contains 2.2 million recipes. The size is slightly less than 1 GB.
 
-## Download and Unpack the Dataset {#download-and-unpack-the-dataset}
+## Download and Unpack the Dataset
 
 1. Go to the download page [https://recipenlg.cs.put.poznan.pl/dataset](https://recipenlg.cs.put.poznan.pl/dataset).
 2. Accept Terms and Conditions and download zip file.
 3. Option: Using the `md5sum dataset.zip` to validate the zip file and it should be equal to `3a168dfd0912bb034225619b3586ce76`.
 4. Unpack the zip file with `unzip dataset.zip`. You will get the `full_dataset.csv` file in the `dataset` directory.
 
-## Create a Table {#create-a-table}
+## Create a Table
 
 Run clickhouse-client and execute the following CREATE query:
 
@@ -30,7 +30,7 @@ CREATE TABLE recipes
 ) ENGINE = MergeTree ORDER BY title;
 ```
 
-## Insert the Data {#insert-the-data}
+## Insert the Data
 
 Run the following command:
 
@@ -60,7 +60,7 @@ Explanation:
 - Some strings from CSV cannot parse, because they contain `\M/` sequence at the beginning of the value; the only value starting with backslash in CSV can be `\N` that is parsed as SQL NULL. We add `--input_format_allow_errors_num 10` parameter and up to ten malformed records can be skipped;
 - There are arrays for ingredients, directions and NER fields; these arrays are represented in unusual form: they are serialized into string as JSON and then placed in CSV - we parse them as String and then use [JSONExtract](../../sql-reference/functions/json-functions.md) function to transform it to Array.
 
-## Validate the Inserted Data {#validate-the-inserted-data}
+## Validate the Inserted Data
 
 By checking the row count:
 
@@ -78,9 +78,9 @@ Result:
 └─────────┘
 ```
 
-## Example Queries {#example-queries}
+## Example Queries
 
-### Top Components by the Number of Recipes: {#top-components-by-the-number-of-recipes}
+### Top Components by the Number of Recipes:
 
 In this example we learn how to use [arrayJoin](../../sql-reference/functions/array-join.md) function to expand an array into a set of rows.
 
@@ -155,7 +155,7 @@ Result:
 50 rows in set. Elapsed: 0.112 sec. Processed 2.23 million rows, 361.57 MB (19.99 million rows/s., 3.24 GB/s.)
 ```
 
-### The Most Complex Recipes with Strawberry {#the-most-complex-recipes-with-strawberry}
+### The Most Complex Recipes with Strawberry
 
 ``` sql
 SELECT
@@ -334,6 +334,6 @@ Result:
 126 rows in set. Elapsed: 0.011 sec. Processed 8.19 thousand rows, 5.34 MB (737.75 thousand rows/s., 480.59 MB/s.)
 ```
 
-### Online Playground {#online-playground}
+### Online Playground
 
 The dataset is also available in the [Online Playground](https://sql.clickhouse.com?query_id=HQXNQZE26Z1QWYP9KC76ML).

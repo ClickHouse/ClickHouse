@@ -2,11 +2,12 @@
 
 #include <Core/Block.h>
 #include <Processors/IProcessor.h>
+#include <QueryPipeline/Chain.h>
+#include <QueryPipeline/QueryPlanResourceHolder.h>
 
 namespace DB
 {
 
-class Chain;
 class EnabledQuota;
 struct StreamLocalLimits;
 

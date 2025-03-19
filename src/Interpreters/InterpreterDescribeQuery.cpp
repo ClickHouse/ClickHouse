@@ -3,7 +3,6 @@
 #include <QueryPipeline/BlockIO.h>
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/queryToString.h>
-#include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <TableFunctions/ITableFunction.h>

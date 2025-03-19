@@ -116,7 +116,7 @@ public:
     {
     }
 
-    uint64_t getSeed() const;
+    uint32_t getSeed() const;
 
     uint32_t nextSmallNumber();
 
