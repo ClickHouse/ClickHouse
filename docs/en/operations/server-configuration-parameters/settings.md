@@ -324,7 +324,7 @@ Default: `SLRU`
 
 ## index_mark_cache_size {#index_mark_cache_size}
 
-Size of cache for index marks.
+Maximum size of cache for index marks.
 
 :::note
 
@@ -339,7 +339,7 @@ Default: `0`
 
 ## index_mark_cache_size_ratio {#index_mark_cache_size_ratio}
 
-The size of the protected queue in the index mark cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the index mark cache relative to the cache's total size.
 
 Type: `Double`
 
@@ -355,7 +355,7 @@ Default: `SLRU`
 
 ## index_uncompressed_cache_size {#index_uncompressed_cache_size}
 
-Size of cache for uncompressed blocks of `MergeTree` indices.
+Maximum size of cache for uncompressed blocks of `MergeTree` indices.
 
 :::note
 A value of `0` means disabled.
@@ -369,11 +369,47 @@ Default: `0`
 
 ## index_uncompressed_cache_size_ratio {#index_uncompressed_cache_size_ratio}
 
-The size of the protected queue in the index uncompressed cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the index uncompressed cache relative to the cache's total size.
 
 Type: `Double`
 
 Default: `0.5`
+
+## vector_similarity_index_cache_policy {#vector_similarity_index_cache_policy}
+
+Vector similarity index cache policy name.
+
+Type: `String`
+
+Default: `SLRU`
+
+## vector_similarity_index_cache_size {#vector_similarity_index_cache_size}
+
+Size of cache for vector similarity indexes. Zero means disabled.
+
+:::note
+This setting can be modified at runtime and will take effect immediately.
+:::
+
+Type: `UInt64`
+
+Default: `5368709120` (= 5 GiB)
+
+## vector_similarity_index_cache_size_ratio {#vector_similarity_index_cache_size_ratio}
+
+The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.
+
+Type: `Double`
+
+Default: `0.5`
+
+## vector_similarity_index_cache_max_entries {#vector_similarity_index_cache_max_entries}
+
+The maximum number of entries in the vector similarity index cache.
+
+Type: `UInt64`
+
+Default: `10000000`
 
 ## io_thread_pool_queue_size {#io_thread_pool_queue_size}
 
@@ -409,7 +445,7 @@ Default: `5368709120`
 
 ## mark_cache_size_ratio {#mark_cache_size_ratio}
 
-The size of the protected queue in the mark cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the mark cache relative to the cache's total size.
 
 Type: `Double`
 
@@ -1128,7 +1164,7 @@ Default: `SLRU`
 
 ## uncompressed_cache_size {#uncompressed_cache_size}
 
-Cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
+Maximum cache size (in bytes) for uncompressed data used by table engines from the MergeTree family.
 
 There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option use_uncompressed_cache is enabled.
 
@@ -1146,7 +1182,7 @@ Default: `0`
 
 ## uncompressed_cache_size_ratio {#uncompressed_cache_size_ratio}
 
-The size of the protected queue in the uncompressed cache relative to the cache's total size.
+The size of the protected queue (in case of SLRU policy) in the uncompressed cache relative to the cache's total size.
 
 Type: Double
 
