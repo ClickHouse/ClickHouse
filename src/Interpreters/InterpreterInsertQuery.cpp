@@ -823,7 +823,8 @@ BlockIO InterpreterInsertQuery::execute()
     auto & query = query_ptr->as<ASTInsertQuery &>();
 
     if (getContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation]
-        && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
+        && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
+        && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
 
     StoragePtr table = getTable(query);

@@ -41,6 +41,15 @@ def test_disable_insertion_and_mutation(started_cluster):
         """CREATE TABLE my_table on cluster default (key UInt64, value String) ENGINE=ReplicatedMergeTree('/clickhouse/tables/{shard}/default.my_table', '{replica}') ORDER BY key partition by (key % 5) """
     )
 
+    # allow insert into temp table in reading node
+    reading_node.query(
+        """CREATE TABLE default.my_tmp_table on cluster default (key UInt64, value String) ENGINE=Memory"""
+    )
+
+    reading_node.query(
+        """INSERT INTO my_tmp_table VALUES (1, 'hello'), (2, 'world')"""
+    )
+
     assert "QUERY_IS_PROHIBITED" in reading_node.query_and_get_error(
         "INSERT INTO my_table VALUES (1, 'hello')"
     )
