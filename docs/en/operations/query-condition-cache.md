@@ -29,7 +29,7 @@ The query condition cache is effective if three prerequisites are fulfilled:
 ## Memory Consumption {#memory-consumption}
 
 Since the query condition cache stores only a single bit per filter condition and granule, it consumes only little memory.
-The maximum size of the query condition cache can be configured using server settings [`query_condition_cache_size`](server-configuration-parameters/settings.md#query_codition_cache_size) (default: 100 MB).
+The maximum size of the query condition cache can be configured using server settings [`query_condition_cache_size`](server-configuration-parameters/settings.md#query_condition_cache_size) (default: 100 MB).
 A cache size of 100 MB corresponds to 100 * 1024 * 1024 * 8 = 838,860,800 entries.
 Since each entry represents a mark (8192 rows by default), the cache can cover up to 6,871,947,673,600 (6.8 trillion) rows of a single column.
 In practice, filter are evaluated on more than one column, so that number needs to be divided by the number of filtered columns.
