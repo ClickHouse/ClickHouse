@@ -1,0 +1,193 @@
+-- { echo }
+
+SET max_block_size = 10;
+SET max_result_rows = 20;
+SET result_overflow_mode = 'throw';
+SELECT DISTINCT intDiv(number, 10) FROM numbers(300); -- { serverError 396 }
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+SELECT DISTINCT intDiv(number, 10) FROM numbers(190);
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+SELECT DISTINCT intDiv(number, 10) FROM numbers(200);
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+SELECT DISTINCT intDiv(number, 10) FROM numbers(210); -- { serverError 396 }
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+SET result_overflow_mode = 'break';
+SELECT DISTINCT intDiv(number, 10) FROM numbers(300);
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+SELECT DISTINCT intDiv(number, 10) FROM numbers(190);
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+SELECT DISTINCT intDiv(number, 10) FROM numbers(200);
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+SELECT DISTINCT intDiv(number, 10) FROM numbers(210);
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+SET max_block_size = 10;
+SET max_result_rows = 1;
+SELECT number FROM system.numbers;
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+SELECT count() FROM numbers(100);
+100
+-- subquery result is not the total result
+SELECT count() FROM (SELECT * FROM numbers(100));
+100
+-- remote query result is not the total result
+SELECT count() FROM remote('127.0.0.{1,2}', numbers(100));
+200
