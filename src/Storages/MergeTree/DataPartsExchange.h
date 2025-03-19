@@ -40,6 +40,10 @@ public:
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
 
 protected:
+    MergeTreeData::DataPartPtr processQueryImpl(
+        const HTMLForm & params, ReadBuffer & body, WriteBuffer & out,
+        HTTPServerResponse & response, int client_protocol_version, bool send_projections);
+
     MergeTreeData::DataPartPtr findPart(const String & name);
 
     virtual MergeTreeData::DataPart::Checksums sendPartFromDisk(
@@ -47,6 +51,17 @@ protected:
         WriteBuffer & out,
         int client_protocol_version,
         bool send_projections);
+
+    MergeTreeData::DataPart::Checksums sendPartFromDiskImpl(
+        const MergeTreeData::DataPartPtr & part,
+        IDataPartStorage::ReplicatedFilesDescription replicated_description,
+        WriteBuffer & out,
+        int client_protocol_version,
+        bool send_projections);
+
+    NameSet getFilesToReplicate(const MergeTreeData::DataPartPtr & part, int client_protocol_version);
+
+    void report_broken_part(MergeTreeData::DataPartPtr part);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
     /// so Service will never access dangling reference to storage
@@ -139,7 +154,6 @@ class FetcherZeroCopy : Fetcher
 public:
     explicit FetcherZeroCopy(StorageReplicatedMergeTree & data_);
 
-    /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,

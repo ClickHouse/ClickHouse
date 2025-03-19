@@ -125,10 +125,8 @@ std::string Service::getId(const std::string & node_id) const
     return getEndpointId(node_id);
 }
 
-void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, HTTPServerResponse & response)
+MergeTreeData::DataPartPtr Service::processQueryImpl(const HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, HTTPServerResponse & response, int client_protocol_version, bool send_projections)
 {
-    int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
-
     String part_name = params.get("part");
 
     const auto data_settings = data.getSettings();
@@ -204,139 +202,77 @@ void Service::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, Write
         }
         capabilities.push_back(remote_fs_metadata.substr(pos_start));
 
-        bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
-
         if (send_projections)
         {
             const auto & projections = part->getProjectionParts();
             writeBinary(projections.size(), out);
         }
 
-        sendPartFromDisk(part, out, client_protocol_version, false);
+        return part;
+    }
+    catch (...)
+    {
+        if (!isRetryableException(std::current_exception()))
+            report_broken_part();
+        throw;
+    }
+}
+
+
+void Service::report_broken_part(MergeTreeData::DataPartPtr part)
+{
+    if (part)
+        data.reportBrokenPart(part);
+    else
+        LOG_TRACE(log, "Part {} was not found, do not report it as broken", part->name);
+}
+
+
+void Service::processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response)
+{
+    int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
+    bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
+    MergeTreeData::DataPartPtr part = processQueryImpl(params, body, out, response, client_protocol_version, send_projections);
+    // TODO zero-copy: maybe redundant catch
+    try
+    {
+        sendPartFromDisk(part, out, client_protocol_version, send_projections);
         data.addLastSentPart(part->info);
     }
     catch (...)
     {
         if (!isRetryableException(std::current_exception()))
-            report_broken_part();
+            report_broken_part(part);
         throw;
     }
 }
 
 
-void ServiceZeroCopy::processQuery(const HTMLForm & params, ReadBuffer & /*body*/, WriteBuffer & out, HTTPServerResponse & response)
+void ServiceZeroCopy::processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response)
 {
     int client_protocol_version = parse<int>(params.get("client_protocol_version", "0"));
-
-    String part_name = params.get("part");
-
-    const auto data_settings = data.getSettings();
-
-    /// Validation of the input that may come from malicious replica.
-    MergeTreePartInfo::fromPartName(part_name, data.format_version);
-
-    /// We pretend to work as older server version, to be sure that client will correctly process our version
-    response.addCookie({"server_protocol_version", toString(std::min(client_protocol_version, REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION))});
-
-    LOG_TRACE(log, "Sending part {}", part_name);
-
-    static const auto test_delay = data.getContext()->getConfigRef().getUInt64("test.data_parts_exchange.delay_before_sending_part_ms", 0);
-    if (test_delay)
-        randomDelayForMaxMilliseconds(test_delay, log, "DataPartsExchange: Before sending part");
-
-    MergeTreeData::DataPartPtr part;
-
-    auto report_broken_part = [&]()
-    {
-        if (part)
-            data.reportBrokenPart(part);
-        else
-            LOG_TRACE(log, "Part {} was not found, do not report it as broken", part_name);
-    };
-
+    bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
+    MergeTreeData::DataPartPtr part = processQueryImpl(params, body, out, response, client_protocol_version, send_projections);
+    // TODO zero-copy: maybe redundant catch
     try
     {
-        part = findPart(part_name);
-
-        CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
-
-        if (part->getDataPartStorage().isStoredOnRemoteDisk())
-        {
-            UInt64 revision = parse<UInt64>(params.get("disk_revision", "0"));
-            if (revision)
-                part->getDataPartStorage().syncRevision(revision);
-
-            revision = part->getDataPartStorage().getRevision();
-            if (revision)
-                response.addCookie({"disk_revision", toString(revision)});
-        }
-
-        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
-            writeBinary(part->checksums.getTotalSizeOnDisk(), out);
-
-        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS)
-        {
-            WriteBufferFromOwnString ttl_infos_buffer;
-            part->ttl_infos.write(ttl_infos_buffer);
-            writeBinary(ttl_infos_buffer.str(), out);
-        }
-
-        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_TYPE)
-            writeStringBinary(part->getType().toString(), out);
-
-        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_UUID)
-            writeUUIDText(part->uuid, out);
-
-        String remote_fs_metadata = parse<String>(params.get("remote_fs_metadata", ""));
-
-        /// Tokenize capabilities from remote_fs_metadata
-        /// E.g. remote_fs_metadata = "local, s3_plain, web" --> capabilities = ["local", "s3_plain", "web"]
-        Strings capabilities;
-        const String delimiter(", ");
-        size_t pos_start = 0;
-        size_t pos_end;
-        while ((pos_end = remote_fs_metadata.find(delimiter, pos_start)) != std::string::npos)
-        {
-            const String token = remote_fs_metadata.substr(pos_start, pos_end - pos_start);
-            pos_start = pos_end + delimiter.size();
-            capabilities.push_back(token);
-        }
-        capabilities.push_back(remote_fs_metadata.substr(pos_start));
-
-        bool send_projections = client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_PROJECTION;
-
-        if (send_projections)
-        {
-            const auto & projections = part->getProjectionParts();
-            writeBinary(projections.size(), out);
-        }
-
         // TODO zero-copy: what if not?
         // if (!client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_ZERO_COPY)
         //     throw ...
         auto disk_type = part->getDataPartStorage().getDiskType();
-        if (part->getDataPartStorage().supportZeroCopyReplication() && std::find(capabilities.begin(), capabilities.end(), disk_type) != capabilities.end())
-        {
-            /// Send metadata if the receiver's capabilities covers the source disk type.
-            response.addCookie({"remote_fs_metadata", disk_type});
-            sendPartFromDisk(part, out, client_protocol_version, send_projections);
-            return;
-        }
+        response.addCookie({"remote_fs_metadata", disk_type});
+        sendPartFromDisk(part, out, client_protocol_version, send_projections);
     }
     catch (...)
     {
         if (!isRetryableException(std::current_exception()))
-            report_broken_part();
+            report_broken_part(part);
         throw;
     }
 }
 
 
-MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
-    const MergeTreeData::DataPartPtr & part,
-    WriteBuffer & out,
-    int client_protocol_version,
-    bool send_projections)
+NameSet Service::getFilesToReplicate(const MergeTreeData::DataPartPtr & part, int client_protocol_version)
 {
     NameSet files_to_replicate;
     auto file_names_without_checksums = part->getFileNamesWithoutChecksums();
@@ -362,13 +298,17 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
         files_to_replicate.insert(name);
     }
 
-    auto data_part_storage = part->getDataPartStoragePtr();
-    IDataPartStorage::ReplicatedFilesDescription replicated_description;
+    return files_to_replicate;
+}
 
-    /// get files_to_replicate
 
-    replicated_description = data_part_storage->getReplicatedFilesDescription(files_to_replicate);
-
+MergeTreeData::DataPart::Checksums Service::sendPartFromDiskImpl(
+    const MergeTreeData::DataPartPtr & part,
+    IDataPartStorage::ReplicatedFilesDescription replicated_description,
+    WriteBuffer & out,
+    int client_protocol_version,
+    bool send_projections)
+{
     MergeTreeData::DataPart::Checksums data_checksums;
     for (const auto & [name, projection] : part->getProjectionParts())
     {
@@ -421,10 +361,27 @@ MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
 
         writePODBinary(hashing_out.getHash(), out);
 
-        if (!file_names_without_checksums.contains(file_name))
+        if (!part->getFileNamesWithoutChecksums().contains(file_name))
             data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
     }
 
+    return data_checksums;
+}
+
+
+MergeTreeData::DataPart::Checksums Service::sendPartFromDisk(
+    const MergeTreeData::DataPartPtr & part,
+    WriteBuffer & out,
+    int client_protocol_version,
+    bool send_projections)
+{
+    NameSet files_to_replicate = getFilesToReplicate(part, client_protocol_version);
+
+    auto data_part_storage = part->getDataPartStoragePtr();
+    IDataPartStorage::ReplicatedFilesDescription replicated_description;
+    replicated_description = data_part_storage->getReplicatedFilesDescription(files_to_replicate);
+
+    MergeTreeData::DataPart::Checksums data_checksums = sendPartFromDiskImpl(part, replicated_description, out, client_protocol_version, send_projections);
     if (isFullPartStorage(part->getDataPartStorage()))
         part->checksums.checkEqual(data_checksums, false, part->name);
 
@@ -438,32 +395,7 @@ MergeTreeData::DataPart::Checksums ServiceZeroCopy::sendPartFromDisk(
     int client_protocol_version,
     bool send_projections)
 {
-    NameSet files_to_replicate;
-    auto file_names_without_checksums = part->getFileNamesWithoutChecksums();
-
-    for (const auto & [name, _] : part->checksums.files)
-    {
-        if (endsWith(name, ".proj"))
-            continue;
-
-        files_to_replicate.insert(name);
-    }
-
-    for (const auto & name : file_names_without_checksums)
-    {
-        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_PARTS_DEFAULT_COMPRESSION
-            && name == IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME)
-            continue;
-
-        if (client_protocol_version < REPLICATION_PROTOCOL_VERSION_WITH_METADATA_VERSION
-            && name == IMergeTreeDataPart::METADATA_VERSION_FILE_NAME)
-            continue;
-
-        files_to_replicate.insert(name);
-    }
-
-
-    ///
+    NameSet files_to_replicate = getFilesToReplicate(part, client_protocol_version);
 
     auto data_part_storage = part->getDataPartStoragePtr();
     IDataPartStorage::ReplicatedFilesDescription replicated_description;
@@ -471,63 +403,7 @@ MergeTreeData::DataPart::Checksums ServiceZeroCopy::sendPartFromDisk(
     if (!part->isProjectionPart())
         writeStringBinary(replicated_description.unique_id, out);
 
-    MergeTreeData::DataPart::Checksums data_checksums;
-    for (const auto & [name, projection] : part->getProjectionParts())
-    {
-        if (send_projections)
-        {
-            writeStringBinary(name, out);
-            MergeTreeData::DataPart::Checksums projection_checksum = sendPartFromDisk(projection, out, client_protocol_version, false);
-            data_checksums.addFile(name + ".proj", projection_checksum.getTotalSizeOnDisk(), projection_checksum.getTotalChecksumUInt128());
-        }
-        else if (part->checksums.has(name + ".proj"))
-        {
-            // We don't send this projection, just add out checksum to bypass the following check
-            const auto & our_checksum = part->checksums.files.find(name + ".proj")->second;
-            data_checksums.addFile(name + ".proj", our_checksum.file_size, our_checksum.file_hash);
-        }
-    }
-
-    writeBinary(replicated_description.files.size(), out);
-    for (const auto & [file_name, desc] : replicated_description.files)
-    {
-        writeStringBinary(file_name, out);
-        writeBinary(desc.file_size, out);
-
-        auto file_in = desc.input_buffer_getter();
-        HashingWriteBuffer hashing_out(out);
-
-        const auto & is_cancelled = blocker.getCounter();
-        auto cancellation_hook = [&]()
-        {
-            if (is_cancelled)
-                throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
-
-            fiu_do_on(FailPoints::replicated_sends_failpoint,
-            {
-                std::bernoulli_distribution fault(0.1);
-                if (fault(thread_local_rng))
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint replicated_sends_failpoint is triggered");
-            });
-        };
-        copyDataWithThrottler(*file_in, hashing_out, cancellation_hook, data.getSendsThrottler());
-
-        hashing_out.finalize();
-
-        if (hashing_out.count() != desc.file_size)
-            throw Exception(
-                ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
-                "Unexpected size of file {}, expected {} got {}",
-                std::string(fs::path(part->getDataPartStorage().getRelativePath()) / file_name),
-                desc.file_size, hashing_out.count());
-
-        writePODBinary(hashing_out.getHash(), out);
-
-        if (!file_names_without_checksums.contains(file_name))
-            data_checksums.addFile(file_name, hashing_out.count(), hashing_out.getHash());
-    }
-
-    return data_checksums;
+    return sendPartFromDiskImpl(part, replicated_description, out, client_protocol_version, send_projections);
 }
 
 
