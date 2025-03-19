@@ -120,7 +120,7 @@ void StatementGenerator::addColNestedAccess(RandomGenerator & rg, ExprColumn * e
 
 void StatementGenerator::addSargableColRef(RandomGenerator & rg, const SQLRelationCol & rel_col, Expr * expr)
 {
-    if (rg.nextMediumNumber() < 16)
+    if (rg.nextMediumNumber() < 6)
     {
         /// Add non sargable reference
         SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
