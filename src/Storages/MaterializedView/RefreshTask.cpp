@@ -59,7 +59,7 @@ namespace ErrorCodes
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
     : log(getLogger("RefreshTask"))
     , view(view_)
     , refresh_schedule(strategy)
@@ -98,11 +98,32 @@ RefreshTask::RefreshTask(
             zookeeper->createAncestors(coordination.path);
             /// Create coordination znodes if they don't exist. Register this replica, throwing if already exists.
             Coordination::Requests ops;
-            ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, true));
+            ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
             ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/replicas", "", zkutil::CreateMode::Persistent, true));
             ops.emplace_back(zkutil::makeCreateRequest(replica_path, "", zkutil::CreateMode::Persistent));
+
+            /// When restoring multiple tables from backup (e.g. a RESTORE DATABASE), the restored
+            /// refreshable materialized views shouldn't start refreshing on any replica until all
+            /// tables and their data is restored on all replicas. Otherwise things break:
+            ///  * Refresh may EXCHANGE+DROP a table before its data is restored. The restore will
+            ///    then fail when trying to write to a dropped table.
+            ///  * Refresh may see empty source table before they're restored, producing empty
+            ///    refresh result.
+            ///
+            /// Note that with replicated catalog a replicated database may be restored
+            /// by a RESTORE running on just one replica, so one replica needs to be able to unpause
+            /// refreshes on all replicas. This is the only reason why "paused" znode is a thing,
+            /// otherwise we could just use stop_requested.
+            if (is_restore_from_backup)
+                ops.emplace_back(zkutil::makeCreateRequest(coordination.path + "/paused", "restored from backup", zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
+
             zookeeper->multi(ops);
         }
+    }
+    else
+    {
+        if (is_restore_from_backup)
+            scheduling.stop_requested = true;
     }
 }
 
@@ -112,9 +133,10 @@ OwnedRefreshTask RefreshTask::create(
     const DB::ASTRefreshStrategy & strategy,
     bool attach,
     bool coordinated,
-    bool empty)
+    bool empty,
+    bool is_restore_from_backup)
 {
-    auto task = std::make_shared<RefreshTask>(view, context, strategy, attach, coordinated, empty);
+    auto task = std::make_shared<RefreshTask>(view, context, strategy, attach, coordinated, empty, is_restore_from_backup);
 
     task->refresh_task = context->getSchedulePool().createTask("RefreshTask",
         [self = task.get()] { self->refreshTask(); });
@@ -135,6 +157,14 @@ void RefreshTask::startup()
 
     std::lock_guard guard(mutex);
     scheduleRefresh(guard);
+}
+
+void RefreshTask::finalizeRestoreFromBackup()
+{
+    if (coordination.coordinated)
+        start_replicated();
+    else
+        start();
 }
 
 void RefreshTask::shutdown()

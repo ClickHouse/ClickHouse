@@ -39,7 +39,7 @@ public:
     struct Info;
 
     /// Never call it manually, public for shared_ptr construction only
-    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty);
+    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup);
 
     /// If !attach, creates coordination znodes if needed.
     static OwnedRefreshTask create(
@@ -48,10 +48,12 @@ public:
         const DB::ASTRefreshStrategy & strategy,
         bool attach,
         bool coordinated,
-        bool empty);
+        bool empty,
+        bool is_restore_from_backup);
 
     /// Called at most once.
     void startup();
+    void finalizeRestoreFromBackup();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
     /// Ok to call multiple times, but not in parallel.
     /// Ok to call even if startup() wasn't called or failed.
