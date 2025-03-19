@@ -195,6 +195,31 @@ InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
 {
 }
 
+namespace
+{
+
+QueryTreeNodePtr replaceStorageIfNeeded(QueryTreeNodePtr query_tree, const ContextPtr & context, const StoragePtr & storage)
+{
+    if (storage)
+        replaceStorageInQueryTree(query_tree, context, storage);
+
+    return query_tree;
+}
+
+}
+
+InterpreterSelectQueryAnalyzer::InterpreterSelectQueryAnalyzer(
+    const QueryTreeNodePtr & query_tree_,
+    const ContextPtr & context_,
+    const StoragePtr & storage_,
+    const SelectQueryOptions & select_query_options_)
+    : query(query_tree_->toAST())
+    , context(buildContext(context_, select_query_options_))
+    , select_query_options(select_query_options_)
+    , query_tree(replaceStorageIfNeeded(query_tree_, context, storage_))
+    , planner(query_tree, select_query_options)
+{}
+
 Block InterpreterSelectQueryAnalyzer::getSampleBlock(const ASTPtr & query,
     const ContextPtr & context,
     const SelectQueryOptions & select_query_options)
