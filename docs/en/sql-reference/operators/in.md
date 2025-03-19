@@ -24,7 +24,12 @@ Don't list too many values explicitly (i.e. millions). If a data set is large, 
 
 The right side of the operator can be a set of constant expressions, a set of tuples with constant expressions (shown in the examples above), or the name of a database table or `SELECT` subquery in brackets.
 
-ClickHouse allows types to differ in the left and the right parts of `IN` subquery. In this case it converts the left side value to the type of the right side, as if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accuratecastornullx-t) function is applied. That means, that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion cannot be performed, it returns [NULL](/operations/settings/formats#input_format_null_as_default).
+ClickHouse allows types to differ in the left and the right parts of the `IN` subquery. 
+In this case, it converts the right side value to the type of the left side, as 
+if the [accurateCastOrNull](/sql-reference/functions/type-conversion-functions#accuratecastornullx-t) function were applied to the right side. 
+
+This means that the data type becomes [Nullable](../../sql-reference/data-types/nullable.md), and if the conversion 
+cannot be performed, it returns [NULL](/operations/settings/formats#input_format_null_as_default).
 
 **Example**
 
