@@ -12,9 +12,6 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
-#include <Common/MemoryTracker.h>
-#include <Common/ThreadStatus.h>
-#include <Common/CurrentThread.h>
 
 using namespace DB;
 

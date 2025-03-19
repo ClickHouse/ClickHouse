@@ -11,7 +11,6 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/GinFilter.h>
-#include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -78,15 +77,6 @@ void MergeTreeIndexGranuleFullText::deserializeBinary(ReadBuffer & istr, MergeTr
         istr.readStrict(reinterpret_cast<char *>(gin_filter.getFilter().data()), filter_size * sizeof(GinSegmentWithRowIdRangeVector::value_type));
     }
     has_elems = true;
-}
-
-
-size_t MergeTreeIndexGranuleFullText::memoryUsageBytes() const
-{
-    size_t sum = 0;
-    for (const auto & gin_filter : gin_filters)
-        sum += gin_filter.memoryUsageBytes();
-    return sum;
 }
 
 

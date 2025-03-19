@@ -25,6 +25,9 @@ public:
         , changes_behavior(cb)
     {
     }
+
+    constexpr CHSetting(const CHSetting & rhs) = default;
+    constexpr CHSetting(CHSetting && rhs) = default;
 };
 
 const std::function<String(RandomGenerator &)> trueOrFalse = [](RandomGenerator & rg) { return rg.nextBool() ? "1" : "0"; };
@@ -139,26 +142,6 @@ const std::unordered_map<TableEngineValues, std::unordered_map<String, CHSetting
        {IcebergS3, {}},
        {Merge, {}},
        {Distributed, {}}};
-
-const std::unordered_map<String, CHSetting> backupSettings
-    = {{"allow_azure_native_copy", CHSetting(trueOrFalse, {}, false)},
-       {"allow_backup_broken_projections", CHSetting(trueOrFalse, {}, false)},
-       {"allow_checksums_from_remote_paths", CHSetting(trueOrFalse, {}, false)},
-       {"allow_s3_native_copy", CHSetting(trueOrFalse, {}, false)},
-       {"async", CHSetting(trueOrFalse, {}, false)},
-       {"azure_attempt_to_create_container", CHSetting(trueOrFalse, {}, false)},
-       {"check_parts", CHSetting(trueOrFalse, {}, false)},
-       {"check_projection_parts", CHSetting(trueOrFalse, {}, false)},
-       {"decrypt_files_from_encrypted_disks", CHSetting(trueOrFalse, {}, false)},
-       {"deduplicate_files", CHSetting(trueOrFalse, {}, false)},
-       {"experimental_lightweight_snapshot", CHSetting(trueOrFalse, {}, false)},
-       {"internal", CHSetting(trueOrFalse, {}, false)},
-       {"read_from_filesystem_cache", CHSetting(trueOrFalse, {}, false)},
-       {"s3_storage_class", CHSetting([](RandomGenerator &) { return "'STANDARD'"; }, {}, false)},
-       {"structure_only", CHSetting(trueOrFalse, {}, false)},
-       {"write_access_entities_dependents", CHSetting(trueOrFalse, {}, false)}};
-
-extern std::unordered_map<String, CHSetting> restoreSettings;
 
 extern std::unique_ptr<SQLType> size_tp, null_tp;
 

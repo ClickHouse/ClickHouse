@@ -22,7 +22,6 @@ class _Settings:
     DOCKER_BUILD_RUNS_ON: Optional[List[str]] = None
     VALIDATE_FILE_PATHS: bool = True
     DISABLED_WORKFLOWS: Optional[List[str]] = None
-    ENABLED_WORKFLOWS: Optional[List[str]] = None
     DEFAULT_LOCAL_TEST_WORKFLOW: str = ""
 
     ENABLE_ARTIFACTS_REPORT: bool = False
@@ -77,10 +76,8 @@ class _Settings:
     ######################################
     HTML_S3_PATH: str = ""
     HTML_PAGE_FILE: str = "./ci/praktika/json.html"
-    S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
     TEXT_CONTENT_EXTENSIONS: Iterable[str] = frozenset([".txt", ".log"])
-    # Compress if text file size exceeds this threshold (in MB, 0 - disable compression)
-    COMPRESS_THRESHOLD_MB: int = 0
+    S3_BUCKET_TO_HTTP_ENDPOINT: Optional[Dict[str, str]] = None
 
     DOCKERHUB_USERNAME: str = ""
     DOCKERHUB_SECRET: str = ""
@@ -137,11 +134,9 @@ _USER_DEFINED_SETTINGS = [
     "MAIN_BRANCH",
     "DISABLE_MERGE_COMMIT",
     "DISABLED_WORKFLOWS",
-    "ENABLED_WORKFLOWS",
     "PYTHONPATHS",
     "ENABLE_ARTIFACTS_REPORT",
     "DEFAULT_LOCAL_TEST_WORKFLOW",
-    "COMPRESS_THRESHOLD_MB",
 ]
 
 

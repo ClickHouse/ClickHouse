@@ -1,7 +1,6 @@
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
-#include <Parsers/ASTCreateQuery.h>
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>

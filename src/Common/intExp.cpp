@@ -70,7 +70,7 @@ constexpr Int128 exp10_i128_table[]
        static_cast<Int128>(1000000000000000000LL) * 100000000000000000LL * 1000LL};
 
 constexpr Int256 i10e18{1000000000000000000ll};
-const Int256 exp10_i256_table[] = {
+constexpr Int256 exp10_i256_table[] = {
     static_cast<Int256>(1ll),
     static_cast<Int256>(10ll),
     static_cast<Int256>(100ll),

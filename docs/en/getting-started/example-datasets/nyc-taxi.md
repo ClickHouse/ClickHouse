@@ -14,7 +14,7 @@ The New York taxi data consists of 3+ billion taxi and for-hire vehicle (Uber, L
 - insert the data directly into ClickHouse Cloud from S3 or GCS
 - download prepared partitions
 
-## Create the table trips {#create-the-table-trips}
+## Create the table trips
 
 Start by creating a table for the taxi rides:
 
@@ -42,7 +42,7 @@ ENGINE = MergeTree
 PRIMARY KEY (pickup_datetime, dropoff_datetime);
 ```
 
-## Load the Data directly from Object Storage {#load-the-data-directly-from-object-storage}
+## Load the Data directly from Object Storage
 
 Let's grab a small subset of the data for getting familiar with it. The data is in TSV files in object storage, which is easily streamed into
 ClickHouse Cloud using the `s3` table function. 
@@ -114,7 +114,7 @@ FROM s3(
 </TabItem>
 </Tabs>
 
-## Sample Queries {#sample-queries}
+## Sample Queries
 
 Let's see how many rows were inserted:
 

@@ -3,7 +3,6 @@
 #include <Access/Common/AccessFlags.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/TableFunctionNode.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Interpreters/Context.h>
 
 #include <TableFunctions/TableFunctionFactory.h>

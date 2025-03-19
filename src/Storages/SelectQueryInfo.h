@@ -5,6 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Interpreters/PreparedSets.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
 #include <memory>
@@ -35,9 +36,6 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 
 class PlannerContext;
 using PlannerContextPtr = std::shared_ptr<PlannerContext>;
-
-class PreparedSets;
-using PreparedSetsPtr = std::shared_ptr<PreparedSets>;
 
 struct PrewhereInfo
 {
@@ -136,7 +134,9 @@ using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
   */
 struct SelectQueryInfo
 {
-    SelectQueryInfo();
+    SelectQueryInfo()
+        : prepared_sets(std::make_shared<PreparedSets>())
+    {}
 
     ASTPtr query;
     ASTPtr view_query; /// Optimized VIEW query

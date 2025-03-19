@@ -5,13 +5,12 @@
 #include <Common/quoteString.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/PreparedSets.h>
+#include <Interpreters/TreeRewriter.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -62,15 +61,6 @@ void MergeTreeIndexGranuleBloomFilterText::deserializeBinary(ReadBuffer & istr, 
         istr.readStrict(reinterpret_cast<char *>(bloom_filter.getFilter().data()), params.filter_size);
     }
     has_elems = true;
-}
-
-
-size_t MergeTreeIndexGranuleBloomFilterText::memoryUsageBytes() const
-{
-    size_t sum = 0;
-    for (const auto & bloom_filter : bloom_filters)
-        sum += bloom_filter.memoryUsageBytes();
-    return sum;
 }
 
 

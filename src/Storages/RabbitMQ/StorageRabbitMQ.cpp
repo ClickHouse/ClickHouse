@@ -39,8 +39,6 @@
 
 #include <base/range.h>
 
-#include <Poco/Util/AbstractConfiguration.h>
-
 namespace DB
 {
 namespace Setting
@@ -1211,7 +1209,7 @@ bool StorageRabbitMQ::tryStreamToViews()
         write_failed = true;
     }
 
-    LOG_TRACE(log, "Processed {} rows", rows.load());
+    LOG_TRACE(log, "Processed {} rows", rows);
 
     /* Note: sending ack() with loop running in another thread will lead to a lot of data races inside the library, but only in case
      * error occurs or connection is lost while ack is being sent

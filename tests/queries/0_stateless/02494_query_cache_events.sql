@@ -7,7 +7,7 @@ SYSTEM DROP QUERY CACHE;
 SELECT 1 SETTINGS use_query_cache = true;
 SELECT 1 SETTINGS use_query_cache = true;
 
-SYSTEM FLUSH LOGS query_log;
+SYSTEM FLUSH LOGS;
 SELECT ProfileEvents['QueryCacheHits'], ProfileEvents['QueryCacheMisses']
 FROM system.query_log
 WHERE type = 'QueryFinish'

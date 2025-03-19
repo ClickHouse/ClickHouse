@@ -36,8 +36,6 @@
 
 #include <Functions/FunctionFactory.h>
 
-#include <pcg_random.hpp>
-
 
 namespace DB
 {
@@ -72,25 +70,25 @@ void fillBufferWithRandomData(char * __restrict data, size_t limit, size_t size_
     {
         /// The loop can be further optimized.
         UInt64 number = rng();
-        if constexpr (std::endian::native == std::endian::big)
-            unalignedStoreLittleEndian<UInt64>(data, number);
-        else
-            unalignedStore<UInt64>(data, number);
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+        unalignedStoreLittleEndian<UInt64>(data, number);
+#else
+        unalignedStore<UInt64>(data, number);
+#endif
         data += sizeof(UInt64); /// We assume that data has at least 7-byte padding (see PaddedPODArray)
     }
-    if constexpr (std::endian::native == std::endian::big)
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    if (flip_bytes)
     {
-        if (flip_bytes)
+        data = end - size;
+        while (data < end)
         {
-            data = end - size;
-            while (data < end)
-            {
-                char * rev_end = data + size_of_type;
-                std::reverse(data, rev_end);
-                data += size_of_type;
-            }
+            char * rev_end = data + size_of_type;
+            std::reverse(data, rev_end);
+            data += size_of_type;
         }
     }
+#endif
 }
 
 

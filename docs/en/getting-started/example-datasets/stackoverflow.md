@@ -16,7 +16,7 @@ The following diagram shows the schema for the available tables assuming Parquet
 
 A description of the schema of this data can be found [here](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 
-## Pre-prepared data {#pre-prepared-data}
+## Pre-prepared data
 
 We provide a copy of this data in Parquet format, up to date as of April 2024. While small for ClickHouse with respect to the number of rows (60 million posts), this dataset contains significant volumes of text and large String columns.
 
@@ -26,7 +26,7 @@ CREATE DATABASE stackoverflow
 
 The following timings are for a 96 GiB, 24 vCPU ClickHouse Cloud cluster located in `eu-west-2`. The dataset is located in `eu-west-3`.
 
-### Posts {#posts}
+### Posts
 
 ```sql
 CREATE TABLE stackoverflow.posts
@@ -66,7 +66,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM s3('https://datasets-documentation
 Posts are also available by year e.g. [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet)
 
 
-### Votes {#votes}
+### Votes
 
 ```sql
 CREATE TABLE stackoverflow.votes
@@ -89,7 +89,7 @@ INSERT INTO stackoverflow.votes SELECT * FROM s3('https://datasets-documentation
 Votes are also available by year e.g. [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/2020.parquet)
 
 
-### Comments {#comments}
+### Comments
 
 ```sql
 CREATE TABLE stackoverflow.comments
@@ -112,7 +112,7 @@ INSERT INTO stackoverflow.comments SELECT * FROM s3('https://datasets-documentat
 
 Comments are also available by year e.g. [https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2020.parquet](https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/2020.parquet)
 
-### Users {#users}
+### Users
 
 ```sql
 CREATE TABLE stackoverflow.users
@@ -138,7 +138,7 @@ INSERT INTO stackoverflow.users SELECT * FROM s3('https://datasets-documentation
 0 rows in set. Elapsed: 10.988 sec. Processed 22.48 million rows, 1.36 GB (2.05 million rows/s., 124.10 MB/s.)
 ```
 
-### Badges {#badges}
+### Badges
 
 ```sql
 CREATE TABLE stackoverflow.badges
@@ -158,7 +158,7 @@ INSERT INTO stackoverflow.badges SELECT * FROM s3('https://datasets-documentatio
 0 rows in set. Elapsed: 6.635 sec. Processed 51.29 million rows, 797.05 MB (7.73 million rows/s., 120.13 MB/s.)
 ```
 
-### PostLinks {#postlinks}
+### PostLinks
 
 ```sql
 CREATE TABLE stackoverflow.postlinks
@@ -177,7 +177,7 @@ INSERT INTO stackoverflow.postlinks SELECT * FROM s3('https://datasets-documenta
 0 rows in set. Elapsed: 1.534 sec. Processed 6.55 million rows, 129.70 MB (4.27 million rows/s., 84.57 MB/s.)
 ```
 
-### PostHistory {#posthistory}
+### PostHistory
 
 ```sql
 CREATE TABLE stackoverflow.posthistory
@@ -201,11 +201,11 @@ INSERT INTO stackoverflow.posthistory SELECT * FROM s3('https://datasets-documen
 0 rows in set. Elapsed: 422.795 sec. Processed 160.79 million rows, 67.08 GB (380.30 thousand rows/s., 158.67 MB/s.)
 ```
 
-## Original dataset {#original-dataset}
+## Original dataset
 
 The original dataset is available in compressed (7zip) XML format at [https://archive.org/download/stackexchange](https://archive.org/download/stackexchange) - files with prefix `stackoverflow.com*`.
 
-### Download {#download}
+### Download
 
 ```bash
 wget https://archive.org/download/stackexchange/stackoverflow.com-Badges.7z
@@ -219,7 +219,7 @@ wget https://archive.org/download/stackexchange/stackoverflow.com-Votes.7z
 
 These files are up to 35GB and can take around 30 mins to download depending on internet connection - the download server throttles at around 20MB/sec.
 
-### Convert to JSON {#convert-to-json}
+### Convert to JSON
 
 At the time of writing, ClickHouse does not have native support for XML as an input format. To load the data into ClickHouse we first convert to NDJSON.
 
@@ -265,11 +265,11 @@ Load into ClickHouse with the following command. Note the schema is specified fo
 clickhouse local --query "SELECT * FROM file('posts.json', JSONEachRow, 'Id Int32, PostTypeId UInt8, AcceptedAnswerId UInt32, CreationDate DateTime64(3, \'UTC\'), Score Int32, ViewCount UInt32, Body String, OwnerUserId Int32, OwnerDisplayName String, LastEditorUserId Int32, LastEditorDisplayName String, LastEditDate DateTime64(3, \'UTC\'), LastActivityDate DateTime64(3, \'UTC\'), Title String, Tags String, AnswerCount UInt16, CommentCount UInt8, FavoriteCount UInt8, ContentLicense String, ParentId String, CommunityOwnedDate DateTime64(3, \'UTC\'), ClosedDate DateTime64(3, \'UTC\')') FORMAT Native" | clickhouse client --host <host> --secure --password <password> --query "INSERT INTO stackoverflow.posts_v2 FORMAT Native"
 ```
 
-## Example queries {#example-queries}
+## Example queries
 
 A few simple questions to you get started.
 
-### Most popular tags on Stack Overflow {#most-popular-tags-on-stack-overflow}
+### Most popular tags on Stack Overflow
 
 ```sql
 
@@ -298,7 +298,7 @@ LIMIT 10
 Peak memory usage: 224.03 MiB.
 ```
 
-### User with the most answers (active accounts) {#user-with-the-most-answers-active-accounts}
+### User with the most answers (active accounts)
 
 Account requires a `UserId`.
 
@@ -324,7 +324,7 @@ LIMIT 5
 Peak memory usage: 206.45 MiB.
 ```
 
-### ClickHouse related posts with the most views {#clickhouse-related-posts-with-the-most-views}
+### ClickHouse related posts with the most views
 
 ```sql
 SELECT
@@ -354,7 +354,7 @@ LIMIT 10
 Peak memory usage: 240.01 MiB.
 ```
 
-### Most controversial posts {#most-controversial-posts}
+### Most controversial posts
 
 ```sql
 SELECT
@@ -388,6 +388,6 @@ LIMIT 3
 Peak memory usage: 6.05 GiB.
 ```
 
-## Attribution {#attribution}
+## Attribution
 
 We thank Stack Overflow for providing this data under the `cc-by-sa 4.0` license, acknowledging their efforts and the original source of the data at [https://archive.org/details/stackexchange](https://archive.org/details/stackexchange).

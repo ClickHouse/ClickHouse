@@ -35,8 +35,6 @@ namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool join_any_take_last_row;
-    extern const SettingsUInt64 default_max_bytes_in_join;
-    extern const SettingsBool join_use_nulls;
 }
 
 namespace ErrorCodes
@@ -101,15 +99,16 @@ JoinStepLogical::JoinStepLogical(
     JoinInfo join_info_,
     JoinExpressionActions join_expression_actions_,
     Names required_output_columns_,
-    bool use_nulls_,
-    JoinSettings join_settings_,
-    SortingStep::Settings sorting_settings_)
+    ContextPtr query_context_)
     : expression_actions(std::move(join_expression_actions_))
     , join_info(std::move(join_info_))
     , required_output_columns(std::move(required_output_columns_))
-    , use_nulls(use_nulls_) // query_context_->getSettingsRef()[Setting::join_use_nulls])
-    , join_settings(std::move(join_settings_)) // JoinSettings::create(query_context_->getSettingsRef()))
-    , sorting_settings(std::move(sorting_settings_)) //*query_context_)
+    , join_settings(JoinSettings::create(query_context_->getSettingsRef()))
+    , sorting_settings(*query_context_)
+    , expression_actions_settings(query_context_->getSettingsRef())
+    , tmp_volume(query_context_->getGlobalTemporaryVolume())
+    , tmp_data(query_context_->getTempDataOnDisk())
+    , query_context(std::move(query_context_))
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -512,18 +511,9 @@ static void addToNullableActions(ActionsDAG & dag, const FunctionOverloadResolve
     }
 }
 
-JoinPtr JoinStepLogical::convertToPhysical(
-    JoinActionRef & post_filter,
-    bool is_explain_logical,
-    UInt64 max_threads,
-    UInt64 max_entries_for_hash_table_stats,
-    String initial_query_id,
-    std::chrono::milliseconds lock_acquire_timeout,
-    const ExpressionActionsSettings & actions_settings)
+JoinPtr JoinStepLogical::convertToPhysical(JoinActionRef & post_filter, bool is_explain_logical)
 {
-    auto table_join = std::make_shared<TableJoin>(join_settings, use_nulls,
-        Context::getGlobalContextInstance()->getGlobalTemporaryVolume(),
-        Context::getGlobalContextInstance()->getTempDataOnDisk());
+    auto table_join = std::make_shared<TableJoin>(join_settings, tmp_volume, tmp_data, query_context);
 
     auto & join_expression = join_info.expression;
 
@@ -554,7 +544,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
 
         if (!has_keys)
         {
-            if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH))
+            if (!TableJoin::isEnabledAlgorithm(join_settings.join_algorithm, JoinAlgorithm::HASH))
                 throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot convert JOIN ON expression to CROSS JOIN, because hash join is disabled");
 
             table_join_clauses.pop_back();
@@ -644,7 +634,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
     bool need_add_nullable = join_info.kind == JoinKind::Left
         || join_info.kind == JoinKind::Right
         || join_info.kind == JoinKind::Full;
-    if (need_add_nullable && use_nulls)
+    if (need_add_nullable && join_settings.join_use_nulls)
     {
         if (residual_filter_condition)
         {
@@ -689,7 +679,7 @@ JoinPtr JoinStepLogical::convertToPhysical(
             }
         }
         ExpressionActionsPtr & mixed_join_expression = table_join->getMixedJoinExpression();
-        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), actions_settings);
+        mixed_join_expression = std::make_shared<ExpressionActions>(std::move(dag), expression_actions_settings);
     }
 
     NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
@@ -729,19 +719,12 @@ JoinPtr JoinStepLogical::convertToPhysical(
         std::swap(left_sample_block, right_sample_block);
     }
 
-    JoinAlgorithmSettings algo_settings(
-        join_settings,
-        max_threads,
-        max_entries_for_hash_table_stats,
-        std::move(initial_query_id),
-        lock_acquire_timeout);
-
     auto join_algorithm_ptr = chooseJoinAlgorithm(
         table_join,
         prepared_join_storage,
         left_sample_block,
         right_sample_block,
-        algo_settings,
+        query_context,
         hash_table_key_hash);
     runtime_info_description.emplace_back("Algorithm", join_algorithm_ptr->getName());
     return join_algorithm_ptr;

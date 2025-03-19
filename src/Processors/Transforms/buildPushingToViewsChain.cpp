@@ -1014,7 +1014,7 @@ void FinalizingViewsTransform::work()
                 "Pushing from {} to {} took {} ms.",
                 views_data->source_storage_id.getNameForLogs(),
                 view.table_id.getNameForLogs(),
-                view.runtime_stats->elapsed_ms.load());
+                view.runtime_stats->elapsed_ms);
         }
     }
 

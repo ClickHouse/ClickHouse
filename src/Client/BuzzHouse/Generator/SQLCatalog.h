@@ -111,35 +111,14 @@ public:
     uint32_t dname = 0;
     DatabaseEngineValues deng;
     uint32_t zoo_path_counter;
-    String backed_db;
-    String backed_disk;
 
     bool isReplicatedDatabase() const { return deng == DatabaseEngineValues::DReplicated; }
 
     bool isReplicatedOrSharedDatabase() const { return deng == DatabaseEngineValues::DReplicated || deng == DatabaseEngineValues::DShared; }
 
-    bool isBackupDatabase() const { return deng == DatabaseEngineValues::DBackup; }
-
     std::optional<String> getCluster() const { return cluster; }
 
     bool isAttached() const { return attached == DetachStatus::ATTACHED; }
-
-    void finishDatabaseSpecification(DatabaseEngine * dspec)
-    {
-        if (isReplicatedDatabase())
-        {
-            dspec->add_params()->set_svalue("/test/db" + std::to_string(zoo_path_counter));
-            dspec->add_params()->set_svalue("s1");
-            dspec->add_params()->set_svalue("r1");
-        }
-        else if (isBackupDatabase())
-        {
-            dspec->add_params()->mutable_database()->set_database(backed_db);
-            BackupDisk * bd = dspec->add_params()->mutable_disk();
-            bd->set_disk(backed_disk);
-            bd->mutable_database()->set_database("d" + std::to_string(dname));
-        }
-    }
 };
 
 struct SQLBase
@@ -225,7 +204,14 @@ public:
 
     bool hasClickHousePeer() const { return peer_table == PeerTableDatabase::ClickHouse; }
 
-    std::optional<String> getCluster() const { return cluster; }
+    std::optional<String> getCluster() const
+    {
+        if (db && db->cluster.has_value())
+        {
+            return db->cluster;
+        }
+        return cluster;
+    }
 
     bool isAttached() const { return (!db || db->isAttached()) && attached == DetachStatus::ATTACHED; }
 };
@@ -267,9 +253,8 @@ public:
 struct SQLView : SQLBase
 {
 public:
-    bool is_materialized = false, is_refreshable = false, has_with_cols = false;
-    uint32_t staged_ncols = 0;
-    std::unordered_set<uint32_t> cols;
+    bool is_materialized = false, is_refreshable = false;
+    uint32_t ncols = 1, staged_ncols = 1;
 };
 
 struct SQLFunction

@@ -23,7 +23,7 @@ while true
 do
     query="SELECT a, b FROM test_s3"
     query_id=$(${CLICKHOUSE_CLIENT} --query "select queryID() from ($query) limit 1" 2>&1)
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
 
     RES=$(${CLICKHOUSE_CLIENT} -m --query "
     SELECT ProfileEvents['DiskConnectionsPreserved'] > 0
@@ -59,7 +59,7 @@ do
         select 1
     ) limit 1 settings max_threads=1;
     " 2>&1)
-    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
     RES=$(${CLICKHOUSE_CLIENT} -m --query "
     SELECT ProfileEvents['StorageConnectionsPreserved'] > 0
     FROM system.query_log

@@ -1,11 +1,10 @@
 ---
 slug: /sql-reference/aggregate-functions/reference/exponentialTimeDecayedMax
 sidebar_position: 135
-title: "exponentialTimeDecayedMax"
-description: "Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`. "
+title: exponentialTimeDecayedMax
 ---
 
-## exponentialTimeDecayedMax {#exponentialtimedecayedmax}
+## exponentialTimeDecayedMax
 
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`. 
 

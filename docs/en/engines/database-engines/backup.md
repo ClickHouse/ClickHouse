@@ -2,8 +2,6 @@
 slug: /engines/database-engines/backup
 sidebar_position: 60
 sidebar_label: Backup
-title: "Backup"
-description: "Allows to instantly attach table/database from backups in read-only mode."
 ---
 
 # Backup

@@ -35,7 +35,7 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "granularity", std::make_shared<DataTypeUInt64>(), "The number of granules in the block."},
             { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
             { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
-            { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."}
+            { "marks", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."}
         }));
     setInMemoryMetadata(storage_metadata);
 }
@@ -161,7 +161,7 @@ protected:
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.data_uncompressed);
 
-                    /// 'marks_bytes' column
+                    /// 'marks' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.marks);
                 }

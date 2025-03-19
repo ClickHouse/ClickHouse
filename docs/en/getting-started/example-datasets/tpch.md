@@ -16,7 +16,7 @@ Despite its age and its unrealistic assumption that the data is uniformly and in
 - [TPC-H Analyzed: Hidden Messages and Lessons Learned from an Influential Benchmark](https://doi.org/10.1007/978-3-319-04936-6_5) (Boncz et. al.), 2013
 - [Quantifying TPC-H Choke Points and Their Optimizations](https://doi.org/10.14778/3389133.3389138) (Dresseler et. al.), 2020
 
-## Data Generation and Import {#data-generation-and-import}
+## Data Generation and Import
 
 First, checkout the TPC-H repository and compile the data generator:
 
@@ -192,7 +192,7 @@ INSERT INTO lineitem SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.
 ````
 :::
 
-## Queries {#queries}
+## Queries
 
 :::note
 Setting [`join_use_nulls`](../../operations/settings/settings.md#join_use_nulls) should be enabled to produce correct results according to SQL standard.

@@ -551,16 +551,13 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
         build_context.result_join_info.expression.condition.predicates.push_back(std::move(predicate));
     }
 
-    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     return std::make_unique<JoinStepLogical>(
         left_header,
         right_header,
         std::move(build_context.result_join_info),
         std::move(build_context.result_join_expression_actions),
         Names(outer_scope_columns.begin(), outer_scope_columns.end()),
-        settings[Setting::join_use_nulls],
-        JoinSettings(settings),
-        SortingStep::Settings(settings));
+        planner_context->getQueryContext());
 }
 
 PreparedJoinStorage tryGetStorageInTableJoin(const QueryTreeNodePtr & table_expression, const PlannerContextPtr & planner_context)

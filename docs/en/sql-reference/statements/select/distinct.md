@@ -51,7 +51,7 @@ SELECT DISTINCT ON (a,b) * FROM t1;
 └───┴───┴───┘
 ```
 
-## DISTINCT and ORDER BY {#distinct-and-order-by}
+## DISTINCT and ORDER BY
 
 ClickHouse supports using the `DISTINCT` and `ORDER BY` clauses for different columns in one query. The `DISTINCT` clause is executed before the `ORDER BY` clause.
 
@@ -97,13 +97,13 @@ Row `2, 4` was cut before sorting.
 
 Take this implementation specificity into account when programming queries.
 
-## Null Processing {#null-processing}
+## Null Processing
 
-`DISTINCT` works with [NULL](/sql-reference/syntax#null) as if `NULL` were a specific value, and `NULL==NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` occur only once. It differs from `NULL` processing in most other contexts.
+`DISTINCT` works with [NULL](../../../sql-reference/syntax.md#null-literal) as if `NULL` were a specific value, and `NULL==NULL`. In other words, in the `DISTINCT` results, different combinations with `NULL` occur only once. It differs from `NULL` processing in most other contexts.
 
-## Alternatives {#alternatives}
+## Alternatives
 
-It is possible to obtain the same result by applying [GROUP BY](/sql-reference/statements/select/group-by) across the same set of values as specified as `SELECT` clause, without using any aggregate functions. But there are few differences from `GROUP BY` approach:
+It is possible to obtain the same result by applying [GROUP BY](../../../sql-reference/statements/select/group-by.md) across the same set of values as specified as `SELECT` clause, without using any aggregate functions. But there are few differences from `GROUP BY` approach:
 
 - `DISTINCT` can be applied together with `GROUP BY`.
 - When [ORDER BY](../../../sql-reference/statements/select/order-by.md) is omitted and [LIMIT](../../../sql-reference/statements/select/limit.md) is defined, the query stops running immediately after the required number of different rows has been read.

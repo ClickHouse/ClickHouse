@@ -326,7 +326,7 @@ def test_hardlinks_preserved_when_projection_dropped(
         )
 
         # it is an easy way to read all data in part
-        # "0" means corrupted, https://clickhouse.com/docs/sql-reference/statements/check-table
+        # "0" means corrupted, https://clickhouse.com/docs/en/sql-reference/statements/check-table
         assert (
             "1"
             == first_cluster_node.query(

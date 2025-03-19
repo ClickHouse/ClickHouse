@@ -34,6 +34,9 @@
 [submodule "contrib/jemalloc"]
 	path = contrib/jemalloc
 	url = https://github.com/jemalloc/jemalloc
+[submodule "contrib/unixodbc"]
+	path = contrib/unixodbc
+	url = https://github.com/ClickHouse/UnixODBC
 [submodule "contrib/google-protobuf"]
 	path = contrib/google-protobuf
 	url = https://github.com/ClickHouse/google-protobuf.git
@@ -67,6 +70,9 @@
 [submodule "contrib/h3"]
 	path = contrib/h3
 	url = https://github.com/ClickHouse/h3
+[submodule "contrib/libunwind"]
+	path = contrib/libunwind
+	url = https://github.com/ClickHouse/libunwind
 [submodule "contrib/simdjson"]
 	path = contrib/simdjson
 	url = https://github.com/simdjson/simdjson
@@ -121,7 +127,7 @@
 	url = https://github.com/msgpack/msgpack-c
 [submodule "contrib/libcpuid"]
 	path = contrib/libcpuid
-	url = https://github.com/anrieff/libcpuid
+	url = https://github.com/ClickHouse/libcpuid
 [submodule "contrib/openldap"]
 	path = contrib/openldap
 	url = https://github.com/ClickHouse/openldap
@@ -170,6 +176,9 @@
 [submodule "contrib/NuRaft"]
 	path = contrib/NuRaft
 	url = https://github.com/ClickHouse/NuRaft
+[submodule "contrib/nanodbc"]
+	path = contrib/nanodbc
+	url = https://github.com/ClickHouse/nanodbc
 [submodule "contrib/datasketches-cpp"]
 	path = contrib/datasketches-cpp
 	url = https://github.com/apache/datasketches-cpp

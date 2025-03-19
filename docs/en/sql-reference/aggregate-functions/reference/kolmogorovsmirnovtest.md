@@ -2,8 +2,6 @@
 slug: /sql-reference/aggregate-functions/reference/kolmogorovsmirnovtest
 sidebar_position: 156
 sidebar_label: kolmogorovSmirnovTest
-title: "kolmogorovSmirnovTest"
-description: "Applies Kolmogorov-Smirnov's test to samples from two populations."
 ---
 
 # kolmogorovSmirnovTest

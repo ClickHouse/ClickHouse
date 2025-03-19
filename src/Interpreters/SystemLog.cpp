@@ -4,6 +4,7 @@
 #include <Common/Logger.h>
 #include <Common/SystemLogBase.h>
 #include <Common/logger_useful.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include <Core/ServerSettings.h>
@@ -219,7 +220,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
         log_settings.engine += " ORDER BY (" + order_by + ")";
 
         /// SETTINGS expr is not necessary.
-        ///   https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#settings
+        ///   https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree#settings
         ///
         /// STORAGE POLICY expr is retained for backward compatible.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");

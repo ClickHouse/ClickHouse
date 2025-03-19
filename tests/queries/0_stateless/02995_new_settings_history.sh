@@ -71,7 +71,7 @@ $CLICKHOUSE_LOCAL --query "
         (
             SELECT 'PLEASE ADD THE SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: ' || name || ' WAS CHANGED FROM ' || old_settings.default || ' TO ' || new_settings.default
             FROM new_settings
-            JOIN old_settings ON new_settings.name = old_settings.name
+            LEFT JOIN old_settings ON new_settings.name = old_settings.name
             WHERE (new_settings.default != old_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
@@ -82,7 +82,7 @@ $CLICKHOUSE_LOCAL --query "
         (
             SELECT 'PLEASE ADD THE MERGE_TREE_SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: ' || name || ' WAS CHANGED FROM ' || old_merge_tree_settings.default || ' TO ' || new_merge_tree_settings.default
             FROM new_merge_tree_settings
-            JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
+            LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
             WHERE (new_merge_tree_settings.default != old_merge_tree_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes

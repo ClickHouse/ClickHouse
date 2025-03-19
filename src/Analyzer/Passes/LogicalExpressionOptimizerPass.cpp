@@ -1087,11 +1087,7 @@ private:
         ComparePairs greater_pairs;
         ComparePairs less_pairs;
 
-        auto flattened_and_node = getFlattenedLogicalExpression(function_node, getContext());
-        const auto & arguments = flattened_and_node ? flattened_and_node->getArguments().getNodes()
-                                                    : function_node.getArguments().getNodes();
-
-        for (const auto & argument : arguments)
+        for (const auto & argument : function_node.getArguments())
         {
             auto * argument_function = argument->as<FunctionNode>();
             const auto valid_functions = std::unordered_set<std::string>{
