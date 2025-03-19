@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Analyzer/Passes/CNFAtomicFormula.h>
-#include <Interpreters/TreeCNFConverter.h>
+#include <Interpreters/CNFQueryAtomicFormula.h>
 #include <Interpreters/ComparisonGraph.h>
 
 #include <map>
@@ -48,8 +48,8 @@ public:
 
     const ASTs & getConstraints() const;
 
-    const std::vector<std::vector<CNFQuery::AtomicFormula>> & getConstraintData() const;
-    std::vector<CNFQuery::AtomicFormula> getAtomicConstraintData() const;
+    const std::vector<std::vector<CNFQueryAtomicFormula>> & getConstraintData() const;
+    std::vector<CNFQueryAtomicFormula> getAtomicConstraintData() const;
 
     const ComparisonGraph<ASTPtr> & getGraph() const;
 
@@ -64,7 +64,7 @@ public:
     using AtomIds = std::vector<AtomId>;
 
     std::optional<AtomIds> getAtomIds(const ASTPtr & ast) const;
-    std::vector<CNFQuery::AtomicFormula> getAtomsById(const AtomIds & ids) const;
+    std::vector<CNFQueryAtomicFormula> getAtomsById(const AtomIds & ids) const;
 
     class QueryTreeData
     {
@@ -86,13 +86,13 @@ public:
     QueryTreeData getQueryTreeData(const ContextPtr & context, const QueryTreeNodePtr & table_node) const;
 
 private:
-    std::vector<std::vector<CNFQuery::AtomicFormula>> buildConstraintData() const;
+    std::vector<std::vector<CNFQueryAtomicFormula>> buildConstraintData() const;
     std::unique_ptr<ComparisonGraph<ASTPtr>> buildGraph() const;
     void update();
 
     ASTs constraints;
 
-    std::vector<std::vector<CNFQuery::AtomicFormula>> cnf_constraints;
+    std::vector<std::vector<CNFQueryAtomicFormula>> cnf_constraints;
     std::map<IAST::Hash, AtomIds> ast_to_atom_ids;
 
     std::unique_ptr<ComparisonGraph<ASTPtr>> graph;

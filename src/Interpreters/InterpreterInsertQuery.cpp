@@ -24,6 +24,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>

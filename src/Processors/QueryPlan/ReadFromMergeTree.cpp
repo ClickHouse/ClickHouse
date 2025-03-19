@@ -11,6 +11,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>

@@ -24,6 +24,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 

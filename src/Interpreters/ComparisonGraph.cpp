@@ -120,7 +120,7 @@ const auto & getNode(const Analyzer::CNFAtomicFormula & atom)
     return atom.node_with_hash.node;
 }
 
-const auto & getNode(const CNFQuery::AtomicFormula & atom)
+const auto & getNode(const CNFQueryAtomicFormula & atom)
 {
     return atom.ast;
 }
