@@ -13,7 +13,7 @@ The left side of the operator is either a single column or a tuple.
 
 Examples:
 
-``` sql
+```sql
 SELECT UserID IN (123, 456) FROM ...
 SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 ```
@@ -35,13 +35,13 @@ cannot be performed, it returns [NULL](/operations/settings/formats#input_format
 
 Query:
 
-``` sql
+```sql
 SELECT '1' IN (SELECT 1);
 ```
 
 Result:
 
-``` text
+```text
 ┌─in('1', _subquery49)─┐
 │                    1 │
 └──────────────────────┘
@@ -55,7 +55,7 @@ The subquery may specify more than one column for filtering tuples.
 
 Example:
 
-``` sql
+```sql
 SELECT (CounterID, UserID) IN (SELECT CounterID, UserID FROM ...) FROM ...
 ```
 
@@ -64,7 +64,7 @@ The columns to the left and right of the `IN` operator should have the same type
 The `IN` operator and subquery may occur in any part of the query, including in aggregate functions and lambda functions.
 Example:
 
-``` sql
+```sql
 SELECT
     EventDate,
     avg(UserID IN
@@ -78,7 +78,7 @@ GROUP BY EventDate
 ORDER BY EventDate ASC
 ```
 
-``` text
+```text
 ┌──EventDate─┬────ratio─┐
 │ 2014-03-17 │        1 │
 │ 2014-03-18 │ 0.807696 │
@@ -99,7 +99,7 @@ During request processing, the `IN` operator assumes that the result of an opera
 
 Here is an example with the `t_null` table:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -108,7 +108,7 @@ Here is an example with the `t_null` table:
 
 Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the following result:
 
-``` text
+```text
 ┌─x─┐
 │ 2 │
 └───┘
@@ -116,12 +116,12 @@ Running the query `SELECT x FROM t_null WHERE y IN (NULL,3)` gives you the follo
 
 You can see that the row in which `y = NULL` is thrown out of the query results. This is because ClickHouse can't decide whether `NULL` is included in the `(NULL,3)` set, returns `0` as the result of the operation, and `SELECT` excludes this row from the final output.
 
-``` sql
+```sql
 SELECT y IN (NULL, 3)
 FROM t_null
 ```
 
-``` text
+```text
 ┌─in(y, tuple(NULL, 3))─┐
 │                     0 │
 │                     1 │
@@ -150,13 +150,13 @@ For a query to the **distributed_table**, the query will be sent to all the remo
 
 For example, the query
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM distributed_table
 ```
 
 will be sent to all remote servers as
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM local_table
 ```
 
@@ -164,7 +164,7 @@ and run on each of them in parallel, until it reaches the stage where intermedia
 
 Now let's examine a query with `IN`:
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -172,7 +172,7 @@ SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID I
 
 This query will be sent to all remote servers as
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
@@ -182,19 +182,19 @@ This will work correctly and optimally if you are prepared for this case and hav
 
 To correct how the query works when data is spread randomly across the cluster servers, you could specify **distributed_table** inside a subquery. The query would look like this:
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 This query will be sent to all remote servers as
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 The subquery will begin running on each remote server. Since the subquery uses a distributed table, the subquery that is on each remote server will be resent to every remote server as:
 
-``` sql
+```sql
 SELECT UserID FROM local_table WHERE CounterID = 34
 ```
 
@@ -202,19 +202,19 @@ For example, if you have a cluster of 100 servers, executing the entire query wi
 
 In such cases, you should always use `GLOBAL IN` instead of `IN`. Let's look at how it works for the query:
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID GLOBAL IN (SELECT UserID FROM distributed_table WHERE CounterID = 34)
 ```
 
 The requestor server will run the subquery:
 
-``` sql
+```sql
 SELECT UserID FROM distributed_table WHERE CounterID = 34
 ```
 
 and the result will be put in a temporary table in RAM. Then the request will be sent to each remote server as:
 
-``` sql
+```sql
 SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL IN _data1
 ```
 

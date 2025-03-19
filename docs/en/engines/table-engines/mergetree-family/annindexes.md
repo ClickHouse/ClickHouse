@@ -30,7 +30,7 @@ Blogs:
 
 In terms of SQL, a nearest neighborhood search can be expressed as follows:
 
-``` sql
+```sql
 SELECT [...]
 FROM table, [...]
 ORDER BY DistanceFunction(vectors, reference_vector)
@@ -136,7 +136,7 @@ additional techniques are recommended to speed up index creation:
 
 Vector similarity indexes support this type of query:
 
-``` sql
+```sql
 WITH [...] AS reference_vector
 SELECT *
 FROM table

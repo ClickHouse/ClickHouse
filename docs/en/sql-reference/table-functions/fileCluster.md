@@ -21,7 +21,7 @@ In case these files differ between nodes, the return value cannot be predetermin
 
 **Syntax**
 
-``` sql
+```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
@@ -41,7 +41,7 @@ A table with the specified format and structure and with data from files matchin
 
 Given a cluster named `my_cluster` and given the following value of setting `user_files_path`:
 
-``` bash
+```bash
 $ grep user_files_path /etc/clickhouse-server/config.xml
     <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```

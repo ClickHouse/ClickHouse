@@ -112,7 +112,7 @@ In this case, ensure that the username follows the `mysql4<subdomain>_<username>
 
 Add the [mysql_port](../operations/server-configuration-parameters/settings.md#mysql_port) setting to your server's configuration file. For example, you could define the port in a new XML file in your `config.d/` [folder](../operations/configuration-files):
 
-``` xml
+```xml
 <clickhouse>
     <mysql_port>9004</mysql_port>
 </clickhouse>
@@ -134,13 +134,13 @@ mysql --protocol tcp -h [hostname] -u [username] -P [port_number] [database_name
 
 For example:
 
-``` bash
+```bash
 $ mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default
 ```
 
 Output if a connection succeeded:
 
-``` text
+```text
 Welcome to the MySQL monitor.  Commands end with ; or \g.
 Your MySQL connection id is 4
 Server version: 20.2.1.1-ClickHouse
@@ -167,6 +167,6 @@ Restrictions:
 
 To cancel a long query use `KILL QUERY connection_id` statement (it is replaced with `KILL QUERY WHERE query_id = connection_id` while proceeding). For example:
 
-``` bash
+```bash
 $ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
 ```

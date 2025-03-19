@@ -2442,7 +2442,7 @@ LIMIT 20
 │              13 │ alesapin             │ #include <Disks/ObjectStorages/IMetadataStorage.h>            │
 │              14 │ alesapin             │                                                               │
 │              15 │ Alexey Milovidov     │ #include <DB/Databases/IDatabase.h>                           │
-│              16 │ Alexey Zatelepin     │ #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h> │
+│              16 │ Alexey Zatelepin     │ #include <Storages/MergeTree/ReplicatedMergeTreePartheckout er.h> │
 │              17 │ CurtizJ              │ #include <Storages/MergeTree/MergeTreeDataPart.h>             │
 │              18 │ Kirill Shvakov       │ #include <Parsers/ASTDropQuery.h>                             │
 │              19 │ s-kat                │ #include <Storages/MergeTree/PinnedPartUUIDs.h>               │

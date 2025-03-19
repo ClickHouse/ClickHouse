@@ -10,7 +10,7 @@ Changes settings profiles.
 
 Syntax:
 
-``` sql
+```sql
 ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]] 
     [ON CLUSTER cluster_name]
     [DROP ALL PROFILES]
