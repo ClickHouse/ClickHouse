@@ -10,15 +10,15 @@
 
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
-#include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/QueryPlanVisitor.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 
-#include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
+#include <QueryPipeline/QueryPipelineBuilder.h>
 
 namespace DB
 {
@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
 }
 
 SettingsChanges ExplainPlanOptions::toSettingsChanges() const
@@ -68,6 +69,43 @@ const Header & QueryPlan::getCurrentHeader() const
     checkInitialized();
     checkNotCompleted();
     return root->step->getOutputHeader();
+}
+
+void QueryPlan::unitePlans(QueryPlan plan)
+{
+    if (!isInitialized())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite plans without step because current QueryPlan is not initialized");
+
+    const auto & step = root->step;
+    size_t num_existing_inputs = root->children.size();
+
+    const auto & inputs = step->getInputHeaders();
+
+    if (inputs.size() != num_existing_inputs + 1)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot unite QueryPlans using {} because step has different number of inputs. Has {} inputs and {} existing inputs",
+            step->getName(),
+            inputs.size(),
+            num_existing_inputs);
+
+    const auto & step_header = inputs.back();
+    const auto & plan_header = plan.getCurrentHeader();
+    if (!blocksHaveEqualStructure(step_header, plan_header))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot unite QueryPlans using {} because it has incompatible header with plan {} plan header: {} step header: {}",
+            step->getName(),
+            root->step->getName(),
+            plan_header.dumpStructure(),
+            step_header.dumpStructure());
+
+    nodes.splice(nodes.end(), std::move(plan.nodes));
+
+    root->children.emplace_back(plan.root);
+
+    max_threads = std::max(max_threads, plan.max_threads);
+    resources = std::move(plan.resources);
 }
 
 void QueryPlan::unitePlans(QueryPlanStepPtr step, std::vector<std::unique_ptr<QueryPlan>> plans)
@@ -167,8 +205,7 @@ void QueryPlan::addStep(QueryPlanStepPtr step)
 }
 
 QueryPipelineBuilderPtr QueryPlan::buildQueryPipeline(
-    const QueryPlanOptimizationSettings & optimization_settings,
-    const BuildQueryPipelineSettings & build_pipeline_settings)
+    const QueryPlanOptimizationSettings & optimization_settings, const BuildQueryPipelineSettings & build_pipeline_settings)
 {
     checkInitialized();
     optimize(optimization_settings);
@@ -312,10 +349,7 @@ JSONBuilder::ItemPtr QueryPlan::explainPlan(const ExplainPlanOptions & options) 
     return tree;
 }
 
-static void explainStep(
-    IQueryPlanStep & step,
-    IQueryPlanStep::FormatSettings & settings,
-    const ExplainPlanOptions & options)
+static void explainStep(IQueryPlanStep & step, IQueryPlanStep::FormatSettings & settings, const ExplainPlanOptions & options)
 {
     std::string prefix(settings.offset, ' ');
     settings.out << prefix;
@@ -323,7 +357,7 @@ static void explainStep(
 
     const auto & description = step.getStepDescription();
     if (options.description && !description.empty())
-        settings.out <<" (" << description << ')';
+        settings.out << " (" << description << ')';
 
     settings.out.write('\n');
 
@@ -352,7 +386,6 @@ static void explainStep(
             }
         }
         settings.out.write('\n');
-
     }
 
     if (options.sorting)
@@ -507,11 +540,11 @@ void QueryPlan::explainEstimate(MutableColumns & columns) const
     using CountersPtr = std::shared_ptr<EstimateCounters>;
     std::unordered_map<std::string, CountersPtr> counters;
     using processNodeFuncType = std::function<void(const Node * node)>;
-    processNodeFuncType process_node = [&counters, &process_node] (const Node * node)
+    processNodeFuncType process_node = [&counters, &process_node](const Node * node)
     {
         if (!node)
             return;
-        if (const auto * step = dynamic_cast<ReadFromMergeTree*>(node->step.get()))
+        if (const auto * step = dynamic_cast<ReadFromMergeTree *>(node->step.get()))
         {
             const auto & id = step->getStorageID();
             auto key = id.database_name + "." + id.table_name;

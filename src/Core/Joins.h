@@ -8,16 +8,16 @@ namespace DB
 class ReadBuffer;
 class WriteBuffer;
 
-/// Join method.
+/// Defines which side of the JOIN is preserved in the result.
 enum class JoinKind : uint8_t
 {
-    Inner, /// Leave only rows that was JOINed.
-    Left, /// If in "right" table there is no corresponding rows, use default values instead.
-    Right,
-    Full,
+    Inner, /// Keep only joined rows.
+    Left,  /// Keep all rows from left table. Fill with default values for right table where no matches.
+    Right, /// Keep all rows from right table. Fill with default values for left table where no matches.
+    Full,  /// Keep all rows from both tables. Fill with default values where no matches.
     Cross, /// Direct product. Strictness and condition doesn't matter.
     Comma, /// Same as direct product. Intended to be converted to INNER JOIN with conditions from WHERE.
-    Paste, /// Used to join parts without `ON` clause.
+    Paste, /// Stack columns from left and right tables.
 };
 
 void serializeJoinKind(JoinKind kind, WriteBuffer & out);
@@ -29,6 +29,7 @@ constexpr bool isLeft(JoinKind kind)         { return kind == JoinKind::Left; }
 constexpr bool isRight(JoinKind kind)        { return kind == JoinKind::Right; }
 constexpr bool isInner(JoinKind kind)        { return kind == JoinKind::Inner; }
 constexpr bool isFull(JoinKind kind)         { return kind == JoinKind::Full; }
+constexpr bool isOuter(JoinKind kind)        { return kind == JoinKind::Left || kind == JoinKind::Right || kind == JoinKind::Full; }
 constexpr bool isCrossOrComma(JoinKind kind) { return kind == JoinKind::Comma || kind == JoinKind::Cross; }
 constexpr bool isRightOrFull(JoinKind kind)  { return kind == JoinKind::Right || kind == JoinKind::Full; }
 constexpr bool isLeftOrFull(JoinKind kind)   { return kind == JoinKind::Left  || kind == JoinKind::Full; }

@@ -164,7 +164,7 @@ void addSortingForMergeJoin(
     QueryPlan::Nodes & nodes,
     const SortingStep::Settings & sort_settings,
     const JoinSettings & join_settings,
-    const JoinInfo & join_info)
+    const JoinOperator & join_info)
 {
     auto join_kind = join_info.kind;
     auto join_strictness = join_info.strictness;
@@ -239,18 +239,21 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
         return false;
-    if (node.children.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
+    if (node.children.size() <= 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have more than 2 children, but has {}", node.children.size());
 
-    JoinActionRef post_filter(nullptr);
-    auto join_ptr = join_step->convertToPhysical(
-        post_filter,
+    auto result = join_step->convertToPhysical(
         keep_logical,
         optimization_settings.max_threads,
         optimization_settings.max_entries_for_hash_table_stats,
         optimization_settings.initial_query_id,
         optimization_settings.lock_acquire_timeout,
         optimization_settings.actions_settings);
+
+    #pragma clang diagnostic ignored "-Wunreachable-code"
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "WIP");
+
+    auto join_ptr = result.nodes[result.root].join_strategy;
 
     if (join_ptr->isFilled())
     {
@@ -262,62 +265,93 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
 
     Header output_header = join_step->getOutputHeader();
 
-    const auto & join_expression_actions = join_step->getExpressionActions();
+    // QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(*join_expression_actions.actions[1]), {}, nodes);
+    // QueryPlan::Node * new_right_node = nullptr;
+    // if (node.children.size() >= 2)
+    //     new_right_node = makeExpressionNodeOnTopOf(node.children.at(1), std::move(*join_expression_actions.actions[2]), {}, nodes);
 
-    QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(*join_expression_actions.left_pre_join_actions), {}, nodes);
-    QueryPlan::Node * new_right_node = nullptr;
-    if (node.children.size() >= 2)
-        new_right_node = makeExpressionNodeOnTopOf(node.children.at(1), std::move(*join_expression_actions.right_pre_join_actions), {}, nodes);
-
-    if (join_step->areInputsSwapped() && new_right_node)
-        std::swap(new_left_node, new_right_node);
+    // if (join_step->areInputsSwapped() && new_right_node)
+    //     std::swap(new_left_node, new_right_node);
 
     const auto & settings = join_step->getSettings();
 
     auto & new_join_node = nodes.emplace_back();
 
-    if (!join_ptr->isFilled())
-    {
-        chassert(new_right_node);
-        if (const auto * fsmjoin = dynamic_cast<const FullSortingMergeJoin *>(join_ptr.get()))
-            addSortingForMergeJoin(fsmjoin, new_left_node, new_right_node, nodes,
-                join_step->getSortingSettings(), join_step->getJoinSettings(), join_step->getJoinInfo());
+    // if (!join_ptr->isFilled())
+    // {
+    //     chassert(new_right_node);
+    //     if (const auto * fsmjoin = dynamic_cast<const FullSortingMergeJoin *>(join_ptr.get()))
+    //         addSortingForMergeJoin(fsmjoin, new_left_node, new_right_node, nodes,
+    //             join_step->getSortingSettings(), join_step->getJoinSettings(), join_step->getJoinInfo());
 
-        auto required_output_from_join = join_expression_actions.post_join_actions->getRequiredColumnsNames();
-        new_join_node.step = std::make_unique<JoinStep>(
-            new_left_node->step->getOutputHeader(),
-            new_right_node->step->getOutputHeader(),
-            join_ptr,
-            settings.max_block_size,
-            settings.min_joined_block_size_bytes,
-            optimization_settings.max_threads,
-            NameSet(required_output_from_join.begin(), required_output_from_join.end()),
-            false /*optimize_read_in_order*/,
-            true /*use_new_analyzer*/);
-        new_join_node.children = {new_left_node, new_right_node};
-    }
-    else
-    {
-        new_join_node.step = std::make_unique<FilledJoinStep>(
-            new_left_node->step->getOutputHeader(),
-            join_ptr,
-            settings.max_block_size);
-        new_join_node.children = {new_left_node};
-    }
+    //     auto required_output_from_join = join_expression_actions.actions[3]->getRequiredColumnsNames();
+    //     new_join_node.step = std::make_unique<JoinStep>(
+    //         new_left_node->step->getOutputHeader(),
+    //         new_right_node->step->getOutputHeader(),
+    //         join_ptr,
+    //         settings.max_block_size,
+    //         settings.min_joined_block_size_bytes,
+    //         settings.max_threads,
+    //         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
+    //         false /*optimize_read_in_order*/,
+    //         true /*use_new_analyzer*/);
+    //     new_join_node.children = {new_left_node, new_right_node};
+    // }
+    // else
+    // {
+    //     new_join_node.step = std::make_unique<FilledJoinStep>(
+    //         new_left_node->step->getOutputHeader(),
+    //         join_ptr,
+    //         settings.max_block_size);
+    //     new_join_node.children = {new_left_node};
+    // }
+
+    UNUSED(result);
+    UNUSED(output_header);
+    UNUSED(new_join_node);
+    UNUSED(settings);
+
+    //     auto required_output_from_join = join_expression_actions.post_join_actions->getRequiredColumnsNames();
+    //     new_join_node.step = std::make_unique<JoinStep>(
+    //         new_left_node->step->getOutputHeader(),
+    //         new_right_node->step->getOutputHeader(),
+    //         join_ptr,
+    //         settings.max_block_size,
+    //         settings.min_joined_block_size_bytes,
+    //         optimization_settings.max_threads,
+    //         NameSet(required_output_from_join.begin(), required_output_from_join.end()),
+    //         false /*optimize_read_in_order*/,
+    //         true /*use_new_analyzer*/);
+    //     new_join_node.children = {new_left_node, new_right_node};
+    // }
+    // else
+    // {
+    //     new_join_node.step = std::make_unique<FilledJoinStep>(
+    //         new_left_node->step->getOutputHeader(),
+    //         join_ptr,
+    //         settings.max_block_size);
+    //     new_join_node.children = {new_left_node};
+    // }
 
     QueryPlan::Node result_node;
+
+    /*
     if (post_filter)
     {
         bool remove_filter = !output_header.has(post_filter.getColumnName());
-        result_node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions), post_filter.getColumnName(), remove_filter);
+        result_node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.actions[3]), post_filter.getColumnName(), remove_filter);
+        result_node.children = {&new_join_node};
+    }
+    else if (!isPassthroughActions(*join_expression_actions.actions[3]))
+    {
+        result_node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.actions[3]));
         result_node.children = {&new_join_node};
     }
     else
     {
-        result_node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions));
-        result_node.children = {&new_join_node};
+        result_node = std::move(new_join_node);
     }
-
+    */
     node = std::move(result_node);
     return true;
 }
@@ -332,7 +366,8 @@ bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
         return false;
 
     if (node.children.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
+        /// TODO(@vdimir): optimize flattened join
+        return false;
 
     bool need_swap = false;
     if (!optimization_settings.join_swap_table.has_value())
@@ -354,9 +389,12 @@ bool optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes &, const Query
     if (!need_swap)
         return false;
 
+    if (join_step->getNumberOfTables() != 2)
+        return false;
+
     /// fixme: USING clause handled specially in join algorithm, so swap breaks it
     /// fixme: Swapping for SEMI and ANTI joins should be alright, need to try to enable it and test
-    const auto & join_info = join_step->getJoinInfo();
+    const auto & join_info = join_step->getJoinOperator();
     if (join_info.expression.is_using || join_info.strictness != JoinStrictness::All)
         return true;
 

@@ -58,7 +58,7 @@ std::vector<size_t> getPermutationForBlock(
     {
         for (const auto & col : other_block)
         {
-            if (!name_filter.contains(col.name))
+            if (!name_filter.empty() && !name_filter.contains(col.name))
                 continue;
             if (auto it = name_map.find(col.name); it != name_map.end())
             {

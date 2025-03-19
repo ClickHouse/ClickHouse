@@ -127,7 +127,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         !TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::PARALLEL_HASH))
         return 0;
 
-    const auto & join_info = join->getJoinInfo();
+    const auto & join_info = join->getJoinOperator();
 
     /// Let's allow Strictness::All with a wrong result for now.
     if (join_info.strictness != JoinStrictness::Any && join_info.strictness != JoinStrictness::All)
@@ -165,7 +165,7 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         }
     }
 
-    const auto & required_output_columns = join->getRequiredOutpurColumns();
+    const auto & required_output_columns = join->getRequiredOutputColumns();
     NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
 
     const auto & join_expression_actions = join->getExpressionActions();
