@@ -8,7 +8,6 @@
 #include <Common/Throttler.h>
 #include <Common/safe_cast.h>
 #include <Common/logger_useful.h>
-#include <Core/Settings.h>
 #include <hdfs/hdfs.h>
 #include <mutex>
 
@@ -45,7 +44,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl : public BufferWithOwnMemory<S
     off_t file_offset = 0;
     off_t read_until_position = 0;
     off_t file_size;
-    bool enable_pread = false;
+    bool enable_pread = true;
 
     explicit ReadBufferFromHDFSImpl(
         const std::string & hdfs_uri_,
