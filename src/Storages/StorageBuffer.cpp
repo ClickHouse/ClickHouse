@@ -1200,11 +1200,11 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
 UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
 {
     /**
-      * Do not force UInt64 type for args, it'll backward incampatible,
+      * Do not force UInt64 type for args, otherwise it'll be backward incampatible,
       * there are exponential notation usages for shortness.
       */
     const auto & value = arg->as<ASTLiteral &>().value;
-    if (value.getType() > Field::Types::UInt64)
+    if (value.getType() != Field::Types::UInt64)
     {
         Int64 val = applyVisitor(FieldVisitorConvertToNumber<Int64>(), value);
         if (val < 0)
@@ -1214,7 +1214,6 @@ UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
                 "Argument '{}' must be non-negative value, get {}",
                 arg_name, val);
         }
-        return static_cast<UInt64>(val);
     }
 
     return applyVisitor(FieldVisitorConvertToNumber<UInt64>(), value);
