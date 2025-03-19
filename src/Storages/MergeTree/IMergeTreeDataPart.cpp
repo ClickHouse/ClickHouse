@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 
 #include <Columns/ColumnNullable.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -19,7 +20,6 @@
 #include <Interpreters/TransactionLog.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/GinIndexStore.h>
 #include <Storages/MergeTree/MergeTreeData.h>

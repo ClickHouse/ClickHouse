@@ -22,17 +22,17 @@ then
 fi
 
 # Note that this is a broad check. A per version check is done in the upgrade test
-# Baselines generated with v25.1.4.32 (pre-release)
-# clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_settings_25_1_4.tsv
-# clickhouse local --query "select name, value from system.merge_tree_settings order by name format TSV" > 02995_merge_tree_settings_settings_25_1_4.tsv
+# Baselines generated with v25.2.3.14 (pre-release)
+# clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_settings_25_2_3.tsv
+# clickhouse local --query "select name, value from system.merge_tree_settings order by name format TSV" > 02995_merge_tree_settings_settings_25_2_3.tsv
 $CLICKHOUSE_LOCAL --query "
     WITH old_settings AS
     (
-        SELECT * FROM file('${CUR_DIR}/02995_settings_25_1_4.tsv', 'TSV', 'name String, default String')
+        SELECT * FROM file('${CUR_DIR}/02995_settings_25_2_3.tsv', 'TSV', 'name String, default String')
     ),
     old_merge_tree_settings AS
     (
-        SELECT * FROM file('${CUR_DIR}/02995_merge_tree_settings_settings_25_1_4.tsv', 'TSV', 'name String, default String')
+        SELECT * FROM file('${CUR_DIR}/02995_merge_tree_settings_settings_25_2_3.tsv', 'TSV', 'name String, default String')
     ),
     new_settings AS
     (
@@ -52,7 +52,7 @@ $CLICKHOUSE_LOCAL --query "
         )) AND (name NOT IN (
             SELECT arrayJoin(tupleElement(changes, 'name'))
             FROM system.settings_changes
-            WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
+            WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 2
         ))
         UNION ALL
         (
@@ -64,7 +64,7 @@ $CLICKHOUSE_LOCAL --query "
             )) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
+                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 2
             ))
         )
         UNION ALL
@@ -75,7 +75,7 @@ $CLICKHOUSE_LOCAL --query "
             WHERE (new_settings.default != old_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
+                WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 2
             )) AND ${IGNORE_SETTINGS_FOR_SANITIZERS}
         )
         UNION ALL
@@ -86,7 +86,7 @@ $CLICKHOUSE_LOCAL --query "
             WHERE (new_merge_tree_settings.default != old_merge_tree_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 1
+                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 2
             )) AND ${IGNORED_MERGETREE_SETTINGS_FOR_CLOUD}
         )
     )

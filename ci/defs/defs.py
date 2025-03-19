@@ -46,14 +46,6 @@ SECRETS = [
         type=Secret.Type.AWS_SSM_VAR,
     ),
     azure_secret,
-    # Secret.Config(
-    #     name="clickhouse_github_secret_key.clickhouse-app-id",
-    #     type=Secret.Type.AWS_SSM_SECRET,
-    # ),
-    # Secret.Config(
-    #     name="clickhouse_github_secret_key.clickhouse-app-key",
-    #     type=Secret.Type.AWS_SSM_SECRET,
-    # ),
     Secret.Config(
         name="woolenwolf_gh_app.clickhouse-app-id",
         type=Secret.Type.AWS_SSM_SECRET,
@@ -66,17 +58,45 @@ SECRETS = [
 
 DOCKERS = [
     Docker.Config(
-        name="clickhouse/binary-builder",
-        path="./ci/docker/binary-builder",
+        name="clickhouse/style-test",
+        path="./ci/docker/style-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/fasttest"],
+        depends_on=[],
     ),
+    Docker.Config(
+        name="clickhouse/fasttest",
+        path="./ci/docker/fasttest",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    # new images
     # Docker.Config(
-    #     name="clickhouse/cctools",
-    #     path="./ci/docker/packager/cctools",
+    #     name="clickhouse/binary-builder",
+    #     path="./ci/docker/binary-builder",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=["clickhouse/fasttest"],
+    # ),
+    # Docker.Config(
+    #     name="clickhouse/stateless-test",
+    #     path="./ci/docker/stateless-test",
     #     platforms=Docker.Platforms.arm_amd,
     #     depends_on=[],
     # ),
+    # TODO: fix build failure:
+    # 7 58.76 In file included from ./../code-sign-blobs/superblob.h:7:
+    # 7 58.76 ./../code-sign-blobs/blob.h:185:60: error: no member named 'clone' in 'Security::BlobCore'
+    # Docker.Config(
+    #     name="clickhouse/cctools",
+    #     path="./docker/packager/cctools",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=["clickhouse/fasttest"],
+    # ),
+    Docker.Config(
+        name="clickhouse/binary-builder",
+        path="./docker/packager/binary-builder",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/fasttest"],
+    ),
     Docker.Config(
         name="clickhouse/test-old-centos",
         path="./ci/docker/compatibility/centos",
@@ -89,42 +109,60 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # Docker.Config(
-    #     name="clickhouse/test-util",
-    #     path="./ci/docker/test/util",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/fuzzer",
-    #     path="./ci/docker/test/fuzzer",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/performance-comparison",
-    #     path="./ci/docker/test/performance-comparison",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
     Docker.Config(
-        name="clickhouse/fasttest",
-        path="./ci/docker/fasttest",
+        name="clickhouse/test-util",
+        path="./docker/test/util",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # Docker.Config(
-    #     name="clickhouse/keeper-jepsen-test",
-    #     path="./ci/docker/test/keeper-jepsen",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/server-jepsen-test",
-    #     path="./ci/docker/test/server-jepsen",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/test-base"],
-    # ),
+    Docker.Config(
+        name="clickhouse/test-base",
+        path="./docker/test/base",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-util"],
+    ),
+    Docker.Config(
+        name="clickhouse/unit-test",
+        path="./docker/test/unit",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/stateless-test",
+        path="./docker/test/stateless",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/stress-test",
+        path="./docker/test/stress",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/stateless-test"],
+    ),
+    Docker.Config(
+        name="clickhouse/fuzzer",
+        path="./docker/test/fuzzer",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/performance-comparison",
+        path="./docker/test/performance-comparison",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/keeper-jepsen-test",
+        path="./docker/test/keeper-jepsen",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
+        name="clickhouse/server-jepsen-test",
+        path="./docker/test/server-jepsen",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
     # Docker.Config(
     #     name="clickhouse/sqllogic-test",
     #     path="./ci/docker/test/sqllogic",
@@ -132,27 +170,26 @@ DOCKERS = [
     #     depends_on=["clickhouse/test-base"],
     # ),
     Docker.Config(
-        name="clickhouse/stateless-test",
-        path="./ci/docker/stateless-test",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
-        name="clickhouse/stateful-test",
-        path="./ci/docker/stateful-test",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/stateless-test"],
-    ),
-    Docker.Config(
         name="clickhouse/integration-test",
-        path="./ci/docker/integration/integration-test",
+        path="./docker/test/integration/base",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
+        depends_on=["clickhouse/test-base"],
     ),
-    # TODO: move images into ./ci
+    # Docker.Config(
+    #     name="clickhouse/integration-test",
+    #     path="./ci/docker/integration/integration-test",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
     Docker.Config(
         name="clickhouse/integration-tests-runner",
         path="./docker/test/integration/runner",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/integration-test-with-unity-catalog",
+        path="docker/test/integration/clickhouse_with_unity_catalog",
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
@@ -177,9 +214,7 @@ DOCKERS = [
     Docker.Config(
         name="clickhouse/mysql-java-client",
         path="./docker/test/integration/mysql_java_client",
-        # TODO: amd image on arm runner hangs on "RUN javac MySQLJavaClientTest.java"
-        #  fix and enable for both platforms
-        platforms=[Docker.Platforms.AMD],
+        platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
     Docker.Config(
@@ -225,12 +260,6 @@ DOCKERS = [
         depends_on=[],
     ),
     Docker.Config(
-        name="clickhouse/style-test",
-        path="./ci/docker/style-test",
-        platforms=Docker.Platforms.arm_amd,
-        depends_on=[],
-    ),
-    Docker.Config(
         name="clickhouse/docs-builder",
         path="./docker/docs/builder",
         platforms=[Docker.Platforms.AMD],
@@ -254,21 +283,20 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
+    # TODO: remove redundant images
+    Docker.Config(
+        name="clickhouse/clickbench",
+        path="./docker/test/clickbench",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
+    Docker.Config(
+        name="clickhouse/sqltest",
+        path="./docker/test/sqltest",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=[],
+    ),
 ]
-
-# TODO:
-# "docker/test/sqlancer": {
-#     "name": "clickhouse/sqlancer-test",
-#     "dependent": []
-# },
-# "docker/test/install/deb": {
-#     "name": "clickhouse/install-deb-test",
-#     "dependent": []
-# },
-# "docker/test/install/rpm": {
-#     "name": "clickhouse/install-rpm-test",
-#     "dependent": []
-# },
 
 
 class BuildTypes(metaclass=MetaClasses.WithIter):
@@ -345,7 +373,7 @@ class ArtifactNames:
     CH_ARM_RELEASE = "CH_ARM_RELEASE"
     CH_ARM_ASAN = "CH_ARM_ASAN"
 
-    CH_AMD_COV_BIN = "CH_AMDCOV_BIN"
+    CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BIN = "CH_ARM_BIN"
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
@@ -368,7 +396,7 @@ class ArtifactNames:
 
     DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_AMD_COV = "DEB_AMD_COV"
+    DEB_COV = "DEB_COV"
     DEB_AMD_ASAN = "DEB_AMD_ASAN"
     DEB_AMD_TSAN = "DEB_AMD_TSAN"
     DEB_AMD_MSAM = "DEB_AMD_MSAM"
@@ -411,7 +439,7 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_BINARY,
             ArtifactNames.CH_ARM_RELEASE,
             ArtifactNames.CH_ARM_ASAN,
-            ArtifactNames.CH_AMD_COV_BIN,
+            ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BIN,
             ArtifactNames.CH_TIDY_BIN,
             ArtifactNames.CH_AMD_DARWIN_BIN,
@@ -438,7 +466,7 @@ class ArtifactConfigs:
             ArtifactNames.DEB_AMD_TSAN,
             ArtifactNames.DEB_AMD_MSAM,
             ArtifactNames.DEB_AMD_UBSAN,
-            ArtifactNames.DEB_AMD_COV,
+            ArtifactNames.DEB_COV,
             ArtifactNames.DEB_ARM_RELEASE,
             ArtifactNames.DEB_ARM_ASAN,
         ]
@@ -475,11 +503,6 @@ class ArtifactConfigs:
             ArtifactNames.UNITTEST_AMD_UBSAN,
             ArtifactNames.UNITTEST_AMD_BINARY,
         ]
-    )
-    fast_test = Artifact.Config(
-        name=ArtifactNames.FAST_TEST,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*",
     )
     fuzzers = Artifact.Config(
         name=ArtifactNames.FUZZERS,
@@ -539,7 +562,6 @@ class Jobs:
                 "./src",
             ],
         ),
-        provides=[ArtifactNames.FAST_TEST],
     )
 
     build_jobs = Job.Config(
@@ -637,7 +659,7 @@ class Jobs:
                 ArtifactNames.DEB_ARM_ASAN,
             ],
             # special builds
-            [ArtifactNames.CH_AMD_COV_BIN],
+            [ArtifactNames.CH_COV_BIN],
             [ArtifactNames.CH_ARM_BIN],
             [ArtifactNames.CH_TIDY_BIN],
             [ArtifactNames.CH_AMD_DARWIN_BIN],
@@ -663,7 +685,7 @@ class Jobs:
             RunnerLabels.BUILDER_ARM,
             RunnerLabels.BUILDER_ARM,
             # special builds
-            RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_COVERAGE
+            RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_COVERAGE
             RunnerLabels.BUILDER_ARM,  # BuildTypes.ARM_BINARY
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_TIDY,
             RunnerLabels.BUILDER_AMD,  # BuildTypes.AMD_DARWIN,

@@ -789,7 +789,7 @@ See also:
 
 ### Random (by Default) {#load_balancing-random}
 
-``` sql
+```sql
 load_balancing = random
 ```
 
@@ -798,7 +798,7 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 
 ### Nearest Hostname {#load_balancing-nearest_hostname}
 
-``` sql
+```sql
 load_balancing = nearest_hostname
 ```
 
@@ -812,13 +812,13 @@ We can also assume that when sending a query to the same server, in the absence 
 
 ### Hostname levenshtein distance {#load_balancing-hostname_levenshtein_distance}
 
-``` sql
+```sql
 load_balancing = hostname_levenshtein_distance
 ```
 
 Just like `nearest_hostname`, but it compares hostname in a [levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance) manner. For example:
 
-``` text
+```text
 example-clickhouse-0-0 ample-clickhouse-0-0
 1
 
@@ -831,7 +831,7 @@ example-clickhouse-0-0 example-clickhouse-12-0
 
 ### In Order {#load_balancing-in_order}
 
-``` sql
+```sql
 load_balancing = in_order
 ```
 
@@ -840,7 +840,7 @@ This method is appropriate when you know exactly which replica is preferable.
 
 ### First or Random {#load_balancing-first_or_random}
 
-``` sql
+```sql
 load_balancing = first_or_random
 ```
 
@@ -852,7 +852,7 @@ It's possible to explicitly define what the first replica is by using the settin
 
 ### Round Robin {#load_balancing-round_robin}
 
-``` sql
+```sql
 load_balancing = round_robin
 ```
 
@@ -1583,7 +1583,7 @@ Queries sent to ClickHouse with this setup are logged according to the rules in 
 
 Example:
 
-``` text
+```text
 log_queries=1
 ```
 )", 0) \
@@ -5829,7 +5829,7 @@ The analyzer should be enabled to use parallel replicas. With disabled analyzer 
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
 )", IMPORTANT) ALIAS(enable_analyzer) \
@@ -6099,7 +6099,13 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
-Allow experimental database engine Iceberg
+Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_unity_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
 Enable Kusto Query Language (KQL) - an alternative to SQL.

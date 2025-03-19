@@ -1,8 +1,8 @@
 ---
-description: "Dataset containing the on-time performance of airline flights"
+description: 'Dataset containing the on-time performance of airline flights'
+sidebar_label: 'OnTime Airline Flight Data'
 slug: /getting-started/example-datasets/ontime
-sidebar_label: OnTime Airline Flight Data
-title: "OnTime"
+title: 'OnTime'
 ---
 
 This dataset contains data from Bureau of Transportation Statistics.

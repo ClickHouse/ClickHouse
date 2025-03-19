@@ -951,7 +951,7 @@ SinkToStoragePtr StorageDistributed::write(const ASTPtr &, const StorageMetadata
     }
 
     /// Force sync insertion if it is remote() table function
-    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || owned_cluster;
+    bool insert_sync = settings[Setting::distributed_foreground_insert] || settings[Setting::insert_shard_id] || owned_cluster || relative_data_path.empty();
     auto timeout = settings[Setting::distributed_background_insert_timeout];
 
     Names columns_to_send;
@@ -1112,7 +1112,7 @@ static std::optional<ActionsDAG> getFilterFromQuery(const ASTPtr & ast, ContextP
                 plan.explainPlan(buf, {});
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
                     "Found multiple source steps for query\n{}\nPlan\n{}",
-                    queryToString(ast), buf.str());
+                    ast->formatForErrorMessage(), buf.str());
             }
 
             source = with_filter;

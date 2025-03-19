@@ -9,6 +9,7 @@
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/MemoryTracker.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
@@ -27,7 +28,6 @@
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
@@ -171,7 +171,7 @@ void handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const String
     query_with_output->out_file = tmp_file_literal;
 
     /// Update the query string after modifying the AST
-    query = serializeAST(*query_with_output);
+    query = query_with_output->formatWithSecretsOneLine();
 }
 
 void cleanupTempFile(const DB::ASTPtr & parsed_query)
@@ -1162,7 +1162,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
-            query = serializeAST(*parsed_query);
+            query = parsed_query->formatWithSecretsOneLine();
         chassert(!query.empty());
     }
 
@@ -1178,7 +1178,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 visitor.visit(parsed_query);
             }
 
-            query = serializeAST(*parsed_query);
+            query = parsed_query->formatWithSecretsOneLine();
         }
     }
 
@@ -1762,7 +1762,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
-            query = serializeAST(*parsed_query);
+            query = parsed_query->formatWithSecretsOneLine();
         chassert(!query.empty());
     }
 
