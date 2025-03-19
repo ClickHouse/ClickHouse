@@ -180,7 +180,7 @@ void StatementGenerator::addSargableColRef(RandomGenerator & rg, const SQLRelati
         /// Add non sargable reference
         SQLFuncCall * sfc = expr->mutable_comp_expr()->mutable_func_call();
 
-        sfc->mutable_func()->set_catalog_func(binopToFunc.at(op));
+        sfc->mutable_func()->set_catalog_func(rg.pickRandomly(nonSargablFuncs));
         expr = sfc->add_args()->mutable_expr();
     }
     ExprSchemaTableColumn * estc = expr->mutable_comp_expr()->mutable_expr_stc();
