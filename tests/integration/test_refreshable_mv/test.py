@@ -271,3 +271,29 @@ def test_refresh_vs_shutdown_smoke(started_cluster):
     node1.start_clickhouse()
     node1.query("drop database re sync")
     node2.query("drop database re sync")
+
+
+def test_pause(started_cluster):
+    for node in nodes:
+        node.query(
+            "create database re engine = Replicated('/test/re', 'shard1', '{replica}');"
+        )
+    node1.query(
+        "create table src (x Int64) engine ReplicatedMergeTree order by x as select 1;"
+        "create materialized view re.a refresh every 1 second (x Int64) engine ReplicatedMergeTree order by x as select x from src;"
+        "system wait view re.a")
+    assert node1.query("select * from re.a") == "1\n"
+    node2.query("system stop replicated view re.a")
+    node1.restart_clickhouse() # just to guarantee that it notices the new znode
+    node2.query(
+        "system wait view re.a;"
+        "truncate table src;"
+        "insert into src values (2);")
+    time.sleep(3)
+    assert node1.query("select * from re.a") == "1\n"
+    node1.query("system start replicated view re.a")
+    assert_eq_with_retry(
+        node1,
+        "select * from re.a",
+        "2\n",
+    )

@@ -66,10 +66,14 @@ public:
 
     Info getInfo() const;
 
-    /// Enable task scheduling
+    /// Methods to pause/unpause refreshing on this replica or all replicas.
+    /// The per-replica pause and global pause are two separate flags; if either of them is set,
+    /// no refreshes will run.
     void start();
-    /// Disable task scheduling
     void stop();
+    void start_replicated();
+    void stop_replicated(const String & reason);
+
     /// Schedule task immediately
     void run();
     /// Cancel task execution
@@ -168,7 +172,8 @@ private:
         /// │   ├── name1
         /// │   ├── name2
         /// │   └── name3
-        /// └── ["running"] (RunningZnode, ephemeral)
+        /// ├── ["running"] (ephemeral)
+        /// └── ["paused"]
 
         struct WatchState
         {
@@ -179,6 +184,7 @@ private:
 
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
+        bool paused_znode_exists = false;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Whether we use Keeper to coordinate refresh across replicas. If false, we don't write to Keeper,

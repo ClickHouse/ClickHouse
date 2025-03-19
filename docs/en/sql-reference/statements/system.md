@@ -578,7 +578,7 @@ Wait for the currently running refresh to complete. If the refresh fails, throws
 
 ### STOP VIEW, STOP VIEWS {#stop-view-stop-views}
 
-Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too.
+Disable periodic refreshing of the given view or all refreshable views. If a refresh is in progress, cancel it too. If the view is in a Replicated or Shared database, this only affects the current replica.
 
 ```sql
 SYSTEM STOP VIEW [db.]name
@@ -600,7 +600,7 @@ SYSTEM START VIEWS
 
 ### CANCEL VIEW {#cancel-view}
 
-If there's a refresh in progress for the given view, interrupt and cancel it. Otherwise do nothing.
+If there's a refresh in progress for the given view on the current replica, interrupt and cancel it. Otherwise do nothing.
 
 ```sql
 SYSTEM CANCEL VIEW [db.]name
@@ -611,6 +611,8 @@ SYSTEM CANCEL VIEW [db.]name
 Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
 
 Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
+
+If the view is in a Replicated or Shared database, and refresh is running on another replica, waits for that refresh to complete.
 
 ```sql
 SYSTEM WAIT VIEW [db.]name

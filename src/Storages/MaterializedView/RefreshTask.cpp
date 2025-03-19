@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int REFRESH_FAILED;
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
+    extern const int INCORRECT_QUERY;
 }
 
 RefreshTask::RefreshTask(
@@ -253,6 +254,28 @@ void RefreshTask::stop()
     refresh_task->schedule();
 }
 
+void RefreshTask::start_replicated()
+{
+    if (!coordination.coordinated)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
+    const auto zookeeper = view->getContext()->getZooKeeper();
+    String path = coordination.path + "/paused";
+    auto code = zookeeper->tryRemove(path);
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+        throw Coordination::Exception::fromPath(code, path);
+}
+
+void RefreshTask::stop_replicated(const String & reason)
+{
+    if (!coordination.coordinated)
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
+    const auto zookeeper = view->getContext()->getZooKeeper();
+    String path = coordination.path + "/paused";
+    auto code = zookeeper->tryCreate(path, reason, zkutil::CreateMode::Persistent);
+    if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNODEEXISTS)
+        throw Coordination::Exception::fromPath(code, path);
+}
+
 void RefreshTask::run()
 {
     std::lock_guard guard(mutex);
@@ -403,7 +426,7 @@ void RefreshTask::refreshTask()
 
             chassert(lock.owns_lock());
 
-            if (scheduling.stop_requested || view->getContext()->getRefreshSet().refreshesStopped() || coordination.read_only)
+            if (scheduling.stop_requested || coordination.paused_znode_exists || view->getContext()->getRefreshSet().refreshesStopped() || coordination.read_only)
             {
                 /// Exit the task and wait for the user to start or resume, which will schedule the task again.
                 setState(RefreshState::Disabled, lock);
@@ -511,9 +534,10 @@ void RefreshTask::refreshTask()
                 znode.last_attempt_error = error_message;
             }
 
-            bool ok = updateCoordinationState(znode, false, zookeeper, lock);  /// NOLINT(clang-analyzer-deadcode.DeadStores)
-            chassert(ok);
+            bool ok = updateCoordinationState(znode, false, zookeeper, lock);
             chassert(lock.owns_lock());
+            if (!ok)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Refresh coordination znode was changed while refresh was in progress.");
 
             if (refreshed)
             {
@@ -802,19 +826,21 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
             });
     }
 
-    Strings paths {coordination.path, coordination.path + "/running"};
+    Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
 
     lock.lock();
 
     if (responses[0].error != Coordination::Error::ZOK)
         throw Coordination::Exception::fromPath(responses[0].error, paths[0]);
-    if (responses[1].error != Coordination::Error::ZOK && responses[1].error != Coordination::Error::ZNONODE)
-        throw Coordination::Exception::fromPath(responses[1].error, paths[1]);
+    for (size_t i = 1; i < 3; ++i)
+        if (responses[i].error != Coordination::Error::ZOK && responses[i].error != Coordination::Error::ZNONODE)
+            throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
 
     coordination.root_znode.parse(responses[0].data);
     coordination.root_znode.version = responses[0].stat.version;
     coordination.running_znode_exists = responses[1].error == Coordination::Error::ZOK;
+    coordination.paused_znode_exists = responses[2].error == Coordination::Error::ZOK;
 
     if (coordination.root_znode.last_completed_timeslot != prev_last_completed_timeslot)
     {
@@ -940,6 +966,9 @@ void RefreshTask::CoordinationZnode::randomize()
 String RefreshTask::CoordinationZnode::toString() const
 {
     WriteBufferFromOwnString out;
+    /// "format version" should be incremented when making incompatible change, to make older servers
+    /// refuse to parse it. For backwards compatible changes, just add new fields at the end and old
+    /// servers will ignore them.
     out << "format version: 1\n"
         << "last_completed_timeslot: " << Int64(last_completed_timeslot.time_since_epoch().count()) << "\n"
         << "last_success_time: " << Int64(last_success_time.time_since_epoch().count()) << "\n"
