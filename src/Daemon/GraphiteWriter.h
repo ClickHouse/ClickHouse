@@ -5,6 +5,7 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketStream.h>
 #include <Poco/Util/Application.h>
+#include "Common/Logger.h"
 #include <Common/logger_useful.h>
 
 
@@ -50,7 +51,7 @@ private:
         }
         catch (const Poco::Exception & e)
         {
-            LOG_WARNING(getLogger("Application"), "Fail to write to Graphite {}:{}. e.what() = {}, e.message() = {}", host, port, e.what(), e.message());
+            LOG_WARNING(getRootLogger(), "Fail to write to Graphite {}:{}. e.what() = {}, e.message() = {}", host, port, e.what(), e.message());
         }
     }
 

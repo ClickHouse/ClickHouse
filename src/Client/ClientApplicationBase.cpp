@@ -250,7 +250,7 @@ void ClientApplicationBase::init(int argc, char ** argv)
         client_sinks.push_back(quill::Frontend::create_or_get_sink<quill::FileSink>(options["client_logs_file"].as<std::string>()));
 
     fatal_log = createLogger("ClientBase", std::move(client_sinks));
-    fatal_log->getQuillLogger()->set_log_level(quill::LogLevel::Critical);
+    fatal_log->setLogLevel(quill::LogLevel::Critical);
     Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
 
     DB::startQuillBackend();

@@ -106,6 +106,7 @@ namespace impl
     requires DB::is_any_of<TLogger, LoggerPtr, LoggerRawPtr>
     inline DB::QuillLoggerPtr getQuillLogger(const TLogger & logger)
     {
+        chassert(logger != nullptr);
         return logger->getQuillLogger();
     }
 
@@ -120,6 +121,7 @@ namespace impl
     requires DB::is_any_of<TLogger, LogSeriesLimiter *, LogSeriesLimiterPtr>
     inline DB::QuillLoggerPtr getQuillLogger(const TLogger & logger)
     {
+        chassert(logger != nullptr);
         return getQuillLogger(logger->getLogger());
     }
 
@@ -256,14 +258,14 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
             if (_should_log)                                                                                                               \
             {                                                                                                                              \
                 std::string _text;                                                                                                         \
-                if (auto * _formatter = Logger::getFormatter(); _formatter)                                                                \
+                if (auto * _formatter = ::Logger::getFormatter(); _formatter)                                                                \
                     _formatter->formatExtended(_msg_ext, _text);                                                                           \
                                                                                                                                            \
                 QUILL_DEFINE_MACRO_METADATA(__PRETTY_FUNCTION__, "{}", nullptr, quill::LogLevel::Dynamic);                                 \
                 ::impl::getQuillLogger(_logger)->template log_statement<QUILL_IMMEDIATE_FLUSH, true>(                                      \
                     ::impl::logLevelToQuillLogLevel(level), &macro_metadata, _text.empty() ? _msg_ext.base.getText() : _text);             \
             }                                                                                                                              \
-            Logger::getTextLogSink().log(_msg_ext, _should_log);                                                                           \
+            ::Logger::getTextLogSink().log(_msg_ext, _should_log);                                                                           \
         }                                                                                                                                  \
         catch (const Poco::Exception & logger_exception)                                                                                   \
         {                                                                                                                                  \

@@ -1,6 +1,7 @@
 #include "GRPCServer.h"
 #include <limits>
 #include <memory>
+#include <quill/core/LogLevel.h>
 #include <Poco/Net/SocketAddress.h>
 #if USE_GRPC
 
@@ -106,19 +107,20 @@ namespace
                     LOG_ERROR(logger, "{} ({}:{})", args->message, args->file, args->line);
             });
 
+            auto * logger = getLogger("grpc")->getQuillLogger();
             if (config.getBool("grpc.verbose_logs", false))
             {
                 gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
                 grpc_tracer_set_enabled("all", true);
             }
-            //else if (logger->is(Poco::Message::PRIO_DEBUG))
-            //{
-            //    gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
-            //}
-            //else if (logger->is(Poco::Message::PRIO_INFORMATION))
-            //{
-            //    gpr_set_log_verbosity(GPR_LOG_SEVERITY_INFO);
-            //}
+            else if (logger->get_log_level() == quill::LogLevel::Debug)
+            {
+               gpr_set_log_verbosity(GPR_LOG_SEVERITY_DEBUG);
+            }
+            else if (logger->get_log_level() == quill::LogLevel::Info)
+            {
+               gpr_set_log_verbosity(GPR_LOG_SEVERITY_INFO);
+            }
         });
     }
 

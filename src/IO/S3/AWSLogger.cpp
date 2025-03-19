@@ -61,7 +61,7 @@ void AWSLogger::LogStream(Aws::Utils::Logging::LogLevel log_level, const char * 
     callLogImpl(log_level, tag, message_stream.str().c_str());
 }
 
-void AWSLogger::callLogImpl([[maybe_unused]] Aws::Utils::Logging::LogLevel log_level, [[maybe_unused]] const char * tag, [[maybe_unused]] const char * message)
+void AWSLogger::callLogImpl(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * message)
 {
     const auto level = convertLogLevel(log_level);
     if (tag_loggers.contains(tag))

@@ -34,7 +34,7 @@ public:
     }
 
     void put_details(
-        [[maybe_unused]] int level_,
+        int level_,
         const char * /* source_file */,
         const char * /* func_name */,
         size_t /* line_number */,

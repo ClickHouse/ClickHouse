@@ -148,7 +148,7 @@ BaseDaemon::~BaseDaemon()
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger("Application"));
+        tryLogCurrentException(getRootLogger());
     }
 
     disableLogging();
@@ -392,12 +392,12 @@ void BaseDaemon::initialize(Application & self)
         if (core_path.empty())
             core_path = getDefaultCorePath();
 
-        tryCreateDirectories(getLogger("Application"), core_path);
+        tryCreateDirectories(getRootLogger(), core_path);
 
         if (!(fs::exists(core_path) && fs::is_directory(core_path)))
         {
             core_path = !log_path.empty() ? log_path : "/opt/";
-            tryCreateDirectories(getLogger("Application"), core_path);
+            tryCreateDirectories(getRootLogger(), core_path);
         }
 
         if (0 != chdir(core_path.c_str()))
@@ -424,7 +424,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
         /// In release builds send it to sentry (if it is configured)
         if (auto * sentry = SentryWriter::getInstance())
         {
-            LOG_DEBUG(getLogger("Application"), "Enable sending LOGICAL_ERRORs to sentry");
+            LOG_DEBUG(getRootLogger(), "Enable sending LOGICAL_ERRORs to sentry");
             Exception::callback = [sentry](const std::string & msg, int code, bool remote, const Exception::FramePointers & trace)
             {
                 if (!remote && code == ErrorCodes::LOGICAL_ERROR)
@@ -470,7 +470,7 @@ void BaseDaemon::initializeTerminationAndSignalProcessing()
 
 void BaseDaemon::logRevision() const
 {
-    LOG_INFO(getLogger("Application"), fmt::runtime("Starting " + std::string{VERSION_FULL}
+    LOG_INFO(getRootLogger(), fmt::runtime("Starting " + std::string{VERSION_FULL}
         + " (revision: " + std::to_string(ClickHouseRevision::getVersionRevision())
         + ", git hash: " + std::string(GIT_HASH)
         + ", build id: " + (build_id.empty() ? "<unknown>" : build_id) + ")"

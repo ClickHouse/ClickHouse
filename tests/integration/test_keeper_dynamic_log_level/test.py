@@ -74,7 +74,7 @@ def test_adjust_log_level(start_cluster):
         privileged=True,
         user="root",
     )
-    for _ in range(100):
+    for _ in range(10):
         if (
             int(
                 node.exec_in_container(
@@ -90,6 +90,6 @@ def test_adjust_log_level(start_cluster):
             >= 1
         ):
             break
-        time.sleep(10)
+        time.sleep(0.5)
     else:
         assert False
