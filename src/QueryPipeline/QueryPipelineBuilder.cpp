@@ -4,7 +4,6 @@
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/ConcatProcessor.h>
@@ -194,10 +193,10 @@ void QueryPipelineBuilder::addMergingAggregatedMemoryEfficientTransform(Aggregat
     DB::addMergingAggregatedMemoryEfficientTransform(pipe, std::move(params), num_merging_processors);
 }
 
-void QueryPipelineBuilder::resize(size_t num_streams, bool force, bool strict)
+void QueryPipelineBuilder::resize(size_t num_streams, bool strict)
 {
     checkInitializedAndNotCompleted();
-    pipe.resize(num_streams, force, strict);
+    pipe.resize(num_streams, strict);
 }
 
 void QueryPipelineBuilder::narrow(size_t size)
@@ -360,8 +359,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     right->pipe.dropExtremes();
     if ((left->getNumStreams() != 1 || right->getNumStreams() != 1) && join->getTableJoin().kind() == JoinKind::Paste)
     {
-        left->pipe.resize(1, true);
-        right->pipe.resize(1, true);
+        left->pipe.resize(1);
+        right->pipe.resize(1);
     }
     else if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port, got {} and {}", left->getNumStreams(), right->getNumStreams());

@@ -10,6 +10,7 @@
 #include <Processors/Sources/NullSource.h>
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <QueryPipeline/Chain.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Columns/ColumnConst.h>
 
@@ -682,12 +683,19 @@ void Pipe::addChains(std::vector<Chain> chains)
     max_parallel_streams = std::max(max_parallel_streams, max_parallel_streams_for_chains);
 }
 
-void Pipe::resize(size_t num_streams, bool force, bool strict)
+void Pipe::resize(size_t num_streams, bool strict)
 {
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");
 
-    if (!force && num_streams == numOutputPorts())
+    if (strict && num_streams == numOutputPorts())
+        return;
+
+    /// We need to not add the resize in case of 1-1 because in case
+    /// it is not force resize and we have n outputs (look at the code above),
+    /// and one of the outputs is dead, we can push all data to n-1 outputs,
+    /// which doesn't make sense for 1-1 scenario
+    if (numOutputPorts() == 1 && num_streams == 1)
         return;
 
     ProcessorPtr resize;

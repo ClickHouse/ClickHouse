@@ -74,6 +74,7 @@ struct FormatSettings
     };
 
     UInt64 schema_inference_make_columns_nullable = 1;
+    bool schema_inference_make_json_columns_nullable = false;
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
@@ -126,6 +127,7 @@ struct FormatSettings
         bool decode_types_in_binary_format = false;
         bool read_json_as_string = false;
         bool write_json_as_string = false;
+        bool read_bool_field_as_int = false;
     } binary{};
 
     struct

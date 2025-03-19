@@ -327,6 +327,7 @@ close it.
         assignees = [self.pr.user, self.pr.merged_by]
         if self.pr.assignees:
             assignees.extend(self.pr.assignees)
+        assignees = [a for a in assignees if "robot-clickhouse" not in str(a) and "clickhouse-gh" not in str(a)]
         logging.info(
             "Assing #%s to author and assignees of the original PR: %s",
             new_pr.number,

@@ -35,6 +35,8 @@ extern const int CANNOT_SEND_SIGNAL;
 
 extern const char * GIT_HASH;
 
+static const std::vector<StackTrace::FramePointers> empty_stack;
+
 using namespace DB;
 
 
@@ -113,7 +115,7 @@ void signalHandler(int sig, siginfo_t * info, void * context)
     writePODBinary(*info, out);
     writePODBinary(signal_context, out);
     writePODBinary(stack_trace, out);
-    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : std::vector<StackTrace::FramePointers>{}, out);
+    writeVectorBinary(Exception::enable_job_stack_trace ? Exception::getThreadFramePointers() : empty_stack, out);
     writeBinary(static_cast<UInt32>(getThreadId()), out);
     writePODBinary(current_thread, out);
     out.finalize();
@@ -577,10 +579,8 @@ try
         /// Advice the user to send it manually.
         if (std::string_view(VERSION_OFFICIAL).contains("official build"))
         {
-            const auto & date_lut = DateLUT::instance();
-
             /// Approximate support period, upper bound.
-            if (time(nullptr) - date_lut.makeDate(2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
+            if (time(nullptr) - makeDate(DateLUT::instance(), 2000 + VERSION_MAJOR, VERSION_MINOR, 1) < (365 + 30) * 86400)
             {
                 LOG_FATAL(log, "Report this error to https://github.com/ClickHouse/ClickHouse/issues");
             }

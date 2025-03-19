@@ -1,5 +1,4 @@
 import json
-import os
 import urllib
 from pathlib import Path
 from typing import Optional
@@ -14,6 +13,7 @@ class Info:
         from ._environment import _Environment
 
         self.env = _Environment.get()
+        self.workflow = None
 
     @property
     def sha(self):
@@ -22,6 +22,14 @@ class Info:
     @property
     def pr_number(self):
         return self.env.PR_NUMBER
+
+    @property
+    def linked_pr_number(self):
+        """
+        PR associated with the merge commit for Push or Merge Queue workflow
+        :return: PR number or 0 if not applicable or not found
+        """
+        return self.env.LINKED_PR_NUMBER
 
     @property
     def workflow_name(self):
@@ -79,6 +87,18 @@ class Info:
     def is_local_run(self):
         return self.env.LOCAL_RUN
 
+    # TODO: Consider defining secrets outside of workflow as it project data in most of the cases
+    def get_secret(self, name):
+        from praktika.mangle import _get_workflows
+
+        if not self.workflow:
+            self.workflow = _get_workflows(self.env.WORKFLOW_NAME)[0]
+        return self.workflow.get_secret(name)
+
+    def get_job_report_url(self, latest=False):
+        url = self.get_report_url(latest=latest)
+        return url + f"&name_1={urllib.parse.quote(self.env.JOB_NAME, safe='')}"
+
     def get_report_url(self, latest=False):
         sha = self.env.SHA
         if latest:
@@ -133,6 +153,31 @@ class Info:
             json.dump(custom_data, f, indent=4)
 
     def get_custom_data(self, key=None):
+        # todo: remove intermediary file CUSTOM_DATA_FILE and store/get directly to/from RunConfig
+        if Path(Settings.CUSTOM_DATA_FILE).is_file():
+            # first check CUSTOM_DATA_FILE in case data is not yet in RunConfig
+            #   might happen if data stored in one pre-hook and fetched in another
+            with open(Settings.CUSTOM_DATA_FILE, "r", encoding="utf8") as f:
+                custom_data = json.load(f)
+        else:
+            custom_data = RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
         if key:
-            return RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data.get(key, None)
-        return RunConfig.from_fs(self.env.WORKFLOW_NAME).custom_data
+            return custom_data.get(key, None)
+        return custom_data
+
+    @classmethod
+    def is_workflow_ok(cls):
+        """
+        Experimental function
+        :return:
+        """
+        from praktika.result import Result
+
+        result = Result.from_fs(cls.workflow_name)
+        for subresult in result.results:
+            if subresult.name == Settings.FINISH_WORKFLOW_JOB_NAME:
+                continue
+            if not subresult.is_ok():
+                print(f"Job [{subresult.name}] is not ok, status [{subresult.status}]")
+                return False
+        return True

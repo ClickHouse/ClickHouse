@@ -1,7 +1,12 @@
 ---
-slug: /en/operations/system-tables/replicas
+description: 'System table containing information about and status of replicated tables
+  residing on the local server. Useful for monitoring.'
+keywords: ['system table', 'replicas']
+slug: /operations/system-tables/replicas
+title: 'system.replicas'
 ---
-# replicas
+
+# system.replicas
 
 Contains information and status for replicated tables residing on the local server.
 This table can be used for monitoring. The table contains a row for every Replicated\* table.

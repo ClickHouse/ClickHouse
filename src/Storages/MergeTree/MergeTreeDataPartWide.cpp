@@ -42,6 +42,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
     const VirtualFields & virtual_fields,
     UncompressedCache * uncompressed_cache,
     MarkCache * mark_cache,
+    DeserializationPrefixesCache * deserialization_prefixes_cache,
     const AlterConversionsPtr & alter_conversions,
     const MergeTreeReaderSettings & reader_settings,
     const ValueSizeMap & avg_value_size_hints,
@@ -55,10 +56,12 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartWide::getReader(
         storage_snapshot,
         uncompressed_cache,
         mark_cache,
+        deserialization_prefixes_cache,
         mark_ranges,
         reader_settings,
         avg_value_size_hints,
-        profile_callback);
+        profile_callback,
+        CLOCK_MONOTONIC_COARSE);
 }
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWideWriter(
@@ -305,11 +308,16 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             {
                 getSerialization(name_type.name)->enumerateStreams([&](const ISerialization::SubstreamPath & substream_path)
                 {
+                    /// Skip ephemeral subcolumns that don't store any real data.
+                    if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
+                        return;
+
                     auto stream_name = getStreamNameForColumn(name_type, substream_path, checksums);
                     if (!stream_name)
                         throw Exception(
                             ErrorCodes::NO_FILE_IN_DATA_PART,
-                            "No stream ({}) file checksum for column {} in part {}",
+                            "No stream ({}{}) file checksum for column {} in part {}",
+                            ISerialization::getFileNameForStream(name_type, substream_path),
                             DATA_FILE_EXTENSION,
                             name_type.name,
                             getDataPartStorage().getFullPath());

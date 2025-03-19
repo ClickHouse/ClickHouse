@@ -5,6 +5,7 @@
 #include <Core/Settings.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/addTypeConversionToAST.h>
@@ -20,7 +21,6 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -31,6 +31,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool allow_suspicious_ttl_expressions;
     extern const SettingsBool enable_zstd_qat_codec;
+    extern const SettingsBool enable_deflate_qpl_codec;
 }
 
 namespace ErrorCodes
@@ -174,7 +175,7 @@ TTLDescription & TTLDescription::operator=(const TTLDescription & other)
 static ExpressionAndSets buildExpressionAndSets(ASTPtr & ast, const NamesAndTypesList & columns, const ContextPtr & context)
 {
     ExpressionAndSets result;
-    auto ttl_string = queryToString(ast);
+    auto ttl_string = ast->formatWithSecretsOneLine();
     auto context_copy = Context::createCopy(context);
     /// FIXME All code here will work with old analyzer, however for TTL
     /// with subqueries it's possible that new analyzer will be enabled in ::read method
@@ -349,7 +350,7 @@ TTLDescription TTLDescription::getTTLFromAST(
         {
             result.recompression_codec =
                 CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
-                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
+                    ttl_element->recompression_codec, {}, !context->getSettingsRef()[Setting::allow_suspicious_codecs], context->getSettingsRef()[Setting::allow_experimental_codecs], context->getSettingsRef()[Setting::enable_deflate_qpl_codec], context->getSettingsRef()[Setting::enable_zstd_qat_codec]);
         }
     }
 
@@ -435,7 +436,8 @@ TTLTableDescription TTLTableDescription::getTTLForTableFromAST(
     return result;
 }
 
-TTLTableDescription TTLTableDescription::parse(const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key)
+TTLTableDescription TTLTableDescription::parse(
+    const String & str, const ColumnsDescription & columns, ContextPtr context, const KeyDescription & primary_key, bool is_attach)
 {
     TTLTableDescription result;
     if (str.empty())
@@ -445,7 +447,7 @@ TTLTableDescription TTLTableDescription::parse(const String & str, const Columns
     ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     FunctionNameNormalizer::visit(ast.get());
 
-    return getTTLForTableFromAST(ast, columns, context, primary_key, context->getSettingsRef()[Setting::allow_suspicious_ttl_expressions]);
+    return getTTLForTableFromAST(ast, columns, context, primary_key, is_attach);
 }
 
 }

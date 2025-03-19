@@ -1,10 +1,11 @@
 ---
-title : PrettySpaceMonoBlock
-slug : /en/interfaces/formats/PrettySpaceMonoBlock
-keywords : [PrettySpaceMonoBlock]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the PrettySpaceMonoBlock format'
+input_format: false
+keywords: ['PrettySpaceMonoBlock']
+output_format: true
+slug: /interfaces/formats/PrettySpaceMonoBlock
+title: 'PrettySpaceMonoBlock'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -13,13 +14,13 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 |-------|---------|-------|
 | ✗     | ✔       |       |
 
-## Description
+## Description {#description}
 
 Differs from the [`PrettySpace`](./PrettySpace.md) format in that up to `10,000` rows are buffered, 
-and then output as a single table, and not by [blocks](../../../development/architecture.md/#block-block).
+and then output as a single table, and not by [blocks](/development/architecture#block).
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 
 <PrettyFormatSettings/>

@@ -625,8 +625,8 @@ void KeeperTCPHandler::cancelWriteBuffer() noexcept
 {
     if (compressed_out)
         compressed_out->cancel();
-    chassert(out);
-    out->cancel();
+    if (out)
+        out->cancel();
 }
 
 ReadBuffer & KeeperTCPHandler::getReadBuffer()

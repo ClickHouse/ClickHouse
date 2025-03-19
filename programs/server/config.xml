@@ -368,6 +368,7 @@
     -->
     <concurrent_threads_soft_limit_num>0</concurrent_threads_soft_limit_num>
     <concurrent_threads_soft_limit_ratio_to_cores>2</concurrent_threads_soft_limit_ratio_to_cores>
+    <concurrent_threads_scheduler>fair_round_robin</concurrent_threads_scheduler>
 
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>1000</max_concurrent_queries>
@@ -479,6 +480,9 @@
 
     <!-- Cache size in elements for compiled expressions.-->
     <!-- <compiled_expression_cache_elements_size>10000</compiled_expression_cache_elements_size> -->
+
+    <!-- Size of the query condition cache in bytes. -->
+    <query_condition_cache_size>106700800</query_condition_cache_size>
 
     <!-- Configuration for the query cache -->
     <!--
@@ -1261,6 +1265,8 @@
 
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.
+
+        NOTE: this table does not use standard schema with event_date and event_time!
     -->
     <opentelemetry_span_log>
         <!--
@@ -1276,7 +1282,7 @@
         <engine>
             engine MergeTree
             partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us, trace_id)
+            order by (finish_date, finish_time_us)
         </engine>
         <database>system</database>
         <table>opentelemetry_span_log</table>
@@ -1329,6 +1335,7 @@
         <reserved_size_rows>8192</reserved_size_rows>
         <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
         <flush_on_crash>false</flush_on_crash>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </processors_profile_log>
 
     <!-- Log of asynchronous inserts. It allows to check status
@@ -1529,6 +1536,7 @@
     <!--
     <merge_workload>merges_and_mutations</merge_workload>
     <mutation_workload>merges_and_mutations</mutation_workload>
+    <throw_on_unknown_workload>true</throw_on_unknown_workload>
     -->
 
     <!-- Settings to fine-tune MergeTree tables. See documentation in source code, in MergeTreeSettings.h -->

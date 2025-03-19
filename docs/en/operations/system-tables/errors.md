@@ -1,9 +1,12 @@
 ---
-slug: /en/operations/system-tables/errors
+description: 'System table containing error codes with the number of times they have
+  been triggered.'
+keywords: ['system table', 'errors']
+slug: /operations/system-tables/errors
+title: 'system.errors'
 ---
-import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-# errors
+import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
 

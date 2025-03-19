@@ -9,11 +9,11 @@ slug: /zh/operations/system-tables/settings
 
 -   `name` ([字符串](../../sql-reference/data-types/string.md)) — 设置名称。
 -   `value` ([字符串](../../sql-reference/data-types/string.md)) — 设置的值。
--   `changed` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 显示该设置是否从其默认值修改。
+-   `changed` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 显示该设置是否从其默认值修改。
 -   `description` ([字符串](../../sql-reference/data-types/string.md)) — 该设置的简要描述。
--   `min` ([可为空](../../sql-reference/data-types/nullable.md)([字符串](../../sql-reference/data-types/string.md))) — 该设置的最小值，如果有最小值，则是通过[约束](../../operations/settings/constraints-on-settings.md#constraints-on-settings)设置的。如果该设置没有最小值，则包含 [NULL](../../sql-reference/syntax.md#null-literal).
--   `max` ([可为空](../../sql-reference/data-types/nullable.md)([字符串](../../sql-reference/data-types/string.md))) — 该设置的最大值, 如果有最大值，则是通过[约束](../../operations/settings/constraints-on-settings.md#constraints-on-settings)设置的。如果该设置没有最大值，则包含 [NULL](../../sql-reference/syntax.md#null-literal).
--   `readonly` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — 当前用户是否可以修改该设置:
+-   `min` ([可为空](../../sql-reference/data-types/nullable.md)([字符串](../../sql-reference/data-types/string.md))) — 该设置的最小值，如果有最小值，则是通过[约束](/operations/settings/constraints-on-settings)设置的。如果该设置没有最小值，则包含 [NULL](/operations/settings/formats#input_format_null_as_default).
+-   `max` ([可为空](../../sql-reference/data-types/nullable.md)([字符串](../../sql-reference/data-types/string.md))) — 该设置的最大值, 如果有最大值，则是通过[约束](/operations/settings/constraints-on-settings)设置的。如果该设置没有最大值，则包含 [NULL](/operations/settings/formats#input_format_null_as_default).
+-   `readonly` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — 当前用户是否可以修改该设置:
     -   `0` — 当前用户可以修改此设置.
     -   `1` — 当前用户不能修改此设置.
 

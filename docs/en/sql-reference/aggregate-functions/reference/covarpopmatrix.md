@@ -1,6 +1,8 @@
 ---
-slug: /en/sql-reference/aggregate-functions/reference/covarpopmatrix
+description: 'Returns the population covariance matrix over N variables.'
 sidebar_position: 122
+slug: /sql-reference/aggregate-functions/reference/covarpopmatrix
+title: 'covarPopMatrix'
 ---
 
 # covarPopMatrix
