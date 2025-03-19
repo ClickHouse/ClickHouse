@@ -42,7 +42,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg)
          {
              const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
-             return rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomly(choices);
          },
          {},
          false)},
@@ -55,6 +55,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"enable_block_offset_column", CHSetting(trueOrFalse, {}, false)},
     {"enable_index_granularity_compression", CHSetting(trueOrFalse, {}, false)},
     {"enable_mixed_granularity_parts", CHSetting(trueOrFalse, {}, false)},
+    {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", CHSetting(trueOrFalse, {}, false)},
     {"enable_vertical_merge_algorithm", CHSetting(trueOrFalse, {}, false)},
     {"enforce_index_structure_match_on_partition_manipulation", CHSetting(trueOrFalse, {}, false)},
     {"exclude_deleted_rows_for_part_size_in_merge", CHSetting(trueOrFalse, {}, false)},
@@ -70,7 +71,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
          [](RandomGenerator & rg)
          {
              const DB::Strings & choices = {"'throw'", "'drop'", "'rebuild'"};
-             return rg.pickRandomlyFromVector(choices);
+             return rg.pickRandomly(choices);
          },
          {},
          false)},
@@ -224,7 +225,7 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
     {
         merge_storage_policies.insert(merge_storage_policies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
         const auto & storage_policy
-            = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomlyFromVector(merge_storage_policies) + "'"; }, {}, false);
+            = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(merge_storage_policies) + "'"; }, {}, false);
         mergeTreeTableSettings.insert({{"storage_policy", storage_policy}});
         restoreSettings.insert({{"storage_policy", storage_policy}});
     }

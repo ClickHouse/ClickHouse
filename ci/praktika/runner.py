@@ -122,7 +122,7 @@ class Runner:
 
         if job.requires and job.name not in (
             Settings.CI_CONFIG_JOB_NAME,
-            Settings.DOCKER_BUILD_JOB_NAME,
+            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
             Settings.FINISH_WORKFLOW_JOB_NAME,
         ):
             print("Download required artifacts")
@@ -146,7 +146,7 @@ class Runner:
                             if job.name
                             not in (
                                 Settings.CI_CONFIG_JOB_NAME,
-                                Settings.DOCKER_BUILD_JOB_NAME,
+                                Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                                 Settings.FINISH_WORKFLOW_JOB_NAME,
                             )
                         ]
@@ -212,9 +212,7 @@ class Runner:
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).custom_data.get(
-                        "digest_dockers", "latest"
-                    )
+                    RunConfig.from_fs(workflow.name).digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -260,7 +258,21 @@ class Runner:
         print(f"--- Run command [{cmd}]")
 
         with TeePopen(cmd, timeout=job.timeout) as process:
+            start_time = Utils.timestamp()
+            if Path((Result.experimental_file_name_static())).exists():
+                # experimental mode to let job write results into fixed result.json file instead of result_job_name.json
+                Path(Result.experimental_file_name_static()).unlink()
+
             exit_code = process.wait()
+
+            if Path(Result.experimental_file_name_static()).exists():
+                result = Result.experimental_from_fs(job.name)
+                if not result.start_time:
+                    print(
+                        "WARNING: no start_time set by the job - set job start_time/duration"
+                    )
+                    result.start_time = start_time
+                    result.dump()
 
             result = Result.from_fs(job.name)
             if exit_code != 0:
@@ -328,6 +340,7 @@ class Runner:
             result = Result.from_fs(job.name)
         except Exception as e:  # json.decoder.JSONDecodeError
             print(f"ERROR: Failed to read Result json from fs, ex: [{e}]")
+            traceback.print_exc()
             result = Result.create_from(
                 status=Result.Status.ERROR,
                 info=f"Failed to read Result json, ex: [{e}]",
@@ -432,7 +445,7 @@ class Runner:
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
-                description=result.info[0:70],
+                description=result.info.splitlines()[0] if result.info else "",
                 url=report_url,
             ):
                 print(f"ERROR: Failed to post failed commit status for the job")

@@ -613,6 +613,7 @@ void ObjectStorageQueueMetadata::registerNonActive(const StorageID & storage_id)
         }
 
         if (code == Coordination::Error::ZBADVERSION
+            || code == Coordination::Error::ZNODEEXISTS
             || code == Coordination::Error::ZSESSIONEXPIRED)
             continue;
 

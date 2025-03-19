@@ -31,7 +31,7 @@ expect ":) "
 # Make a query
 send -- "SELECT 1 FORMAT Parquet\r"
 expect "is binary and could produce side-effects"
-expect "Do you want to output it anyway\?"
+expect -ex "Do you want to output it anyway? \[y/N\] "
 send -- "y\r"
 
 expect "PAR"
@@ -39,7 +39,7 @@ expect ":) "
 
 send -- "SELECT 1 FORMAT Parquet\r"
 expect "is binary and could produce side-effects"
-expect "Do you want to output it anyway\?"
+expect -ex "Do you want to output it anyway? \[y/N\] "
 send -- "n\r"
 
 expect {
@@ -49,7 +49,7 @@ expect {
 
 send -- "SELECT 1 FORMAT Parquet\r"
 expect "is binary and could produce side-effects"
-expect "Do you want to output it anyway\?"
+expect -ex "Do you want to output it anyway? \[y/N\] "
 send -- "\r"
 
 expect {

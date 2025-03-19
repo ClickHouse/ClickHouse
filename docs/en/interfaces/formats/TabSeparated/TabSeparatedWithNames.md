@@ -1,15 +1,16 @@
 ---
-title: TabSeparatedWithNames
-slug: /interfaces/formats/TabSeparatedWithNames
-keywords: [TabSeparatedWithNames]
-input_format: true
-output_format: true
 alias: ['TSVWithNames']
+description: 'Documentation for the TabSeparatedWithNames format'
+input_format: true
+keywords: ['TabSeparatedWithNames']
+output_format: true
+slug: /interfaces/formats/TabSeparatedWithNames
+title: 'TabSeparatedWithNames'
 ---
 
 | Input | Output | Alias                          |
 |-------|--------|--------------------------------|
-| 	✔    | 	✔     | `TSVWithNames`, `RawWithNames` |
+|     ✔    |     ✔     | `TSVWithNames`, `RawWithNames` |
 
 ## Description {#description}
 

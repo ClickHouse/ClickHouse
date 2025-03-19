@@ -140,8 +140,8 @@ public:
     const MergeTreeReadersChain & getReadersChain() const { return readers_chain; }
     const IMergeTreeReader & getMainReader() const { return *readers.main; }
 
-    void addPreWhereUnmatchedMarks(MarkRanges & mark_ranges_);
-    const MarkRanges & getPreWhereUnmatchedMarks() { return prewhere_unmatched_marks; }
+    void addPrewhereUnmatchedMarks(MarkRanges & mark_ranges_);
+    const MarkRanges & getPrewhereUnmatchedMarks() { return prewhere_unmatched_marks; }
 
     Readers releaseReaders() { return std::move(readers); }
 

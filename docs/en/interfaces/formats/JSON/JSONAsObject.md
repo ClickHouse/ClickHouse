@@ -1,10 +1,11 @@
 ---
-title: JSONAsObject
-slug: /interfaces/formats/JSONAsObject
-keywords: [JSONAsObject]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the JSONAsObject format'
+input_format: true
+keywords: ['JSONAsObject']
+output_format: false
+slug: /interfaces/formats/JSONAsObject
+title: 'JSONAsObject'
 ---
 
 ## Description {#description}
@@ -62,4 +63,3 @@ SELECT time, json FROM json_as_object FORMAT JSONEachRow
 ```
 
 ## Format Settings {#format-settings}
-

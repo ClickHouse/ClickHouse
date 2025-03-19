@@ -1,9 +1,11 @@
 ---
-slug: /operations/server-configuration-parameters/settings
+description: 'This section contains descriptions of server settings that cannot be
+  changed at the session or query level.'
+keywords: ['global server settings']
+sidebar_label: 'Global Server Settings'
 sidebar_position: 57
-sidebar_label: Global Server Settings
-description: This section contains descriptions of server settings that cannot be changed at the session or query level.
-keywords: [global server settings]
+slug: /operations/server-configuration-parameters/settings
+title: 'Global Server Settings'
 ---
 
 import Tabs from '@theme/Tabs';
@@ -1883,7 +1885,7 @@ When new credentials are applied to all replicas, old credentials may be removed
 
 ## keep_alive_timeout {#keep_alive_timeout}
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection.
+The number of seconds that ClickHouse waits for incoming requests for HTTP protocol before closing the connection.
 
 **Example**
 

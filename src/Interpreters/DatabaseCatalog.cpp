@@ -16,7 +16,6 @@
 #include <Storages/MemorySettings.h>
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Parsers/formatAST.h>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -1128,7 +1127,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
             {
                 tryLogCurrentException(log, "Cannot load partially dropped table " + table_id.getNameForLogs() +
                                             " from: " + dropped_metadata_path +
-                                            ". Parsed query: " + serializeAST(*create) +
+                                            ". Parsed query: " + create->formatForLogging() +
                                             ". Will remove metadata and " + data_path +
                                             ". Garbage may be left in ZooKeeper.");
             }

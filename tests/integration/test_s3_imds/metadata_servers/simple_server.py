@@ -12,7 +12,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         if self.path == "/latest/meta-data/iam/security-credentials/myrole":
             return (
-                '{ "Code" : "Success", "Type" : "AWS-HMAC", "AccessKeyId" : "minio", "SecretAccessKey" : "minio123" }',
+                '{ "Code" : "Success", "Type" : "AWS-HMAC", "AccessKeyId" : "minio", "SecretAccessKey" : "ClickHouse_Minio_P@ssw0rd" }',
                 200,
             )
 

@@ -2,6 +2,7 @@
 
 #include <Common/CacheBase.h>
 #include <Storages/MergeTree/MarkRange.h>
+#include <shared_mutex>
 
 namespace DB
 {
@@ -19,27 +20,13 @@ public:
     /// True means at least one row in the mark matches the predicate. We need to read such marks.
     using MatchingMarks = std::vector<bool>;
 
-    QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
-
-    /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
-    void write(
-        const UUID & table_id, const String & part_name, size_t predicate_hash,
-        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
-
-    /// Check the cache if it contains an entry for the given table + part id and predicate hash.
-    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, size_t predicate_hash);
-
-    void clear();
-
-    void setMaxSizeInBytes(size_t max_size_in_bytes);
-
 private:
     /// Key + entry represent a mark range result.
     struct Key
     {
         const UUID table_id;
         const String part_name;
-        const size_t predicate_hash;
+        const size_t condition_hash;
 
         bool operator==(const Key & other) const;
     };
@@ -47,7 +34,7 @@ private:
     struct Entry
     {
         MatchingMarks matching_marks;
-        std::mutex mutex; /// (*)
+        std::shared_mutex mutex; /// (*)
 
         explicit Entry(size_t mark_count);
     };
@@ -67,9 +54,29 @@ private:
         size_t operator()(const Entry & entry) const;
     };
 
+public:
     using Cache = CacheBase<Key, Entry, KeyHasher, QueryConditionCacheEntryWeight>;
-    Cache cache;
 
+    QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
+
+    /// Add an entry to the cache. The passed marks represent ranges of the column with matches of the predicate.
+    void write(
+        const UUID & table_id, const String & part_name, size_t condition_hash,
+        const MarkRanges & mark_ranges, size_t marks_count, bool has_final_mark);
+
+    /// Check the cache if it contains an entry for the given table + part id and predicate hash.
+    std::optional<MatchingMarks> read(const UUID & table_id, const String & part_name, size_t condition_hash);
+
+    /// For debugging and system tables
+    std::vector<QueryConditionCache::Cache::KeyMapped> dump() const;
+
+    void clear();
+
+    void setMaxSizeInBytes(size_t max_size_in_bytes);
+    size_t maxSizeInBytes();
+
+private:
+    Cache cache;
     LoggerPtr logger = getLogger("QueryConditionCache");
 };
 
