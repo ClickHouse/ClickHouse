@@ -1,14 +1,14 @@
 #include <Processors/Transforms/FilterTransform.h>
 
-#include <Interpreters/Context.h>
-#include <Interpreters/ExpressionActions.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/Field.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Processors/Chunk.h>
+#include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
 namespace ProfileEvents
 {
@@ -254,45 +254,56 @@ void FilterTransform::doTransform(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_filtered_rows);
 }
 
-void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_info)
+void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
 {
     if (!query_condition_cache)
         return;
 
-    if (!mark_info)
+    if (!mark_ranges_info)
     {
-        if (!merged_mark_info)
+        /// FilterTransform has finished, we need to flush to the query result cache.
+
+        if (!buffered_mark_ranges_info)
             return;
 
         query_condition_cache->write(
-            merged_mark_info->table_uuid,
-            merged_mark_info->part_name,
+            buffered_mark_ranges_info->table_uuid,
+            buffered_mark_ranges_info->part_name,
             *condition_hash,
-            merged_mark_info->mark_ranges,
-            merged_mark_info->marks_count,
-            merged_mark_info->has_final_mark);
-        merged_mark_info = nullptr;
+            buffered_mark_ranges_info->mark_ranges,
+            buffered_mark_ranges_info->marks_count,
+            buffered_mark_ranges_info->has_final_mark);
+
+        buffered_mark_ranges_info = nullptr;
+
         return;
     }
 
-    if (!merged_mark_info)
-        merged_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
+    if (!buffered_mark_ranges_info)
+    {
+        buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
+    }
     else
     {
-        /// If it is the same part, merge the mark ranges, otherwise update to the query condition cache.
-        if (merged_mark_info->table_uuid != mark_info->table_uuid || merged_mark_info->part_name != mark_info->part_name)
+        /// If the current and the buffer mark range info are from the same table/part, append to the buffer.
+        /// Otherwise write to the query condition cache and reset the buffer.
+
+        if (buffered_mark_ranges_info->table_uuid != mark_ranges_info->table_uuid || buffered_mark_ranges_info->part_name != mark_ranges_info->part_name)
         {
             query_condition_cache->write(
-                merged_mark_info->table_uuid,
-                merged_mark_info->part_name,
+                buffered_mark_ranges_info->table_uuid,
+                buffered_mark_ranges_info->part_name,
                 *condition_hash,
-                merged_mark_info->mark_ranges,
-                merged_mark_info->marks_count,
-                merged_mark_info->has_final_mark);
-            merged_mark_info = std::static_pointer_cast<MarkRangesInfo>(mark_info->clone());
+                buffered_mark_ranges_info->mark_ranges,
+                buffered_mark_ranges_info->marks_count,
+                buffered_mark_ranges_info->has_final_mark);
+
+            buffered_mark_ranges_info = std::static_pointer_cast<MarkRangesInfo>(mark_ranges_info->clone());
         }
         else
-            merged_mark_info->addMarkRanges(mark_info->mark_ranges);
+        {
+            buffered_mark_ranges_info->appendMarkRanges(mark_ranges_info->mark_ranges);
+        }
     }
 }
 

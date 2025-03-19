@@ -47,11 +47,10 @@ private:
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
 
-    /// If 'condition_hash' is set, we need to update the query condition cache at runtime.
-    std::optional<size_t> condition_hash;
+    std::optional<size_t> condition_hash; /// If set, we need to update the query condition cache at runtime for every processed chunk
     std::shared_ptr<QueryConditionCache> query_condition_cache;
-    /// Merge mark info from the same part and write them to the query condition cache once.
-    MarkRangesInfoPtr merged_mark_info;
+    MarkRangesInfoPtr buffered_mark_ranges_info; /// Buffers mark info for chunks from the same table and part.
+                                                 /// The goal is to write less often into the query condition cache (reduce lock contention).
 
     /// Header after expression, but before removing filter column.
     Block transformed_header;
@@ -61,7 +60,7 @@ private:
     void doTransform(Chunk & chunk);
     void removeFilterIfNeed(Columns & columns) const;
 
-    void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_info);
+    void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
 };
 
 }

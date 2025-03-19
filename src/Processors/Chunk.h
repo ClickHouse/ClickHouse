@@ -171,7 +171,7 @@ public:
         , mark_ranges(std::move(mark_ranges_))
     {}
 
-    void addMarkRanges(const MarkRanges & mark_ranges_);
+    void appendMarkRanges(const MarkRanges & mark_ranges_);
 
     UUID table_uuid;
     String part_name;
