@@ -195,8 +195,7 @@ constexpr bool constexprContains(std::string_view haystack, std::string_view nee
 ///  the first argument is interpreted as a template with {}-substitutions
 ///  and the latter arguments are treated as values to substitute.
 /// If only one argument is provided, it is treated as a message without substitutions.
-#define LOG_IMPL(logger, level, ...)                                                                                                       \
-    do                                                                                                                                     \
+#define LOG_IMPL(logger, level, ...) do                                                                                                    \
     {                                                                                                                                      \
         static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsOneLine"), "Think twice!");                                       \
         static_assert(!constexprContains(#__VA_ARGS__, "formatWithSecretsMultiLine"), "Think twice!");                                     \

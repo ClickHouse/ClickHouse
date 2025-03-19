@@ -1,8 +1,9 @@
 #pragma once
 
+
 namespace quill
 {
-inline namespace v8
+inline namespace v9
 {
 
 template <typename TFrontendOptions>
@@ -19,7 +20,7 @@ namespace DB
 {
 struct QuillFrontendOptions;
 
-using QuillLoggerPtr = quill::v8::LoggerImpl<QuillFrontendOptions> *;
+using QuillLoggerPtr = quill::LoggerImpl<QuillFrontendOptions> *;
 
 using QuillFrontend = quill::FrontendImpl<QuillFrontendOptions>;
 }

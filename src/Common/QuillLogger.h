@@ -38,10 +38,10 @@ struct QuillFrontendOptions
     /**
    * Enables huge pages on the frontend queues to reduce TLB misses. Available only for Linux.
    */
-    static constexpr bool huge_pages_enabled = false;
+    static constexpr quill::HugePagesPolicy huge_pages_policy = quill::HugePagesPolicy::Never;
 };
 
-using QuillLoggerPtr = quill::v8::LoggerImpl<QuillFrontendOptions> *;
+using QuillLoggerPtr = quill::LoggerImpl<QuillFrontendOptions> *;
 
 void startQuillBackend();
 

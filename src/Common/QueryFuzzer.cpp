@@ -1417,7 +1417,7 @@ ASTPtr QueryFuzzer::addJoinClause()
             }
             else
             {
-                chassert(0);
+                chassert(false);
             }
         }
         else

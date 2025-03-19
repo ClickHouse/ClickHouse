@@ -534,7 +534,7 @@ void ObjectStorageQueueOrderedFileMetadata::migrateToBuckets(const std::string &
             continue;
         }
 
-        auto it = std::find_if(
+        [[maybe_unused]] auto it = std::find_if(
             responses.begin(), responses.end(),
             [](const auto & response) { return response->error != Coordination::Error::ZOK; });
 
