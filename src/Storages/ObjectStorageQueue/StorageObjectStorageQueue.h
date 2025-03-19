@@ -110,12 +110,7 @@ private:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsDynamicSubcolumns() const override { return true; }
 
-    const ObjectStorageQueueTableMetadata & getTableMetadata() const
-    {
-        if (!files_metadata)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Files metadata is empty");
-        return files_metadata->getTableMetadata();
-    }
+    const ObjectStorageQueueTableMetadata & getTableMetadata() const;
 
     std::shared_ptr<FileIterator> createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate);
     std::shared_ptr<ObjectStorageQueueSource> createSource(

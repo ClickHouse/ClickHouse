@@ -1002,6 +1002,13 @@ zkutil::ZooKeeperPtr StorageObjectStorageQueue::getZooKeeper() const
     return getContext()->getZooKeeper();
 }
 
+const ObjectStorageQueueTableMetadata & StorageObjectStorageQueue::getTableMetadata() const
+{
+    if (!files_metadata)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Files metadata is empty");
+    return files_metadata->getTableMetadata();
+}
+
 std::shared_ptr<StorageObjectStorageQueue::FileIterator>
 StorageObjectStorageQueue::createFileIterator(ContextPtr local_context, const ActionsDAG::Node * predicate)
 {
