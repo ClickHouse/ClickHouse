@@ -5,7 +5,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <IO/ReadBufferFromString.h>

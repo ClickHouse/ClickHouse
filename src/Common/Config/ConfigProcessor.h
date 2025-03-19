@@ -7,7 +7,7 @@
 #include <vector>
 #include <memory>
 
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 
 #include <Poco/DOM/Document.h>
 #include <Poco/DOM/DOMParser.h>

@@ -146,7 +146,7 @@ private:
 
     std::shared_ptr<HiveSettings> storage_settings;
 
-    LoggerPtr log = getLogger("StorageHive");
+    LoggerPtr log;
 };
 
 }

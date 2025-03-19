@@ -6,7 +6,7 @@
 
 #include <pqxx/pqxx>
 #include <Core/Types.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <boost/noncopyable.hpp>
 
 /** Methods to work with PostgreSQL connection object.

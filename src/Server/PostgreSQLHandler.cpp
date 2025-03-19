@@ -54,6 +54,7 @@ PostgreSQLHandler::PostgreSQLHandler(
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
+    , log(getLogger("PostgreSQLHandler"))
 #if USE_SSL
     , config(server_.config())
     , prefix(prefix_)

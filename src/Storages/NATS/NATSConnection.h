@@ -1,11 +1,12 @@
 #pragma once
 
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <base/types.h>
 
 #include <nats.h>
 
 #include <mutex>
+#include <vector>
 
 namespace DB
 {

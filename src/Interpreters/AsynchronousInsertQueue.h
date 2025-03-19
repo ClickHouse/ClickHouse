@@ -259,7 +259,7 @@ private:
     /// Uses async_insert_busy_timeout_ms and processBatchDeadlines()
     std::vector<ThreadFromGlobalPool> dump_by_first_update_threads;
 
-    LoggerPtr log = getLogger("AsynchronousInsertQueue");
+    LoggerPtr log;
 
     PushResult pushDataChunk(ASTPtr query, DataChunk chunk, ContextPtr query_context);
 

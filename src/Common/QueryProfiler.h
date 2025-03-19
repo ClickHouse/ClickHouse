@@ -7,7 +7,7 @@
 
 #include "config.h"
 
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 
 
 namespace Poco

@@ -159,7 +159,10 @@ off_t RemoteReadBuffer::getPosition()
     return local_file_holder->file_buffer->getPosition();
 }
 
-ExternalDataSourceCache::ExternalDataSourceCache() = default;
+ExternalDataSourceCache::ExternalDataSourceCache()
+    : log(getLogger("ExternalDataSourceCache"))
+{
+}
 
 ExternalDataSourceCache::~ExternalDataSourceCache()
 {

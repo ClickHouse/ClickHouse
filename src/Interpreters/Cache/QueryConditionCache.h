@@ -77,7 +77,7 @@ public:
 
 private:
     Cache cache;
-    LoggerPtr logger = getLogger("QueryConditionCache");
+    LoggerPtr logger;
 };
 
 using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;

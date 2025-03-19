@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Core/UUID.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <filesystem>
 
 namespace fs = std::filesystem;

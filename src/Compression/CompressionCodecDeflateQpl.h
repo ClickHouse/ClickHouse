@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <atomic>
 #include <map>
 #include <random>

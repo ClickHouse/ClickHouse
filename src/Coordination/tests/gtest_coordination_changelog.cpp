@@ -6,6 +6,8 @@
 #if USE_NURAFT
 #include <Coordination/tests/gtest_coordination_common.h>
 
+#include <Common/Logger.h>
+
 #include <Coordination/KeeperLogStore.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 
@@ -24,9 +26,11 @@ public:
     void SetUp() override
     {
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
-        auto logger = createRootLogger(
-            {quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink", quill::ConsoleSink::ColourMode::Never, "stderr")});
-        logger->getQuillLogger()->set_log_level(quill::LogLevel::TraceL1);
+        quill::ConsoleSinkConfig console_config;
+        console_config.set_colour_mode(quill::ConsoleSinkConfig::ColourMode::Never);
+        console_config.set_stream("stderr");
+        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink", console_config)});
+        logger->setLogLevel(quill::LogLevel::TraceL1);
 
         auto settings = std::make_shared<DB::CoordinationSettings>();
         keeper_context = std::make_shared<DB::KeeperContext>(true, settings);

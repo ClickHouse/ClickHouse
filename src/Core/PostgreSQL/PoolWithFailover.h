@@ -71,7 +71,7 @@ private:
     bool auto_close_connection;
     bool bg_reconnect;
     std::mutex mutex;
-    LoggerPtr log = getLogger("PostgreSQLConnectionPool");
+    LoggerPtr log;
 };
 
 using PoolWithFailoverPtr = std::shared_ptr<PoolWithFailover>;

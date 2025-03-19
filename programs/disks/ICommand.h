@@ -37,7 +37,7 @@ namespace ErrorCodes
 class ICommand
 {
 public:
-    explicit ICommand(String logger_name) : log(getLogger(logger_name)) { }
+    explicit ICommand(String logger_name);
 
     virtual ~ICommand() = default;
 

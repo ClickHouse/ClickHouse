@@ -44,7 +44,7 @@ public:
     void run() final;
 
 private:
-    LoggerPtr log = getLogger("PostgreSQLHandler");
+    LoggerPtr log;
 
 #if USE_SSL
     std::shared_ptr<Poco::Net::SecureStreamSocket> ss;

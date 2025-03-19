@@ -73,6 +73,9 @@ int setCertificateCallback(SSL * ssl, const CertificateReloader::Data * current_
     return 1;
 }
 
+CertificateReloader::CertificateReloader()
+    : log(getLogger("CertificateReloader"))
+{}
 
 void CertificateReloader::init(MultiData * pdata)
 {

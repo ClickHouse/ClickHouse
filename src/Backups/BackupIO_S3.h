@@ -4,7 +4,7 @@
 
 #if USE_AWS_S3
 #include <Backups/BackupIO_Default.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <Disks/DiskType.h>
 #include <IO/S3Common.h>
 #include <IO/S3Settings.h>

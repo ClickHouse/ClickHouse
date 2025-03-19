@@ -79,7 +79,7 @@ private:
     char * data_ptr;
     size_t data_capacity;
 
-    LoggerPtr log = getLogger("ReadBufferFromAzureBlobStorage");
+    LoggerPtr log;
 };
 
 }

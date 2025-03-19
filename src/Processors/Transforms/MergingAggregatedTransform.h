@@ -33,7 +33,7 @@ protected:
     Chunk generate() override;
 
 private:
-    LoggerPtr log = getLogger("MergingAggregatedTransform");
+    LoggerPtr log;
     size_t max_threads;
 
     struct GroupingSet

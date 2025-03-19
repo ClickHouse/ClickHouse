@@ -316,7 +316,7 @@ private:
     /// How many RAM were used to process the query before processing the first block.
     Int64 memory_usage_before_aggregation = 0;
 
-    LoggerPtr log = getLogger("Aggregator");
+    LoggerPtr log;
 
     /// For external aggregation.
     TemporaryDataOnDiskScopePtr tmp_data;

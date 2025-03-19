@@ -5,6 +5,11 @@
 namespace DB
 {
 
+ShellCommandsHolder::ShellCommandsHolder()
+    : log(getLogger("ShellCommandsHolder"))
+{
+}
+
 ShellCommandsHolder & ShellCommandsHolder::instance()
 {
     static ShellCommandsHolder instance;

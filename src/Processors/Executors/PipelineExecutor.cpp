@@ -44,7 +44,9 @@ namespace ErrorCodes
 
 
 PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, QueryStatusPtr elem)
-    : process_list_element(std::move(elem))
+    : log(getLogger("PipelineExecutor"))
+    , process_list_element(std::move(elem))
+
 {
     if (process_list_element)
     {

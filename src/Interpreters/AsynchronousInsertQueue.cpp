@@ -235,6 +235,7 @@ AsynchronousInsertQueue::AsynchronousInsertQueue(ContextPtr context_, size_t poo
           CurrentMetrics::AsynchronousInsertThreadsActive,
           CurrentMetrics::AsynchronousInsertThreadsScheduled,
           pool_size)
+    , log(getLogger("AsynchronousInsertQueue"))
 {
     if (!pool_size)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "pool_size cannot be zero");

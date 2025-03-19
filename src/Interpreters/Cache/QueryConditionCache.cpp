@@ -15,6 +15,7 @@ namespace DB
 
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
     : cache(cache_policy, max_size_in_bytes, 0, size_ratio)
+    , logger(getLogger("QueryConditionCache"))
 {
 }
 

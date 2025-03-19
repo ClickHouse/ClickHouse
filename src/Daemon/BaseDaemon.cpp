@@ -52,8 +52,6 @@
 #include <Interpreters/Context.h>
 #include <filesystem>
 
-#include <quill/Backend.h>
-
 #include <Loggers/OwnFormattingChannel.h>
 #include <Loggers/OwnPatternFormatter.h>
 

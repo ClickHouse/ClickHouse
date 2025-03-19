@@ -8,6 +8,7 @@
 #include <IO/Archives/IArchiveReader.h>
 #include <Processors/SourceWithKeyCondition.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Common/Logger.h>
 
 #include <atomic>
 #include <shared_mutex>

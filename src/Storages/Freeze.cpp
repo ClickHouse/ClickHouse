@@ -118,7 +118,9 @@ String FreezeMetaData::getFileName(const String & path)
     return fs::path(path) / "frozen_metadata.txt";
 }
 
-Unfreezer::Unfreezer(ContextPtr context) : local_context(context)
+Unfreezer::Unfreezer(ContextPtr context)
+    : local_context(context)
+    , log(getLogger("Unfreezer"))
 {
     if (local_context->hasZooKeeper())
         zookeeper = local_context->getZooKeeper();

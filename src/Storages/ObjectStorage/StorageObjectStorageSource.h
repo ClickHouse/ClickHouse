@@ -85,7 +85,7 @@ protected:
     SchemaCache & schema_cache;
     bool initialized = false;
     size_t total_rows_in_file = 0;
-    LoggerPtr log = getLogger("StorageObjectStorageSource");
+    LoggerPtr log;
 
     struct ReaderHolder : private boost::noncopyable
     {

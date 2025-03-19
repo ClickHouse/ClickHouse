@@ -100,6 +100,13 @@ private:
 
 }
 
+
+MergeTreePartsMover::MergeTreePartsMover(MergeTreeData * data_)
+    : data(data_)
+    , log(getLogger("MergeTreePartsMover"))
+{
+}
+
 bool MergeTreePartsMover::selectPartsForMove(
     MergeTreeMovingParts & parts_to_move,
     const AllowedMovingPredicate & can_move,

@@ -23,10 +23,12 @@ public:
 private:
     using ShellCommands = std::unordered_map<pid_t, std::unique_ptr<ShellCommand>>;
 
+    ShellCommandsHolder();
+
     std::mutex mutex;
     ShellCommands shell_commands TSA_GUARDED_BY(mutex);
 
-    LoggerPtr log = getLogger("ShellCommandsHolder");
+    LoggerPtr log;
 };
 
 }

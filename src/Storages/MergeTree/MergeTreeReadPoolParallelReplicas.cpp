@@ -126,6 +126,7 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
         settings_,
         params_,
         context_)
+    , log(getLogger("MergeTreeReadPoolParallelReplicas"))
     , extension(std::move(extension_))
     , coordination_mode(CoordinationMode::Default)
     , min_marks_per_task(getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos))

@@ -348,6 +348,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , min_query_runtime(min_query_runtime_)
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
+    , logger(getLogger("QueryResultCache"))
 {
     if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
     {
@@ -364,6 +365,7 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
+    , logger(other.logger)
 {
 }
 
@@ -547,6 +549,7 @@ void QueryResultCacheReader::buildSourceFromChunks(Block header, Chunks && chunk
 }
 
 QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
+    : logger(getLogger("QueryResultCache"))
 {
     auto entry = cache_.getWithKey(key);
 

@@ -3,6 +3,7 @@
 #include <Common/tests/gtest_global_context.h>
 
 #include <Common/QuillLogger.h>
+#include <Common/Logger.h>
 
 class ContextEnvironment : public testing::Environment
 {

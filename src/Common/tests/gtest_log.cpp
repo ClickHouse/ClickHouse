@@ -21,7 +21,7 @@
 class StdStreamSink : public quill::Sink
 {
 public:
-    StdStreamSink(std::ostringstream & oss_)
+    explicit StdStreamSink(std::ostringstream & oss_)
         : oss(oss_)
     {
     }
@@ -78,7 +78,7 @@ TEST(Logger, TestLog)
     {
         SCOPED_TRACE("Test logs visible for test level");
         oss.str("");
-        log->setLogLevel(DB::parseQuillLogLevel("test"));
+        log->setLogLevel("test");
         LOG_TEST(log, "Hello World");
         log->flushLogs();
         EXPECT_EQ(oss.str(), "Hello World\n");
@@ -89,7 +89,7 @@ TEST(Logger, TestLog)
         for (const auto & level : {"trace", "debug", "information", "warning", "error", "fatal"})
         {
             oss.str("");
-            log->setLogLevel(DB::parseQuillLogLevel(level));
+            log->setLogLevel(level);
             LOG_TEST(log, "Hello World");
             log->flushLogs();
             EXPECT_EQ(oss.str(), "");
@@ -134,7 +134,7 @@ TEST(Logger, SideEffects)
     auto stream_sink = std::static_pointer_cast<StdStreamSink>(sink);
     auto log = createLogger("Logger", {sink});
     SCOPE_EXIT(log->flushLogs());
-    log->setLogLevel(DB::parseQuillLogLevel("trace"));
+    log->setLogLevel("trace");
 
     /// Ensure that parameters are evaluated only once
     global_counter = 0;

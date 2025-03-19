@@ -16,6 +16,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/quoteString.h>
 #include <Common/re2.h>
+#include <Common/Logger.h>
 #include <Common/RemoteHostFilter.h>
 #include <Core/Settings.h>
 

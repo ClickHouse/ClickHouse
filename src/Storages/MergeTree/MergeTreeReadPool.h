@@ -104,7 +104,7 @@ private:
     std::vector<ThreadTask> threads_tasks TSA_GUARDED_BY(mutex);
     std::set<size_t> remaining_thread_tasks TSA_GUARDED_BY(mutex);
 
-    LoggerPtr log = getLogger("MergeTreeReadPool");
+    LoggerPtr log;
 };
 
 }

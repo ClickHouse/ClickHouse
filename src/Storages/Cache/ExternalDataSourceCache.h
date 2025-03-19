@@ -1,11 +1,6 @@
 #pragma once
-#include <condition_variable>
-#include <filesystem>
-#include <list>
-#include <map>
 #include <memory>
 #include <mutex>
-#include <set>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
 #include <IO/BufferWithOwnMemory.h>
@@ -90,7 +85,7 @@ private:
     std::mutex mutex;
     std::unique_ptr<RemoteFileCacheType> lru_caches;
 
-    LoggerPtr log = getLogger("ExternalDataSourceCache");
+    LoggerPtr log;
 
     String calculateLocalPath(IRemoteFileMetadataPtr meta) const;
 

@@ -8,6 +8,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/Stopwatch.h>
+#include <Common/Logger.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
 

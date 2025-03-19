@@ -4,6 +4,8 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Functions/CastOverloadResolver.h>
 
+#include <mutex>
+
 
 namespace DB
 {

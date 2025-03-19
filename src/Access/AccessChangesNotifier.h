@@ -5,6 +5,7 @@
 #include <list>
 #include <queue>
 #include <unordered_map>
+#include <mutex>
 
 
 namespace DB

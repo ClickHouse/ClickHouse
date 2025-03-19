@@ -46,11 +46,7 @@ private:
 
 public:
 
-    explicit MergeTreePartsMover(MergeTreeData * data_)
-        : data(data_)
-        , log(getLogger("MergeTreePartsMover"))
-    {
-    }
+    explicit MergeTreePartsMover(MergeTreeData * data_);
 
     struct TemporaryClonedPart
     {

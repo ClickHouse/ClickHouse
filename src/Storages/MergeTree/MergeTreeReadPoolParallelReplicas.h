@@ -32,7 +32,7 @@ public:
 private:
     mutable std::mutex mutex;
 
-    LoggerPtr log = getLogger("MergeTreeReadPoolParallelReplicas");
+    LoggerPtr log;
     const ParallelReadingExtension extension;
     const CoordinationMode coordination_mode;
     size_t min_marks_per_task{0};

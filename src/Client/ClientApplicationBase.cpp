@@ -19,7 +19,6 @@
 #include <quill/sinks/ConsoleSink.h>
 #include <quill/sinks/FileSink.h>
 #include <quill/sinks/StreamSink.h>
-#include <quill/Backend.h>
 
 using namespace std::literals;
 

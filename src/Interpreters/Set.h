@@ -34,11 +34,7 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_)
-        : log(getLogger("Set")),
-        limits(limits_), max_elements_to_fill(max_elements_to_fill_), transform_null_in(transform_null_in_),
-        cast_cache(std::make_unique<InternalCastFunctionCache>())
-    {}
+    Set(const SizeLimits & limits_, size_t max_elements_to_fill_, bool transform_null_in_);
 
     /** Set can be created either from AST or from a stream of data (subquery result).
       */

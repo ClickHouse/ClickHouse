@@ -110,6 +110,7 @@ CreateSetAndFilterOnTheFlyStep::CreateSetAndFilterOnTheFlyStep(
     , filtering_set(nullptr)
     , crosswise_connection(crosswise_connection_)
     , position(position_)
+    , log(getLogger("CreateSetAndFilterOnTheFlyStep"))
 {
     if (crosswise_connection == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Crosswise connection is not initialized");

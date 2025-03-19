@@ -223,7 +223,7 @@ private:
     Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
     std::atomic<bool> skip_insert = false;
     bool was_finalized = false;
-    LoggerPtr logger = getLogger("QueryResultCache");
+    LoggerPtr logger;
 
     QueryResultCacheWriter(
         Cache & cache_,
@@ -255,7 +255,7 @@ private:
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
     std::unique_ptr<SourceFromChunks> source_from_chunks_extremes;
-    LoggerPtr logger = getLogger("QueryResultCache");
+    LoggerPtr logger;
     friend class QueryResultCache; /// for createReader()
 };
 

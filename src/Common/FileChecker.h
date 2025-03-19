@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/CheckResults.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <map>
 #include <base/types.h>
 #include <memory>

@@ -1,9 +1,6 @@
 #pragma once
 
-#include <deque>
-#include <functional>
 #include <mutex>
-#include <future>
 #include <condition_variable>
 #include <variant>
 #include <utility>
@@ -15,7 +12,7 @@
 #include <Storages/MergeTree/IExecutableTask.h>
 #include <base/defines.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <Common/ThreadPool_fwd.h>
 
 namespace DB
@@ -305,7 +302,7 @@ private:
     std::condition_variable has_tasks TSA_GUARDED_BY(mutex);
     bool shutdown TSA_GUARDED_BY(mutex) = false;
     std::unique_ptr<ThreadPool> pool;
-    LoggerPtr log = getLogger("MergeTreeBackgroundExecutor");
+    LoggerPtr log;
 };
 
 extern template class MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;

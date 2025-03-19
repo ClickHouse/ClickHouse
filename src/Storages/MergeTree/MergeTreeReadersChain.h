@@ -9,7 +9,7 @@ using RangeReaders = std::vector<MergeTreeRangeReader>;
 class MergeTreeReadersChain
 {
 public:
-    MergeTreeReadersChain() = default;
+    MergeTreeReadersChain();
     explicit MergeTreeReadersChain(RangeReaders range_readers_);
     bool isInitialized() const { return is_initialized; }
 
@@ -30,7 +30,7 @@ private:
     RangeReaders range_readers;
 
     bool is_initialized = false;
-    LoggerPtr log = getLogger("MergeTreeReadersChain");
+    LoggerPtr log;
 };
 
 };

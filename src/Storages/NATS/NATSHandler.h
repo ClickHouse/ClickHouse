@@ -2,13 +2,11 @@
 
 #include <uv.h>
 #include <future>
-#include <memory>
 #include <mutex>
-#include <thread>
 #include <queue>
 #include <nats.h>
 #include <base/types.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 
 #include <Storages/NATS/NATSConnection.h>
 #include <Storages/UVLoop.h>

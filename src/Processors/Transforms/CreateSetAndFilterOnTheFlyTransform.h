@@ -35,7 +35,7 @@ private:
     /// Set to fill
     SetWithStatePtr set;
 
-    LoggerPtr log = getLogger("CreatingSetsOnTheFlyTransform");
+    LoggerPtr log;
 };
 
 /*
@@ -76,7 +76,7 @@ private:
         size_t result_rows = 0;
     } stat;
 
-    LoggerPtr log = getLogger("FilterBySetOnTheFlyTransform");
+    LoggerPtr log;
 };
 
 }

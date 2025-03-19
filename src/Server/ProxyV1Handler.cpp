@@ -20,6 +20,15 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_SOCKET;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
 }
+ProxyV1Handler::ProxyV1Handler(
+    const StreamSocket & socket, IServer & server_, const std::string & conf_name_, TCPProtocolStackData & stack_data_)
+    : Poco::Net::TCPServerConnection(socket)
+    , log(getLogger("ProxyV1Handler"))
+    , server(server_)
+    , conf_name(conf_name_)
+    , stack_data(stack_data_)
+{
+}
 
 void ProxyV1Handler::run()
 {

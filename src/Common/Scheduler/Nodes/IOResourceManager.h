@@ -3,7 +3,7 @@
 #include <base/defines.h>
 #include <base/scope_guard.h>
 
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <Common/Scheduler/SchedulingSettings.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/SchedulerRoot.h>

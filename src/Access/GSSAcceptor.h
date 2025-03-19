@@ -3,7 +3,7 @@
 #include "config.h"
 
 #include <Access/Credentials.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <base/types.h>
 #include <memory>
 

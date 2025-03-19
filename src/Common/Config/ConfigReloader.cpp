@@ -28,7 +28,8 @@ ConfigReloader::ConfigReloader(
         zkutil::ZooKeeperNodeCache && zk_node_cache_,
         const zkutil::EventPtr & zk_changed_event_,
         Updater && updater_)
-    : config_path(config_path_)
+    : log(getLogger("ConfigReloader"))
+    , config_path(config_path_)
     , extra_paths(extra_paths_)
     , preprocessed_dir(preprocessed_dir_)
     , zk_node_cache(std::move(zk_node_cache_))

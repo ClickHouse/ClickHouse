@@ -14,14 +14,6 @@
 #include <fmt/format.h>
 #include <Poco/Exception.h>
 
-
-namespace Poco
-{
-class Channel;
-class Logger;
-using LoggerPtr = std::shared_ptr<Logger>;
-}
-
 namespace DB
 {
 

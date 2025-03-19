@@ -14,6 +14,7 @@
 #include <Storages/IStorage.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/Logger.h>
 #include <Formats/FormatFactory.h>
 
 #include <filesystem>

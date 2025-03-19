@@ -6,13 +6,8 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include <time.h>
 #include <string>
-#include <thread>
 #include <mutex>
-#include <condition_variable>
-#include <list>
 
-
-namespace Poco { class Logger; }
 
 namespace DB
 {
@@ -66,7 +61,7 @@ private:
 
     FilesChangesTracker getNewFileList() const;
 
-    LoggerPtr log = getLogger("ConfigReloader");
+    LoggerPtr log;
 
     std::string config_path;
     std::vector<std::string> extra_paths;

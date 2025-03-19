@@ -13,7 +13,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
-#include "Common/Logger.h"
+#include <Common/Logger.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -121,7 +121,6 @@
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 
-#include <quill/Backend.h>
 #include <filesystem>
 #include <unordered_set>
 
@@ -429,7 +428,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     UInt16 port,
     [[maybe_unused]] bool secure) const
 {
-    auto logger = getLogger("Server");
+    auto logger = getRootLogger();
     auto address = makeSocketAddress(host, port, logger);
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config.getBool("listen_reuse_port", false));
     /// If caller requests any available port from the OS, discover it after binding.
@@ -510,7 +509,7 @@ void Server::createServer(
         if (start_server)
         {
             servers.back().start();
-            LOG_INFO(getLogger("Server"), "Listening for {}", servers.back().getDescription());
+            LOG_INFO(getRootLogger(), "Listening for {}", servers.back().getDescription());
         }
         global_context->registerServerPort(port_name, port);
     }
@@ -518,7 +517,7 @@ void Server::createServer(
     {
         if (listen_try)
         {
-            LOG_WARNING(getLogger("Server"), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
+            LOG_WARNING(getRootLogger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
                 "then consider to "
                 "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                 "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
@@ -561,7 +560,7 @@ void setOOMScore(int value, LoggerPtr log)
 
 void Server::uninitialize()
 {
-    LOG_INFO(getLogger("Server"), "shutting down");
+    LOG_INFO(getRootLogger(), "shutting down");
     BaseDaemon::uninitialize();
 }
 
@@ -589,9 +588,10 @@ void Server::initialize(Poco::Util::Application & self)
 {
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(gresource_embedded_xmlData), gresource_embedded_xmlSize));
     BaseDaemon::initialize(self);
-    LOG_INFO(getLogger("Server"), "starting up");
+    auto logger = getRootLogger();
+    LOG_INFO(logger, "starting up");
 
-    LOG_INFO(getLogger("Server"), "OS name: {}, version: {}, architecture: {}",
+    LOG_INFO(logger, "OS name: {}, version: {}, architecture: {}",
         Poco::Environment::osName(),
         Poco::Environment::osVersion(),
         Poco::Environment::osArchitecture());
@@ -961,7 +961,7 @@ try
 
     Stopwatch startup_watch;
 
-    auto log = getLogger("Server");
+    auto log = getRootLogger();
 
     UseSSL use_ssl;
 
@@ -3098,7 +3098,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "gRPC protocol: " + server_address.toString(),
-                    std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, getLogger("Server"))));
+                    std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, getRootLogger())));
             });
         }
 #endif
@@ -3204,7 +3204,7 @@ void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
     const ServerType & server_type) const
 {
-    LoggerPtr log = getLogger("Server");
+    LoggerPtr log = getRootLogger();
 
     /// Remove servers once all their connections are closed
     auto check_server = [&log](const char prefix[], auto & server)
@@ -3243,7 +3243,7 @@ void Server::updateServers(
     std::vector<ProtocolServerAdapter> & servers,
     std::vector<ProtocolServerAdapter> & servers_to_start_before_tables)
 {
-    LoggerPtr log = getLogger("Server");
+    LoggerPtr log = getRootLogger();
 
     const auto listen_hosts = getListenHosts(config);
     const auto interserver_listen_hosts = getInterserverListenHosts(config);

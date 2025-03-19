@@ -304,7 +304,7 @@ void LocalServer::tryInitPath()
     {
         // The path is not provided explicitly - use a unique path in the system temporary directory
         // (or in the current dir if a temporary doesn't exist)
-        LoggerPtr log = getLogger("Local");
+        LoggerPtr log = getRootLogger();
         std::filesystem::path parent_folder;
         std::filesystem::path default_path;
 
@@ -389,7 +389,7 @@ void LocalServer::cleanup()
         // Delete the temporary directory if needed.
         if (temporary_directory_to_delete)
         {
-            LOG_DEBUG(getLogger("Local"), "Removing temporary directory: {}", temporary_directory_to_delete->string());
+            LOG_DEBUG(getRootLogger(), "Removing temporary directory: {}", temporary_directory_to_delete->string());
             fs::remove_all(*temporary_directory_to_delete);
             temporary_directory_to_delete.reset();
         }
@@ -594,7 +594,7 @@ try
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger("Local"), "Caught exception while loading user defined executable functions.");
+        tryLogCurrentException(getRootLogger(), "Caught exception while loading user defined executable functions.");
         throw;
     }
 
@@ -684,10 +684,9 @@ void LocalServer::processConfig()
 
     if (getClientConfiguration().has("server_logs_file"))
     {
-        auto log_level = parseQuillLogLevel(level);
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
         auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::FileSink>(server_logs_file)});
-        logger->getQuillLogger()->set_log_level(log_level);
+        logger->setLogLevel(level);
     }
     else
     {
@@ -705,7 +704,7 @@ void LocalServer::processConfig()
 
     tryInitPath();
 
-    LoggerPtr log = getLogger("Local");
+    LoggerPtr log = getRootLogger();
 
     /// Maybe useless
     if (getClientConfiguration().has("macros"))

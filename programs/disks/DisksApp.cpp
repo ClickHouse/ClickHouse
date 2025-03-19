@@ -28,8 +28,6 @@
 
 #include <quill/sinks/FileSink.h>
 #include <quill/sinks/ConsoleSink.h>
-#include <quill/Backend.h>
-
 
 #include "Utils.h"
 #include <Server/CloudPlacementInfo.h>
@@ -501,14 +499,14 @@ int DisksApp::main(const std::vector<String> & /*args*/)
 
         auto log_path = config().getString("logger.clickhouse-disks", "/var/log/clickhouse-server/clickhouse-disks.log");
         auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::FileSink>(log_path)});
-        logger->getQuillLogger()->set_log_level(parseQuillLogLevel(log_level));
+        logger->setLogLevel(log_level);
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
     }
     else
     {
         auto log_level = config().getString("log-level", "none");
         auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink")});
-        logger->getQuillLogger()->set_log_level(parseQuillLogLevel(log_level));
+        logger->setLogLevel(log_level);
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
     }
 

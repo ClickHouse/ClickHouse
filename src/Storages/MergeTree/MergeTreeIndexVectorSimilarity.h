@@ -5,7 +5,7 @@
 #if USE_USEARCH
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 
 /// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
 #if defined(__x86_64__) || defined(__i386__)
@@ -98,7 +98,7 @@ struct MergeTreeIndexGranuleVectorSimilarity final : public IMergeTreeIndexGranu
     const UsearchHnswParams usearch_hnsw_params;
     USearchIndexWithSerializationPtr index;
 
-    LoggerPtr logger = getLogger("VectorSimilarityIndex");
+    LoggerPtr logger;
 
 private:
     /// The version of the persistence format of USearch index. Increment whenever you change the format.
