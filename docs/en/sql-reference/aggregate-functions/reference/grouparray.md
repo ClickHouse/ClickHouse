@@ -19,7 +19,7 @@ In some cases, you can still rely on the order of execution. This applies to cas
 
 **Example**
 
-``` text
+```text
 SELECT * FROM default.ck;
 
 ┌─id─┬─name─────┐
@@ -33,13 +33,13 @@ SELECT * FROM default.ck;
 
 Query:
 
-``` sql
+```sql
 select id, groupArray(10)(name) from default.ck group by id;
 ```
 
 Result:
 
-``` text
+```text
 ┌─id─┬─groupArray(10)(name)─┐
 │  1 │ ['zhangsan','lisi']  │
 │  2 │ ['wangwu']           │

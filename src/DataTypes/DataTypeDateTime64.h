@@ -4,8 +4,6 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDecimalBase.h>
 
-class DateLUTImpl;
-
 namespace DB
 {
 
@@ -38,6 +36,8 @@ public:
     bool canBeUsedAsVersion() const override { return true; }
 
     bool isSummable() const override { return false; }
+
+    bool canBeInsideLowCardinality() const override { return true; }
 
 protected:
     SerializationPtr doGetDefaultSerialization() const override;

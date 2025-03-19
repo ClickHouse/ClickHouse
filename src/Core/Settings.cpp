@@ -789,7 +789,7 @@ See also:
 
 ### Random (by Default) {#load_balancing-random}
 
-``` sql
+```sql
 load_balancing = random
 ```
 
@@ -798,7 +798,7 @@ Disadvantages: Server proximity is not accounted for; if the replicas have diffe
 
 ### Nearest Hostname {#load_balancing-nearest_hostname}
 
-``` sql
+```sql
 load_balancing = nearest_hostname
 ```
 
@@ -812,13 +812,13 @@ We can also assume that when sending a query to the same server, in the absence 
 
 ### Hostname levenshtein distance {#load_balancing-hostname_levenshtein_distance}
 
-``` sql
+```sql
 load_balancing = hostname_levenshtein_distance
 ```
 
 Just like `nearest_hostname`, but it compares hostname in a [levenshtein distance](https://en.wikipedia.org/wiki/Levenshtein_distance) manner. For example:
 
-``` text
+```text
 example-clickhouse-0-0 ample-clickhouse-0-0
 1
 
@@ -831,7 +831,7 @@ example-clickhouse-0-0 example-clickhouse-12-0
 
 ### In Order {#load_balancing-in_order}
 
-``` sql
+```sql
 load_balancing = in_order
 ```
 
@@ -840,7 +840,7 @@ This method is appropriate when you know exactly which replica is preferable.
 
 ### First or Random {#load_balancing-first_or_random}
 
-``` sql
+```sql
 load_balancing = first_or_random
 ```
 
@@ -852,7 +852,7 @@ It's possible to explicitly define what the first replica is by using the settin
 
 ### Round Robin {#load_balancing-round_robin}
 
-``` sql
+```sql
 load_balancing = round_robin
 ```
 
@@ -1583,7 +1583,7 @@ Queries sent to ClickHouse with this setup are logged according to the rules in 
 
 Example:
 
-``` text
+```text
 log_queries=1
 ```
 )", 0) \
@@ -1606,7 +1606,7 @@ Possible values:
 
 Can be used to limit which entities will go to `query_log`, say you are interested only in errors, then you can use `EXCEPTION_WHILE_PROCESSING`:
 
-``` text
+```text
 log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 )", 0) \
@@ -1697,7 +1697,7 @@ Possible values:
 
 **Example**
 
-``` xml
+```xml
 <max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 )", 0) \
@@ -2862,7 +2862,7 @@ Possible values:
 
 **Example**
 
-``` text
+```text
 log_query_threads=1
 ```
 )", 0) \
@@ -2873,7 +2873,7 @@ When a query run by ClickHouse with this setting enabled has associated views (m
 
 Example:
 
-``` text
+```text
 log_query_views=1
 ```
 )", 0) \
@@ -2890,7 +2890,7 @@ Possible values:
 
 Query:
 
-``` sql
+```sql
 SET log_comment = 'log_comment test', log_queries = 1;
 SELECT 1;
 SYSTEM FLUSH LOGS;
@@ -2899,7 +2899,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Result:
 
-``` text
+```text
 ┌─type────────┬─query─────┐
 │ QueryStart  │ SELECT 1; │
 │ QueryFinish │ SELECT 1; │
@@ -3750,7 +3750,7 @@ Possible values:
 
 Consider the `null_in` table:
 
-``` text
+```text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -3760,13 +3760,13 @@ Consider the `null_in` table:
 
 Query:
 
-``` sql
+```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
 ```
 
 Result:
 
-``` text
+```text
 ┌──idx─┬────i─┐
 │    1 │    1 │
 └──────┴──────┘
@@ -3774,13 +3774,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 ```
 
 Result:
 
-``` text
+```text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -3798,7 +3798,7 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 
 **Example**
 
-``` xml
+```xml
 <profiles>
     <default>
         <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
@@ -4017,7 +4017,7 @@ Possible values:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_syntax_fuse_functions = 1;
 EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
@@ -4025,7 +4025,7 @@ EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 
 Result:
 
-``` text
+```text
 SELECT
     sum(a),
     sumCount(b).1,
@@ -4050,7 +4050,7 @@ If the setting is set to `0`, it is possible to use an arbitrary level of nestin
 
 Query:
 
-``` sql
+```sql
 SET flatten_nested = 1;
 CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
@@ -4059,7 +4059,7 @@ SHOW CREATE TABLE t_nest;
 
 Result:
 
-``` text
+```text
 ┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_nest
 (
@@ -4074,7 +4074,7 @@ SETTINGS index_granularity = 8192 │
 
 Query:
 
-``` sql
+```sql
 SET flatten_nested = 0;
 
 CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
@@ -4084,7 +4084,7 @@ SHOW CREATE TABLE t_nest;
 
 Result:
 
-``` text
+```text
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_nest
 (
@@ -4158,7 +4158,7 @@ SELECT * FROM test2;
 
 Result:
 
-``` text
+```text
 ┌─FirstTable─┐
 │          0 │
 │          1 │
@@ -4411,7 +4411,7 @@ If `insert_shard_id` value is incorrect, the server will throw an exception.
 
 To get the number of shards on `requested_cluster`, you can check server config or use this query:
 
-``` sql
+```sql
 SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
 ```
 
@@ -4433,7 +4433,7 @@ SELECT * FROM x_dist ORDER BY number ASC;
 
 Result:
 
-``` text
+```text
 ┌─number─┐
 │      0 │
 │      0 │
@@ -4879,21 +4879,21 @@ Possible values:
 
 Input table:
 
-``` sql
+```sql
 CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
 INSERT INTO test SELECT number FROM numbers(500);
 ```
 
 Query:
 
-``` sql
+```sql
 SET limit = 5;
 SET offset = 7;
 SELECT * FROM test LIMIT 10 OFFSET 100;
 ```
 Result:
 
-``` text
+```text
 ┌───i─┐
 │ 107 │
 │ 108 │
@@ -5189,7 +5189,7 @@ from the specified table.
 
 **Example**
 
-``` sql
+```sql
 INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 SELECT * FROM table_1;
 ```
@@ -5220,7 +5220,7 @@ This setting is not applied to any subquery.
 
 **Example**
 
-``` sql
+```sql
 INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 SElECT * FROM table_1;
 ```
@@ -5829,7 +5829,7 @@ The analyzer should be enabled to use parallel replicas. With disabled analyzer 
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
 )", IMPORTANT) ALIAS(enable_analyzer) \
@@ -6095,7 +6095,13 @@ Allow to create database with Engine=MaterializedPostgreSQL(...).
 Experimental data deduplication for SELECT queries based on part UUIDs
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_iceberg, false, R"(
-Allow experimental database engine Iceberg
+Allow experimental database engine DataLakeCatalog with catalog_type = 'iceberg'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_unity_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_database_glue_catalog, false, R"(
+Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_kusto_dialect, false, R"(
 Enable Kusto Query Language (KQL) - an alternative to SQL.

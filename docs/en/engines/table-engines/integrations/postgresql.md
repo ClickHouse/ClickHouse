@@ -19,7 +19,7 @@ Currently, only PostgreSQL versions 12 and up are supported.
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -61,7 +61,7 @@ The table structure can differ from the original PostgreSQL table structure:
 ```
 
 Some parameters can be overridden by key value arguments:
-``` sql
+```sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
@@ -116,7 +116,7 @@ In the example below replica `example01-1` has the highest priority:
 
 ### Table in PostgreSQL {#table-in-postgresql}
 
-``` text
+```text
 postgres=# CREATE TABLE "public"."test" (
 "int_id" SERIAL,
 "int_nullable" INT NULL DEFAULT NULL,
@@ -141,7 +141,7 @@ postgresql> SELECT * FROM test;
 
 This example uses the [PostgreSQL table engine](/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
 
-``` sql
+```sql
 CREATE TABLE default.postgresql_table
 (
     `float_nullable` Nullable(Float32),
@@ -155,7 +155,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgre
 
 The [postgresql table function](/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
 
-``` sql
+```sql
 CREATE TABLE default.postgresql_copy
 (
     `float_nullable` Nullable(Float32),
@@ -166,7 +166,7 @@ ENGINE = MergeTree
 ORDER BY (int_id);
 ```
 
-``` sql
+```sql
 INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
 ```
@@ -177,13 +177,13 @@ If then performing ongoing synchronization between the PostgreSQL table and Clic
 
 This would require keeping track of the max ID or timestamp previously added, such as the following:
 
-``` sql
+```sql
 SELECT max(`int_id`) AS maxIntID FROM default.postgresql_copy;
 ```
 
 Then inserting values from PostgreSQL table greater than the max
 
-``` sql
+```sql
 INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
 WHERE int_id > maxIntID;
@@ -191,11 +191,11 @@ WHERE int_id > maxIntID;
 
 ### Selecting data from the resulting ClickHouse table {#selecting-data-from-the-resulting-clickhouse-table}
 
-``` sql
+```sql
 SELECT * FROM postgresql_copy WHERE str IN ('test');
 ```
 
-``` text
+```text
 ┌─float_nullable─┬─str──┬─int_id─┐
 │           ᴺᵁᴸᴸ │ test │      1 │
 └────────────────┴──────┴────────┘

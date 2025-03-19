@@ -11,11 +11,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int BAD_ARGUMENTS;
-}
-
 class ReadBuffer;
 class WriteBuffer;
 
@@ -36,10 +31,10 @@ struct SettingFieldNumber
     Type value;
     bool changed = false;
 
-    explicit SettingFieldNumber(Type x = 0) : value(x) {}
+    explicit SettingFieldNumber(Type x = 0);
     explicit SettingFieldNumber(const Field & f);
 
-    SettingFieldNumber & operator=(Type x) { value = x; changed = true; return *this; }
+    SettingFieldNumber & operator=(Type x);
     SettingFieldNumber & operator=(const Field & f);
 
     operator Type() const { return value; } /// NOLINT
@@ -275,8 +270,6 @@ public:
     void readBinary(ReadBuffer & in);
 };
 
-#undef NORETURN
-
 struct SettingFieldChar
 {
 public:
@@ -335,7 +328,7 @@ struct SettingFieldURI
   * DECLARE_SETTING_ENUM(SettingFieldGender, Gender)
   *
   * mysettings.cpp:
-  * IMPLEMENT_SETTING_ENUM(SettingFieldGender, ErrorCodes::BAD_ARGUMENTS,
+  * IMPLEMENT_SETTING_ENUM(SettingFieldGender, ExceptionType,
   *                        {{"Male", Gender::Male}, {"Female", Gender::Female}})
   */
 template <typename EnumT, typename Traits>

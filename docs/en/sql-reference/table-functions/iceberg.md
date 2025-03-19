@@ -13,7 +13,7 @@ Provides a read-only table-like interface to Apache [Iceberg](https://iceberg.ap
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
 icebergS3(named_collection[, option=value [,..]])
 
