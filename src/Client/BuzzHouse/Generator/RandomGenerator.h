@@ -179,7 +179,7 @@ public:
             std::uniform_real_distribution<double> d{min_val, max_val};
             return d(generator);
         }
-        chassert(0);
+        chassert(false);
         return 0;
     }
 
