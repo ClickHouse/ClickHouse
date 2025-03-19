@@ -75,6 +75,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             /// Release closed. Please use 25.4
             {"allow_experimental_database_unity_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"},
             {"allow_experimental_database_glue_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"},
+            {"allow_experimental_drop_detached_table", true, false, "Enable drop detach table."},
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},
             {"use_query_condition_cache", false, false, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
@@ -124,7 +125,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_orc_writer_time_zone_name", "GMT", "GMT", "The time zone name for ORC writer, the default ORC writer's time zone is GMT."},
             {"output_format_pretty_highlight_trailing_spaces", false, true, "A new setting."},
             {"allow_experimental_bfloat16_type", false, true, "Add new BFloat16 type"},
-            {"allow_experimental_drop_detached_table", true, false, "Enable drop detach table."},
             {"allow_push_predicate_ast_for_distributed_subqueries", false, true, "A new setting"},
             {"output_format_pretty_squash_consecutive_ms", 0, 50, "Add new setting"},
             {"output_format_pretty_squash_max_wait_ms", 0, 1000, "Add new setting"},
