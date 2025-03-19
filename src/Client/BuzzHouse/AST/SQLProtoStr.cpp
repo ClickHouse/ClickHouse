@@ -1103,20 +1103,26 @@ CONV_FN(ExprIn, ein)
         ret += "GLOBAL ";
     if (ein.not_())
         ret += "NOT ";
-    ret += "IN (";
-    if (ein.has_exprs())
+    ret += "IN ";
+    using InType = ExprIn::InOneofCase;
+    switch (ein.in_oneof_case())
     {
-        ExprListToString(ret, ein.exprs());
+        case InType::kSingleExpr:
+            ExprToString(ret, ein.single_expr());
+            break;
+        case InType::kExprs:
+            ret += "(";
+            ExprListToString(ret, ein.exprs());
+            ret += ")";
+            break;
+        case InType::kSel:
+            ret += "(";
+            ExplainQueryToString(ret, ein.sel());
+            ret += ")";
+            break;
+        default:
+            ret += "1";
     }
-    else if (ein.has_sel())
-    {
-        ExplainQueryToString(ret, ein.sel());
-    }
-    else
-    {
-        ret += "1";
-    }
-    ret += ")";
 }
 
 CONV_FN(ExprAny, eany)

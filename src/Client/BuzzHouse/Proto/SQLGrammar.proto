@@ -1874,9 +1874,10 @@ message ExprIn {
     required ExprList expr = 1;
     required bool global = 2;
     required bool not = 3;
-    oneof exprin_oneof {
-        ExprList exprs = 4;
-        ExplainQuery sel = 5;
+    oneof in_oneof {
+        Expr single_expr = 4;
+        ExprList exprs = 5;
+        ExplainQuery sel = 6;
     }
 }
 

@@ -489,6 +489,7 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
         }
         else if (this->width < this->fc.max_width && noption < 501)
         {
+            const uint32_t nopt2 = rg.nextSmallNumber();
             const uint32_t nclauses = std::min(this->fc.max_width - this->width, (rg.nextSmallNumber() % 4) + 1);
             ComplicatedExpr * cexpr = expr->mutable_comp_expr();
             ExprIn * ein = cexpr->mutable_expr_in();
@@ -502,11 +503,11 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
             {
                 this->generateExpression(rg, i == 0 ? elist->mutable_expr() : elist->add_extra_exprs());
             }
-            if (rg.nextBool())
+            if (nopt2 < 5)
             {
-                generateSubquery(rg, ein->mutable_sel());
+                this->generateSubquery(rg, ein->mutable_sel());
             }
-            else
+            else if (nopt2 < 8)
             {
                 ExprList * elist2 = ein->mutable_exprs();
 
@@ -514,6 +515,10 @@ void StatementGenerator::generatePredicate(RandomGenerator & rg, Expr * expr)
                 {
                     this->generateExpression(rg, i == 0 ? elist2->mutable_expr() : elist2->add_extra_exprs());
                 }
+            }
+            else
+            {
+                this->generateExpression(rg, ein->mutable_single_expr());
             }
             this->depth--;
         }

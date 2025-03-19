@@ -1095,16 +1095,24 @@ void StatementGenerator::addWhereFilter(RandomGenerator & rg, const std::vector<
 
         if (rg.nextSmallNumber() < 8)
         {
-            const uint32_t nclauses = rg.nextSmallNumber();
             ExprIn * ein = expr->mutable_comp_expr()->mutable_expr_in();
-            ExprList * elist = ein->mutable_exprs();
 
             ein->set_not_(rg.nextBool());
             ein->set_global(rg.nextBool());
             expr1 = ein->mutable_expr()->mutable_expr();
-            for (uint32_t i = 0; i < nclauses; i++)
+            if (rg.nextBool())
             {
-                addWhereSide(rg, available_cols, elist->mutable_expr());
+                ExprList * elist = ein->mutable_exprs();
+                const uint32_t nclauses = rg.nextSmallNumber();
+
+                for (uint32_t i = 0; i < nclauses; i++)
+                {
+                    addWhereSide(rg, available_cols, elist->mutable_expr());
+                }
+            }
+            else
+            {
+                addWhereSide(rg, available_cols, ein->mutable_single_expr());
             }
         }
         else
