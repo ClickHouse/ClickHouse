@@ -444,6 +444,9 @@ public:
         NodeRawConstPtrs nodes,
         const std::unordered_set<const Node *> & allowed_inputs);
 
+    /// Returns the list of inputs required to compute the target node.
+    NodeRawConstPtrs getRequiredInputs(const Node * target_node) const;
+
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 

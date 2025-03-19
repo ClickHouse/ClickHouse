@@ -70,8 +70,11 @@ std::pair<std::unique_ptr<QueryPlan>, bool> createLocalPlanForParallelReplicas(
             // in case of RIGHT JOIN, - reading from right table is parallelized among replicas
             const JoinStep * join = typeid_cast<JoinStep *>(node->step.get());
             const JoinStepLogical * join_logical = typeid_cast<JoinStepLogical *>(node->step.get());
+            if (join_logical && join_logical->getNumberOfTables() != 2)
+                join_logical = nullptr;
+
             if ((join && join->getJoin()->getTableJoin().kind() == JoinKind::Right)
-             || (join_logical && join_logical->getJoinInfo().kind == JoinKind::Right))
+             || (join_logical && join_logical->getJoinOperator().kind == JoinKind::Right))
                 node = node->children.at(1);
             else
                 node = node->children.at(0);

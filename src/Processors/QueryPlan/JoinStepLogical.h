@@ -41,13 +41,7 @@ struct PreparedJoinStorage
 class JoinStepLogical final : public IQueryPlanStep
 {
 public:
-    JoinStepLogical(
-        const Block & left_header_,
-        const Block & right_header_,
-        JoinInfo join_info_,
-        JoinExpressionActions join_expression_actions_,
-        Names required_output_columns_,
-        ContextPtr query_context_);
+    explicit JoinStepLogical(Header left_header, ContextPtr query_context_);
 
     String getName() const override { return "JoinLogical"; }
 
@@ -58,38 +52,63 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    bool canFlatten(const ContextPtr & context_) const;
     bool hasPreparedJoinStorage() const;
     void setPreparedJoinStorage(PreparedJoinStorage storage);
     void setHashTableCacheKey(IQueryTreeNode::HashState hash_table_key_hash_);
     const SortingStep::Settings & getSortingSettings() const { return sorting_settings; }
     const JoinSettings & getJoinSettings() const { return join_settings; }
-    const JoinInfo & getJoinInfo() const { return join_info; }
-    JoinInfo & getJoinInfo() { return join_info; }
+
+    JoinOperator & addInput(JoinOperator join_operator, const Header & header);
 
     std::optional<ActionsDAG> getFilterActions(JoinTableSide side, String & filter_column_name);
 
     void setSwapInputs() { swap_inputs = true; }
     bool areInputsSwapped() const { return swap_inputs; }
 
-    JoinPtr convertToPhysical(JoinActionRef & post_filter, bool is_explain_logical);
 
-    JoinExpressionActions & getExpressionActions() { return expression_actions; }
+    struct PhysicalJoinNode
+    {
+        ActionsDAGPtr actions;
+        JoinActionRef filter;
+        JoinPtr join_strategy;
+
+        BaseRelsSet left_child;
+        BaseRelsSet right_child;
+    };
+
+    struct PhysicalJoinTree
+    {
+        std::unordered_map<BaseRelsSet, PhysicalJoinNode> nodes;
+    };
+
+    PhysicalJoinTree convertToPhysical(bool is_explain_logical)
 
     const JoinSettings & getSettings() const { return join_settings; }
+
+    std::vector<Names> & getUsingColumnsMapping() { return using_columns_mapping; }
+
+    size_t getNumberOfTables() const;
+    BaseRelsSet getNullExtendedTables() const;
+    Headers getCurrentHeaders() const;
+    void addRequiredOutput(const NameSet & columns);
+
+    JoinOperator & getJoinOperator(size_t index = 0) { return join_operators.at(index); }
+    const JoinOperator & getJoinOperator(size_t index = 0) const { return join_operators.at(index); }
 
 protected:
     void updateOutputHeader() override;
 
-    std::vector<std::pair<String, String>> describeJoinActions() const;
+    template <typename ResultType>
+    void describeJoinActionsImpl(ResultType & result) const;
 
-    JoinExpressionActions expression_actions;
-    JoinInfo join_info;
+    std::vector<JoinOperator> join_operators;
+    std::vector<IQueryTreeNode::HashState> hash_table_key_hashes;
 
     bool swap_inputs = false;
-    Names required_output_columns;
+    NameSet required_output_columns;
 
     PreparedJoinStorage prepared_join_storage;
-    IQueryTreeNode::HashState hash_table_key_hash;
 
     JoinSettings join_settings;
     SortingStep::Settings sorting_settings;
@@ -100,6 +119,8 @@ protected:
 
     /// Add some information from convertToPhysical to description in explain output.
     std::vector<std::pair<String, String>> runtime_info_description;
+
+    std::vector<Names> using_columns_mapping;
 
     ContextPtr query_context;
 };

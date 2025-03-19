@@ -77,12 +77,9 @@ String toString(const JoinCondition & condition)
     };
     return fmt::format("{} {} {} {}",
         fmt::join(condition.predicates | std::views::transform([](auto && x) { return toString(x); }), ", "),
-        format_conditions("Left filter", condition.left_filter_conditions),
-        format_conditions("Right filter", condition.right_filter_conditions),
-        format_conditions("Residual filter", condition.residual_conditions)
+        format_conditions("Filters", condition.restrict_conditions),
     );
 }
-
 
 static bool checkNodeInOutputs(const ActionsDAG::Node * node, const ActionsDAG * actions_dag)
 {
@@ -94,11 +91,41 @@ static bool checkNodeInOutputs(const ActionsDAG::Node * node, const ActionsDAG *
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Node {} is not in outputs of actions DAG:\n{}", node->result_name, actions_dag->dumpDAG());
 }
 
-JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, const ActionsDAG * actions_dag_)
-    : actions_dag(actions_dag_)
-    , column_name(node_->result_name)
+JoinActionRef::JoinActionRef(std::nullptr_t)
+{
+}
+
+JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, BaseRelsSet src_rels_)
+    : column_name(node_->result_name)
+    , src_rels(src_rels_)
+{
+}
+
+JoinActionRef::JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_)
+    : column_name(node_->result_name)
+    , actions_dag(actions_dag_)
 {
     chassert(checkNodeInOutputs(node_, actions_dag));
+}
+
+bool JoinActionRef::canBeCalculated(BaseRelsSet rels) const
+{
+    if (src_rels == 0)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} called on uninitialized actions", __PRETTY_FUNCTION__);
+    return (rels & src_rels) == src_rels;
+}
+
+ActionsDAG * JoinActionRef::getActions() const
+{
+    if (!actions_dag)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Function {} called on uninitialized actions", __PRETTY_FUNCTION__);
+
+    return actions_dag;
+}
+
+void JoinActionRef::setActions(ActionsDAG * actions_dag_)
+{
+    actions_dag = actions_dag_;
 }
 
 const ActionsDAG::Node * JoinActionRef::getNode() const
@@ -124,6 +151,23 @@ const String & JoinActionRef::getColumnName() const
 DataTypePtr JoinActionRef::getType() const
 {
     return getNode()->result_type;
+}
+
+ActionsDAGPtr & JoinExpressionActions::getActions(BaseRelsSet sources, const std::vector<ColumnsWithTypeAndName> & tables)
+{
+    auto it = actions.find(sources);
+    if (it != actions.end())
+    {
+        ColumnsWithTypeAndName inputs;
+        for (size_t i = 0; i < sources.size(); ++i)
+        {
+            if (sources.test(i))
+                inputs.append_range(tables[i]);
+        }
+        auto actions_dag = std::make_unique<ActionsDAG>(inputs);
+        it = actions.emplace(sources, std::move(actions_dag)).first;
+    }
+    return it->second;
 }
 
 }

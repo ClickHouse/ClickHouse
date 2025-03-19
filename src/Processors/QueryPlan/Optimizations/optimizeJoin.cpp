@@ -164,7 +164,7 @@ void addSortingForMergeJoin(
     QueryPlan::Nodes & nodes,
     const SortingStep::Settings & sort_settings,
     const JoinSettings & join_settings,
-    const JoinInfo & join_info)
+    const JoinOperator & join_info)
 {
     auto join_kind = join_info.kind;
     auto join_strictness = join_info.strictness;
@@ -242,8 +242,10 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
-    JoinActionRef post_filter(nullptr);
-    auto join_ptr = join_step->convertToPhysical(post_filter, keep_logical);
+    PhysicalJoinNode result;
+    join_step->convertToPhysical(result, keep_logical);
+
+    auto join_ptr = result.join_strategy;
 
     if (join_ptr->isFilled())
     {
@@ -255,12 +257,10 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
 
     Header output_header = join_step->getOutputHeader();
 
-    auto & join_expression_actions = join_step->getExpressionActions();
-
-    QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(*join_expression_actions.left_pre_join_actions), {}, nodes);
+    QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(*join_expression_actions.actions[1]), {}, nodes);
     QueryPlan::Node * new_right_node = nullptr;
     if (node.children.size() >= 2)
-        new_right_node = makeExpressionNodeOnTopOf(node.children.at(1), std::move(*join_expression_actions.right_pre_join_actions), {}, nodes);
+        new_right_node = makeExpressionNodeOnTopOf(node.children.at(1), std::move(*join_expression_actions.actions[2]), {}, nodes);
 
     if (join_step->areInputsSwapped() && new_right_node)
         std::swap(new_left_node, new_right_node);
@@ -276,7 +276,7 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
             addSortingForMergeJoin(fsmjoin, new_left_node, new_right_node, nodes,
                 join_step->getSortingSettings(), join_step->getJoinSettings(), join_step->getJoinInfo());
 
-        auto required_output_from_join = join_expression_actions.post_join_actions->getRequiredColumnsNames();
+        auto required_output_from_join = join_expression_actions.actions[3]->getRequiredColumnsNames();
         new_join_node.step = std::make_unique<JoinStep>(
             new_left_node->step->getOutputHeader(),
             new_right_node->step->getOutputHeader(),
@@ -302,12 +302,12 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     if (post_filter)
     {
         bool remove_filter = !output_header.has(post_filter.getColumnName());
-        result_node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions), post_filter.getColumnName(), remove_filter);
+        result_node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.actions[3]), post_filter.getColumnName(), remove_filter);
         result_node.children = {&new_join_node};
     }
-    else if (!isPassthroughActions(*join_expression_actions.post_join_actions))
+    else if (!isPassthroughActions(*join_expression_actions.actions[3]))
     {
-        result_node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions));
+        result_node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.actions[3]));
         result_node.children = {&new_join_node};
     }
     else

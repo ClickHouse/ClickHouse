@@ -74,6 +74,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(const Settings & fr
 
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class
     keep_logical_steps = false;
+    optimize_level = std::numeric_limits<decltype(optimize_level)>::max();
     is_explain = false;
 }
 

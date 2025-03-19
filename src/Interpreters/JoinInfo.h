@@ -56,41 +56,31 @@ inline PredicateOperator reversePredicateOperator(PredicateOperator op)
 
 using ActionsDAGPtr = std::unique_ptr<ActionsDAG>;
 
-struct JoinExpressionActions
-{
-    JoinExpressionActions(const ColumnsWithTypeAndName & left_columns, const ColumnsWithTypeAndName & right_columns, const ColumnsWithTypeAndName & joined_columns)
-        : left_pre_join_actions(std::make_unique<ActionsDAG>(left_columns))
-        , right_pre_join_actions(std::make_unique<ActionsDAG>(right_columns))
-        , post_join_actions(std::make_unique<ActionsDAG>(joined_columns))
-    {
-    }
-
-    ActionsDAGPtr left_pre_join_actions;
-    ActionsDAGPtr right_pre_join_actions;
-    ActionsDAGPtr post_join_actions;
-};
-
+using BaseRelsSet = std::bitset<64>;
 
 class JoinActionRef
 {
 public:
-    explicit JoinActionRef(std::nullptr_t)
-        : actions_dag(nullptr)
-    {}
-
-    explicit JoinActionRef(const ActionsDAG::Node * node_, const ActionsDAG * actions_dag_);
+    explicit JoinActionRef(std::nullptr_t);
+    explicit JoinActionRef(const ActionsDAG::Node * node_, BaseRelsSet src_rels_);
+    explicit JoinActionRef(const ActionsDAG::Node * node_, ActionsDAG * actions_dag_);
 
     const ActionsDAG::Node * getNode() const;
+    ActionsDAG * getActions() const;
+    void setActions(ActionsDAG * actions_dag_);
 
     ColumnWithTypeAndName getColumn() const;
     const String & getColumnName() const;
     DataTypePtr getType() const;
 
-    operator bool() const { return actions_dag != nullptr; } /// NOLINT
+    operator bool() const { return !column_name.empty(); } /// NOLINT
+    bool canBeCalculated(BaseRelsSet rels) const;
 
 private:
-    const ActionsDAG * actions_dag = nullptr;
     String column_name;
+    BaseRelsSet src_rels;
+
+    ActionsDAG * actions_dag = nullptr;
 };
 
 /// JoinPredicate represents a single join qualifier
@@ -108,13 +98,8 @@ struct JoinCondition
     /// Join predicates that must be satisfied to join rows
     std::vector<JoinPredicate> predicates;
 
-    /// Pre-Join filters applied to the left and right tables independently
-    std::vector<JoinActionRef> left_filter_conditions;
-    std::vector<JoinActionRef> right_filter_conditions;
-
-    /// Residual conditions depend on data from both tables and must be evaluated after the join has been performed.
-    /// Unlike the join predicates, these conditions can be arbitrary expressions.
-    std::vector<JoinActionRef> residual_conditions;
+    /// Additional restrictions that must be satisfied
+    std::vector<JoinActionRef> restrict_conditions;
 };
 
 struct JoinExpression
@@ -132,19 +117,43 @@ struct JoinExpression
     bool is_using = false;
 };
 
-struct JoinInfo
+struct JoinExpressionActions
 {
-    /// An expression in ON/USING clause of a JOIN statement
-    JoinExpression expression;
+    JoinExpressionActions() = default;
+    JoinExpressionActions(const JoinExpressionActions &) = delete;
+    JoinExpressionActions & operator=(const JoinExpressionActions &) = delete;
+    JoinExpressionActions(JoinExpressionActions &&) = default;
+    JoinExpressionActions & operator=(JoinExpressionActions &&) = default;
 
+    ActionsDAGPtr & getActions(BaseRelsSet sources, const std::vector<ColumnsWithTypeAndName> & tables);
+
+    std::unordered_map<BaseRelsSet, ActionsDAGPtr> actions;
+};
+
+struct JoinOperator
+{
     /// The type of join (e.g., INNER, LEFT, RIGHT, FULL)
     JoinKind kind;
 
-    /// The strictness of the join (e.g., ALL, ANY, SEMI, ANTI)
+    /// The strictness of the join (e.g., ALL, ANY, SEMI, ANTI, ASOF)
     JoinStrictness strictness;
 
     /// The locality of the join (e.g., LOCAL, GLOBAL)
     JoinLocality locality;
+
+    /// An expression in ON/USING clause of a JOIN statement
+    JoinExpression expression = {};
+
+    JoinExpressionActions expression_actions = {};
+
+    JoinOperator() = default;
+    JoinOperator(JoinOperator &&) = default;
+    JoinOperator & operator=(JoinOperator &&) = default;
+    JoinOperator(const JoinOperator &) = delete;
+    JoinOperator & operator=(const JoinOperator &) = delete;
+
+    JoinOperator(JoinKind kind_, JoinStrictness strictness_, JoinLocality locality_)
+        : kind(kind_), strictness(strictness_), locality(locality_) {}
 };
 
 

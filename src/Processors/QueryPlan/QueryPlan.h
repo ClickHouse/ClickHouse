@@ -75,6 +75,8 @@ public:
     QueryPlan & operator=(QueryPlan &&) noexcept;
 
     void unitePlans(QueryPlanStepPtr step, std::vector<QueryPlanPtr> plans);
+    void unitePlans(QueryPlan plan);
+
     void addStep(QueryPlanStepPtr step);
 
     bool isInitialized() const { return root != nullptr; } /// Tree is not empty
