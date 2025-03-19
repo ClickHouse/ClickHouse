@@ -47,14 +47,9 @@ def simple_tester(source):
 
 @pytest.fixture(scope="module")
 def main_config(secure_connection):
-    main_config = [os.path.join("configs", "mongo", "new.xml")]
-
     if secure_connection:
-        main_config.append(os.path.join("configs", "disable_ssl_verification.xml"))
-    else:
-        main_config.append(os.path.join("configs", "ssl_verification.xml"))
-
-    return main_config
+        return [os.path.join("configs", "disable_ssl_verification.xml")]
+    return [os.path.join("configs", "ssl_verification.xml")]
 
 
 @pytest.fixture(scope="module")
@@ -84,7 +79,5 @@ def test_simple(secure_connection, started_cluster, simple_tester, layout_name):
 
 @pytest.mark.parametrize("secure_connection", [True], indirect=["secure_connection"])
 @pytest.mark.parametrize("layout_name", ["flat"])
-def test_simple_ssl(
-    secure_connection, started_cluster, simple_tester, layout_name
-):
+def test_simple_ssl(secure_connection, started_cluster, simple_tester, layout_name):
     simple_tester.execute(layout_name, started_cluster.instances["uri_node"])
