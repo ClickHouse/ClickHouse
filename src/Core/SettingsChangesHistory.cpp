@@ -686,6 +686,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             /// Release closed. Please use 25.4
             {"shared_merge_tree_enable_keeper_parts_extra_data", false, false, "New setting"},
+            {"escape_variant_subcolumn_filenames", false, true, "Escape special symbols for filenames created for Variant type subcolumns in Wide parts"},
             {"zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock", 0, 0, "New setting"},
             {"enable_replacing_merge_with_cleanup_for_min_age_to_force_merge", false, false, "New setting to allow automatic cleanup merges for ReplacingMergeTree"},
             /// Release closed. Please use 25.4
