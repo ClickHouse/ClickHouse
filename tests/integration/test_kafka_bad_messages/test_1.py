@@ -88,18 +88,19 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
 
     instance.query(
         f"""
-        CREATE USER RESTRICTED;
-        GRANT SHOW ON default.kafka_grant_visible TO RESTRICTED;
-        GRANT SELECT ON system.kafka_consumers TO RESTRICTED;
+        DROP USER IF EXISTS restricted;
+        CREATE USER restricted;
+        GRANT SHOW ON default.kafka_grant_visible TO restricted;
+        GRANT SELECT ON system.kafka_consumers TO restricted;
     """
     )
 
     restricted_result_system_kafka_consumers = instance.query(
         "SELECT count(1) FROM system.kafka_consumers WHERE table LIKE 'kafka_grant%'",
-        user="RESTRICTED",
+        user="restricted",
     )
     assert int(restricted_result_system_kafka_consumers) == 1
-    # only kafka_grant_visible is visible for user RESTRICTED
+    # only kafka_grant_visible is visible for user `restricted`
 
     kafka_delete_topic(admin_client, "visible")
     kafka_delete_topic(admin_client, "hidden")
@@ -107,7 +108,7 @@ def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
         f"""
         DROP TABLE IF EXISTS kafka_grant_visible;
         DROP TABLE IF EXISTS kafka_grant_hidden;
-        DROP USER RESTRICTED;
+        DROP USER IF EXISTS restricted;
     """
     )
 
