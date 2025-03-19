@@ -22,8 +22,8 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/AvroForIcebergDeserializer.h>
 
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
@@ -59,19 +59,15 @@ constexpr const char * COLUMN_MANIFEST_FILE_PATH_NAME = "manifest_path";
 constexpr const char * FIELD_FORMAT_VERSION_NAME = "format-version";
 
 std::pair<Int32, Poco::JSON::Object::Ptr>
-parseTableSchemaFromManifestFile(const avro::DataFileReaderBase & manifest_file_reader, const String & manifest_file_name)
-{
-    auto avro_metadata = manifest_file_reader.metadata();
-    auto avro_schema_it = avro_metadata.find("schema");
-    if (avro_schema_it == avro_metadata.end())
+parseTableSchemaFromManifestFile(const AvroForIcebergDeserializer & deserializer, const String & manifest_file_name) {
+    auto schema_json_string = deserializer.tryGetAvroMetadataValue("schema");
+    if (!schema_json_string.has_value())
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Cannot read Iceberg table: manifest file '{}' doesn't have table schema in its metadata",
             manifest_file_name);
-    std::vector<uint8_t> schema_json = avro_schema_it->second;
-    String schema_json_string = String(reinterpret_cast<char *>(schema_json.data()), schema_json.size());
     Poco::JSON::Parser parser;
-    Poco::Dynamic::Var json = parser.parse(schema_json_string);
+    Poco::Dynamic::Var json = parser.parse(*schema_json_string);
     const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
     Int32 schema_object_id = schema_object->getValue<int>("schema-id");
     return {schema_object_id, schema_object};
@@ -371,67 +367,20 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
     if (configuration_ptr == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is expired");
 
-    auto context = getContext();
     StorageObjectStorage::ObjectInfo object_info(filename);
-    auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, context, log);
+    auto manifest_list_buf = StorageObjectStorageSource::createReadBuffer(object_info, object_storage, getContext(), log);
+    AvroForIcebergDeserializer manifest_list_deserializer(std::move(manifest_list_buf), filename, getFormatSettings(getContext()));
 
-    auto manifest_list_file_reader
-        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*manifest_list_buf));
-
-    auto [name_to_index, name_to_data_type, header] = getColumnsAndTypesFromAvroByNames(
-        manifest_list_file_reader->dataSchema().root(),
-        {COLUMN_MANIFEST_FILE_PATH_NAME, COLUMN_SEQ_NUMBER_NAME},
-        {avro::Type::AVRO_STRING, avro::Type::AVRO_LONG});
-
-    if (name_to_index.find(COLUMN_MANIFEST_FILE_PATH_NAME) == name_to_index.end())
-        throw Exception(
-            DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Required columns are not found in manifest file: {}",
-            COLUMN_MANIFEST_FILE_PATH_NAME);
-    if (format_version > 1 && name_to_index.find(COLUMN_SEQ_NUMBER_NAME) == name_to_index.end())
-        throw Exception(
-            DB::ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Required columns are not found in manifest file: `{}`", COLUMN_SEQ_NUMBER_NAME);
-
-
-    auto columns = parseAvro(*manifest_list_file_reader, header, getFormatSettings(context));
-    const auto & manifest_path_col = columns.at(name_to_index.at(COLUMN_MANIFEST_FILE_PATH_NAME));
-
-    std::optional<const ColumnInt64 *> sequence_number_column = std::nullopt;
-    if (format_version > 1)
-    {
-        if (columns.at(name_to_index.at(COLUMN_SEQ_NUMBER_NAME))->getDataType() != TypeIndex::Int64)
-        {
-            throw Exception(
-                DB::ErrorCodes::ILLEGAL_COLUMN,
-                "The parsed column from Avro file of `{}` field should be Int64 type, got `{}`",
-                COLUMN_SEQ_NUMBER_NAME,
-                columns.at(name_to_index.at(COLUMN_SEQ_NUMBER_NAME))->getFamilyName());
-        }
-        sequence_number_column = assert_cast<const ColumnInt64 *>(columns.at(name_to_index.at(COLUMN_SEQ_NUMBER_NAME)).get());
-    }
-
-    if (manifest_path_col->getDataType() != TypeIndex::String)
-    {
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN,
-            "The parsed column from Avro file of `{}` field should be String type, got `{}`",
-            COLUMN_MANIFEST_FILE_PATH_NAME,
-            manifest_path_col->getFamilyName());
-    }
-
-    const auto * manifest_path_col_str = typeid_cast<ColumnString *>(manifest_path_col.get());
     ManifestList manifest_list;
 
-
-    for (size_t i = 0; i < manifest_path_col_str->size(); ++i)
+    for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
     {
-        const std::string_view file_path = manifest_path_col_str->getDataAt(i).toView();
+        const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, COLUMN_MANIFEST_FILE_PATH_NAME, TypeIndex::String).safeGet<std::string>();
         const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPath(), table_location);
         Int64 added_sequence_number = 0;
         if (format_version > 1)
-        {
-            added_sequence_number = sequence_number_column.value()->getInt(i);
-        }
+            added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, COLUMN_SEQ_NUMBER_NAME, TypeIndex::Int64).safeGet<Int64>();
+
         /// We can't encapsulate this logic in getManifestFile because we need not only the name of the file, but also an inherited sequence number which is known only during the parsing of ManifestList
         auto manifest_file_content = initializeManifestFile(manifest_file_name, added_sequence_number);
         auto [iterator, _inserted] = manifest_files_by_name.emplace(manifest_file_name, std::move(manifest_file_content));
@@ -453,21 +402,18 @@ ManifestFileContent IcebergMetadata::initializeManifestFile(const String & filen
 
     ObjectInfo manifest_object_info(filename);
     auto buffer = StorageObjectStorageSource::createReadBuffer(manifest_object_info, object_storage, getContext(), log);
-    auto manifest_file_reader = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
-    auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(*manifest_file_reader, filename);
+    AvroForIcebergDeserializer manifest_file_deserializer(std::move(buffer), filename, getFormatSettings(getContext()));
+    auto [schema_id, schema_object] = parseTableSchemaFromManifestFile(manifest_file_deserializer, filename);
     schema_processor.addIcebergTableSchema(schema_object);
-    auto manifest_file_impl = std::make_unique<ManifestFileContentImpl>(
-        std::move(manifest_file_reader),
+    return ManifestFileContent(
+        manifest_file_deserializer,
         format_version,
         configuration_ptr->getPath(),
-        getFormatSettings(getContext()),
         schema_id,
         schema_processor,
         inherited_sequence_number,
         table_location,
         getContext());
-
-    return ManifestFileContent(std::move(manifest_file_impl));
 }
 
 ManifestFileIterator IcebergMetadata::getManifestFile(const String & filename) const
@@ -495,7 +441,6 @@ ManifestListIterator IcebergMetadata::getManifestList(const String & filename) c
     auto [manifest_file_iterator, _inserted] = manifest_lists_by_name.emplace(filename, initializeManifestList(filename));
     return ManifestListIterator{manifest_file_iterator};
 }
-
 
 IcebergSnapshot IcebergMetadata::getSnapshot(const String & filename) const
 {
