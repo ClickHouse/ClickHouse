@@ -4,12 +4,10 @@ Actions: INPUT : 0 -> __table1.id Int32 : 0
          ALIAS __table1.id :: 0 -> id Int32 : 1
 Positions: 1
   CreatingSets (Create sets before main query execution)
-  Header: in(__table1.id, set column) UInt8
-          __table1.id Int32
+  Header: __table1.id Int32
     Filter (( + Change column names to column identifiers))
-    Header: in(__table1.id, set column) UInt8
-            __table1.id Int32
-    Filter column: in(__table1.id, set column)
+    Header: __table1.id Int32
+    Filter column: in(__table1.id, set column) (removed)
     Actions: INPUT : 0 -> id Int32 : 0
              COLUMN Set -> set column Set : 1
              ALIAS id : 0 -> __table1.id Int32 : 2
