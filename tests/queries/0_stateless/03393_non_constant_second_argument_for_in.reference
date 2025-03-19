@@ -63,7 +63,6 @@ SELECT (1, null) in [(number % 3, number % 5), (1, null)] FROM numbers(2);
 1
 SELECT (1, null) in (SELECT (0, 0::Nullable(Int)) UNION ALL SELECT (1, null)), (1, null) in (SELECT (1, 1::Nullable(Int)) UNION ALL SELECT (1, null));
 1	1
-
 --- with tuple rewritten into array
 SELECT *
 FROM numbers(1000)
