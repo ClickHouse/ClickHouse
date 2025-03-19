@@ -25,63 +25,6 @@ namespace DB::ErrorCodes
 namespace DB::QueryPlanOptimizations
 {
 
-FutureSet::Hash generateRandomHash()
-{
-    auto uuid = UUIDHelpers::generateV4();
-    FutureSet::Hash hash;
-    hash.low64 = UUIDHelpers::getLowBytes(uuid);
-    hash.high64 = UUIDHelpers::getHighBytes(uuid);
-    return hash;
-}
-
-bool hasAnyInSet(const Header & header, NameSet & set)
-{
-    for (const auto & column : header)
-        if (set.contains(column.name))
-            return true;
-
-    return false;
-}
-
-// std::unordered_set<std::string_view> findUnusedInputs(const ActionsDAG & dag)
-// {
-//     std::unordered_set<const ActionsDAG::Node *> used;
-//     std::stack<const ActionsDAG::Node *> stack;
-//     for (const auto * output : dag.getOutputs())
-//     {
-//         if (!used.emplace(output).second)
-//             continue;
-
-//         stack.push(output);
-//         while (!stack.empty())
-//         {
-//             const auto * node = stack.top();
-//             stack.pop();
-
-//             for (const auto * child : node->children)
-//                 if (!used.emplace(child).second)
-//                     stack.push(child);
-//         }
-//     }
-
-//     std::unordered_set<std::string_view> names;
-//     for (const auto * input : dag.getInputs())
-//         if (used.contains(input))
-//             names.insert(input->result_name);
-
-//     return names;
-// }
-
-// ActionsDAG dropInputs(const ActionsDAG & dag, const Header & inputs)
-// {
-//    std::unordered_set<const ActionsDAG::Node *> split_nodes;
-//     for (const auto * input : dag.getInputs())
-//         if (inputs.findByName(input->result_name))
-//             split_nodes.insert(input);
-
-//     return dag.split(split_nodes).second;
-// }
-
 struct InConversion
 {
     ActionsDAG dag;
@@ -141,6 +84,12 @@ InConversion buildInConversion(
         left_columns.front() :
         &lhs_dag.addFunction(func_tuple_builder, std::move(left_columns), {});
 
+    auto generateRandomHash =[]()
+    {
+        auto uuid = UUIDHelpers::generateV4();
+        return FutureSet::Hash(UUIDHelpers::getLowBytes(uuid), UUIDHelpers::getHighBytes(uuid));
+    };
+
     /// right parameter of IN function
     auto future_set = std::make_shared<FutureSetFromSubquery>(
         generateRandomHash(),
@@ -162,11 +111,6 @@ InConversion buildInConversion(
     lhs_dag.getOutputs().insert(lhs_dag.getOutputs().begin(), &in_node);
 
     return {std::move(lhs_dag), std::move(future_set)};
-}
-
-bool isJoinConstant(const std::string & name)
-{
-    return name == "__lhs_const" || name == "__rhs_const";
 }
 
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
@@ -208,6 +152,11 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         if (!join_info.expression.condition.residual_conditions.empty())
             return 0;
 
+        auto isJoinConstant = [](const std::string & name)
+        {
+            return name == "__lhs_const" || name == "__rhs_const";
+        };
+
         for (const auto & predicate : join_info.expression.condition.predicates)
         {
             if (predicate.op != PredicateOperator::Equals)
@@ -223,36 +172,43 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     NameSet required_output_columns_set(required_output_columns.begin(), required_output_columns.end());
 
     const auto & join_expression_actions = join->getExpressionActions();
-    //auto unused_columns = findUnusedInputs(*join_expression_actions.post_join_actions);
 
     const auto & left_input_header = join->getInputHeaders().front();
     const auto & right_input_header = join->getInputHeaders().back();
 
-    /// Apply pre-join actions to input headers before checking for required columns.
-    // auto left_header = join_expression_actions.left_pre_join_actions->updateHeader(left_input_header);
-    // auto right_header = join_expression_actions.right_pre_join_actions->updateHeader(right_input_header);
-
     bool build_set_from_left_part = false;
 
-    if (isInnerOrLeft(join_info.kind) && !hasAnyInSet(right_input_header, required_output_columns_set))
+    /// Check output columns come from one side.
     {
-        /// Transform right to IN
-    }
-    // else if (isInnerOrRight(join_info.kind) && !hasAnyInSet(left_input_header, required_output_columns_set))
-    // {
-    //     /// Transform left to IN
-    //     build_set_from_left_part = true;
-    // }
-    else
-        return 0;
+        auto hasAnyInSet = [](const Header & header, NameSet & set)
+        {
+            for (const auto & column : header)
+                if (set.contains(column.name))
+                    return true;
+            return false;
+        };
 
-    const auto & output_header = join->getOutputHeader();
-
-    for (const auto & column_type_and_name : output_header)
-    {
-        /// Check input and output type
-        if (!left_input_header.getByName(column_type_and_name.name).type->equals(*column_type_and_name.type))
+        if (isInnerOrLeft(join_info.kind) && !hasAnyInSet(right_input_header, required_output_columns_set))
+        {
+            /// Transform right to IN
+        }
+        // else if (isInnerOrRight(join_info.kind) && !hasAnyInSet(left_input_header, required_output_columns_set))
+        // {
+        //     /// Transform left to IN
+        //     build_set_from_left_part = true;
+        // }
+        else
             return 0;
+    }
+
+    /// Check input and output type
+    {
+        const auto & output_header = join->getOutputHeader();
+        for (const auto & column_type_and_name : output_header)
+        {
+            if (!left_input_header.getByName(column_type_and_name.name).type->equals(*column_type_and_name.type))
+                return 0;
+        }
     }
 
     JoinActionRef unused_post_filter(nullptr);

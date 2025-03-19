@@ -29,3 +29,4 @@ Expression ((Project names + Projection))
       Expression ((JOIN keys + Change column names to column identifiers))
         ReadFromSystemOneBlock
 0
+1	1
