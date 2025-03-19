@@ -1,5 +1,6 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Common/FieldVisitorToString.h>
+#include <Core/NamesAndTypes.h>
 
 #include <Columns/ColumnNullable.h>
 
@@ -2961,6 +2962,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         if (function_in_arguments_nodes.size() != 2)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function '{}' expects 2 arguments", function_name);
 
+        auto & in_first_argument = function_in_arguments_nodes[0];
         auto & in_second_argument = function_in_arguments_nodes[1];
         auto * table_node = in_second_argument->as<TableNode>();
         auto * table_function_node = in_second_argument->as<TableFunctionNode>();
@@ -3025,10 +3027,86 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     in_second_argument = in_second_argument->cloneAndReplace(table_expression, std::move(replacement_table_expression_table_node));
                 }
             }
+            /// If it's a function node like array(..) or tuple(..), consider rewriting them to 'has':
+            if (auto * non_const_set_candidate = in_second_argument->as<FunctionNode>())
+            {
+                const auto & candidate_name = non_const_set_candidate->getFunctionName();
+
+                /// Case 1: array(..) node – keep existing behavior
+                if (candidate_name == "array"
+                    && !isNullableOrLowCardinalityNullable(in_first_argument->getResultType()))
+                {
+                    bool contains_nullable = false;
+                    for (const auto & array_elem : non_const_set_candidate->getArguments().getNodes())
+                    {
+                        if (isNullableOrLowCardinalityNullable(array_elem->getResultType()))
+                        {
+                            contains_nullable = true;
+                            break;
+                        }
+                    }
+                    if (!contains_nullable)
+                    {
+                        function_name = "has";
+                        is_special_function_in = false;
+                        auto & fn_args = function_node.getArguments().getNodes();
+                        std::swap(fn_args[0], fn_args[1]);
+                    }
+                }
+                /// Case 2: tuple(..) node – rewrite it into an array
+                else if (candidate_name == "tuple")
+                {
+                    /// Infer a common type among the tuple elements
+                    DataTypePtr common_type = nullptr;
+                    auto & tuple_args = non_const_set_candidate->getArguments().getNodes();
+                    for (const auto & arg : tuple_args)
+                    {
+                        if (!common_type)
+                            common_type = arg->getResultType(); // start with the first element’s type
+                        else
+                            common_type = tryGetLeastSupertype(DataTypes{common_type, arg->getResultType()});
+                    }
+
+                    /// Create a new array node
+                    auto array_function_node = std::make_shared<FunctionNode>("array");
+                    auto array_arguments_list = std::make_shared<ListNode>();
+
+                    /// for each tuple element, build a CAST function node
+                    for (auto & arg : tuple_args)
+                    {
+                        auto cast_function_node = std::make_shared<FunctionNode>("CAST");
+                        auto cast_arguments_list = std::make_shared<ListNode>();
+
+                        /// First argument: the original element
+                        cast_arguments_list->getNodes().push_back(arg);
+                        /// Second argument: a constant node with the target type name
+                        auto type_constant_node = std::make_shared<ConstantNode>(common_type->getName(), std::make_shared<DataTypeString>());
+                        cast_arguments_list->getNodes().push_back(type_constant_node);
+
+                        /// Assign the cast arguments list to the CAST function node
+                        cast_function_node->getArgumentsNode() = cast_arguments_list;
+                        array_arguments_list->getNodes().push_back(cast_function_node);
+                    }
+
+                    /// assign the new array arguments list to the array function node
+                    array_function_node->getArgumentsNode() = array_arguments_list;
+
+                    /// replace the original tuple node with the new array node
+                    in_second_argument = array_function_node;
+
+                    /// force resolution of the new array node.
+                    resolveExpressionNode(in_second_argument, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/);
+
+                    /// rewrite the IN call as a has() call by swapping the arguments
+                    function_name = "has";
+                    is_special_function_in = false;
+                    auto & fn_args = function_node.getArguments().getNodes();
+                    std::swap(fn_args[0], fn_args[1]);
+                }
+            }
         }
 
         /// Edge case when the first argument of IN is scalar subquery.
-        auto & in_first_argument = function_in_arguments_nodes[0];
         auto first_argument_type = in_first_argument->getNodeType();
         if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
         {
