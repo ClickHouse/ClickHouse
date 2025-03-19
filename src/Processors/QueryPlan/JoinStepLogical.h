@@ -70,7 +70,8 @@ public:
     struct PhysicalJoinNode
     {
         ActionsDAGPtr actions;
-        JoinActionRef filter;
+        JoinActionRef filter{nullptr};
+
         JoinPtr join_strategy;
 
         BaseRelsSet left_child;
@@ -79,10 +80,11 @@ public:
 
     struct PhysicalJoinTree
     {
+        BaseRelsSet root;
         std::unordered_map<BaseRelsSet, PhysicalJoinNode> nodes;
     };
 
-    PhysicalJoinTree convertToPhysical(bool is_explain_logical)
+    PhysicalJoinTree convertToPhysical(bool is_explain_logical);
 
     const JoinSettings & getSettings() const { return join_settings; }
 

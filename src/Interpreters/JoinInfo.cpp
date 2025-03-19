@@ -75,10 +75,9 @@ String toString(const JoinCondition & condition)
             return String{};
         return fmt::format("{}: {}", label, fmt::join(conditions | std::views::transform([](auto && x) { return toString(x); }), ", "));
     };
-    return fmt::format("{} {} {} {}",
+    return fmt::format("{} {}",
         fmt::join(condition.predicates | std::views::transform([](auto && x) { return toString(x); }), ", "),
-        format_conditions("Filters", condition.restrict_conditions),
-    );
+        format_conditions("Filters", condition.restrict_conditions));
 }
 
 static bool checkNodeInOutputs(const ActionsDAG::Node * node, const ActionsDAG * actions_dag)
@@ -159,10 +158,10 @@ ActionsDAGPtr & JoinExpressionActions::getActions(BaseRelsSet sources, const std
     if (it != actions.end())
     {
         ColumnsWithTypeAndName inputs;
-        for (size_t i = 0; i < sources.size(); ++i)
+        for (size_t i = 0; i < tables.size(); ++i)
         {
             if (sources.test(i))
-                inputs.append_range(tables[i]);
+                inputs.append_range(tables.at(i));
         }
         auto actions_dag = std::make_unique<ActionsDAG>(inputs);
         it = actions.emplace(sources, std::move(actions_dag)).first;

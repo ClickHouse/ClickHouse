@@ -166,7 +166,7 @@ struct JoinFlattenContext
 
     JoinActionRef addExpression(const QueryTreeNodePtr & node, BaseRelsSet sources)
     {
-        ActionsDAG * actions_dag_ptr = join_operator.expression_actions.actions[sources].get();
+        ActionsDAG * actions_dag_ptr = getActions(sources).get();
         return JoinActionRef(appendExpression(*actions_dag_ptr, node, planner_context), sources);
     }
 
@@ -273,7 +273,7 @@ void buildJoinCondition(const QueryTreeNodePtr & node, JoinFlattenContext & join
         return;
 
     auto expr_source = join_flatten.getExpressionSource(node);
-    join_condition.filter_conditions.push_back(join_flatten.addExpression(node, expr_source));
+    join_condition.restrict_conditions.push_back(join_flatten.addExpression(node, expr_source));
 }
 
 void buildDisjunctiveJoinConditions(const QueryTreeNodePtr & node, JoinFlattenContext & join_flatten, std::vector<JoinCondition> & join_conditions)
@@ -330,7 +330,7 @@ JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondition & 
 {
     JoinCondition result = lhs;
     result.predicates.insert(result.predicates.end(), rhs.predicates.begin(), rhs.predicates.end());
-    result.filter_conditions.insert(result.filter_conditions.end(), rhs.filter_conditions.begin(), rhs.filter_conditions.end());
+    result.restrict_conditions.insert(result.restrict_conditions.end(), rhs.restrict_conditions.begin(), rhs.restrict_conditions.end());
     return result;
 }
 
@@ -501,7 +501,7 @@ JoinTreeQueryPlan buildJoinStepLogical(
     auto * root_node = left_plan.query_plan.getRootNode();
     JoinStepLogical * join_step = root_node ? typeid_cast<JoinStepLogical *>(root_node->step.get()) : nullptr;
 
-    bool force_split = join_step == nullptr || join_step->canFlatten(query_context)
+    bool force_split = join_step == nullptr || !join_step->canFlatten(query_context)
         || prepared_storage || join_node.getKind() == JoinKind::Full || join_node.getKind() == JoinKind::Paste;
     if (force_split)
         join_step = nullptr;
@@ -521,14 +521,14 @@ JoinTreeQueryPlan buildJoinStepLogical(
 
     join_step->addRequiredOutput(outer_scope_columns);
 
-    auto hash_table_key = preCalculateCacheKey(join_node.getRightTableExpression(), select_query_info);
-    join_step->setHashTableCacheKey(std::move(hash_table_key));
-    join_step->setPreparedJoinStorage(std::move(prepared_storage));
-
     const auto & right_header = right_plan.query_plan.getCurrentHeader();
     auto & join_operator = join_step->addInput(
         {join_node.getKind(), join_node.getStrictness(), join_node.getLocality()},
         right_header);
+
+    auto hash_table_key = preCalculateCacheKey(join_node.getRightTableExpression(), select_query_info);
+    join_step->setHashTableCacheKey(std::move(hash_table_key));
+    join_step->setPreparedJoinStorage(std::move(prepared_storage));
 
     for (const auto * table_expression : extractTableExpressionsSet(join_node.getRightTableExpression()))
         table_expression_to_join_input_mapping.emplace(table_expression, join_step->getNumberOfTables());
