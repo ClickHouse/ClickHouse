@@ -2428,18 +2428,6 @@ Alias: `dateTrunc`.
         -	Microsecond → scale = 6
         -	Nanosecond → scale = 9
 
-⸻
-
-Additional Rules and Edge Cases
-1.	Invalid Combinations:
-	-	If the second argument is Date or Date32, datepart_kind cannot be Hour, Minute, or Second.
-2.	Negative Value Support Adjustments:
-	-	If the second argument is Date32, return type is changed from Date → Date32.
-	-	If the second argument is DateTime64, return type is changed from DateTime → DateTime64.
-
-⸻
-
-
 **Example**
 
 Query without timezone:
