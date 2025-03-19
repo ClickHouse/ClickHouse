@@ -6,11 +6,11 @@
 namespace BuzzHouse
 {
 
-StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs)
+StatementGenerator::StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool rs)
     : fc(fuzzc)
     , connections(conn)
     , supports_cloud_features(scf)
-    , replica_setup(hrs)
+    , replica_setup(rs)
     , deterministic_funcs_limit(static_cast<size_t>(
           std::find_if(CHFuncs.begin(), CHFuncs.end(), StatementGenerator::funcNotDeterministicIndexLambda) - CHFuncs.begin()))
     , deterministic_aggrs_limit(static_cast<size_t>(

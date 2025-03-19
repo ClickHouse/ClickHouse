@@ -424,7 +424,7 @@ public:
     template <bool RequireMergeTree>
     auto getQueryTableLambda();
 
-    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, const bool scf, const bool hrs);
+    StatementGenerator(FuzzConfig & fuzzc, ExternalIntegrations & conn, bool scf, bool rs);
 
     void generateNextCreateTable(RandomGenerator & rg, CreateTable * ct);
     void generateNextCreateDatabase(RandomGenerator & rg, CreateDatabase * cd);
