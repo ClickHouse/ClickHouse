@@ -686,7 +686,7 @@ void StatementGenerator::generateNextInsert(RandomGenerator & rg, Insert * ins)
                     first ? "" : ", ",
                     bottomName,
                     entry.path.size() > 1 ? "Array(" : "",
-                    tp->typeName(true),
+                    tp->typeName(false),
                     entry.path.size() > 1 ? ")" : "");
                 ssc->add_result_columns()->mutable_etc()->mutable_col()->mutable_path()->mutable_col()->set_column(bottomName);
                 first = false;
