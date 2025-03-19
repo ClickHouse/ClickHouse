@@ -3,7 +3,7 @@ description: 'Guide to using and configuring the query condition cache feature i
 sidebar_label: Query Condition Cache
 sidebar_position: 64
 slug: /operations/query-condition-cache
-titie: 'Query Condition Cache'
+title: 'Query Condition Cache'
 ---
 
 # Query Condition Cache
