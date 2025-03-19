@@ -117,7 +117,7 @@ std::vector<std::vector<size_t>> IIcebergSchemaTransform::traverseAllPaths(const
                 }
                 break;
             }
-            case TransformType::MAP: 
+            case TransformType::MAP:
             {
                 for (size_t i = 0; i < std::get<Map>(current_value).size(); ++i)
                 {
