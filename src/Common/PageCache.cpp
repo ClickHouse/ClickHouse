@@ -205,7 +205,7 @@ PageCacheCell::PageCacheCell(PageCacheKey key_, bool temporary) : key(std::move(
         blocker.emplace();
 
     /// Allow throwing out-of-memory exceptions from here.
-    m_data = reinterpret_cast<char *>(Allocator<false>().alloc(m_size));
+    m_data = reinterpret_cast<char *>(Allocator<false>().alloc(m_size, DEFAULT_AIO_FILE_BLOCK_SIZE));
 }
 
 PageCacheCell::~PageCacheCell()
