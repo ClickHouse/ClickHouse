@@ -2796,17 +2796,17 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     }
     if (nopt2 < (out_to_disk + out_to_file + out_to_s3 + 1) && rg.nextBool())
     {
-        static const DB::Strings & backup_formats = {"tar", "zip", "tzst", "tgz"};
-        const String & nsuffix = rg.pickRandomly(backup_formats);
+        static const DB::Strings & backupFormats = {"tar", "zip", "tzst", "tgz"};
+        const String & nsuffix = rg.pickRandomly(backupFormats);
 
         backup_file += ".";
         backup_file += nsuffix;
         if (nsuffix == "tar" && rg.nextBool())
         {
-            static const DB::Strings & tar_suffixes = {"gz", "bz2", "lzma", "zst", "xz"};
+            static const DB::Strings & tarSuffixes = {"gz", "bz2", "lzma", "zst", "xz"};
 
             backup_file += ".";
-            backup_file += rg.pickRandomly(tar_suffixes);
+            backup_file += rg.pickRandomly(tarSuffixes);
         }
     }
     if (out_to_disk && (nopt2 < out_to_disk + 1))
@@ -3137,7 +3137,7 @@ struct ExplainOptValues
 
 static const std::function<uint32_t(RandomGenerator &)> trueOrFalseInt = [](RandomGenerator & rg) { return rg.nextBool() ? 1 : 0; };
 
-static const std::vector<ExplainOptValues> explain_settings{
+static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_graph, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_optimize, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_oneline, trueOrFalseInt),
@@ -3229,7 +3229,7 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, ExplainQuery 
 
             for (size_t i = 0; i < noptions; i++)
             {
-                const auto & nopt = explain_settings[this->ids[i]];
+                const auto & nopt = explainSettings[this->ids[i]];
                 ExplainOption * eopt = eq->add_opts();
 
                 eopt->set_opt(nopt.opt);

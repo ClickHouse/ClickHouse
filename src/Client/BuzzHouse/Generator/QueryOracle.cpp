@@ -14,7 +14,7 @@ extern const int BUZZHOUSE;
 namespace BuzzHouse
 {
 
-static const std::unordered_map<OutFormat, InFormat> out_in{
+static const std::unordered_map<OutFormat, InFormat> outIn{
     {OutFormat::OUT_CSV, InFormat::IN_CSV},
     {OutFormat::OUT_CSVWithNames, InFormat::IN_CSVWithNames},
     {OutFormat::OUT_CSVWithNamesAndTypes, InFormat::IN_CSVWithNamesAndTypes},
@@ -165,7 +165,7 @@ void QueryOracle::dumpTableContent(RandomGenerator & rg, StatementGenerator & ge
         first = false;
     }
     gen.entries.clear();
-    ts->set_format(rg.pickRandomly(out_in));
+    ts->set_format(rg.pickRandomly(outIn));
     sif->set_path(qfile.generic_string());
     sif->set_step(SelectIntoFile_SelectIntoFileStep::SelectIntoFile_SelectIntoFileStep_TRUNCATE);
 }
@@ -179,7 +179,7 @@ void QueryOracle::generateExportQuery(RandomGenerator & rg, StatementGenerator &
     FileFunc * ff = ins->mutable_tfunction()->mutable_file();
     SelectStatementCore * sel = ins->mutable_select()->mutable_select_core();
     const std::filesystem::path & nfile = fc.db_file_path / "table.data";
-    OutFormat outf = rg.pickRandomly(out_in);
+    OutFormat outf = rg.pickRandomly(outIn);
 
     /// Remove the file if exists
     if (!std::filesystem::remove(nfile, ec) && ec)
@@ -245,7 +245,7 @@ void QueryOracle::generateImportQuery(
     }
     gen.entries.clear();
     iff->set_path(ff.path());
-    iff->set_format(out_in.at(outf));
+    iff->set_format(outIn.at(outf));
     if (ff.has_fcomp())
     {
         iff->set_fcomp(ff.fcomp());
@@ -360,7 +360,7 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     {
         ins = sq2.mutable_explain()->mutable_inner_query()->mutable_insert();
         FileFunc * ff = ins->mutable_tfunction()->mutable_file();
-        OutFormat outf = rg.pickRandomly(out_in);
+        OutFormat outf = rg.pickRandomly(outIn);
 
         if (!std::filesystem::remove(qfile, ec) && ec)
         {

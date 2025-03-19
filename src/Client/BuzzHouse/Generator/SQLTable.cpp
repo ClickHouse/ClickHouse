@@ -406,7 +406,7 @@ void StatementGenerator::pickUpNextCols(RandomGenerator & rg, const SQLTable & t
     entries.clear();
 }
 
-const std::vector<SQLFunc> multicol_hash
+static const std::vector<SQLFunc> multicolHash
     = {SQLFunc::FUNChalfMD5,
        SQLFunc::FUNCsipHash64,
        SQLFunc::FUNCsipHash128,
@@ -423,7 +423,7 @@ const std::vector<SQLFunc> multicol_hash
        SQLFunc::FUNCmurmurHash3_64,
        SQLFunc::FUNCmurmurHash3_128};
 
-const std::vector<SQLFunc> dates_hash
+static const std::vector<SQLFunc> datesHash
     = {SQLFunc::FUNCtoYear,
        SQLFunc::FUNCtoQuarter,
        SQLFunc::FUNCtoMonth,
@@ -526,7 +526,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                 Expr * expr = tke->mutable_expr();
                 SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
-                func_call->mutable_func()->set_catalog_func(rg.pickRandomly(multicol_hash));
+                func_call->mutable_func()->set_catalog_func(rg.pickRandomly(multicolHash));
                 for (size_t i = 0; i < ocols; i++)
                 {
                     columnPathRef(this->entries[i], func_call->add_args()->mutable_expr());
@@ -550,7 +550,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                         /// Use date functions for partitioning/keys
                         SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
-                        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(dates_hash));
+                        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(datesHash));
                         columnPathRef(entry, func_call->add_args()->mutable_expr());
                     }
                     else if (hasType<IntType>(true, true, false, tp) && rg.nextBool())
@@ -568,7 +568,7 @@ void StatementGenerator::generateTableKey(RandomGenerator & rg, const TableEngin
                         /// Use hash
                         SQLFuncCall * func_call = expr->mutable_comp_expr()->mutable_func_call();
 
-                        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(multicol_hash));
+                        func_call->mutable_func()->set_catalog_func(rg.pickRandomly(multicolHash));
                         columnPathRef(entry, func_call->add_args()->mutable_expr());
                     }
                     else
@@ -897,9 +897,9 @@ void StatementGenerator::generateEngineDetails(RandomGenerator & rg, SQLBase & b
             te->add_params()->set_in_out(b.file_format);
             if (rg.nextSmallNumber() < 4)
             {
-                static const DB::Strings & s3_compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
+                static const DB::Strings & S3Compress = {"none", "gzip", "gz", "brotli", "br", "xz", "LZMA", "zstd", "zst"};
 
-                b.file_comp = rg.pickRandomly(s3_compress);
+                b.file_comp = rg.pickRandomly(S3Compress);
                 te->add_params()->set_svalue(b.file_comp);
             }
             if (b.isAnyS3Engine() && rg.nextSmallNumber() < 5)
@@ -1308,9 +1308,9 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
             if (rg.nextBool())
             {
                 std::uniform_int_distribution<uint32_t> next_dist(0, 4194304);
-                static const DB::Strings quantitization_vals = {"f64", "f32", "f16", "bf16", "i8"};
+                static const DB::Strings QuantitizationVals = {"f64", "f32", "f16", "bf16", "i8"};
 
-                idef->add_params()->set_sval(rg.pickRandomly(quantitization_vals));
+                idef->add_params()->set_sval(rg.pickRandomly(QuantitizationVals));
                 idef->add_params()->set_ival(next_dist(rg.generator));
                 idef->add_params()->set_ival(next_dist(rg.generator));
             }
@@ -1482,7 +1482,7 @@ void StatementGenerator::getNextTableEngine(RandomGenerator & rg, bool use_exter
     this->ids.clear();
 }
 
-const std::vector<TableEngineValues> like_engs
+static const std::vector<TableEngineValues> likeEngs
     = {TableEngineValues::MergeTree,
        TableEngineValues::ReplacingMergeTree,
        TableEngineValues::SummingMergeTree,
@@ -1498,9 +1498,9 @@ const std::vector<TableEngineValues> like_engs
        TableEngineValues::EmbeddedRocksDB,
        TableEngineValues::Merge};
 
-static const auto replace_table_lambda = [](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer(); };
+static const auto replaceTableLambda = [](const SQLTable & t) { return t.isAttached() && !t.hasDatabasePeer(); };
 
-static const auto table_like_lambda = [](const SQLTable & t) { return t.isAttached() && !t.is_temp; };
+static const auto tableLikeLambda = [](const SQLTable & t) { return t.isAttached() && !t.is_temp; };
 
 void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTable * ct)
 {
@@ -1508,13 +1508,13 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     uint32_t tname = 0;
     bool added_pkey = false;
     TableEngine * te = ct->mutable_engine();
-    const bool replace = collectionCount<SQLTable>(replace_table_lambda) > 3 && rg.nextMediumNumber() < 16;
+    const bool replace = collectionCount<SQLTable>(replaceTableLambda) > 3 && rg.nextMediumNumber() < 16;
 
     next.is_temp = rg.nextMediumNumber() < 11;
     ct->set_is_temp(next.is_temp);
     if (replace)
     {
-        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(replace_table_lambda));
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(replaceTableLambda));
 
         next.db = t.db;
         tname = next.tname = t.tname;
@@ -1531,7 +1531,7 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
         replace ? CreateTable_CreateTableOption::CreateTable_CreateTableOption_Replace
                 : CreateTable_CreateTableOption::CreateTable_CreateTableOption_Create);
     next.setName(ct->mutable_est(), false);
-    if (!collectionHas<SQLTable>(table_like_lambda) || rg.nextSmallNumber() < 9)
+    if (!collectionHas<SQLTable>(tableLikeLambda) || rg.nextSmallNumber() < 9)
     {
         /// Create table with definition
         TableDef * colsdef = ct->mutable_table_def();
@@ -1650,9 +1650,9 @@ void StatementGenerator::generateNextCreateTable(RandomGenerator & rg, CreateTab
     {
         /// Create table as
         CreateTableAs * cta = ct->mutable_table_as();
-        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(table_like_lambda));
-        std::uniform_int_distribution<size_t> table_engine(0, rg.nextSmallNumber() < 8 ? 3 : (like_engs.size() - 1));
-        TableEngineValues val = like_engs[table_engine(rg.generator)];
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(tableLikeLambda));
+        std::uniform_int_distribution<size_t> table_engine(0, rg.nextSmallNumber() < 8 ? 3 : (likeEngs.size() - 1));
+        TableEngineValues val = likeEngs[table_engine(rg.generator)];
 
         next.teng = val;
         te->set_engine(val);

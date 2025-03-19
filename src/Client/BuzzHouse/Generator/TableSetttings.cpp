@@ -3,7 +3,7 @@
 namespace BuzzHouse
 {
 
-static DB::Strings merge_storage_policies;
+static DB::Strings mergeStoragePolicies;
 
 static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"adaptive_write_buffer_initial_size",
@@ -223,9 +223,9 @@ void loadFuzzerTableSettings(const FuzzConfig & fc)
 {
     if (!fc.storage_policies.empty())
     {
-        merge_storage_policies.insert(merge_storage_policies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
+        mergeStoragePolicies.insert(mergeStoragePolicies.end(), fc.storage_policies.begin(), fc.storage_policies.end());
         const auto & storage_policy
-            = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(merge_storage_policies) + "'"; }, {}, false);
+            = CHSetting([&](RandomGenerator & rg) { return "'" + rg.pickRandomly(mergeStoragePolicies) + "'"; }, {}, false);
         mergeTreeTableSettings.insert({{"storage_policy", storage_policy}});
         restoreSettings.insert({{"storage_policy", storage_policy}});
     }

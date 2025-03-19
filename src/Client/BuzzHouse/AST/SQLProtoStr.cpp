@@ -12,7 +12,7 @@
 namespace BuzzHouse
 {
 
-static constexpr char hex_digits[] = "0123456789ABCDEF";
+static constexpr char hexDigits[] = "0123456789ABCDEF";
 static constexpr char digits[] = "0123456789";
 
 CONV_FN(Expr, expr);
@@ -166,8 +166,8 @@ static void convertToSQLString(String & ret, const String & s)
                     const uint8_t & x = static_cast<uint8_t>(c);
 
                     ret += "\\x";
-                    ret += hex_digits[(x & 0xF0) >> 4];
-                    ret += hex_digits[x & 0x0F];
+                    ret += hexDigits[(x & 0xF0) >> 4];
+                    ret += hexDigits[x & 0x0F];
                 }
             }
         }
@@ -413,8 +413,8 @@ CONV_FN(LiteralValue, lit_val)
             for (size_t i = 0; i < s.length(); i++)
             {
                 const uint8_t & x = static_cast<uint8_t>(s[i]);
-                ret += hex_digits[(x & 0xF0) >> 4];
-                ret += hex_digits[x & 0x0F];
+                ret += hexDigits[(x & 0xF0) >> 4];
+                ret += hexDigits[x & 0x0F];
             }
             ret += '\'';
         }
