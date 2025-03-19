@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/mergetree-family/graphitemergetree
+description: 'Designed for thinning and aggregating/averaging (rollup) Graphite data.'
+sidebar_label: 'GraphiteMergeTree'
 sidebar_position: 90
-sidebar_label:  GraphiteMergeTree
-title: "GraphiteMergeTree"
-description: "Designed for thinning and aggregating/averaging (rollup) Graphite data."
+slug: /engines/table-engines/mergetree-family/graphitemergetree
+title: 'GraphiteMergeTree'
 ---
 
 # GraphiteMergeTree

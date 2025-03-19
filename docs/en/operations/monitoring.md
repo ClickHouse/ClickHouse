@@ -1,9 +1,12 @@
 ---
-slug: /operations/monitoring
+description: 'You can monitor the utilization of hardware resources and also ClickHouse
+  server metrics.'
+keywords: ['monitoring', 'observability', 'advanced dashboard', 'dashboard', 'observability
+    dashboard']
+sidebar_label: 'Monitoring'
 sidebar_position: 45
-sidebar_label: Monitoring
-description: You can monitor the utilization of hardware resources and also ClickHouse server metrics.
-keywords: [monitoring, observability, advanced dashboard, dashboard, observability dashboard]
+slug: /operations/monitoring
+title: 'Monitoring'
 ---
 
 # Monitoring
