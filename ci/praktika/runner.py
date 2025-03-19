@@ -523,8 +523,8 @@ class Runner:
             print(f"=== Pre run finished ===\n\n")
 
         if res:
-            res = False
             print(f"=== Run script [{job.name}], workflow [{workflow.name}] ===")
+            run_code = None
             try:
                 run_code = self._run(
                     workflow,
@@ -540,11 +540,20 @@ class Runner:
             except Exception as e:
                 print(f"ERROR: Run script failed with exception [{e}]")
                 traceback.print_exc()
+                res = False
+
+            result = Result.from_fs(job.name)
+            if not res and result.is_ok():
+                # TODO: It happens due to invalid timeout handling (forceful termination by timeout does not work) - fix
+                result.set_status(Result.Status.ERROR).set_info(
+                    f"Job got terminated with an error, exit code [{run_code}]"
+                ).dump()
+
             print(f"=== Run script finished ===\n\n")
 
         if not local_run:
             print(f"=== Post run script [{job.name}], workflow [{workflow.name}] ===")
-            self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
+            res = self._post_run(workflow, job, setup_env_code, prerun_code, run_code)
             print(f"=== Post run script finished ===")
 
         if not res:

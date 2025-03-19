@@ -71,31 +71,9 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
-    # new images
-    # Docker.Config(
-    #     name="clickhouse/binary-builder",
-    #     path="./ci/docker/binary-builder",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/fasttest"],
-    # ),
-    # Docker.Config(
-    #     name="clickhouse/stateless-test",
-    #     path="./ci/docker/stateless-test",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=[],
-    # ),
-    # TODO: fix build failure:
-    # 7 58.76 In file included from ./../code-sign-blobs/superblob.h:7:
-    # 7 58.76 ./../code-sign-blobs/blob.h:185:60: error: no member named 'clone' in 'Security::BlobCore'
-    # Docker.Config(
-    #     name="clickhouse/cctools",
-    #     path="./docker/packager/cctools",
-    #     platforms=Docker.Platforms.arm_amd,
-    #     depends_on=["clickhouse/fasttest"],
-    # ),
     Docker.Config(
         name="clickhouse/binary-builder",
-        path="./docker/packager/binary-builder",
+        path="./ci/docker/binary-builder",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/fasttest"],
     ),
@@ -111,6 +89,22 @@ DOCKERS = [
         platforms=Docker.Platforms.arm_amd,
         depends_on=[],
     ),
+    # new images
+    # Docker.Config(
+    #     name="clickhouse/stateless-test",
+    #     path="./ci/docker/stateless-test",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=[],
+    # ),
+    # TODO: fix build failure:
+    # 7 58.76 In file included from ./../code-sign-blobs/superblob.h:7:
+    # 7 58.76 ./../code-sign-blobs/blob.h:185:60: error: no member named 'clone' in 'Security::BlobCore'
+    # Docker.Config(
+    #     name="clickhouse/cctools",
+    #     path="./docker/packager/cctools",
+    #     platforms=Docker.Platforms.arm_amd,
+    #     depends_on=["clickhouse/fasttest"],
+    # ),
     Docker.Config(
         name="clickhouse/test-util",
         path="./docker/test/util",
@@ -411,8 +405,6 @@ class ArtifactNames:
 
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
-    PERFORMANCE_PACKAGE_AMD = "PERFORMANCE_PACKAGE_AMD"
-    PERFORMANCE_PACKAGE_ARM = "PERFORMANCE_PACKAGE_ARM"
 
     FUZZERS = "FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
@@ -429,7 +421,7 @@ class ArtifactConfigs:
     clickhouse_binaries = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/clickhouse",
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
     ).parametrize(
         names=[
             ArtifactNames.CH_AMD_DEBUG,
@@ -459,7 +451,7 @@ class ArtifactConfigs:
     clickhouse_debians = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*.deb",
+        path=f"{TEMP_DIR}/*.deb",
     ).parametrize(
         names=[
             ArtifactNames.DEB_AMD_RELEASE,
@@ -486,7 +478,7 @@ class ArtifactConfigs:
     clickhouse_tgzs = Artifact.Config(
         name="*",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/*64.tgz*",
+        path=f"{TEMP_DIR}/*64.tgz*",
     ).parametrize(
         names=[
             ArtifactNames.TGZ_AMD_RELEASE,
@@ -496,7 +488,7 @@ class ArtifactConfigs:
     unittests_binaries = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/unit_tests_dbms",
+        path=f"{TEMP_DIR}/build/src/unit_tests_dbms",
     ).parametrize(
         names=[
             ArtifactNames.UNITTEST_AMD_ASAN,
@@ -519,16 +511,6 @@ class ArtifactConfigs:
         name=ArtifactNames.FUZZERS_CORPUS,
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/programs/*_seed_corpus.zip",
-    )
-    performance_packages = Artifact.Config(
-        name="*",
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/build/performance.tar.zst",
-    ).parametrize(
-        names=[
-            ArtifactNames.PERFORMANCE_PACKAGE_AMD,
-            ArtifactNames.PERFORMANCE_PACKAGE_ARM,
-        ]
     )
     performance_reports = Artifact.Config(
         name="*",
