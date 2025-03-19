@@ -27,6 +27,7 @@ Depending on P parameter value Decimal(P, S) is a synonym for:
 
 ## Decimal Value Ranges {#decimal-value-ranges}
 
+- Decimal(P, S) - ( -1 \* 10^(P - S), 1 \* 10^(P - S) )
 - Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
 - Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
 - Decimal128(S) - ( -1 \* 10^(38 - S), 1 \* 10^(38 - S) )
