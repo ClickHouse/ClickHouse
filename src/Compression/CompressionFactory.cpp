@@ -8,7 +8,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Poco/String.h>
 
 #include <boost/algorithm/string/join.hpp>
@@ -99,7 +98,7 @@ CompressionCodecPtr CompressionCodecFactory::get(
         return std::make_shared<CompressionCodecNone>();
     }
 
-    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", queryToString(ast));
+    throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected AST structure for compression codec: {}", ast->formatForErrorMessage());
 }
 
 

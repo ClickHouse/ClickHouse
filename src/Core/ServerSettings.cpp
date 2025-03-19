@@ -4,6 +4,7 @@
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/ServerSettings.h>
 #include <IO/MMappedFileCache.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <IO/UncompressedCache.h>
 #include <IO/SharedThreadPools.h>
 #include <Interpreters/Context.h>
@@ -40,7 +41,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_thread_pool_size>12000</max_thread_pool_size>
     ```
     )", 0) \
@@ -49,7 +50,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_thread_pool_free_size>1200</max_thread_pool_free_size>
     ```
     )", 0) \
@@ -62,7 +63,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <thread_pool_queue_size>12000</thread_pool_queue_size>
     ```
     )", 0) \
@@ -460,10 +461,10 @@ namespace DB
     DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Maximum size of cache for primary index (index of MergeTree family of tables).)", 0) \
     DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the primary index cache relative to the cache's total size.)", 0) \
     DECLARE(Double, primary_index_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
-    DECLARE(String, skipping_index_cache_policy, DEFAULT_SKIPPING_INDEX_CACHE_POLICY, "Skipping index cache policy name.", 0) \
-    DECLARE(UInt64, skipping_index_cache_size, DEFAULT_SKIPPING_INDEX_CACHE_MAX_SIZE, "Size of cache for secondary index in bytes. Zero means disabled.", 0) \
-    DECLARE(UInt64, skipping_index_cache_max_entries, DEFAULT_SKIPPING_INDEX_CACHE_MAX_ENTRIES, "Size of cache for secondary index in entries. Zero means disabled.", 0) \
-    DECLARE(Double, skipping_index_cache_size_ratio, DEFAULT_SKIPPING_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the skipping index cache relative to the cache's total size.", 0) \
+    DECLARE(String, vector_similarity_index_cache_policy, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_POLICY, "Vector similarity index cache policy name.", 0) \
+    DECLARE(UInt64, vector_similarity_index_cache_size, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_SIZE, "Size of cache for vector similarityindex in bytes. Zero means disabled.", 0) \
+    DECLARE(UInt64, vector_similarity_index_cache_max_entries, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_MAX_ENTRIES, "Size of cache for vector similarity index in entries. Zero means disabled.", 0) \
+    DECLARE(Double, vector_similarity_index_cache_size_ratio, DEFAULT_VECTOR_SIMILARITY_INDEX_CACHE_SIZE_RATIO, "The size of the protected queue (in case of SLRU policy) in the vector similarity index cache relative to the cache's total size.", 0) \
     DECLARE(String, index_uncompressed_cache_policy, DEFAULT_INDEX_UNCOMPRESSED_CACHE_POLICY, R"(Secondary index uncompressed cache policy name.)", 0) \
     DECLARE(UInt64, index_uncompressed_cache_size, DEFAULT_INDEX_UNCOMPRESSED_CACHE_MAX_SIZE, R"(
     Maximum size of cache for uncompressed blocks of `MergeTree` indices.
@@ -544,7 +545,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_table_size_to_drop>0</max_table_size_to_drop>
     ```
     )", 0) \
@@ -562,7 +563,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_partition_size_to_drop>0</max_partition_size_to_drop>
     ```
     )", 0) \
@@ -571,8 +572,17 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_table_num_to_warn>400</max_table_num_to_warn>
+    ```
+    )", 0) \
+    DECLARE(UInt64, max_pending_mutations_to_warn, 500lu, R"(
+    If the number of pending mutations exceeds the specified value, clickhouse server will add warning messages to `system.warnings` table.
+
+    **Example**
+
+    ```xml
+    <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
     ```
     )", 0) \
     DECLARE(UInt64, max_view_num_to_warn, 10000lu, R"(
@@ -580,7 +590,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_view_num_to_warn>400</max_view_num_to_warn>
     ```
     )", 0) \
@@ -589,7 +599,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_dictionary_num_to_warn>400</max_dictionary_num_to_warn>
     ```
     )", 0) \
@@ -598,7 +608,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_database_num_to_warn>50</max_database_num_to_warn>
     ```
     )", 0) \
@@ -607,7 +617,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_part_num_to_warn>400</max_part_num_to_warn>
     ```
     )", 0) \
@@ -790,7 +800,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <async_load_databases>true</async_load_databases>
     ```
     )", 0) \
@@ -802,7 +812,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <async_load_system_database>true</async_load_system_database>
     ```
     )", 0) \
@@ -820,11 +830,11 @@ namespace DB
     - `1` — Enabled.
     )", 0) \
     DECLARE(Seconds, keep_alive_timeout, DEFAULT_HTTP_KEEP_ALIVE_TIMEOUT, R"(
-    The number of seconds that ClickHouse waits for incoming requests before closing the connection.
+    The number of seconds that ClickHouse waits for incoming requests for HTTP protocol before closing the connection.
 
     **Example**
 
-    ``` xml
+    ```xml
     <keep_alive_timeout>10</keep_alive_timeout>
     ```
     )", 0) \
@@ -833,7 +843,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <max_keep_alive_requests>10</max_keep_alive_requests>
     ```
     )", 0) \
@@ -868,7 +878,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <default_replica_path>/clickhouse/tables/{uuid}/{shard}</default_replica_path>
     ```
     )", 0) \
@@ -877,7 +887,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <default_replica_name>{replica}</default_replica_name>
     ```
     )", 0) \
@@ -914,7 +924,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <throw_on_unknown_workload>true</throw_on_unknown_workload>
     ```
 
@@ -991,7 +1001,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <dictionaries_lazy_load>true</dictionaries_lazy_load>
     ```
     )", 0) \
@@ -1010,7 +1020,7 @@ namespace DB
 
     **Example**
 
-    ``` xml
+    ```xml
     <wait_dictionaries_load_at_startup>true</wait_dictionaries_load_at_startup>
     ```
     )", 0) \
@@ -1136,9 +1146,9 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"mark_cache_size", {std::to_string(context->getMarkCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"uncompressed_cache_size", {std::to_string(context->getUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"index_mark_cache_size", {std::to_string(context->getIndexMarkCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
-            {"index_uncompressed_cache_size",
-                {std::to_string(context->getIndexUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"index_uncompressed_cache_size", {std::to_string(context->getIndexUncompressedCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"mmap_cache_size", {std::to_string(context->getMMappedFileCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
 
             {"merge_workload", {context->getMergeWorkload(), ChangeableWithoutRestart::Yes}},
             {"mutation_workload", {context->getMutationWorkload(), ChangeableWithoutRestart::Yes}},

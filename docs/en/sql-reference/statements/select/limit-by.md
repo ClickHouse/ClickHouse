@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for LIMIT BY Clause'
+sidebar_label: 'LIMIT BY'
 slug: /sql-reference/statements/select/limit-by
-sidebar_label: LIMIT BY
+title: 'LIMIT BY Clause'
 ---
 
 # LIMIT BY Clause
@@ -18,8 +20,8 @@ During query processing, ClickHouse selects data ordered by sorting key. The sor
 `LIMIT BY` is not related to [LIMIT](../../../sql-reference/statements/select/limit.md). They can both be used in the same query.
 :::
 
-If you want to use column numbers instead of column names in the `LIMIT BY` clause, enable the setting [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments).	
-	
+If you want to use column numbers instead of column names in the `LIMIT BY` clause, enable the setting [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments).    
+    
 
 ## Examples {#examples}
 

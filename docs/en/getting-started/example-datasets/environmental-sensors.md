@@ -1,9 +1,14 @@
 ---
-description: "Over 20 billion records of data from Sensor.Community, a contributors-driven global sensor network that creates Open Environmental Data."
+description: 'Over 20 billion records of data from Sensor.Community, a contributors-driven
+  global sensor network that creates Open Environmental Data.'
+sidebar_label: 'Environmental Sensors Data'
 slug: /getting-started/example-datasets/environmental-sensors
-sidebar_label: Environmental Sensors Data
-title: "Environmental Sensors Data"
+title: 'Environmental Sensors Data'
 ---
+
+import Image from '@theme/IdealImage';
+import no_events_per_day from './images/sensors_01.png';
+import sensors_02 from './images/sensors_02.png';
 
 [Sensor.Community](https://sensor.community/en/) is a contributors-driven global sensor network that creates Open Environmental Data. The data is collected from sensors all over the globe. Anyone can purchase a sensor and place it wherever they like. The APIs to download the data is in [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs) and the data is freely available under the [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 
@@ -153,7 +158,7 @@ ORDER BY date ASC;
 
 We can create a chart in the SQL Console to visualize the results:
 
-![Number of events per day](./images/sensors_01.png)
+<Image img={no_events_per_day} size="md" alt="Number of events per day"/>
 
 6. This query counts the number of overly hot and humid days:
 
@@ -168,5 +173,4 @@ ORDER BY day asc;
 
 Here's a visualization of the result:
 
-![Hot and humid days](./images/sensors_02.png)
-
+<Image img={sensors_02} size="md" alt="Hot and humid days"/>
