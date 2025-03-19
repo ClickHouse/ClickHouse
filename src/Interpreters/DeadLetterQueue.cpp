@@ -1,6 +1,7 @@
 #include <Interpreters/DeadLetterQueue.h>
 
 #include <Core/Settings.h>
+#include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
