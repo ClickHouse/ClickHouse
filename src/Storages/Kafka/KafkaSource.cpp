@@ -167,6 +167,7 @@ Chunk KafkaSource::generateImpl()
         size_t new_rows = 0;
         exception_message.reset();
         is_dead_letter = false;
+
         if (auto buf = consumer->consume())
         {
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);

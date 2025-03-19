@@ -3800,7 +3800,7 @@ def dead_letter_queue_test(expected_num_messages, exchange_name):
 
 
 def rabbitmq_reject_broken_messages(
-    rabbitmq_cluster, handle_error_mode, additional_dml, check_method
+    rabbitmq_cluster, handle_error_mode, additional_dml, check_method, broken_messages_rejected
 ):
     credentials = pika.PlainCredentials("root", "clickhouse")
     parameters = pika.ConnectionParameters(
@@ -3857,9 +3857,12 @@ def rabbitmq_reject_broken_messages(
 
     messages = []
     num_rows = 50
+    num_good_messages = 0
+
     for i in range(num_rows):
-        if i % 2 == 0:
+        if (i+1) % 2 == 0:   # let's finish on good message to not miss the latest one
             messages.append(json.dumps({"key": i, "value": i}))
+            num_good_messages += 1
         else:
             messages.append("Broken message " + str(i))
 
@@ -3868,33 +3871,36 @@ def rabbitmq_reject_broken_messages(
 
     time.sleep(1)
 
+    expected_num_rows = num_good_messages if broken_messages_rejected else num_rows
+
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
     rows = 0
     while time.monotonic() < deadline:
         rows = int(instance.query("SELECT count() FROM test.data"))
-        if rows == num_rows:
+        if rows == expected_num_rows:
             break
         time.sleep(1)
     else:
         pytest.fail(
-            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The number of rows did not match {num_rows}."
+            f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached. The number of rows {rows} did not match {expected_num_rows}."
         )
 
-    assert rows == num_rows
+    assert rows == expected_num_rows
 
     dead_letters = []
+    num_bad_messages = num_rows - num_good_messages
 
     def on_dead_letter(channel, method, properties, body):
         dead_letters.append(body)
-        if len(dead_letters) == num_rows / 2:
+        if len(dead_letters) == num_bad_messages:
             channel.stop_consuming()
 
     channel.basic_consume(deadletter_queue, on_dead_letter)
     channel.start_consuming()
 
-    assert len(dead_letters) == num_rows / 2
+    assert len(dead_letters) == num_bad_messages
 
-    i = 1
+    i = 0
     for letter in dead_letters:
         assert f"Broken message {i}" in str(letter)
         i += 2
@@ -3913,6 +3919,7 @@ def test_rabbitmq_reject_broken_messages_stream(rabbitmq_cluster):
         "stream",
         "CREATE MATERIALIZED VIEW test.errors_view TO test.errors AS SELECT _error as error, _raw_message as broken_message FROM test.rabbit where not isNull(_error)",
         view_test,
+        broken_messages_rejected = False,
     )
 
 
@@ -3922,6 +3929,7 @@ def test_rabbitmq_reject_broken_messages_dead_letter_queue(rabbitmq_cluster):
         "dead_letter_queue",
         "",
         dead_letter_queue_test,
+        broken_messages_rejected = True,
     )
 
 

@@ -170,13 +170,13 @@ Chunk RabbitMQSource::generateImpl()
 
     std::optional<String> exception_message;
     size_t total_rows = 0;
+    bool is_dead_letter = false;
 
     auto on_error = [&](const MutableColumns & result_columns, const ColumnCheckpoints & checkpoints, Exception & e)
     {
         switch (handle_error_mode)
         {
             case StreamingHandleErrorMode::STREAM:
-            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
             {
                 exception_message = e.message();
                 for (size_t i = 0; i < result_columns.size(); ++i)
@@ -187,13 +187,23 @@ Chunk RabbitMQSource::generateImpl()
                     // All data columns will get default value in case of error.
                     result_columns[i]->insertDefault();
                 }
+                return 1;
+            }
+            case StreamingHandleErrorMode::DEAD_LETTER_QUEUE:
+            {
+                exception_message = e.message();
+                for (size_t i = 0; i < result_columns.size(); ++i)
+                {
+                    // We could already push some rows to result_columns before exception, we need to fix it.
+                    result_columns[i]->rollback(*checkpoints[i]);
+                }
 
-                break;
+                is_dead_letter = true;
+                return 0;
             }
             case StreamingHandleErrorMode::DEFAULT:
                 throw std::move(e);
         }
-        return 1;
     };
 
     StreamingFormatExecutor executor(non_virtual_header, input_format, on_error);
@@ -203,6 +213,7 @@ Chunk RabbitMQSource::generateImpl()
     {
         exception_message.reset();
         size_t new_rows = 0;
+        is_dead_letter = false;
 
         if (consumer->hasPendingMessages())
         {
@@ -213,7 +224,7 @@ Chunk RabbitMQSource::generateImpl()
             }
         }
 
-        if (new_rows)
+        if (new_rows || is_dead_letter)
         {
             const auto exchange_name = storage.getExchange();
             const auto & message = consumer->currentMessage();
@@ -262,35 +273,33 @@ Chunk RabbitMQSource::generateImpl()
                         virtual_columns[7]->insertDefault();
                     }
                 }
-                else if (handle_error_mode == StreamingHandleErrorMode::DEAD_LETTER_QUEUE)
-                {
-                    if (exception_message)
-                    {
-                        const auto time_now = std::chrono::system_clock::now();
-                        auto storage_id = storage.getStorageID();
+            }
 
-                        auto dead_letter_queue = context->getDeadLetterQueue();
-                        dead_letter_queue->add(
-                            DeadLetterQueueElement{
-                                .stream_type = DeadLetterQueueElement::StreamType::RabbitMQ,
-                                .event_time = timeInSeconds(time_now),
-                                .event_time_microseconds = timeInMicroseconds(time_now),
-                                .database_name = storage_id.database_name,
-                                .table_name = storage_id.table_name,
-                                .raw_message = message.message,
-                                .error = exception_message.value(),
-                                .details = DeadLetterQueueElement::RabbitMQDetails{
-                                    .exchange_name = exchange_name,
-                                    .message_id = message.message_id,
-                                    .timestamp = message.timestamp,
-                                    .redelivered = message.redelivered,
-                                    .delivery_tag = message.delivery_tag,
-                                    .channel_id = message.channel_id
-                                }
+            if (is_dead_letter && exception_message)
+            {
+                const auto time_now = std::chrono::system_clock::now();
+                auto storage_id = storage.getStorageID();
 
-                            });
-                    }
-                }
+                auto dead_letter_queue = context->getDeadLetterQueue();
+                dead_letter_queue->add(
+                    DeadLetterQueueElement{
+                        .stream_type = DeadLetterQueueElement::StreamType::RabbitMQ,
+                        .event_time = timeInSeconds(time_now),
+                        .event_time_microseconds = timeInMicroseconds(time_now),
+                        .database_name = storage_id.database_name,
+                        .table_name = storage_id.table_name,
+                        .raw_message = message.message,
+                        .error = exception_message.value(),
+                        .details = DeadLetterQueueElement::RabbitMQDetails{
+                            .exchange_name = exchange_name,
+                            .message_id = message.message_id,
+                            .timestamp = message.timestamp,
+                            .redelivered = message.redelivered,
+                            .delivery_tag = message.delivery_tag,
+                            .channel_id = message.channel_id
+                        }
+
+                    });
             }
 
             total_rows += new_rows;

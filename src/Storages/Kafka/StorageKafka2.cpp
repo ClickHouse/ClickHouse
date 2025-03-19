@@ -926,6 +926,8 @@ StorageKafka2::PolledBatchInfo StorageKafka2::pollConsumer(
     {
         size_t new_rows = 0;
         exception_message.reset();
+        is_dead_letter = false;
+
         if (auto buf = consumer.consume(topic_partition, message_count))
         {
             ProfileEvents::increment(ProfileEvents::KafkaMessagesRead);
