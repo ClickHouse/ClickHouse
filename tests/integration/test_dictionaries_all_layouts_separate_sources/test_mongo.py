@@ -65,8 +65,8 @@ def ranged_tester(source):
 @pytest.fixture(scope="module")
 def main_config(secure_connection):
     if secure_connection:
-        return main_config.append(os.path.join("configs", "disable_ssl_verification.xml"))
-    return main_config.append(os.path.join("configs", "ssl_verification.xml"))
+        return [os.path.join("configs", "disable_ssl_verification.xml")]
+    return [os.path.join("configs", "ssl_verification.xml")]
 
 
 @pytest.fixture(scope="module")
