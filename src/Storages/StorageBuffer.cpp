@@ -1200,7 +1200,7 @@ void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context
 UInt64 checkUnderflowAndGetUInt64(const ASTPtr & arg, const String & arg_name)
 {
     /**
-      * Do not force UInt64 type for args, otherwise it'll be backward incampatible,
+      * Do not force UInt64 type for args, otherwise it'll be backward incompatible,
       * there are exponential notation usages for shortness.
       */
     const auto & value = arg->as<ASTLiteral &>().value;
