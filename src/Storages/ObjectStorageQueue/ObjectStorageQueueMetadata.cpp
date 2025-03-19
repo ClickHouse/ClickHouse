@@ -156,7 +156,8 @@ ObjectStorageQueueMetadata::~ObjectStorageQueueMetadata()
 
 void ObjectStorageQueueMetadata::startup()
 {
-    if (mode == ObjectStorageQueueMode::UNORDERED
+    if (!task
+        && mode == ObjectStorageQueueMode::UNORDERED
         && (table_metadata.tracked_files_limit || table_metadata.tracked_files_ttl_sec))
     {
         task = Context::getGlobalContextInstance()->getSchedulePool().createTask(
@@ -168,7 +169,8 @@ void ObjectStorageQueueMetadata::startup()
             generateRescheduleInterval(
                 cleanup_interval_min_ms, cleanup_interval_max_ms));
     }
-    update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
+    if (!update_registry_thread)
+        update_registry_thread = std::make_unique<ThreadFromGlobalPool>([this](){ updateRegistryFunc(); });
 }
 
 void ObjectStorageQueueMetadata::shutdown()
