@@ -3077,7 +3077,7 @@ bool StorageReplicatedMergeTree::executeReplaceRange(LogEntry & entry)
             auto [fetched_part, lock] = fetcher.fetchSelectedPart(
                 metadata_snapshot, getContext(), part_desc->found_new_part_name, zookeeper_info.zookeeper_name, source_replica_path,
                 address.host, address.replication_port, timeouts, credentials->getUser(), credentials->getPassword(),
-                interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_");
+                interserver_scheme, replicated_fetches_throttler, false, TMP_PREFIX + "fetch_", nullptr, nullptr);
             part_desc->res_part = fetched_part;
             part_temp_directory_lock = std::move(lock);
 
@@ -3200,7 +3200,7 @@ void StorageReplicatedMergeTree::executeClonePartFromShard(const LogEntry & entr
                 metadata_snapshot, getContext(), entry.new_part_name, zookeeper_info.zookeeper_name, source_replica_path,
                 address.host, address.replication_port,
                 timeouts, credentials->getUser(), credentials->getPassword(), interserver_scheme,
-                replicated_fetches_throttler, true);
+                replicated_fetches_throttler, false, "", nullptr, nullptr);
             part_temp_directory_lock = std::move(lock);
             return fetched_part;
         };
@@ -5057,7 +5057,7 @@ bool StorageReplicatedMergeTree::fetchPart(
     bool to_detached,
     size_t quorum,
     zkutil::ZooKeeper::Ptr zookeeper_,
-    bool try_fetch_shared)
+    bool  /*try_fetch_shared*/)
 {
     if (isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is in readonly mode due to static storage");
@@ -5234,7 +5234,7 @@ bool StorageReplicatedMergeTree::fetchPart(
                 to_detached,
                 "",
                 &tagger_ptr,
-                try_fetch_shared);
+                nullptr);
             part_directory_lock = std::move(lock);
             return fetched_part;
         };
@@ -5407,7 +5407,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::fetchExistsPart(
             metadata_snapshot, getContext(), part_name, zookeeper_info.zookeeper_name, source_replica_path,
             address.host, address.replication_port,
             timeouts, credentials->getUser(), credentials->getPassword(),
-            interserver_scheme, replicated_fetches_throttler, false, "", nullptr, true,
+            interserver_scheme, replicated_fetches_throttler, false, "", nullptr,
             replaced_disk);
         part_temp_directory_lock = std::move(lock);
         return fetched_part;

@@ -28,7 +28,7 @@ namespace DataPartsExchange
 
 /** Service for sending parts from the table *ReplicatedMergeTree.
   */
-class Service final : public InterserverIOEndpoint
+class Service : public InterserverIOEndpoint
 {
 public:
     explicit Service(StorageReplicatedMergeTree & data_);
@@ -39,14 +39,13 @@ public:
     std::string getId(const std::string & node_id) const override;
     void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
 
-private:
+protected:
     MergeTreeData::DataPartPtr findPart(const String & name);
 
-    MergeTreeData::DataPart::Checksums sendPartFromDisk(
+    virtual MergeTreeData::DataPart::Checksums sendPartFromDisk(
         const MergeTreeData::DataPartPtr & part,
         WriteBuffer & out,
         int client_protocol_version,
-        bool from_remote_disk,
         bool send_projections);
 
     /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
@@ -55,15 +54,35 @@ private:
     LoggerPtr log;
 };
 
+class ServiceZeroCopy : public Service
+{
+public:
+    explicit ServiceZeroCopy(StorageReplicatedMergeTree & data_);
+
+    ServiceZeroCopy(const Service &) = delete;
+    ServiceZeroCopy & operator=(const Service &) = delete;
+
+    void processQuery(const HTMLForm & params, ReadBuffer & body, WriteBuffer & out, HTTPServerResponse & response) override;
+
+protected:
+    MergeTreeData::DataPartPtr findPart(const String & name);
+
+    MergeTreeData::DataPart::Checksums sendPartFromDisk(
+        const MergeTreeData::DataPartPtr & part,
+        WriteBuffer & out,
+        int client_protocol_version,
+        bool send_projections) override;
+};
+
 /** Client for getting the parts from the table *MergeTree.
   */
-class Fetcher final : private boost::noncopyable
+class Fetcher : private boost::noncopyable
 {
 public:
     explicit Fetcher(StorageReplicatedMergeTree & data_);
 
     /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
-    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
+    virtual std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
         const StorageMetadataPtr & metadata_snapshot,
         ContextPtr context,
         const String & part_name,
@@ -76,16 +95,17 @@ public:
         const String & password,
         const String & interserver_scheme,
         ThrottlerPtr throttler,
-        bool to_detached = false,
-        const String & tmp_prefix_ = "",
-        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr = nullptr,
-        bool try_zero_copy = true,
-        DiskPtr dest_disk = nullptr);
+        bool to_detached,
+        const String & tmp_prefix_,
+        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
+        DiskPtr dest_disk);
 
     /// You need to stop the data transfer.
     ActionBlocker blocker;
 
-private:
+    virtual ~Fetcher() = default;
+
+protected:
     using OutputBufferGetter = std::function<std::unique_ptr<WriteBufferFromFileBase>(IDataPartStorage &, const String &, size_t)>;
 
     void downloadBaseOrProjectionPartToDisk(
@@ -103,26 +123,54 @@ private:
         bool to_detached,
         const String & tmp_prefix_,
         DiskPtr disk,
-        bool to_remote_disk,
         ReadWriteBufferFromHTTP & in,
         OutputBufferGetter output_buffer_getter,
         size_t projections,
         ThrottlerPtr throttler,
         bool sync);
 
-    MergeTreeData::MutableDataPartPtr downloadPartToDiskRemoteMeta(
-       const String & part_name,
-       const String & replica_path,
-       bool to_detached,
-       const String & tmp_prefix_,
-       DiskPtr disk,
-       ReadWriteBufferFromHTTP & in,
-       size_t projections,
-       MergeTreeData::DataPart::Checksums & checksums,
-       ThrottlerPtr throttler);
-
     StorageReplicatedMergeTree & data;
     LoggerPtr log;
+
+};
+
+class FetcherZeroCopy : Fetcher
+{
+public:
+    explicit FetcherZeroCopy(StorageReplicatedMergeTree & data_);
+
+    /// Downloads a part to tmp_directory. If to_detached - downloads to the `detached` directory.
+    std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> fetchSelectedPart(
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr context,
+        const String & part_name,
+        const String & zookeeper_name,
+        const String & replica_path,
+        const String & host,
+        int port,
+        const ConnectionTimeouts & timeouts,
+        const String & user,
+        const String & password,
+        const String & interserver_scheme,
+        ThrottlerPtr throttler,
+        bool to_detached,
+        const String & tmp_prefix_,
+        std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
+        DiskPtr dest_disk) override;
+
+protected:
+    MergeTreeData::MutableDataPartPtr downloadPartToDisk(
+        const String & part_name,
+        const String & replica_path,
+        bool to_detached,
+        const String & tmp_prefix_,
+        DiskPtr disk,
+        ReadWriteBufferFromHTTP & in,
+        OutputBufferGetter output_buffer_getter,
+        size_t projections,
+        ThrottlerPtr throttler,
+        bool sync);
+
 };
 
 }
