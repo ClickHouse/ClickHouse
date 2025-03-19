@@ -879,17 +879,20 @@ class JobConfigs:
     )
     sqlancer_master_jobs = Job.Config(
         name=JobNames.SQLANCER,
-        runs_on=RunnerLabels.FUNC_TESTER_ARM,
-        command="cd ./tests/ci && python3 ci.py --run-from-praktika",
+        runs_on=["..."],
+        command="./ci/jobs/sqlancer_job.sh",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=["./ci/jobs/sqlancer_job.sh"],
+        ),
+        run_in_docker="clickhouse/sqlancer-test",
+        timeout=3600,
     ).parametrize(
         parameter=[
-            "release",
-            "debug",
+            "amd_debug",
         ],
-        runs_on=[RunnerLabels.FUNC_TESTER_AMD, RunnerLabels.FUNC_TESTER_AMD],
+        runs_on=[RunnerLabels.FUNC_TESTER_AMD],
         requires=[
-            ["Build (amd_release)"],
-            ["Build (amd_debug)"],
+            [ArtifactNames.CH_AMD_DEBUG],
         ],
     )
     sqltest_master_job = Job.Config(
