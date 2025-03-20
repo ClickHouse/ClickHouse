@@ -544,6 +544,12 @@ static void addExistingProgressToOutputFormat(OutputFormatPtr format, const Cont
     }
 }
 
+static bool inline isWritingToTerminal(const WriteBuffer & buf)
+{
+    const auto * write_buffer_to_descriptor = dynamic_cast<const WriteBufferFromFileDescriptor *>(&buf);
+    return write_buffer_to_descriptor && write_buffer_to_descriptor->getFD() == STDOUT_FILENO && isatty(STDOUT_FILENO);
+}
+
 OutputFormatPtr FormatFactory::getOutputFormatParallelIfPossible(
     const String & name,
     WriteBuffer & buf,
