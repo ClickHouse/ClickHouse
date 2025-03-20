@@ -1,6 +1,7 @@
 #include <Analyzer/ConstantNode.h>
 
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Utils.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Common/assert_cast.h>
@@ -209,25 +210,10 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
     // may have a different type.
     if (source_expression != nullptr || requiresCastCall(constant_value_ast->value.getType(), applyVisitor(FieldToDataType(), constant_value_ast->value), getResultType()))
     {
-        /** Value for DateTime64 is Decimal64, which is serialized as a string literal.
-          * If we serialize it as is, DateTime64 would be parsed from that string literal, which can be incorrect.
-          * For example, DateTime64 cannot be parsed from the short value, like '1', while it's a valid Decimal64 value.
-          * It could also lead to ambiguous parsing because we don't know if the string literal represents a date or a Decimal64 literal.
-          * For this reason, we use a string literal representing a date instead of a Decimal64 literal.
-          */
-        const auto & constant_value_end_type = removeNullable(constant_value_type); /// if Nullable
-        if (WhichDataType(constant_value_end_type->getTypeId()).isDateTime64())
-        {
-            const auto * date_time_type = typeid_cast<const DataTypeDateTime64 *>(constant_value_end_type.get());
-            DecimalField<Decimal64> decimal_value;
-            if (constant_value_ast->value.tryGet<DecimalField<Decimal64>>(decimal_value))
-            {
-                WriteBufferFromOwnString ostr;
-                writeDateTimeText(decimal_value.getValue(), date_time_type->getScale(), ostr, date_time_type->getTimeZone());
-                constant_value_ast = std::make_shared<ASTLiteral>(ostr.str());
-            }
-        }
-
+        /// For some types we cannot just get a field from a column, because it can loose type information during serialization/deserialization of the literal.
+        /// For example, DateTime64 will return Field with Decimal64 and we won't be able to parse it to DateTine64 back in some cases.
+        /// Also for Dynamic and Object types we can loose types information, so we need to create a Field carefully.
+        constant_value_ast = std::make_shared<ASTLiteral>(getFieldFromColumnForASTLiteral(constant_value.getColumn(), 0, constant_value.getType()));
         auto constant_type_name_ast = std::make_shared<ASTLiteral>(constant_value_type->getName());
         return makeASTFunction("_CAST", std::move(constant_value_ast), std::move(constant_type_name_ast));
     }

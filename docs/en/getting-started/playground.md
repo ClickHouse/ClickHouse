@@ -36,12 +36,12 @@ The service also have quotas on its usage.
 
 HTTPS endpoint example with `curl`:
 
-``` bash
+```bash
 curl "https://play.clickhouse.com/?user=explorer" --data-binary "SELECT 'Play ClickHouse'"
 ```
 
 TCP endpoint example with [CLI](../interfaces/cli.md):
 
-``` bash
+```bash
 clickhouse client --secure --host play.clickhouse.com --user explorer
 ```

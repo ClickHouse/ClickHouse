@@ -16,7 +16,7 @@ Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) and Google 
 
 **Syntax**
 
-``` sql
+```sql
 s3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,structure] [,compression_method],[,headers])
 s3Cluster(cluster_name, named_collection[, option=value [,..]])
 ```
@@ -48,7 +48,7 @@ A table with the specified structure for reading or writing data in the specifie
 
 Select the data from all the files in the `/root/data/clickhouse` and `/root/data/database/` folders, using all the nodes in the `cluster_simple` cluster:
 
-``` sql
+```sql
 SELECT * FROM s3Cluster(
     'cluster_simple',
     'http://minio1:9001/root/data/{clickhouse,database}/*',
@@ -66,7 +66,7 @@ If your listing of files contains number ranges with leading zeros, use the cons
 :::
 
 For production use cases, it is recommended to use [named collections](operations/named-collections.md). Here is the example:
-``` sql
+```sql
 
 CREATE NAMED COLLECTION creds AS
         access_key_id = 'minio',

@@ -53,7 +53,7 @@ See also the description of [max_memory_usage](#settings_max_memory_usage).
 
 For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
 
-``` sql
+```sql
 ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
 ```
 
@@ -187,7 +187,7 @@ Cloud default value: `throw`.
 
 Example:
 
-``` sql
+```sql
 SET max_threads = 3, max_block_size = 3333;
 SET max_result_rows = 3334, result_overflow_mode = 'break';
 
@@ -198,7 +198,7 @@ FORMAT Null;
 
 Result:
 
-``` text
+```text
 6666 rows in set. ...
 ```
 
@@ -224,13 +224,13 @@ Similar semantic to `max_execution_time` but only apply on leaf node for distrib
 
 For example, if we want to limit execution time on leaf node to `10s` but no limit on the initial node, instead of having `max_execution_time` in the nested subquery settings:
 
-``` sql
+```sql
 SELECT count() FROM cluster(cluster, view(SELECT * FROM t SETTINGS max_execution_time = 10));
 ```
 
 We can use `max_execution_time_leaf` as the query settings:
 
-``` sql
+```sql
 SELECT count() FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
 ```
 
@@ -427,7 +427,7 @@ Maximum number of simultaneous sessions per authenticated user to the ClickHouse
 
 Example:
 
-``` xml
+```xml
 <profiles>
     <single_session_profile>
         <max_sessions_for_user>1</max_sessions_for_user>

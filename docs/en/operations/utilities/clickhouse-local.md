@@ -8,10 +8,6 @@ title: 'clickhouse-local'
 
 # clickhouse-local
 
-## Related Content {#related-content}
-
-- Blog: [Extracting, Converting, and Querying Data in Local Files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
-
 ## When to use clickhouse-local vs. ClickHouse {#when-to-use-clickhouse-local-vs-clickhouse}
 
 `clickhouse-local` is an easy-to-use version of ClickHouse that is ideal for developers who need to perform fast processing on local and remote files using SQL without having to install a full database server. With `clickhouse-local`, developers can use SQL commands (using the [ClickHouse SQL dialect](../../sql-reference/index.md) directly from the command line, providing a simple and efficient way to access ClickHouse features without the need for a full ClickHouse installation. One of the main benefits of `clickhouse-local` is that it is already included when installing [clickhouse-client](/operations/utilities/clickhouse-local). This means that developers can get started with `clickhouse-local` quickly, without the need for a complex installation process.
@@ -183,18 +179,18 @@ When you are ready to insert your files into ClickHouse, startup a ClickHouse se
 
 You can use `clickhouse-local` for converting data between different formats. Example:
 
-``` bash
+```bash
 $ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
 ```
 
 Formats are auto-detected from file extensions: 
 
-``` bash
+```bash
 $ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
 ```
 
 As a shortcut, you can write it using the `--copy` argument:
-``` bash
+```bash
 $ clickhouse-local --copy < data.json > data.csv
 ```
 
@@ -205,13 +201,13 @@ By default `clickhouse-local` has access to data of a ClickHouse server on the s
 
 Basic usage (Linux):
 
-``` bash
+```bash
 $ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
 Basic usage (Mac):
 
-``` bash
+```bash
 $ ./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
 ```
 
@@ -247,7 +243,7 @@ Also, there are arguments for each ClickHouse configuration variable which are m
 
 ## Examples {#examples}
 
-``` bash
+```bash
 $ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
     --input-format "CSV" --query "SELECT * FROM table"
 Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
@@ -257,7 +253,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 
 Previous example is the same as:
 
-``` bash
+```bash
 $ echo -e "1,2\n3,4" | clickhouse-local -n --query "
     CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
     SELECT a, b FROM table;
@@ -269,7 +265,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 
 You don't have to use `stdin` or `--file` argument, and can open any number of files using the [`file` table function](../../sql-reference/table-functions/file.md):
 
-``` bash
+```bash
 $ echo 1 | tee 1.tsv
 1
 
@@ -286,7 +282,7 @@ Now let's output memory user for each Unix user:
 
 Query:
 
-``` bash
+```bash
 $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
     | clickhouse-local --structure "user String, mem Float64" \
         --query "SELECT user, round(sum(mem), 2) as memTotal
@@ -295,7 +291,7 @@ $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
 
 Result:
 
-``` text
+```text
 Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ┏━━━━━━━━━━┳━━━━━━━━━━┓
 ┃ user     ┃ memTotal ┃
@@ -307,10 +303,9 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-
-
 ## Related Content {#related-content-1}
 
 - [Extracting, converting, and querying data in local files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
 - [Getting Data Into ClickHouse - Part 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)
 - [Exploring massive, real-world data sets: 100+ Years of Weather Records in ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
+- Blog: [Extracting, Converting, and Querying Data in Local Files using clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
