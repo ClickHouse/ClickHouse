@@ -20,7 +20,7 @@ public:
         CPUSlot,
     };
 
-    /// Describes kinds of operations requiring the access to the resourece
+    /// Describes kinds of operations requiring the access to the resource
     enum class AccessMode
     {
         DiskRead,
