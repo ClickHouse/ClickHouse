@@ -1280,7 +1280,7 @@ public:
      *
      * **SCRAM-SHA-256 Message Formats:**
      *
-     *  - **Client First Message:** n=<username>,r=<client_nonce>
+     *  - **Client First Message:** y,,n=<username>,r=<client_nonce>
      *    - n: Attribute for the username.
      *    - r: Attribute for the client-generated nonce.
      *
