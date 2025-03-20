@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/hash-functions
+description: 'Documentation for Hash Functions'
+sidebar_label: 'Hash'
 sidebar_position: 85
-sidebar_label: Hash
+slug: /sql-reference/functions/hash-functions
+title: 'Hash Functions'
 ---
 
 # Hash Functions
@@ -12,7 +14,7 @@ Simhash is a hash function, which returns close hash values for close (similar) 
 
 ## halfMD5 {#halfmd5}
 
-[Interprets](../functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
+[Interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input parameters as strings and calculates the [MD5](https://en.wikipedia.org/wiki/MD5) hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the resulting string, and interprets them as `UInt64` in big-endian byte order.
 
 ```sql
 halfMD5(par1, ...)
@@ -95,7 +97,7 @@ sipHash64(par1,...)
 
 This is a cryptographic hash function. It works at least three times faster than the [MD5](#md5) hash function.
 
-The function [interprets](../functions/type-conversion-functions.md/#type_conversion_functions-reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
+The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretasstring) all the input parameters as strings and calculates the hash value for each of them. It then combines the hashes by the following algorithm:
 
 1. The first and the second hash value are concatenated to an array which is hashed.
 2. The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
@@ -764,7 +766,7 @@ gccMurmurHash(par1, ...)
 
 **Arguments**
 
-- `par1, ...` — A variable number of parameters that can be any of the [supported data types](../data-types/index.md/#data_types).
+- `par1, ...` — A variable number of parameters that can be any of the [supported data types](/sql-reference/data-types).
 
 **Returned value**
 
@@ -801,7 +803,7 @@ MurmurHash(par1, ...)
 
 **Arguments**
 
-- `par1, ...` — A variable number of parameters that can be any of the [supported data types](../data-types/index.md/#data_types).
+- `par1, ...` — A variable number of parameters that can be any of the [supported data types](/sql-reference/data-types).
 
 **Returned value**
 
@@ -867,7 +869,7 @@ murmurHash3_128(expr)
 
 **Arguments**
 
-- `expr` — A list of [expressions](../syntax.md/#syntax-expressions). [String](../data-types/string.md).
+- `expr` — A list of [expressions](/sql-reference/syntax#expressions). [String](../data-types/string.md).
 
 **Returned value**
 
@@ -901,7 +903,7 @@ xxh3(expr)
 
 **Arguments**
 
-- `expr` — A list of [expressions](../syntax.md/#syntax-expressions) of any data type.
+- `expr` — A list of [expressions](/sql-reference/syntax#expressions) of any data type.
 
 **Returned value**
 
@@ -1948,4 +1950,40 @@ SELECT sqidDecode('gXHfJ1C6dN');
 ┌─sqidDecode('gXHfJ1C6dN')─┐
 │ [1,2,3,4,5]              │
 └──────────────────────────┘
+```
+
+## keccak256 {#keccak256}
+
+Calculates Keccak-256 hash string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
+
+**Syntax**
+
+```sql
+keccak256('s')
+```
+
+This cryptographic hash-function is used a lot in [EVM-based blockchains](https://ethereum.github.io/yellowpaper/paper.pdf). 
+
+**Arguments**
+
+- s - input string for Keccak-256 hash calculation. [String](../data-types/string.md).
+
+**Return value**
+
+- Keccak-256 hash as a byte array with type FixedString(32). [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Use function [hex](../functions/encoding-functions.md/#hex) to format the result as a hex-encoded string.
+
+Query:
+```sql
+select hex(keccak256('hello'))
+```
+
+Result:
+```sql
+   ┌─hex(keccak256('hello'))──────────────────────────────────────────┐
+1. │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
+   └──────────────────────────────────────────────────────────────────┘
 ```

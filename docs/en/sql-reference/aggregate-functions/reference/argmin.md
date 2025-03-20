@@ -1,12 +1,16 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/argmin
+description: 'Calculates the `arg` value for a minimum `val` value. If there are multiple
+  rows with equal `val` being the maximum, which of the associated `arg` is returned
+  is not deterministic.'
 sidebar_position: 110
+slug: /sql-reference/aggregate-functions/reference/argmin
+title: 'argMin'
 ---
 
 # argMin
 
 Calculates the `arg` value for a minimum `val` value. If there are multiple rows with equal `val` being the maximum, which of the associated `arg` is returned is not deterministic.
-Both parts the `arg` and the `min` behave as [aggregate functions](/docs/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/docs/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
+Both parts the `arg` and the `min` behave as [aggregate functions](/sql-reference/aggregate-functions/index.md), they both [skip `Null`](/sql-reference/aggregate-functions/index.md#null-processing) during processing and return not `Null` values if not `Null` values are available.
 
 **Syntax**
 
@@ -111,4 +115,4 @@ SELECT argMin(a, tuple(b)) FROM test;
 
 **See also**
 
-- [Tuple](/docs/sql-reference/data-types/tuple.md)
+- [Tuple](/sql-reference/data-types/tuple.md)

@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/arithmetic-functions
+description: 'Documentation for Arithmetic Functions'
+sidebar_label: 'Arithmetic'
 sidebar_position: 5
-sidebar_label: Arithmetic
+slug: /sql-reference/functions/arithmetic-functions
+title: 'Arithmetic Functions'
 ---
 
 # Arithmetic Functions
@@ -194,7 +196,7 @@ Result:
     │     inf │                            42 │
     └─────────┴───────────────────────────────┘
 
-You can get similar result by using the [ternary operator](../../sql-reference/functions/conditional-functions.md#ternary-operator): `isFinite(x) ? x : y`.
+You can get similar result by using the [ternary operator](/sql-reference/functions/conditional-functions#if): `isFinite(x) ? x : y`.
 
 ## isNaN {#isnan}
 

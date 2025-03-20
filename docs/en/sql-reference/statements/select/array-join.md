@@ -1,13 +1,15 @@
 ---
+description: 'Documentation for ARRAY JOIN Clause'
+sidebar_label: 'ARRAY JOIN'
 slug: /sql-reference/statements/select/array-join
-sidebar_label: ARRAY JOIN
+title: 'ARRAY JOIN Clause'
 ---
 
 # ARRAY JOIN Clause
 
 It is a common operation for tables that contain an array column to produce a new table that has a column with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
 
-Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](../../../sql-reference/functions/array-join.md#functions_arrayjoin) function, but the clause functionality is broader.
+Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](/sql-reference/functions/array-join) function, but the clause functionality is broader.
 
 Syntax:
 
@@ -144,7 +146,7 @@ ARRAY JOIN arr AS a, arrayEnumerate(arr) AS num, arrayMap(x -> x + 1, arr) AS ma
 └───────┴─────────┴───┴─────┴────────┘
 ```
 
-The example below uses the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
+The example below uses the [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) function:
 
 ```sql
 SELECT s, arr, a, num, arrayEnumerate(arr)
@@ -277,7 +279,7 @@ ARRAY JOIN nest AS n;
 └───────┴─────┴─────┴─────────┴────────────┘
 ```
 
-Example of using the [arrayEnumerate](../../../sql-reference/functions/array-functions.md#array_functions-arrayenumerate) function:
+Example of using the [arrayEnumerate](/sql-reference/functions/array-functions#arrayenumeratearr) function:
 
 ```sql
 SELECT s, `n.x`, `n.y`, `nest.x`, `nest.y`, num
@@ -301,7 +303,7 @@ The query execution order is optimized when running `ARRAY JOIN`. Although `ARRA
 
 ### Incompatibility with short-circuit function evaluation {#incompatibility-with-short-circuit-function-evaluation}
 
-[Short-circuit function evaluation](../../../operations/settings/overview#short-circuit-function-evaluation) is a feature that optimizes the execution of complex expressions in specific functions such as `if`, `multiIf`, `and`, and `or`. It prevents potential exceptions, such as division by zero, from occurring during the execution of these functions.
+[Short-circuit function evaluation](/operations/settings/settings#short_circuit_function_evaluation) is a feature that optimizes the execution of complex expressions in specific functions such as `if`, `multiIf`, `and`, and `or`. It prevents potential exceptions, such as division by zero, from occurring during the execution of these functions.
 
 `arrayJoin` is always executed and not supported for short circuit function evaluation. That's because it's a unique function processed separately from all other functions during query analysis and execution and requires additional logic that doesn't work with short circuit function execution. The reason is that the number of rows in the result depends on the arrayJoin result, and it's too complex and expensive to implement lazy execution of `arrayJoin`.
 

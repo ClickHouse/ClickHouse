@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from ._environment import _Environment
-from .cache import Cache
-from .info import Info
 from .s3 import S3
 from .settings import Settings
 from .utils import ContextManager, MetaClasses, Shell, Utils
@@ -94,19 +92,17 @@ class Result(MetaClasses.Serializable):
                 infos += info
         if results and not status:
             for result in results:
-                if result.status not in (
-                    Result.Status.SUCCESS,
-                    Result.Status.FAILED,
-                    Result.Status.ERROR,
-                ):
+                if result.status in (Result.Status.SUCCESS, Result.Status.SKIPPED):
+                    continue
+                elif result.status == Result.Status.ERROR:
+                    result_status = Result.Status.ERROR
+                    break
+                elif result.status == Result.Status.FAILED:
+                    result_status = Result.Status.FAILED
+                else:
                     Utils.raise_with_error(
                         f"Unexpected result status [{result.status}] for [{result.name}]"
                     )
-                if result.status != Result.Status.SUCCESS:
-                    result_status = Result.Status.FAILED
-                if result.status == Result.Status.ERROR:
-                    result_status = Result.Status.ERROR
-                    break
         if results and with_info_from_results:
             for result in results:
                 if result.info:
@@ -124,6 +120,14 @@ class Result(MetaClasses.Serializable):
     @staticmethod
     def get():
         return Result.from_fs(_Environment.get().JOB_NAME)
+
+    @staticmethod
+    def get_workflow_result():
+        """
+        Returns the latest workflow result, if available on fs
+        :return:
+        """
+        return Result.from_fs(_Environment.get().WORKFLOW_NAME)
 
     def is_completed(self):
         return self.status not in (Result.Status.PENDING, Result.Status.RUNNING)
@@ -256,6 +260,10 @@ class Result(MetaClasses.Serializable):
         ):
             print("Pipeline finished")
             self.update_duration()
+
+    def add_ext_key_value(self, key, value):
+        self.ext[key] = value
+        return self
 
     @classmethod
     def generate_pending(cls, name, results=None):

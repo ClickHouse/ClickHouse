@@ -1,5 +1,6 @@
 #include <Storages/Kafka/KafkaSource.h>
 
+#include <Columns/IColumn.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <IO/EmptyReadBuffer.h>
@@ -63,7 +64,7 @@ KafkaSource::~KafkaSource()
         return;
 
     if (broken)
-        consumer->unsubscribe();
+        consumer->markDirty();
 
     storage.pushConsumer(consumer);
 }

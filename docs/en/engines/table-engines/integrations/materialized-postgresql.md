@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/materialized-postgresql
+description: 'Creates a ClickHouse table with an initial data dump of a PostgreSQL
+  table and starts the replication process.'
+sidebar_label: 'MaterializedPostgreSQL'
 sidebar_position: 130
-sidebar_label: MaterializedPostgreSQL
-title: "MaterializedPostgreSQL"
-description: "Creates a ClickHouse table with an initial data dump of a PostgreSQL table and starts the replication process."
+slug: /engines/table-engines/integrations/materialized-postgresql
+title: 'MaterializedPostgreSQL'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -15,7 +16,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 <CloudNotSupportedBadge/>
 
 :::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/docs/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
+ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
 :::
 
 Creates ClickHouse table with an initial data dump of PostgreSQL table and starts the replication process, i.e. it executes a background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.

@@ -1,0 +1,8 @@
+OK - For codec=ZSTD(1) block_size=65536 num_rows=1_000: Estimated compression ratios are within 30.00% of actual ratios
+OK - For codec=ZSTD(1) block_size=1048576 num_rows=1_000: Estimated compression ratios are within 30.00% of actual ratios
+OK - For codec=LZ4 block_size=65536 num_rows=1_000: Estimated compression ratios are within 30.00% of actual ratios
+OK - For codec=LZ4 block_size=1048576 num_rows=1_000: Estimated compression ratios are within 30.00% of actual ratios
+OK - For codec=ZSTD(1) block_size=65536 num_rows=50_000: Estimated compression ratios are within 30.00% of actual ratios
+OK - For codec=ZSTD(1) block_size=1048576 num_rows=50_000: Estimated compression ratios are within 30.00% of actual ratios
+OK - For codec=LZ4 block_size=65536 num_rows=50_000: Estimated compression ratios are within 30.00% of actual ratios
+OK - For codec=LZ4 block_size=1048576 num_rows=50_000: Estimated compression ratios are within 30.00% of actual ratios

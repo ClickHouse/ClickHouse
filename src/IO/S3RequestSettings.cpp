@@ -33,7 +33,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_single_read_retries, 4, "", 0) \
     DECLARE(UInt64, request_timeout_ms, S3::DEFAULT_REQUEST_TIMEOUT_MS, "", 0) \
     DECLARE(UInt64, list_object_keys_size, S3::DEFAULT_LIST_OBJECT_KEYS_SIZE, "", 0) \
-    DECLARE(Bool, allow_native_copy, S3::DEFAULT_ALLOW_NATIVE_COPY, "", 0) \
+    DECLARE(BoolAuto, allow_native_copy, S3::DEFAULT_ALLOW_NATIVE_COPY, "", 0) \
     DECLARE(Bool, check_objects_after_upload, S3::DEFAULT_CHECK_OBJECTS_AFTER_UPLOAD, "", 0) \
     DECLARE(Bool, throw_on_zero_files_match, false, "", 0) \
     DECLARE(Bool, allow_multipart_copy, true, "", 0) \
@@ -241,7 +241,7 @@ void S3RequestSettings::validateUploadSettings()
                             ErrorCodes::INVALID_SETTING_VALUE,
                             "Setting upload_part_size_multiply_factor is too big ({}). "
                             "Multiplication to max_upload_part_size ({}) will cause integer overflow",
-                            impl->upload_part_size_multiply_factor, ReadableSize(impl->max_upload_part_size));
+                            impl->upload_part_size_multiply_factor.value, ReadableSize(impl->max_upload_part_size));
     }
 
     std::unordered_set<String> storage_class_names {"STANDARD", "INTELLIGENT_TIERING"};

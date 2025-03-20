@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/create/user
+description: 'Documentation for User'
+sidebar_label: 'USER'
 sidebar_position: 39
-sidebar_label: USER
-title: "CREATE USER"
+slug: /sql-reference/statements/create/user
+title: 'CREATE USER'
 ---
 
 Creates [user accounts](../../../guides/sre/user-management/index.md#user-account-management).
@@ -43,7 +44,7 @@ There are multiple ways of user identification:
 - `IDENTIFIED WITH http SERVER 'http_server'` or `IDENTIFIED WITH http SERVER 'http_server' SCHEME 'basic'`
 - `IDENTIFIED BY 'qwerty'`
 
-Password complexity requirements can be edited in [config.xml](/docs/operations/configuration-files). Below is an example configuration that requires passwords to be at least 12 characters long and contain 1 number. Each password complexity rule requires a regex to match against passwords and a description of the rule.
+Password complexity requirements can be edited in [config.xml](/operations/configuration-files). Below is an example configuration that requires passwords to be at least 12 characters long and contain 1 number. Each password complexity rule requires a regex to match against passwords and a description of the rule.
 
 ```xml
 <clickhouse>
@@ -164,7 +165,7 @@ User host is a host from which a connection to ClickHouse server could be establ
 - `HOST LOCAL` — User can connect only locally.
 - `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
 - `HOST REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST REGEXP '.*\.mysite\.com'`.
-- `HOST LIKE 'template'` — Allows you to use the [LIKE](../../../sql-reference/functions/string-search-functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
+- `HOST LIKE 'template'` — Allows you to use the [LIKE](/sql-reference/functions/string-search-functions#like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
 
 Another way of specifying host is to use `@` syntax following the username. Examples:
 

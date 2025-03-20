@@ -31,6 +31,7 @@
 #include <Interpreters/ExpressionActions.h>
 
 #include <Common/HTTPHeaderFilter.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/ThreadStatus.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/NamedCollections/NamedCollections.h>

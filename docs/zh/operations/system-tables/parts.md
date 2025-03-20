@@ -9,7 +9,7 @@ slug: /zh/operations/system-tables/parts
 
 列:
 
--   `partition` ([String](../../sql-reference/data-types/string.md)) – 分区名称。请参阅 [ALTER](../../sql-reference/statements/alter/index.md#query_language_queries_alter) 查询的说明，来了解什么是分区。
+-   `partition` ([String](../../sql-reference/data-types/string.md)) – 分区名称。请参阅 [ALTER](/sql-reference/statements/alter) 查询的说明，来了解什么是分区。
 
     格式:
 

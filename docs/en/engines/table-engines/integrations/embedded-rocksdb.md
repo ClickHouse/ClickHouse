@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/integrations/embedded-rocksdb
+description: 'This engine allows integrating ClickHouse with RocksDB'
+sidebar_label: 'EmbeddedRocksDB'
 sidebar_position: 50
-sidebar_label: EmbeddedRocksDB
-title: "EmbeddedRocksDB Engine"
-description: "This engine allows integrating ClickHouse with RocksDB"
+slug: /engines/table-engines/integrations/embedded-rocksdb
+title: 'EmbeddedRocksDB Engine'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -224,5 +224,5 @@ ORDER BY key ASC
 ```
 
 ### More information on Joins {#more-information-on-joins}
-- [`join_algorithm` setting](/docs/operations/settings/settings.md#join_algorithm)
-- [JOIN clause](/docs/sql-reference/statements/select/join.md)
+- [`join_algorithm` setting](/operations/settings/settings.md#join_algorithm)
+- [JOIN clause](/sql-reference/statements/select/join.md)

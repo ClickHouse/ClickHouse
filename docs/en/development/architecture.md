@@ -1,7 +1,10 @@
 ---
-slug: /development/architecture
-sidebar_label: Architecture Overview
+description: 'A comprehensive overview of ClickHouse architecture and its column-oriented
+  design'
+sidebar_label: 'Architecture Overview'
 sidebar_position: 50
+slug: /development/architecture
+title: 'Architecture Overview'
 ---
 
 # Architecture Overview
@@ -129,7 +132,7 @@ There are ordinary functions and aggregate functions. For aggregate functions, s
 
 Ordinary functions do not change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`'s of data to implement vectorized query execution.
 
-There are some miscellaneous functions, like [blockSize](../sql-reference/functions/other-functions.md#blocksize-function-blocksize), [rowNumberInBlock](../sql-reference/functions/other-functions.md#rownumberinblock-function-rownumberinblock), and [runningAccumulate](../sql-reference/functions/other-functions.md#runningaccumulate-runningaccumulate), that exploit block processing and violate the independence of rows.
+There are some miscellaneous functions, like [blockSize](/sql-reference/functions/other-functions#blockSize), [rowNumberInBlock](/sql-reference/functions/other-functions#rowNumberInBlock), and [runningAccumulate](/sql-reference/functions/other-functions#runningaccumulate), that exploit block processing and violate the independence of rows.
 
 ClickHouse has strong typing, so there's no implicit type conversion. If a function does not support a specific combination of types, it throws an exception. But functions can work (be overloaded) for many different combinations of types. For example, the `plus` function (to implement the `+` operator) works for any combination of numeric types: `UInt8` + `Float32`, `UInt16` + `Int8`, and so on. Also, some variadic functions can accept any number of arguments, such as the `concat` function.
 
@@ -205,10 +208,6 @@ If thread is related to query execution, then the most important thing attached 
 
 ## Concurrency control {#concurrency-control}
 Query that can be parallelized uses `max_threads` setting to limit itself. Default value for this setting is selected in a way that allows single query to utilize all CPU cores in the best way. But what if there are multiple concurrent queries and each of them uses default `max_threads` setting value? Then queries will share CPU resources. OS will ensure fairness by constantly switching threads, which introduce some performance penalty. `ConcurrencyControl` helps to deal with this penalty and avoid allocating a lot of threads. Configuration setting `concurrent_threads_soft_limit_num` is used to limit how many concurrent thread can be allocated before applying some kind of CPU pressure.
-
-:::note
-`concurrent_threads_soft_limit_num` and `concurrent_threads_soft_limit_ratio_to_cores` are disabled (equal 0) by default. So this feature must be enabled before use.
-:::
 
 Notion of CPU `slot` is introduced. Slot is a unit of concurrency: to run a thread query has to acquire a slot in advance and release it when thread stops. The number of slots is globally limited in a server. Multiple concurrent queries are competing for CPU slots if the total demand exceeds the total number of slots. `ConcurrencyControl` is responsible to resolve this competition by doing CPU slot scheduling in a fair manner.
 

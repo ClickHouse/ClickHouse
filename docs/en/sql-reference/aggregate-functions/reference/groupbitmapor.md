@@ -1,10 +1,14 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/groupbitmapor
+description: 'Calculations the OR of a bitmap column, return cardinality of type UInt64,
+  if add suffix -State, then return a bitmap object. This is equivalent to `groupBitmapMerge`.'
 sidebar_position: 150
-title: groupBitmapOr
+slug: /sql-reference/aggregate-functions/reference/groupbitmapor
+title: 'groupBitmapOr'
 ---
 
-Calculations the OR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../../sql-reference/functions/bitmap-functions.md). This is equivalent to `groupBitmapMerge`.
+# groupBitmapOr
+
+Calculations the OR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return a [bitmap object](../../../sql-reference/functions/bitmap-functions.md). This is equivalent to `groupBitmapMerge`.
 
 ``` sql
 groupBitmapOr(expr)

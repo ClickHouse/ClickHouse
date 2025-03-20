@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/deltalake
+description: 'This engine provides a read-only integration with existing Delta Lake
+  tables in Amazon S3.'
+sidebar_label: 'DeltaLake'
 sidebar_position: 40
-sidebar_label: DeltaLake
-title: "DeltaLake Table Engine"
-description: "This engine provides a read-only integration with existing Delta Lake tables in Amazon S3."
+slug: /engines/table-engines/integrations/deltalake
+title: 'DeltaLake Table Engine'
 ---
 
 # DeltaLake Table Engine
@@ -24,7 +25,7 @@ CREATE TABLE deltalake
 - `url` — Bucket url with path to the existing Delta Lake table.
 - `aws_access_key_id`, `aws_secret_access_key` - Long-term credentials for the [AWS](https://aws.amazon.com/) account user.  You can use these to authenticate your requests. Parameter is optional. If credentials are not specified, they are used from the configuration file.
 
-Engine parameters can be specified using [Named Collections](/docs/operations/named-collections.md).
+Engine parameters can be specified using [Named Collections](/operations/named-collections.md).
 
 **Example**
 

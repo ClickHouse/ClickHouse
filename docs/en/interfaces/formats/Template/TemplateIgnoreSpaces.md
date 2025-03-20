@@ -1,10 +1,11 @@
 ---
-title : TemplateIgnoreSpaces
-slug: /interfaces/formats/TemplateIgnoreSpaces
-keywords : [TemplateIgnoreSpaces]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the TemplateIgnoreSpaces format'
+input_format: true
+keywords: ['TemplateIgnoreSpaces']
+output_format: false
+slug: /interfaces/formats/TemplateIgnoreSpaces
+title: 'TemplateIgnoreSpaces'
 ---
 
 | Input | Output | Alias |
@@ -25,7 +26,7 @@ This format is suitable only for input.
 
 ## Example Usage {#example-usage}
 
-The following request can be used for inserting data from its output example of format [JSON](/docs/interfaces/formats/JSON):
+The following request can be used for inserting data from its output example of format [JSON](/interfaces/formats/JSON):
 
 ```sql
 INSERT INTO table_name 

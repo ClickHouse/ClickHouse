@@ -1,9 +1,11 @@
 ---
-slug: /engines/table-engines/special/executable
+description: 'The `Executable` and `ExecutablePool` table engines allow you to define
+  a table whose rows are generated from a script that you define (by writing rows
+  to **stdout**).'
+sidebar_label: 'Executable'
 sidebar_position: 40
-sidebar_label:  Executable
-title: "Executable and ExecutablePool Table Engines"
-description: "The `Executable` and `ExecutablePool` table engines allow you to define a table whose rows are generated from a script that you define (by writing rows to **stdout**)."
+slug: /engines/table-engines/special/executable
+title: 'Executable and ExecutablePool Table Engines'
 ---
 
 # Executable and ExecutablePool Table Engines
@@ -102,7 +104,7 @@ SELECT * FROM my_executable_table
 
 Users of the Hacker News website leave comments. Python contains a natural language processing toolkit (`nltk`) with a `SentimentIntensityAnalyzer` for determining if comments are positive, negative, or neutral - including assigning a value between -1 (a very negative comment) and 1 (a very positive comment). Let's create an `Executable` table that computes the sentiment of Hacker News comments using `nltk`.
 
-This example uses the `hackernews` table described [here](/docs/engines/table-engines/mergetree-family/invertedindexes/#full-text-search-of-the-hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
+This example uses the `hackernews` table described [here](/engines/table-engines/mergetree-family/invertedindexes/#full-text-search-of-the-hacker-news-dataset). The `hackernews` table includes an `id` column of type `UInt64` and a `String` column named `comment`. Let's start by defining the `Executable` table:
 
 ```sql
 CREATE TABLE sentiment (
@@ -217,12 +219,12 @@ CREATE TABLE sentiment_pooled (
    sentiment Float32
 )
 ENGINE = ExecutablePool(
-	'sentiment.py',
-	TabSeparated,
-	(SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20000)
+    'sentiment.py',
+    TabSeparated,
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20000)
 )
 SETTINGS
-	pool_size = 4;
+    pool_size = 4;
 ```
 
 ClickHouse will maintain 4 processes on-demand when your client queries the `sentiment_pooled` table.

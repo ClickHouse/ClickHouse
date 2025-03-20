@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for ORDER BY Clause'
+sidebar_label: 'ORDER BY'
 slug: /sql-reference/statements/select/order-by
-sidebar_label: ORDER BY
+title: 'ORDER BY Clause'
 ---
 
 # ORDER BY Clause
@@ -11,8 +13,8 @@ The `ORDER BY` clause contains
 - a list of numbers referring to columns in the `SELECT` clause, e.g. `ORDER BY 2, 1`, or
 - `ALL` which means all columns of the `SELECT` clause, e.g. `ORDER BY ALL`.
 
-To disable sorting by column numbers, set setting [enable_positional_arguments](../../../operations/settings/settings.md#enable-positional-arguments) = 0.
-To disable sorting by `ALL`, set setting [enable_order_by_all](../../../operations/settings/settings.md#enable-order-by-all) = 0.
+To disable sorting by column numbers, set setting [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments) = 0.
+To disable sorting by `ALL`, set setting [enable_order_by_all](/operations/settings/settings#enable_order_by_all) = 0.
 
 The `ORDER BY` clause can be attributed by a `DESC` (descending) or `ASC` (ascending) modifier which determines the sorting direction.
 Unless an explicit sort order is specified, `ASC` is used by default.
@@ -253,7 +255,7 @@ Result:
 
 ## Implementation Details {#implementation-details}
 
-Less RAM is used if a small enough [LIMIT](../../../sql-reference/statements/select/limit.md) is specified in addition to `ORDER BY`. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. For distributed query processing, if [GROUP BY](../../../sql-reference/statements/select/group-by.md) is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
+Less RAM is used if a small enough [LIMIT](../../../sql-reference/statements/select/limit.md) is specified in addition to `ORDER BY`. Otherwise, the amount of memory spent is proportional to the volume of data for sorting. For distributed query processing, if [GROUP BY](/sql-reference/statements/select/group-by) is omitted, sorting is partially done on remote servers, and the results are merged on the requestor server. This means that for distributed sorting, the volume of data to sort can be greater than the amount of memory on a single server.
 
 If there is not enough RAM, it is possible to perform sorting in external memory (creating temporary files on a disk). Use the setting `max_bytes_before_external_sort` for this purpose. If it is set to 0 (the default), external sorting is disabled. If it is enabled, when the volume of data to sort reaches the specified number of bytes, the collected data is sorted and dumped into a temporary file. After all data is read, all the sorted files are merged and the results are output. Files are written to the `/var/lib/clickhouse/tmp/` directory in the config (by default, but you can use the `tmp_path` parameter to change this setting).
 
@@ -267,7 +269,7 @@ External sorting works much less effectively than sorting in RAM.
 
  When the `optimize_read_in_order` setting is enabled, the ClickHouse server uses the table index and reads the data in order of the `ORDER BY` key. This allows to avoid reading all data in case of specified [LIMIT](../../../sql-reference/statements/select/limit.md). So queries on big data with small limit are processed faster.
 
-Optimization works with both `ASC` and `DESC` and does not work together with [GROUP BY](../../../sql-reference/statements/select/group-by.md) clause and [FINAL](../../../sql-reference/statements/select/from.md#select-from-final) modifier.
+Optimization works with both `ASC` and `DESC` and does not work together with [GROUP BY](/sql-reference/statements/select/group-by) clause and [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
 
 When the `optimize_read_in_order` setting is disabled, the ClickHouse server does not use the table index while processing `SELECT` queries.
 
@@ -275,7 +277,7 @@ Consider disabling `optimize_read_in_order` manually, when running queries that 
 
 Optimization is supported in the following table engines:
 
-- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) (including [materialized views](../../../sql-reference/statements/create/view.md#materialized-view)),
+- [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md) (including [materialized views](/sql-reference/statements/create/view#materialized-view)),
 - [Merge](../../../engines/table-engines/special/merge.md),
 - [Buffer](../../../engines/table-engines/special/buffer.md)
 
@@ -283,7 +285,7 @@ In `MaterializedView`-engine tables the optimization works with views like `SELE
 
 ## ORDER BY Expr WITH FILL Modifier {#order-by-expr-with-fill-modifier}
 
-This modifier also can be combined with [LIMIT ... WITH TIES modifier](../../../sql-reference/statements/select/limit.md#limit-with-ties).
+This modifier also can be combined with [LIMIT ... WITH TIES modifier](/sql-reference/statements/select/limit#limit--with-ties-modifier).
 
 `WITH FILL` modifier can be set after `ORDER BY expr` with optional `FROM expr`, `TO expr` and `STEP expr` parameters.
 All missed values of `expr` column will be filled sequentially and other columns will be filled as defaults.
@@ -298,7 +300,7 @@ ORDER BY expr [WITH FILL] [FROM const_expr] [TO const_expr] [STEP const_numeric_
 `WITH FILL` can be applied for fields with Numeric (all kinds of float, decimal, int) or Date/DateTime types. When applied for `String` fields, missed values are filled with empty strings.
 When `FROM const_expr` not defined sequence of filling use minimal `expr` field value from `ORDER BY`.
 When `TO const_expr` not defined sequence of filling use maximum `expr` field value from `ORDER BY`.
-When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types, as `days` for Date type, as `seconds` for DateTime type. It also supports [INTERVAL](/docs/sql-reference/data-types/special-data-types/interval/) data type representing time and date intervals.
+When `STEP const_numeric_expr` defined then `const_numeric_expr` interprets `as is` for numeric types, as `days` for Date type, as `seconds` for DateTime type. It also supports [INTERVAL](/sql-reference/data-types/special-data-types/interval/) data type representing time and date intervals.
 When `STEP const_numeric_expr` omitted then sequence of filling use `1.0` for numeric type, `1 day` for Date type and `1 second` for DateTime type.
 When `STALENESS const_numeric_expr` is defined, the query will generate rows until the difference from the previous row in the original data exceeds `const_numeric_expr`.
 `INTERPOLATE` can be applied to columns not participating in `ORDER BY WITH FILL`. Such columns are filled based on previous fields values by applying `expr`. If `expr` is not present will repeat previous value. Omitted list will result in including all allowed columns.
