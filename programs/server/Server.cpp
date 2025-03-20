@@ -2902,8 +2902,10 @@ try
             main_config_reloader.reset();
             access_control.stopPeriodicReloading();
 
+#if USE_SSL
             /// Stop ACME tasks.
             ACME::Client::instance().shutdown();
+#endif
 
             is_cancelled = true;
 
