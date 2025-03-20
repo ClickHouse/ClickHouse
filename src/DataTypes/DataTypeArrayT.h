@@ -36,7 +36,7 @@ public:
     const DataTypePtr & getType() const { return type; }
     size_t getSize() const { return size; }
     size_t getN() const { return n; }
-    size_t getSizeOfValueInMemory() const override;
+    size_t getSizeOfValueInMemory() const override { return (size / 8) * n; }
 
     SerializationPtr doGetDefaultSerialization() const override;
 };

@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArrayT.h>
+#include <DataTypes/Serializations/SerializationFixedString.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
@@ -54,6 +55,33 @@ MutableColumnPtr DataTypeArrayT::createColumn() const
     return ColumnArrayT::create(std::move(tuple_column));
 }
 
+bool DataTypeArrayT::equals(const IDataType & rhs) const
+{
+    if (typeid(rhs) != typeid(*this))
+        return false;
+
+    const DataTypeArrayT & rhs_arrayt = static_cast<const DataTypeArrayT &>(rhs);
+
+    if (type != rhs_arrayt.type || size != rhs_arrayt.size || n != rhs_arrayt.n)
+        return false;
+
+    return true;
+}
+
+SerializationPtr DataTypeArrayT::doGetDefaultSerialization() const
+{
+    LOG_WARNING(getLogger("doGetDefaultSerialization"), "1");
+    SerializationArrayT::ElementSerializations serializations(size);
+
+    for (size_t i = 0; i < size; ++i)
+    {
+        auto serialization = std::make_shared<SerializationFixedString>(n / 8);
+        serializations[i] = std::make_shared<SerializationNamed>(serialization, toString(i), SubstreamType::TupleElement);
+    }
+
+    return std::make_shared<SerializationArrayT>(serializations, size, n);
+}
+
 /// TODO: the following methods until create() are placeholders and need to be implemented
 void DataTypeArrayT::insertDefaultInto(IColumn & column) const
 {
@@ -64,24 +92,9 @@ void DataTypeArrayT::insertDefaultInto(IColumn & column) const
     }
 }
 
-bool DataTypeArrayT::equals(const IDataType & rhs) const
-{
-    return rhs.getSizeOfValueInMemory() != 0;
-}
-
-SerializationPtr DataTypeArrayT::doGetDefaultSerialization() const
-{
-    return std::make_shared<SerializationArrayT>(size, n);
-}
-
 Field DataTypeArrayT::getDefault() const
 {
     return 0;
-}
-
-size_t DataTypeArrayT::getSizeOfValueInMemory() const
-{
-    return type->getSizeOfValueInMemory() * n;
 }
 
 static DataTypePtr create(const ASTPtr & arguments)

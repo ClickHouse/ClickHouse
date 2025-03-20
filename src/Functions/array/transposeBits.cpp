@@ -2,12 +2,12 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Common/assert_cast.h>
-#include <Common/typeid_cast.h>
 
 // TODO: support for Float64 and BFloat16
 

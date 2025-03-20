@@ -21,19 +21,11 @@ namespace ErrorCodes
 extern const int SIZES_OF_COLUMNS_IN_TUPLE_DOESNT_MATCH;
 }
 
-SerializationArrayT::SerializationArrayT(const size_t size_, UInt64 n_)
-    : size(size_)
-    , n(n_)
-{
-    SerializationPtr element_serialization = std::make_shared<SerializationFixedString>(n >> 3);
-    nested_serialization = std::make_shared<SerializationNamed>(element_serialization, "", ISerialization::Substream::TupleElement);
-}
-
 void SerializationArrayT::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     const auto & arrayt = field.safeGet<const ArrayT &>();
     for (size_t element_index = 0; element_index < size; ++element_index)
-        nested_serialization->serializeBinary(arrayt[element_index], ostr, settings);
+        elems[element_index]->serializeBinary(arrayt[element_index], ostr, settings);
 }
 
 void SerializationArrayT::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
@@ -42,7 +34,7 @@ void SerializationArrayT::deserializeBinary(Field & field, ReadBuffer & istr, co
     ArrayT & arrayt = field.safeGet<ArrayT &>();
     arrayt.reserve(size);
     for (size_t i = 0; i < size; ++i)
-        nested_serialization->deserializeBinary(arrayt.emplace_back(), istr, settings);
+        elems[i]->deserializeBinary(arrayt.emplace_back(), istr, settings);
 }
 
 /* Get idx-th column */
@@ -115,7 +107,7 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 void SerializationArrayT::serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
     for (size_t element_index = 0; element_index < size; ++element_index)
-        nested_serialization->serializeBinary(extractElementColumn(column, element_index), row_num, ostr, settings);
+        elems[element_index]->serializeBinary(extractElementColumn(column, element_index), row_num, ostr, settings);
 }
 
 void SerializationArrayT::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -128,7 +120,7 @@ void SerializationArrayT::deserializeBinary(IColumn & column, ReadBuffer & istr,
             for (size_t i = 0; i < size; ++i)
             {
                 auto & element_column = const_cast<IColumn &>(extractElementColumn(column, i));
-                nested_serialization->deserializeBinary(element_column, istr, settings);
+                elems[i]->deserializeBinary(element_column, istr, settings);
             }
             return true;
         });
@@ -153,7 +145,6 @@ void SerializationArrayT::readFloatsAndExtractBytes(ReadBuffer & istr, std::vect
 
         const char * bytes = reinterpret_cast<const char *>(&value);
 
-        // BREAKS HERE FLOAT64
         for (size_t byte_index = 0; byte_index < bytes_per_float; ++byte_index)
         {
             size_t target_index = i * bytes_per_float + (bytes_per_float - 1 - byte_index);
