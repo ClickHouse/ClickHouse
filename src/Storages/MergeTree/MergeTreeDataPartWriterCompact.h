@@ -56,7 +56,7 @@ private:
 
     void addStreams(const NameAndTypePair & name_and_type, const ColumnPtr & column, const ASTPtr & effective_codec_desc) override;
 
-    void initColumnsSubstreamsWithEmptyColumns();
+    void initColumnsSubstreamsIfNeeded(const Block & sample);
 
     Block header;
 

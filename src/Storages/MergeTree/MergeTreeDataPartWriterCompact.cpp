@@ -183,6 +183,8 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
     /// the next blocks so they match this dynamic structure.
     initOrAdjustDynamicStructureIfNeeded(result_block);
 
+    initColumnsSubstreamsIfNeeded(result_block);
+
     /// Fill index granularity for this block
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
@@ -234,13 +236,9 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
     {
         data_written = true;
 
-        bool fill_columns_substreams = index_granularity_info.mark_type.with_substreams && columns_substreams.empty();
         auto name_and_type = columns_list.begin();
         for (size_t i = 0; i < columns_list.size(); ++i, ++name_and_type)
         {
-            if (fill_columns_substreams)
-                columns_substreams.addColumn(name_and_type->name);
-
             /// Tricky part, because we share compressed streams between different columns substreams.
             /// Compressed streams write data to the single file, but with different compression codecs.
             /// So we flush each stream (using next()) before using new one, because otherwise we will override
@@ -249,9 +247,6 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
             auto stream_getter = [&, this](const ISerialization::SubstreamPath & substream_path) -> WriteBuffer *
             {
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
-
-                if (fill_columns_substreams)
-                    columns_substreams.addSubstreamToLastColumn(stream_name);
 
                 auto & result_stream = compressed_streams[stream_name];
                 /// Write one compressed block per column in granule for more optimal reading.
@@ -308,7 +303,12 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
 
     /// If there was no data written, we still need to initialize columns substreams for marks with substreams.
     if (index_granularity_info.mark_type.with_substreams && !data_written)
-        initColumnsSubstreamsWithEmptyColumns();
+    {
+        Block sample;
+        for (const auto & [name, type] : columns_list)
+            sample.insert(ColumnWithTypeAndName(type->createColumn(), type, name));
+        initColumnsSubstreamsIfNeeded(sample);
+    }
 
 #ifndef NDEBUG
     /// Offsets should be 0, because compressed block is written for every granule.
@@ -357,8 +357,11 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
     marks_file->preFinalize();
 }
 
-void MergeTreeDataPartWriterCompact::initColumnsSubstreamsWithEmptyColumns()
+void MergeTreeDataPartWriterCompact::initColumnsSubstreamsIfNeeded(const Block & sample)
 {
+    if (!index_granularity_info.mark_type.with_substreams || columns_substreams.getTotalSubstreams())
+        return;
+
     NullWriteBuffer buf;
     for (const auto & name_and_type : columns_list)
     {
@@ -369,8 +372,7 @@ void MergeTreeDataPartWriterCompact::initColumnsSubstreamsWithEmptyColumns()
             return &buf;
         };
 
-        auto empty_column = name_and_type.type->createColumn();
-        writeColumnSingleGranule(ColumnWithTypeAndName(std::move(empty_column), name_and_type.type, name_and_type.name), getSerialization(name_and_type.name), buffer_getter, 0, 0, settings);
+        writeColumnSingleGranule(sample.getByName(name_and_type.name), getSerialization(name_and_type.name), buffer_getter, 0, 0, settings);
     }
 }
 
