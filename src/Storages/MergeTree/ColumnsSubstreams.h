@@ -23,7 +23,7 @@ public:
     /// Add new column to the list with empty list of substreams.
     void addColumn(const String & column);
     /// Add new stream for last added column.
-    void addSubstreamForLastColumn(const String & substream);
+    void addSubstreamToLastColumn(const String & substream);
 
     size_t getSubstreamPosition(const String & column, const String & substream) const;
     size_t getSubstreamPosition(size_t column_position, const String & substream) const;

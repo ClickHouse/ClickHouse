@@ -4,6 +4,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 #include "Formats/MarkInCompressedFile.h"
 #include <Common/logger_useful.h>
+#include <IO/NullWriteBuffer.h>
 
 namespace DB
 {
@@ -250,7 +251,7 @@ void MergeTreeDataPartWriterCompact::writeDataBlock(const Block & block, const G
                 String stream_name = ISerialization::getFileNameForStream(*name_and_type, substream_path);
 
                 if (fill_columns_substreams)
-                    columns_substreams.addSubstreamForLastColumn(stream_name);
+                    columns_substreams.addSubstreamToLastColumn(stream_name);
 
                 auto & result_stream = compressed_streams[stream_name];
                 /// Write one compressed block per column in granule for more optimal reading.
@@ -305,6 +306,10 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
         writeDataBlockPrimaryIndexAndSkipIndices(block, granules_to_write);
     }
 
+    /// If there was no data written, we still need to initialize columns substreams for marks with substreams.
+    if (index_granularity_info.mark_type.with_substreams && !data_written)
+        initColumnsSubstreamsWithEmptyColumns();
+
 #ifndef NDEBUG
     /// Offsets should be 0, because compressed block is written for every granule.
     for (const auto & [_, stream] : streams_by_codec)
@@ -350,6 +355,23 @@ void MergeTreeDataPartWriterCompact::fillDataChecksums(MergeTreeDataPartChecksum
 
     plain_file->preFinalize();
     marks_file->preFinalize();
+}
+
+void MergeTreeDataPartWriterCompact::initColumnsSubstreamsWithEmptyColumns()
+{
+    NullWriteBuffer buf;
+    for (const auto & name_and_type : columns_list)
+    {
+        columns_substreams.addColumn(name_and_type.name);
+        auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForStream(name_and_type, substream_path));
+            return &buf;
+        };
+
+        auto empty_column = name_and_type.type->createColumn();
+        writeColumnSingleGranule(ColumnWithTypeAndName(std::move(empty_column), name_and_type.type, name_and_type.name), getSerialization(name_and_type.name), buffer_getter, 0, 0, settings);
+    }
 }
 
 void MergeTreeDataPartWriterCompact::finishDataSerialization(bool sync)

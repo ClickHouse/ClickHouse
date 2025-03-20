@@ -19,7 +19,7 @@ void ColumnsSubstreams::addColumn(const String & column)
     column_to_first_substream_position[column] = total_substreams;
 }
 
-void ColumnsSubstreams::addSubstreamForLastColumn(const String & substream)
+void ColumnsSubstreams::addSubstreamToLastColumn(const String & substream)
 {
     if (columns_substreams.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add new substream {} to ColumnsSubstreams: there are no columns", substream);

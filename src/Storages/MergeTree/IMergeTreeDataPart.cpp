@@ -1089,6 +1089,9 @@ NameSet IMergeTreeDataPart::getFileNamesWithoutChecksums() const
     if (getDataPartStorage().existsFile(METADATA_VERSION_FILE_NAME))
         result.emplace(METADATA_VERSION_FILE_NAME);
 
+    if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
+        result.emplace("columns_substreams.txt");
+
     return result;
 }
 
