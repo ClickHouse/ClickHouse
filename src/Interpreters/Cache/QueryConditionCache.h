@@ -43,13 +43,19 @@ private:
         MatchingMarks matching_marks;
         std::shared_mutex mutex; /// (*)
 
-        explicit Entry(size_t mark_count);
-    };
+        explicit Entry(size_t mark_count); /// (**)
 
-    /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already.
-    ///     The reason is that ClickHouse scans ranges within the same part in parallel. The first scan creates
-    ///     and inserts a new Key + Entry into the cache, the 2nd ... Nth scan find the existing Key and update
-    ///     its Entry for the new ranges. This can only be done safely in a synchronized fashion.
+        /// (*) You might wonder why Entry has its own mutex considering that CacheBase locks internally already.
+        ///     The reason is that ClickHouse scans ranges within the same part in parallel. The first scan creates
+        ///     and inserts a new Key + Entry into the cache, the 2nd ... Nth scan find the existing Key and update
+        ///     its Entry for the new ranges. This can only be done safely in a synchronized fashion.
+
+        /// (**) About error handling: There could be an exception after the i-th scan and cache entries could
+        ///     (theoretically) be left in a corrupt state. If we are not careful, future scans queries could then
+        ///     skip too many ranges. To prevent this, it is important to initialize all marks of each entry as
+        ///     non-matching. In case of an exception, future scans will then not skip them.
+
+    };
 
     struct KeyHasher
     {
