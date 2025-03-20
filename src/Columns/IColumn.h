@@ -28,6 +28,7 @@ class Field;
 class WeakHash32;
 class ColumnConst;
 class IDataType;
+class Block;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -567,6 +568,13 @@ public:
         return getPtr();
     }
 
+    /// Fills column values from RowRefList
+    virtual void fillFromRowRefs(const DataTypePtr & type, size_t right_index, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges);
+
+    /// Fills column values from list of blocks and row numbers
+    /// blocks.size() == row_nums.size()
+    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t right_index, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums);
+
     /// Some columns may require finalization before using of other operations.
     virtual void finalize() {}
     virtual bool isFinalized() const { return true; }
@@ -799,6 +807,13 @@ private:
 
     /// Devirtualize byteSizeAt.
     void collectSerializedValueSizes(PaddedPODArray<UInt64> & sizes, const UInt8 * is_null) const override;
+
+    /// Fills column values from RowRefList
+    void fillFromRowRefs(const DataTypePtr & type, size_t right_index, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges) override;
+
+    /// Fills column values from list of blocks and row numbers
+    /// blocks.size() == row_nums.size()
+    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t right_index, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums) override;
 
     /// Move common implementations into the same translation unit to ensure they are properly inlined.
     char * serializeValueIntoMemoryWithNull(size_t n, char * memory, const UInt8 * is_null) const override;

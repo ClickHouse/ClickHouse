@@ -21,10 +21,12 @@
 #include <Columns/IColumnDummy.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Field.h>
+#include <Core/Block.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Interpreters/RowRefs.h>
 
 namespace DB
 {
@@ -439,6 +441,81 @@ void IColumnHelper<Derived, Parent>::getIndicesOfNonDefaultRows(IColumn::Offsets
         if (!self.isDefaultAt(i))
             indices.push_back(i);
     }
+}
+
+/// Fills column values from RowRefList
+/// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
+template <bool row_refs_are_ranges, typename ColumnType>
+static void fillColumnFromRowRefs(ColumnType * col, const DataTypePtr & type, const size_t right_index, const PaddedPODArray<UInt64> & row_refs)
+{
+    for (UInt64 row_ref_i : row_refs)
+    {
+        if (row_ref_i)
+        {
+            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
+            if constexpr (row_refs_are_ranges)
+            {
+                col->insertRangeFrom(*row_ref_list->block->getByPosition(right_index).column, row_ref_list->row_num, row_ref_list->rows);
+            }
+            else
+            {
+                for (auto it = row_ref_list->begin(); it.ok(); ++it)
+                    col->insertFrom(*it->block->getByPosition(right_index).column, it->row_num);
+            }
+        }
+        else
+            type->insertDefaultInto(*col);
+    }
+}
+
+/// Fills column values from RowRefsList
+void IColumn::fillFromRowRefs(const DataTypePtr & type, size_t right_index, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges)
+{
+    if (row_refs_are_ranges)
+        fillColumnFromRowRefs<true>(this, type, right_index, row_refs);
+    else
+        fillColumnFromRowRefs<false>(this, type, right_index, row_refs);
+}
+
+/// Fills column values from RowRefsList
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::fillFromRowRefs(const DataTypePtr & type, size_t right_index, const PaddedPODArray<UInt64> & row_refs, bool row_refs_are_ranges)
+{
+    auto & self = static_cast<Derived &>(*this);
+    if (row_refs_are_ranges)
+        fillColumnFromRowRefs<true>(&self, type, right_index, row_refs);
+    else
+        fillColumnFromRowRefs<false>(&self, type, right_index, row_refs);
+}
+
+
+template <typename ColumnType>
+static void fillColumnFromBlocksAndRowNumbers(ColumnType * col, const DataTypePtr & type, size_t right_index, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
+{
+    col->reserve(col->size() + blocks.size());
+    for (size_t j = 0; j < blocks.size(); ++j)
+    {
+        if (blocks[j])
+            col->insertFrom(*blocks[j]->getByPosition(right_index).column, row_nums[j]);
+        else
+            type->insertDefaultInto(*col);
+    }
+}
+
+/// Fills column values from list of blocks and row numbers
+/// blocks.size() == row_nums.size()
+void IColumn::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t right_index, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
+{
+    fillColumnFromBlocksAndRowNumbers(this, type, right_index, blocks, row_nums);
+}
+
+/// Fills column values from list of blocks and row numbers
+/// blocks.size() == row_nums.size()
+template <typename Derived, typename Parent>
+void IColumnHelper<Derived, Parent>::fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t right_index, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
+{
+    auto & self = static_cast<Derived &>(*this);
+    fillColumnFromBlocksAndRowNumbers(&self, type, right_index, blocks, row_nums);
 }
 
 template <typename Derived, typename Parent>

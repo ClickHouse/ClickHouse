@@ -1,9 +1,5 @@
 #include <Interpreters/HashJoin/AddedColumns.h>
 #include <DataTypes/NullableUtils.h>
-#include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnFixedString.h>
 
 namespace DB
 {
@@ -38,6 +34,9 @@ template<bool from_row_list>
 void AddedColumns<false>::buildOutputFromBlocks() {}
 
 template<>
+void AddedColumns<true>::buildOutputFromRowRefLists();
+
+template<>
 void AddedColumns<true>::buildOutput()
 {
     if (!output_by_row_list)
@@ -46,101 +45,22 @@ void AddedColumns<true>::buildOutput()
     {
         if (join_data_avg_perkey_rows < output_by_row_list_threshold)
             buildOutputFromBlocks<true>();
-        else if (join_data_sorted)
-            buildOutputFromRowRefLists<true>();
         else
-            buildOutputFromRowRefLists<false>();
+            buildOutputFromRowRefLists();
     }
-}
-
-/// Fills column values from RowRefList
-/// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
-template <bool join_data_sorted, typename ColumnType>
-static void fillTypedColumn(ColumnType * col, const size_t right_index, const DataTypePtr & type, const size_t output_row_count, const PaddedPODArray<UInt64> & row_refs)
-{
-    col->reserve(col->size() + output_row_count);
-    for (UInt64 row_ref_i : row_refs)
-    {
-        if (row_ref_i)
-        {
-            const RowRefList * row_ref_list = reinterpret_cast<const RowRefList *>(row_ref_i);
-            if constexpr (join_data_sorted)
-            {
-                col->insertRangeFrom(*row_ref_list->block->getByPosition(right_index).column, row_ref_list->row_num, row_ref_list->rows);
-            }
-            else
-            {
-                for (auto it = row_ref_list->begin(); it.ok(); ++it)
-                    col->insertFrom(*it->block->getByPosition(right_index).column, it->row_num);
-            }
-        }
-        else
-            type->insertDefaultInto(*col);
-    }
-}
-
-/// Fills column values from RowRefList
-template <bool join_data_sorted>
-static void fillColumn(const MutableColumnPtr & column, const size_t right_index, const DataTypePtr & type, const size_t output_row_count, const PaddedPODArray<UInt64> & row_refs)
-{
-    bool filled = false;
-
-#define TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX(column_type_index, column_type) \
-    case TypeIndex::column_type_index : \
-    { \
-        auto * typed_column = typeid_cast<column_type *>(column.get()); /* NOLINT */ \
-        if (typed_column) \
-        { \
-            fillTypedColumn<join_data_sorted>(typed_column, right_index, type, output_row_count, row_refs); \
-            filled = true; \
-        } \
-        break; \
-    }
-
-#define TRY_FILL_TYPED_COLUMN(column_type_index) \
-    TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX(column_type_index, Column ## column_type_index)
-
-
-    switch (column->getDataType())
-    {
-    TRY_FILL_TYPED_COLUMN(UInt8)
-    TRY_FILL_TYPED_COLUMN(UInt16)
-    TRY_FILL_TYPED_COLUMN(UInt32)
-    TRY_FILL_TYPED_COLUMN(UInt64)
-    TRY_FILL_TYPED_COLUMN(Int8)
-    TRY_FILL_TYPED_COLUMN(Int16)
-    TRY_FILL_TYPED_COLUMN(Int32)
-    TRY_FILL_TYPED_COLUMN(Int64)
-    TRY_FILL_TYPED_COLUMN(Float32)
-    TRY_FILL_TYPED_COLUMN(Float64)
-    TRY_FILL_TYPED_COLUMN(BFloat16)
-    TRY_FILL_TYPED_COLUMN(UUID)
-    TRY_FILL_TYPED_COLUMN(IPv4)
-    TRY_FILL_TYPED_COLUMN(IPv6)
-    TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX(Decimal32, ColumnDecimal<Decimal32>)
-    TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX(Decimal64, ColumnDecimal<Decimal64>)
-    TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX(DateTime64, ColumnDecimal<DateTime64>)
-    TRY_FILL_TYPED_COLUMN(String)
-    TRY_FILL_TYPED_COLUMN(FixedString)
-    default:
-    }
-
-#undef TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX
-#undef TRY_FILL_TYPED_COLUMN
-
-    /// Generic implementation for IColumn
-    if (!filled)
-        fillTypedColumn<join_data_sorted>(column.get(), right_index, type, output_row_count, row_refs);
 }
 
 template<>
-template<bool join_data_sorted>
 void AddedColumns<true>::buildOutputFromRowRefLists()
 {
     const size_t output_row_count = lazy_output.getRowCount();
 
     for (size_t i = 0; i < this->size(); ++i)
-        fillColumn<join_data_sorted>(columns[i], right_indexes[i], type_name[i].type, output_row_count, lazy_output.getRowRefs());
+    {
+        auto & col = columns[i];
+        col->reserve(col->size() + output_row_count);
+        col->fillFromRowRefs(type_name[i].type, right_indexes[i], lazy_output.getRowRefs(), join_data_sorted);
+    }
 }
 
 template<>
@@ -164,75 +84,6 @@ void AddedColumns<true>::buildJoinGetOutput()
                 col->insertFrom(*column_from_block.column, row_ref->row_num);
         }
     }
-}
-
-
-/// Fills column values from blocks and row numbers
-/// Implementation with concrete column type allows to de-virtualize col->insertFrom() calls
-template <typename ColumnType>
-static void fillTypedColumnFromBlocks(ColumnType * col, const size_t right_index, const DataTypePtr & type, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
-{
-    col->reserve(col->size() + blocks.size());
-    for (size_t j = 0; j < blocks.size(); ++j)
-    {
-        if (blocks[j])
-            col->insertFrom(*blocks[j]->getByPosition(right_index).column, row_nums[j]);
-        else
-            type->insertDefaultInto(*col);
-    }
-}
-
-/// Fills column values from blocks and row numbers
-static void fillColumnFromBlocks(const MutableColumnPtr & column, const size_t right_index, const DataTypePtr & type, const std::vector<const Block *> & blocks, const std::vector<UInt32> & row_nums)
-{
-    bool filled = false;
-
-#define TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX(column_type_index, column_type) \
-    case TypeIndex::column_type_index : \
-    { \
-        auto * typed_column = typeid_cast<column_type *>(column.get()); /* NOLINT */ \
-        if (typed_column) \
-        { \
-            fillTypedColumnFromBlocks(typed_column, right_index, type, blocks, row_nums); \
-            filled = true; \
-        } \
-        break; \
-    }
-
-#define TRY_FILL_TYPED_COLUMN(column_type_index) \
-    TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX(column_type_index, Column ## column_type_index)
-
-
-    switch (column->getDataType())
-    {
-    TRY_FILL_TYPED_COLUMN(UInt8)
-    TRY_FILL_TYPED_COLUMN(UInt16)
-    TRY_FILL_TYPED_COLUMN(UInt32)
-    TRY_FILL_TYPED_COLUMN(UInt64)
-    TRY_FILL_TYPED_COLUMN(Int8)
-    TRY_FILL_TYPED_COLUMN(Int16)
-    TRY_FILL_TYPED_COLUMN(Int32)
-    TRY_FILL_TYPED_COLUMN(Int64)
-    TRY_FILL_TYPED_COLUMN(Float32)
-    TRY_FILL_TYPED_COLUMN(Float64)
-    TRY_FILL_TYPED_COLUMN(BFloat16)
-    TRY_FILL_TYPED_COLUMN(UUID)
-    TRY_FILL_TYPED_COLUMN(IPv4)
-    TRY_FILL_TYPED_COLUMN(IPv6)
-    TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX(Decimal32, ColumnDecimal<Decimal32>)
-    TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX(Decimal64, ColumnDecimal<Decimal64>)
-    TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX(DateTime64, ColumnDecimal<DateTime64>)
-    TRY_FILL_TYPED_COLUMN(String)
-    TRY_FILL_TYPED_COLUMN(FixedString)
-    default:
-    }
-
-#undef TRY_FILL_TYPED_COLUMN_BY_TYPE_INDEX
-#undef TRY_FILL_TYPED_COLUMN
-
-    /// Generic implementation for IColumn
-    if (!filled)
-        fillTypedColumnFromBlocks(column.get(), right_index, type, blocks, row_nums);
 }
 
 template<>
@@ -273,7 +124,7 @@ void AddedColumns<true>::buildOutputFromBlocks()
     }
     for (size_t i = 0; i < this->size(); ++i)
     {
-        fillColumnFromBlocks(columns[i], right_indexes[i], type_name[i].type, blocks, row_nums);
+        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], blocks, row_nums);
     }
 }
 
