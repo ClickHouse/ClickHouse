@@ -11,6 +11,7 @@
 #include <IO/WriteHelpers.h>
 
 #include <Common/OpenSSLHelpers.h>
+#include <Common/Base64.h>
 #include <Poco/SHA1Engine.h>
 #include <base/types.h>
 #include <base/hex.h>
@@ -66,23 +67,6 @@ std::vector<uint8_t> pbkdf2SHA256(std::string_view password, const std::vector<u
     return derived_key;
 }
 
-std::vector<uint8_t> base64Decode(std::string_view encoded)
-{
-    BIO *bio;
-    BIO *b64;
-    size_t decode_len = encoded.size();
-    std::vector<uint8_t> decoded(decode_len);
-
-    bio = BIO_new_mem_buf(encoded.data(), static_cast<Int32>(encoded.size()));
-    b64 = BIO_new(BIO_f_base64());
-    bio = BIO_push(b64, bio);
-    BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
-    Int32 len = BIO_read(bio, decoded.data(), static_cast<Int32>(decode_len));
-    BIO_free_all(bio);
-    decoded.resize(len);
-    return decoded;
-}
-
 #endif
 }
 
@@ -101,7 +85,9 @@ AuthenticationData::Digest AuthenticationData::Util::encodeSHA256(std::string_vi
 AuthenticationData::Digest AuthenticationData::Util::encodeScramSHA256(std::string_view password [[maybe_unused]], std::string_view salt [[maybe_unused]])
 {
 #if USE_SSL
-    auto salt_digest = base64Decode(salt);
+    std::vector<uint8_t> salt_digest;
+    for (auto elem : base64Decode(String(salt)))
+        salt_digest.push_back(elem);
     auto salted_password = pbkdf2SHA256(password, salt_digest, 4096);
     return salted_password;
 #else
