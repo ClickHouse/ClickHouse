@@ -1,0 +1,11 @@
+SELECT dummy
+FROM
+(
+    SELECT dummy
+    FROM system.one
+) AS a
+ALL INNER JOIN
+(
+    SELECT dummy
+    FROM system.one
+) AS b USING (dummy)
