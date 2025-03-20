@@ -956,7 +956,6 @@ void Connection::sendQueryPlan(const QueryPlan & query_plan)
 {
     writeVarUInt(Protocol::Client::QueryPlan, *out);
     query_plan.serialize(*out, server_query_plan_serialization_version);
-    LOG_DEBUG(log_wrapper.get(), "Sent query plan");
 }
 
 void Connection::sendCancel()

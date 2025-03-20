@@ -1830,7 +1830,7 @@ static std::pair<ASTPtr, BlockIO> executeQueryImpl(
 
                     WriteBufferFromOwnString buf;
                     plan.explainPlan(buf, {.header=true, .actions=true});
-                    LOG_TRACE(getLogger("executeQuery"), "Query Plan:\n{}", buf.str());
+                    LOG_TRACE(getLogger("executeQuery"), "Deserialized Query Plan:\n{}", buf.str());
 
                     auto pipeline = plan.buildQueryPipeline(
                             QueryPlanOptimizationSettings(context),
