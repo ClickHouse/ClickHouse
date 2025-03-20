@@ -82,7 +82,7 @@ std::future<IAsynchronousReader::Result> ThreadPoolRemoteFSReader::submit(Reques
     {
         ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
         /// `seek` have to be done before checking `isContentCached`, and `set` have to be done prior to `seek`
-        if (!request.use_page_cache)
+        if (!typeid_cast<CachedInMemoryReadBufferFromFile *>(&reader))
             reader.set(request.buf, request.size);
         reader.seek(request.offset, SEEK_SET);
     }
@@ -124,6 +124,7 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
 
     auto * fd = assert_cast<RemoteFSFileDescriptor *>(request.descriptor.get());
     auto & reader = fd->getReader();
+    auto * cached_reader = typeid_cast<CachedInMemoryReadBufferFromFile *>(&reader);
 
     auto read_counters = fd->getReadCounters();
     std::optional<AsyncReadIncrement> increment = read_counters ? std::optional<AsyncReadIncrement>(read_counters) : std::nullopt;
@@ -132,7 +133,7 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
         ProfileEventTimeIncrement<Microseconds> elapsed(ProfileEvents::ThreadpoolReaderPrepareMicroseconds);
         if (!seek_performed)
         {
-            if (!request.use_page_cache)
+            if (!cached_reader)
                 reader.set(request.buf, request.size);
             reader.seek(request.offset, SEEK_SET);
         }
@@ -148,7 +149,10 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
 
     bool result = reader.available();
     if (!result)
+    {
+        chassert(!request.ignore); // read_result.offset must be equal to request.ignore
         result = reader.next();
+    }
 
     watch->stop();
     ProfileEvents::increment(ProfileEvents::ThreadpoolReaderTaskMicroseconds, watch->elapsedMicroseconds());
@@ -156,22 +160,21 @@ IAsynchronousReader::Result ThreadPoolRemoteFSReader::execute(Request request, b
     IAsynchronousReader::Result read_result;
     if (result)
     {
-        if (request.use_page_cache)
+        if (cached_reader)
         {
-            auto & cached_reader = typeid_cast<CachedInMemoryReadBufferFromFile &>(reader);
-            read_result.page_cache_cell = cached_reader.getPageCacheCell();
-
-            chassert(cached_reader.internalBuffer().empty());
+            read_result.page_cache_cell = cached_reader->getPageCacheCell();
             chassert(read_result.page_cache_cell);
             chassert(read_result.page_cache_cell->data() == reader.buffer().begin());
+            chassert(!request.ignore);
         }
         else
         {
             chassert(reader.buffer().begin() == request.buf);
             chassert(reader.buffer().end() <= request.buf + request.size);
         }
-        read_result.size = reader.buffer().size();
-        read_result.offset = reader.offset();
+        read_result.buf = reader.position() - request.ignore;
+        read_result.size = reader.available() + request.ignore;
+        read_result.offset = request.ignore;
         ProfileEvents::increment(ProfileEvents::ThreadpoolReaderReadBytes, read_result.size);
     }
 

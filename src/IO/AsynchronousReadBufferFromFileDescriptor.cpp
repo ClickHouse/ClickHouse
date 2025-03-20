@@ -56,7 +56,7 @@ std::future<IAsynchronousReader::Result> AsynchronousReadBufferFromFileDescripto
     /// This is a workaround of a read pass EOF bug in linux kernel with pread()
     if (file_size.has_value() && file_offset_of_buffer_end >= *file_size)
     {
-        return std::async(std::launch::deferred, [] { return IAsynchronousReader::Result{.size = 0, .offset = 0, .page_cache_cell = nullptr}; });
+        return std::async(std::launch::deferred, [] { return IAsynchronousReader::Result{ .buf = nullptr, .size = 0, .offset = 0}; });
     }
 
     return reader.submit(request);
@@ -100,6 +100,7 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
         result = asyncReadInto(memory.data(), memory.size(), DEFAULT_PREFETCH_PRIORITY).get();
     }
 
+    chassert(!result.page_cache_cell);
     chassert(result.size >= result.offset);
     size_t bytes_read = result.size - result.offset;
     file_offset_of_buffer_end += result.size;
@@ -110,8 +111,8 @@ bool AsynchronousReadBufferFromFileDescriptor::nextImpl()
     if (bytes_read)
     {
         /// Adjust the working buffer so that it ignores `offset` bytes.
-        internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-        working_buffer = Buffer(memory.data() + result.offset, memory.data() + result.size);
+        internal_buffer = Buffer(result.buf, result.buf + result.size);
+        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
         pos = working_buffer.begin();
     }
 

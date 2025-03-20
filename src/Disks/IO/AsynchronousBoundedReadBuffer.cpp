@@ -71,10 +71,8 @@ AsynchronousBoundedReadBuffer::AsynchronousBoundedReadBuffer(
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
 
     const auto * cached_impl = typeid_cast<const CachedInMemoryReadBufferFromFile *>(impl.get());
-    if (cached_impl && reader.supportsUserspacePageCache())
+    if (cached_impl)
     {
-        /// When using userspace page cache, we directly use memory owned by the cache instead of
-        /// allocating our own buffers.
         use_page_cache = true;
         buffer_size = cached_impl->getPageCache()->defaultBlockSize();
     }
@@ -111,6 +109,8 @@ bool AsynchronousBoundedReadBuffer::hasPendingDataToRead()
 
 std::future<IAsynchronousReader::Result> AsynchronousBoundedReadBuffer::readAsync(char * data, size_t size, Priority priority)
 {
+    if (use_page_cache)
+        assert(data == nullptr);
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl, async_read_counters);
     request.buf = data;
@@ -118,19 +118,19 @@ std::future<IAsynchronousReader::Result> AsynchronousBoundedReadBuffer::readAsyn
     request.offset = file_offset_of_buffer_end;
     request.priority = Priority{read_settings.priority.value + priority.value};
     request.ignore = bytes_to_ignore;
-    request.use_page_cache = use_page_cache;
     return reader.submit(request);
 }
 
 IAsynchronousReader::Result AsynchronousBoundedReadBuffer::readSync(char * data, size_t size)
 {
+    if (use_page_cache)
+        assert(data == nullptr);
     IAsynchronousReader::Request request;
     request.descriptor = std::make_shared<RemoteFSFileDescriptor>(*impl, async_read_counters);
     request.buf = data;
     request.size = size;
     request.offset = file_offset_of_buffer_end;
     request.ignore = bytes_to_ignore;
-    request.use_page_cache = use_page_cache;
     return reader.execute(request);
 }
 
@@ -247,7 +247,8 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     }
     else
     {
-        memory.resize(buffer_size);
+        if (!use_page_cache)
+            memory.resize(buffer_size);
 
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::SynchronousRemoteReadWaitMicroseconds);
@@ -264,18 +265,8 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
     size_t bytes_read = result.size - result.offset;
     if (bytes_read)
     {
-        if (use_page_cache)
-        {
-            page_cache_cell = result.page_cache_cell;
-            internal_buffer = Buffer(page_cache_cell->data(), page_cache_cell->data() + page_cache_cell->size());
-        }
-        else
-        {
-            internal_buffer = Buffer(memory.data(), memory.data() + memory.size());
-        }
-
-        /// Adjust the working buffer so that it ignores `offset` bytes.
-        working_buffer = Buffer(internal_buffer.begin() + result.offset, internal_buffer.begin() + result.size);
+        page_cache_cell = result.page_cache_cell;
+        working_buffer = Buffer(result.buf + result.offset, result.buf + result.size);
         pos = working_buffer.begin();
     }
 

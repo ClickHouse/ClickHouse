@@ -67,6 +67,8 @@ private:
     Memory<> prefetch_buffer;
     std::future<IAsynchronousReader::Result> prefetch_future;
 
+    /// When using userspace page cache, we directly use memory owned by the cache instead of
+    /// allocating our own buffers.
     bool use_page_cache = false;
     PageCacheCellPtr page_cache_cell;
 

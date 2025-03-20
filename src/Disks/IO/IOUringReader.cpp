@@ -321,7 +321,7 @@ void IOUringReader::monitorRing()
         else
         {
             ProfileEvents::increment(ProfileEvents::AsynchronousReaderIgnoredBytes, enqueued.request.ignore);
-            enqueued.promise.set_value(Result{ .size = total_bytes_read, .offset = enqueued.request.ignore, .page_cache_cell = nullptr });
+            enqueued.promise.set_value(Result{ .buf = enqueued.request.buf, .size = total_bytes_read, .offset = enqueued.request.ignore });
             finalizeRequest(it);
         }
 
