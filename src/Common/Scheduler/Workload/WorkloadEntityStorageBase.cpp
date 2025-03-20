@@ -398,10 +398,10 @@ bool WorkloadEntityStorageBase::storeEntity(
             }
 
             SchedulingSettings io_validator;
-            io_validator.updateFromChanges(SchedulingSettings::Unit::IoByte, workload->changes);
+            io_validator.updateFromChanges(SchedulingSettings::Unit::IOByte, workload->changes);
 
             SchedulingSettings cpu_validator;
-            cpu_validator.updateFromChanges(SchedulingSettings::Unit::CpuSlot, workload->changes);
+            cpu_validator.updateFromChanges(SchedulingSettings::Unit::CPUSlot, workload->changes);
         }
 
         // Validate resource

@@ -16,8 +16,8 @@ public:
     /// One resource could not mix different units
     enum class CostUnit
     {
-        IoByte,
-        CpuSlot,
+        IOByte,
+        CPUSlot,
     };
 
     /// Describes kinds of operations requiring the access to the resourece
@@ -33,10 +33,10 @@ public:
     {
         switch (mode)
         {
-            case AccessMode::DiskRead: return CostUnit::IoByte;
-            case AccessMode::DiskWrite: return CostUnit::IoByte;
-            case AccessMode::MasterThread: return CostUnit::CpuSlot;
-            case AccessMode::WorkerThread: return CostUnit::CpuSlot;
+            case AccessMode::DiskRead: return CostUnit::IOByte;
+            case AccessMode::DiskWrite: return CostUnit::IOByte;
+            case AccessMode::MasterThread: return CostUnit::CPUSlot;
+            case AccessMode::WorkerThread: return CostUnit::CPUSlot;
         }
     }
 
@@ -44,8 +44,8 @@ public:
     {
         switch (unit)
         {
-            case CostUnit::IoByte: return "IoByte";
-            case CostUnit::CpuSlot: return "CpuSlot";
+            case CostUnit::IOByte: return "IOByte";
+            case CostUnit::CPUSlot: return "CPUSlot";
         }
     }
 

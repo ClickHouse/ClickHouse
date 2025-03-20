@@ -150,7 +150,7 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     create_resource_query->if_not_exists = if_not_exists;
     create_resource_query->cluster = std::move(cluster_str);
 
-    create_resource_query->unit = operations.empty() ? ASTCreateResourceQuery::CostUnit::IoByte : operations.front().unit();
+    create_resource_query->unit = operations.empty() ? ASTCreateResourceQuery::CostUnit::IOByte : operations.front().unit();
     create_resource_query->operations = std::move(operations);
 
     return true;

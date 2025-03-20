@@ -15,48 +15,48 @@ namespace ErrorCodes
 bool SchedulingSettings::hasThrottler() const
 {
     switch (unit) {
-        case Unit::IoByte: return max_bytes_per_second != 0;
-        case Unit::CpuSlot: return false;
+        case Unit::IOByte: return max_bytes_per_second != 0;
+        case Unit::CPUSlot: return false;
     }
 }
 
 Float64 SchedulingSettings::getThrottlerMaxSpeed() const
 {
     switch (unit) {
-        case Unit::IoByte: return max_bytes_per_second;
-        case Unit::CpuSlot: return 0;
+        case Unit::IOByte: return max_bytes_per_second;
+        case Unit::CPUSlot: return 0;
     }
 }
 
 Float64 SchedulingSettings::getThrottlerMaxBurst() const
 {
     switch (unit) {
-        case Unit::IoByte: return max_burst_bytes;
-        case Unit::CpuSlot: return 0;
+        case Unit::IOByte: return max_burst_bytes;
+        case Unit::CPUSlot: return 0;
     }
 }
 
 bool SchedulingSettings::hasSemaphore() const
 {
     switch (unit) {
-        case Unit::IoByte: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
-        case Unit::CpuSlot: return max_concurrent_threads != unlimited;
+        case Unit::IOByte: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
+        case Unit::CPUSlot: return max_concurrent_threads != unlimited;
     }
 }
 
 Int64 SchedulingSettings::getSemaphoreMaxRequests() const
 {
     switch (unit) {
-        case Unit::IoByte: return max_io_requests;
-        case Unit::CpuSlot: return max_concurrent_threads;
+        case Unit::IOByte: return max_io_requests;
+        case Unit::CPUSlot: return max_concurrent_threads;
     }
 }
 
 Int64 SchedulingSettings::getSemaphoreMaxCost() const
 {
     switch (unit) {
-        case Unit::IoByte: return max_bytes_inflight;
-        case Unit::CpuSlot: return unlimited;
+        case Unit::IOByte: return max_bytes_inflight;
+        case Unit::CPUSlot: return unlimited;
     }
 }
 
