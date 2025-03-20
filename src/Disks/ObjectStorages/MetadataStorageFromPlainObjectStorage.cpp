@@ -220,7 +220,7 @@ void MetadataStorageFromPlainObjectStorageTransaction::createHardLink(const std:
     if (metadata_storage.object_storage->isWriteOnce())
         throwNotImplemented();
 
-    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyOperation>(
+    addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
         path_from, path_to, *metadata_storage.getPathMap(), object_storage));
 }
 

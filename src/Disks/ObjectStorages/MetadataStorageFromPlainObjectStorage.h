@@ -143,7 +143,7 @@ public:
     void unlinkFile(const std::string & path) override;
     void removeDirectory(const std::string & path) override;
 
-    /// Hard links are not yet implemented; copying is used instead
+    /// Hard links are simulated using server-side copying.
     void createHardLink(const std::string & path_from, const std::string & path_to) override;
 
     void moveFile(const std::string & path_from, const std::string & path_to) override;

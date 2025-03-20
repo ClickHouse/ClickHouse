@@ -123,7 +123,7 @@ public:
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
-class MetadataStorageFromPlainObjectStorageCopyOperation final : public IMetadataOperation
+class MetadataStorageFromPlainObjectStorageCopyFileOperation final : public IMetadataOperation
 {
 private:
     std::filesystem::path path_from;
@@ -136,7 +136,7 @@ private:
     bool copied = false;
 
 public:
-    MetadataStorageFromPlainObjectStorageCopyOperation(
+    MetadataStorageFromPlainObjectStorageCopyFileOperation(
         std::filesystem::path path_from_,
         std::filesystem::path path_to_,
         InMemoryDirectoryPathMap & path_map_,
