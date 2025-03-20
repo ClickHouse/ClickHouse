@@ -8,7 +8,7 @@ title: 'Manipulating Key Expressions'
 
 # Manipulating Key Expressions
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 ```
 

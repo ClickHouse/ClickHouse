@@ -91,7 +91,6 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
 
 #include <base/insertAtEnd.h>

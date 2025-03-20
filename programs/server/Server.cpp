@@ -228,6 +228,10 @@ namespace ServerSetting
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
     extern const ServerSettingsDouble index_mark_cache_size_ratio;
+    extern const ServerSettingsString vector_similarity_index_cache_policy;
+    extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
+    extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
+    extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
@@ -302,7 +306,6 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
-    extern const ServerSettingsBool use_legacy_mongodb_integration;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
@@ -316,6 +319,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 page_cache_max_size;
     extern const ServerSettingsDouble page_cache_free_memory_ratio;
     extern const ServerSettingsUInt64 page_cache_lookahead_blocks;
+    extern const ServerSettingsUInt64 page_cache_shards;
 }
 
 }
@@ -1011,10 +1015,10 @@ try
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerTableFunctions();
     registerDatabases();
-    registerStorages(server_settings[ServerSetting::use_legacy_mongodb_integration]);
-    registerDictionaries(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerStorages();
+    registerDictionaries();
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
@@ -1171,7 +1175,8 @@ try
             server_settings[ServerSetting::page_cache_size_ratio],
             server_settings[ServerSetting::page_cache_min_size],
             server_settings[ServerSetting::page_cache_max_size],
-            server_settings[ServerSetting::page_cache_free_memory_ratio]);
+            server_settings[ServerSetting::page_cache_free_memory_ratio],
+            server_settings[ServerSetting::page_cache_shards]);
         total_memory_tracker.setPageCache(global_context->getPageCache().get());
     }
 
@@ -1753,6 +1758,17 @@ try
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
+    String vector_similarity_index_cache_policy = server_settings[ServerSetting::vector_similarity_index_cache_policy];
+    size_t vector_similarity_index_cache_size = server_settings[ServerSetting::vector_similarity_index_cache_size];
+    size_t vector_similarity_index_cache_max_entries = server_settings[ServerSetting::vector_similarity_index_cache_max_entries];
+    double vector_similarity_index_cache_size_ratio = server_settings[ServerSetting::vector_similarity_index_cache_size_ratio];
+    if (vector_similarity_index_cache_size > max_cache_size)
+    {
+        vector_similarity_index_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered vector similarity index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(vector_similarity_index_cache_size));
+    }
+    global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_entries, vector_similarity_index_cache_size_ratio);
+
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -2077,6 +2093,7 @@ try
             global_context->updatePrimaryIndexCacheConfiguration(*config);
             global_context->updateIndexUncompressedCacheConfiguration(*config);
             global_context->updateIndexMarkCacheConfiguration(*config);
+            global_context->updateVectorSimilarityIndexCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
             global_context->updateQueryResultCacheConfiguration(*config);
             global_context->updateQueryConditionCacheConfiguration(*config);
@@ -3021,7 +3038,7 @@ void Server::createServers(
                 servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
-#if 0 && USE_SSH && defined(OS_LINUX) /// SSH server is insecure until and it is disabled until all special cases are fixed.
+#if USE_SSH && defined(OS_LINUX)
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ false);
                     return ProtocolServerAdapter(

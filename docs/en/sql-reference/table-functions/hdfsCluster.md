@@ -13,7 +13,7 @@ Allows processing files from HDFS in parallel from many nodes in a specified clu
 
 **Syntax**
 
-``` sql
+```sql
 hdfsCluster(cluster_name, URI, format, structure)
 ```
 
@@ -41,14 +41,14 @@ A table with the specified structure for reading data in the specified file.
 
 2.  Query the amount of rows in these files:
 
-``` sql
+```sql
 SELECT count(*)
 FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
 ```
 
 3.  Query the amount of rows in all files of these two directories:
 
-``` sql
+```sql
 SELECT count(*)
 FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
 ```

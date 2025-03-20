@@ -21,7 +21,7 @@ struct MarkRange
     size_t end;
 
     MarkRange() = default;
-    MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_) {}
+    MarkRange(size_t begin_, size_t end_) : begin(begin_), end(end_) { chassert(begin <= end); }
 
     size_t getNumberOfMarks() const;
 

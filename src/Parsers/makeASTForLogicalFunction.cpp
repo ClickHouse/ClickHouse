@@ -4,7 +4,6 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/IAST_erase.h>
 #include <Common/FieldVisitorConvertToNumber.h>
-#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
