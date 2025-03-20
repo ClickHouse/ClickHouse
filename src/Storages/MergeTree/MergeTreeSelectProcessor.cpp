@@ -173,21 +173,24 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         {
             if (!task || algorithm->needNewTask(*task))
             {
-                if (task && prewhere_info && reader_settings.use_query_condition_cache)
+                /// Update the query condition cache for filters in PREWHERE stage
+                if (reader_settings.use_query_condition_cache && task && prewhere_info)
                 {
-                    for (const auto * dag : prewhere_info->prewhere_actions.getOutputs())
+                    for (const auto * outputs : prewhere_info->prewhere_actions.getOutputs())
                     {
-                        if (dag->result_name == prewhere_info->prewhere_column_name)
+                        if (outputs->result_name == prewhere_info->prewhere_column_name)
                         {
-                            auto data_part = task->getInfo().data_part;
-                            auto storage_id = data_part->storage.getStorageID();
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            query_condition_cache->write(storage_id.uuid,
+                            auto data_part = task->getInfo().data_part;
+
+                            query_condition_cache->write(
+                                data_part->storage.getStorageID().uuid,
                                 data_part->name,
-                                dag->getHash(),
+                                outputs->getHash(),
                                 task->getPrewhereUnmatchedMarks(),
                                 data_part->index_granularity->getMarksCount(),
                                 data_part->index_granularity->hasFinalMark());
+
                             break;
                         }
                     }
@@ -244,6 +247,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};
         }
+
         if (reader_settings.use_query_condition_cache && prewhere_info)
             task->addPrewhereUnmatchedMarks(res.read_mark_ranges);
 

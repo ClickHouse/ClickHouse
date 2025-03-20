@@ -72,6 +72,10 @@ class Info:
         return self.env.USER_LOGIN
 
     @property
+    def run_url(self):
+        return self.env.RUN_URL
+
+    @property
     def pr_labels(self):
         return self.env.PR_LABELS
 
@@ -165,15 +169,14 @@ class Info:
             return custom_data.get(key, None)
         return custom_data
 
-    @classmethod
-    def is_workflow_ok(cls):
+    def is_workflow_ok(self):
         """
         Experimental function
         :return:
         """
         from praktika.result import Result
 
-        result = Result.from_fs(cls.workflow_name)
+        result = Result.from_fs(self.env.WORKFLOW_NAME)
         for subresult in result.results:
             if subresult.name == Settings.FINISH_WORKFLOW_JOB_NAME:
                 continue
