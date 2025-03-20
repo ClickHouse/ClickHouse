@@ -1,7 +1,7 @@
 #pragma once
 #include "config.h"
 
-#if USE_AVRO
+#if USE_AVRO && USE_HIVE
 #    include <filesystem>
 #    include <Databases/DataLake/ICatalog.h>
 #    include <IO/HTTPHeaderEntries.h>

@@ -148,7 +148,6 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 Context::getGlobalContextInstance());
             break;
         }
-<<<<<<< HEAD
 
         case DB::DatabaseDataLakeCatalogType::GLUE:
         {
@@ -156,13 +155,15 @@ std::shared_ptr<DataLake::ICatalog> DatabaseDataLake::getCatalog() const
                 settings[DatabaseDataLakeSetting::aws_access_key_id].value,
                 settings[DatabaseDataLakeSetting::aws_secret_access_key].value,
                 settings[DatabaseDataLakeSetting::region].value,
-=======
+                url,
+                Context::getGlobalContextInstance());
+            break;
+        }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         {
             catalog_impl = std::make_shared<DataLake::HiveCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 settings[DatabaseDataLakeSetting::hms_catalog_storage_type].value,
->>>>>>> 2ca3dda1bee (Start Hive metastore catalog)
                 url,
                 Context::getGlobalContextInstance());
             break;
