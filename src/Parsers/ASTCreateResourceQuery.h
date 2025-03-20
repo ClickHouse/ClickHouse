@@ -12,7 +12,7 @@ namespace DB
 class ASTCreateResourceQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
-    /// Describes what resourse request cost means.
+    /// Describes what resource request cost means.
     /// One resource could not mix different units
     enum class CostUnit
     {
@@ -49,7 +49,7 @@ public:
         }
     }
 
-    /// Describes spicific operation that requires this resource
+    /// Describes specific operation that requires this resource
     struct Operation
     {
         AccessMode mode;
