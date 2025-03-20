@@ -361,6 +361,9 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute(std::unique
     if (!path_map.existsLocalPath(directory_to))
         throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Metadata object for the target directory path '{}' does not exist", path_to);
 
+    if (path_map.existsFile(path_to))
+        throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "Target file '{}' already exists", path_to);
+
     object_storage->copyObject(StoredObject(remote_path_from), StoredObject(remote_path_to), getReadSettings(), getWriteSettings());
 
     copied = true;
