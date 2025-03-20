@@ -1,3 +1,4 @@
+#include "Storages/PartitionCommands.h"
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Access/AccessControl.h>
@@ -5376,7 +5377,8 @@ void MergeTreeData::checkAlterPartitionIsPossible(
 
         if (disk_without_hardlink_support_it != disks.end() && command.type != PartitionCommand::DROP_PARTITION
             && command.type != PartitionCommand::DROP_DETACHED_PARTITION && command.type != PartitionCommand::ATTACH_PARTITION
-            && command.type != PartitionCommand::MOVE_PARTITION)
+            && command.type != PartitionCommand::MOVE_PARTITION
+            && command.type != PartitionCommand::REPLACE_PARTITION)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Partition operation ALTER TABLE {} is not supported for disk '{}'",
