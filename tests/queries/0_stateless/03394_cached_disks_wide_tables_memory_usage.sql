@@ -1,3 +1,6 @@
+-- Tags: no-fasttest
+-- - no-fasttest -- requires S3
+
 DROP TABLE IF EXISTS metric_log;
 
 SYSTEM FLUSH LOGS metric_log;
