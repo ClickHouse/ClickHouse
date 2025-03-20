@@ -34,7 +34,7 @@ $CLICKHOUSE_CLIENT -m -q "
 "
 
 $CLICKHOUSE_CLIENT -m -q "
-    system flush logs part_logs;
+    system flush logs part_log;
     select 'before';
     select table, event_type, error>0, countIf(error=0) from system.part_log where database = currentDatabase() group by 1, 2, 3 order by 1, 2, 3;
 
