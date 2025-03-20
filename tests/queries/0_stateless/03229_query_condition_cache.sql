@@ -2,6 +2,8 @@
 
 SET allow_experimental_analyzer = 1;
 
+SELECT 'With PREWHERE';
+
 SYSTEM DROP QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
@@ -39,7 +41,7 @@ WHERE
 ORDER BY
     event_time_microseconds;
 
--- Now test without move to PREWHERE
+SELECT 'Without PREWHERE';
 
 SYSTEM DROP QUERY CONDITION CACHE;
 

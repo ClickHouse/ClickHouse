@@ -10,7 +10,7 @@ Attaches a table or a dictionary, for example, when moving a database to another
 
 **Syntax**
 
-``` sql
+```sql
 ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
 ```
 
@@ -22,7 +22,7 @@ If a table was previously detached ([DETACH](../../sql-reference/statements/deta
 
 **Syntax**
 
-``` sql
+```sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -119,7 +119,7 @@ Attaches a previously detached dictionary.
 
 **Syntax**
 
-``` sql
+```sql
 ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
@@ -129,6 +129,6 @@ Attaches a previously detached database.
 
 **Syntax**
 
-``` sql
+```sql
 ATTACH DATABASE [IF NOT EXISTS] name [ENGINE=<database engine>] [ON CLUSTER cluster]
 ```

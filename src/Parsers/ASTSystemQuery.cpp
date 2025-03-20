@@ -5,8 +5,6 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
-#include <base/EnumReflection.h>
-
 
 namespace DB
 {
@@ -453,7 +451,7 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_SKIPPING_INDEX_CACHE:
+        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
         case Type::RESET_COVERAGE:
