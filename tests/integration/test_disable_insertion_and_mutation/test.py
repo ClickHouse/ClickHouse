@@ -43,7 +43,7 @@ def test_disable_insertion_and_mutation(started_cluster):
 
     # allow insert into temp table in reading node
     reading_node.query(
-        """CREATE TABLE default.my_tmp_table on cluster default (key UInt64, value String) ENGINE=Memory"""
+        """CREATE TEMPORARY TABLE my_tmp_table on cluster default (key UInt64, value String) ENGINE=Memory"""
     )
 
     reading_node.query(
