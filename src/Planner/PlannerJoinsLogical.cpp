@@ -85,6 +85,12 @@ const ActionsDAG::Node * appendExpression(
     return join_expression_dag_node_raw_pointers[0];
 }
 
+auto dumpTableExpressionMapping(const std::unordered_map<const IQueryTreeNode *, size_t> & table_expression_mapping)
+{
+    auto format_entry = [](const auto & e) { return fmt::format("{} -> {}", e.second, e.first->formatASTForErrorMessage()); };
+    return fmt::join(table_expression_mapping | std::views::transform(format_entry), ", ");
+}
+
 struct JoinFlattenContext
 {
     explicit JoinFlattenContext(
@@ -132,8 +138,10 @@ struct JoinFlattenContext
             auto it = table_expression_to_join_input_mapping.find(table_expression);
             if (it == table_expression_to_join_input_mapping.end())
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "JOIN {} ON clause contains column {} that do not exist in left or right table expression columns",
-                    join_node.formatASTForErrorMessage(), table_expression->formatASTForErrorMessage());
+                    "JOIN {} ON clause contains column {} that do not exist join tree: {}",
+                    join_node.formatASTForErrorMessage(),
+                    table_expression->formatASTForErrorMessage(),
+                    dumpTableExpressionMapping(table_expression_to_join_input_mapping));
 
             res.set(it->second);
         }
@@ -473,16 +481,18 @@ JoinTreeQueryPlan mergeJoinTreePlans(
     for (const auto & useful_set : right_join_tree_query_plan.useful_sets)
         result_useful_sets.insert(useful_set);
 
-    auto result_mapping = std::move(left_join_tree_query_plan.query_node_to_plan_step_mapping);
+    auto result_query_node_to_plan_step_mapping = std::move(left_join_tree_query_plan.query_node_to_plan_step_mapping);
     const auto & r_mapping = right_join_tree_query_plan.query_node_to_plan_step_mapping;
-    result_mapping.insert(r_mapping.begin(), r_mapping.end());
+    result_query_node_to_plan_step_mapping.insert(r_mapping.begin(), r_mapping.end());
+
 
     return JoinTreeQueryPlan{
         .query_plan = std::move(result_plan),
         .from_stage = QueryProcessingStage::FetchColumns,
         .used_row_policies = std::move(result_used_row_policies),
         .useful_sets = std::move(result_useful_sets),
-        .query_node_to_plan_step_mapping = std::move(result_mapping),
+        .query_node_to_plan_step_mapping = std::move(result_query_node_to_plan_step_mapping),
+        .table_expression_to_join_input_mapping = std::move(left_join_tree_query_plan.table_expression_to_join_input_mapping),
     };
 }
 
@@ -501,9 +511,9 @@ JoinTreeQueryPlan buildJoinStepLogical(
     auto * root_node = left_plan.query_plan.getRootNode();
     JoinStepLogical * join_step = root_node ? typeid_cast<JoinStepLogical *>(root_node->step.get()) : nullptr;
 
-    bool force_split = join_step == nullptr || !join_step->canFlatten(query_context)
-        || prepared_storage || join_node.getKind() == JoinKind::Full || join_node.getKind() == JoinKind::Paste;
-    if (force_split)
+    bool can_flatten = join_step && join_step->canFlatten(query_context)
+        && !prepared_storage && join_node.getKind() != JoinKind::Full && join_node.getKind() != JoinKind::Paste;
+    if (!can_flatten)
         join_step = nullptr;
 
     auto & table_expression_to_join_input_mapping = left_plan.table_expression_to_join_input_mapping;
@@ -531,7 +541,7 @@ JoinTreeQueryPlan buildJoinStepLogical(
     join_step->setPreparedJoinStorage(std::move(prepared_storage));
 
     for (const auto * table_expression : extractTableExpressionsSet(join_node.getRightTableExpression()))
-        table_expression_to_join_input_mapping.emplace(table_expression, join_step->getNumberOfTables());
+        table_expression_to_join_input_mapping.emplace(table_expression, join_step->getNumberOfTables() - 1);
 
     JoinFlattenContext join_flatten(join_node, *join_step, join_operator, table_expression_to_join_input_mapping, planner_context);
 

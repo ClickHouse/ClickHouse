@@ -117,8 +117,8 @@ template <>
 class ActionsDescrtiptionBuilder<IQueryPlanStep::FormatSettings>
 {
 public:
-    explicit ActionsDescrtiptionBuilder(IQueryPlanStep::FormatSettings & settings_)
-        : settings(settings_)
+    explicit ActionsDescrtiptionBuilder(IQueryPlanStep::FormatSettings settings_)
+        : settings(std::move(settings_))
         , prefix(settings.offset, settings.indent_char)
     {}
 
@@ -129,7 +129,28 @@ public:
         value.describeActions(settings.out, prefix);
     }
 
-    IQueryPlanStep::FormatSettings & settings;
+    class NestedLevel
+    {
+    public:
+        explicit NestedLevel(IQueryPlanStep::FormatSettings settings_) : settings(std::move(settings_)) {}
+
+        ActionsDescrtiptionBuilder<IQueryPlanStep::FormatSettings> next()
+        {
+            auto new_settings = settings;
+            new_settings.offset += settings.indent;
+            return ActionsDescrtiptionBuilder<IQueryPlanStep::FormatSettings>(new_settings);
+        }
+        IQueryPlanStep::FormatSettings settings;
+    };
+
+    NestedLevel push(String key)
+    {
+        settings.out << prefix << key << ":\n";
+        return NestedLevel(settings);
+    }
+
+
+    IQueryPlanStep::FormatSettings settings;
     String prefix;
 };
 
@@ -144,24 +165,50 @@ public:
     void add(String key, String value) { map.add(key, value); }
     void add(String key, ExpressionActions value) { map.add(key, value.toTree()); }
 
+    class NestedLevel
+    {
+    public:
+        explicit NestedLevel(JSONBuilder::JSONArray & arr_) : arr(arr_) {}
+
+        ActionsDescrtiptionBuilder<JSONBuilder::JSONMap> next()
+        {
+            auto current = std::make_unique<JSONBuilder::JSONMap>();
+            ActionsDescrtiptionBuilder<JSONBuilder::JSONMap> result(*current);
+            arr.add(std::move(current));
+            return result;
+        }
+
+        JSONBuilder::JSONArray & arr;
+    };
+
+    NestedLevel push(String key)
+    {
+        auto level = std::make_unique<JSONBuilder::JSONArray>();
+        NestedLevel nested(*level);
+        map.add(key, std::move(level));
+        return nested;
+    }
+
     JSONBuilder::JSONMap & map;
 };
 
 template <typename ResultType>
 void JoinStepLogical::describeJoinActionsImpl(ResultType & result) const
 {
-    ActionsDescrtiptionBuilder<ResultType> description(result);
+    ActionsDescrtiptionBuilder<ResultType> root_description(result);
 
+
+    auto join_description = root_description.push("JoinOperators");
     // Display information for all join operators
     for (size_t join_num = 0; join_num < join_operators.size(); ++join_num)
     {
+        auto description = join_description.next();
+
         const auto & join_info = join_operators[join_num];
 
-        String prefix = join_operators.size() > 1 ? fmt::format("Join{}", join_num + 1) : "Join";
-
-        description.add(prefix + "Type", toString(join_info.kind));
-        description.add(prefix + "Strictness", toString(join_info.strictness));
-        description.add(prefix + "Locality", toString(join_info.locality));
+        description.add("Type", toString(join_info.kind));
+        description.add("Strictness", toString(join_info.strictness));
+        description.add("Locality", toString(join_info.locality));
 
         {
             WriteBufferFromOwnString join_expression_str;
@@ -172,21 +219,22 @@ void JoinStepLogical::describeJoinActionsImpl(ResultType & result) const
                 join_expression_str << " | ";
                 formatJoinCondition(condition, join_expression_str);
             }
-            description.add(prefix + "Expression", join_expression_str.str());
+            description.add("Expression", join_expression_str.str());
         }
-        for (const auto & [bs, actions] : join_info.expression_actions.actions)
+
+        auto sorted_actions = join_info.expression_actions.actions
+            | std::views::transform([](const auto & p) { return std::make_pair(p.first, p.second.get()); }) | std::ranges::to<std::vector>();
+        std::ranges::sort(sorted_actions, [](const auto & lhs, const auto & rhs) { return lhs.first.to_ullong() < rhs.first.to_ullong(); });
+        for (const auto & [inputs, actions] : sorted_actions)
         {
-            String actions_key = fmt::format(
-                "{}Actions[{} | {}]", prefix,
-                bs.to_string(),
-                fmt::join(std::views::iota(size_t(0), bs.size()) | std::views::filter([&bs](size_t i) { return bs[i]; }), ", "));
+            String actions_key = fmt::format("Actions[{}]",
+                fmt::join(std::views::iota(0u, inputs.size()) | std::views::filter([&inputs](size_t i) { return inputs[i]; }), ", "));
 
             description.add(actions_key, ExpressionActions(actions->clone()));
         }
-
     }
 
-    description.add("Required Output", fmt::format("[{}]", fmt::join(required_output_columns, ", ")));
+    root_description.add("Required Output", fmt::format("[{}]", fmt::join(required_output_columns, ", ")));
 }
 
 void JoinStepLogical::describeActions(FormatSettings & settings) const
@@ -647,6 +695,12 @@ void forEachJoinAction(JoinExpression & join_expression, F && f)
         forEachJoinAction(join_condition, f);
 }
 
+
+bool isSubsetOf(const BaseRelsSet & lhs, const BaseRelsSet & rhs)
+{
+    return (lhs & rhs) == lhs;
+}
+
 void buildPhysicalJoinNode(
     JoinStepLogical::PhysicalJoinNode & result_node,
     JoinStepLogical::PhysicalJoinTree & join_tree,
@@ -670,11 +724,24 @@ void buildPhysicalJoinNode(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot determine actions for JoinActionRef {}", action.getColumnName());
     });
 
+    for (auto && [src, actions] : join_info.expression_actions.actions)
+    {
+        ActionsDAG * join_actions = nullptr;
+        if (isSubsetOf(src, result_node.left_child))
+            join_actions = left_pre_join_actions;
+        else if (isSubsetOf(src, result_node.right_child))
+            join_actions = right_pre_join_actions;
+        else if (isSubsetOf(src, result_node.left_child | result_node.right_child))
+            join_actions = post_join_actions;
+        else
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot determine actions source: left {}, right{}, actions {} {}",
+                result_node.left_child.to_ullong(), result_node.right_child.to_ullong(), src.to_ullong(), actions->dumpNames());
+        join_actions->mergeInplace(std::move(*actions));
+    }
+    join_info.expression_actions.actions.clear();
+
     auto & join_expression = join_info.expression;
     auto & table_join = join_context.table_join;
-
-    // if (join_expression.is_using || join_info.kind == JoinKind::Paste)
-    //     swap_inputs = false;
 
     join_context.is_asof = join_info.strictness == JoinStrictness::Asof;
     join_context.is_using = join_expression.is_using;
@@ -855,12 +922,6 @@ void buildPhysicalJoinNode(
     Block left_sample_block = blockWithColumns(left_pre_join_actions->getResultColumns());
     Block right_sample_block = blockWithColumns(right_pre_join_actions->getResultColumns());
 
-    // if (swap_inputs)
-    // {
-    //     table_join->swapSides();
-    //     std::swap(left_sample_block, right_sample_block);
-    // }
-
     auto join_algorithm_ptr = chooseJoinAlgorithm(
         table_join,
         join_context.prepared_join_storage,
@@ -893,25 +954,30 @@ JoinStepLogical::PhysicalJoinTree JoinStepLogical::convertToPhysical(bool is_exp
 
     PhysicalJoinTree physical_tree;
 
+    std::vector<ColumnsWithTypeAndName> current_headers;
+    for (const auto & header : input_headers)
+        current_headers.push_back(header.getColumnsWithTypeAndName());
+
     for (auto & join_edge : join_order)
     {
         ActionsDAGPtr left_actions;
 
-        if (join_edge.lhs.count() == 1)
+        for (auto src : {join_edge.lhs, join_edge.rhs})
         {
-            auto & physical_node = physical_tree.nodes[join_edge.lhs];
-            UNUSED(physical_node);
-            // physical_node.actions = join_edge.join_operator.expression_actions.getActions(join_edge.lhs, input_headers);
+            auto & child_node = physical_tree.nodes[src];
+            if (src.count() == 1)
+                child_node.actions = join_edge.join_operator.expression_actions.getActions(src, current_headers);
         }
 
         auto & physical_node = physical_tree.nodes[join_edge.lhs | join_edge.rhs];
+        ColumnsWithTypeAndName current_step_inputs;
         for (auto child : {join_edge.lhs, join_edge.rhs})
         {
             for (const auto * col : physical_tree.nodes[child].actions->getOutputs())
             {
                 if (required_output_columns.contains(col->result_name))
                 {
-
+                    current_step_inputs.emplace_back(nullptr, col->type, col->result_name);
                 }
             }
         }
@@ -960,11 +1026,10 @@ bool JoinStepLogical::canFlatten(const ContextPtr & context_) const
     if (join_operators.at(0).strictness != JoinStrictness::All)
         return false;
     if (query_context.get() != context_.get())
-    {
-        LOG_DEBUG(&Poco::Logger::get("XXXX"), "{}:{}: context !=", __FILE__, __LINE__);
-        return true;
-    }
+        return false;
     if (prepared_join_storage)
+        return false;
+    if (getNumberOfTables() >= BaseRelsSet().size())
         return false;
     return true;
 }

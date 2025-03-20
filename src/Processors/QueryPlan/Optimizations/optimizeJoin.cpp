@@ -239,8 +239,8 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step)
         return false;
-    if (node.children.size() != 2)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
+    if (node.children.size() <= 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have more than 2 children, but has {}", node.children.size());
 
     auto result = join_step->convertToPhysical(keep_logical);
 
