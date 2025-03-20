@@ -340,7 +340,7 @@ std::unique_ptr<ReadBufferFromFileBase> DiskLocal::readFile(const String & path,
 {
     if (!file_size.has_value())
         file_size = fileSizeSafe(fs::path(disk_path) / path);
-    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size, /*flags*/ -1, /*existing_memory*/ nullptr, settings.userspace_page_cache_for_local_files);
+    return createReadBufferFromFileBase(fs::path(disk_path) / path, settings, read_hint, file_size, /*flags*/ -1, /*existing_memory*/ nullptr, settings.use_page_cache_for_local_files);
 }
 
 std::unique_ptr<WriteBufferFromFileBase>

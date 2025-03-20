@@ -66,7 +66,6 @@ struct ReadSettings
 
     bool use_page_cache_for_disks_without_file_cache = false;
     [[ maybe_unused ]] bool use_page_cache_with_distributed_cache = false;
-    bool userspace_page_cache_for_local_files = false;
     bool use_page_cache_for_local_files = false;
     bool read_from_page_cache_if_exists_otherwise_bypass_cache = false;
     bool page_cache_inject_eviction = false;

@@ -1067,11 +1067,12 @@ class SettingsRandomizer:
                 get_localzone(),
             ]
         ),
-        # This setting affect part names and their content which can be read from tables in tests.
+        # This setting affects part names and their content which can be read from tables in tests.
         # We have a lot of tests which relies on part names, so it's very unsafe to enable randomization
         # of this setting
         # "prefer_warmed_unmerged_parts_seconds": lambda: random.randint(0, 10),
         "use_page_cache_for_disks_without_file_cache": lambda: random.random() < 0.7,
+        "use_page_cache_for_local_files": lambda: random.random() < 0.3,
         "page_cache_inject_eviction": lambda: random.random() < 0.5,
         "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability": lambda: round(
             random.random(), 2

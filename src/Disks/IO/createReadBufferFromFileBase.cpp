@@ -10,6 +10,7 @@
 #include <Disks/IO/getThreadPoolReader.h>
 #include <IO/AsynchronousReader.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 #include "config.h"
 
 namespace ProfileEvents
@@ -195,6 +196,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBufferFromFileBase(
 
         if (use_page_cache && settings.page_cache->defaultBlockSize() % min_alignment)
         {
+            LOG_TEST(getLogger("createReadBufferFromFileBase"), "Not using userspace page cache because page cache block size is not divisible by direct IO alignment");
             use_page_cache = false;
         }
 
