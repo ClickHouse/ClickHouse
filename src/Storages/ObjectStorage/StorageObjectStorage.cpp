@@ -1,7 +1,6 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -45,6 +44,12 @@ namespace ErrorCodes
     extern const int DATABASE_ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+}
+
+namespace StorageObjectStorageSetting
+{
+extern const StorageObjectStorageSettingsBool allow_dynamic_metadata_for_data_lakes;
+extern const StorageObjectStorageSettingsBool allow_experimental_delta_kernel_rs;
 }
 
 String StorageObjectStorage::getPathSample(ContextPtr context)
@@ -579,41 +584,42 @@ SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, c
 }
 
 void StorageObjectStorage::Configuration::initialize(
-    Configuration & configuration_to_initialize,
+    Configuration & configuration,
     ASTs & engine_args,
     ContextPtr local_context,
     bool with_table_structure,
-    StorageObjectStorageSettingsPtr settings)
+    StorageObjectStorageSettings * settings)
 {
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context))
-        configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
+        configuration.fromNamedCollection(*named_collection, local_context);
     else
-        configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
+        configuration.fromAST(engine_args, local_context, with_table_structure);
 
-    if (configuration_to_initialize.format == "auto")
+    if (configuration.format == "auto")
     {
-        if (configuration_to_initialize.isDataLakeConfiguration())
+        if (configuration.isDataLakeConfiguration())
         {
-            configuration_to_initialize.format = "Parquet";
+            configuration.format = "Parquet";
         }
         else
         {
-            configuration_to_initialize.format
+            configuration.format
                 = FormatFactory::instance()
-                      .tryGetFormatFromFileName(configuration_to_initialize.isArchive() ? configuration_to_initialize.getPathInArchive() : configuration_to_initialize.getPath())
+                      .tryGetFormatFromFileName(configuration.isArchive() ? configuration.getPathInArchive() : configuration.getPath())
                       .value_or("auto");
         }
     }
     else
-        FormatFactory::instance().checkFormatName(configuration_to_initialize.format);
+        FormatFactory::instance().checkFormatName(configuration.format);
 
-    configuration_to_initialize.storage_settings = settings;
-    configuration_to_initialize.initialized = true;
-}
-
-const StorageObjectStorageSettings & StorageObjectStorage::Configuration::getSettingsRef() const
-{
-    return *storage_settings;
+    if (settings)
+    {
+        configuration.allow_dynamic_metadata_for_data_lakes
+            = (*settings)[StorageObjectStorageSetting::allow_dynamic_metadata_for_data_lakes];
+        configuration.allow_experimental_delta_kernel_rs
+            = (*settings)[StorageObjectStorageSetting::allow_experimental_delta_kernel_rs];
+    }
+    configuration.initialized = true;
 }
 
 void StorageObjectStorage::Configuration::check(ContextPtr) const

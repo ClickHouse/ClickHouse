@@ -70,7 +70,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -107,7 +106,6 @@
 #include <Common/getHashOfLoadedBinary.h>
 #include <Common/filesystemHelpers.h>
 #include <Compression/CompressionCodecEncrypted.h>
-#include <Parsers/ASTAlterQuery.h>
 #include <Server/HTTP/HTTPServerConnectionFactory.h>
 #include <Server/MySQLHandlerFactory.h>
 #include <Server/PostgreSQLHandlerFactory.h>
@@ -118,7 +116,6 @@
 #include <Server/HTTP/HTTPServer.h>
 #include <Server/CloudPlacementInfo.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
-
 #include <filesystem>
 #include <unordered_set>
 
@@ -228,10 +225,6 @@ namespace ServerSetting
     extern const ServerSettingsString index_mark_cache_policy;
     extern const ServerSettingsUInt64 index_mark_cache_size;
     extern const ServerSettingsDouble index_mark_cache_size_ratio;
-    extern const ServerSettingsString vector_similarity_index_cache_policy;
-    extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
-    extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
-    extern const ServerSettingsDouble vector_similarity_index_cache_size_ratio;
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
@@ -257,7 +250,6 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_outdated_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
     extern const ServerSettingsUInt64 max_part_num_to_warn;
-    extern const ServerSettingsUInt64 max_pending_mutations_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
@@ -273,15 +265,16 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_waiting_queries;
     extern const ServerSettingsUInt64 memory_worker_period_ms;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
-    extern const ServerSettingsBool memory_worker_use_cgroup;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
-    extern const ServerSettingsString query_condition_cache_policy;
-    extern const ServerSettingsUInt64 query_condition_cache_size;
-    extern const ServerSettingsDouble query_condition_cache_size_ratio;
+    extern const ServerSettingsUInt64 page_cache_chunk_size;
+    extern const ServerSettingsUInt64 page_cache_mmap_size;
+    extern const ServerSettingsUInt64 page_cache_size;
+    extern const ServerSettingsBool page_cache_use_madv_free;
+    extern const ServerSettingsBool page_cache_use_transparent_huge_pages;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
@@ -306,20 +299,12 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
+    extern const ServerSettingsBool use_legacy_mongodb_integration;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
-    extern const ServerSettingsUInt64 page_cache_block_size;
-    extern const ServerSettingsUInt64 page_cache_history_window_ms;
-    extern const ServerSettingsString page_cache_policy;
-    extern const ServerSettingsDouble page_cache_size_ratio;
-    extern const ServerSettingsUInt64 page_cache_min_size;
-    extern const ServerSettingsUInt64 page_cache_max_size;
-    extern const ServerSettingsDouble page_cache_free_memory_ratio;
-    extern const ServerSettingsUInt64 page_cache_lookahead_blocks;
-    extern const ServerSettingsUInt64 page_cache_shards;
 }
 
 }
@@ -401,7 +386,6 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int NETWORK_ERROR;
     extern const int CORRUPTED_DATA;
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -667,10 +651,8 @@ void sanityChecks(Server & server)
     std::string logs_path = server.config().getString("logger.log", "");
 
     if (server.logger().is(Poco::Message::PRIO_TEST))
-        server.context()->addOrUpdateWarningMessage(
-            Context::WarningType::SERVER_LOGGING_LEVEL_TEST,
-            PreformattedMessage::create(
-                "Server logging level is set to 'test' and performance is degraded. This cannot be used in production."));
+        server.context()->addWarningMessage("Server logging level is set to 'test' and performance is degraded. This cannot be used in production.");
+
 #if defined(OS_LINUX)
     try
     {
@@ -684,9 +666,7 @@ void sanityChecks(Server & server)
         };
         const char * filename = "/sys/devices/system/clocksource/clocksource0/current_clocksource";
         if (!fast_clock_sources.contains(readLine(filename)))
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_FAST_CLOCK_SOURCE_NOT_USED,
-                PreformattedMessage::create("Linux is not using a fast clock source. Performance can be degraded. Check {}", filename));
+            server.context()->addWarningMessage("Linux is not using a fast clock source. Performance can be degraded. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -696,9 +676,7 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/vm/overcommit_memory";
         if (readNumber(filename) == 2)
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_MEMORY_OVERCOMMIT_DISABLED,
-                PreformattedMessage::create("Linux memory overcommit is disabled. Check {}", String(filename)));
+            server.context()->addWarningMessage("Linux memory overcommit is disabled. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -708,9 +686,7 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/sys/kernel/mm/transparent_hugepage/enabled";
         if (readLine(filename).find("[always]") != std::string::npos)
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_TRANSPARENT_HUGEPAGES_SET_TO_ALWAYS,
-                PreformattedMessage::create("Linux transparent hugepages are set to \"always\". Check {}", String(filename)));
+            server.context()->addWarningMessage("Linux transparent hugepages are set to \"always\". Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -720,9 +696,7 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/pid_max";
         if (readNumber(filename) < 30000)
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_MAX_PID_TOO_LOW,
-               PreformattedMessage::create("Linux max PID is too low. Check {}", String(filename)));
+            server.context()->addWarningMessage("Linux max PID is too low. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -732,9 +706,7 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/threads-max";
         if (readNumber(filename) < 30000)
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::LINUX_MAX_THREADS_COUNT_TOO_LOW,
-                PreformattedMessage::create("Linux threads max count is too low. Check {}", String(filename)));
+            server.context()->addWarningMessage("Linux threads max count is too low. Check " + String(filename));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -744,12 +716,7 @@ void sanityChecks(Server & server)
     {
         const char * filename = "/proc/sys/kernel/task_delayacct";
         if (readNumber(filename) == 0)
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::DELAY_ACCOUNTING_DISABLED,
-                PreformattedMessage::create(
-                    "Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it "
-                    "using `echo 1 > {}` or by using sysctl.",
-                    String(filename)));
+            server.context()->addWarningMessage("Delay accounting is not enabled, OSIOWaitMicroseconds will not be gathered. You can enable it using `echo 1 > " + String(filename) + "` or by using sysctl.");
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -757,18 +724,13 @@ void sanityChecks(Server & server)
 
     std::string dev_id = getBlockDeviceId(data_path);
     if (getBlockDeviceType(dev_id) == BlockDeviceType::ROT && getBlockDeviceReadAheadBytes(dev_id) == 0)
-        server.context()->addOrUpdateWarningMessage(
-            Context::WarningType::ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-            PreformattedMessage::create(
-                "Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: {}", String(data_path)));
+        server.context()->addWarningMessage("Rotational disk with disabled readahead is in use. Performance can be degraded. Used for data: " + String(data_path));
 #endif
 
     try
     {
         if (getAvailableMemoryAmount() < (2l << 30))
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::AVAILABLE_MEMORY_TOO_LOW,
-                PreformattedMessage::create("Available memory at server startup is too low (2GiB)."));
+            server.context()->addWarningMessage("Available memory at server startup is too low (2GiB).");
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -777,9 +739,7 @@ void sanityChecks(Server & server)
     try
     {
         if (!enoughSpaceInDirectory(data_path, 1ull << 30))
-            server.context()->addOrUpdateWarningMessage(
-                Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_DATA,
-                PreformattedMessage::create("Available disk space for data at server startup is too low (1GiB): {}", String(data_path)));
+            server.context()->addWarningMessage("Available disk space for data at server startup is too low (1GiB): " + String(data_path));
     }
     catch (...) // NOLINT(bugprone-empty-catch)
     {
@@ -791,9 +751,7 @@ void sanityChecks(Server & server)
         {
             auto logs_parent = fs::path(logs_path).parent_path();
             if (!enoughSpaceInDirectory(logs_parent, 1ull << 30))
-                server.context()->addOrUpdateWarningMessage(
-                    Context::WarningType::AVAILABLE_DISK_SPACE_TOO_LOW_FOR_LOGS,
-                    PreformattedMessage::create("Available disk space for logs at server startup is too low (1GiB): {}", String(logs_parent)));
+                server.context()->addWarningMessage("Available disk space for logs at server startup is too low (1GiB): " + String(logs_parent));
         }
     }
     catch (...) // NOLINT(bugprone-empty-catch)
@@ -802,13 +760,9 @@ void sanityChecks(Server & server)
 
     if (server.context()->getMergeTreeSettings()[MergeTreeSetting::allow_remote_fs_zero_copy_replication])
     {
-        constexpr auto message_format_string
-            = "The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
-              " But the feature of 'zero-copy replication' is under development and is not ready for production."
-              " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.";
-        server.context()->addOrUpdateWarningMessage(
-            Context::WarningType::SETTING_ZERO_COPY_REPLICATION_ENABLED,
-            PreformattedMessage::create(message_format_string));
+        server.context()->addWarningMessage("The setting 'allow_remote_fs_zero_copy_replication' is enabled for MergeTree tables."
+            " But the feature of 'zero-copy replication' is under development and is not ready for production."
+            " The usage of this feature can lead to data corruption and loss. The setting should be disabled in production.");
     }
 }
 
@@ -852,12 +806,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
                 if (result != "1\n" && result != "true\n")
                 {
                     if (result != "0\n" && result != "false\n")
-                        context->addOrUpdateWarningMessage(
-                            Context::WarningType::SKIPPING_CONDITION_QUERY,
-                            PreformattedMessage::create(
-                                "The condition query returned `{}`, which can't be interpreted as a boolean (`0`, "
-                                "`false`, `1`, `true`). Will skip this query.",
-                                result));
+                        context->addWarningMessage(fmt::format("The condition query returned `{}`, which can't be interpreted as a boolean (`0`, `false`, `1`, `true`). Will skip this query.", result));
 
                     continue;
                 }
@@ -1015,10 +964,10 @@ try
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions();
+    registerTableFunctions(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDatabases();
-    registerStorages();
-    registerDictionaries();
+    registerStorages(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerDictionaries(server_settings[ServerSetting::use_legacy_mongodb_integration]);
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
@@ -1039,13 +988,11 @@ try
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
 #if !defined(NDEBUG) || !defined(__OPTIMIZE__)
-    global_context->addOrUpdateWarningMessage(Context::WarningType::SERVER_BUILT_IN_DEBUG_MODE, PreformattedMessage::create("Server was built in debug mode. It will work slowly."));
+    global_context->addWarningMessage("Server was built in debug mode. It will work slowly.");
 #endif
 
     if (ThreadFuzzer::instance().isEffective())
-        global_context->addOrUpdateWarningMessage(
-            Context::WarningType::THREAD_FUZZER_IS_ENABLED,
-            PreformattedMessage::create("ThreadFuzzer is enabled. Application will run slowly and unstable."));
+        global_context->addWarningMessage("ThreadFuzzer is enabled. Application will run slowly and unstable.");
 
 #if defined(SANITIZER)
     auto sanitizers = getSanitizerNames();
@@ -1058,15 +1005,11 @@ try
     else
         log_message = fmt::format("sanitizers ({})", fmt::join(sanitizers, ", "));
 
-    global_context->addOrUpdateWarningMessage(
-        Context::WarningType::SERVER_BUILT_WITH_SANITIZERS,
-        PreformattedMessage::create("Server was built with {}. It will work slowly.", log_message));
+    global_context->addWarningMessage(fmt::format("Server was built with {}. It will work slowly.", log_message));
 #endif
 
 #if defined(SANITIZE_COVERAGE) || WITH_COVERAGE
-    global_context->addOrUpdateWarningMessage(
-        Context::WarningType::SERVER_BUILT_WITH_COVERAGE,
-        PreformattedMessage::create("Server was built with code coverage. It will work slowly."));
+    global_context->addWarningMessage("Server was built with code coverage. It will work slowly.");
 #endif
 
     const size_t physical_server_memory = getMemoryAmount();
@@ -1165,26 +1108,8 @@ try
         LOG_INFO(log, "Background threads finished in {} ms", watch.elapsedMilliseconds());
     });
 
-    if (server_settings[ServerSetting::page_cache_max_size] != 0)
-    {
-        global_context->setPageCache(
-            server_settings[ServerSetting::page_cache_block_size],
-            server_settings[ServerSetting::page_cache_lookahead_blocks],
-            std::chrono::milliseconds(Int64(server_settings[ServerSetting::page_cache_history_window_ms])),
-            server_settings[ServerSetting::page_cache_policy],
-            server_settings[ServerSetting::page_cache_size_ratio],
-            server_settings[ServerSetting::page_cache_min_size],
-            server_settings[ServerSetting::page_cache_max_size],
-            server_settings[ServerSetting::page_cache_free_memory_ratio],
-            server_settings[ServerSetting::page_cache_shards]);
-        total_memory_tracker.setPageCache(global_context->getPageCache().get());
-    }
-
     MemoryWorker memory_worker(
-        server_settings[ServerSetting::memory_worker_period_ms],
-        server_settings[ServerSetting::memory_worker_correct_memory_tracker],
-        global_context->getServerSettings()[ServerSetting::memory_worker_use_cgroup],
-        global_context->getPageCache());
+        server_settings[ServerSetting::memory_worker_period_ms], server_settings[ServerSetting::memory_worker_correct_memory_tracker]);
 
     /// This object will periodically calculate some metrics.
     ServerAsynchronousMetrics async_metrics(
@@ -1361,13 +1286,7 @@ try
     fs::path path = path_str;
 
     /// Check that the process user id matches the owner of the data.
-    assertProcessUserMatchesDataOwner(
-        path_str,
-        [&](const PreformattedMessage & message)
-        {
-            global_context->addOrUpdateWarningMessage(
-                Context::WarningType::PROCESS_USER_MATCHES_DATA_OWNER, message);
-        });
+    assertProcessUserMatchesDataOwner(path_str, [&](const std::string & message){ global_context->addWarningMessage(message); });
 
     global_context->setPath(path_str);
 
@@ -1431,11 +1350,9 @@ try
                 if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) == -1)
                 {
                     /// Program is run under debugger. Modification of it's binary image is ok for breakpoints.
-                    global_context->addOrUpdateWarningMessage(
-                        Context::WarningType::SERVER_RUN_UNDER_DEBUGGER,
-                        PreformattedMessage::create(
-                            "Server is run under debugger and its binary image {} is modified (most likely with breakpoints).",
-                            calculated_binary_hash));
+                    global_context->addWarningMessage(fmt::format(
+                        "Server is run under debugger and its binary image is modified (most likely with breakpoints).",
+                        calculated_binary_hash));
                 }
                 else
                 {
@@ -1592,10 +1509,7 @@ try
 
         if (rlim.rlim_cur < 30000)
         {
-            global_context->addOrUpdateWarningMessage(
-                Context::WarningType::MAX_NUM_THREADS_LOWER_THAN_LIMIT,
-                PreformattedMessage::create(
-                    "Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries."));
+            global_context->addWarningMessage("Maximum number of threads is lower than 30000. There could be problems with handling a lot of simultaneous queries.");
         }
     }
 
@@ -1605,7 +1519,7 @@ try
     /// Initialize DateLUT early, to not interfere with running time of first query.
     LOG_DEBUG(log, "Initializing DateLUT.");
     DateLUT::serverTimezoneInstance();
-    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", getDateLUTTimeZone(DateLUT::serverTimezoneInstance()));
+    LOG_TRACE(log, "Initialized DateLUT with time zone '{}'.", DateLUT::serverTimezoneInstance().getTimeZone());
 
     /// Storage with temporary data for processing of heavy queries.
     if (!server_settings[ServerSetting::tmp_policy].value.empty())
@@ -1738,6 +1652,13 @@ try
     }
     global_context->setPrimaryIndexCache(primary_index_cache_policy, primary_index_cache_size, primary_index_cache_size_ratio);
 
+    size_t page_cache_size = server_settings[ServerSetting::page_cache_size];
+    if (page_cache_size != 0)
+        global_context->setPageCache(
+            server_settings[ServerSetting::page_cache_chunk_size], server_settings[ServerSetting::page_cache_mmap_size],
+            page_cache_size, server_settings[ServerSetting::page_cache_use_madv_free],
+            server_settings[ServerSetting::page_cache_use_transparent_huge_pages]);
+
     String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
     size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
     double index_uncompressed_cache_size_ratio = server_settings[ServerSetting::index_uncompressed_cache_size_ratio];
@@ -1758,17 +1679,6 @@ try
     }
     global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
-    String vector_similarity_index_cache_policy = server_settings[ServerSetting::vector_similarity_index_cache_policy];
-    size_t vector_similarity_index_cache_size = server_settings[ServerSetting::vector_similarity_index_cache_size];
-    size_t vector_similarity_index_cache_max_entries = server_settings[ServerSetting::vector_similarity_index_cache_max_entries];
-    double vector_similarity_index_cache_size_ratio = server_settings[ServerSetting::vector_similarity_index_cache_size_ratio];
-    if (vector_similarity_index_cache_size > max_cache_size)
-    {
-        vector_similarity_index_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered vector similarity index cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(vector_similarity_index_cache_size));
-    }
-    global_context->setVectorSimilarityIndexCache(vector_similarity_index_cache_policy, vector_similarity_index_cache_size, vector_similarity_index_cache_max_entries, vector_similarity_index_cache_size_ratio);
-
     size_t mmap_cache_size = server_settings[ServerSetting::mmap_cache_size];
     if (mmap_cache_size > max_cache_size)
     {
@@ -1777,26 +1687,16 @@ try
     }
     global_context->setMMappedFileCache(mmap_cache_size);
 
-    String query_condition_cache_policy = server_settings[ServerSetting::query_condition_cache_policy];
-    size_t query_condition_cache_size = server_settings[ServerSetting::query_condition_cache_size];
-    double query_condition_cache_size_ratio = server_settings[ServerSetting::query_condition_cache_size_ratio];
-    if (query_condition_cache_size > max_cache_size)
+    size_t query_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_SIZE);
+    size_t query_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_CACHE_MAX_ENTRIES);
+    size_t query_cache_query_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
+    size_t query_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    if (query_cache_max_size_in_bytes > max_cache_size)
     {
-        query_condition_cache_size = max_cache_size;
-        LOG_INFO(log, "Lowered query condition cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_condition_cache_size));
+        query_cache_max_size_in_bytes = max_cache_size;
+        LOG_INFO(log, "Lowered query cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_cache_max_size_in_bytes));
     }
-    global_context->setQueryConditionCache(query_condition_cache_policy, query_condition_cache_size, query_condition_cache_size_ratio);
-
-    size_t query_result_cache_max_size_in_bytes = config().getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
-    size_t query_result_cache_max_entries = config().getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
-    size_t query_result_cache_max_entry_size_in_bytes = config().getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-    size_t query_result_cache_max_entry_size_in_rows = config().getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
-    if (query_result_cache_max_size_in_bytes > max_cache_size)
-    {
-        query_result_cache_max_size_in_bytes = max_cache_size;
-        LOG_INFO(log, "Lowered query result cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(query_result_cache_max_size_in_bytes));
-    }
-    global_context->setQueryResultCache(query_result_cache_max_size_in_bytes, query_result_cache_max_entries, query_result_cache_max_entry_size_in_bytes, query_result_cache_max_entry_size_in_rows);
+    global_context->setQueryCache(query_cache_max_size_in_bytes, query_cache_max_entries, query_cache_query_cache_max_entry_size_in_bytes, query_cache_max_entry_size_in_rows);
 
 #if USE_EMBEDDED_COMPILER
     size_t compiled_expression_cache_max_size_in_bytes = server_settings[ServerSetting::compiled_expression_cache_size];
@@ -1901,7 +1801,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio].value);
+                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio]);
             }
             else if (merges_mutations_memory_usage_soft_limit > default_merges_mutations_server_memory_usage)
             {
@@ -1910,7 +1810,7 @@ try
                     " ({} available * {:.2f} merges_mutations_memory_usage_to_ram_ratio)",
                     formatReadableSizeWithBinarySuffix(merges_mutations_memory_usage_soft_limit),
                     formatReadableSizeWithBinarySuffix(current_physical_server_memory),
-                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio].value);
+                    new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio]);
             }
 
             LOG_INFO(log, "Merges and mutations memory limit is set to {}",
@@ -1950,7 +1850,6 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
-            global_context->setMaxPendingMutationsToWarn(new_server_settings[ServerSetting::max_pending_mutations_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
 
             size_t read_bandwidth = new_server_settings[ServerSetting::max_remote_read_network_bandwidth_for_server];
@@ -2093,10 +1992,8 @@ try
             global_context->updatePrimaryIndexCacheConfiguration(*config);
             global_context->updateIndexUncompressedCacheConfiguration(*config);
             global_context->updateIndexMarkCacheConfiguration(*config);
-            global_context->updateVectorSimilarityIndexCacheConfiguration(*config);
             global_context->updateMMappedFileCacheConfiguration(*config);
-            global_context->updateQueryResultCacheConfiguration(*config);
-            global_context->updateQueryConditionCacheConfiguration(*config);
+            global_context->updateQueryCacheConfiguration(*config);
 
             CompressionCodecEncrypted::Configuration::instance().tryLoad(*config, "encryption_codecs");
 #if USE_SSL
@@ -2397,8 +2294,6 @@ try
     /// Set current database name before loading tables and databases because
     /// system logs may copy global context.
     std::string default_database = server_settings[ServerSetting::default_database].toString();
-    if (default_database.empty())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "default_database cannot be empty");
     global_context->setCurrentDatabaseNameInGlobalContext(default_database);
 
     LOG_INFO(log, "Loading metadata from {}", path_str);
@@ -3038,7 +2933,7 @@ void Server::createServers(
                 servers,
                 [&](UInt16 port) -> ProtocolServerAdapter
                 {
-#if USE_SSH && defined(OS_LINUX)
+#if 0 && USE_SSH && defined(OS_LINUX) /// SSH server is insecure until and it is disabled until all special cases are fixed.
                     Poco::Net::ServerSocket socket;
                     auto address = socketBindListen(config, socket, listen_host, port, /* secure = */ false);
                     return ProtocolServerAdapter(

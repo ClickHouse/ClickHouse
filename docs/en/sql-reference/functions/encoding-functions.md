@@ -1,20 +1,18 @@
 ---
-description: 'Documentation for Encoding Functions'
-sidebar_label: 'Encoding'
-sidebar_position: 65
 slug: /sql-reference/functions/encoding-functions
-title: 'Encoding Functions'
+sidebar_position: 65
+sidebar_label: Encoding
 ---
 
 # Encoding Functions
 
-## char {#char}
+## char
 
 Returns the string with the length as the number of passed arguments and each byte has the value of corresponding argument. Accepts multiple arguments of numeric types. If the value of argument is out of range of UInt8 data type, it is converted to UInt8 with possible rounding and overflow.
 
 **Syntax**
 
-```sql
+``` sql
 char(number_1, [number_2, ..., number_n]);
 ```
 
@@ -30,13 +28,13 @@ char(number_1, [number_2, ..., number_n]);
 
 Query:
 
-```sql
+``` sql
 SELECT char(104.1, 101, 108.9, 108.9, 111) AS hello;
 ```
 
 Result:
 
-```text
+``` text
 ┌─hello─┐
 │ hello │
 └───────┘
@@ -46,13 +44,13 @@ You can construct a string of arbitrary encoding by passing the corresponding by
 
 Query:
 
-```sql
+``` sql
 SELECT char(0xD0, 0xBF, 0xD1, 0x80, 0xD0, 0xB8, 0xD0, 0xB2, 0xD0, 0xB5, 0xD1, 0x82) AS hello;
 ```
 
 Result:
 
-```text
+``` text
 ┌─hello──┐
 │ привет │
 └────────┘
@@ -60,19 +58,19 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT char(0xE4, 0xBD, 0xA0, 0xE5, 0xA5, 0xBD) AS hello;
 ```
 
 Result:
 
-```text
+``` text
 ┌─hello─┐
 │ 你好  │
 └───────┘
 ```
 
-## hex {#hex}
+## hex
 
 Returns a string containing the argument's hexadecimal representation.
 
@@ -80,7 +78,7 @@ Alias: `HEX`.
 
 **Syntax**
 
-```sql
+``` sql
 hex(arg)
 ```
 
@@ -108,25 +106,25 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 Query:
 
-```sql
+``` sql
 SELECT hex(1);
 ```
 
 Result:
 
-```text
+``` text
 01
 ```
 
 Query:
 
-```sql
+``` sql
 SELECT hex(toFloat32(number)) AS hex_presentation FROM numbers(15, 2);
 ```
 
 Result:
 
-```text
+``` text
 ┌─hex_presentation─┐
 │ 00007041         │
 │ 00008041         │
@@ -135,13 +133,13 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT hex(toFloat64(number)) AS hex_presentation FROM numbers(15, 2);
 ```
 
 Result:
 
-```text
+``` text
 ┌─hex_presentation─┐
 │ 0000000000002E40 │
 │ 0000000000003040 │
@@ -150,24 +148,24 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT lower(hex(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0'))) as uuid_hex
 ```
 
 Result:
 
-```text
+``` text
 ┌─uuid_hex─────────────────────────┐
 │ 61f0c4045cb311e7907ba6006ad3dba0 │
 └──────────────────────────────────┘
 ```
 
 
-## unhex {#unhex}
+## unhex
 
 Performs the opposite operation of [hex](#hex). It interprets each pair of hexadecimal digits (in the argument) as a number and converts it to the byte represented by the number. The return value is a binary string (BLOB).
 
-If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](/sql-reference/functions/type-conversion-functions) functions.
+If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#type-conversion-functions) functions.
 
 :::note
 If `unhex` is invoked from within the `clickhouse-client`, binary strings display using UTF-8.
@@ -177,7 +175,7 @@ Alias: `UNHEX`.
 
 **Syntax**
 
-```sql
+``` sql
 unhex(arg)
 ```
 
@@ -194,12 +192,12 @@ Supports both uppercase and lowercase letters `A-F`. The number of hexadecimal d
 **Example**
 
 Query:
-```sql
+``` sql
 SELECT unhex('303132'), UNHEX('4D7953514C');
 ```
 
 Result:
-```text
+``` text
 ┌─unhex('303132')─┬─unhex('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
@@ -207,25 +205,25 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT reinterpretAsUInt64(reverse(unhex('FFF'))) AS num;
 ```
 
 Result:
 
-```text
+``` text
 ┌──num─┐
 │ 4095 │
 └──────┘
 ```
 
-## bin {#bin}
+## bin
 
 Returns a string containing the argument's binary representation.
 
 **Syntax**
 
-```sql
+``` sql
 bin(arg)
 ```
 
@@ -253,13 +251,13 @@ Values of [UUID](../data-types/uuid.md) type are encoded as big-endian order str
 
 Query:
 
-```sql
+``` sql
 SELECT bin(14);
 ```
 
 Result:
 
-```text
+``` text
 ┌─bin(14)──┐
 │ 00001110 │
 └──────────┘
@@ -267,13 +265,13 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT bin(toFloat32(number)) AS bin_presentation FROM numbers(15, 2);
 ```
 
 Result:
 
-```text
+``` text
 ┌─bin_presentation─────────────────┐
 │ 00000000000000000111000001000001 │
 │ 00000000000000001000000001000001 │
@@ -282,13 +280,13 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT bin(toFloat64(number)) AS bin_presentation FROM numbers(15, 2);
 ```
 
 Result:
 
-```text
+``` text
 ┌─bin_presentation─────────────────────────────────────────────────┐
 │ 0000000000000000000000000000000000000000000000000010111001000000 │
 │ 0000000000000000000000000000000000000000000000000011000001000000 │
@@ -297,32 +295,32 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT bin(toUUID('61f0c404-5cb3-11e7-907b-a6006ad3dba0')) as bin_uuid
 ```
 
 Result:
 
-```text
+``` text
 ┌─bin_uuid─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ 01100001111100001100010000000100010111001011001100010001111001111001000001111011101001100000000001101010110100111101101110100000 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 
-## unbin {#unbin}
+## unbin
 
 Interprets each pair of binary digits (in the argument) as a number and converts it to the byte represented by the number. The functions performs the opposite operation to [bin](#bin).
 
 **Syntax**
 
-```sql
+``` sql
 unbin(arg)
 ```
 
 Alias: `UNBIN`.
 
-For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](/sql-reference/functions/type-conversion-functions#reinterpret) functions.
+For a numeric argument `unbin()` does not return the inverse of `bin()`. If you want to convert the result to a number, you can use the [reverse](../../sql-reference/functions/string-functions.md#reverse) and [reinterpretAs&lt;Type&gt;](../../sql-reference/functions/type-conversion-functions.md#reinterpretasuint8163264) functions.
 
 :::note
 If `unbin` is invoked from within the `clickhouse-client`, binary strings are displayed using UTF-8.
@@ -342,13 +340,13 @@ Supports binary digits `0` and `1`. The number of binary digits does not have to
 
 Query:
 
-```sql
+``` sql
 SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000101001100');
 ```
 
 Result:
 
-```text
+``` text
 ┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
@@ -356,27 +354,27 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num;
 ```
 
 Result:
 
-```text
+``` text
 ┌─num─┐
 │  14 │
 └─────┘
 ```
 
-## bitmaskToList(num) {#bitmasktolistnum}
+## bitmaskToList(num)
 
 Accepts an integer. Returns a string containing the list of powers of two that total the source number when summed. They are comma-separated without spaces in text format, in ascending order.
 
-## bitmaskToArray(num) {#bitmasktoarraynum}
+## bitmaskToArray(num)
 
 Accepts an integer. Returns an array of UInt64 numbers containing the list of powers of two that total the source number when summed. Numbers in the array are in ascending order.
 
-## bitPositionsToArray(num) {#bitpositionstoarraynum}
+## bitPositionsToArray(num)
 
 Accepts an integer and converts it to an unsigned integer. Returns an array of `UInt64` numbers containing the list of positions of bits of `arg` that equal `1`, in ascending order.
 
@@ -398,13 +396,13 @@ bitPositionsToArray(arg)
 
 Query:
 
-```sql
+``` sql
 SELECT bitPositionsToArray(toInt8(1)) AS bit_positions;
 ```
 
 Result:
 
-```text
+``` text
 ┌─bit_positions─┐
 │ [0]           │
 └───────────────┘
@@ -412,19 +410,19 @@ Result:
 
 Query:
 
-```sql
+``` sql
 SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions;
 ```
 
 Result:
 
-```text
+``` text
 ┌─bit_positions─────┐
 │ [0,1,2,3,4,5,6,7] │
 └───────────────────┘
 ```
 
-## mortonEncode {#mortonencode}
+## mortonEncode
 
 Calculates the Morton encoding (ZCurve) for a list of unsigned integers.
 
@@ -432,7 +430,7 @@ The function has two modes of operation:
 - Simple
 - Expanded
 
-### Simple mode {#simple-mode}
+### Simple mode
 
 Accepts up to 8 unsigned integers as arguments and produces a UInt64 code.
 
@@ -463,7 +461,7 @@ Result:
 53
 ```
 
-### Expanded mode {#expanded-mode}
+### Expanded mode
 
 Accepts a range mask ([tuple](../data-types/tuple.md)) as a first argument and up to 8 [unsigned integers](../data-types/int-uint.md) as other arguments.
 
@@ -583,7 +581,7 @@ Result:
 
 Please note that you can fit only so many bits of information into Morton code as [UInt64](../data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each, three arguments a range of max 2^21 (64/3) each and so on. All overflow will be clamped to zero.
 
-## mortonDecode {#mortondecode}
+## mortonDecode
 
 Decodes a Morton encoding (ZCurve) into the corresponding unsigned integer tuple.
 
@@ -591,7 +589,7 @@ As with the `mortonEncode` function, this function has two modes of operation:
 - Simple
 - Expanded
 
-### Simple mode {#simple-mode-1}
+### Simple mode
 
 Accepts a resulting tuple size as the first argument and the code as the second argument.
 
@@ -623,7 +621,7 @@ Result:
 ["1","2","3"]
 ```
 
-### Expanded mode {#expanded-mode-1}
+### Expanded mode
 
 Accepts a range mask (tuple) as a first argument and the code as the second argument.
 Each number in the mask configures the amount of range shrink:<br/>
@@ -700,10 +698,10 @@ select untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) fr
 Result:
 
 ```response
-1    2    3    4    5    6    7    8
+1	2	3	4	5	6	7	8
 ```
 
-## hilbertEncode {#hilbertencode}
+## hilbertEncode
 
 Calculates code for Hilbert Curve for a list of unsigned integers.
 
@@ -711,7 +709,7 @@ The function has two modes of operation:
 - Simple
 - Expanded
 
-### Simple mode {#simple-mode-2}
+### Simple mode
 
 Simple: accepts up to 2 unsigned integers as arguments and produces a UInt64 code.
 
@@ -744,7 +742,7 @@ Result:
 31
 ```
 
-### Expanded mode {#expanded-mode-2}
+### Expanded mode
 
 Accepts a range mask ([tuple](../../sql-reference/data-types/tuple.md)) as a first argument and up to 2 [unsigned integers](../../sql-reference/data-types/int-uint.md) as other arguments.
 
@@ -855,7 +853,7 @@ Result:
 
 Please note that you can fit only so many bits of information into Hilbert code as [UInt64](../../sql-reference/data-types/int-uint.md) has. Two arguments will have a range of maximum 2^32 (64/2) each. All overflow will be clamped to zero.
 
-## hilbertDecode {#hilbertdecode}
+## hilbertDecode
 
 Decodes a Hilbert curve index back into a tuple of unsigned integers, representing coordinates in multi-dimensional space.
 
@@ -863,7 +861,7 @@ As with the `hilbertEncode` function, this function has two modes of operation:
 - Simple
 - Expanded
 
-### Simple mode {#simple-mode-3}
+### Simple mode
 
 Accepts up to 2 unsigned integers as arguments and produces a UInt64 code.
 
@@ -897,7 +895,7 @@ Result:
 ["3", "4"]
 ```
 
-### Expanded mode {#expanded-mode-3}
+### Expanded mode
 
 Accepts a range mask (tuple) as a first argument and up to 2 unsigned integers as other arguments.
 Each number in the mask configures the number of bits by which the corresponding argument will be shifted left, effectively scaling the argument within its range.
@@ -965,5 +963,5 @@ select untuple(hilbertDecode(2, hilbertEncode(n1, n2))) from hilbert_numbers;
 Result:
 
 ```response
-1    2
+1	2
 ```

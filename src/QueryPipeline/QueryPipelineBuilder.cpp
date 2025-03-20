@@ -193,10 +193,10 @@ void QueryPipelineBuilder::addMergingAggregatedMemoryEfficientTransform(Aggregat
     DB::addMergingAggregatedMemoryEfficientTransform(pipe, std::move(params), num_merging_processors);
 }
 
-void QueryPipelineBuilder::resize(size_t num_streams, bool strict)
+void QueryPipelineBuilder::resize(size_t num_streams, bool force, bool strict)
 {
     checkInitializedAndNotCompleted();
-    pipe.resize(num_streams, strict);
+    pipe.resize(num_streams, force, strict);
 }
 
 void QueryPipelineBuilder::narrow(size_t size)
@@ -359,8 +359,8 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     right->pipe.dropExtremes();
     if ((left->getNumStreams() != 1 || right->getNumStreams() != 1) && join->getTableJoin().kind() == JoinKind::Paste)
     {
-        left->pipe.resize(1);
-        right->pipe.resize(1);
+        left->pipe.resize(1, true);
+        right->pipe.resize(1, true);
     }
     else if (left->getNumStreams() != 1 || right->getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is supported only for pipelines with one output port, got {} and {}", left->getNumStreams(), right->getNumStreams());

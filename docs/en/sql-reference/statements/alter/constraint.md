@@ -1,16 +1,14 @@
 ---
-description: 'Documentation for Manipulating Constraints'
-sidebar_label: 'CONSTRAINT'
-sidebar_position: 43
 slug: /sql-reference/statements/alter/constraint
-title: 'Manipulating Constraints'
+sidebar_position: 43
+sidebar_label: CONSTRAINT
 ---
 
 # Manipulating Constraints
 
 Constraints could be added or deleted using following syntax:
 
-```sql
+``` sql
 ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```

@@ -1,11 +1,10 @@
 ---
-alias: []
-description: 'Documentation for the PrettyCompact format'
-input_format: false
-keywords: ['PrettyCompact']
-output_format: true
+title : PrettyCompact
 slug: /interfaces/formats/PrettyCompact
-title: 'PrettyCompact'
+keywords : [PrettyCompact]
+input_format: false
+output_format: true
+alias: []
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -14,7 +13,7 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 |-------|---------|-------|
 | ✗     | ✔       |       |
 
-## Description {#description}
+## Description
 
 Differs from the [`Pretty`](./Pretty.md) format in that the table is displayed with a grid drawn between rows. 
 Because of this the result is more compact.
@@ -23,8 +22,8 @@ Because of this the result is more compact.
 This format is used by default in the command-line client in interactive mode.
 :::
 
-## Example Usage {#example-usage}
+## Example Usage
 
-## Format Settings {#format-settings}
+## Format Settings
 
 <PrettyFormatSettings />

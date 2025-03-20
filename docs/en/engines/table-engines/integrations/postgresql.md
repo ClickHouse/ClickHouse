@@ -1,10 +1,8 @@
 ---
-description: 'The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored
-  on a remote PostgreSQL server.'
-sidebar_label: 'PostgreSQL'
-sidebar_position: 160
 slug: /engines/table-engines/integrations/postgresql
-title: 'PostgreSQL Table Engine'
+title: PostgreSQL Table Engine
+sidebar_position: 160
+sidebar_label: PostgreSQL
 ---
 
 The PostgreSQL engine allows `SELECT` and `INSERT` queries on data stored on a remote PostgreSQL server.
@@ -19,7 +17,7 @@ Currently, only PostgreSQL versions 12 and up are supported.
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -28,13 +26,13 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
 ```
 
-See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
+See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
 
 The table structure can differ from the original PostgreSQL table structure:
 
 - Column names should be the same as in the original PostgreSQL table, but you can use just some of these columns and in any order.
 - Column types may differ from those in the original PostgreSQL table. ClickHouse tries to [cast](../../../engines/database-engines/postgresql.md#data_types-support) values to the ClickHouse data types.
-- The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+- The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 **Engine Parameters**
 
@@ -46,7 +44,7 @@ The table structure can differ from the original PostgreSQL table structure:
 - `schema` — Non-default table schema. Optional.
 - `on_conflict` — Conflict resolution strategy. Example: `ON CONFLICT DO NOTHING`. Optional. Note: adding this option will make insertion less efficient.
 
-[Named collections](/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
+[Named collections](/docs/operations/named-collections.md) (available since version 21.11) are recommended for production environment. Here is an example:
 
 ```xml
 <named_collections>
@@ -61,7 +59,7 @@ The table structure can differ from the original PostgreSQL table structure:
 ```
 
 Some parameters can be overridden by key value arguments:
-```sql
+``` sql
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
@@ -114,9 +112,9 @@ In the example below replica `example01-1` has the highest priority:
 
 ## Usage Example {#usage-example}
 
-### Table in PostgreSQL {#table-in-postgresql}
+### Table in PostgreSQL
 
-```text
+``` text
 postgres=# CREATE TABLE "public"."test" (
 "int_id" SERIAL,
 "int_nullable" INT NULL DEFAULT NULL,
@@ -137,25 +135,25 @@ postgresql> SELECT * FROM test;
  (1 row)
 ```
 
-### Creating Table in ClickHouse, and connecting to  PostgreSQL table created above {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
+### Creating Table in ClickHouse, and connecting to  PostgreSQL table created above
 
-This example uses the [PostgreSQL table engine](/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
+This example uses the [PostgreSQL table engine](/docs/engines/table-engines/integrations/postgresql.md) to connect the ClickHouse table to the PostgreSQL table and use both SELECT and INSERT statements to the PostgreSQL database:
 
-```sql
+``` sql
 CREATE TABLE default.postgresql_table
 (
     `float_nullable` Nullable(Float32),
     `str` String,
     `int_id` Int32
 )
-ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
 ```
 
-### Inserting initial data from PostgreSQL table into ClickHouse table, using a SELECT query {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
+### Inserting initial data from PostgreSQL table into ClickHouse table, using a SELECT query
 
-The [postgresql table function](/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
+The [postgresql table function](/docs/sql-reference/table-functions/postgresql.md) copies the data from PostgreSQL to ClickHouse, which is often used for improving the query performance of the data by querying or performing analytics in ClickHouse rather than in PostgreSQL, or can also be used for migrating data from PostgreSQL to ClickHouse. Since we will be copying the data from PostgreSQL to ClickHouse, we will use a MergeTree table engine in ClickHouse and call it postgresql_copy:
 
-```sql
+``` sql
 CREATE TABLE default.postgresql_copy
 (
     `float_nullable` Nullable(Float32),
@@ -166,42 +164,42 @@ ENGINE = MergeTree
 ORDER BY (int_id);
 ```
 
-```sql
+``` sql
 INSERT INTO default.postgresql_copy
-SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
 ```
 
-### Inserting incremental data from PostgreSQL table into ClickHouse table {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}
+### Inserting incremental data from PostgreSQL table into ClickHouse table
 
 If then performing ongoing synchronization between the PostgreSQL table and ClickHouse table after the initial insert, you can use a WHERE clause in ClickHouse to insert only data added to PostgreSQL based on a timestamp or unique sequence ID.
 
 This would require keeping track of the max ID or timestamp previously added, such as the following:
 
-```sql
+``` sql
 SELECT max(`int_id`) AS maxIntID FROM default.postgresql_copy;
 ```
 
 Then inserting values from PostgreSQL table greater than the max
 
-```sql
+``` sql
 INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postges_user', 'postgres_password');
 WHERE int_id > maxIntID;
 ```
 
-### Selecting data from the resulting ClickHouse table {#selecting-data-from-the-resulting-clickhouse-table}
+### Selecting data from the resulting ClickHouse table
 
-```sql
+``` sql
 SELECT * FROM postgresql_copy WHERE str IN ('test');
 ```
 
-```text
+``` text
 ┌─float_nullable─┬─str──┬─int_id─┐
 │           ᴺᵁᴸᴸ │ test │      1 │
 └────────────────┴──────┴────────┘
 ```
 
-### Using Non-default Schema {#using-non-default-schema}
+### Using Non-default Schema
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
@@ -219,9 +217,9 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The `postgresql` table function](../../../sql-reference/table-functions/postgresql.md)
-- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#mysql)
+- [Using PostgreSQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
 
-## Related content {#related-content}
+## Related content
 
 - Blog: [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 - Blog: [ClickHouse and PostgreSQL - a Match Made in Data Heaven - part 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

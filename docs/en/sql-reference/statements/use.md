@@ -1,14 +1,12 @@
 ---
-description: 'Documentation for USE Statement'
-sidebar_label: 'USE'
-sidebar_position: 53
 slug: /sql-reference/statements/use
-title: 'USE Statement'
+sidebar_position: 53
+sidebar_label: USE
 ---
 
 # USE Statement
 
-```sql
+``` sql
 USE db
 ```
 

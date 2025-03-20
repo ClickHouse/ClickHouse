@@ -17,9 +17,7 @@
     },
     "docker/test/integration/base": {
         "name": "clickhouse/integration-test",
-        "dependent": [
-            "docker/test/integration/clickhouse_with_unity_catalog"
-        ]
+        "dependent": []
     },
     "docker/test/fuzzer": {
         "name": "clickhouse/fuzzer",
@@ -42,7 +40,15 @@
     },
     "docker/test/stateless": {
         "name": "clickhouse/stateless-test",
-        "dependent": []
+        "dependent": [
+            "docker/test/stateful"
+        ]
+    },
+    "docker/test/stateful": {
+        "name": "clickhouse/stateful-test",
+        "dependent": [
+            "docker/test/stress"
+        ]
     },
     "docker/test/unit": {
         "name": "clickhouse/unit-test",
@@ -160,10 +166,6 @@
     },
     "docker/test/integration/nginx_dav": {
         "name": "clickhouse/nginx-dav",
-        "dependent": []
-    },
-    "docker/test/integration/clickhouse_with_unity_catalog": {
-        "name": "clickhouse/integration-test-with-unity-catalog",
         "dependent": []
     }
 }

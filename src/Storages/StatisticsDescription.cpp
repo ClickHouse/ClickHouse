@@ -4,6 +4,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -168,7 +169,7 @@ ColumnStatisticsDescription ColumnStatisticsDescription::fromColumnDeclaration(c
 {
     const auto & stat_type_list_ast = column.statistics_desc->as<ASTFunction &>().arguments;
     if (stat_type_list_ast->children.empty())
-        throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", column.formatForErrorMessage());
+        throw Exception(ErrorCodes::INCORRECT_QUERY, "We expect at least one statistics type for column {}", queryToString(column));
     ColumnStatisticsDescription stats;
     for (const auto & ast : stat_type_list_ast->children)
     {

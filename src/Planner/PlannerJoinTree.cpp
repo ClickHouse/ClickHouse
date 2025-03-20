@@ -75,9 +75,7 @@
 #include <Planner/CollectSets.h>
 #include <Planner/CollectTableExpressionData.h>
 
-#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
-
 #include <ranges>
 
 namespace DB
@@ -447,7 +445,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             ErrorCodes::TOO_MANY_COLUMNS,
             "Limit for number of columns to read exceeded. Requested: {}, maximum: {}",
             columns_names.size(),
-            settings[Setting::max_columns_to_read].value);
+            settings[Setting::max_columns_to_read]);
 }
 
 void updatePrewhereOutputsIfNeeded(SelectQueryInfo & table_expression_query_info,
@@ -1416,9 +1414,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
     trySetStorageInTableJoin(right_table_expression, table_join);
     auto prepared_join_storage = tryGetStorageInTableJoin(right_table_expression, planner_context);
     auto hash_table_stat_cache_key = preCalculateCacheKey(right_table_expression, select_query_info);
-    const auto cache_key_for_parallel_hash = calculateCacheKey(table_join, hash_table_stat_cache_key);
-    auto join_algorithm = chooseJoinAlgorithm(
-        table_join, prepared_join_storage, left_header, right_header, JoinAlgorithmSettings(*planner_context->getQueryContext()), cache_key_for_parallel_hash);
+    auto join_algorithm = chooseJoinAlgorithm(table_join, prepared_join_storage, left_header, right_header, planner_context->getQueryContext(), std::move(hash_table_stat_cache_key));
     auto result_plan = QueryPlan();
 
     bool is_filled_join = join_algorithm->isFilled();
@@ -1441,7 +1437,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             for (const auto & key_name : key_names)
                 sort_description.emplace_back(key_name);
 
-            SortingStep::Settings sort_settings(query_context->getSettingsRef());
+            SortingStep::Settings sort_settings(*query_context);
 
             auto sorting_step = std::make_unique<SortingStep>(
                 plan.getCurrentHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
@@ -1532,8 +1528,7 @@ std::tuple<QueryPlan, JoinPtr> buildJoinQueryPlan(
             false /*optimize_read_in_order*/,
             true /*optimize_skip_unused_shards*/);
 
-        auto setting_swap = settings[Setting::query_plan_join_swap_table];
-        join_step->swap_join_tables = setting_swap.is_auto ? std::nullopt : std::make_optional(setting_swap.base);
+        join_step->swap_join_tables = settings[Setting::query_plan_join_swap_table].get();
 
         join_step->setStepDescription(fmt::format("JOIN {}", join_pipeline_type));
 
@@ -2059,8 +2054,9 @@ JoinTreeQueryPlan buildQueryPlanForJoinNode(
 
     join_step_logical->setPreparedJoinStorage(
         tryGetStorageInTableJoin(join_node.getRightTableExpression(), planner_context));
+    join_step_logical->setHashTableCacheKey(preCalculateCacheKey(join_node.getRightTableExpression(), select_query_info));
 
-    const auto & join_expression_actions = join_step_logical->getExpressionActions();
+    auto & join_expression_actions = join_step_logical->getExpressionActions();
     appendSetsFromActionsDAG(*join_expression_actions.left_pre_join_actions, left_join_tree_query_plan.useful_sets);
     appendSetsFromActionsDAG(*join_expression_actions.post_join_actions, left_join_tree_query_plan.useful_sets);
     appendSetsFromActionsDAG(*join_expression_actions.right_pre_join_actions, right_join_tree_query_plan.useful_sets);

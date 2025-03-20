@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Parsers/ASTViewTargets.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/IStorage.h>

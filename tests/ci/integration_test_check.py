@@ -61,11 +61,15 @@ def get_env_for_runner(
     work_path: Path,
 ) -> Dict[str, str]:
     binary_path = build_path / "clickhouse"
+    odbc_bridge_path = build_path / "clickhouse-odbc-bridge"
+    library_bridge_path = build_path / "clickhouse-library-bridge"
 
     my_env = os.environ.copy()
     my_env["CLICKHOUSE_TESTS_BUILD_PATH"] = build_path.as_posix()
     my_env["CLICKHOUSE_TESTS_SERVER_BIN_PATH"] = binary_path.as_posix()
     my_env["CLICKHOUSE_TESTS_CLIENT_BIN_PATH"] = binary_path.as_posix()
+    my_env["CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH"] = odbc_bridge_path.as_posix()
+    my_env["CLICKHOUSE_TESTS_LIBRARY_BRIDGE_BIN_PATH"] = library_bridge_path.as_posix()
     my_env["CLICKHOUSE_TESTS_REPO_PATH"] = repo_path.as_posix()
     my_env["CLICKHOUSE_TESTS_RESULT_PATH"] = result_path.as_posix()
     my_env["CLICKHOUSE_TESTS_BASE_CONFIG_DIR"] = f"{repo_path}/programs/server"

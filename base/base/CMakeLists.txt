@@ -32,6 +32,7 @@ set (SRCS
     safeExit.cpp
     throwError.cpp
     Numa.cpp
+    ask.cpp
     GitHash.generated.cpp
     wide_integer_to_string.cpp
 )

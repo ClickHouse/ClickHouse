@@ -15,7 +15,6 @@
 #include <Core/Field.h>
 #include <Core/Settings.h>
 #include <Core/NamesAndTypes.h>
-#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>

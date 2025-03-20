@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterShowAccessEntitiesQuery.h>
 #include <Parsers/Access/ASTShowAccessEntitiesQuery.h>
+#include <Parsers/formatAST.h>
 #include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Interpreters/Context.h>

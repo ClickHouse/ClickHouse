@@ -66,8 +66,6 @@ class Labels:
     RELEASE_LTS = "release-lts"
     SUBMODULE_CHANGED = "submodule changed"
 
-    CI_PERFORMANCE = "ci-performance"
-
     # automatic backport for critical bug fixes
     AUTO_BACKPORT = {"pr-critical-bugfix"}
 
@@ -91,7 +89,8 @@ def check_category(pr_body: str) -> Tuple[bool, str]:
     lines = list(map(lambda x: x.strip(), pr_body.split("\n") if pr_body else []))
     lines = [re.sub(r"\s+", " ", line) for line in lines]
 
-    if "Reverts ClickHouse/" in pr_body:
+    # Check if body contains "Reverts ClickHouse/ClickHouse#36337"
+    if [True for line in lines if re.match(rf"\AReverts [A-Za-z0-9_.-/]+#\d+\Z", line)]:
         return True, LABEL_CATEGORIES["pr-not-for-changelog"][0]
 
     category = ""

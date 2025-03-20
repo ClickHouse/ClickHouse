@@ -5,7 +5,6 @@
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Core/Block.h>
 #include <Columns/ColumnsNumber.h>
-#include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>

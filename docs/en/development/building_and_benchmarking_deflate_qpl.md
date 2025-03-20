@@ -1,9 +1,8 @@
 ---
-description: 'How to build Clickhouse and run benchmark with DEFLATE_QPL Codec'
-sidebar_label: 'Building and Benchmarking DEFLATE_QPL'
-sidebar_position: 73
 slug: /development/building_and_benchmarking_deflate_qpl
-title: 'Build Clickhouse with DEFLATE_QPL'
+sidebar_position: 73
+sidebar_label: Building and Benchmarking DEFLATE_QPL
+description: How to build Clickhouse and run benchmark with DEFLATE_QPL Codec
 ---
 
 # Build Clickhouse with DEFLATE_QPL
@@ -11,24 +10,24 @@ title: 'Build Clickhouse with DEFLATE_QPL'
 - Make sure your host machine meet the QPL required [prerequisites](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#prerequisites)
 - deflate_qpl is enabled by default during cmake build. In case you accidentally change it, please double-check build flag: ENABLE_QPL=1
 
-- For generic requirements, please refer to Clickhouse generic [build instructions](/development/build.md)
+- For generic requirements, please refer to Clickhouse generic [build instructions](/docs/development/build.md)
 
 # Run Benchmark with DEFLATE_QPL
 
-## Files list {#files-list}
+## Files list
 
 The folders `benchmark_sample` under [qpl-cmake](https://github.com/ClickHouse/ClickHouse/tree/master/contrib/qpl-cmake) give example to run benchmark with python scripts:
 
 `client_scripts` contains python scripts for running typical benchmark, for example:
 - `client_stressing_test.py`: The python script for query stress test with [1~4] server instances.
-- `queries_ssb.sql`: The file lists all queries for [Star Schema Benchmark](/getting-started/example-datasets/star-schema/)
+- `queries_ssb.sql`: The file lists all queries for [Star Schema Benchmark](/docs/getting-started/example-datasets/star-schema/)
 - `allin1_ssb.sh`: This shell script executes benchmark workflow all in one automatically.
 
 `database_files` means it will store database files according to lz4/deflate/zstd codec.
 
-## Run benchmark automatically for Star Schema: {#run-benchmark-automatically-for-star-schema}
+## Run benchmark automatically for Star Schema:
 
-```bash
+``` bash
 $ cd ./benchmark_sample/client_scripts
 $ sh run_ssb.sh
 ```
@@ -37,29 +36,29 @@ After complete, please check all the results in this folder:`./output/`
 
 In case you run into failure, please manually run benchmark as below sections.
 
-## Definition {#definition}
+## Definition
 
 [CLICKHOUSE_EXE] means the path of clickhouse executable program.
 
-## Environment {#environment}
+## Environment
 
 - CPU: Sapphire Rapid
 - OS Requirements refer to [System Requirements for QPL](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#system-requirements)
 - IAA Setup refer to [Accelerator Configuration](https://intel.github.io/qpl/documentation/get_started_docs/installation.html#accelerator-configuration)
 - Install python modules:
 
-```bash
+``` bash
 pip3 install clickhouse_driver numpy
 ```
 
 [Self-check for IAA]
 
-```bash
+``` bash
 $ accel-config list | grep -P 'iax|state'
 ```
 
 Expected output like this:
-```bash
+``` bash
     "dev":"iax1",
     "state":"enabled",
             "state":"enabled",
@@ -67,23 +66,23 @@ Expected output like this:
 
 If you see nothing output, it means IAA is not ready to work. Please check IAA setup again.
 
-## Generate raw data {#generate-raw-data}
+## Generate raw data
 
-```bash
+``` bash
 $ cd ./benchmark_sample
 $ mkdir rawdata_dir && cd rawdata_dir
 ```
 
-Use [`dbgen`](/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
+Use [`dbgen`](/docs/getting-started/example-datasets/star-schema) to generate 100 million rows data with the parameters:
 -s 20
 
 The files like `*.tbl` are expected to output under `./benchmark_sample/rawdata_dir/ssb-dbgen`:
 
-## Database setup {#database-setup}
+## Database setup
 
 Set up database with LZ4 codec
 
-```bash
+``` bash
 $ cd ./database_dir/lz4
 $ [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 $ [CLICKHOUSE_EXE] client
@@ -91,14 +90,14 @@ $ [CLICKHOUSE_EXE] client
 
 Here you should see the message `Connected to ClickHouse server` from console which means client successfully setup connection with server.
 
-Complete below three steps mentioned in [Star Schema Benchmark](/getting-started/example-datasets/star-schema)
+Complete below three steps mentioned in [Star Schema Benchmark](/docs/getting-started/example-datasets/star-schema)
 - Creating tables in ClickHouse
 - Inserting data. Here should use `./benchmark_sample/rawdata_dir/ssb-dbgen/*.tbl` as input data.
 - Converting "star schema" to de-normalized "flat schema"
 
 Set up database with IAA Deflate codec
 
-```bash
+``` bash
 $ cd ./database_dir/deflate
 $ [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 $ [CLICKHOUSE_EXE] client
@@ -107,7 +106,7 @@ Complete three steps same as lz4 above
 
 Set up database with ZSTD codec
 
-```bash
+``` bash
 $ cd ./database_dir/zstd
 $ [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
 $ [CLICKHOUSE_EXE] client
@@ -137,11 +136,11 @@ Initialization of hardware-assisted DeflateQpl codec failed
 ```
 That means IAA devices is not ready, you need check IAA setup again.
 
-## Benchmark with single instance {#benchmark-with-single-instance}
+## Benchmark with single instance 
 
 - Before start benchmark, Please disable C6 and set CPU frequency governor to be `performance`
 
-```bash
+``` bash
 $ cpupower idle-set -d 3
 $ cpupower frequency-set -g performance
 ```
@@ -153,7 +152,7 @@ Now run benchmark for LZ4/Deflate/ZSTD respectively:
 
 LZ4:
 
-```bash
+``` bash
 $ cd ./database_dir/lz4 
 $ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 $ cd ./client_scripts
@@ -162,7 +161,7 @@ $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > lz4.log
 
 IAA deflate:
 
-```bash
+``` bash
 $ cd ./database_dir/deflate
 $ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 $ cd ./client_scripts
@@ -171,7 +170,7 @@ $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 1 > deflate
 
 ZSTD:
 
-```bash
+``` bash
 $ cd ./database_dir/zstd
 $ numactl -m 0 -N 0 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
 $ cd ./client_scripts
@@ -189,7 +188,7 @@ How to check performance metrics:
 
 We focus on QPS, please search the keyword: `QPS_Final` and collect statistics
 
-## Benchmark with multi-instances {#benchmark-with-multi-instances}
+## Benchmark with multi-instances
 
 - To reduce impact of memory bound on too much threads, We recommend run benchmark with multi-instances.
 - Multi-instance means multiple（2 or 4）servers connected with respective client.
@@ -204,21 +203,21 @@ Here we assume there are 60 cores per socket and take 2 instances for example.
 Launch server for first instance
 LZ4:
 
-```bash
+``` bash
 $ cd ./database_dir/lz4
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 ```
 
 ZSTD:
 
-```bash
+``` bash
 $ cd ./database_dir/zstd
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
 ```
 
 IAA Deflate:
 
-```bash
+``` bash
 $ cd ./database_dir/deflate
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 ```
@@ -227,7 +226,7 @@ $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/n
 
 LZ4:
 
-```bash
+``` bash
 $ cd ./database_dir && mkdir lz4_s2 && cd lz4_s2
 $ cp ../../server_config/config_lz4_s2.xml ./
 $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/null&
@@ -235,7 +234,7 @@ $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_lz4_s2.xml >&/dev/n
 
 ZSTD:
 
-```bash
+``` bash
 $ cd ./database_dir && mkdir zstd_s2 && cd zstd_s2
 $ cp ../../server_config/config_zstd_s2.xml ./
 $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/null&
@@ -243,7 +242,7 @@ $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_zstd_s2.xml >&/dev/
 
 IAA Deflate:
 
-```bash
+``` bash
 $ cd ./database_dir && mkdir deflate_s2 && cd deflate_s2
 $ cp ../../server_config/config_deflate_s2.xml ./
 $ numactl -C 30-59,150-179 [CLICKHOUSE_EXE] server -C config_deflate_s2.xml >&/dev/null&
@@ -253,13 +252,13 @@ Creating tables && Inserting data for second instance
 
 Creating tables:
 
-```bash
+``` bash
 $ [CLICKHOUSE_EXE] client -m --port=9001 
 ```
 
 Inserting data:
 
-```bash
+``` bash
 $ [CLICKHOUSE_EXE] client --query "INSERT INTO [TBL_FILE_NAME] FORMAT CSV" < [TBL_FILE_NAME].tbl  --port=9001
 ```
 
@@ -270,7 +269,7 @@ Benchmarking with 2 instances
 
 LZ4:
 
-```bash
+``` bash
 $ cd ./database_dir/lz4
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_lz4.xml >&/dev/null&
 $ cd ./database_dir/lz4_s2
@@ -281,7 +280,7 @@ $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2  > lz4_2i
 
 ZSTD:
 
-```bash
+``` bash
 $ cd ./database_dir/zstd
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_zstd.xml >&/dev/null&
 $ cd ./database_dir/zstd_s2
@@ -292,7 +291,7 @@ $ numactl -m 1 -N 1 python3 client_stressing_test.py queries_ssb.sql 2 > zstd_2i
 
 IAA deflate
 
-```bash
+``` bash
 $ cd ./database_dir/deflate
 $ numactl -C 0-29,120-149 [CLICKHOUSE_EXE] server -C config_deflate.xml >&/dev/null&
 $ cd ./database_dir/deflate_s2
@@ -305,7 +304,7 @@ Here the last argument: `2` of client_stressing_test.py stands for the number of
 
 Now three logs should be output as expected:
 
-```text
+``` text
 lz4_2insts.log
 deflate_2insts.log
 zstd_2insts.log
@@ -317,12 +316,12 @@ We focus on QPS, please search the keyword: `QPS_Final` and collect statistics
 Benchmark setup for 4 instances is similar with 2 instances above.
 We recommend use 2 instances benchmark data as final report for review.
 
-## Tips {#tips}
+## Tips
 
 Each time before launch new clickhouse server, please make sure no background clickhouse process running, please check and kill old one:
 
-```bash
+``` bash
 $ ps -aux| grep clickhouse
 $ kill -9 [PID]
 ```
-By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](/getting-started/example-datasets/star-schema), you will find 3 queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low < 10% for these queries which means cannot demonstrate performance differences.
+By comparing the query list in ./client_scripts/queries_ssb.sql with official [Star Schema Benchmark](/docs/getting-started/example-datasets/star-schema), you will find 3 queries are not included: Q1.2/Q1.3/Q3.4 . This is because cpu utilization% is very low < 10% for these queries which means cannot demonstrate performance differences.

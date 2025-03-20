@@ -8,8 +8,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
-#include <Storages/IStorage.h>
+#include "Storages/IStorage.h"
 
 namespace DB
 {
@@ -46,7 +47,7 @@ void DatabaseMemory::createTable(
         query_to_store = query->clone();
         auto * create = query_to_store->as<ASTCreateQuery>();
         if (!create)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", query->formatForErrorMessage());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Query '{}' is not CREATE query", serializeAST(*query));
         cleanupObjectDefinitionFromTemporaryFlags(*create);
     }
 

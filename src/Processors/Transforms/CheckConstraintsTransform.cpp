@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Parsers/formatAST.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
@@ -79,7 +80,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                         "Constraint expression returns nullable column that contains null value",
                         backQuote(constraint_ptr->name),
                         table_id.getNameForLogs(),
-                        constraint_ptr->expr->formatForErrorMessage());
+                        serializeAST(*(constraint_ptr->expr)));
 
                 result_column = nested_column;
             }
@@ -122,7 +123,7 @@ void CheckConstraintsTransform::onConsume(Chunk chunk)
                     backQuote(constraint_ptr->name),
                     table_id.getNameForLogs(),
                     rows_written + row_idx + 1,
-                    constraint_ptr->expr->formatForErrorMessage(),
+                    serializeAST(*(constraint_ptr->expr)),
                     column_values_msg);
             }
         }

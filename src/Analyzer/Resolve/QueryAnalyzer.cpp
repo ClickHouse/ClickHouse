@@ -66,7 +66,6 @@
 #include <Analyzer/Resolve/QueryExpressionsAliasVisitor.h>
 #include <Analyzer/Resolve/ReplaceColumnsVisitor.h>
 #include <Analyzer/Resolve/TableExpressionsAliasVisitor.h>
-#include <Analyzer/Resolve/TableFunctionsWithClusterAlternativesVisitor.h>
 #include <Analyzer/Resolve/TypoCorrection.h>
 
 #include <Planner/PlannerActionsVisitor.h>
@@ -581,28 +580,14 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
         Settings subquery_settings = context->getSettingsCopy();
         subquery_settings[Setting::max_result_rows] = 1;
         subquery_settings[Setting::extremes] = false;
+        subquery_context->setSettings(subquery_settings);
         /// When execute `INSERT INTO t WITH ... SELECT ...`, it may lead to `Unknown columns`
         /// exception with this settings enabled(https://github.com/ClickHouse/ClickHouse/issues/52494).
-        subquery_settings[Setting::use_structure_from_insertion_table_in_table_functions] = false;
-        subquery_context->setSettings(subquery_settings);
-
-        auto query_tree = node->clone();
-        /// Update context for the QueryTree, because apparently Planner would use this context.
-        if (auto * new_query_node = query_tree->as<QueryNode>())
-            new_query_node->getMutableContext() = subquery_context;
-        if (auto * new_union_node = query_tree->as<UnionNode>())
-            new_union_node->getMutableContext() = subquery_context;
+        subquery_context->setSetting("use_structure_from_insertion_table_in_table_functions", false);
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, scope.subquery_depth, true /*is_subquery*/);
         options.only_analyze = only_analyze;
-
-        QueryTreePassManager query_tree_pass_manager(subquery_context);
-        addQueryTreePasses(query_tree_pass_manager, options.only_analyze);
-        query_tree_pass_manager.run(query_tree);
-
-        if (auto storage = subquery_context->getViewSource())
-            replaceStorageInQueryTree(query_tree, subquery_context, storage);
-        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(query_tree, subquery_context, options);
+        auto interpreter = std::make_unique<InterpreterSelectQueryAnalyzer>(node->toAST(), subquery_context, subquery_context->getViewSource(), options);
 
         if (only_analyze)
         {
@@ -3922,13 +3907,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
     /// Most likely only the root scope can have an aggregate function, but let's check all just in case.
     bool in_aggregate_function_scope = false;
     for (const auto * scope_ptr = &scope; scope_ptr; scope_ptr = scope_ptr->parent_scope)
-    {
         in_aggregate_function_scope = in_aggregate_function_scope || scope_ptr->expressions_in_resolve_process_stack.hasAggregateFunction();
-
-        /// Check parent scopes until find current query scope.
-        if (scope_ptr->scope_node->getNodeType() == QueryTreeNodeType::QUERY)
-            break;
-    }
 
     if (!in_aggregate_function_scope)
     {
@@ -5570,11 +5549,6 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     TableExpressionsAliasVisitor table_expressions_visitor(scope);
     table_expressions_visitor.visit(query_node_typed.getJoinTree());
-
-    TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
-    table_function_visitor.visit(query_node);
-    if (!table_function_visitor.shouldReplaceWithClusterAlternatives() && scope.context->hasQueryContext())
-        scope.context->getQueryContext()->setSetting("parallel_replicas_for_cluster_engines", false);
 
     initializeQueryJoinTreeNode(query_node_typed.getJoinTree(), scope);
     scope.aliases.alias_name_to_table_expression_node = std::move(transitive_aliases);
