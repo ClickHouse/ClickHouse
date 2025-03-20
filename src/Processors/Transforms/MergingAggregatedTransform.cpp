@@ -228,7 +228,8 @@ void MergingAggregatedTransform::consume(Chunk chunk)
           */
         auto block = getInputPort().getHeader().cloneWithColumns(chunk.getColumns());
         block.info.is_overflows = agg_info->is_overflows;
-        block.info.bucket_num = agg_info->bucket_num;
+        if (agg_info->bucket_num >= (1 << 16))
+            block.info.bucket_num = agg_info->bucket_num & 0xFFFF;
 
         addBlock(std::move(block));
     }

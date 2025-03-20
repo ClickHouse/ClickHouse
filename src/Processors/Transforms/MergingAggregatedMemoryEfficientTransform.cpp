@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <limits>
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/sortBlock.h>
@@ -6,6 +7,7 @@
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <QueryPipeline/Pipe.h>
+#include "base/defines.h"
 
 namespace DB
 {
@@ -14,12 +16,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-GroupingAggregatedTransform::GroupingAggregatedTransform(
-    const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_)
-    : IProcessor(InputPorts(num_inputs_, header_), { Block() })
+GroupingAggregatedTransform::GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_)
+    : IProcessor(InputPorts(num_inputs_, header_), {Block()})
     , num_inputs(num_inputs_)
     , params(std::move(params_))
     , last_bucket_number(num_inputs, -1)
+    , delayed_bucket_number(num_inputs, -1)
 {
 }
 
@@ -65,9 +67,36 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
     }
     else
     {
+        for (const auto delayed_bucket : delayed_buckets)
+        {
+            if (delayed_bucket > current_bucket)
+                continue;
+            // throw Exception(
+            //     ErrorCodes::LOGICAL_ERROR,
+            //     "Delayed bucket number is greatre than current bucket number. curent_bucket: {}, delayed_bucket: {}",
+            //     current_bucket,
+            //     delayed_bucket);
+
+            /// The bucket is no longer delayed for all inputs. Either we received it from all sources (where it was not empty),
+            /// or we received buckets with higher id-s and no delayed bucket information.
+            if (!std::ranges::contains(delayed_bucket_number, delayed_bucket))
+            {
+                if (try_push_by_iter(chunks_map.find(delayed_bucket)))
+                {
+                    delayed_buckets.erase(delayed_bucket);
+                    return true;
+                }
+            }
+        }
+
         for (; next_bucket_to_push < current_bucket; ++next_bucket_to_push)
+        {
+            if (delayed_buckets.contains(next_bucket_to_push))
+                continue;
+
             if (try_push_by_iter(chunks_map.find(next_bucket_to_push)))
                 return true;
+        }
     }
 
     return false;
@@ -118,10 +147,9 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
 
     auto need_input = [this](size_t input_num)
     {
-        if (last_bucket_number[input_num] < current_bucket)
+        if (last_bucket_number[input_num] <= current_bucket)
             return true;
-
-        return expect_several_chunks_for_single_bucket_per_source && last_bucket_number[input_num] == current_bucket;
+        return false;
     };
 
     if (!wait_input_ports_numbers.empty())
@@ -214,6 +242,9 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const PortNumbers & upda
             break;
         }
 
+        if (delayed_buckets.contains(next_bucket_to_push))
+            continue;
+
         if (need_data)
             return Status::NeedData;
     }
@@ -261,6 +292,13 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
     if (auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>())
     {
         Int32 bucket = agg_info->bucket_num;
+        Int32 delayed_bucket = -1;
+        if (bucket >= (1 << 16))
+        {
+            delayed_bucket = bucket >> 16;
+            bucket &= 0xFFFF;
+            agg_info->bucket_num = bucket;
+        }
         bool is_overflows = agg_info->is_overflows;
 
         if (is_overflows)
@@ -272,6 +310,8 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             chunks_map[bucket].emplace_back(std::move(chunk));
             has_two_level = true;
             last_bucket_number[input] = bucket;
+            delayed_bucket_number[input] = delayed_bucket;
+            delayed_buckets.insert(delayed_bucket);
         }
     }
     else if (chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())

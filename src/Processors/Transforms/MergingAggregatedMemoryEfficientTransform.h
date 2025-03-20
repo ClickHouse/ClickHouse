@@ -1,13 +1,14 @@
 #pragma once
 
+#include <unordered_set>
 #include <Core/SortDescription.h>
-#include <Common/HashTable/HashSet.h>
 #include <Interpreters/Aggregator.h>
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/ISimpleTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Common/HashTable/HashSet.h>
 
 
 namespace DB
@@ -66,9 +67,6 @@ public:
     GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_);
     String getName() const override { return "GroupingAggregatedTransform"; }
 
-    /// Special setting: in case if single source can return several chunks with same bucket.
-    void allowSeveralChunksForSingleBucketPerSource() { expect_several_chunks_for_single_bucket_per_source = true; }
-
 protected:
     Status prepare(const PortNumbers & updated_input_ports, const PortNumbers &) override;
     void work() override;
@@ -78,6 +76,10 @@ private:
     AggregatingTransformParamsPtr params;
 
     std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
+    std::vector<Int32> delayed_bucket_number; /// Delayed bucket ids for each input.
+
+    std::unordered_set<Int32> delayed_buckets;
+
     std::map<Int32, Chunks> chunks_map; /// bucket -> chunks
     Chunks overflow_chunks;
     Chunks single_level_chunks;
@@ -89,9 +91,6 @@ private:
     bool initialized_index_to_input = false;
     std::vector<InputPorts::iterator> index_to_input;
     HashSet<uint64_t> wait_input_ports_numbers;
-
-    /// If we aggregate partitioned data several chunks might be produced for the same bucket: one for each partition.
-    bool expect_several_chunks_for_single_bucket_per_source = true;
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
