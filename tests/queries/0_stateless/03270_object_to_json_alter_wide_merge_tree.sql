@@ -1,5 +1,5 @@
--- Tags: long, no-azure-blob-storage
--- no-azure-blob-storage: too slow
+-- Tags: long, no-object-storage
+-- - no-object-storage: too slow
 
 set allow_experimental_object_type = 1;
 SET enable_json_type = 1;

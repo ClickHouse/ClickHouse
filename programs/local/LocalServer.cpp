@@ -119,7 +119,6 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
-    extern const ServerSettingsBool use_legacy_mongodb_integration;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_free_size;
     extern const ServerSettingsUInt64 prefixes_deserialization_thread_pool_thread_pool_queue_size;
@@ -573,10 +572,10 @@ try
     /// Don't initialize DateLUT
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerTableFunctions();
     registerDatabases();
-    registerStorages(server_settings[ServerSetting::use_legacy_mongodb_integration]);
-    registerDictionaries(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerStorages();
+    registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
 
