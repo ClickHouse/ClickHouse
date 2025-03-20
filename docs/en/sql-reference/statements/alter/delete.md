@@ -8,7 +8,7 @@ title: 'ALTER TABLE ... DELETE Statement'
 
 # ALTER TABLE ... DELETE Statement
 
-``` sql
+```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 ```
 

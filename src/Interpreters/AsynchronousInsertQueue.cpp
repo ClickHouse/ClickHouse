@@ -923,7 +923,7 @@ try
             normalized_query_hash,
             key.query,
             pipeline,
-            interpreter,
+            interpreter.get(),
             internal,
             query_database,
             query_table,

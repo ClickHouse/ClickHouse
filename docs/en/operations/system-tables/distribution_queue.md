@@ -32,11 +32,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.distribution_queue LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 database:              default

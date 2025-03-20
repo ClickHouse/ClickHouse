@@ -78,7 +78,7 @@ Converts a WKT (Well Known Text) MultiPolygon into a MultiPolygon type.
 
 ### Example {#example}
 
-``` sql
+```sql
 SELECT
     toTypeName(readWKTMultiPolygon('MULTIPOLYGON(((2 0,10 0,10 10,0 10,2 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))')) AS type,
     readWKTMultiPolygon('MULTIPOLYGON(((2 0,10 0,10 10,0 10,2 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))') AS output FORMAT Markdown
@@ -103,7 +103,7 @@ Converts a WKT (Well Known Text) MultiPolygon into a Polygon type.
 
 ### Example {#example-1}
 
-``` sql
+```sql
 SELECT
     toTypeName(readWKTPolygon('POLYGON((2 0,10 0,10 10,0 10,2 0))')) AS type,
     readWKTPolygon('POLYGON((2 0,10 0,10 10,0 10,2 0))') AS output
@@ -239,7 +239,7 @@ Returns true or false depending on whether or not one polygon lies completely in
 
 ### Example {#example-6}
 
-``` sql
+```sql
 select polygonsWithinSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]);
 ```
 ```response
@@ -258,7 +258,7 @@ Calculates the minimal distance between two points where one point belongs to th
 
 ### Example {#example-7}
 
-``` sql
+```sql
 SELECT polygonsDistanceSpherical([[[(0, 0), (0, 0.1), (0.1, 0.1), (0.1, 0)]]], [[[(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)]]])
 ```
 ```response
@@ -279,7 +279,7 @@ Calculates distance between two polygons
 
 ### Example {#example-8}
 
-``` sql
+```sql
 SELECT polygonsDistanceCartesian([[[(0, 0), (0, 0.1), (0.1, 0.1), (0.1, 0)]]], [[[(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)]]])
 ```
 ```response
@@ -300,7 +300,7 @@ Returns true if two polygons are equal
 
 ### Example {#example-9}
 
-``` sql
+```sql
 SELECT polygonsEqualsCartesian([[[(1., 1.), (1., 4.), (4., 4.), (4., 1.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
 ```
 ```response
@@ -321,7 +321,7 @@ Calculates the spatial set theoretic symmetric difference (XOR) between two poly
 
 ### Example {#example-10}
 
-``` sql
+```sql
 SELECT wkt(arraySort(polygonsSymDifferenceSpherical([[(50., 50.), (50., -50.), (-50., -50.), (-50., 50.), (50., 50.)], [(10., 10.), (10., 40.), (40., 40.), (40., 10.), (10., 10.)], [(-10., -10.), (-10., -40.), (-40., -40.), (-40., -10.), (-10., -10.)]], [[(-20., -20.), (-20., 20.), (20., 20.), (20., -20.), (-20., -20.)]])));
 ```
 ```response
@@ -342,7 +342,7 @@ The same as `polygonsSymDifferenceSpherical`, but the coordinates are in the Car
 
 ### Example {#example-11}
 
-``` sql
+```sql
 SELECT wkt(polygonsSymDifferenceCartesian([[[(0, 0), (0, 3), (1, 2.9), (2, 2.6), (2.6, 2), (2.9, 1), (3, 0), (0, 0)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]]))
 ```
 ```response
@@ -363,7 +363,7 @@ Calculates the intersection (AND) between polygons, coordinates are spherical.
 
 ### Example {#example-12}
 
-``` sql
+```sql
 SELECT wkt(arrayMap(a -> arrayMap(b -> arrayMap(c -> (round(c.1, 6), round(c.2, 6)), b), a), polygonsIntersectionSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]])))
 ```
 ```response
@@ -384,7 +384,7 @@ Returns true if the second polygon is within the first polygon.
 
 ### Example {#example-13}
 
-``` sql
+```sql
 SELECT polygonsWithinCartesian([[[(2., 2.), (2., 3.), (3., 3.), (3., 2.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]])
 ```
 ```response
@@ -407,7 +407,7 @@ Coordinates are in Cartesian coordinate system.
 
 ### Example {#example-14}
 
-``` sql
+```sql
 SELECT wkt(polygonConvexHullCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.), (2., 3.)]]]))
 ```
 ```response
@@ -428,7 +428,7 @@ Calculates the surface area of a polygon.
 
 ### Example {#example-15}
 
-``` sql
+```sql
 SELECT round(polygonAreaSpherical([[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]), 14)
 ```
 ```response
@@ -449,7 +449,7 @@ Calculates a union (OR).
 
 ### Example {#example-16}
 
-``` sql
+```sql
 SELECT wkt(polygonsUnionSpherical([[[(4.3613577, 50.8651821), (4.349556, 50.8535879), (4.3602419, 50.8435626), (4.3830299, 50.8428851), (4.3904543, 50.8564867), (4.3613148, 50.8651279)]]], [[[(4.346693, 50.858306), (4.367945, 50.852455), (4.366227, 50.840809), (4.344961, 50.833264), (4.338074, 50.848677), (4.346693, 50.858306)]]]))
 ```
 ```response
@@ -494,7 +494,7 @@ Calculates the intersection of polygons.
 
 ### Example {#example-18}
 
-``` sql
+```sql
 SELECT wkt(polygonsIntersectionCartesian([[[(0., 0.), (0., 3.), (1., 2.9), (2., 2.6), (2.6, 2.), (2.9, 1.), (3., 0.), (0., 0.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]]))
 ```
 ```response
@@ -515,7 +515,7 @@ Calculates the area of a polygon
 
 ### Example {#example-19}
 
-``` sql
+```sql
 SELECT polygonAreaCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
 ```
 ```response
@@ -536,7 +536,7 @@ Calculates the perimeter of a polygon.
 
 ### Example {#example-20}
 
-``` sql
+```sql
 SELECT polygonPerimeterCartesian([[[(0., 0.), (0., 5.), (5., 5.), (5., 0.)]]])
 ```
 ```response
@@ -557,7 +557,7 @@ Calculates the union of polygons.
 
 ### Example {#example-21}
 
-``` sql
+```sql
 SELECT wkt(polygonsUnionCartesian([[[(0., 0.), (0., 3.), (1., 2.9), (2., 2.6), (2.6, 2.), (2.9, 1), (3., 0.), (0., 0.)]]], [[[(1., 1.), (1., 4.), (4., 4.), (4., 1.), (1., 1.)]]]))
 ```
 ```response

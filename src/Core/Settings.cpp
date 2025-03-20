@@ -1606,7 +1606,7 @@ Possible values:
 
 Can be used to limit which entities will go to `query_log`, say you are interested only in errors, then you can use `EXCEPTION_WHILE_PROCESSING`:
 
-``` text
+```text
 log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 )", 0) \
@@ -1697,7 +1697,7 @@ Possible values:
 
 **Example**
 
-``` xml
+```xml
 <max_concurrent_queries_for_user>5</max_concurrent_queries_for_user>
 ```
 )", 0) \
@@ -2862,7 +2862,7 @@ Possible values:
 
 **Example**
 
-``` text
+```text
 log_query_threads=1
 ```
 )", 0) \
@@ -2873,7 +2873,7 @@ When a query run by ClickHouse with this setting enabled has associated views (m
 
 Example:
 
-``` text
+```text
 log_query_views=1
 ```
 )", 0) \
@@ -2890,7 +2890,7 @@ Possible values:
 
 Query:
 
-``` sql
+```sql
 SET log_comment = 'log_comment test', log_queries = 1;
 SELECT 1;
 SYSTEM FLUSH LOGS;
@@ -2899,7 +2899,7 @@ SELECT type, query FROM system.query_log WHERE log_comment = 'log_comment test' 
 
 Result:
 
-``` text
+```text
 ┌─type────────┬─query─────┐
 │ QueryStart  │ SELECT 1; │
 │ QueryFinish │ SELECT 1; │
@@ -3750,7 +3750,7 @@ Possible values:
 
 Consider the `null_in` table:
 
-``` text
+```text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -3760,13 +3760,13 @@ Consider the `null_in` table:
 
 Query:
 
-``` sql
+```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 0;
 ```
 
 Result:
 
-``` text
+```text
 ┌──idx─┬────i─┐
 │    1 │    1 │
 └──────┴──────┘
@@ -3774,13 +3774,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 ```
 
 Result:
 
-``` text
+```text
 ┌──idx─┬─────i─┐
 │    1 │     1 │
 │    2 │  NULL │
@@ -3798,7 +3798,7 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 
 **Example**
 
-``` xml
+```xml
 <profiles>
     <default>
         <allow_nondeterministic_mutations>1</allow_nondeterministic_mutations>
@@ -4017,7 +4017,7 @@ Possible values:
 
 Query:
 
-``` sql
+```sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_syntax_fuse_functions = 1;
 EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
@@ -4025,7 +4025,7 @@ EXPLAIN SYNTAX SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
 
 Result:
 
-``` text
+```text
 SELECT
     sum(a),
     sumCount(b).1,
@@ -4050,7 +4050,7 @@ If the setting is set to `0`, it is possible to use an arbitrary level of nestin
 
 Query:
 
-``` sql
+```sql
 SET flatten_nested = 1;
 CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
 
@@ -4059,7 +4059,7 @@ SHOW CREATE TABLE t_nest;
 
 Result:
 
-``` text
+```text
 ┌─statement───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_nest
 (
@@ -4074,7 +4074,7 @@ SETTINGS index_granularity = 8192 │
 
 Query:
 
-``` sql
+```sql
 SET flatten_nested = 0;
 
 CREATE TABLE t_nest (`n` Nested(a UInt32, b UInt32)) ENGINE = MergeTree ORDER BY tuple();
@@ -4084,7 +4084,7 @@ SHOW CREATE TABLE t_nest;
 
 Result:
 
-``` text
+```text
 ┌─statement──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_nest
 (
@@ -4158,7 +4158,7 @@ SELECT * FROM test2;
 
 Result:
 
-``` text
+```text
 ┌─FirstTable─┐
 │          0 │
 │          1 │
@@ -4411,7 +4411,7 @@ If `insert_shard_id` value is incorrect, the server will throw an exception.
 
 To get the number of shards on `requested_cluster`, you can check server config or use this query:
 
-``` sql
+```sql
 SELECT uniq(shard_num) FROM system.clusters WHERE cluster = 'requested_cluster';
 ```
 
@@ -4433,7 +4433,7 @@ SELECT * FROM x_dist ORDER BY number ASC;
 
 Result:
 
-``` text
+```text
 ┌─number─┐
 │      0 │
 │      0 │
@@ -4882,21 +4882,21 @@ Possible values:
 
 Input table:
 
-``` sql
+```sql
 CREATE TABLE test (i UInt64) ENGINE = MergeTree() ORDER BY i;
 INSERT INTO test SELECT number FROM numbers(500);
 ```
 
 Query:
 
-``` sql
+```sql
 SET limit = 5;
 SET offset = 7;
 SELECT * FROM test LIMIT 10 OFFSET 100;
 ```
 Result:
 
-``` text
+```text
 ┌───i─┐
 │ 107 │
 │ 108 │
@@ -5192,7 +5192,7 @@ from the specified table.
 
 **Example**
 
-``` sql
+```sql
 INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 SELECT * FROM table_1;
 ```
@@ -5223,7 +5223,7 @@ This setting is not applied to any subquery.
 
 **Example**
 
-``` sql
+```sql
 INSERT INTO table_1 VALUES (1, 'a'), (2, 'bb'), (3, 'ccc'), (4, 'dddd');
 SElECT * FROM table_1;
 ```
@@ -5709,6 +5709,12 @@ When the ratio of rows containing NULL values to the total number of rows exceed
     DECLARE(Int64, prefer_warmed_unmerged_parts_seconds, 0, R"(
 Only has an effect in ClickHouse Cloud. If a merged part is less than this many seconds old and is not pre-warmed (see [cache_populated_by_fetch](merge-tree-settings.md/#cache_populated_by_fetch)), but all its source parts are available and pre-warmed, SELECT queries will read from those parts instead. Only for Replicated-/SharedMergeTree. Note that this only checks whether CacheWarmer processed the part; if the part was fetched into cache by something else, it'll still be considered cold until CacheWarmer gets to it; if it was warmed, then evicted from cache, it'll still be considered warm.
 )", 0) \
+    DECLARE(Int64, iceberg_timestamp_ms, 0, R"(
+Query Iceberg table using the snapshot that was current at a specific timestamp.
+)", 0) \
+    DECLARE(Int64, iceberg_snapshot_id, 0, R"(
+Query Iceberg table using the specific snapshot id.
+)", 0) \
     DECLARE(Bool, allow_deprecated_error_prone_window_functions, false, R"(
 Allow usage of deprecated error prone window functions (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
 )", 0) \
@@ -5832,7 +5838,7 @@ The analyzer should be enabled to use parallel replicas. With disabled analyzer 
 )", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
-)", EXPERIMENTAL) \
+)", 0) \
     DECLARE(Bool, allow_experimental_analyzer, true, R"(
 Allow new query analyzer.
 )", IMPORTANT) ALIAS(enable_analyzer) \
@@ -5907,7 +5913,7 @@ Enable `IF NOT EXISTS` for `CREATE` statement by default. If either this setting
 If enabled, only allow identifiers containing alphanumeric characters and underscores.
 )", 0) \
     DECLARE(Bool, mongodb_throw_on_unsupported_query, true, R"(
-If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply to the legacy implementation or when 'allow_experimental_analyzer=0'.
+If enabled, MongoDB tables will return an error when a MongoDB query cannot be built. Otherwise, ClickHouse reads the full table and processes it locally. This option does not apply when 'allow_experimental_analyzer=0'.
 )", 0) \
     DECLARE(Bool, implicit_select, false, R"(
 Allow writing simple SELECT queries without the leading SELECT keyword, which makes it simple for calculator-style usage, e.g. `1 + 2` becomes a valid query.
@@ -5929,15 +5935,15 @@ Enable pushing user roles from originator to other nodes while performing a quer
 Automatically synchronize set of data parts after MOVE|REPLACE|ATTACH partition operations in SMT tables. Cloud only
 )", 0) \
     \
-    DECLARE(Bool, allow_experimental_variant_type, false, R"(
+    DECLARE(Bool, allow_experimental_variant_type, true, R"(
 Allows creation of [Variant](../../sql-reference/data-types/variant.md) data type.
-)", BETA) ALIAS(enable_variant_type) \
-    DECLARE(Bool, allow_experimental_dynamic_type, false, R"(
+)", 0) ALIAS(enable_variant_type) \
+    DECLARE(Bool, allow_experimental_dynamic_type, true, R"(
 Allows creation of [Dynamic](../../sql-reference/data-types/dynamic.md) data type.
-)", BETA) ALIAS(enable_dynamic_type) \
-    DECLARE(Bool, allow_experimental_json_type, false, R"(
+)", 0) ALIAS(enable_dynamic_type) \
+    DECLARE(Bool, allow_experimental_json_type, true, R"(
 Allows creation of [JSON](../../sql-reference/data-types/newjson.md) data type.
-)", BETA) ALIAS(enable_json_type) \
+)", 0) ALIAS(enable_json_type) \
     DECLARE(Bool, allow_general_join_planning, true, R"(
 Allows a more general join planning algorithm that can handle more complex conditions, but only works with hash join. If hash join is not enabled, then the usual join planning algorithm is used regardless of the value of this setting.
 )", 0) \
