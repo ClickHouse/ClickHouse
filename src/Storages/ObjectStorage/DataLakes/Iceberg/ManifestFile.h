@@ -62,7 +62,7 @@ private:
 };
 
 
-/// Once manifest file is constructed. It's unchangable.
+/// Once manifest file is constructed. It's unchangeable.
 using ManifestFilePtr = std::shared_ptr<const ManifestFileContent>;
 using ManifestFilesStorage = std::map<String, ManifestFilePtr>;
 
