@@ -179,18 +179,18 @@ When you are ready to insert your files into ClickHouse, startup a ClickHouse se
 
 You can use `clickhouse-local` for converting data between different formats. Example:
 
-``` bash
+```bash
 $ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
 ```
 
 Formats are auto-detected from file extensions: 
 
-``` bash
+```bash
 $ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
 ```
 
 As a shortcut, you can write it using the `--copy` argument:
-``` bash
+```bash
 $ clickhouse-local --copy < data.json > data.csv
 ```
 

@@ -30,7 +30,7 @@ Blogs:
 
 In terms of SQL, a nearest neighborhood search can be expressed as follows:
 
-``` sql
+```sql
 SELECT [...]
 FROM table, [...]
 ORDER BY DistanceFunction(vectors, reference_vector)
@@ -136,7 +136,7 @@ additional techniques are recommended to speed up index creation:
 
 Vector similarity indexes support this type of query:
 
-``` sql
+```sql
 WITH [...] AS reference_vector
 SELECT *
 FROM table
@@ -148,6 +148,9 @@ LIMIT N
 To search using a different value of HNSW parameter `hnsw_candidate_list_size_for_search` (default: 256), also known as `ef_search` in the
 original [HNSW paper](https://doi.org/10.1109/TPAMI.2018.2889473), run the `SELECT` query with `SETTINGS hnsw_candidate_list_size_for_search
 = <value>`.
+
+Repeated reads from vector similarity indexes benefit from a large index cache. If needed, you can increase the default cache size
+using server setting [vector_similarity_index_cache_size](../../../operations/server-configuration-parameters/settings.md#vector_similarity_index_cache_size).
 
 **Restrictions**: Approximate vector search algorithms require a limit, hence queries without `LIMIT` clause cannot utilize vector
 similarity indexes. The limit must also be smaller than setting `max_limit_for_ann_queries` (default: 100).

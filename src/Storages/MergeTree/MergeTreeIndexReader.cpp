@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 
 namespace
 {
@@ -51,40 +52,65 @@ MergeTreeIndexReader::MergeTreeIndexReader(
     MergeTreeData::DataPartPtr part_,
     size_t marks_count_,
     const MarkRanges & all_mark_ranges_,
-    MarkCache * mark_cache,
-    UncompressedCache * uncompressed_cache,
-    MergeTreeReaderSettings settings)
+    MarkCache * mark_cache_,
+    UncompressedCache * uncompressed_cache_,
+    VectorSimilarityIndexCache * vector_similarity_index_cache_,
+    MergeTreeReaderSettings settings_)
     : index(index_)
+    , part(std::move(part_))
+    , marks_count(marks_count_)
+    , all_mark_ranges(all_mark_ranges_)
+    , mark_cache(mark_cache_)
+    , uncompressed_cache(uncompressed_cache_)
+    , vector_similarity_index_cache(vector_similarity_index_cache_)
+    , settings(std::move(settings_))
 {
-    auto index_format = index->getDeserializedFormat(part_->getDataPartStorage(), index->getFileName());
+}
+
+void MergeTreeIndexReader::initStreamIfNeeded()
+{
+    if (stream)
+        return;
+
+    auto index_format = index->getDeserializedFormat(part->getDataPartStorage(), index->getFileName());
 
     stream = makeIndexReader(
         index_format.extension,
-        index_,
-        part_,
-        marks_count_,
-        all_mark_ranges_,
+        index,
+        part,
+        marks_count,
+        all_mark_ranges,
         mark_cache,
         uncompressed_cache,
         std::move(settings));
 
     version = index_format.version;
 
-    stream->adjustRightMark(getLastMark(all_mark_ranges_));
+    stream->adjustRightMark(getLastMark(all_mark_ranges));
     stream->seekToStart();
 }
 
-void MergeTreeIndexReader::seek(size_t mark)
+MergeTreeIndexGranulePtr MergeTreeIndexReader::read(size_t mark)
 {
-    stream->seekToMark(mark);
-}
+    auto load_func = [&] {
+        initStreamIfNeeded();
+        if (stream_mark != mark)
+            stream->seekToMark(mark);
 
-void MergeTreeIndexReader::read(MergeTreeIndexGranulePtr & granule)
-{
-    if (granule == nullptr)
-        granule = index->createIndexGranule();
+        auto granule = index->createIndexGranule();
+        granule->deserializeBinary(*stream->getDataBuffer(), version);
+        stream_mark = mark + 1;
+        return granule;
+    };
 
-    granule->deserializeBinary(*stream->getDataBuffer(), version);
+    if (!index->isVectorSimilarityIndex())
+        return load_func();
+
+    UInt128 key = VectorSimilarityIndexCache::hash(
+        part->getDataPartStorage().getFullPath(),
+        index->getFileName(),
+        mark);
+    return vector_similarity_index_cache->getOrSet(key, load_func);
 }
 
 }
