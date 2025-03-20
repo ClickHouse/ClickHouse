@@ -23,6 +23,7 @@ def start_cluster():
 
 
 def test_insert_distributed_async_send_success():
+    node.query("DROP TABLE IF EXISTS data SYNC")
     node.query("CREATE TABLE data (key Int, value String) Engine=Null()")
     node.query(
         """
@@ -87,3 +88,5 @@ def test_insert_distributed_async_send_success():
 
     # will check that clickhouse-server is alive
     node.restart_clickhouse()
+
+    node.query("DROP TABLE IF EXISTS data SYNC")

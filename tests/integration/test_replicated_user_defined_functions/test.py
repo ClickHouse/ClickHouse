@@ -16,7 +16,6 @@ from helpers.test_tools import TSV, assert_eq_with_retry
 default_zk_config = p.join(p.dirname(p.realpath(__file__)), "configs/zookeeper.xml")
 cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.xml")
 
-# Disable `with_remote_database_disk` as the test does not use the default Keeper.
 node1 = cluster.add_instance(
     "node1",
     main_configs=["configs/config.xml"],
@@ -24,13 +23,12 @@ node1 = cluster.add_instance(
     stay_alive=True,
     with_remote_database_disk=False,
 )
-
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/config.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    with_remote_database_disk=False,
+    with_remote_database_disk=False,  # Disable `with_remote_database_disk` as test_start_without_zookeeper stops keeper before starting.
 )
 
 all_nodes = [node1, node2]

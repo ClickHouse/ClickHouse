@@ -519,6 +519,10 @@ def test_detached_part_dir_exists(started_cluster):
         "create table detached_part_dir_exists (n int) engine=MergeTree order by n "
         "SETTINGS compress_marks=false, compress_primary_key=false, ratio_of_defaults_for_sparse_serialization=1, old_parts_lifetime=0"
     )
+    data_path = q(
+        f"SELECT arrayElement(data_paths, 1) FROM system.tables WHERE database='default' AND name='detached_part_dir_exists'"
+    ).strip()
+     
     q("insert into detached_part_dir_exists select 1")  # will create all_1_1_0
     q(
         "alter table detached_part_dir_exists detach partition id 'all'"
@@ -538,12 +542,11 @@ def test_detached_part_dir_exists(started_cluster):
         )
         == "all_1_1_0\nall_2_2_0\n"
     )
-
     instance.exec_in_container(
         [
             "bash",
             "-c",
-            "mkdir /var/lib/clickhouse/data/default/detached_part_dir_exists/detached/all_2_2_0",
+            f"mkdir {data_path}detached/all_2_2_0",
         ],
         privileged=True,
     )
@@ -551,7 +554,7 @@ def test_detached_part_dir_exists(started_cluster):
         [
             "bash",
             "-c",
-            "touch /var/lib/clickhouse/data/default/detached_part_dir_exists/detached/all_2_2_0/file",
+            f"touch {data_path}detached/all_2_2_0/file",
         ],
         privileged=True,
     )
