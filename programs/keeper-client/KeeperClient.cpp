@@ -262,7 +262,7 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     else
         default_log_level = "information";
 
-    auto logger = createRootLogger({DB::QuillFrontend::create_or_get_sink<DB::ConsoleSink>("ConsoleSink", DB::ConsoleSink::Stream::STDERR)});
+    auto logger = createRootLogger({DB::QuillFrontend::create_or_get_sink<DB::ConsoleSink>("ConsoleSink", DB::ConsoleSink::Stream::STDOUT)});
     logger->setLogLevel(config().getString("log-level", default_log_level));
     Logger::enableSyncLogging();
     DB::startQuillBackend();

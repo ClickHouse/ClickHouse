@@ -1,4 +1,5 @@
 #include <atomic>
+#include <utility>
 #include <Loggers/OwnPatternFormatter.h>
 #include <Loggers/TextLogSink.h>
 #include <Common/DateLUT.h>
@@ -11,6 +12,7 @@
 #include <Common/thread_local_rng.h>
 
 #include <quill/Frontend.h>
+#include <quill/core/LogLevel.h>
 #include <quill/sinks/Sink.h>
 
 namespace DB
@@ -25,10 +27,21 @@ namespace
 std::unique_ptr<OwnPatternFormatter> formatter;
 std::atomic<OwnPatternFormatter *> formatter_ptr = nullptr;
 
-const std::string root_logger_name = "Application";
+std::array<quill::LogLevel, std::to_underlying(LoggerComponent::Max)> component_log_levels{quill::LogLevel::None};
+
+constexpr std::array<std::string_view, std::to_underlying(LoggerComponent::Max)> component_names
+{
+    "Application",
+    "RaftInstance",
+    "ZooKeeperClient"
+};
+
+const std::string root_logger_name{component_names[std::to_underlying(LoggerComponent::Root)]};
 std::atomic<DB::QuillLoggerPtr> root_logger = nullptr;
 
 std::atomic<bool> sync_logging = false;
+
+std::mutex logger_mutex;
 
 DB::QuillLoggerPtr createQuillLogger(const std::string & name, std::vector<std::shared_ptr<quill::Sink>> sinks)
 {
@@ -40,6 +53,38 @@ DB::QuillLoggerPtr createQuillLogger(const std::string & name, std::vector<std::
             /*timestamp_pattern=*/"",
             /*timestamp_timezone=*/quill::Timezone::LocalTime,
             /*add_metadata_to_multi_line_logs=*/false});
+}
+
+const std::string & componentToString(LoggerComponent component)
+{
+    using enum LoggerComponent;
+    switch (component)
+    {
+        case Root: {
+            return root_logger_name;
+        }
+        case RaftInstance: [[fallthrough]];
+        case ZooKeeperClient: {
+            static const std::string component_string{component_names[std::to_underlying(component)]};
+            return component_string;
+        }
+        case Max: {
+            chassert(false, "Invalid componment requested");
+            static const std::string component_string;
+            return component_string;
+        }
+    }
+};
+
+std::optional<LoggerComponent> stringToComponent(std::string_view string)
+{
+    for (std::underlying_type_t<LoggerComponent> i = 0; i < std::to_underlying(LoggerComponent::Root); ++i)
+    {
+        if (string == component_names[i])
+            return static_cast<LoggerComponent>(i);
+    }
+
+    return std::nullopt;
 }
 
 }
@@ -97,7 +142,39 @@ void Logger::setLogLevel(quill::LogLevel level)
     if (!quill_logger)
         return;
 
-    quill_logger->set_log_level(level);
+    std::lock_guard lock(logger_mutex);
+
+    /// if we are setting level for nonroot logger,
+    /// make sure the level is not lower than root logger's level
+    auto maybe_component = stringToComponent(quill_logger->get_logger_name());
+    if (!maybe_component)
+    {
+        /// it's a custom created component, just set the level as is
+        quill_logger->set_log_level(level);
+        return;
+    }
+
+    if (*maybe_component != LoggerComponent::Root)
+    {
+        component_log_levels[std::to_underlying(*maybe_component)] = level;
+        quill_logger->set_log_level(std::max(level, root_logger.load(std::memory_order_relaxed)->get_log_level()));
+        return;
+    }
+
+    /// if we are setting level for root logger, iterate all loggers and correct their level
+    for (const auto & cur_logger : DB::QuillFrontend::get_all_loggers())
+    {
+        auto current_logger_component = stringToComponent(cur_logger->get_logger_name());
+        if (!current_logger_component || *current_logger_component == LoggerComponent::Root
+            || component_log_levels[std::to_underlying(*current_logger_component)] == quill::LogLevel::None)
+        {
+            cur_logger->set_log_level(level);
+        }
+        else
+        {
+            cur_logger->set_log_level(std::max(component_log_levels[std::to_underlying(*current_logger_component)], level));
+        }
+    }
 }
 
 void Logger::flushLogs()
@@ -113,29 +190,6 @@ DB::TextLogSink & Logger::getTextLogSink()
 {
     static DB::TextLogSink text_log_sink;
     return text_log_sink;
-}
-
-namespace
-{
-
-const std::string & componentToString(LoggerComponent component)
-{
-    using enum LoggerComponent;
-    switch (component)
-    {
-        case Root: {
-            return root_logger_name;
-        }
-        case RaftInstance: {
-            static const std::string component_string{"RaftInstance"};
-            return component_string;
-        }
-        case ZooKeeperClient: {
-            static const std::string component_string{"ZooKeeperClient"};
-            return component_string;
-        }
-    }
-};
 }
 
 LoggerPtr getLogger(const char * name, LoggerComponent component)
@@ -191,7 +245,10 @@ DB::QuillLoggerPtr getQuillLogger(const std::string & name)
         throw DB::Exception(
             DB::ErrorCodes::LOGICAL_ERROR, "Cannot create logger for component '{}' because root logger is not initialized", name);
 
-    return DB::QuillFrontend::create_or_get_logger(name, root);
+    std::lock_guard lock(logger_mutex);
+    auto * logger = DB::QuillFrontend::create_or_get_logger(name, root);
+    logger->set_log_level(root->get_log_level());
+    return logger;
 }
 
 static constinit std::atomic<bool> allow_logging{true};

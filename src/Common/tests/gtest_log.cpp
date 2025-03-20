@@ -21,10 +21,7 @@
 class StdStreamSink : public quill::Sink
 {
 public:
-    explicit StdStreamSink(std::ostringstream & oss_)
-        : oss(oss_)
-    {
-    }
+    StdStreamSink() = default;
 
     QUILL_ATTRIBUTE_HOT void write_log(
         quill::MacroMetadata const *,
@@ -43,10 +40,20 @@ public:
         oss << log_statement;
     }
 
+    void resetStream()
+    {
+        oss.str("");
+    }
+
+    std::string getString()
+    {
+        return oss.str();
+    }
+
     QUILL_ATTRIBUTE_HOT void flush_sink() override { }
 
 private:
-    std::ostringstream & oss;
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
 };
 
 TEST(Logger, Log)
@@ -69,30 +76,28 @@ TEST(Logger, TestLog)
 {
     DB::startQuillBackend();
 
-    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    auto sink = DB::QuillFrontend::create_or_get_sink<StdStreamSink>("StreamSink", oss);
+    auto sink = DB::QuillFrontend::create_or_get_sink<StdStreamSink>("StreamSink");
     auto stream_sink = std::static_pointer_cast<StdStreamSink>(sink);
     auto log = createLogger("TestLogger", {sink});
-    SCOPE_EXIT(log->flushLogs());
 
     {
         SCOPED_TRACE("Test logs visible for test level");
-        oss.str("");
+        stream_sink->resetStream();
         log->setLogLevel("test");
         LOG_TEST(log, "Hello World");
         log->flushLogs();
-        EXPECT_EQ(oss.str(), "Hello World\n");
+        EXPECT_EQ(stream_sink->getString(), "Hello World\n");
     }
 
     {
         SCOPED_TRACE("Test logs invisible for other levels");
         for (const auto & level : {"trace", "debug", "information", "warning", "error", "fatal"})
         {
-            oss.str("");
+            stream_sink->resetStream();
             log->setLogLevel(level);
             LOG_TEST(log, "Hello World");
             log->flushLogs();
-            EXPECT_EQ(oss.str(), "");
+            EXPECT_EQ(stream_sink->getString(), "");
         }
     }
 }
@@ -130,11 +135,12 @@ TEST(Logger, SideEffects)
     DB::startQuillBackend();
 
     std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-    auto sink = DB::QuillFrontend::create_or_get_sink<StdStreamSink>("StreamSink", oss);
+    auto sink = DB::QuillFrontend::create_or_get_sink<StdStreamSink>("StreamSink");
     auto stream_sink = std::static_pointer_cast<StdStreamSink>(sink);
     auto log = createLogger("Logger", {sink});
-    SCOPE_EXIT(log->flushLogs());
     log->setLogLevel("trace");
+
+    stream_sink->resetStream();
 
     /// Ensure that parameters are evaluated only once
     global_counter = 0;

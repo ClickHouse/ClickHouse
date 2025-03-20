@@ -129,6 +129,7 @@ PoolWithFailover::PoolWithFailover(
     , max_tries(max_tries_)
     , auto_close_connection(auto_close_connection_)
     , bg_reconnect(bg_reconnect_)
+    , log(getLogger("PostgreSQLConnectionPool"))
 {
     LOG_TRACE(getLogger("PostgreSQLConnectionPool"), "PostgreSQL connection pool size: {}, connection wait timeout: {}, max failover tries: {}",
               pool_size, pool_wait_timeout, max_tries_);

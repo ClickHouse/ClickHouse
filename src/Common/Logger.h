@@ -56,7 +56,8 @@ enum class LoggerComponent
 {
     Root = 0,
     RaftInstance,
-    ZooKeeperClient
+    ZooKeeperClient,
+    Max
 };
 
 LoggerPtr getLogger(LoggerComponent component);
