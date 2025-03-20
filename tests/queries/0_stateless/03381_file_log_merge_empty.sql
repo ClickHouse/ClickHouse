@@ -1,7 +1,7 @@
 
 DROP TABLE IF EXISTS file_log;
 
-CREATE TABLE file_log  (`key` UInt8, `value` UInt8) ENGINE = FileLog({CLICKHOUSE_USER_FILES_UNIQUE:String}, 'JSONEachRow') SETTINGS handle_error_mode = 'stream'
+CREATE TABLE file_log  (`key` UInt8, `value` UInt8) ENGINE = FileLog({CLICKHOUSE_USER_FILES:String} || '/03381_file_log_merge_empty', 'JSONEachRow') SETTINGS handle_error_mode = 'stream'
 ;
 
 SET stream_like_engine_allow_direct_select = 1;
