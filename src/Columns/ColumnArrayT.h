@@ -60,7 +60,9 @@ private:
     WrappedPtr tuple;
 
     explicit ColumnArrayT(MutableColumnPtr && tuple_);
-    ColumnArrayT(const ColumnArrayT &) = default;
+
+    /// Dedicated copy-constructor to make a deep copy of the tuple column.
+    ColumnArrayT(const ColumnArrayT & src) { tuple = src.tuple->cloneResized(src.size()); }
 
     int compareAtImpl(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint, const Collator * collator = nullptr) const;
 
