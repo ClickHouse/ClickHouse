@@ -1,8 +1,9 @@
 ---
-description: "Dataset consisting of two tables containing anonymized web analytics data with hits and visits"
+description: 'Dataset consisting of two tables containing anonymized web analytics
+  data with hits and visits'
+sidebar_label: 'Web Analytics Data'
 slug: /getting-started/example-datasets/metrica
-sidebar_label: Web Analytics Data
-title: "Anonymized Web Analytics"
+title: 'Anonymized Web Analytics'
 ---
 
 # Anonymized Web Analytics Data
@@ -15,7 +16,7 @@ The tables can be downloaded as compressed `tsv.xz` files. In addition to the sa
 
 ### Download the hits compressed TSV file: {#download-the-hits-compressed-tsv-file}
 
-``` bash
+```bash
 curl https://datasets.clickhouse.com/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
 # Validate the checksum
 md5sum hits_v1.tsv
@@ -58,7 +59,7 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 
 ### Download the visits compressed TSV file: {#download-the-visits-compressed-tsv-file}
 
-``` bash
+```bash
 curl https://datasets.clickhouse.com/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 # Validate the checksum
 md5sum visits_v1.tsv

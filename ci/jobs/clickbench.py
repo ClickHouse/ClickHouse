@@ -1,6 +1,7 @@
+from praktika.result import Result
+from praktika.utils import Shell, Utils
+
 from ci.jobs.scripts.clickhouse_proc import ClickHouseLight
-from ci.praktika.result import Result
-from ci.praktika.utils import Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 

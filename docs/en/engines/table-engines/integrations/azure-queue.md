@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/azure-queue
+description: 'This engine provides an integration with the Azure Blob Storage ecosystem,
+  allowing streaming data import.'
+sidebar_label: 'AzureQueue'
 sidebar_position: 181
-sidebar_label: AzureQueue
-title: "AzureQueue Table Engine"
-description: "This engine provides an integration with the Azure Blob Storage ecosystem, allowing streaming data import."
+slug: /engines/table-engines/integrations/azure-queue
+title: 'AzureQueue Table Engine'
 ---
 
 # AzureQueue Table Engine
@@ -12,7 +13,7 @@ This engine provides an integration with the [Azure Blob Storage](https://azure.
 
 ## Create Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE test (name String, value UInt32)
     ENGINE = AzureQueue(...)
     [SETTINGS]
@@ -57,7 +58,7 @@ When the `MATERIALIZED VIEW` joins the engine, it starts collecting data in the 
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE azure_queue_engine_table (key UInt64, data String)
   ENGINE=AzureQueue('<endpoint>', 'CSV', 'gzip')
   SETTINGS

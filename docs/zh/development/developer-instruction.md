@@ -217,13 +217,14 @@ sudo bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)"
 
 # IDE (集成开发环境) {#ide-ji-cheng-kai-fa-huan-jing}
 
-如果您还不知道使用哪款IDE，我们推荐使用CLion。CLion是一款商业软件，但能够有30天的免费使用时间。它同时也对学生免费。CLion可以在Linux和Mac OS X上使用。
+[Visual Studio Code](https://code.visualstudio.com/) 和 [Neovim](https://neovim.io/) 是过去开发 ClickHouse 时常用的两个高效工具。如果使用 VS Code，建议安装 [clangd 扩展](https://marketplace.visualstudio.com/items?itemName=llvm-vs-code-extensions.vscode-clangd) 替代 IntelliSense，因为前者性能表现更佳。
 
-KDevelop和QTCreator是另外两款适合开发ClickHouse的替代IDE。尽管不太稳定，但KDevelop还是作为一款非常便捷的IDE。如果KDevelop在打开项目后不久崩溃，则您应该在打开项目文件列表后立即单击«全部停止»按钮。按此处理后，KDevelop可以正常使用。
+[CLion](https://www.jetbrains.com/clion/) 也是一个优秀选择，但在处理像 ClickHouse 这样的大型项目时可能运行较慢。使用时需注意：
+- CLion 会自动生成 `build` 目录，并默认使用 `debug` 构建类型
+- 它会调用 CLion 内置的 CMake 版本，而非用户自行安装的版本
+- 默认通过 `make` 而非 `ninja` 执行构建任务（此为正常现象）
 
-作为简易的代码编辑器，您可以使用Sublime Text或Visual Studio Code或Kate（在Linux上都可用）。
-
-值得一提的是CLion会创建自己的`build`路径，它还会自行选择`debug`作为构建类型。对于配置，它使用CLion中定义的CMake版本，而不是您安装的版本。最后，CLion会使用`make`而不是`ninja`去构建任务。这属于正常的现象，请记住这一点，以免造成混淆。
+其他可选 IDE 包括 [Sublime Text](https://www.sublimetext.com/)、[Qt Creator](https://www.qt.io/product/development-tools) 或 [Kate](https://kate-editor.org/)。
 
 # 编写代码 {#bian-xie-dai-ma}
 

@@ -395,6 +395,10 @@ DirectoryIteratorPtr DiskObjectStorage::iterateDirectory(const String & path) co
     return metadata_storage->iterateDirectory(path);
 }
 
+bool DiskObjectStorage::isDirectoryEmpty(const String & path) const
+{
+    return metadata_storage->isDirectoryEmpty(path);
+}
 
 void DiskObjectStorage::listFiles(const String & path, std::vector<String> & file_names) const
 {
@@ -719,8 +723,10 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         return object_storage->readObject(object_, read_settings, read_hint, file_size);
     };
 
-    /// Avoid cache fragmentation by choosing bigger buffer size.
+    /// Avoid cache fragmentation by choosing a bigger buffer size.
+    /// But don't use it if the cache is used passively (only for reading if data is already cached, such as during merges).
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
+        && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
         && object_storage->supportsCache()
         && read_settings.enable_filesystem_cache;
 
@@ -737,7 +743,6 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         std::move(read_buffer_creator),
         storage_objects,
         read_settings,
-        global_context->getFilesystemCacheLog(),
         use_external_buffer_for_gather,
         /* buffer_size */use_external_buffer_for_gather ? 0 : buffer_size);
 

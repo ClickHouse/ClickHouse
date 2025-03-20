@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/deltalake
+description: 'Provides a read-only table-like interface to the Delta Lake tables in
+  Amazon S3.'
+sidebar_label: 'deltaLake'
 sidebar_position: 45
-sidebar_label: deltaLake
-title: "deltaLake"
-description: "Provides a read-only table-like interface to the Delta Lake tables in Amazon S3."
+slug: /sql-reference/table-functions/deltalake
+title: 'deltaLake'
 ---
 
 # deltaLake Table Function
@@ -12,7 +13,7 @@ Provides a read-only table-like interface to the [Delta Lake](https://github.com
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
 ```
 
@@ -32,7 +33,7 @@ A table with the specified structure for reading data in the specified Delta Lak
 
 Selecting rows from the table in S3 `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`:
 
-``` sql
+```sql
 SELECT
     URL,
     UserAgent
@@ -41,7 +42,7 @@ WHERE URL IS NOT NULL
 LIMIT 2
 ```
 
-``` response
+```response
 ┌─URL───────────────────────────────────────────────────────────────────┬─UserAgent─┐
 │ http://auto.ria.ua/search/index.kz/jobinmoscow/detail/55089/hasimages │         1 │
 │ http://auto.ria.ua/search/index.kz/jobinmoscow.ru/gosushi             │         1 │

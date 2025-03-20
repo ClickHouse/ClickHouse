@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/nlp-functions
+description: 'Documentation for Natural Language Processing (NLP) Functions'
+sidebar_label: 'NLP'
 sidebar_position: 130
-sidebar_label: NLP
+slug: /sql-reference/functions/nlp-functions
+title: 'Natural Language Processing (NLP) Functions'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -22,7 +24,7 @@ The `detectCharset` function detects the character set of the non-UTF8-encoded i
 
 *Syntax*
 
-``` sql
+```sql
 detectCharset('text_to_be_analyzed')
 ```
 
@@ -58,7 +60,7 @@ The `detectLanguage` function works best when providing over 200 characters in t
 
 *Syntax*
 
-``` sql
+```sql
 detectLanguage('text_to_be_analyzed')
 ```
 
@@ -96,7 +98,7 @@ Similar to the `detectLanguage` function, but `detectLanguageMixed` returns a `M
 
 *Syntax*
 
-``` sql
+```sql
 detectLanguageMixed('text_to_be_analyzed')
 ```
 
@@ -132,7 +134,7 @@ Then using a marked-up dictionary with weights of unigrams and bigrams of comman
 
 *Syntax*
 
-``` sql
+```sql
 detectProgrammingLanguage('source_code')
 ```
 
@@ -167,7 +169,7 @@ Similar to the `detectLanguage` function, except the `detectLanguageUnknown` fun
 
 *Syntax*
 
-``` sql
+```sql
 detectLanguageUnknown('text_to_be_analyzed')
 ```
 
@@ -211,7 +213,7 @@ This function is limited in its current form. Currently it makes use of the embe
 
 *Syntax*
 
-``` sql
+```sql
 detectTonality(text)
 ```
 
@@ -246,7 +248,7 @@ Performs lemmatization on a given word. Needs dictionaries to operate, which can
 
 *Syntax*
 
-``` sql
+```sql
 lemmatize('language', word)
 ```
 
@@ -259,13 +261,13 @@ lemmatize('language', word)
 
 Query:
 
-``` sql
+```sql
 SELECT lemmatize('en', 'wolves');
 ```
 
 Result:
 
-``` text
+```text
 ┌─lemmatize("wolves")─┐
 │              "wolf" │
 └─────────────────────┘
@@ -276,7 +278,7 @@ Result:
 This configuration specifies that the dictionary `en.bin` should be used for lemmatization of English (`en`) words.  The `.bin` files can be downloaded from
 [here](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
 
-``` xml
+```xml
 <lemmatizers>
     <lemmatizer>
         <!-- highlight-start -->
@@ -293,7 +295,7 @@ Performs stemming on a given word.
 
 *Syntax*
 
-``` sql
+```sql
 stem('language', word)
 ```
 
@@ -306,13 +308,13 @@ stem('language', word)
 
 Query:
 
-``` sql
+```sql
 SELECT arrayMap(x -> stem('en', x), ['I', 'think', 'it', 'is', 'a', 'blessing', 'in', 'disguise']) as res;
 ```
 
 Result:
 
-``` text
+```text
 ┌─res────────────────────────────────────────────────┐
 │ ['I','think','it','is','a','bless','in','disguis'] │
 └────────────────────────────────────────────────────┘
@@ -363,7 +365,7 @@ With the `wordnet` extension type we need to provide a path to a directory with 
 
 *Syntax*
 
-``` sql
+```sql
 synonyms('extension_name', word)
 ```
 
@@ -376,20 +378,20 @@ synonyms('extension_name', word)
 
 Query:
 
-``` sql
+```sql
 SELECT synonyms('list', 'important');
 ```
 
 Result:
 
-``` text
+```text
 ┌─synonyms('list', 'important')────────────┐
 │ ['important','big','critical','crucial'] │
 └──────────────────────────────────────────┘
 ```
 
 *Configuration*
-``` xml
+```xml
 <synonyms_extensions>
     <extension>
         <name>en</name>

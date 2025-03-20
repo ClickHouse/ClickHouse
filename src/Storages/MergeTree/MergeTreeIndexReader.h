@@ -18,7 +18,7 @@ public:
         const MarkRanges & all_mark_ranges_,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
-        SkippingIndexCache * skipping_index_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache,
         MergeTreeReaderSettings settings_);
 
     MergeTreeIndexGranulePtr read(size_t mark);
@@ -30,7 +30,7 @@ private:
     const MarkRanges & all_mark_ranges;
     MarkCache * mark_cache;
     UncompressedCache * uncompressed_cache;
-    SkippingIndexCache * skipping_index_cache;
+    VectorSimilarityIndexCache * vector_similarity_index_cache;
     MergeTreeReaderSettings settings;
 
     std::unique_ptr<MergeTreeReaderStream> stream;

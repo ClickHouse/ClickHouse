@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/estimateCompressionRatio
+description: 'Estimates the compression ratio of a given column without compressing
+  it.'
 sidebar_position: 132
-title: "estimateCompressionRatio"
-description: "Estimates the compression ratio of a given column without compressing it."
+slug: /sql-reference/aggregate-functions/reference/estimateCompressionRatio
+title: 'estimateCompressionRatio'
 ---
 
 ## estimateCompressionRatio {#estimatecompressionration}
@@ -36,7 +37,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 Input table:
 
-``` sql
+```sql
 CREATE TABLE compression_estimate_example
 (
     `number` UInt64
@@ -57,7 +58,7 @@ SELECT estimateCompressionRatio(number) as estimate from compression_estimate_ex
 
 Result:
 
-``` text
+```text
 ┌───────────estimate─┐
 │ 1.9988506608699999 │
 └────────────────────┘
@@ -75,7 +76,7 @@ SELECT estimateCompressionRatio('T64')(number) as estimate from compression_esti
 
 Result:
 
-``` text
+```text
 ┌──────────estimate─┐
 │ 3.762758101688538 │
 └───────────────────┘

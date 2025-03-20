@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/hash-functions
+description: 'Documentation for Hash Functions'
+sidebar_label: 'Hash'
 sidebar_position: 85
-sidebar_label: Hash
+slug: /sql-reference/functions/hash-functions
+title: 'Hash Functions'
 ---
 
 # Hash Functions
@@ -1948,4 +1950,40 @@ SELECT sqidDecode('gXHfJ1C6dN');
 ┌─sqidDecode('gXHfJ1C6dN')─┐
 │ [1,2,3,4,5]              │
 └──────────────────────────┘
+```
+
+## keccak256 {#keccak256}
+
+Calculates Keccak-256 hash string and returns the resulting set of bytes as [FixedString](../data-types/fixedstring.md).
+
+**Syntax**
+
+```sql
+keccak256('s')
+```
+
+This cryptographic hash-function is used a lot in [EVM-based blockchains](https://ethereum.github.io/yellowpaper/paper.pdf). 
+
+**Arguments**
+
+- s - input string for Keccak-256 hash calculation. [String](../data-types/string.md).
+
+**Return value**
+
+- Keccak-256 hash as a byte array with type FixedString(32). [FixedString](../data-types/fixedstring.md).
+
+**Example**
+
+Use function [hex](../functions/encoding-functions.md/#hex) to format the result as a hex-encoded string.
+
+Query:
+```sql
+select hex(keccak256('hello'))
+```
+
+Result:
+```sql
+   ┌─hex(keccak256('hello'))──────────────────────────────────────────┐
+1. │ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
+   └──────────────────────────────────────────────────────────────────┘
 ```

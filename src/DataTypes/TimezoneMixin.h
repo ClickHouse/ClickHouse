@@ -2,8 +2,6 @@
 #include <Core/Types.h>
 #include <Common/DateLUT.h>
 
-class DateLUTImpl;
-
 /** Mixin-class that manages timezone info for timezone-aware DateTime implementations
  *
  * Must be used as a (second) base for class implementing IDateType/ISerialization-interface.
