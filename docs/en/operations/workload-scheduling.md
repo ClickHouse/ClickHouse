@@ -208,7 +208,7 @@ To customize workload the following settings could be used:
 * `max_burst_bytes` - maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
 * `max_concurrent_threads` - the limit on the number of additional threads for queries in this workload. The first thread of a query is not counted towards this limit.
 
-All limit specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = 10485760` will have 10 MBps bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
+All limit specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = 10485760` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
 
 There is no way to specify different hierarchies of workloads for different resources. But there is a way to specify different workload setting value for a specific resource:
 
@@ -237,7 +237,7 @@ CPU time is consumed by threads when they are not blocked and work on CPU-intens
 * Master thread — the first thread that starts working on a query or background activity like a merge or a mutation.
 * Worker thread — the additional threads that master can spawn to work on CPU-intensive tasks.
 
-It may be desirable to use separate resources for master and worker threads to achive better responsiveness. A high number of worker threads can easily monopolize CPU resource when high `max_thread` query setting values are used. Then incoming queries should block and wait a CPU slot for its master thread to start execution. To avoid this the following configuration could be used:
+It may be desirable to use separate resources for master and worker threads to achieve better responsiveness. A high number of worker threads can easily monopolize CPU resource when high `max_thread` query setting values are used. Then incoming queries should block and wait a CPU slot for its master thread to start execution. To avoid this the following configuration could be used:
 
 ```sql
 CREATE RESOURCE worker_cpu (WORKER THREAD)
