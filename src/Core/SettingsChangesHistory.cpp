@@ -68,7 +68,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.4",
         {
-
+            {"compile_expressions", false, true, "For ci tests"},
+            {"min_count_to_compile_expression", 3, 1, "For ci tests"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
