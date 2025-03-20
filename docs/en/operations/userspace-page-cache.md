@@ -9,7 +9,9 @@ title: 'Userspace page cache'
 
 # Userspace page cache
 
-The userspace page cache is a new caching mechanism that allows for caching of 
+## Overview {#overview}
+
+> The userspace page cache is a new caching mechanism that allows for caching of 
 data in in-process memory rather than relying on the OS page cache.
 
 ClickHouse already offers the [Filesystem cache](/docs/operations/storing-data) 
@@ -22,13 +24,15 @@ It differs from the filesystem cache in the following ways:
 
 | Filesystem Cache                                        | Userspace page cache                  |
 |---------------------------------------------------------|---------------------------------------|
-| Writes data on the local filesystem                     | Present only in memory                |
+| Writes data to the local filesystem                     | Present only in memory                |
 | Takes up disk space (configurable on tmpfs)             | Independent of filesystem             |
 | Survives server restarts                                | Does not survive server restarts      |
 | Does not show up in the server's memory usage           | Shows up in the server's memory usage |
-| Suitable for both on-disk and in-memory (OS page cache) | Good for disk-less servers            |
+| Suitable for both on-disk and in-memory (OS page cache) | **Good for disk-less servers**        |
 
 ## Configuration settings and usage {#configuration-settings-and-usage}
+
+### Usage {#usage}
 
 To enable the userspace page cache, first configure it on the server:
 
@@ -39,8 +43,8 @@ page_cache_max_size: 100G
 
 :::note
 The userspace page cache will use up to the specified amount of memory, but
-it is not reserved. The memory will be evicted when required for other server
-needs.
+this memory amount is not reserved. The memory will be evicted when it is needed
+for other server needs.
 :::
 
 Next, enable its usage on the query-level:
@@ -48,6 +52,8 @@ Next, enable its usage on the query-level:
 ```sql
 SET use_page_cache_for_disks_without_file_cache=1;
 ```
+
+### Settings {#settings}
 
 | Setting                                                  | Description                                                                                                                                                                                                                                                                                                            | Default     |
 |----------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------|
