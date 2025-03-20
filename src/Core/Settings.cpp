@@ -4383,7 +4383,8 @@ Possible values:
 Allow sharing set objects build for IN subqueries between different tasks of the same mutation. This reduces memory usage and CPU consumption
 )", 0) \
     DECLARE(Bool, use_query_condition_cache, false, R"(
-Enable the query condition cache.
+Enable the query condition cache, with which ClickHouse will remember which ranges of granules in data parts satisfy the condition in `WHERE`,
+and reuse this information as an ephemeral index for subsequent queries.
 
 Possible values:
 
