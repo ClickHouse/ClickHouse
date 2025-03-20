@@ -7,9 +7,9 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS mv4 TO data_b_02187 AS Select sleepEachRo
 CREATE MATERIALIZED VIEW IF NOT EXISTS mv5 TO data_b_02187 AS Select sleepEachRow(0.05) as a FROM data_a_02187;
 
 -- INSERT USING VALUES
-INSERT INTO data_a_02187 VALUES (1);
+INSERT INTO data_a_02187 SETTINGS max_threads=1 VALUES (1);
 -- INSERT USING TABLE
-INSERT INTO data_a_02187 SELECT * FROM system.one;
+INSERT INTO data_a_02187 SELECT * FROM system.one SETTINGS max_threads=1;
 SYSTEM FLUSH LOGS query_log, query_views_log;
 
 SELECT 'VALUES', query_duration_ms >= 250
