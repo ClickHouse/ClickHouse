@@ -39,10 +39,6 @@ target_link_libraries(clickhouse_dictionaries
         Poco::Redis
 )
 
-if (USE_MONGODB)
-    target_link_libraries(clickhouse_dictionaries PRIVATE Poco::MongoDB)
-endif()
-
 target_link_libraries(clickhouse_dictionaries PUBLIC ch_contrib::abseil_swiss_tables)
 
 if (TARGET ch_contrib::cassandra)

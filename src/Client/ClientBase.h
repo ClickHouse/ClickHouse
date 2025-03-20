@@ -192,6 +192,9 @@ protected:
 
     void setInsertionTable(const ASTInsertQuery & insert_query);
 
+    /// Used to check certain things that are considered unsafe for the embedded client
+    virtual bool isEmbeeddedClient() const = 0;
+
 private:
     void receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, bool partial_result_on_first_cancel);
     bool receiveAndProcessPacket(ASTPtr parsed_query, bool cancelled_);

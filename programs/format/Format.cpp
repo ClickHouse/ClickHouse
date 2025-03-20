@@ -193,9 +193,9 @@ int mainEntryClickHouseFormat(int argc, char ** argv)
             registerInterpreters();
             registerFunctions();
             registerAggregateFunctions();
-            registerTableFunctions(false);
+            registerTableFunctions();
             registerDatabases();
-            registerStorages(false);
+            registerStorages();
             registerFormats();
 
             std::unordered_set<std::string> additional_names;

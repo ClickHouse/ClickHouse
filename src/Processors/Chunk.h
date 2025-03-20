@@ -171,12 +171,16 @@ public:
         , mark_ranges(std::move(mark_ranges_))
     {}
 
+    void appendMarkRanges(const MarkRanges & mark_ranges_);
+
     UUID table_uuid;
     String part_name;
     size_t marks_count;
     bool has_final_mark;
     MarkRanges mark_ranges;
 };
+
+using MarkRangesInfoPtr = std::shared_ptr<MarkRangesInfo>;
 
 /// Converts all columns to full serialization in chunk.
 /// It's needed, when you have to access to the internals of the column,

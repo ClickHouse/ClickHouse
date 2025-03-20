@@ -786,10 +786,8 @@ void Client::processOptions(
 
     shared_context = Context::createShared();
     global_context = Context::createGlobal(shared_context.get());
-
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::CLIENT);
-
     global_context->setSettings(cmd_settings);
 
     /// Copy settings-related program options to config.

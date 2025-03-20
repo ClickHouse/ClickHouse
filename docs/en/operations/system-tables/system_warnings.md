@@ -86,13 +86,13 @@ Columns:
 
 Query:
 
-``` sql
+```sql
  SELECT * FROM system.warnings LIMIT 2 \G;
 ```
 
 Result:
 
-``` text
+```text
 Row 1:
 ──────
 message:               The number of active parts is more than 10.
