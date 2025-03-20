@@ -3345,7 +3345,7 @@ void Context::clearUncompressedCache() const
 void Context::setPageCache(
     size_t default_block_size, size_t default_lookahead_blocks, std::chrono::milliseconds history_window,
     const String & cache_policy, double size_ratio, size_t min_size_in_bytes, size_t max_size_in_bytes,
-    double free_memory_ratio)
+    double free_memory_ratio, size_t num_shards)
 {
     std::lock_guard lock(shared->mutex);
 
@@ -3354,7 +3354,7 @@ void Context::setPageCache(
 
     shared->page_cache = std::make_shared<PageCache>(
         default_block_size, default_lookahead_blocks, history_window, cache_policy, size_ratio,
-        min_size_in_bytes, max_size_in_bytes, free_memory_ratio);
+        min_size_in_bytes, max_size_in_bytes, free_memory_ratio, num_shards);
 }
 
 PageCachePtr Context::getPageCache() const
@@ -4428,10 +4428,40 @@ UInt16 Context::getServerPort(const String & port_name) const
     return it->second;
 }
 
-void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
+size_t Context::getMaxPendingMutationsToWarn() const
 {
     SharedLockGuard lock(shared->mutex);
-    shared->max_part_num_to_warn = max_part_to_warn;
+    return shared->max_pending_mutations_to_warn;
+}
+
+size_t Context::getMaxPartNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_part_num_to_warn;
+}
+
+size_t Context::getMaxTableNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_table_num_to_warn;
+}
+
+size_t Context::getMaxViewNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_view_num_to_warn;
+}
+
+size_t Context::getMaxDictionaryNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_dictionary_num_to_warn;
+}
+
+size_t Context::getMaxDatabaseNumToWarn() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->max_database_num_to_warn;
 }
 
 void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn)
@@ -4440,10 +4470,10 @@ void Context::setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn)
     shared->max_pending_mutations_to_warn = max_pending_mutations_to_warn;
 }
 
-size_t Context::getMaxPendingMutationsToWarn() const
+void Context::setMaxPartNumToWarn(size_t max_part_to_warn)
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->max_pending_mutations_to_warn;
+    shared->max_part_num_to_warn = max_part_to_warn;
 }
 
 void Context::setMaxTableNumToWarn(size_t max_table_to_warn)

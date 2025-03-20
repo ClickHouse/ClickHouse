@@ -23,7 +23,7 @@
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
+
 
 namespace DB
 {

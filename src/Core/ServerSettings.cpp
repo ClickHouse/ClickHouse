@@ -495,7 +495,8 @@ namespace DB
     DECLARE(UInt64, page_cache_min_size, DEFAULT_PAGE_CACHE_MIN_SIZE, "Minimum size of the userspace page cache.", 0) \
     DECLARE(UInt64, page_cache_max_size, DEFAULT_PAGE_CACHE_MAX_SIZE, "Maximum size of the userspace page cache. Set to 0 to disable the cache. If greater than page_cache_min_size, the cache size will be continuously adjusted within this range, to use most of the available memory while keeping the total memory usage below the limit (max_server_memory_usage[_to_ram_ratio]).", 0) \
     DECLARE(Double, page_cache_free_memory_ratio, 0.15, "Fraction of the memory limit to keep free from the userspace page cache. Analogous to Linux min_free_kbytes setting.", 0) \
-    DECLARE(UInt64, page_cache_lookahead_blocks, 16, "On userspace page cache miss, read up to this many consecutive blocks (page_cache_block_size) at once from the underlying storage, if they're also not in the cache.", 0) \
+    DECLARE(UInt64, page_cache_lookahead_blocks, 16, "On userspace page cache miss, read up to this many consecutive blocks at once from the underlying storage, if they're also not in the cache. Each block is page_cache_block_size bytes.", 0) \
+    DECLARE(UInt64, page_cache_shards, 4, "Stripe userspace page cache over this many shards to reduce mutex contention. Experimental, not likely to improve performance.", 0) \
     DECLARE(UInt64, mmap_cache_size, DEFAULT_MMAP_CACHE_MAX_SIZE, R"(
     Sets the cache size (in bytes) for mapped files. This setting allows avoiding frequent open/close calls (which are very expensive due to consequent page faults), and to reuse mappings from several threads and queries. The setting value is the number of mapped regions (usually equal to the number of mapped files).
 
@@ -962,10 +963,6 @@ namespace DB
     DECLARE(UInt64, keeper_multiread_batch_size, 10'000, R"(
     Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching. If set to 0, batching is disabled. Available only in ClickHouse Cloud.
     )", 0) \
-    DECLARE(Bool, use_legacy_mongodb_integration, false, R"(
-    Use the legacy MongoDB integration implementation. Note: it's highly recommended to set this option to false, since legacy implementation will be removed in the future. Please submit any issues you encounter with the new implementation.
-    )", 0) \
-    \
     DECLARE(String, license_key, "", "License key for ClickHouse Enterprise Edition", 0) \
     DECLARE(UInt64, prefetch_threadpool_pool_size, 100, R"(Size of background pool for prefetches for remote object storages)", 0) \
     DECLARE(UInt64, prefetch_threadpool_queue_size, 1000000, R"(Number of tasks which is possible to push into prefetches pool)", 0) \
@@ -1122,6 +1119,12 @@ void ServerSettings::dumpToSystemServerSettingsColumns(ServerSettingColumnsParam
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
 
             {"max_table_size_to_drop", {std::to_string(context->getMaxTableSizeToDrop()), ChangeableWithoutRestart::Yes}},
+            {"max_table_num_to_warn", {std::to_string(context->getMaxTableNumToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_view_num_to_warn", {std::to_string(context->getMaxViewNumToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_dictionary_num_to_warn", {std::to_string(context->getMaxDictionaryNumToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_database_num_to_warn", {std::to_string(context->getMaxDatabaseNumToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_part_num_to_warn", {std::to_string(context->getMaxPartNumToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_pending_mutations_to_warn", {std::to_string(context->getMaxPendingMutationsToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_partition_size_to_drop", {std::to_string(context->getMaxPartitionSizeToDrop()), ChangeableWithoutRestart::Yes}},
 
             {"max_concurrent_queries", {std::to_string(context->getProcessList().getMaxSize()), ChangeableWithoutRestart::Yes}},

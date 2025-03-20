@@ -73,6 +73,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "25.3",
         {
             /// Release closed. Please use 25.4
+            {"enable_json_type", false, true, "JSON data type is production-ready"},
+            {"enable_dynamic_type", false, true, "Dynamic data type is production-ready"},
+            {"enable_variant_type", false, true, "Variant data type is production-ready"},
+            {"allow_experimental_json_type", false, true, "JSON data type is production-ready"},
+            {"allow_experimental_dynamic_type", false, true, "Dynamic data type is production-ready"},
+            {"allow_experimental_variant_type", false, true, "Variant data type is production-ready"},
             {"allow_experimental_database_unity_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'unity'"},
             {"allow_experimental_database_glue_catalog", false, false, "Allow experimental database engine DataLakeCatalog with catalog_type = 'glue'"},
             {"use_page_cache_with_distributed_cache", false, false, "New setting"},

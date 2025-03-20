@@ -306,7 +306,6 @@ namespace ServerSetting
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
-    extern const ServerSettingsBool use_legacy_mongodb_integration;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
@@ -320,6 +319,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 page_cache_max_size;
     extern const ServerSettingsDouble page_cache_free_memory_ratio;
     extern const ServerSettingsUInt64 page_cache_lookahead_blocks;
+    extern const ServerSettingsUInt64 page_cache_shards;
 }
 
 }
@@ -1015,10 +1015,10 @@ try
     registerInterpreters();
     registerFunctions();
     registerAggregateFunctions();
-    registerTableFunctions(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerTableFunctions();
     registerDatabases();
-    registerStorages(server_settings[ServerSetting::use_legacy_mongodb_integration]);
-    registerDictionaries(server_settings[ServerSetting::use_legacy_mongodb_integration]);
+    registerStorages();
+    registerDictionaries();
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
@@ -1175,7 +1175,8 @@ try
             server_settings[ServerSetting::page_cache_size_ratio],
             server_settings[ServerSetting::page_cache_min_size],
             server_settings[ServerSetting::page_cache_max_size],
-            server_settings[ServerSetting::page_cache_free_memory_ratio]);
+            server_settings[ServerSetting::page_cache_free_memory_ratio],
+            server_settings[ServerSetting::page_cache_shards]);
         total_memory_tracker.setPageCache(global_context->getPageCache().get());
     }
 
