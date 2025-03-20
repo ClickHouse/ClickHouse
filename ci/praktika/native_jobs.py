@@ -1,4 +1,5 @@
 import json
+import platform
 import sys
 import traceback
 from pathlib import Path
@@ -36,14 +37,25 @@ _workflow_config_job = Job.Config(
 )
 
 _docker_build_job = Job.Config(
-    name=Settings.DOCKER_BUILD_JOB_NAME,
-    runs_on=Settings.DOCKER_BUILD_RUNS_ON,
+    name=Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+    runs_on=Settings.DOCKER_BUILD_AND_MERGE_RUNS_ON,
     job_requirements=Job.Requirements(
         python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
         python_requirements_txt="",
     ),
     timeout=int(5.5 * 3600),
-    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_JOB_NAME}'",
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME}'",
+)
+
+_docker_build_arm_linux_job = Job.Config(
+    name=Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+    runs_on=Settings.DOCKER_BUILD_ARM_RUNS_ON,
+    job_requirements=Job.Requirements(
+        python=Settings.INSTALL_PYTHON_FOR_NATIVE_JOBS,
+        python_requirements_txt="",
+    ),
+    timeout=int(5.5 * 3600),
+    command=f"{Settings.PYTHON_INTERPRETER} -m praktika.native_jobs '{Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME}'",
 )
 
 _final_job = Job.Config(
@@ -61,7 +73,8 @@ _final_job = Job.Config(
 def _is_praktika_job(job_name):
     if job_name in (
         Settings.CI_CONFIG_JOB_NAME,
-        Settings.DOCKER_BUILD_JOB_NAME,
+        Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+        Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
         Settings.FINISH_WORKFLOW_JOB_NAME,
     ):
         return True
@@ -77,6 +90,19 @@ def _build_dockers(workflow, job_name):
     job_info = ""
     dockers = Docker.sort_in_build_order(dockers)
     docker_digests = {}  # type: Dict[str, str]
+    arm_only = False
+    amd_only = False
+    if not Settings.ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB:
+        cpu_arch = platform.processor()
+        if cpu_arch in ("arm", "aarch64"):
+            arm_only = True
+        elif cpu_arch == "x86_64":
+            amd_only = True
+        else:
+            Utils.raise_with_error(
+                f"Not supported CPU architecture for docker build [{cpu_arch}]"
+            )
+
     for docker in dockers:
         docker_digests[docker.name] = Digest().calc_docker_digest(docker, dockers)
 
@@ -101,53 +127,49 @@ def _build_dockers(workflow, job_name):
 
     if job_status == Result.Status.SUCCESS:
         for docker in dockers:
+            if amd_only and Docker.Platforms.AMD not in docker.platforms:
+                continue
+            elif arm_only and Docker.Platforms.ARM not in docker.platforms:
+                continue
+            if any(p not in Docker.Platforms.arm_amd for p in docker.platforms):
+                Utils.raise_with_error(
+                    f"TODO: add support for all docker platforms [{docker.platforms}]"
+                )
             assert (
                 docker.name not in ready
             ), f"All docker names must be uniq [{dockers}]"
-            stopwatch = Utils.Stopwatch()
-            info = f"{docker.name}:{docker_digests[docker.name]}"
-            log_file = f"{Settings.OUTPUT_DIR}/docker_{Utils.normalize_string(docker.name)}.log"
-            files = []
 
-            code, out, err = Shell.get_res_stdout_stderr(
-                f"docker manifest inspect {docker.name}:{docker_digests[docker.name]}"
-            )
-            print(
-                f"Docker inspect results for {docker.name}:{docker_digests[docker.name]}: exit code [{code}], out [{out}], err [{err}]"
-            )
-            if "no such manifest" in err:
-                ret_code = Docker.build(
-                    docker, log_file=log_file, digests=docker_digests, add_latest=False
-                )
-                if ret_code == 0:
-                    status = Result.Status.SUCCESS
-                else:
-                    status = Result.Status.FAILED
-                    job_status = Result.Status.FAILED
-                    info += f", failed with exit code: {ret_code}, see log"
-                    files.append(log_file)
-            else:
-                print(
-                    f"Docker image [{docker.name}:{docker_digests[docker.name]} exists - skip build"
-                )
-                status = Result.Status.SKIPPED
-            ready.append(docker.name)
             results.append(
-                Result(
-                    name=docker.name,
-                    status=status,
-                    info=info,
-                    duration=stopwatch.duration,
-                    start_time=stopwatch.start_time,
-                    files=files,
+                Docker.build(
+                    docker,
+                    digests=docker_digests,
+                    amd_only=amd_only,
+                    arm_only=arm_only,
+                    with_log=True,
                 )
             )
-    return (
-        Result.from_fs(job_name)
-        .set_status(job_status)
-        .set_results(results)
-        .set_info(job_info)
-    )
+            if results[0].is_ok():
+                ready.append(docker.name)
+            else:
+                job_status = Result.Status.FAILED
+                break
+
+    if (
+        job_status == Result.Status.SUCCESS
+        and job_name == Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME
+    ):
+        print("Start docker manifest merge")
+        for docker in dockers:
+            results.append(
+                Docker.merge_manifest(
+                    config=docker,
+                    digests=docker_digests,
+                    with_log=True,
+                    add_latest=False,
+                )
+            )
+
+    return Result.create_from(results=results, info=job_info)
 
 
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
@@ -156,42 +178,17 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
 
     def _check_yaml_up_to_date():
         print("Check workflows are up to date")
-        stop_watch = Utils.Stopwatch()
-        exit_code, output, err = Shell.get_res_stdout_stderr(
-            f"git diff-index HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
-        )
-        info = ""
-        status = Result.Status.FAILED
-        if exit_code != 0:
-            info = f"workspace has uncommitted files unexpectedly [{output}]"
-            status = Result.Status.ERROR
-            print("ERROR: ", info)
-        else:
-            exit_code_1, out, err = Shell.get_res_stdout_stderr(
-                f"{Settings.PYTHON_INTERPRETER} -m praktika yaml", verbose=True
-            )
-            exit_code_2, output, err = Shell.get_res_stdout_stderr(
-                f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}"
-            )
-            if exit_code_1 != 0:
-                info = f"praktika failed to generate workflows.\n{out}\nerr: {err}"
-                status = Result.Status.FAILED
-                print("ERROR: ", info)
-            elif output:
-                info = f"outdated workflows: [{output}], run [praktika yaml] to update"
-                status = Result.Status.FAILED
-                print("ERROR: ", info)
-            elif exit_code_2 == 0 and not err:
-                status = Result.Status.SUCCESS
-            else:
-                print(f"ERROR: exit code [{exit_code}], err [{err}]")
+        commands = [
+            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
+            f"{Settings.PYTHON_INTERPRETER} -m praktika yaml",
+            f"git diff-index --name-only HEAD -- {Settings.WORKFLOW_PATH_PREFIX}",
+        ]
 
-        return Result(
-            name="Check Workflows updated",
-            status=status,
-            start_time=stop_watch.start_time,
-            duration=stop_watch.duration,
-            info=info,
+        return Result.from_commands_run(
+            name="Check Workflows",
+            command=commands,
+            with_info=True,
+            fail_fast=True,
         )
 
     def _check_secrets(secrets):
@@ -236,7 +233,6 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     print(f"Start [{job_name}], workflow [{workflow.name}]")
     results = []
     files = []
-    info_lines = []
 
     if workflow.pre_hooks:
         sw_ = Utils.Stopwatch()
@@ -259,20 +255,16 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         result_ = _check_yaml_up_to_date()
         if result_.status != Result.Status.SUCCESS:
             print("ERROR: yaml files are outdated - regenerate, commit and push")
-            info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
 
     if results[-1].is_ok() and workflow.secrets:
         result_ = _check_secrets(workflow.secrets)
         if result_.status != Result.Status.SUCCESS:
             print(f"ERROR: Invalid secrets in workflow [{workflow.name}]")
-            info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
 
     if results[-1].is_ok() and workflow.enable_cidb:
         result_ = _check_db(workflow)
-        if result_.status != Result.Status.SUCCESS:
-            info_lines.append(result_.name + ": " + result_.info)
         results.append(result_)
 
     if Path(Settings.CUSTOM_DATA_FILE).is_file():
@@ -385,9 +377,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
         files.append(Result.file_name_static(workflow.name))
 
-    return Result.create_from(
-        name=job_name, results=results, files=files, info=("\n".join(info_lines))
-    )
+    return Result.create_from(name=job_name, results=results, files=files)
 
 
 def _finish_workflow(workflow, job_name):
@@ -465,9 +455,9 @@ def _finish_workflow(workflow, job_name):
         if failed_jobs_csv and len(failed_jobs_csv) < 80:
             ready_for_merge_description = f"Failed: {failed_jobs_csv}"
         else:
-            ready_for_merge_description = f"Failed: {len(failed_results)} jobs"
+            ready_for_merge_description = f"Failed: {len(failed_results)}"
         if skipped_results:
-            ready_for_merge_description += f", Skipped: {len(skipped_results)} of them"
+            ready_for_merge_description += f", Skipped: {len(skipped_results)}"
 
     if workflow.enable_merge_ready_status:
         pem = workflow.get_secret(Settings.SECRET_GH_APP_PEM_KEY).get_value()
@@ -500,7 +490,10 @@ if __name__ == "__main__":
     sw = Utils.Stopwatch()
     try:
         workflow = _get_workflows(name=_Environment.get().WORKFLOW_NAME)[0]
-        if job_name == Settings.DOCKER_BUILD_JOB_NAME:
+        if job_name in (
+            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
+            Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+        ):
             result = _build_dockers(workflow, job_name)
         elif job_name == Settings.CI_CONFIG_JOB_NAME:
             result = _config_workflow(workflow, job_name)

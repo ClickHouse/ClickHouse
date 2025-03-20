@@ -48,7 +48,7 @@ Columns:
 
 Configure the dictionary:
 
-``` sql
+```sql
 CREATE DICTIONARY dictionary_with_comment
 (
     id UInt64,
@@ -63,11 +63,11 @@ COMMENT 'The temporary dictionary';
 
 Make sure that the dictionary is loaded.
 
-``` sql
+```sql
 SELECT * FROM system.dictionaries LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 database:                    default

@@ -49,9 +49,9 @@ struct NormalDistribution
     static constexpr const char * getName() { return "randNormal"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    static void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container)
+    static void generate(Float64 mean, Float64 stddev, ColumnFloat64::Container & container)
     {
-        auto distribution = std::normal_distribution<>(mean, variance);
+        auto distribution = std::normal_distribution<>(mean, stddev);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
     }
@@ -63,9 +63,9 @@ struct LogNormalDistribution
     static constexpr const char * getName() { return "randLogNormal"; }
     static constexpr size_t getNumberOfArguments() { return 2; }
 
-    static void generate(Float64 mean, Float64 variance, ColumnFloat64::Container & container)
+    static void generate(Float64 mean, Float64 stddev, ColumnFloat64::Container & container)
     {
-        auto distribution = std::lognormal_distribution<>(mean, variance);
+        auto distribution = std::lognormal_distribution<>(mean, stddev);
         for (auto & elem : container)
             elem = distribution(thread_local_rng);
     }
@@ -338,7 +338,7 @@ Typical usage:
     FunctionDocumentation{
     .description=R"(
 Returns a random number from the normal distribution.
-Accepts two parameters - mean and variance.
+Accepts two parameters - mean and standard deviation.
 
 Typical usage:
 [example:typical]
@@ -353,7 +353,7 @@ Typical usage:
     FunctionDocumentation{
     .description=R"(
 Returns a random number from the lognormal distribution (a distribution of a random variable whose logarithm is normally distributed).
-Accepts two parameters - mean and variance.
+Accepts two parameters - mean and standard deviation.
 
 Typical usage:
 [example:typical]
