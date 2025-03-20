@@ -284,7 +284,7 @@ To enforce all queries to follow resource scheduling policies there is a server 
 Do not set `throw_on_unknown_workload` to `true` unless `CREATE WORKLOAD default` is executed. It could lead to server startup issues if a query without explicit setting `workload` is executed during startup.
 :::
 
-## See also
+## See also {#see-also}
  - [system.scheduler](/operations/system-tables/scheduler.md)
  - [system.workloads](/operations/system-tables/workloads.md)
  - [system.resources](/operations/system-tables/resources.md)
