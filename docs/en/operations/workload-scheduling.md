@@ -262,8 +262,12 @@ CREATE WORKLOAD ingestion IN production
 
 This configuration example provides independent CPU slot pools for admin and production. The production pool is shared between analytics and ingestion. Furthermore, if the production pool is overloaded, 9 of 10 released slots will be rescheduled to analytical queries if necessary. The ingestion queries would only receive 1 of 10 slots during overload periods. This might improve the latency of user-facing queries. Analytics has its own limit of 60 concurrent thread, always leaving at least 40 threads to support ingestion. When there is no overload, ingestion could use all 100 threads.
 
+To exclude a query from CPU scheduling set a query setting [use_concurrency_control](/operations/settings/settings.md/#use_concurrency_control) to 0.
+
+CPU scheduling is not supported for merges and mutations yet.
+
 :::warning
-Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md/#max_threads) but does not guarantee fair CPU time allocation yet. This requires further development of CPU slot preemption and will be supported later.
+Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md/#max_thruseeads) but does not guarantee fair CPU time allocation yet. This requires further development of CPU slot preemption and will be supported later.
 :::
 
 :::note
