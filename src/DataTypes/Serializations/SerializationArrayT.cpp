@@ -235,23 +235,18 @@ void SerializationArrayT::serializeText(
 void SerializationArrayT::deserializeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, bool whole) const
 {
     auto & column_arrayt = assert_cast<ColumnArrayT &>(column);
-    auto & tuple_column = column_arrayt.getTupleColumn();
+    auto * tuple_column = column_arrayt.getTupleColumn();
 
     addElementSafe<void>(
         size,
-        tuple_column,
+        *tuple_column,
         [&]() -> bool
         {
             assertChar('[', istr);
 
             size_t bytes_per_fixedstring = n >> 3;
 
-            std::vector<std::string> column_data(size);
-            for (auto & data : column_data)
-                data.reserve(bytes_per_fixedstring);
-
-            std::vector<char> value_bytes;
-            value_bytes.reserve(bytes_per_fixedstring * size);
+            std::vector<char> value_bytes(bytes_per_fixedstring * size);
 
             switch (size)
             {
@@ -272,16 +267,16 @@ void SerializationArrayT::deserializeText(IColumn & column, ReadBuffer & istr, c
             skipWhitespaceIfAny(istr);
             assertChar(']', istr);
 
+            std::vector<std::string> column_data;
+            column_data.reserve(size);
             for (size_t i = 0; i < size; ++i)
-                for (size_t byte_idx = 0; byte_idx < bytes_per_fixedstring; ++byte_idx)
-                    column_data[i].push_back(value_bytes[i * bytes_per_fixedstring + byte_idx]);
+                column_data.emplace_back(value_bytes.data() + i * bytes_per_fixedstring, bytes_per_fixedstring);
 
-            for (size_t byte_idx = 0; byte_idx < size; ++byte_idx)
+            for (size_t col_idx = 0; col_idx < size; ++col_idx)
             {
-                auto & element_column = const_cast<IColumn &>(extractElementColumn(tuple_column, byte_idx));
+                auto & element_column = const_cast<IColumn &>(extractElementColumn(*tuple_column, col_idx));
                 auto & fixed_string_column = assert_cast<ColumnFixedString &>(element_column);
-
-                fixed_string_column.insertData(column_data[byte_idx].data(), bytes_per_fixedstring);
+                fixed_string_column.insertData(column_data[col_idx].data(), bytes_per_fixedstring);
             }
 
             if (whole && !istr.eof())

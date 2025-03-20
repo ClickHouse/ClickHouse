@@ -215,7 +215,7 @@ public:
 
     /// Efficient access to the underlying tuple
     const ColumnPtr & getTuple() const { return tuple; }
-    IColumn & getTupleColumn() { return *tuple; }
+    IColumn * getTupleColumn() { return tuple.operator->(); }
     const IColumn & getTupleColumn() const { return *tuple; }
 };
 

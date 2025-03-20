@@ -35,8 +35,7 @@ MutableColumnPtr ColumnArrayT::cloneResized(size_t new_size) const
 
 size_t ColumnArrayT::groupCount() const
 {
-    const auto * tuple_column = typeid_cast<const ColumnTuple *>(tuple.get());
-    return tuple_column->getColumns().size();
+    return assert_cast<const ColumnTuple *>(tuple.get())->getColumns().size();
 }
 
 std::string ColumnArrayT::getName() const
@@ -52,7 +51,7 @@ void ColumnArrayT::insert(const Field & x)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert {} into column of type ArrayT", x.getTypeName());
 
     const ArrayT & arrayt = x.safeGet<ArrayT>();
-    auto * t = dynamic_cast<ColumnTuple *>(&getTupleColumn());
+    auto * t = dynamic_cast<ColumnTuple *>(tuple.get());
 
     t->addSize(1);
     for (size_t i = 0; i < arrayt.size(); ++i)
@@ -74,8 +73,7 @@ void ColumnArrayT::insertManyFrom(const IColumn & src, size_t position, size_t l
 
 void ColumnArrayT::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
-    const auto * arrayt_column = typeid_cast<const ColumnArrayT *>(&src);
-    tuple->insertRangeFrom(arrayt_column->getTupleColumn(), start, length);
+    tuple->insertRangeFrom(typeid_cast<const ColumnArrayT *>(&src)->getTupleColumn(), start, length);
 }
 
 int ColumnArrayT::compareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const
