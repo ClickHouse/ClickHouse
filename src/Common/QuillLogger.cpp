@@ -17,6 +17,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/typeid_cast.h>
+#include <Common/Logger.h>
 #include <Loggers/OwnPatternFormatter.h>
 
 #include <IO/ReadHelpers.h>

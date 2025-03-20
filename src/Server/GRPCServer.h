@@ -9,8 +9,6 @@
 #include <base/types.h>
 #include <Common/Logger_fwd.h>
 
-namespace Poco { class Logger; }
-
 namespace grpc
 {
 class Server;
