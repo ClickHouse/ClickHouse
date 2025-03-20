@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/syntax
+description: 'Documentation for Syntax'
+displayed_sidebar: 'sqlreference'
+sidebar_label: 'Syntax'
 sidebar_position: 2
-sidebar_label: Syntax
-title: Syntax
-displayed_sidebar: sqlreference
+slug: /sql-reference/syntax
+title: 'Syntax'
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 
@@ -284,7 +285,7 @@ SELECT
    {c: DateTime},
    {d: Map(String, Array(UInt8))};
 
-13	str	2022-08-04 18:30:53	{'10':[11,12],'13':[14,15]}
+13    str    2022-08-04 18:30:53    {'10':[11,12],'13':[14,15]}
 ```
 </details>
 
@@ -351,7 +352,7 @@ For example, the expression
 
 is transformed to 
 
-```
+```text
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 

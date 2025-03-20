@@ -122,7 +122,7 @@ class Runner:
 
         if job.requires and job.name not in (
             Settings.CI_CONFIG_JOB_NAME,
-            Settings.DOCKER_BUILD_JOB_NAME,
+            Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
             Settings.FINISH_WORKFLOW_JOB_NAME,
         ):
             print("Download required artifacts")
@@ -146,7 +146,7 @@ class Runner:
                             if job.name
                             not in (
                                 Settings.CI_CONFIG_JOB_NAME,
-                                Settings.DOCKER_BUILD_JOB_NAME,
+                                Settings.DOCKER_BUILD_AMD_LINUX_AND_MERGE_JOB_NAME,
                                 Settings.FINISH_WORKFLOW_JOB_NAME,
                             )
                         ]
@@ -212,9 +212,7 @@ class Runner:
         if job.name != Settings.CI_CONFIG_JOB_NAME:
             try:
                 os.environ["DOCKER_TAG"] = json.dumps(
-                    RunConfig.from_fs(workflow.name).custom_data.get(
-                        "digest_dockers", "latest"
-                    )
+                    RunConfig.from_fs(workflow.name).digest_dockers
                 )
             except Exception as e:
                 traceback.print_exc()
@@ -432,7 +430,7 @@ class Runner:
             if not GH.post_commit_status(
                 name=job.name,
                 status=result.status,
-                description=result.info[0:70],
+                description=result.info.splitlines()[0] if result.info else "",
                 url=report_url,
             ):
                 print(f"ERROR: Failed to post failed commit status for the job")

@@ -1,8 +1,9 @@
 ---
-slug: /operations/workload-scheduling
+description: 'Documentation for Workload Scheduling'
+sidebar_label: 'Workload scheduling'
 sidebar_position: 69
-sidebar_label: "Workload scheduling"
-title: "Workload scheduling"
+slug: /operations/workload-scheduling
+title: 'Workload scheduling'
 ---
 
 When ClickHouse execute multiple queries simultaneously, they may be using shared resources (e.g. disks). Scheduling constraints and policies can be applied to regulate how resources are utilized and shared between different workloads. For every resource a scheduling hierarchy can be configured. Hierarchy root represents a resource, while leafs are queues, holding requests that exceed resource capacity.

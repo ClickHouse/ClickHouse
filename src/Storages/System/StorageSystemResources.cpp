@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
-#include <Parsers/queryToString.h>
 #include <Storages/System/StorageSystemResources.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Parsers/ASTCreateResourceQuery.h>
@@ -59,7 +58,7 @@ void StorageSystemResources::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[2]->insert(write_disks);
         }
         res_columns[3]->insert(DB::ASTCreateResourceQuery::unitToString(resource.unit));
-        res_columns[4]->insert(queryToString(ast));
+        res_columns[4]->insert(ast->formatForLogging());
     }
 }
 

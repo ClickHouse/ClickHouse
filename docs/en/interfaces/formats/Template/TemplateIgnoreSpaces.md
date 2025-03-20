@@ -1,10 +1,11 @@
 ---
-title: TemplateIgnoreSpaces
-slug: /interfaces/formats/TemplateIgnoreSpaces
-keywords: [TemplateIgnoreSpaces]
-input_format: true
-output_format: false
 alias: []
+description: 'Documentation for the TemplateIgnoreSpaces format'
+input_format: true
+keywords: ['TemplateIgnoreSpaces']
+output_format: false
+slug: /interfaces/formats/TemplateIgnoreSpaces
+title: 'TemplateIgnoreSpaces'
 ---
 
 | Input | Output | Alias |

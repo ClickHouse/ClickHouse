@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/parallel_with
+description: 'Documentation for PARALLEL WITH Clause'
+sidebar_label: 'PARALLEL WITH'
 sidebar_position: 53
-sidebar_label: PARALLEL WITH
+slug: /sql-reference/statements/parallel_with
+title: 'PARALLEL WITH Clause'
 ---
 
 # PARALLEL WITH Clause
