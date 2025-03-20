@@ -5,6 +5,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/quoteString.h>
+#include <Common/DateLUT.h>
 #include <DataTypes/FieldToDataType.h>
 
 #include <Processors/Sources/ShellCommandSource.h>
@@ -17,6 +18,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/UDFLog.h>
 
 
 namespace DB
@@ -120,6 +122,10 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
+        UDFLogElement udf_log_element;
+        udf_log_element.function_name = getName();
+        udf_log_element.number_of_processed_rows = input_rows_count;
+
         auto coordinator = executable_function->getCoordinator();
         const auto & coordinator_configuration = coordinator->getConfiguration();
         const auto & configuration = executable_function->getConfiguration();
@@ -154,16 +160,25 @@ public:
 
         size_t argument_size = arguments.size();
         auto arguments_copy = arguments;
+        UInt64 number_of_processed_bytes = 0;
+        Array constant_args;
 
         for (size_t i = 0; i < argument_size; ++i)
         {
             auto & column_with_type = arguments_copy[i];
+
+            Field field;
+            column_with_type.column->get(0, field);
+            constant_args.push_back(field);
+
             column_with_type.column = column_with_type.column->convertToFullColumnIfConst();
 
             const auto & argument = configuration.arguments[i];
             column_with_type.name = argument.name;
 
             const auto & argument_type = argument.type;
+
+            number_of_processed_bytes += column_with_type.column->byteSize();
 
             if (arguments_copy[i].type->equals(*argument_type))
                 continue;
@@ -174,6 +189,9 @@ public:
 
             column_with_type = std::move(column_to_cast);
         }
+
+        udf_log_element.number_of_processed_bytes = number_of_processed_bytes;
+        udf_log_element.constant_function_args = std::move(constant_args);
 
         ColumnWithTypeAndName result(result_type, configuration.result_name);
         Block result_block({result});
@@ -192,6 +210,10 @@ public:
 
         Pipes shell_input_pipes;
         shell_input_pipes.emplace_back(std::move(shell_input_pipe));
+
+        const auto time_now = std::chrono::system_clock::now();
+        udf_log_element.event_time = timeInSeconds(time_now);
+        Stopwatch start_watch{CLOCK_MONOTONIC};
 
         Pipe pipe = coordinator->createPipe(
             command,
@@ -214,6 +236,8 @@ public:
             result_column->insertRangeFrom(result_column_to_add, 0, result_column_to_add.size());
         }
 
+        udf_log_element.duration_ms = start_watch.elapsedMilliseconds();
+
         size_t result_column_size = result_column->size();
         if (result_column_size != input_rows_count)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -221,6 +245,9 @@ public:
                 quoteString(getName()),
                 input_rows_count,
                 result_column_size);
+
+        if (auto udf_log = context->getUDFLog())
+            udf_log->add(udf_log_element);
 
         return result_column;
     }
