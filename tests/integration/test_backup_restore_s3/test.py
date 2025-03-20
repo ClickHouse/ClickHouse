@@ -184,7 +184,9 @@ def get_events_for_query(query_id: str) -> Dict[str, int]:
 def format_settings(settings):
     if not settings:
         return ""
-    return "SETTINGS " + ",".join(f"{k}={v}" for k, v in settings.items())
+    def vstr(v):
+        return "'" + v + "'" if type(v) == str else str(v)
+    return "SETTINGS " + ",".join(f"{k}={vstr(v)}" for k, v in settings.items())
 
 
 def check_backup_and_restore(
@@ -761,12 +763,13 @@ def test_user_specific_auth(start_cluster):
 
 @pytest.mark.parametrize(
     "allow_s3_native_copy,use_multipart_copy",
-    [(True, True), (True, False), (False, True), (False, False)],
+    [(True, True), (True, False), (False, True), (False, False), ("auto", False)],
     ids=[
         "native_multipart",
         "native_single",
         "non_native_multipart",
         "non_native_single",
+        "auto_single",
     ],
 )
 def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_copy):
@@ -778,14 +781,26 @@ def test_backup_to_s3_different_credentials(allow_s3_native_copy, use_multipart_
     size = 1000
     if use_multipart_copy:
         size = 10000000
-    (backup_events, _) = check_backup_and_restore(
+    (backup_events, restore_events) = check_backup_and_restore(
         storage_policy,
         backup_destination,
         backup_settings=settings,
         restore_settings=settings,
         size=size
     )
+
     check_system_tables(backup_events["query_id"])
+
+    for events in [backup_events, restore_events]:
+        # If allow_s3_native_copy == True then we expect ClickHouse to try s3 native copy first and fail,
+        # then fallback to the reading+writing approach.
+        # If allow_s3_native_copy == 'auto' then we expect ClickHouse to find that the source and destination credentials
+        # are different, then go directly to the reading+writing approach (without trying s3 native copy).
+        assert ("S3CopyObject" in events) == (allow_s3_native_copy == True)
+        assert ("S3WriteRequestsErrors" in events) == (allow_s3_native_copy == True)
+        assert "S3ReadRequestsErrors" not in events
+        assert "DiskS3ReadRequestsErrors" not in events
+        assert ("S3CreateMultipartUpload" in events) == use_multipart_copy
 
 
 def test_backup_restore_system_tables_with_plain_rewritable_disk():
