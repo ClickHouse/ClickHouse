@@ -7,21 +7,15 @@
 namespace Iceberg
 {
 
-struct ManifestListFileEntry
-{
-    ManifestFileIterator manifest_file;
-    Int64 added_sequence_number;
-};
-
-using ManifestList = std::vector<ManifestListFileEntry>;
+using ManifestList = std::vector<ManifestFilePtr>;
 
 
-using ManifestListsStorage = std::map<String, ManifestList>;
-using ManifestListIterator = IteratorWrapper<ManifestList>;
+using ManifestListPtr = std::shared_ptr<const ManifestList>;
+using ManifestListsStorage = std::map<String, ManifestListPtr>;
 
 struct IcebergSnapshot
 {
-    ManifestListIterator manifest_list_iterator;
+    ManifestListPtr manifest_list;
     Int64 snapshot_id;
 };
 }

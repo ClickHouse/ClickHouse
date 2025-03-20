@@ -13,9 +13,9 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
 
-#include "Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h"
-#include "Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 
 #include <tuple>
 
@@ -92,7 +92,7 @@ public:
     bool supportsPartitionPruning() override { return true; }
 
 private:
-    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFileIterator>;
+    using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFilePtr>;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
@@ -126,13 +126,11 @@ private:
 
     void addTableSchemaById(Int32 schema_id);
 
-    Iceberg::ManifestListIterator getManifestList(const String & filename) const;
+    Iceberg::ManifestListPtr getManifestList(const String & filename) const;
 
     std::optional<Int32> getSchemaVersionByFileIfOutdated(String data_path) const;
 
-    Iceberg::ManifestFileContent initializeManifestFile(const String & filename, Int64 inherited_sequence_number) const;
-
-    Iceberg::ManifestFileIterator getManifestFile(const String & filename) const;
+    Iceberg::ManifestFilePtr initializeManifestFile(const String & filename, Int64 inherited_sequence_number) const;
 
     std::optional<String> getRelevantManifestList(const Poco::JSON::Object::Ptr & metadata);
 
@@ -140,7 +138,7 @@ private:
 
     Strings getDataFilesImpl(const ActionsDAG * filter_dag) const;
 
-    std::optional<Iceberg::ManifestFileIterator> tryGetManifestFile(const String & filename) const;
+    Iceberg::ManifestFilePtr tryGetManifestFile(const String & filename) const;
 };
 }
 
