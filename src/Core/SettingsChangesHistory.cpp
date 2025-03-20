@@ -68,7 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.4",
         {
-
+            {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
@@ -80,7 +80,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"iceberg_timestamp_ms", 0, 0, "New setting."},
             {"iceberg_snapshot_id", 0, 0, "New setting."},
             {"parallel_replicas_for_cluster_engines", false, true, "New setting."},
-            {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
             /// Release closed. Please use 25.4
         });
         addSettingsChanges(settings_changes_history, "25.2",
