@@ -331,8 +331,8 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config)
     // Set level to console
     bool is_daemon = config.getBool("application.runAsDaemon", false);
     bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
-    if (config.getBool("logger.console", false)
-        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
+    if (console_sink && (config.getBool("logger.console", false)
+        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console)))
     {
         auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
         auto console_log_level = DB::parseQuillLogLevel(console_log_level_string);
