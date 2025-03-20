@@ -43,6 +43,7 @@ namespace ErrorCodes
 extern const int FILE_DOESNT_EXIST;
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
+extern const int ICEBERG_SPECIFICATION_VIOLATION;
 }
 
 namespace Setting
@@ -483,11 +484,11 @@ ManifestList IcebergMetadata::initializeManifestList(const String & filename) co
 
     for (size_t i = 0; i < manifest_list_deserializer.rows(); ++i)
     {
-        const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, COLUMN_MANIFEST_FILE_PATH_NAME, TypeIndex::String).safeGet<std::string>();
+        const std::string file_path = manifest_list_deserializer.getValueFromRowByName(i, MANIFEST_FILE_PATH_COLUMN, TypeIndex::String).safeGet<std::string>();
         const auto manifest_file_name = getProperFilePathFromMetadataInfo(file_path, configuration_ptr->getPath(), table_location);
         Int64 added_sequence_number = 0;
         if (format_version > 1)
-            added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, COLUMN_SEQ_NUMBER_NAME, TypeIndex::Int64).safeGet<Int64>();
+            added_sequence_number = manifest_list_deserializer.getValueFromRowByName(i, SEQUENCE_NUMBER_COLUMN, TypeIndex::Int64).safeGet<Int64>();
 
         /// We can't encapsulate this logic in getManifestFile because we need not only the name of the file, but also an inherited sequence number which is known only during the parsing of ManifestList
         auto manifest_file_content = initializeManifestFile(manifest_file_name, added_sequence_number);
@@ -548,11 +549,6 @@ ManifestListIterator IcebergMetadata::getManifestList(const String & filename) c
     auto configuration_ptr = configuration.lock();
     auto [manifest_file_iterator, _inserted] = manifest_lists_by_name.emplace(filename, initializeManifestList(filename));
     return ManifestListIterator{manifest_file_iterator};
-}
-
-IcebergSnapshot IcebergMetadata::getSnapshot(const String & filename) const
-{
-    return IcebergSnapshot{getManifestList(filename)};
 }
 
 Strings IcebergMetadata::getDataFilesImpl(const ActionsDAG * filter_dag) const
