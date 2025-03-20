@@ -13,7 +13,7 @@ Allows `SELECT` and `INSERT` queries to be performed on data that are stored on 
 
 **Syntax**
 
-``` sql
+```sql
 mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
 ```
 
@@ -65,7 +65,7 @@ In the `INSERT` query to distinguish table function `mysql(...)` from table name
 
 Table in MySQL:
 
-``` text
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `float` FLOAT NOT NULL,
@@ -83,7 +83,7 @@ mysql> SELECT * FROM test;
 
 Selecting data from ClickHouse:
 
-``` sql
+```sql
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 ```
 
@@ -99,7 +99,7 @@ CREATE NAMED COLLECTION creds AS
 SELECT * FROM mysql(creds, table='test');
 ```
 
-``` text
+```text
 ┌─int_id─┬─float─┐
 │      1 │     2 │
 └────────┴───────┘
@@ -113,7 +113,7 @@ INSERT INTO TABLE FUNCTION mysql('localhost:3306', 'test', 'test', 'bayonet', '1
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 ```
 
-``` text
+```text
 ┌─int_id─┬─float─┐
 │      1 │     3 │
 │      2 │     4 │

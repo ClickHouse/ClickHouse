@@ -175,14 +175,14 @@ setup_logs_replication
 attach_gdb_to_clickhouse
 
 # create tables for minio log webhooks
-clickhouse-client --allow_experimental_json_type=1 --query "CREATE TABLE minio_audit_logs
+clickhouse-client --enable_json_type=1 --query "CREATE TABLE minio_audit_logs
 (
     log JSON(time DateTime64(9))
 )
 ENGINE = MergeTree
 ORDER BY tuple()"
 
-clickhouse-client --allow_experimental_json_type=1 --query "CREATE TABLE minio_server_logs
+clickhouse-client --enable_json_type=1 --query "CREATE TABLE minio_server_logs
 (
     log JSON(time DateTime64(9))
 )

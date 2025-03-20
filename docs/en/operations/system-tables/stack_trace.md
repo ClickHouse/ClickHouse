@@ -31,17 +31,17 @@ Check out the Knowledge Base for some handy queries, including [how to see what 
 
 Enabling introspection functions:
 
-``` sql
+```sql
 SET allow_introspection_functions = 1;
 ```
 
 Getting symbols from ClickHouse object files:
 
-``` sql
+```sql
 WITH arrayMap(x -> demangle(addressToSymbol(x)), trace) AS all SELECT thread_name, thread_id, query_id, arrayStringConcat(all, '\n') AS res FROM system.stack_trace LIMIT 1 \G;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 thread_name: QueryPipelineEx
@@ -67,11 +67,11 @@ void* std::__1::__thread_proxy[abi:v15000]<std::__1::tuple<std::__1::unique_ptr<
 
 Getting filenames and line numbers in ClickHouse source code:
 
-``` sql
+```sql
 WITH arrayMap(x -> addressToLine(x), trace) AS all, arrayFilter(x -> x LIKE '%/dbms/%', all) AS dbms SELECT thread_name, thread_id, query_id, arrayStringConcat(notEmpty(dbms) ? dbms : all, '\n') AS res FROM system.stack_trace LIMIT 1 \G;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 thread_name: clickhouse-serv
