@@ -971,11 +971,11 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     if (const auto & prewhere_info = select_query_info.prewhere_info)
     {
-        for (const auto * dag : prewhere_info->prewhere_actions.getOutputs())
+        for (const auto * outputs : prewhere_info->prewhere_actions.getOutputs())
         {
-            if (dag->result_name == prewhere_info->prewhere_column_name)
+            if (outputs->result_name == prewhere_info->prewhere_column_name)
             {
-                auto stats = drop_mark_ranges(dag);
+                auto stats = drop_mark_ranges(outputs);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
                         stats.granules_dropped,
@@ -988,8 +988,8 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
-        const auto * dag = filter_actions_dag->getOutputs().front();
-        auto stats = drop_mark_ranges(dag);
+        const auto * output = filter_actions_dag->getOutputs().front();
+        auto stats = drop_mark_ranges(output);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,
