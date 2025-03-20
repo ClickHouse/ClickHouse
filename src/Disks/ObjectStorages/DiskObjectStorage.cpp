@@ -732,7 +732,11 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         ? std::max<size_t>(settings.remote_fs_buffer_size, DBMS_DEFAULT_BUFFER_SIZE)
         : settings.remote_fs_buffer_size;
 
-    size_t total_objects_size = file_size ? *file_size : getTotalSize(storage_objects);
+    /// For object storage file_size and read_hint is interchangeable, and
+    /// read_hint should be respected, since it is passed by various MergeTree
+    /// readers, and we should not read more then this size, since this may
+    /// lead to excessive memory usage.
+    size_t total_objects_size = file_size ? *file_size : (read_hint ? *read_hint : getTotalSize(storage_objects));
     if (total_objects_size)
         buffer_size = std::min(buffer_size, total_objects_size);
 
