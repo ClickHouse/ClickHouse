@@ -10,11 +10,11 @@ class DataTypeArrayT final : public IDataType
 {
 private:
     /* Type of the elements in the vector: BFloat16, Float32, Float64 */
-    DataTypePtr type;
+    const DataTypePtr type;
     /* Size of the vector element: 16, 32, 64 */
-    size_t size;
+    const size_t size;
     /* Number of elements in the vector */
-    size_t n;
+    const size_t n;
 
 public:
     DataTypeArrayT(const DataTypePtr & type_, size_t size, size_t n);
