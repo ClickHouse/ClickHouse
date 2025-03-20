@@ -14,56 +14,56 @@ namespace ErrorCodes
 
 bool SchedulingSettings::hasThrottler() const
 {
-    switch (type) {
-        case Type::Io: return max_bytes_per_second != 0;
-        case Type::Cpu: return false;
+    switch (unit) {
+        case Unit::IoByte: return max_bytes_per_second != 0;
+        case Unit::CpuSlot: return false;
     }
 }
 
 Float64 SchedulingSettings::getThrottlerMaxSpeed() const
 {
-    switch (type) {
-        case Type::Io: return max_io_requests;
-        case Type::Cpu: return 0;
+    switch (unit) {
+        case Unit::IoByte: return max_bytes_per_second;
+        case Unit::CpuSlot: return 0;
     }
 }
 
 Float64 SchedulingSettings::getThrottlerMaxBurst() const
 {
-    switch (type) {
-        case Type::Io: return max_burst_bytes;
-        case Type::Cpu: return 0;
+    switch (unit) {
+        case Unit::IoByte: return max_burst_bytes;
+        case Unit::CpuSlot: return 0;
     }
 }
 
 bool SchedulingSettings::hasSemaphore() const
 {
-    switch (type) {
-        case Type::Io: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
-        case Type::Cpu: return max_additional_threads != unlimited;
+    switch (unit) {
+        case Unit::IoByte: return max_io_requests != unlimited || max_bytes_inflight != unlimited;
+        case Unit::CpuSlot: return max_concurrent_threads != unlimited;
     }
 }
 
 Int64 SchedulingSettings::getSemaphoreMaxRequests() const
 {
-    switch (type) {
-        case Type::Io: return max_io_requests;
-        case Type::Cpu: return max_additional_threads;
+    switch (unit) {
+        case Unit::IoByte: return max_io_requests;
+        case Unit::CpuSlot: return max_concurrent_threads;
     }
 }
 
 Int64 SchedulingSettings::getSemaphoreMaxCost() const
 {
-    switch (type) {
-        case Type::Io: return max_bytes_inflight;
-        case Type::Cpu: return unlimited;
+    switch (unit) {
+        case Unit::IoByte: return max_bytes_inflight;
+        case Unit::CpuSlot: return unlimited;
     }
 }
 
-void SchedulingSettings::updateFromChanges(Type type_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name)
+void SchedulingSettings::updateFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name)
 {
-    // Set resource type
-    type = type_;
+    // Set resource unit
+    unit = unit_;
 
     struct {
         std::optional<Float64> new_weight;
@@ -72,7 +72,7 @@ void SchedulingSettings::updateFromChanges(Type type_, const ASTCreateWorkloadQu
         std::optional<Float64> new_max_burst_bytes;
         std::optional<Int64> new_max_io_requests;
         std::optional<Int64> new_max_bytes_inflight;
-        std::optional<Int64> new_max_additional_threads;
+        std::optional<Int64> new_max_concurrent_threads;
 
         static Float64 getNotNegativeFloat64(const String & name, const Field & field)
         {
@@ -136,8 +136,8 @@ void SchedulingSettings::updateFromChanges(Type type_, const ASTCreateWorkloadQu
                 new_max_io_requests = getNotNegativeInt64(name, value);
             else if (name == "max_bytes_inflight" || name == "max_cost")
                 new_max_bytes_inflight = getNotNegativeInt64(name, value);
-            else if (name == "max_additional_threads")
-                new_max_additional_threads = getNotNegativeInt64(name, value);
+            else if (name == "max_concurrent_threads")
+                new_max_concurrent_threads = getNotNegativeInt64(name, value);
         }
     } regular, specific;
 

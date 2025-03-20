@@ -87,8 +87,11 @@ public:
     /// Gets all current entries, pass them through `handler` and subscribes for all later changes.
     virtual scope_guard getAllEntitiesAndSubscribe(const OnChangedHandler & handler) = 0;
 
-    /// Returns the name of resource used for CPU scheduling
-    virtual String getCpuResourceName() = 0;
+    /// Returns the name of resource used for CPU scheduling of the master query threads
+    virtual String getMasterThreadResourceName() = 0;
+
+    /// Returns the name of resource used for CPU scheduling of the additional query threads
+    virtual String getWorkerThreadResourceName() = 0;
 };
 
 }

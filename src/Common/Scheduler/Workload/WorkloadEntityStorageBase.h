@@ -48,7 +48,8 @@ public:
     scope_guard getAllEntitiesAndSubscribe(
         const OnChangedHandler & handler) override;
 
-    String getCpuResourceName() override;
+    String getMasterThreadResourceName() override;
+    String getWorkerThreadResourceName() override;
 
 protected:
     enum class OperationResult
@@ -119,7 +120,8 @@ private:
     // Validation
     std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources
     String root_name; /// current root workload name
-    String cpu_name; /// current resource name for cpu
+    String master_thread_resource; /// current resource name for worker threads
+    String worker_thread_resource; /// current resource name for master threads
 
 protected:
     ContextPtr global_context;

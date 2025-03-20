@@ -38,30 +38,27 @@ namespace
         return "unknown-workload-entity";
     }
 
-    SchedulingSettings::Type getResourceType(const ASTPtr & ast)
+    SchedulingSettings::Unit getResourceUnit(const ASTPtr & ast)
     {
         // CPU resource must have exactly one access mode specified
         if (auto * create = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
-        {
-            if (create->operations.size() == 1 && create->operations[0].mode == ASTCreateResourceQuery::AccessMode::Cpu)
-                return SchedulingSettings::Type::Cpu;
-        }
-        return SchedulingSettings::Type::Io;
+            return create->unit;
+        return SchedulingSettings::Unit::IoByte;
     }
 }
 
-WorkloadResourceManager::NodeInfo::NodeInfo(SchedulingSettings::Type type, const ASTPtr & ast, const String & resource_name)
+WorkloadResourceManager::NodeInfo::NodeInfo(SchedulingSettings::Unit unit, const ASTPtr & ast, const String & resource_name)
 {
     auto * create = assert_cast<ASTCreateWorkloadQuery *>(ast.get());
     name = create->getWorkloadName();
     parent = create->getWorkloadParent();
-    settings.updateFromChanges(type, create->changes, resource_name);
+    settings.updateFromChanges(unit, create->changes, resource_name);
 }
 
 WorkloadResourceManager::Resource::Resource(const ASTPtr & resource_entity_)
     : resource_entity(resource_entity_)
     , resource_name(getEntityName(resource_entity))
-    , type(getResourceType(resource_entity_))
+    , unit(getResourceUnit(resource_entity_))
 {
     scheduler.start();
 }
@@ -211,7 +208,7 @@ WorkloadResourceManager::Workload::Workload(WorkloadResourceManager * resource_m
     try
     {
         for (auto & [resource_name, resource] : resource_manager->resources)
-            resource->createNode(NodeInfo(resource->getType(), workload_entity, resource_name));
+            resource->createNode(NodeInfo(resource->getUnit(), workload_entity, resource_name));
     }
     catch (...)
     {
@@ -225,7 +222,7 @@ WorkloadResourceManager::Workload::~Workload()
     try
     {
         for (auto & [resource_name, resource] : resource_manager->resources)
-            resource->deleteNode(NodeInfo(resource->getType(), workload_entity, resource_name));
+            resource->deleteNode(NodeInfo(resource->getUnit(), workload_entity, resource_name));
     }
     catch (...)
     {
@@ -239,7 +236,7 @@ void WorkloadResourceManager::Workload::updateWorkload(const ASTPtr & new_entity
     try
     {
         for (auto & [resource_name, resource] : resource_manager->resources)
-            resource->updateNode(NodeInfo(resource->getType(), workload_entity, resource_name), NodeInfo(resource->getType(), new_entity, resource_name));
+            resource->updateNode(NodeInfo(resource->getUnit(), workload_entity, resource_name), NodeInfo(resource->getUnit(), new_entity, resource_name));
         workload_entity = new_entity;
     }
     catch (...)
@@ -330,7 +327,7 @@ void WorkloadResourceManager::createOrUpdateResource(const String & resource_nam
         // Add all workloads into the new resource
         auto resource = std::make_shared<Resource>(ast);
         for (Workload * workload : topologicallySortedWorkloads())
-            resource->createNode(NodeInfo(resource->getType(), workload->workload_entity, resource_name));
+            resource->createNode(NodeInfo(resource->getUnit(), workload->workload_entity, resource_name));
 
         // Attach the resource
         resources.emplace(resource_name, resource);
@@ -434,7 +431,7 @@ void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, c
 void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resource_entity)
 {
     chassert(getEntityName(new_resource_entity) == resource_name);
-    chassert(getResourceType(new_resource_entity) == type); // resource type cannot be changed
+    chassert(getResourceUnit(new_resource_entity) == unit); // resource unit cannot be changed
     resource_entity = new_resource_entity;
 }
 

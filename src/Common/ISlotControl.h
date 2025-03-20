@@ -4,6 +4,7 @@
 #include <limits>
 #include <memory>
 #include <base/types.h>
+#include <base/defines.h>
 #include <boost/core/noncopyable.hpp>
 
 
@@ -54,6 +55,9 @@ public:
 
     /// Take one already granted slot if available.
     [[nodiscard]] virtual AcquiredSlotPtr tryAcquire() = 0;
+
+    /// Take one granted slot or wait until it is available.
+    [[nodiscard]] virtual AcquiredSlotPtr acquire() = 0;
 };
 
 using SlotAllocationPtr = std::shared_ptr<ISlotAllocation>;
@@ -87,13 +91,15 @@ public:
         return {};
     }
 
+    [[nodiscard]] AcquiredSlotPtr acquire() override
+    {
+        auto result = tryAcquire();
+        chassert(result);
+        return result;
+    }
+
 private:
     std::atomic<SlotCount> granted; // allocated, but not yet acquired
 };
-
-[[nodiscard]] inline SlotAllocationPtr grantSlots(SlotCount count)
-{
-    return SlotAllocationPtr(new GrantedAllocation(count));
-}
 
 }

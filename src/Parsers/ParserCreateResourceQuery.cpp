@@ -10,6 +10,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
 
@@ -22,15 +27,17 @@ bool parseOneOperation(ASTCreateResourceQuery::Operation & operation, IParser::P
     std::optional<String> disk;
 
     if (ParserKeyword(Keyword::WRITE).ignore(pos, expected))
-        mode = ASTCreateResourceQuery::AccessMode::Write;
+        mode = ASTCreateResourceQuery::AccessMode::DiskWrite;
     else if (ParserKeyword(Keyword::READ).ignore(pos, expected))
-        mode = ASTCreateResourceQuery::AccessMode::Read;
-    else if (ParserKeyword(Keyword::CPU).ignore(pos, expected))
-        mode = ASTCreateResourceQuery::AccessMode::Cpu;
+        mode = ASTCreateResourceQuery::AccessMode::DiskRead;
+    else if (ParserKeyword(Keyword::MASTER_THREAD).ignore(pos, expected))
+        mode = ASTCreateResourceQuery::AccessMode::MasterThread;
+    else if (ParserKeyword(Keyword::WORKER_THREAD).ignore(pos, expected))
+        mode = ASTCreateResourceQuery::AccessMode::WorkerThread;
     else
         return false;
 
-    if (mode == ASTCreateResourceQuery::AccessMode::Write || mode == ASTCreateResourceQuery::AccessMode::Read)
+    if (mode == ASTCreateResourceQuery::AccessMode::DiskWrite || mode == ASTCreateResourceQuery::AccessMode::DiskRead)
     {
         if (ParserKeyword(Keyword::ANY).ignore(pos, expected))
         {
@@ -74,6 +81,8 @@ bool parseOperations(IParser::Pos & pos, Expected & expected, ASTCreateResourceQ
             ASTCreateResourceQuery::Operation operation;
             if (!parseOneOperation(operation, pos, expected))
                 return false;
+            if (!res_operations.empty() && res_operations.front().unit() != operation.unit())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Resource definition could not mix CPU and IO operations.");
             res_operations.push_back(std::move(operation));
             return true;
         };
@@ -141,6 +150,7 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     create_resource_query->if_not_exists = if_not_exists;
     create_resource_query->cluster = std::move(cluster_str);
 
+    create_resource_query->unit = operations.empty() ? ASTCreateResourceQuery::CostUnit::IoByte : operations.front().unit();
     create_resource_query->operations = std::move(operations);
 
     return true;
