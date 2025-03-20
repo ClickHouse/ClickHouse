@@ -9,11 +9,9 @@
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/MemoryTracker.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
-#include <Common/ErrorCodes.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
@@ -28,6 +26,7 @@
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
@@ -49,7 +48,6 @@
 
 #include <Processors/Formats/Impl/NullFormat.h>
 #include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -60,8 +58,6 @@
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
 #include <Interpreters/ProfileEventsExt.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <IO/Ask.h>
-#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/CompressionMethod.h>
@@ -80,11 +76,13 @@
 #include <unordered_map>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
-#include <boost/algorithm/string/split.hpp>
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
+#include <base/ask.h>
 #include "config.h"
+#include <IO/ReadHelpers.h>
+#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 #if USE_GWP_ASAN
 #    include <Common/GWPAsan.h>
@@ -111,7 +109,6 @@ namespace Setting
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
-    extern const SettingsBool apply_settings_from_server;
 }
 
 namespace ErrorCodes
@@ -132,7 +129,6 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
-    extern const int CANNOT_WRITE_TO_FILE;
 }
 
 }
@@ -146,90 +142,10 @@ namespace ProfileEvents
 namespace
 {
 constexpr UInt64 THREAD_GROUP_ID = 0;
-
-bool isSpecialFile(const String & path)
-{
-    return path == "/dev/null" || path == "/dev/stdout" || path == "/dev/stderr";
-}
-
-void handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const String & out_file, String & query)
-{
-    if (!query_with_output->is_outfile_truncate)
-        return;
-
-    /// Skip handling truncate mode of special files
-    if (isSpecialFile(out_file))
-        return;
-
-    /// Create a temporary file with unique suffix
-    String tmp_file = out_file + ".tmp." + DB::toString(randomSeed());
-
-    /// Update the AST to use the temporary file
-    auto tmp_file_literal = std::make_shared<DB::ASTLiteral>(tmp_file);
-    query_with_output->out_file = tmp_file_literal;
-
-    /// Update the query string after modifying the AST
-    query = query_with_output->formatWithSecretsOneLine();
-}
-
-void cleanupTempFile(const DB::ASTPtr & parsed_query)
-{
-    if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
-    {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
-        {
-            const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
-            String tmp_file = tmp_file_node.value.safeGet<std::string>();
-
-            /// Skip rename for special files
-            if (isSpecialFile(tmp_file))
-                return;
-
-            if (fs::exists(tmp_file))
-                fs::remove(tmp_file);
-        }
-    }
-}
-
-void performAtomicRename(const DB::ASTPtr & parsed_query)
-{
-    if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
-    {
-        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
-        {
-            const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
-            String tmp_file = tmp_file_node.value.safeGet<std::string>();
-
-            /// Skip rename for special files
-            if (isSpecialFile(tmp_file))
-                return;
-
-            String out_file = tmp_file.substr(0, tmp_file.rfind(".tmp."));
-
-            try
-            {
-                fs::rename(tmp_file, out_file);
-            }
-            catch (const fs::filesystem_error & e)
-            {
-                /// Clean up temporary file
-                if (fs::exists(tmp_file))
-                    fs::remove(tmp_file);
-
-                throw DB::Exception(DB::ErrorCodes::CANNOT_WRITE_TO_FILE,
-                    "Cannot rename temporary file {} to {}: {}",
-                    tmp_file, out_file, e.what());
-            }
-        }
-    }
-}
-
 }
 
 namespace DB
 {
-
-class ClientEmbedded;
 
 ProgressOption toProgressOption(std::string progress)
 {
@@ -412,19 +328,10 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     if (is_interactive || ignore_error)
     {
         String message;
-        try
-        {
-            if (dialect == Dialect::kusto)
-                res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-            else
-                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-        }
-        catch (const Exception & e)
-        {
-            error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
-            client_exception.reset(e.clone());
-            return nullptr;
-        }
+        if (dialect == Dialect::kusto)
+            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+        else
+            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
 
         if (!res)
         {
@@ -509,9 +416,6 @@ void ClientBase::sendExternalTables(ASTPtr parsed_query)
     const auto * select = parsed_query->as<ASTSelectWithUnionQuery>();
     if (!select && !external_tables.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External tables could be sent only with select query");
-
-    if (isEmbeeddedClient() && !external_tables.empty())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "External tables are not allowed in embedded more");
 
     std::vector<ExternalTableDataPtr> data;
     for (auto & table : external_tables)
@@ -643,6 +547,7 @@ try
 {
     if (!output_format)
     {
+        auto is_embedded = global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT;
         /// Ignore all results when fuzzing as they can be huge.
         if (query_fuzzer_runs)
         {
@@ -651,7 +556,7 @@ try
         }
 
         WriteBuffer * out_buf = nullptr;
-        if (!pager.empty() && !isEmbeeddedClient())
+        if (!pager.empty() && !is_embedded)
         {
             if (SIG_ERR == signal(SIGPIPE, SIG_IGN))
                 throw ErrnoException(ErrorCodes::CANNOT_SET_SIGNAL_HANDLER, "Cannot set signal handler for SIGPIPE");
@@ -681,7 +586,7 @@ try
         /// The query can specify output format or output file.
         if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
         {
-            if (query_with_output->out_file && isEmbeeddedClient())
+            if (query_with_output->out_file && is_embedded)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Out files are disabled when you are running client embedded into server.");
 
             String out_file;
@@ -783,13 +688,12 @@ try
             stopKeystrokeInterceptorIfExists();
             SCOPE_EXIT({ startKeystrokeInterceptorIfExists(); });
 
-            const auto question = fmt::format(R"(The requested output format `{}` is binary and could produce side-effects when output directly into the terminal.
+            if (!ask(fmt::format(R"(The requested output format `{}` is binary and could produce side-effects when output directly into the terminal.
 If you want to output it into a file, use the "INTO OUTFILE" modifier in the query or redirect the output of the shell command.
-Do you want to output it anyway? [y/N] )", current_format);
-
-            if (!ask(question, *std_in, *std_out))
+Do you want to output it anyway? [y/N] )", current_format)))
+            {
                 output_format = std::make_shared<NullOutputFormat>(block);
-
+            }
             *std_out << '\n';
         }
     }
@@ -946,8 +850,18 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_input_compression_method = chooseCompressionMethod(*file_name, "");
     }
 
-    if (getClientConfiguration().has("insert_format_max_block_size"))
-        insert_format_max_block_size_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
+    format_max_block_size = getClientConfiguration().getUInt64("format_max_block_size", global_context->getSettingsRef()[Setting::max_block_size]);
+
+    /// Setting value from cmd arg overrides one from config
+    if (global_context->getSettingsRef()[Setting::max_insert_block_size].changed)
+    {
+        insert_format_max_block_size = global_context->getSettingsRef()[Setting::max_insert_block_size];
+    }
+    else
+    {
+        insert_format_max_block_size
+            = getClientConfiguration().getUInt64("insert_format_max_block_size", global_context->getSettingsRef()[Setting::max_insert_block_size]);
+    }
 }
 
 void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option)
@@ -979,10 +893,10 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
     // Actually we need to pass tty's name, if we don't want this condition statement,
     // because /dev/tty stands for controlling terminal of the process, thus a client will not see progress line.
     // So it's easier to just pass a descriptor, without the terminal name.
-    if (isEmbeeddedClient())
+    if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
     {
-        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stdout_fd, buf_size);
-        return;
+         tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFileDescriptor>>(stdout_fd, buf_size);
+         return;
     }
 
     static constexpr auto tty_file_name = "/dev/tty";
@@ -1036,9 +950,6 @@ void ClientBase::initKeystrokeInterceptor()
     {
         keystroke_interceptor = std::make_unique<TerminalKeystrokeInterceptor>(stdin_fd, error_stream);
         keystroke_interceptor->registerCallback(' ', [this]() { progress_table_toggle_on = !progress_table_toggle_on; });
-
-        if (isEmbeeddedClient())
-            keystroke_interceptor->registerCallback(0x03, [this]() { tryStopQuery(); });
     }
 }
 
@@ -1098,7 +1009,7 @@ bool ClientBase::isSyncInsertWithData(const ASTInsertQuery & insert_query, const
     return !settings[Setting::async_insert];
 }
 
-bool ClientBase::processTextAsSingleQuery(const String & full_query)
+void ClientBase::processTextAsSingleQuery(const String & full_query)
 {
     /// Some parts of a query (result output and formatting) are executed
     /// client-side. Thus we need to parse the query.
@@ -1108,7 +1019,7 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
         /*allow_multi_statements=*/ false);
 
     if (!parsed_query)
-        return false;
+        return;
 
     String query_to_execute;
 
@@ -1147,7 +1058,6 @@ bool ClientBase::processTextAsSingleQuery(const String & full_query)
 
     if (have_error)
         processError(full_query);
-    return !have_error;
 }
 
 void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr parsed_query)
@@ -1167,7 +1077,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
-            query = parsed_query->formatWithSecretsOneLine();
+            query = serializeAST(*parsed_query);
         chassert(!query.empty());
     }
 
@@ -1183,7 +1093,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 visitor.visit(parsed_query);
             }
 
-            query = parsed_query->formatWithSecretsOneLine();
+            query = serializeAST(*parsed_query);
         }
     }
 
@@ -1191,10 +1101,9 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
     {
         String out_file;
-
         if (query_with_output->out_file)
         {
-            if (isEmbeeddedClient())
+            if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Out files are disabled when you are running client embedded into server.");
 
             const auto & out_file_node = query_with_output->out_file->as<ASTLiteral &>();
@@ -1249,11 +1158,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                         out_file);
                 }
             }
-
-            if (query_with_output->is_outfile_truncate)
-            {
-                handleTruncateMode(const_cast<ASTQueryWithOutput *>(query_with_output), out_file, query);
-            }
         }
     }
 
@@ -1287,9 +1191,6 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             }
             catch (const NetException &)
             {
-                // Clean up temporary file if it exists
-                cleanupTempFile(parsed_query);
-
                 // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
                 receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
                 throw;
@@ -1297,16 +1198,10 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
             receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
 
-            // After successful query execution, perform atomic rename for TRUNCATE mode
-            performAtomicRename(parsed_query);
-
             break;
         }
         catch (const Exception & e)
         {
-            // Clean up temporary file if it exists
-            cleanupTempFile(parsed_query);
-
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
             if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
@@ -1543,7 +1438,7 @@ void ClientBase::onProfileEvents(Block & block)
     if (rows == 0)
         return;
 
-    if (getName() == "local" || isEmbeeddedClient() || server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
+    if (getName() == "local" || server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS)
     {
         const auto & array_thread_id = typeid_cast<const ColumnUInt64 &>(*block.getByName("thread_id").column).getData();
         const auto & names = typeid_cast<const ColumnString &>(*block.getByName("name").column);
@@ -1767,7 +1662,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
-            query = parsed_query->formatWithSecretsOneLine();
+            query = serializeAST(*parsed_query);
         chassert(!query.empty());
     }
 
@@ -1781,7 +1676,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         return;
     }
 
-    if (isEmbeeddedClient() && parsed_insert_query.infile)
+    if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT && parsed_insert_query.infile)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading from INFILE is disabled when you are running client embedded into server.");
 
     query_interrupt_handler.start();
@@ -1799,32 +1694,26 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         {},
         [&](const Progress & progress) { onProgress(progress); });
 
-    try
+    if (send_external_tables)
+        sendExternalTables(parsed_query);
+
+    startKeystrokeInterceptorIfExists();
+    SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
+
+    /// Receive description of table structure.
+    Block sample;
+    ColumnsDescription columns_description;
+    if (receiveSampleBlock(sample, columns_description, parsed_query))
     {
-        if (send_external_tables)
-            sendExternalTables(parsed_query);
-
-        startKeystrokeInterceptorIfExists();
-        SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
-
-        /// Receive description of table structure.
-        Block sample;
-        ColumnsDescription columns_description;
-        if (receiveSampleBlock(sample, columns_description, parsed_query))
+        /// If structure was received (thus, server has not thrown an exception),
+        /// send our data with that structure.
+        if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
         {
-            /// If structure was received (thus, server has not thrown an exception),
-            /// send our data with that structure.
             setInsertionTable(parsed_insert_query);
-
-            sendData(sample, columns_description, parsed_query);
-            receiveEndOfQuery();
         }
-    }
-    catch (...)
-    {
-        connection->sendCancel();
+
+        sendData(sample, columns_description, parsed_query);
         receiveEndOfQuery();
-        throw;
     }
 }
 
@@ -1869,9 +1758,6 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     /// If data fetched from file (maybe compressed file)
     if (parsed_insert_query->infile)
     {
-        if (isEmbeeddedClient())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading from INFILE is disabled when you are running client embedded into server.");
-
         /// Get name of this file (path to file)
         const auto & in_file_node = parsed_insert_query->infile->as<ASTLiteral &>();
         const auto in_file = in_file_node.value.safeGet<std::string>();
@@ -1990,12 +1876,6 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
-    /// Setting value from cmd arg overrides one from config.
-    size_t insert_format_max_block_size = client_context->getSettingsRef()[Setting::max_insert_block_size];
-    if (!client_context->getSettingsRef()[Setting::max_insert_block_size].changed &&
-        insert_format_max_block_size_from_config.has_value())
-        insert_format_max_block_size = insert_format_max_block_size_from_config.value();
-
     auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
 
@@ -2011,6 +1891,7 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 }
 
 void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_more_data)
+try
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
@@ -2057,6 +1938,12 @@ void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_mo
 
     if (!have_more_data)
         connection->sendData({}, "", false);
+}
+catch (...)
+{
+    connection->sendCancel();
+    receiveEndOfQuery();
+    throw;
 }
 
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
@@ -2185,6 +2072,18 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
     }
 
+    if (const auto * set_query = parsed_query->as<ASTSetQuery>())
+    {
+        const auto * logs_level_field = set_query->changes.tryGet(std::string_view{"send_logs_level"});
+        if (logs_level_field)
+        {
+            auto logs_level = logs_level_field->safeGet<String>();
+            /// Check that setting value is correct before updating logger level.
+            SettingFieldLogsLevelTraits::fromString(logs_level);
+            updateLoggerLevel(logs_level);
+        }
+    }
+
     if (const auto * create_user_query = parsed_query->as<ASTCreateUserQuery>())
     {
         if (!create_user_query->attach && !create_user_query->authentication_methods.empty())
@@ -2233,8 +2132,6 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
 
-        applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
-
         ASTPtr input_function;
         const auto * insert = parsed_query->as<ASTInsertQuery>();
         if (insert && insert->select)
@@ -2253,7 +2150,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function))
+        if (insert && (!insert->select || input_function) && !is_async_insert_with_inlined_data)
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -2503,8 +2400,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
         TestHint test_hint(all_queries_text);
         if (test_hint.hasClientErrors() || test_hint.hasServerErrors())
         {
-            auto u = processTextAsSingleQuery("SET send_logs_level = 'fatal'");
-            UNUSED(u);
+            processTextAsSingleQuery("SET send_logs_level = 'fatal'");
         }
     }
 
@@ -2545,10 +2441,7 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
             {
                 /// Compatible with old version when run interactive, e.g. "", "\ld"
                 if (is_first && is_interactive)
-                {
-                    auto u = processTextAsSingleQuery(all_queries_text);
-                    UNUSED(u);
-                }
+                    processTextAsSingleQuery(all_queries_text);
                 return true;
             }
             case MultiQueryProcessingStage::PARSING_FAILED:
@@ -2596,9 +2489,9 @@ bool ClientBase::executeMultiQuery(const String & all_queries_text)
                 full_query = all_queries_text.substr(this_query_begin - all_queries_text.data(), this_query_end - this_query_begin);
 
                 ++script_query_number;
-                script_line_number += std::count(prev_query_begin, this_query_begin, '\n');
+                script_line_number += count_symbols<'\n'>(prev_query_begin, this_query_begin);
                 prev_query_begin = this_query_begin;
-                client_context->setScriptQueryAndLineNumber(script_query_number, 1 + script_line_number);
+                client_context->setScriptLineNumbers(script_query_number, 1 + script_line_number);
 
                 if (query_fuzzer_runs)
                 {
@@ -2870,22 +2763,6 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     return added_new_setting;
 }
 
-void ClientBase::applySettingsFromServerIfNeeded()
-{
-    const Settings & settings = client_context->getSettingsRef();
-    SettingsChanges changes_to_apply;
-    for (const SettingChange & change : settings_from_server)
-    {
-        /// Apply settings received from server with lower priority than settings changed from
-        /// command line or query.
-        if (!settings.isChanged(change.name))
-            changes_to_apply.push_back(change);
-    }
-
-    if (settings[Setting::apply_settings_from_server])
-        global_context->applySettingsChanges(changes_to_apply);
-}
-
 void ClientBase::startKeystrokeInterceptorIfExists()
 {
     if (keystroke_interceptor)
@@ -2935,7 +2812,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 
         ("proto_caps", po::value<std::string>(), "Enable/disable chunked protocol: chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
 
-        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple semicolon-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
+        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple comma-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "File path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "Obsolete, does nothing")
         ("multiline,m", "If specified, allow multi-line queries (Enter does not send the query)")
@@ -3027,11 +2904,7 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.count("config-file"))
         getClientConfiguration().setString("config-file", options["config-file"].as<std::string>());
     if (options.count("queries-file"))
-    {
-        if (isEmbeeddedClient())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading queries from file is not allowed, because the client runs in an embedded mode");
         queries_files = options["queries-file"].as<std::vector<std::string>>();
-    }
     if (options.count("multiline"))
         getClientConfiguration().setBool("multiline", true);
     if (options.count("ignore-error"))
@@ -3100,33 +2973,20 @@ void ClientBase::addOptionsToTheClientConfiguration(const CommandLineOptions & o
     if (options.count("highlight"))
         getClientConfiguration().setBool("highlight", options["highlight"].as<bool>());
     if (options.count("history_file"))
-    {
-        if (isEmbeeddedClient())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom history file is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("history_file", options["history_file"].as<std::string>());
-    }
     if (options.count("history_max_entries"))
         getClientConfiguration().setUInt("history_max_entries", options["history_max_entries"].as<UInt32>());
     if (options.count("interactive"))
         getClientConfiguration().setBool("interactive", true);
     if (options.count("pager"))
-    {
-        if (isEmbeeddedClient())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Specifying custom pager is not allowed, because the client runs in an embedded mode");
         getClientConfiguration().setString("pager", options["pager"].as<std::string>());
-    }
-
     if (options.count("prompt"))
         getClientConfiguration().setString("prompt", options["prompt"].as<std::string>());
 
     if (options.count("log-level"))
         Poco::Logger::root().setLevel(options["log-level"].as<std::string>());
     if (options.count("server_logs_file"))
-    {
-        if (isEmbeeddedClient())
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing server logs to a file is disabled, because the client runs in an embedded mode");
         server_logs_file = options["server_logs_file"].as<std::string>();
-    }
 
     if (options.count("proto_caps"))
     {
@@ -3182,7 +3042,7 @@ void ClientBase::runInteractive()
         /// Load suggestion data from the server.
         if (client_context->getApplicationType() == Context::ApplicationType::CLIENT)
             suggest->load<Connection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
-        else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL || client_context->getApplicationType() == Context::ApplicationType::SERVER)
+        else if (client_context->getApplicationType() == Context::ApplicationType::LOCAL || client_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
             suggest->load<LocalConnection>(client_context, connection_parameters, getClientConfiguration().getInt("suggestion_limit"), wait_for_suggestions_to_load);
     }
 
@@ -3239,29 +3099,25 @@ void ClientBase::runInteractive()
 
     /// Don't allow embedded client to read from and write to any file on the server's filesystem.
     String actual_history_file_path;
-    if (!isEmbeeddedClient())
+    if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
         actual_history_file_path = history_file;
 
-    auto options = ReplxxLineReader::Options
-    {
-        .suggest = *suggest,
-        .history_file_path = actual_history_file_path,
-        .history_max_entries = history_max_entries,
-        .multiline = getClientConfiguration().has("multiline"),
-        .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
-        .embedded_mode = isEmbeeddedClient(),
-        .extenders = query_extenders,
-        .delimiters = query_delimiters,
-        .word_break_characters = word_break_characters,
-        .highlighter = highlight_callback,
-        .input_stream = input_stream,
-        .output_stream = output_stream,
-        .in_fd = stdin_fd,
-        .out_fd = stdout_fd,
-        .err_fd = stderr_fd,
-    };
-
-    lr = std::make_unique<ReplxxLineReader>(std::move(options));
+    lr = std::make_unique<ReplxxLineReader>(
+        *suggest,
+        actual_history_file_path,
+        history_max_entries,
+        getClientConfiguration().has("multiline"),
+        getClientConfiguration().getBool("ignore_shell_suspend", true),
+        query_extenders,
+        query_delimiters,
+        word_break_characters,
+        highlight_callback,
+        input_stream,
+        output_stream,
+        stdin_fd,
+        stdout_fd,
+        stderr_fd
+    );
 #else
     lr = LineReader(
         history_file,
@@ -3302,7 +3158,7 @@ void ClientBase::runInteractive()
             /// (e.g. if we need to reconnect and show a password prompt).
             /// (Alternatively, we could make the password input ignore the control sequences.)
             lr->enableBracketedPaste();
-            SCOPE_EXIT_SAFE({ lr->disableBracketedPaste(); });
+            SCOPE_EXIT({ lr->disableBracketedPaste(); });
 
             input = lr->readLine(getPrompt(), ":-] ");
         }
@@ -3394,9 +3250,6 @@ void ClientBase::runInteractive()
 
 bool ClientBase::processMultiQueryFromFile(const String & file_name)
 {
-    if (isEmbeeddedClient())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading queries from file is not supported for an embedded client");
-
     String queries_from_file;
 
     ReadBufferFromFile in(file_name);
@@ -3514,16 +3367,6 @@ void ClientBase::clearTerminal()
 void ClientBase::showClientVersion()
 {
     output_stream << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
-}
-
-std::string ClientBase::getConnectionHostAndPortForFuzzing() const
-{
-    if (!hosts_and_ports.empty())
-    {
-        const HostAndPort & hap = hosts_and_ports[0];
-        return hap.host + (hap.port.has_value() ? (":" + std::to_string(hap.port.value())) : "");
-    }
-    return "127.0.0.{1,2}";
 }
 
 }

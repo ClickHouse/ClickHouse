@@ -1,8 +1,7 @@
 #pragma once
 
-#include <cstring>
-#include <base/MemorySanitizer.h>
 #include <Columns/ColumnConst.h>
+#include <Common/MemorySanitizer.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeString.h>
@@ -10,6 +9,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Base58.h>
+#include <cstring>
 
 
 namespace DB

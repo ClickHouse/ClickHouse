@@ -159,7 +159,7 @@ public:
         else
         {
             /// Additional limit to fail fast on supposedly incorrect usage.
-            const auto max_matches_per_row = context->getSettingsRef()[Setting::regexp_max_matches_per_row].value;
+            const auto max_matches_per_row = context->getSettingsRef()[Setting::regexp_max_matches_per_row];
 
             PODArray<std::string_view, 0> all_matches;
             /// Number of times RE matched on each row of haystack column.
@@ -244,7 +244,7 @@ public:
                     for (size_t i = row_offset + group_id; i < next_row_offset && i < all_matches.size(); i += groups_count)
                     {
                         const auto & match = all_matches[i];
-                        data_col->insertData(match.data(), match.length());
+                        data_col->insertData(match.begin(), match.length());
                     }
                     nested_offsets_col->insertValue(data_col->size());
                 }

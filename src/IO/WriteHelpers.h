@@ -19,6 +19,7 @@
 #include <Core/Types.h>
 #include <base/IPv4andIPv6.h>
 
+#include <Common/Exception.h>
 #include <Common/NaNUtils.h>
 
 #include <IO/WriteBuffer.h>
@@ -32,8 +33,6 @@
 
 namespace DB
 {
-
-class Exception;
 
 /// Helper functions for formatted and binary output.
 
@@ -959,6 +958,32 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
 inline void writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
 {
     writeDateTimeText<'-', ':', ' ', '.', true>(datetime64, scale, buf, time_zone);
+}
+
+/// In the RFC 1123 format: "Tue, 03 Dec 2019 00:11:50 GMT". You must provide GMT DateLUT.
+/// This is needed for HTTP requests.
+inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
+{
+    const auto & values = time_zone.getValues(datetime);
+
+    static const char week_days[3 * 8 + 1] = "XXX" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun";
+    static const char months[3 * 13 + 1] = "XXX" "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec";
+
+    buf.write(&week_days[values.day_of_week * 3], 3);
+    buf.write(", ", 2);
+    buf.write(&digits100[values.day_of_month * 2], 2);
+    buf.write(' ');
+    buf.write(&months[values.month * 3], 3);
+    buf.write(' ');
+    buf.write(&digits100[values.year / 100 * 2], 2);
+    buf.write(&digits100[values.year % 100 * 2], 2);
+    buf.write(' ');
+    buf.write(&digits100[time_zone.toHour(datetime) * 2], 2);
+    buf.write(':');
+    buf.write(&digits100[time_zone.toMinute(datetime) * 2], 2);
+    buf.write(':');
+    buf.write(&digits100[time_zone.toSecond(datetime) * 2], 2);
+    buf.write(" GMT", 4);
 }
 
 inline void writeDateTimeTextISO(time_t datetime, WriteBuffer & buf, const DateLUTImpl & utc_time_zone)

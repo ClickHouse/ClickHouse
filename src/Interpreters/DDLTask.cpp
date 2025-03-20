@@ -1,7 +1,6 @@
 #include <Interpreters/DDLTask.h>
 #include <base/sort.h>
 #include <Common/DNSResolver.h>
-#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/isLocalAddress.h>
 #include <Core/Settings.h>
 #include <Databases/DatabaseReplicated.h>
@@ -14,7 +13,9 @@
 #include <Common/logger_useful.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/queryToString.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 
 
@@ -119,7 +120,7 @@ String DDLLogEntry::toString() const
         ASTSetQuery ast;
         ast.is_standalone = false;
         ast.changes = *settings;
-        wb << "settings: " << ast.formatWithSecretsOneLine() << "\n";
+        wb << "settings: " << serializeAST(ast) << "\n";
     }
 
     if (version >= OPENTELEMETRY_ENABLED_VERSION)
@@ -242,7 +243,7 @@ void DDLTaskBase::parseQueryFromEntry(ContextPtr context)
 void DDLTaskBase::formatRewrittenQuery(ContextPtr context)
 {
     /// Convert rewritten AST back to string.
-    query_str = query->formatWithSecretsOneLine();
+    query_str = queryToString(*query);
     query_for_logging = query->formatForLogging(context->getSettingsRef()[Setting::log_queries_cut_to_length]);
 }
 
@@ -598,12 +599,6 @@ void ZooKeeperMetadataTransaction::commit()
     state = FAILED;
     current_zookeeper->multi(ops, /* check_session_valid */ true);
     state = COMMITTED;
-
-    if (finalizer)
-    {
-        finalizer();
-        finalizer = FinalizerCallback();
-    }
 }
 
 ClusterPtr tryGetReplicatedDatabaseCluster(const String & cluster_name)

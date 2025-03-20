@@ -243,9 +243,12 @@ void DWARFBlockInputFormat::initializeIfNeeded()
         pool->scheduleOrThrowOnError(
             [this, thread_group = CurrentThread::getGroup()]()
             {
+                if (thread_group)
+                    CurrentThread::attachToGroupIfDetached(thread_group);
+                SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
                 try
                 {
-                    ThreadGroupSwitcher switcher(thread_group, "DWARFDecoder");
+                    setThreadName("DWARFDecoder");
 
                     std::unique_lock lock(mutex);
                     while (!units_queue.empty() && !is_stopped)
@@ -313,7 +316,7 @@ llvm::DWARFFormValue DWARFBlockInputFormat::parseAttribute(
     if (!val.extractValue(*extractor, offset, unit.dwarf_unit->getFormParams(), unit.dwarf_unit))
         throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
             "Failed to parse attribute {} of form {} at offset {}",
-                llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
+                llvm::dwarf::AttributeString(attr.Attr), attr.Form, *offset);
     return val;
 }
 
@@ -334,7 +337,7 @@ void DWARFBlockInputFormat::skipAttribute(
             attr.Form, *extractor, offset, unit.dwarf_unit->getFormParams()))
                 throw Exception(ErrorCodes::CANNOT_PARSE_DWARF,
                     "Failed to skip attribute {} of form {} at offset {}",
-                    llvm::dwarf::AttributeString(attr.Attr).operator std::string_view(), attr.Form, *offset);
+                    llvm::dwarf::AttributeString(attr.Attr), attr.Form, *offset);
     }
 }
 
@@ -346,9 +349,7 @@ uint64_t DWARFBlockInputFormat::parseAddress(llvm::dwarf::Attribute attr, const 
         (val.getForm() >= llvm::dwarf::DW_FORM_addrx1 &&
          val.getForm() <= llvm::dwarf::DW_FORM_addrx4))
         return fetchFromDebugAddr(unit.debug_addr_base, val.getRawUValue());
-    throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Form {} for {} is not supported",
-        llvm::dwarf::FormEncodingString(val.getForm()).operator std::string_view(),
-        llvm::dwarf::AttributeString(attr).operator std::string_view());
+    throw Exception(ErrorCodes::CANNOT_PARSE_DWARF, "Form {} for {} is not supported", llvm::dwarf::FormEncodingString(val.getForm()), llvm::dwarf::AttributeString(attr));
 }
 
 Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
@@ -645,18 +646,7 @@ Chunk DWARFBlockInputFormat::parseEntries(UnitState & unit)
                         // If the offset is relative to the current unit, we convert it to be relative to the .debug_info
                         // section start. This seems more convenient for the user (e.g. for JOINs), but it's
                         // also confusing to see e.g. DW_FORM_ref4 (unit-relative reference) next to an absolute offset.
-                        if (need[COL_ATTR_INT])
-                        {
-                            uint64_t ref;
-                            if (std::optional<uint64_t> offset = val.getAsRelativeReference())
-                                ref = val.getUnit()->getOffset() + *offset;
-                            else if (offset = val.getAsDebugInfoReference(); offset)
-                                ref = *offset;
-                            else
-                                ref = 0;
-
-                            col_attr_int->insertValue(ref);
-                        }
+                        if (need[COL_ATTR_INT]) col_attr_int->insertValue(val.getAsReference().value_or(0));
                         if (need[COL_ATTR_STR]) col_attr_str->insertDefault();
                         break;
 

@@ -5,6 +5,8 @@
 #include <IO/WriteBuffer.h>
 #include <IO/Operators.h>
 
+#include <magic_enum.hpp>
+
 
 namespace DB
 {
@@ -173,10 +175,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::START_CLEANUP:
         case Type::LOAD_PRIMARY_KEY:
         case Type::UNLOAD_PRIMARY_KEY:
-        case Type::STOP_VIRTUAL_PARTS_UPDATE:
-        case Type::START_VIRTUAL_PARTS_UPDATE:
-        case Type::STOP_REDUCE_BLOCKING_PARTS:
-        case Type::START_REDUCE_BLOCKING_PARTS:
         {
             if (table)
             {
@@ -271,7 +269,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         }
         case Type::DROP_REPLICA:
         case Type::DROP_DATABASE_REPLICA:
-        case Type::DROP_CATALOG_REPLICA:
         {
             print_drop_replica();
             break;
@@ -318,29 +315,10 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::DROP_DISTRIBUTED_CACHE_CONNECTIONS:
-        {
-            break;
-        }
-        case Type::DROP_DISTRIBUTED_CACHE:
-        {
-            if (distributed_cache_drop_connections)
-                print_keyword(" CONNECTIONS");
-            else if (!distributed_cache_servive_id.empty())
-                ostr << (settings.hilite ? hilite_none : "") << " " << distributed_cache_servive_id;
-            break;
-        }
         case Type::UNFREEZE:
         {
             print_keyword(" WITH NAME ");
             ostr << quoteString(backup_name);
-            break;
-        }
-        case Type::UNLOCK_SNAPSHOT:
-        {
-            ostr << quoteString(backup_name);
-            print_keyword(" FROM ");
-            backup_source->format(ostr, settings);
             break;
         }
         case Type::START_LISTEN:
@@ -425,33 +403,18 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             }
             break;
         }
-        case Type::FLUSH_LOGS:
-        {
-            bool comma = false;
-            for (const auto & cur_log : logs)
-            {
-                if (comma)
-                    ostr << ',';
-                else
-                    comma = true;
-                ostr << ' ';
-                print_identifier(cur_log);
-            }
-            break;
-        }
         case Type::KILL:
         case Type::SHUTDOWN:
         case Type::DROP_DNS_CACHE:
         case Type::DROP_CONNECTIONS_CACHE:
         case Type::DROP_MMAP_CACHE:
-        case Type::DROP_QUERY_CONDITION_CACHE:
         case Type::DROP_QUERY_CACHE:
         case Type::DROP_MARK_CACHE:
         case Type::DROP_PRIMARY_INDEX_CACHE:
         case Type::DROP_INDEX_MARK_CACHE:
         case Type::DROP_UNCOMPRESSED_CACHE:
         case Type::DROP_INDEX_UNCOMPRESSED_CACHE:
-        case Type::DROP_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::DROP_SKIPPING_INDEX_CACHE:
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
         case Type::DROP_S3_CLIENT_CACHE:
         case Type::RESET_COVERAGE:
@@ -472,14 +435,13 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
         case Type::RELOAD_ASYNCHRONOUS_METRICS:
+        case Type::FLUSH_LOGS:
         case Type::FLUSH_ASYNC_INSERT_QUEUE:
         case Type::START_THREAD_FUZZER:
         case Type::STOP_THREAD_FUZZER:
         case Type::START_VIEWS:
         case Type::STOP_VIEWS:
         case Type::DROP_PAGE_CACHE:
-        case Type::STOP_REPLICATED_DDL_QUERIES:
-        case Type::START_REPLICATED_DDL_QUERIES:
             break;
         case Type::UNKNOWN:
         case Type::END:

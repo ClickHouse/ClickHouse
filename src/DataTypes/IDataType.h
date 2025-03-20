@@ -1,21 +1,15 @@
 #pragma once
 
+#include <memory>
+#include <boost/noncopyable.hpp>
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <Common/COW.h>
+#include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/Serializations/ISerialization.h>
-
-#include <memory>
-
-#include <boost/noncopyable.hpp>
 
 namespace DB
 {
-
-struct DataTypeCustomDesc;
-using DataTypeCustomDescPtr = std::unique_ptr<DataTypeCustomDesc>;
-class IDataTypeCustomName;
-using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 
 namespace ErrorCodes
 {
@@ -68,7 +62,7 @@ struct SerializationInfoSettings;
 class IDataType : private boost::noncopyable, public std::enable_shared_from_this<IDataType>
 {
 public:
-    IDataType();
+    IDataType() = default;
     virtual ~IDataType();
 
     /// Compile time flag. If false, then if C++ types are the same, then SQL types are also the same.
@@ -78,9 +72,19 @@ public:
     /// static constexpr bool is_parametric = false;
 
     /// Name of data type (examples: UInt64, Array(String)).
-    String getName() const;
+    String getName() const
+    {
+        if (custom_name)
+            return custom_name->getName();
+        return doGetName();
+    }
 
-    String getPrettyName(size_t indent = 0) const;
+    String getPrettyName(size_t indent = 0) const
+    {
+        if (custom_name)
+            return custom_name->getName();
+        return doGetPrettyName(indent);
+    }
 
     DataTypePtr getPtr() const { return shared_from_this(); }
 

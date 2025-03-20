@@ -5,12 +5,12 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <IO/ReadHelpers.h>
 #include <Backups/SettingsFieldOptionalUUID.h>
-
+#include <Backups/SettingsFieldOptionalUInt64.h>
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int CANNOT_PARSE_BACKUP_SETTINGS;
@@ -38,9 +38,7 @@ namespace ErrorCodes
     M(Bool, check_projection_parts) \
     M(Bool, allow_backup_broken_projections) \
     M(Bool, write_access_entities_dependents) \
-    M(Bool, allow_checksums_from_remote_paths) \
     M(Bool, internal) \
-    M(Bool, experimental_lightweight_snapshot) \
     M(String, host_id) \
     M(OptionalUUID, backup_uuid) \
     /// M(Int64, compression_level)
@@ -153,7 +151,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                 throw Exception(
                     ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                     "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-            const auto & replicas = array_of_replicas->value.safeGet<Array>();
+            const auto & replicas = array_of_replicas->value.safeGet<const Array &>();
             res[i].resize(replicas.size());
             for (size_t j = 0; j != replicas.size(); ++j)
             {
@@ -162,7 +160,7 @@ std::vector<Strings> BackupSettings::Util::clusterHostIDsFromAST(const IAST & as
                     throw Exception(
                         ErrorCodes::CANNOT_PARSE_BACKUP_SETTINGS,
                         "Setting cluster_host_ids has wrong format, must be array of arrays of string literals");
-                res[i][j] = replica.safeGet<String>();
+                res[i][j] = replica.safeGet<const String &>();
             }
         }
     }

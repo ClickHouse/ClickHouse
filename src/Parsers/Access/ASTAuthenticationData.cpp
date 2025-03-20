@@ -1,5 +1,6 @@
 #include <Parsers/Access/ASTAuthenticationData.h>
 
+#include <Access/AccessControl.h>
 #include <Common/Exception.h>
 #include <Parsers/ASTLiteral.h>
 #include <IO/Operators.h>

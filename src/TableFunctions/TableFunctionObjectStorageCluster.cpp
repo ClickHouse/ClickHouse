@@ -141,7 +141,7 @@ void registerTableFunctionIcebergCluster(TableFunctionFactory & factory)
 #endif
 
 #if USE_AWS_S3
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
 void registerTableFunctionDeltaLakeCluster(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionDeltaLakeCluster>(
@@ -171,7 +171,7 @@ void registerDataLakeClusterTableFunctions(TableFunctionFactory & factory)
     registerTableFunctionIcebergCluster(factory);
 #endif
 #if USE_AWS_S3
-#if USE_PARQUET && USE_DELTA_KERNEL_RS
+#if USE_PARQUET
     registerTableFunctionDeltaLakeCluster(factory);
 #endif
     registerTableFunctionHudiCluster(factory);

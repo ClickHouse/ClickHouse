@@ -304,7 +304,7 @@ def main(args):
     parser.add_argument(
         "--host",
         "-h",
-        help="The server name, 'localhost' by default. You can use either the name or the IPv4 or IPv6 address.",
+        help="The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.",
         default="localhost",
     )
     parser.add_argument(
@@ -316,7 +316,7 @@ def main(args):
         "--user",
         "-u",
         dest="user_name",
-        help="The username. Default value: 'default'.",
+        help="The username. Default value: ‘default’.",
         default="default",
     )
     parser.add_argument(
@@ -331,7 +331,7 @@ def main(args):
     parser.add_argument(
         "--database",
         "-d",
-        help="Select the current default database. Default value: the current database from the server settings ('default' by default).",
+        help="Select the current default database. Default value: the current database from the server settings (‘default’ by default).",
         default="",
     )
     parser.add_argument(

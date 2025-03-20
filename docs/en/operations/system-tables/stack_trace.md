@@ -1,14 +1,9 @@
 ---
-description: 'System table which contains stack traces of all server threads. Allows
-  developers to introspect the server state.'
-keywords: ['system table', 'stack_trace']
-slug: /operations/system-tables/stack_trace
-title: 'system.stack_trace'
+slug: /en/operations/system-tables/stack_trace
 ---
+import SystemTableCloud from '@site/docs/en/_snippets/_system_table_cloud.md';
 
-import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
-
-# system.stack_trace
+# stack_trace
 
 <SystemTableCloud/>
 
@@ -24,24 +19,24 @@ Columns:
 - `trace` ([Array(UInt64)](../../sql-reference/data-types/array.md)) — A [stack trace](https://en.wikipedia.org/wiki/Stack_trace) which represents a list of physical addresses where the called methods are stored.
 
 :::tip
-Check out the Knowledge Base for some handy queries, including [how to see what threads are currently running](/knowledgebase/find-expensive-queries) and [useful queries for troubleshooting](/knowledgebase/useful-queries-for-troubleshooting).
+Check out the Knowledge Base for some handy queries, including [how to see what threads are currently running](https://clickhouse.com/docs/knowledgebase/find-expensive-queries) and [useful queries for troubleshooting](https://clickhouse.com/docs/knowledgebase/useful-queries-for-troubleshooting).
 :::
 
 **Example**
 
 Enabling introspection functions:
 
-```sql
+``` sql
 SET allow_introspection_functions = 1;
 ```
 
 Getting symbols from ClickHouse object files:
 
-```sql
+``` sql
 WITH arrayMap(x -> demangle(addressToSymbol(x)), trace) AS all SELECT thread_name, thread_id, query_id, arrayStringConcat(all, '\n') AS res FROM system.stack_trace LIMIT 1 \G;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 thread_name: QueryPipelineEx
@@ -67,11 +62,11 @@ void* std::__1::__thread_proxy[abi:v15000]<std::__1::tuple<std::__1::unique_ptr<
 
 Getting filenames and line numbers in ClickHouse source code:
 
-```sql
+``` sql
 WITH arrayMap(x -> addressToLine(x), trace) AS all, arrayFilter(x -> x LIKE '%/dbms/%', all) AS dbms SELECT thread_name, thread_id, query_id, arrayStringConcat(notEmpty(dbms) ? dbms : all, '\n') AS res FROM system.stack_trace LIMIT 1 \G;
 ```
 
-```text
+``` text
 Row 1:
 ──────
 thread_name: clickhouse-serv
@@ -101,5 +96,5 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 
 - [Introspection Functions](../../sql-reference/functions/introspection.md) — Which introspection functions are available and how to use them.
 - [system.trace_log](../system-tables/trace_log.md) — Contains stack traces collected by the sampling query profiler.
-- [arrayMap](/sql-reference/functions/array-functions#arraymapfunc-arr1-)) — Description and usage example of the `arrayMap` function.
-- [arrayFilter](/sql-reference/functions/array-functions#arrayfilterfunc-arr1-) — Description and usage example of the `arrayFilter` function.
+- [arrayMap](../../sql-reference/functions/array-functions.md#array-map) — Description and usage example of the `arrayMap` function.
+- [arrayFilter](../../sql-reference/functions/array-functions.md#array-filter) — Description and usage example of the `arrayFilter` function.

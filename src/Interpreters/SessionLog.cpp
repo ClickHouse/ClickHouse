@@ -4,7 +4,6 @@
 #include <Access/ContextAccess.h>
 #include <Access/User.h>
 #include <Access/EnabledRolesInfo.h>
-#include <Common/DateLUTImpl.h>
 #include <Core/Settings.h>
 #include <Core/Protocol.h>
 #include <DataTypes/DataTypeArray.h>
@@ -26,10 +25,7 @@
 #include <Access/SettingsProfilesInfo.h>
 #include <Interpreters/Context.h>
 
-#include <Poco/Net/SocketAddress.h>
-
 #include <cassert>
-
 
 namespace
 {
@@ -111,9 +107,8 @@ ColumnsDescription SessionLogElement::getColumnsDescription()
             {"Local",                  static_cast<Int8>(Interface::LOCAL)},
             {"TCP_Interserver",        static_cast<Int8>(Interface::TCP_INTERSERVER)},
             {"Prometheus",             static_cast<Int8>(Interface::PROMETHEUS)},
-            {"Background",             static_cast<Int8>(Interface::BACKGROUND)},
         });
-    static_assert(magic_enum::enum_count<Interface>() == 9, "Please update the array above to match the enum.");
+    static_assert(magic_enum::enum_count<Interface>() == 8);
 
     auto lc_string_datatype = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
@@ -199,8 +194,8 @@ void SessionLogElement::appendToBlock(MutableColumns & columns) const
         offsets.push_back(settings_tuple_col.size());
     }
 
-    columns[i++]->insertData(IPv6ToBinary(client_info.current_address->host()).data(), 16);
-    columns[i++]->insert(client_info.current_address->port());
+    columns[i++]->insertData(IPv6ToBinary(client_info.current_address.host()).data(), 16);
+    columns[i++]->insert(client_info.current_address.port());
 
     columns[i++]->insert(client_info.interface);
 

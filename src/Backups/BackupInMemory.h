@@ -9,7 +9,7 @@
 namespace DB
 {
 class BackupsInMemoryHolder;
-class ReadBufferFromFileBase;
+class SeekableReadBuffer;
 class WriteBuffer;
 
 /// Keeps a backup stored in memory (good for testing; they will be cleared when the server stops):
@@ -25,7 +25,7 @@ public:
     UInt64 getFileSize(const String & file_name) const;
 
     std::unique_ptr<WriteBuffer> writeFile(const String & file_name);
-    std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const;
+    std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const;
     void removeFile(const String & file_name);
     void copyFile(const String & from, const String & to);
 

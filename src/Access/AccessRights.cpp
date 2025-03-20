@@ -2,6 +2,7 @@
 #include <base/sort.h>
 #include <Common/Exception.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <boost/container/small_vector.hpp>
 #include <list>

@@ -7,23 +7,31 @@
 namespace Iceberg
 {
 
-struct ManifestListFileEntry
+class ManifestList
 {
-    ManifestFileIterator manifest_file;
-    Int64 added_sequence_number;
+public:
+    explicit ManifestList(std::vector<ManifestFileEntry> manifest_files_) : manifest_files(std::move(manifest_files_)) { }
+    const std::vector<ManifestFileEntry> & getManifestFiles() const { return manifest_files; }
+
+private:
+    std::vector<ManifestFileEntry> manifest_files;
 };
 
-using ManifestList = std::vector<ManifestListFileEntry>;
+using ManifestListsByName = std::map<String, ManifestList>;
 
-
-using ManifestListsStorage = std::map<String, ManifestList>;
-using ManifestListIterator = IteratorWrapper<ManifestList>;
-
-struct IcebergSnapshot
+class IcebergSnapshot
 {
-    ManifestListIterator manifest_list_iterator;
-    Int64 snapshot_id;
+public:
+    explicit IcebergSnapshot(const ManifestListsByName::const_iterator & reference_) : reference(reference_) { }
+
+    const ManifestList & getManifestList() const { return reference->second; }
+    const String & getName() const { return reference->first; }
+
+
+private:
+    ManifestListsByName::const_iterator reference;
 };
+
 }
 
 #endif

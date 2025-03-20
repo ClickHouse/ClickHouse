@@ -1,8 +1,7 @@
 #pragma once
 
-#include <vector>
-#include <chrono>
 #include <Common/IntervalKind.h>
+#include <chrono>
 
 namespace DB
 {

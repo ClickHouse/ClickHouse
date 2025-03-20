@@ -8,11 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Ignore settings that, for historic reasons, have different values in Cloud
 IGNORED_SETTINGS_FOR_CLOUD="1 = 1"
-IGNORED_MERGETREE_SETTINGS_FOR_CLOUD="1 = 1"
 if [[ $($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'") -eq 1 ]];
 then
   IGNORED_SETTINGS_FOR_CLOUD="name NOT IN ('max_table_size_to_drop', 'max_partition_size_to_drop')"
-  IGNORED_MERGETREE_SETTINGS_FOR_CLOUD="name NOT IN ('allow_remote_fs_zero_copy_replication', 'min_bytes_for_wide_part')"
 fi
 
 IGNORE_SETTINGS_FOR_SANITIZERS="1=1"
@@ -22,17 +20,17 @@ then
 fi
 
 # Note that this is a broad check. A per version check is done in the upgrade test
-# Baselines generated with v25.2.3.14 (pre-release)
-# clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_settings_25_2_3.tsv
-# clickhouse local --query "select name, value from system.merge_tree_settings order by name format TSV" > 02995_merge_tree_settings_settings_25_2_3.tsv
+# Baselines generated with 24.11.2
+# clickhouse local --query "select name, default from system.settings order by name format TSV" > 02995_settings_24_11_2.tsv
+# clickhouse local --query "select name, value from system.merge_tree_settings order by name format TSV" > 02995_merge_tree_settings_settings_24_11_2.tsv
 $CLICKHOUSE_LOCAL --query "
     WITH old_settings AS
     (
-        SELECT * FROM file('${CUR_DIR}/02995_settings_25_2_3.tsv', 'TSV', 'name String, default String')
+        SELECT * FROM file('${CUR_DIR}/02995_settings_24_11_2.tsv', 'TSV', 'name String, default String')
     ),
     old_merge_tree_settings AS
     (
-        SELECT * FROM file('${CUR_DIR}/02995_merge_tree_settings_settings_25_2_3.tsv', 'TSV', 'name String, default String')
+        SELECT * FROM file('${CUR_DIR}/02995_merge_tree_settings_settings_24_11_2.tsv', 'TSV', 'name String, default String')
     ),
     new_settings AS
     (
@@ -52,7 +50,7 @@ $CLICKHOUSE_LOCAL --query "
         )) AND (name NOT IN (
             SELECT arrayJoin(tupleElement(changes, 'name'))
             FROM system.settings_changes
-            WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 2
+            WHERE type = 'Core' AND splitByChar('.', version)[1]::UInt64 >= 25 OR (splitByChar('.', version)[1]::UInt64 == 24 AND splitByChar('.', version)[2]::UInt64 > 11)
         ))
         UNION ALL
         (
@@ -64,30 +62,30 @@ $CLICKHOUSE_LOCAL --query "
             )) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 2
+                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 OR (splitByChar('.', version)[1]::UInt64 == 24 AND splitByChar('.', version)[2]::UInt64 > 11)
             ))
         )
         UNION ALL
         (
             SELECT 'PLEASE ADD THE SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: ' || name || ' WAS CHANGED FROM ' || old_settings.default || ' TO ' || new_settings.default
             FROM new_settings
-            JOIN old_settings ON new_settings.name = old_settings.name
+            LEFT JOIN old_settings ON new_settings.name = old_settings.name
             WHERE (new_settings.default != old_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE type = 'Session' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 2
+                WHERE type = 'Core' AND splitByChar('.', version)[1]::UInt64 >= 25 OR (splitByChar('.', version)[1]::UInt64 == 24 AND splitByChar('.', version)[2]::UInt64 > 11)
             )) AND ${IGNORE_SETTINGS_FOR_SANITIZERS}
         )
         UNION ALL
         (
             SELECT 'PLEASE ADD THE MERGE_TREE_SETTING VALUE CHANGE TO SettingsChangesHistory.cpp: ' || name || ' WAS CHANGED FROM ' || old_merge_tree_settings.default || ' TO ' || new_merge_tree_settings.default
             FROM new_merge_tree_settings
-            JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
+            LEFT JOIN old_merge_tree_settings ON new_merge_tree_settings.name = old_merge_tree_settings.name
             WHERE (new_merge_tree_settings.default != old_merge_tree_settings.default) AND (name NOT IN (
                 SELECT arrayJoin(tupleElement(changes, 'name'))
                 FROM system.settings_changes
-                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 AND splitByChar('.', version)[2]::UInt64 > 2
-            )) AND ${IGNORED_MERGETREE_SETTINGS_FOR_CLOUD}
+                WHERE type = 'MergeTree' AND splitByChar('.', version)[1]::UInt64 >= 25 OR (splitByChar('.', version)[1]::UInt64 == 24 AND splitByChar('.', version)[2]::UInt64 > 11)
+            ))
         )
     )
 "

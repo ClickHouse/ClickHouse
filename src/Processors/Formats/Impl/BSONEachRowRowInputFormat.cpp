@@ -7,6 +7,7 @@
 #include <Processors/Formats/Impl/BSONEachRowRowInputFormat.h>
 #include <IO/ReadHelpers.h>
 
+#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
@@ -56,7 +57,7 @@ BSONEachRowRowInputFormat::BSONEachRowRowInputFormat(
     , prev_positions(header_.columns())
     , types(header_.getDataTypes())
 {
-    name_map = getNamesToIndexesMap(getPort().getHeader());
+    name_map = getPort().getHeader().getNamesToIndexesMap();
 }
 
 inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, size_t key_index)
@@ -65,7 +66,7 @@ inline size_t BSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     /// and a quick check to match the next expected field, instead of searching the hash table.
 
     if (prev_positions.size() > key_index
-        && prev_positions[key_index] != BlockNameMap::const_iterator{}
+        && prev_positions[key_index] != Block::NameMap::const_iterator{}
         && name == prev_positions[key_index]->first)
     {
         return prev_positions[key_index]->second;

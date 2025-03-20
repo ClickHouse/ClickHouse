@@ -1,8 +1,6 @@
 #include <Processors/TTL/ITTLAlgorithm.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnVector.h>
 #include <Columns/ColumnConst.h>
-#include <Common/DateLUTImpl.h>
-#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {

@@ -1,23 +1,12 @@
 ---
-description: 'List of third-party GUI tools and applications for working with ClickHouse'
-sidebar_label: 'Visual Interfaces'
+slug: /en/interfaces/third-party/gui
 sidebar_position: 28
-slug: /interfaces/third-party/gui
-title: 'Visual Interfaces from Third-party Developers'
+sidebar_label: Visual Interfaces
 ---
 
 # Visual Interfaces from Third-party Developers
 
 ## Open-Source {#open-source}
-
-### agx {#agx}
-
-[agx](https://github.com/agnosticeng/agx) is a desktop application built with Tauri and SvelteKit that provides a modern interface for exploring and querying data using ClickHouse's embedded database engine (chdb).
-
-- Leverage ch-db when running the native application.
-- Can connect to a Clickhouse instance when running the web instance.
-- Monaco editor so you'll feel at home.
-- Multiple and evolving data visualizations.
 
 ### ch-ui {#ch-ui}
 
@@ -151,7 +140,7 @@ Features:
 
 ### clickhouse-plantuml {#clickhouse-plantuml}
 
-[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables' schemes.
+[cickhouse-plantuml](https://pypi.org/project/clickhouse-plantuml/) is a script to generate [PlantUML](https://plantuml.com/) diagram of tables’ schemes.
 
 ### xeus-clickhouse {#xeus-clickhouse}
 
@@ -319,7 +308,7 @@ Features:
 
 - Easy and agile development using LookML, a language which supports curated
     [Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end-users.
-- Powerful workflow integration via Looker's [Data Actions](https://looker.com/platform/actions).
+- Powerful workflow integration via Looker’s [Data Actions](https://looker.com/platform/actions).
 
 [How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 

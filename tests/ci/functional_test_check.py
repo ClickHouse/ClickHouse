@@ -17,7 +17,7 @@ from ci_utils import Shell, Utils
 from clickhouse_helper import CiLogsCredentials
 from docker_images_helper import DockerImage, get_docker_image
 from download_release_packages import download_last_release
-from env_helper import REPO_COPY, REPORT_PATH, TEMP_PATH
+from env_helper import IS_NEW_CI, REPO_COPY, REPORT_PATH, TEMP_PATH
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import (
@@ -79,8 +79,10 @@ def get_additional_envs(
 
 
 def get_image_name(check_name: str) -> str:
-    if "stateless" in check_name.lower() or "validation" in check_name.lower():
+    if "stateless" in check_name.lower():
         return "clickhouse/stateless-test"
+    if "stateful" in check_name.lower():
+        return "clickhouse/stateful-test"
     raise ValueError(f"Cannot deduce image name based on check name {check_name}")
 
 
@@ -119,7 +121,9 @@ def get_run_command(
 
     env_str = " ".join(envs)
 
-    if "stateless" in check_name.lower() or "validation" in check_name.lower():
+    if "stateful" in check_name.lower():
+        run_script = "/repo/tests/docker_scripts/stateful_runner.sh"
+    elif "stateless" in check_name.lower():
         run_script = "/repo/tests/docker_scripts/stateless_runner.sh"
     else:
         assert False
@@ -286,14 +290,13 @@ def main():
     run_by_hash_total = int(os.getenv("RUN_BY_HASH_TOTAL", "0"))
 
     docker_image = get_docker_image(get_image_name(check_name))
-
-    match = re.search(r"\(.*?\)", check_name)
-    options = match.group(0)[1:-1].split(",") if match else []
-    for option in options:
-        if "/" in option:
-            run_by_hash_num = int(option.split("/")[0]) - 1
-            run_by_hash_total = int(option.split("/")[1])
-            break
+    if IS_NEW_CI:
+        docker_image.version = "latest"
+        for option in check_name.split(","):
+            if "/" in option:
+                run_by_hash_num = int(option.split("/")[0]) - 1
+                run_by_hash_total = int(option.split("/")[1])
+                break
 
     packages_path = temp_path / "packages"
     packages_path.mkdir(parents=True, exist_ok=True)
@@ -301,7 +304,14 @@ def main():
     if validate_bugfix_check:
         download_last_release(packages_path, debug=True)
     else:
-        download_all_deb_packages(check_name, reports_path, packages_path)
+        if "amd_" in check_name or "arm_" in check_name:
+            # this is hack for praktika based CI
+            print("Copy input *.deb artifacts")
+            assert Shell.check(
+                f"cp {REPO_COPY}/ci/tmp/*.deb {packages_path}", verbose=True
+            )
+        else:
+            download_all_deb_packages(check_name, reports_path, packages_path)
 
     server_log_path = temp_path / "server_log"
     server_log_path.mkdir(parents=True, exist_ok=True)

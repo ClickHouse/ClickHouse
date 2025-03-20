@@ -49,7 +49,7 @@ public:
 
     static std::vector<std::string> getMetadataPaths(size_t buckets_num);
 
-    static void migrateToBuckets(const std::string & zk_path, size_t value, size_t prev_value);
+    static void migrateToBuckets(const std::string & zk_path, size_t value);
 
     /// Return vector of indexes of filtered paths.
     static void filterOutProcessedAndFailed(
@@ -106,8 +106,6 @@ struct ObjectStorageQueueOrderedFileMetadata::BucketHolder : private boost::nonc
 
     void setFinished() { finished = true; }
     bool isFinished() const { return finished; }
-
-    bool isZooKeeperSessionExpired() const { return zk_client->expired(); }
 
     void release();
 

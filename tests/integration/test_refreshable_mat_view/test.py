@@ -198,11 +198,6 @@ def fn_setup_tables():
 )
 @pytest.mark.parametrize("with_append", [True, False])
 @pytest.mark.parametrize("empty", [True, False])
-@pytest.mark.skipif(
-    datetime.now().minute > 57,
-    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
-           'which might trigger it earlier than expected'
-)
 def test_simple_append(
     module_setup_tables,
     fn_setup_tables,
@@ -264,11 +259,6 @@ def test_simple_append(
             "refresh_retry_max_backoff_ms": "20",
         },
     ],
-)
-@pytest.mark.skipif(
-    datetime.now().minute > 57,
-    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
-           'which might trigger it earlier than expected'
 )
 def test_alters(
     module_setup_tables,
@@ -386,11 +376,6 @@ def expect_rows(rows, table="test_rmv"):
     assert len(inserted_data) == rows
 
 
-@pytest.mark.skipif(
-    datetime.now().minute > 57,
-    reason='"EVERY 1 HOUR" refresh interval schedules the refresh to occur at the start of the next hour, '
-           'which might trigger it earlier than expected'
-)
 def test_long_query(fn_setup_tables):
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
