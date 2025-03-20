@@ -177,7 +177,9 @@ void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & 
         if (!new_cert_path.empty() || !new_key_path.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Static TLS keys and ACME provider are enabled at the same time.");
 
-        return tryLoadACMECertificate(ctx, prefix);
+        tryLoadACMECertificate(ctx, prefix);
+
+        return;
     }
 
     /// For empty paths (that means, that user doesn't want to use certificates)

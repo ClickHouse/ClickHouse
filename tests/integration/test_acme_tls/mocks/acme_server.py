@@ -6,6 +6,10 @@ import ssl
 import sys
 import threading
 import uuid
+import os
+import urllib.request
+import hashlib
+
 from collections import defaultdict
 
 from cryptography import x509
@@ -14,7 +18,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
-HOSTNAME = "localhost:8443"
+
+HOSTNAME = f"{os.uname().nodename}:8443"
 
 
 def generate_self_signed_cert():
@@ -109,9 +114,10 @@ def return_directory():
 
 NONCE_MAP = defaultdict(bool)
 ORDER_MAP = defaultdict(str)
-ORDER_MAP[1] = "ready"
-
 CSR_MAP = defaultdict(str)
+JWK_MAP = defaultdict(str)
+
+CALL_COUNTERS = defaultdict(int)
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
@@ -120,27 +126,36 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if self.path == "/":
             return "OK", 200
 
-        if self.path == "/latest/meta-data/placement/availability-zone":
-            return "ci-test-1a", 200
-
         if self.path == "/directory":
             return return_directory()
 
         if self.path == "/acme/new-nonce":
             return "", 200
 
-        if self.path == "/acme/authz/1":
-            return self._process_authz()
+        if self.path.startswith("/acme/authz/"):
+            order_id = int(self.path.split("/")[-1])
+            if not ORDER_MAP[order_id]:
+                return "Order not found", 404
 
-        if self.path == "/acme/order/1":
-            return self._describe_order()
+            return self._process_authz(order_id)
 
-        if self.path == "/cert/1":
+        if self.path.startswith("/acme/order/"):
+            order_id = int(self.path.split("/")[-1])
+            if not ORDER_MAP[order_id]:
+                return "Order not found", 404
+
+            return self._describe_order(order_id)
+
+        if self.path.startswith("/cert/"):
+            order_id = int(self.path.split("/")[-1])
+            if not ORDER_MAP[order_id]:
+                return "Order not found", 404
+
             private_key, _ = generate_self_signed_cert()
 
             # For ACME we're using URL-safe base64 encoded bytes
             # No PEM header, no newlines, nothing
-            almost_der = CSR_MAP[1]
+            almost_der = CSR_MAP[order_id]
             almost_der = almost_der.replace("-", "+").replace("_", "/")
             formatted_csr = "\n".join(
                 almost_der[i : i + 64] for i in range(0, len(almost_der), 64)
@@ -159,9 +174,9 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         # Resource not found.
         return 404
 
-    def _describe_order(self):
+    def _describe_order(self, order_id):
         response = {
-            "status": ORDER_MAP[1],
+            "status": ORDER_MAP[order_id],
             "expires": "2024-11-11T11:11:11Z",
             "identifiers": [
                 {
@@ -169,14 +184,14 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                     "value": "example.com",
                 }
             ],
-            "authorizations": [f"https://{HOSTNAME}/acme/authz/1"],
-            "finalize": f"https://{HOSTNAME}/acme/finalize/1",
-            "certificate": f"https://{HOSTNAME}/cert/1",
+            "authorizations": [f"https://{HOSTNAME}/acme/authz/{order_id}"],
+            "finalize": f"https://{HOSTNAME}/acme/finalize/{order_id}",
+            "certificate": f"https://{HOSTNAME}/cert/{order_id}",
         }
 
         return json.dumps(response), 200
 
-    def _process_authz(self):
+    def _process_authz(self, order_id):
         response = {
             "status": "pending",
             "expires": "2024-11-11T11:11:11Z",
@@ -189,15 +204,15 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             "challenges": [
                 {
                     "type": "http-01",
-                    "url": f"https://{HOSTNAME}/acme/chall/1",
+                    "url": f"https://{HOSTNAME}/acme/chall/{order_id}",
                     "status": "pending",
-                    "token": "token1",
+                    "token": f"token{order_id}",
                 },
                 {
                     "type": "trash-01",
-                    "url": f"https://{HOSTNAME}/acme/chall/2",
+                    "url": f"https://{HOSTNAME}/acme/chall/{order_id}",
                     "status": "pending",
-                    "token": "token1",
+                    "token": "token12345",
                 },
             ],
         }
@@ -230,10 +245,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         payload = json.loads(base64.b64decode(b64_payload + "===").decode())
         print(payload)
 
-        if payload["termsOfServiceAgreed"] != True:
+        if payload["termsOfServiceAgreed"] is not True:
             return "Terms of service not agreed", 400
         if len(payload["contact"]) != 1:
             return "Invalid contact", 400
+
+        json_str = json.dumps(
+            protected["jwk"], separators=(",", ":"), ensure_ascii=False
+        )
+        kid = hashlib.sha256(json_str.encode()).hexdigest()
+        JWK_MAP[kid] = json_str
 
         response = {
             "key": protected["jwk"],
@@ -244,7 +265,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
         print("Auth OK")
 
-        return json.dumps(response), 201
+        return json.dumps(response), 201, kid
 
     def _new_order(self):
         content_length = int(self.headers["Content-Length"])
@@ -272,19 +293,22 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         payload = json.loads(base64.b64decode(b64_payload + "===").decode())
         print(payload)
 
+        order_num = len(ORDER_MAP)
+        ORDER_MAP[order_num] = "pending"
+
         response = {
             "status": "pending",
             "expires": "2024-11-11T11:11:11Z",
             "identifiers": payload["identifiers"],
-            "authorizations": [f"https://{HOSTNAME}/acme/authz/1"],
-            "finalize": f"https://{HOSTNAME}/acme/finalize/1",
+            "authorizations": [f"https://{HOSTNAME}/acme/authz/{order_num}"],
+            "finalize": f"https://{HOSTNAME}/acme/finalize/{order_num}",
         }
 
         print("Order OK")
 
         return json.dumps(response), 201
 
-    def _process_challenge(self):
+    def _process_challenge(self, order_id):
         content_length = int(self.headers["Content-Length"])
         print(content_length)
         post_data = self.rfile.read(content_length)
@@ -295,6 +319,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         protected = json.loads(base64.b64decode(b64_protected + "===").decode())
         print(protected)
 
+        jwk = JWK_MAP[protected["kid"]]
+
         nonce = protected["nonce"]
         if not NONCE_MAP[nonce]:
             print(f"Nonce not found: {nonce} in map {NONCE_MAP}")
@@ -302,21 +328,42 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         NONCE_MAP[nonce] = False
 
         url = protected["url"]
-        if url != f"https://{HOSTNAME}/acme/chall/1":
-            print(url, f"https://{HOSTNAME}/acme/chall/1")
+        if url != f"https://{HOSTNAME}/acme/chall/{order_id}":
+            print(url, f"https://{HOSTNAME}/acme/chall/{order_id}")
             return "Invalid URL", 400
 
         response = {
             "status": "valid",
-            "url": f"https://{HOSTNAME}/acme/chal/1",
-            "token": "token1",
+            "url": f"https://{HOSTNAME}/acme/chal/{order_id}",
+            "token": f"token{order_id}",
         }
+
+        request = urllib.request.Request(
+            f"http://localhost:8123/.well-known/acme-challenge/token{order_id}"
+        )
+        with urllib.request.urlopen(request) as res:
+            contents = str(res.read().decode())
+            print(contents)
+
+            token, hash = contents.split(".")
+            if token != f"token{order_id}":
+                return f"Invalid token, {token} != token{order_id}", 400
+
+            jwt_sha256 = hashlib.sha256(jwk.encode()).digest()
+            base64_jwt_sha256 = (
+                base64.urlsafe_b64encode(jwt_sha256).decode().replace("=", "")
+            )
+
+            if hash != base64_jwt_sha256:
+                return f"Invalid hash, {hash} != {base64_jwt_sha256}, jwk: {jwk}", 400
+
+        ORDER_MAP[order_id] = "ready"
 
         print("Challenge OK")
 
         return json.dumps(response), 200
 
-    def _finalize_order(self):
+    def _finalize_order(self, order_id):
         content_length = int(self.headers["Content-Length"])
         print(content_length)
         post_data = self.rfile.read(content_length)
@@ -334,8 +381,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         NONCE_MAP[nonce] = False
 
         url = protected["url"]
-        if url != f"https://{HOSTNAME}/acme/finalize/1":
-            print(url, f"https://{HOSTNAME}/acme/finalize/1")
+        if url != f"https://{HOSTNAME}/acme/finalize/{order_id}":
+            print(url, f"https://{HOSTNAME}/acme/finalize/{order_id}")
             return "Invalid URL", 400
 
         b64_payload = request_data["payload"]
@@ -343,8 +390,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         print(payload)
 
         csr = payload["csr"]
-        CSR_MAP[1] = csr
-        ORDER_MAP[1] = "valid"
+        CSR_MAP[order_id] = csr
+        ORDER_MAP[order_id] = "valid"
 
         response = {
             "status": "ready",
@@ -365,27 +412,34 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/acme/new-acct":
-            response, code = self._new_account()
+            CALL_COUNTERS["new_account"] += 1
+            response, code, kid = self._new_account()
             print(code)
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(response.encode())))
-            self.send_header("Location", f"https://{HOSTNAME}/acme/acct/1")
+            self.send_header("Location", kid)
             self.end_headers()
             self.wfile.write(response.encode())
 
         if self.path == "/acme/new-order":
+            CALL_COUNTERS["new_order"] += 1
+
             response, code = self._new_order()
             print(code)
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(response.encode())))
-            self.send_header("Location", f"https://{HOSTNAME}/acme/order/1")
+            self.send_header(
+                "Location", f"https://{HOSTNAME}/acme/order/{len(ORDER_MAP) - 1}"
+            )
             self.end_headers()
             self.wfile.write(response.encode())
 
-        if self.path == "/acme/chall/1":
-            response, code = self._process_challenge()
+        if self.path.startswith("/acme/chall/"):
+            CALL_COUNTERS["process_challenge"] += 1
+            order_id = int(self.path.split("/")[-1])
+            response, code = self._process_challenge(order_id)
             print(code)
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
@@ -393,8 +447,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(response.encode())
 
-        if self.path == "/acme/finalize/1":
-            response, code = self._finalize_order()
+        if self.path.startswith("/acme/finalize/"):
+            CALL_COUNTERS["finalize_order"] += 1
+            order_id = int(self.path.split("/")[-1])
+            response, code = self._finalize_order(order_id)
             print(code)
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
@@ -418,32 +474,50 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         return response, code
 
     def do_GET(self):
+        if self.path == "/counters":
+            response = json.dumps(
+                {
+                    "nonce_count": len(NONCE_MAP),
+                    "order_count": len(ORDER_MAP),
+                    "csr_count": len(CSR_MAP),
+                    "jwk_count": len(JWK_MAP),
+                    "call_counters": CALL_COUNTERS,
+                }
+            )
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(response.encode())))
+            self.end_headers()
+            self.wfile.write(response.encode())
+            return
+
         response, _ = self.do_HEAD()
         self.wfile.write(response.encode())
 
 
-private_key_pem, cert_pem = generate_self_signed_cert()
+if __name__ == "__main__":
+    private_key_pem, cert_pem = generate_self_signed_cert()
 
-with open("key.pem", "wb") as key_file:
-    key_file.write(private_key_pem)
-with open("cert.pem", "wb") as cert_file:
-    cert_file.write(cert_pem)
+    with open("key.pem", "wb") as key_file:
+        key_file.write(private_key_pem)
+    with open("cert.pem", "wb") as cert_file:
+        cert_file.write(cert_pem)
 
-context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-context.load_cert_chain("cert.pem", "key.pem")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain("cert.pem", "key.pem")
 
-httpd = http.server.HTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
-httpd_secure = http.server.ThreadingHTTPServer(("0.0.0.0", 8443), RequestHandler)
-httpd_secure.socket = context.wrap_socket(
-    httpd_secure.socket,
-    server_side=True,
-)
+    httpd = http.server.HTTPServer(("0.0.0.0", int(sys.argv[1])), RequestHandler)
+    httpd_secure = http.server.ThreadingHTTPServer(("0.0.0.0", 8443), RequestHandler)
+    httpd_secure.socket = context.wrap_socket(
+        httpd_secure.socket,
+        server_side=True,
+    )
 
-t1 = threading.Thread(target=httpd.serve_forever)
-t2 = threading.Thread(target=httpd_secure.serve_forever)
+    t1 = threading.Thread(target=httpd.serve_forever)
+    t2 = threading.Thread(target=httpd_secure.serve_forever)
 
-for t in [t1, t2]:
-    t.start()
+    for t in [t1, t2]:
+        t.start()
 
-for t in [t1, t2]:
-    t.join()
+    for t in [t1, t2]:
+        t.join()
