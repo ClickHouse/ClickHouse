@@ -28,10 +28,10 @@ int mainEntryClickHouseKeeperConverter(int argc, char ** argv)
     ;
     po::variables_map options;
     po::store(po::command_line_parser(argc, argv).options(desc).run(), options);
-    Poco::AutoPtr<Poco::ConsoleChannel> console_channel(new Poco::ConsoleChannel);
 
-    LoggerPtr logger = getLogger("KeeperConverter");
-    //logger->setChannel(console_channel);
+    auto logger = createRootLogger({DB::QuillFrontend::create_or_get_sink<DB::ConsoleSink>("ConsoleSink", DB::ConsoleSink::Stream::STDERR)});
+    Logger::enableSyncLogging();
+    DB::startQuillBackend();
 
     if (options.count("help"))
     {

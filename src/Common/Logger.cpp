@@ -28,6 +28,8 @@ std::atomic<OwnPatternFormatter *> formatter_ptr = nullptr;
 const std::string root_logger_name = "Application";
 std::atomic<DB::QuillLoggerPtr> root_logger = nullptr;
 
+std::atomic<bool> sync_logging = false;
+
 DB::QuillLoggerPtr createQuillLogger(const std::string & name, std::vector<std::shared_ptr<quill::Sink>> sinks)
 {
     return DB::QuillFrontend::create_or_get_logger(
@@ -64,6 +66,16 @@ void Logger::setFormatter(std::unique_ptr<OwnPatternFormatter> formatter_)
 {
     formatter = std::move(formatter_);
     formatter_ptr.store(formatter.get(), std::memory_order_relaxed);
+}
+
+void Logger::enableSyncLogging()
+{
+    sync_logging.store(true, std::memory_order_relaxed);
+}
+
+bool Logger::shouldSyncLog()
+{
+    return sync_logging.load(std::memory_order_relaxed);
 }
 
 DB::QuillLoggerPtr Logger::getQuillLogger()
@@ -116,6 +128,10 @@ const std::string & componentToString(LoggerComponent component)
         }
         case RaftInstance: {
             static const std::string component_string{"RaftInstance"};
+            return component_string;
+        }
+        case ZooKeeperClient: {
+            static const std::string component_string{"ZooKeeperClient"};
             return component_string;
         }
     }

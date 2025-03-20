@@ -1,3 +1,4 @@
+#include "Common/Logger.h"
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -393,7 +394,7 @@ ZooKeeper::ZooKeeper(
     std::shared_ptr<ZooKeeperLog> zk_log_)
     : args(args_)
 {
-    log = getLogger("ZooKeeperClient");
+    log = getLogger(LoggerComponent::ZooKeeperClient);
     std::atomic_store(&zk_log, std::move(zk_log_));
 
     if (!args.chroot.empty())

@@ -248,10 +248,8 @@ void ClientApplicationBase::init(int argc, char ** argv)
     /// have an option for client to shutdown gracefully.
 
     std::vector<std::shared_ptr<quill::Sink>> client_sinks;
-    quill::ConsoleSinkConfig console_config;
-    console_config.set_colour_mode(quill::ConsoleSinkConfig::ColourMode::Never);
     client_sinks.push_back(
-        quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ClientFatalSink", console_config));
+        quill::Frontend::create_or_get_sink<DB::ConsoleSink>("ClientFatalSink", DB::ConsoleSink::Stream::STDERR));
     if (options.count("client_logs_file"))
     {
         if (isEmbeeddedClient())

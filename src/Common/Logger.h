@@ -40,6 +40,9 @@ public:
     static DB::TextLogSink & getTextLogSink();
     static OwnPatternFormatter * getFormatter();
     static void setFormatter(std::unique_ptr<OwnPatternFormatter> formatter);
+
+    static void enableSyncLogging();
+    static bool shouldSyncLog();
 private:
     std::string_view name;
     std::string name_holder;
@@ -52,7 +55,8 @@ using LoggerRawPtr = Logger *;
 enum class LoggerComponent
 {
     Root = 0,
-    RaftInstance
+    RaftInstance,
+    ZooKeeperClient
 };
 
 LoggerPtr getLogger(LoggerComponent component);

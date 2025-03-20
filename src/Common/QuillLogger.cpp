@@ -1,3 +1,4 @@
+#include "Common/LoggingFormatStringHelpers.h"
 #include <Common/QuillLogger.h>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -36,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 }
 
 void startQuillBackend()
@@ -73,6 +75,17 @@ ConsoleSink::ConsoleSink(Stream stream, bool enable_colors_)
     : StreamSink{streamToString(stream), nullptr}
     , enable_colors(enable_colors_)
 {
+    if (!enable_colors)
+        return;
+
+    static constexpr std::string_view error_message = "Logging with color is only supported with OwnPatternFormatter";
+    auto * formatter_ptr = Logger::getFormatter();
+    if (!formatter_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, fmt::runtime(error_message));
+
+    auto & formatter = *formatter_ptr;
+    if (typeid(formatter) != typeid(OwnPatternFormatter))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, fmt::runtime(error_message));
 }
 
 void ConsoleSink::write_log(

@@ -2,6 +2,9 @@
 #include "Commands.h"
 #include <Client/ReplxxLineReader.h>
 #include <Client/ClientBase.h>
+
+#include "Common/Logger.h"
+#include <Common/QuillLogger.h>
 #include <Common/VersionNumber.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Client/ClientApplicationBase.h>
@@ -259,8 +262,10 @@ void KeeperClient::initialize(Poco::Util::Application & /* self */)
     else
         default_log_level = "information";
 
-    Poco::Logger::root().setLevel(config().getString("log-level", default_log_level));
-
+    auto logger = createRootLogger({DB::QuillFrontend::create_or_get_sink<DB::ConsoleSink>("ConsoleSink", DB::ConsoleSink::Stream::STDERR)});
+    logger->setLogLevel(config().getString("log-level", default_log_level));
+    Logger::enableSyncLogging();
+    DB::startQuillBackend();
     EventNotifier::init();
 }
 
@@ -445,7 +450,7 @@ int KeeperClient::main(const std::vector<String> & /* args */)
         runInteractive();
 
     /// Suppress "Finalizing session {}" message.
-    //getLogger("ZooKeeperClient")->setLevel("error");
+    getLogger(LoggerComponent::ZooKeeperClient)->setLogLevel("error");
     zookeeper.reset();
 
     return 0;

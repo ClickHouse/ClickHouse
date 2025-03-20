@@ -18,6 +18,7 @@
 #include <Loggers/OwnPatternFormatter.h>
 
 #include <Common/Logger.h>
+#include <Common/QuillLogger.h>
 
 #include <libnuraft/log_entry.hxx>
 #include <libnuraft/log_store.hxx>
@@ -77,10 +78,7 @@ public:
     void SetUp() override
     {
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
-        quill::ConsoleSinkConfig console_config;
-        console_config.set_colour_mode(quill::ConsoleSinkConfig::ColourMode::Never);
-        console_config.set_stream("stderr");
-        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink", console_config)});
+        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<DB::ConsoleSink>("ConsoleSink", DB::ConsoleSink::Stream::STDERR)});
         logger->setLogLevel(quill::LogLevel::TraceL1);
 
         auto settings = std::make_shared<DB::CoordinationSettings>();

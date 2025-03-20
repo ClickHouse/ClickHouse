@@ -67,7 +67,7 @@ public:
         }
     }
 
-    explicit ConsoleSink(Stream stream, bool enable_colors_);
+    explicit ConsoleSink(Stream stream, bool enable_colors_ = false);
 
     ~ConsoleSink() override = default;
 

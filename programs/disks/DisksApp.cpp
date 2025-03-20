@@ -508,7 +508,7 @@ int DisksApp::main(const std::vector<String> & /*args*/)
     else
     {
         auto log_level = config().getString("log-level", "none");
-        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ConsoleSink")});
+        auto logger = createRootLogger({quill::Frontend::create_or_get_sink<DB::ConsoleSink>("ConsoleSink", DB::ConsoleSink::Stream::STDERR)});
         logger->setLogLevel(log_level);
         Logger::setFormatter(std::make_unique<OwnPatternFormatter>());
     }
