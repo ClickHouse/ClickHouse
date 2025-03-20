@@ -21,7 +21,7 @@ Keep in mind that it is deprecated, and will be removed in next releases.
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     name1 [type1],
@@ -53,7 +53,7 @@ Seed list(`mongodb**+srv**`) is not yet supported, but will be added in future r
 
 Alternatively, you can pass a URI:
 
-``` sql
+```sql
 ENGINE = MongoDB(uri, collection[, oid_columns]);
 ```
 
@@ -169,7 +169,7 @@ Assuming MongoDB has [sample_mflix](https://www.mongodb.com/docs/atlas/sample-da
 
 Create a table in ClickHouse which allows to read data from MongoDB collection:
 
-``` sql
+```sql
 CREATE TABLE sample_mflix_table
 (
     _id String,
@@ -186,11 +186,11 @@ CREATE TABLE sample_mflix_table
 
 Query:
 
-``` sql
+```sql
 SELECT count() FROM sample_mflix_table
 ```
 
-``` text
+```text
    ┌─count()─┐
 1. │   21349 │
    └─────────┘

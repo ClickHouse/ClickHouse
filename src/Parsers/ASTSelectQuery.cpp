@@ -1,7 +1,5 @@
-#include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/SipHash.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>

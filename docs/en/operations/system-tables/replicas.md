@@ -13,14 +13,14 @@ This table can be used for monitoring. The table contains a row for every Replic
 
 Example:
 
-``` sql
+```sql
 SELECT *
 FROM system.replicas
 WHERE table = 'test_table'
 FORMAT Vertical
 ```
 
-``` text
+```text
 Query id: dc6dcbcb-dc28-4df9-ae27-4354f5b3b13e
 
 Row 1:
@@ -106,7 +106,7 @@ If you do not request the last 4 columns (log_max_index, log_pointer, total_repl
 
 For example, you can check that everything is working correctly like this:
 
-``` sql
+```sql
 SELECT
     database,
     table,
