@@ -15,6 +15,7 @@
 
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsInterpreter.h>
 

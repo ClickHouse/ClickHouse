@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/ExpressionActions.h>
@@ -1054,7 +1055,6 @@ bool StorageRabbitMQ::hasDependencies(const StorageID & table_id)
 
     return true;
 }
-
 
 void StorageRabbitMQ::streamingToViewsFunc()
 {
