@@ -50,7 +50,6 @@ namespace NATSSetting
     extern const NATSSettingsString nats_format;
     extern const NATSSettingsStreamingHandleErrorMode nats_handle_error_mode;
     extern const NATSSettingsUInt64 nats_max_block_size;
-    extern const NATSSettingsUInt64 nats_max_reconnect;
     extern const NATSSettingsUInt64 nats_max_rows_per_message;
     extern const NATSSettingsUInt64 nats_num_consumers;
     extern const NATSSettingsString nats_password;
