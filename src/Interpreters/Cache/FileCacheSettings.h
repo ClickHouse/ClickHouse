@@ -1,64 +1,52 @@
 #pragma once
 
-#include <functional>
-#include <string>
-#include <Core/Defines.h>
+#include <Core/BaseSettingsFwdMacros.h>
+#include <Core/NamesAndTypes.h>
+#include <Core/SettingsFields.h>
+#include <Core/SettingsEnums.h>
 #include <Interpreters/Cache/FileCache_fwd.h>
+#include <Storages/ColumnsDescription.h>
 
 namespace Poco { namespace Util { class AbstractConfiguration; } } // NOLINT(cppcoreguidelines-virtual-class-destructor)
 
 namespace DB
 {
+struct FileCacheSettingsImpl;
 class NamedCollection;
+struct MutableColumnsAndConstraints;
+
+#define FILE_CACHE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
+    M(CLASS_NAME, String) \
+    M(CLASS_NAME, Bool) \
+    M(CLASS_NAME, Double) \
+    M(CLASS_NAME, UInt64)
+
+FILE_CACHE_SETTINGS_SUPPORTED_TYPES(FileCacheSettings, DECLARE_SETTING_TRAIT)
 
 struct FileCacheSettings
 {
-    std::string base_path;
+    FileCacheSettings();
+    FileCacheSettings(const FileCacheSettings & settings);
+    FileCacheSettings(FileCacheSettings && settings) noexcept;
+    FileCacheSettings & operator=(FileCacheSettings && settings) noexcept;
+    bool operator==(const FileCacheSettings & settings) const noexcept;
+    ~FileCacheSettings();
 
-    size_t max_size = 0;
-    size_t max_elements = FILECACHE_DEFAULT_MAX_ELEMENTS;
-    size_t max_file_segment_size = FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE;
+    static ColumnsDescription getColumnsDescription();
 
-    bool cache_on_write_operations = false;
+    FILE_CACHE_SETTINGS_SUPPORTED_TYPES(FileCacheSettings, DECLARE_SETTING_SUBSCRIPT_OPERATOR)
 
-    size_t cache_hits_threshold = FILECACHE_DEFAULT_HITS_THRESHOLD;
-    bool enable_filesystem_query_cache_limit = false;
-
-    bool enable_bypass_cache_with_threshold = false;
-    size_t bypass_cache_threshold = FILECACHE_BYPASS_THRESHOLD;
-
-    size_t boundary_alignment = FILECACHE_DEFAULT_FILE_SEGMENT_ALIGNMENT;
-    size_t background_download_threads = FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_THREADS;
-    size_t background_download_queue_size_limit = FILECACHE_DEFAULT_BACKGROUND_DOWNLOAD_QUEUE_SIZE_LIMIT;
-
-    size_t load_metadata_threads = FILECACHE_DEFAULT_LOAD_METADATA_THREADS;
-    bool load_metadata_asynchronously = false;
-
-    bool write_cache_per_user_id_directory = false;
-
-    FileCachePolicy cache_policy = FILECACHE_DEFAULT_CACHE_POLICY;
-    double slru_size_ratio = FILECACHE_DEFAULT_SLRU_RATIO;
-
-    double keep_free_space_size_ratio = FILECACHE_DEFAULT_FREE_SPACE_SIZE_RATIO;
-    double keep_free_space_elements_ratio = FILECACHE_DEFAULT_FREE_SPACE_ELEMENTS_RATIO;
-    size_t keep_free_space_remove_batch = FILECACHE_DEFAULT_FREE_SPACE_REMOVE_BATCH;
-
-    size_t background_download_max_file_segment_size = FILECACHE_DEFAULT_MAX_FILE_SEGMENT_SIZE_WITH_BACKGROUND_DOWLOAD;
-
-    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix);
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & config_prefix, bool allow_empty_path = false);
     void loadFromCollection(const NamedCollection & collection);
+    void dumpToSystemSettingsColumns(
+        MutableColumnsAndConstraints & params,
+        const std::string & cache_name,
+        const FileCachePtr & cache) const;
 
-    std::string toString() const;
-    std::vector<std::string> getSettingsDiff(const FileCacheSettings & other) const;
-
-    bool operator ==(const FileCacheSettings &) const = default;
+    void validate(bool allow_empty_path = false);
 
 private:
-    using FuncHas = std::function<bool(std::string_view)>;
-    using FuncGetUInt = std::function<size_t(std::string_view)>;
-    using FuncGetString = std::function<std::string(std::string_view)>;
-    using FuncGetDouble = std::function<double(std::string_view)>;
-    void loadImpl(FuncHas has, FuncGetUInt get_uint, FuncGetString get_string, FuncGetDouble get_double);
+    std::unique_ptr<FileCacheSettingsImpl> impl;
 };
 
 }

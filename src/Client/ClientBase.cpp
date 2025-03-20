@@ -9,9 +9,11 @@
 #include <Core/Block.h>
 #include <Core/Protocol.h>
 #include <Common/DateLUT.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/MemoryTracker.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/typeid_cast.h>
 #include <Common/TerminalSize.h>
@@ -26,7 +28,6 @@
 
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateFunctionQuery.h>
@@ -76,6 +77,7 @@
 #include <unordered_map>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/algorithm/string/replace.hpp>
+#include <boost/algorithm/string/split.hpp>
 
 #include <Common/config_version.h>
 #include <base/find_symbols.h>
@@ -109,6 +111,7 @@ namespace Setting
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsBool throw_if_no_data_to_insert;
     extern const SettingsBool implicit_select;
+    extern const SettingsBool apply_settings_from_server;
 }
 
 namespace ErrorCodes
@@ -129,6 +132,7 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int USER_EXPIRED;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int CANNOT_WRITE_TO_FILE;
 }
 
 }
@@ -142,6 +146,84 @@ namespace ProfileEvents
 namespace
 {
 constexpr UInt64 THREAD_GROUP_ID = 0;
+
+bool isSpecialFile(const String & path)
+{
+    return path == "/dev/null" || path == "/dev/stdout" || path == "/dev/stderr";
+}
+
+void handleTruncateMode(DB::ASTQueryWithOutput * query_with_output, const String & out_file, String & query)
+{
+    if (!query_with_output->is_outfile_truncate)
+        return;
+
+    /// Skip handling truncate mode of special files
+    if (isSpecialFile(out_file))
+        return;
+
+    /// Create a temporary file with unique suffix
+    String tmp_file = out_file + ".tmp." + DB::toString(randomSeed());
+
+    /// Update the AST to use the temporary file
+    auto tmp_file_literal = std::make_shared<DB::ASTLiteral>(tmp_file);
+    query_with_output->out_file = tmp_file_literal;
+
+    /// Update the query string after modifying the AST
+    query = query_with_output->formatWithSecretsOneLine();
+}
+
+void cleanupTempFile(const DB::ASTPtr & parsed_query)
+{
+    if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
+    {
+        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
+        {
+            const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
+            String tmp_file = tmp_file_node.value.safeGet<std::string>();
+
+            /// Skip rename for special files
+            if (isSpecialFile(tmp_file))
+                return;
+
+            if (fs::exists(tmp_file))
+                fs::remove(tmp_file);
+        }
+    }
+}
+
+void performAtomicRename(const DB::ASTPtr & parsed_query)
+{
+    if (const auto * query_with_output = dynamic_cast<const DB::ASTQueryWithOutput *>(parsed_query.get()))
+    {
+        if (query_with_output->is_outfile_truncate && query_with_output->out_file)
+        {
+            const auto & tmp_file_node = query_with_output->out_file->as<DB::ASTLiteral &>();
+            String tmp_file = tmp_file_node.value.safeGet<std::string>();
+
+            /// Skip rename for special files
+            if (isSpecialFile(tmp_file))
+                return;
+
+            String out_file = tmp_file.substr(0, tmp_file.rfind(".tmp."));
+
+            try
+            {
+                fs::rename(tmp_file, out_file);
+            }
+            catch (const fs::filesystem_error & e)
+            {
+                /// Clean up temporary file
+                if (fs::exists(tmp_file))
+                    fs::remove(tmp_file);
+
+                throw DB::Exception(DB::ErrorCodes::CANNOT_WRITE_TO_FILE,
+                    "Cannot rename temporary file {} to {}: {}",
+                    tmp_file, out_file, e.what());
+            }
+        }
+    }
+}
+
 }
 
 namespace DB
@@ -328,10 +410,19 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
     if (is_interactive || ignore_error)
     {
         String message;
-        if (dialect == Dialect::kusto)
-            res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
-        else
-            res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+        try
+        {
+            if (dialect == Dialect::kusto)
+                res = tryParseKQLQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+            else
+                res = tryParseQuery(*parser, pos, end, message, true, "", allow_multi_statements, max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], true);
+        }
+        catch (const Exception & e)
+        {
+            error_stream << "Exception on client:" << std::endl << getExceptionMessage(e, print_stack_trace, true) << std::endl << std::endl;
+            client_exception.reset(e.clone());
+            return nullptr;
+        }
 
         if (!res)
         {
@@ -850,18 +941,8 @@ void ClientBase::setDefaultFormatsAndCompressionFromConfiguration()
             default_input_compression_method = chooseCompressionMethod(*file_name, "");
     }
 
-    format_max_block_size = getClientConfiguration().getUInt64("format_max_block_size", global_context->getSettingsRef()[Setting::max_block_size]);
-
-    /// Setting value from cmd arg overrides one from config
-    if (global_context->getSettingsRef()[Setting::max_insert_block_size].changed)
-    {
-        insert_format_max_block_size = global_context->getSettingsRef()[Setting::max_insert_block_size];
-    }
-    else
-    {
-        insert_format_max_block_size
-            = getClientConfiguration().getUInt64("insert_format_max_block_size", global_context->getSettingsRef()[Setting::max_insert_block_size]);
-    }
+    if (getClientConfiguration().has("insert_format_max_block_size"))
+        insert_format_max_block_size_from_config = getClientConfiguration().getUInt64("insert_format_max_block_size");
 }
 
 void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption progress_table_option)
@@ -1078,7 +1159,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
-            query = serializeAST(*parsed_query);
+            query = parsed_query->formatWithSecretsOneLine();
         chassert(!query.empty());
     }
 
@@ -1094,7 +1175,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                 visitor.visit(parsed_query);
             }
 
-            query = serializeAST(*parsed_query);
+            query = parsed_query->formatWithSecretsOneLine();
         }
     }
 
@@ -1102,6 +1183,7 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
     if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(parsed_query.get()))
     {
         String out_file;
+
         if (query_with_output->out_file)
         {
             if (global_context->getApplicationType() == Context::ApplicationType::EMBEDDED_CLIENT)
@@ -1159,6 +1241,11 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
                         out_file);
                 }
             }
+
+            if (query_with_output->is_outfile_truncate)
+            {
+                handleTruncateMode(const_cast<ASTQueryWithOutput *>(query_with_output), out_file, query);
+            }
         }
     }
 
@@ -1192,6 +1279,9 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
             }
             catch (const NetException &)
             {
+                // Clean up temporary file if it exists
+                cleanupTempFile(parsed_query);
+
                 // We still want to attempt to process whatever we already received or can receive (socket receive buffer can be not empty)
                 receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
                 throw;
@@ -1199,10 +1289,16 @@ void ClientBase::processOrdinaryQuery(const String & query_to_execute, ASTPtr pa
 
             receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
 
+            // After successful query execution, perform atomic rename for TRUNCATE mode
+            performAtomicRename(parsed_query);
+
             break;
         }
         catch (const Exception & e)
         {
+            // Clean up temporary file if it exists
+            cleanupTempFile(parsed_query);
+
             /// Retry when the server said "Client should retry" and no rows
             /// has been received yet.
             if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && --retries_left)
@@ -1663,7 +1759,7 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
 
         /// Get new query after substitutions.
         if (visitor.getNumberOfReplacedParameters())
-            query = serializeAST(*parsed_query);
+            query = parsed_query->formatWithSecretsOneLine();
         chassert(!query.empty());
     }
 
@@ -1695,26 +1791,35 @@ void ClientBase::processInsertQuery(const String & query_to_execute, ASTPtr pars
         {},
         [&](const Progress & progress) { onProgress(progress); });
 
-    if (send_external_tables)
-        sendExternalTables(parsed_query);
-
-    startKeystrokeInterceptorIfExists();
-    SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
-
-    /// Receive description of table structure.
-    Block sample;
-    ColumnsDescription columns_description;
-    if (receiveSampleBlock(sample, columns_description, parsed_query))
+    try
     {
-        /// If structure was received (thus, server has not thrown an exception),
-        /// send our data with that structure.
-        if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
-        {
-            setInsertionTable(parsed_insert_query);
-        }
+        if (send_external_tables)
+            sendExternalTables(parsed_query);
 
-        sendData(sample, columns_description, parsed_query);
+        startKeystrokeInterceptorIfExists();
+        SCOPE_EXIT({ stopKeystrokeInterceptorIfExists(); });
+
+        /// Receive description of table structure.
+        Block sample;
+        ColumnsDescription columns_description;
+        if (receiveSampleBlock(sample, columns_description, parsed_query))
+        {
+            /// If structure was received (thus, server has not thrown an exception),
+            /// send our data with that structure.
+            if (global_context->getApplicationType() != Context::ApplicationType::EMBEDDED_CLIENT)
+            {
+                setInsertionTable(parsed_insert_query);
+            }
+
+            sendData(sample, columns_description, parsed_query);
+            receiveEndOfQuery();
+        }
+    }
+    catch (...)
+    {
+        connection->sendCancel();
         receiveEndOfQuery();
+        throw;
     }
 }
 
@@ -1877,6 +1982,12 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
             current_format = insert->format;
     }
 
+    /// Setting value from cmd arg overrides one from config.
+    size_t insert_format_max_block_size = client_context->getSettingsRef()[Setting::max_insert_block_size];
+    if (!client_context->getSettingsRef()[Setting::max_insert_block_size].changed &&
+        insert_format_max_block_size_from_config.has_value())
+        insert_format_max_block_size = insert_format_max_block_size_from_config.value();
+
     auto source = client_context->getInputFormat(current_format, buf, sample, insert_format_max_block_size);
     Pipe pipe(source);
 
@@ -1892,7 +2003,6 @@ void ClientBase::sendDataFrom(ReadBuffer & buf, Block & sample, const ColumnsDes
 }
 
 void ClientBase::sendDataFromPipe(Pipe&& pipe, ASTPtr parsed_query, bool have_more_data)
-try
 {
     QueryPipeline pipeline(std::move(pipe));
     PullingAsyncPipelineExecutor executor(pipeline);
@@ -1939,12 +2049,6 @@ try
 
     if (!have_more_data)
         connection->sendData({}, "", false);
-}
-catch (...)
-{
-    connection->sendCancel();
-    receiveEndOfQuery();
-    throw;
 }
 
 void ClientBase::sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query)
@@ -2125,11 +2229,15 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
                 }
             }
             client_context->setSettings(old_settings);
+            connection->setFormatSettings(getFormatSettings(client_context));
         });
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
+        connection->setFormatSettings(getFormatSettings(client_context));
 
         if (!connection->checkConnected(connection_parameters.timeouts))
             connect();
+
+        applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         ASTPtr input_function;
         const auto * insert = parsed_query->as<ASTInsertQuery>();
@@ -2149,7 +2257,7 @@ void ClientBase::processParsedSingleQuery(const String & full_query, const Strin
         }
 
         /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-        if (insert && (!insert->select || input_function) && !is_async_insert_with_inlined_data)
+        if (insert && (!insert->select || input_function) && (!is_async_insert_with_inlined_data || input_function))
         {
             if (input_function && insert->format.empty())
                 throw Exception(ErrorCodes::INVALID_USAGE_OF_INPUT, "FORMAT must be specified for function input()");
@@ -2766,6 +2874,22 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     return added_new_setting;
 }
 
+void ClientBase::applySettingsFromServerIfNeeded()
+{
+    const Settings & settings = client_context->getSettingsRef();
+    SettingsChanges changes_to_apply;
+    for (const SettingChange & change : settings_from_server)
+    {
+        /// Apply settings received from server with lower priority than settings changed from
+        /// command line or query.
+        if (!settings.isChanged(change.name))
+            changes_to_apply.push_back(change);
+    }
+
+    if (settings[Setting::apply_settings_from_server])
+        global_context->applySettingsChanges(changes_to_apply);
+}
+
 void ClientBase::startKeystrokeInterceptorIfExists()
 {
     if (keystroke_interceptor)
@@ -2815,7 +2939,7 @@ void ClientBase::addCommonOptions(OptionsDescription & options_description)
 
         ("proto_caps", po::value<std::string>(), "Enable/disable chunked protocol: chunked_optional, notchunked, notchunked_optional, send_chunked, send_chunked_optional, send_notchunked, send_notchunked_optional, recv_chunked, recv_chunked_optional, recv_notchunked, recv_notchunked_optional")
 
-        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple comma-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
+        ("query,q", po::value<std::vector<std::string>>()->multitoken(), R"(Query. Can be specified multiple times (--query "SELECT 1" --query "SELECT 2") or once with multiple semicolon-separated queries (--query "SELECT 1; SELECT 2;"). In the latter case, INSERT queries with non-VALUE format must be separated by empty lines.)")
         ("queries-file", po::value<std::vector<std::string>>()->multitoken(), "File path with queries to execute; multiple files can be specified (--queries-file file1 file2...)")
         ("multiquery,n", "Obsolete, does nothing")
         ("multiline,m", "If specified, allow multi-line queries (Enter does not send the query)")
@@ -3370,6 +3494,16 @@ void ClientBase::clearTerminal()
 void ClientBase::showClientVersion()
 {
     output_stream << VERSION_NAME << " " + getName() + " version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
+}
+
+std::string ClientBase::getConnectionHostAndPortForFuzzing() const
+{
+    if (!hosts_and_ports.empty())
+    {
+        const HostAndPort & hap = hosts_and_ports[0];
+        return hap.host + (hap.port.has_value() ? (":" + std::to_string(hap.port.value())) : "");
+    }
+    return "127.0.0.{1,2}";
 }
 
 }

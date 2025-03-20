@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Storages/StorageMemory.h>
@@ -156,22 +157,6 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryP
     return true;
 }
 
-QueryPlan::Node * makeExpressionNodeOnTopOf(QueryPlan::Node * node, ActionsDAG actions_dag, const String & filter_column_name, QueryPlan::Nodes & nodes)
-{
-    const auto & header = node->step->getOutputHeader();
-    if (!header)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create ExpressionStep on top of node without header");
-
-    QueryPlanStepPtr step;
-
-    if (filter_column_name.empty())
-        step = std::make_unique<ExpressionStep>(header, std::move(actions_dag));
-    else
-        step = std::make_unique<FilterStep>(header, std::move(actions_dag), filter_column_name, false);
-
-    return &nodes.emplace_back(QueryPlan::Node{std::move(step), {node}});
-}
-
 void addSortingForMergeJoin(
     const FullSortingMergeJoin * join_ptr,
     QueryPlan::Node *& left_node,
@@ -257,10 +242,15 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
-    JoinActionRef left_filter(nullptr);
-    JoinActionRef right_filter(nullptr);
     JoinActionRef post_filter(nullptr);
-    auto join_ptr = join_step->convertToPhysical(left_filter, right_filter, post_filter, keep_logical);
+    auto join_ptr = join_step->convertToPhysical(
+        post_filter,
+        keep_logical,
+        optimization_settings.max_threads,
+        optimization_settings.max_entries_for_hash_table_stats,
+        optimization_settings.initial_query_id,
+        optimization_settings.lock_acquire_timeout,
+        optimization_settings.actions_settings);
 
     if (join_ptr->isFilled())
     {
@@ -272,17 +262,17 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
 
     Header output_header = join_step->getOutputHeader();
 
-    auto & join_expression_actions = join_step->getExpressionActions();
+    const auto & join_expression_actions = join_step->getExpressionActions();
 
-    QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(join_expression_actions.left_pre_join_actions), left_filter.column_name, nodes);
+    QueryPlan::Node * new_left_node = makeExpressionNodeOnTopOf(node.children.at(0), std::move(*join_expression_actions.left_pre_join_actions), {}, nodes);
     QueryPlan::Node * new_right_node = nullptr;
     if (node.children.size() >= 2)
-        new_right_node = makeExpressionNodeOnTopOf(node.children.at(1), std::move(join_expression_actions.right_pre_join_actions), right_filter.column_name, nodes);
+        new_right_node = makeExpressionNodeOnTopOf(node.children.at(1), std::move(*join_expression_actions.right_pre_join_actions), {}, nodes);
 
     if (join_step->areInputsSwapped() && new_right_node)
         std::swap(new_left_node, new_right_node);
 
-    const auto & settings = join_step->getContext()->getSettingsRef();
+    const auto & settings = join_step->getSettings();
 
     auto & new_join_node = nodes.emplace_back();
 
@@ -293,14 +283,14 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
             addSortingForMergeJoin(fsmjoin, new_left_node, new_right_node, nodes,
                 join_step->getSortingSettings(), join_step->getJoinSettings(), join_step->getJoinInfo());
 
-        auto required_output_from_join = join_expression_actions.post_join_actions.getRequiredColumnsNames();
+        auto required_output_from_join = join_expression_actions.post_join_actions->getRequiredColumnsNames();
         new_join_node.step = std::make_unique<JoinStep>(
             new_left_node->step->getOutputHeader(),
             new_right_node->step->getOutputHeader(),
             join_ptr,
-            settings[Setting::max_block_size],
-            settings[Setting::min_joined_block_size_bytes],
-            settings[Setting::max_threads],
+            settings.max_block_size,
+            settings.min_joined_block_size_bytes,
+            optimization_settings.max_threads,
             NameSet(required_output_from_join.begin(), required_output_from_join.end()),
             false /*optimize_read_in_order*/,
             true /*use_new_analyzer*/);
@@ -311,18 +301,24 @@ bool convertLogicalJoinToPhysical(QueryPlan::Node & node, QueryPlan::Nodes & nod
         new_join_node.step = std::make_unique<FilledJoinStep>(
             new_left_node->step->getOutputHeader(),
             join_ptr,
-            settings[Setting::max_block_size]);
+            settings.max_block_size);
         new_join_node.children = {new_left_node};
     }
 
-    if (!post_filter)
-        node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(join_expression_actions.post_join_actions));
+    QueryPlan::Node result_node;
+    if (post_filter)
+    {
+        bool remove_filter = !output_header.has(post_filter.getColumnName());
+        result_node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions), post_filter.getColumnName(), remove_filter);
+        result_node.children = {&new_join_node};
+    }
     else
     {
-        bool remove_filter = !output_header.has(post_filter.column_name);
-        node.step = std::make_unique<FilterStep>(new_join_node.step->getOutputHeader(), std::move(join_expression_actions.post_join_actions), post_filter.column_name, remove_filter);
+        result_node.step = std::make_unique<ExpressionStep>(new_join_node.step->getOutputHeader(), std::move(*join_expression_actions.post_join_actions));
+        result_node.children = {&new_join_node};
     }
-    node.children = {&new_join_node};
+
+    node = std::move(result_node);
     return true;
 }
 

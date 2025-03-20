@@ -17,7 +17,6 @@
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
-#include <Parsers/formatAST.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -47,12 +46,6 @@
 #include <Common/escapeForFileName.h>
 #include "Core/Names.h"
 #include <IO/SharedThreadPools.h>
-
-namespace CurrentMetrics
-{
-    extern const Metric ActiveDataMutations;
-    extern const Metric ActiveMetadataMutations;
-}
 
 namespace DB
 {
@@ -86,8 +79,11 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
+    extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
+    extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
@@ -251,9 +247,6 @@ void StorageMergeTree::shutdown(bool)
 StorageMergeTree::~StorageMergeTree()
 {
     shutdown(false);
-
-    CurrentMetrics::sub(CurrentMetrics::ActiveDataMutations, num_data_mutations_to_apply);
-    CurrentMetrics::sub(CurrentMetrics::ActiveMetadataMutations, num_metadata_mutations_to_apply);
 }
 
 void StorageMergeTree::read(
@@ -872,12 +865,10 @@ std::vector<MergeTreeMutationStatus> StorageMergeTree::getMutationsStatus() cons
 
         for (const MutationCommand & command : *entry.commands)
         {
-            WriteBufferFromOwnString buf;
-            formatAST(*command.ast, buf, false, true);
             result.push_back(MergeTreeMutationStatus
             {
                 entry.file_name,
-                buf.str(),
+                command.ast->formatWithSecretsOneLine(),
                 entry.create_time,
                 block_numbers_map,
                 parts_to_do_names,
@@ -1470,7 +1461,13 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (is_cancelled(merge_entry))
             return false;
 
-        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, /* cleanup */ false, merge_entry, shared_lock, common_assignee_trigger);
+        bool cleanup = merge_entry->future_part->final
+            && (*getSettings())[MergeTreeSetting::allow_experimental_replacing_merge_with_cleanup]
+            && (*getSettings())[MergeTreeSetting::enable_replacing_merge_with_cleanup_for_min_age_to_force_merge]
+            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_seconds]
+            && (*getSettings())[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
+
+        auto task = std::make_shared<MergePlainMergeTreeTask>(*this, metadata_snapshot, /* deduplicate */ false, Names{}, cleanup, merge_entry, shared_lock, common_assignee_trigger);
         task->setCurrentTransaction(std::move(transaction_for_merge), std::move(txn));
         bool scheduled = assignee.scheduleMergeMutateTask(task);
         /// The problem that we already booked a slot for TTL merge, but a merge list entry will be created only in a prepare method
@@ -1622,7 +1619,7 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
         // All parts which are dropped in that operations are not removed until failpoint is released
         // If we would set this failpoint before grabOldParts, it leads us to a case when
         // background thread already passed the failpoint but did not reach grabOldParts yet
-        // if failpoint is enabled at that time, background thead could grab parts from those operations and remove them regardless enabled failpoint
+        // if failpoint is enabled at that time, background thread could grab parts from those operations and remove them regardless enabled failpoint
         FailPointInjection::pauseFailPoint(FailPoints::storage_merge_tree_background_clear_old_parts_pause);
     }
 
@@ -2402,7 +2399,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
         throw Exception(ErrorCodes::TOO_MANY_PARTS,
                         "Cannot move {} parts at once, the limit is {}. "
                         "Wait until some parts are merged and retry, move smaller partitions, or increase the setting 'max_parts_to_move'.",
-                        src_parts.size(), settings[Setting::max_parts_to_move]);
+                        src_parts.size(), settings[Setting::max_parts_to_move].value);
     }
 
     MutableDataPartsVector dst_parts;
@@ -2699,6 +2696,18 @@ MergeTreeData::MutationsSnapshotPtr StorageMergeTree::getMutationsSnapshot(const
     }
 
     return res;
+}
+
+UInt64 StorageMergeTree::getNumberOnFlyDataMutations() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return num_data_mutations_to_apply;
+}
+
+UInt64 StorageMergeTree::getNumberOnFlyMetadataMutations() const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+    return num_metadata_mutations_to_apply;
 }
 
 void StorageMergeTree::startBackgroundMovesIfNeeded()

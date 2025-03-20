@@ -1,44 +1,49 @@
 #pragma once
+#include "config.h"
 
-#include <vector>
+#if USE_AVRO
+
 #include <Core/NamesAndTypes.h>
-#include <Core/Range.h>
+#include <Parsers/IAST_fwd.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/KeyDescription.h>
+#include <Storages/MergeTree/KeyCondition.h>
+
 
 namespace Iceberg
 {
 
-enum class PartitionTransform
+struct ManifestFileEntry;
+class ManifestFileContent;
+
+DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
+
+/// Prune specific data files based on manifest content
+class PartitionPruner
 {
-    Year,
-    Month,
-    Day,
-    Hour,
-    Identity,
-    Void,
-    Unsupported
+private:
+    const DB::IcebergSchemaProcessor & schema_processor;
+    Int32 current_schema_id;
+    const DB::KeyDescription * partition_key;
+
+    std::optional<DB::KeyCondition> key_condition;
+    /// NOTE: tricky part to support RENAME column in partition key.
+    /// Takes ActionDAG representation of user's WHERE expression and
+    /// rename columns to the their origina numeric id's in iceberg
+    std::unique_ptr<DB::ActionsDAG> transformFilterDagForManifest(const DB::ActionsDAG * source_dag, Int32 manifest_schema_id, const std::vector<Int32> & partition_column_ids) const;
+public:
+    PartitionPruner(
+        const DB::IcebergSchemaProcessor & schema_processor_,
+        Int32 current_schema_id_,
+        const DB::ActionsDAG * filter_dag,
+        const ManifestFileContent & manifest_file,
+        DB::ContextPtr context);
+
+    bool canBePruned(const ManifestFileEntry & entry) const;
+
 };
 
-struct SpecificSchemaPartitionInfo
-{
-    std::vector<std::vector<DB::Range>> ranges;
-    DB::NamesAndTypesList partition_names_and_types;
-};
-
-Iceberg::PartitionTransform getTransform(const String & transform_name);
-
-// This function is used to convert the entry `partition_column[index]` to the range which type coincides with the
-// `column_data_type` and represents the time period corresponding to the entry's value under the `partition_transform`
-// Examples:
-// partition_transform = Iceberg::PartitionTransform::Year
-// index = 3
-// partition_column = [1970, 1971, 1972, 1973, 1974]
-// column_data_type = Date
-// Range: {1096, true, 1461, false} // 1096 is the start of the year 1973 (in days), 1461 is the start of the year 1974 (in days) (exclusive end of the year 1973)
-// partition_transform = Iceberg::PartitionTransform::Month
-// index = 3
-// partition_column = [1970-01, 1970-02, 1970-03, 1970-04, 1970-05]
-// column_data_type = DateTime64
-// Range: {7776000, true, 10368000, false} // 7776000 is the start of the year 1970-04 (in seconds), 10368000 is the start of the month 1970-05 (in seconds) (exclusive end of the month 1970-04)
-DB::Range getPartitionRange(
-    Iceberg::PartitionTransform partition_transform, size_t index, DB::ColumnPtr partition_column, DB::DataTypePtr column_data_type);
 }
+
+#endif

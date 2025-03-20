@@ -18,7 +18,7 @@ from github.IssueComment import IssueComment
 from github.Repository import Repository
 
 from ci_config import CI
-from env_helper import GITHUB_REPOSITORY, TEMP_PATH
+from env_helper import GITHUB_REPOSITORY, GITHUB_UPSTREAM_REPOSITORY, TEMP_PATH
 from pr_info import PRInfo
 from report import (
     ERROR,
@@ -151,8 +151,8 @@ def set_status_comment(commit: Commit, pr_info: PRInfo) -> None:
     one, so the method does nothing for simple pushes and pull requests with
     `release`/`release-lts` labels"""
 
-    if pr_info.is_merge_queue:
-        # skip report creation for the MQ
+    if GITHUB_REPOSITORY == GITHUB_UPSTREAM_REPOSITORY or pr_info.is_merge_queue:
+        # CI Running status is deprecated for ClickHouse repo
         return
 
     # to reduce number of parameters, the Github is constructed on the fly
@@ -309,6 +309,8 @@ def create_ci_report(pr_info: PRInfo, statuses: CommitStatuses) -> str:
     test_results = []  # type: TestResults
     for status in statuses:
         log_urls = []
+        if status.context == "PR":
+            continue
         if status.target_url is not None:
             log_urls.append(status.target_url)
         raw_logs = status.description or None
@@ -583,7 +585,7 @@ CHECK_DESCRIPTIONS = [
         "information to fix the error, but you might have to reproduce the failure "
         "locally. The <b>cmake</b> options can be found in the build log, grepping for "
         '<b>cmake</b>. Use these options and follow the <a href="'
-        'https://clickhouse.com/docs/en/development/build">general build process</a>',
+        'https://clickhouse.com/docs/development/build">general build process</a>',
         lambda x: x.startswith("ClickHouse") and x.endswith("build check"),
     ),
     CheckDescription(
@@ -610,11 +612,11 @@ CHECK_DESCRIPTIONS = [
     CheckDescription(
         CI.JobNames.FAST_TEST,
         "Normally this is the first check that is ran for a PR. It builds ClickHouse "
-        'and runs most of <a href="https://clickhouse.com/docs/en/development/tests'
+        'and runs most of <a href="https://clickhouse.com/docs/development/tests'
         '#functional-tests">stateless functional tests</a>, '
         "omitting some. If it fails, further checks are not started until it is fixed. "
         "Look at the report to see which tests fail, then reproduce the failure "
-        'locally as described <a href="https://clickhouse.com/docs/en/development/'
+        'locally as described <a href="https://clickhouse.com/docs/development/'
         'tests#functional-test-locally">here</a>',
         lambda x: x == CI.JobNames.FAST_TEST,
     ),

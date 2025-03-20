@@ -1,13 +1,16 @@
 ---
-slug: /en/sql-reference/table-functions/timeSeriesData
+description: 'timeSeriesData returns the data table used by table `db_name.time_series_table`
+  whose table engine is TimeSeries.'
+sidebar_label: 'timeSeriesData'
 sidebar_position: 145
-sidebar_label: timeSeriesData
+slug: /sql-reference/table-functions/timeSeriesData
+title: 'timeSeriesData'
 ---
 
-# timeSeriesData
+# timeSeriesData Table Function
 
 `timeSeriesData(db_name.time_series_table)` - Returns the [data](../../engines/table-engines/integrations/time-series.md#data-table) table
-used by table `db_name.time_series_table` which table engine is [TimeSeries](../../engines/table-engines/integrations/time-series.md):
+used by table `db_name.time_series_table` whose table engine is [TimeSeries](../../engines/table-engines/integrations/time-series.md):
 
 ``` sql
 CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA data_table

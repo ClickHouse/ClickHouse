@@ -6,7 +6,11 @@ options {
 
 // Top-level statements
 
-queryStmt: query (INTO OUTFILE STRING_LITERAL)? (FORMAT identifierOrNull)? (SEMICOLON)? | insertStmt;
+queryStmt
+    : query (INTO OUTFILE stringLiteral)? (FORMAT identifierOrNull)? (SEMICOLON)?  # QueryStmtQuery
+    | insertStmt                                                                   # QueryStmtInsert
+    ;
+
 query
     : alterStmt     // DDL
     | attachStmt    // DDL
@@ -26,20 +30,6 @@ query
     | truncateStmt  // DDL
     | useStmt
     | watchStmt
-    | ctes? selectStmt
-    ;
-
-// CTE statement
-ctes
-    : WITH namedQuery (',' namedQuery)*
-    ;
-
-namedQuery
-    : name=identifier (columnAliases)? AS '(' query ')'
-    ;
-
-columnAliases
-    : '(' identifier (',' identifier)* ')'
     ;
 
 // ALTER statement
@@ -56,7 +46,7 @@ alterTableClause
     | CLEAR COLUMN (IF EXISTS)? nestedIdentifier (IN partitionClause)?                # AlterTableClauseClearColumn
     | CLEAR INDEX (IF EXISTS)? nestedIdentifier (IN partitionClause)?                 # AlterTableClauseClearIndex
     | CLEAR PROJECTION (IF EXISTS)? nestedIdentifier (IN partitionClause)?            # AlterTableClauseClearProjection
-    | COMMENT COLUMN (IF EXISTS)? nestedIdentifier STRING_LITERAL                     # AlterTableClauseComment
+    | COMMENT COLUMN (IF EXISTS)? nestedIdentifier stringLiteral                      # AlterTableClauseComment
     | DELETE WHERE columnExpr                                                         # AlterTableClauseDelete
     | DETACH partitionClause                                                          # AlterTableClauseDetach
     | DROP COLUMN (IF EXISTS)? nestedIdentifier                                       # AlterTableClauseDropColumn
@@ -67,13 +57,13 @@ alterTableClause
     | MATERIALIZE INDEX (IF EXISTS)? nestedIdentifier (IN partitionClause)?           # AlterTableClauseMaterializeIndex
     | MATERIALIZE PROJECTION (IF EXISTS)? nestedIdentifier (IN partitionClause)?      # AlterTableClauseMaterializeProjection
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier codecExpr                           # AlterTableClauseModifyCodec
-    | MODIFY COLUMN (IF EXISTS)? nestedIdentifier COMMENT STRING_LITERAL              # AlterTableClauseModifyComment
+    | MODIFY COLUMN (IF EXISTS)? nestedIdentifier COMMENT stringLiteral               # AlterTableClauseModifyComment
     | MODIFY COLUMN (IF EXISTS)? nestedIdentifier REMOVE tableColumnPropertyType      # AlterTableClauseModifyRemove
     | MODIFY COLUMN (IF EXISTS)? tableColumnDfnt                                      # AlterTableClauseModify
     | MODIFY ORDER BY columnExpr                                                      # AlterTableClauseModifyOrderBy
     | MODIFY ttlClause                                                                # AlterTableClauseModifyTTL
-    | MOVE partitionClause ( TO DISK STRING_LITERAL
-                           | TO VOLUME STRING_LITERAL
+    | MOVE partitionClause ( TO DISK stringLiteral
+                           | TO VOLUME stringLiteral
                            | TO TABLE tableIdentifier
                            )                                                          # AlterTableClauseMovePartition
     | REMOVE TTL                                                                      # AlterTableClauseRemoveTTL
@@ -89,7 +79,7 @@ tableColumnPropertyType: ALIAS | CODEC | COMMENT | DEFAULT | MATERIALIZED | TTL;
 
 partitionClause
     : PARTITION columnExpr         // actually we expect here any form of tuple of literals
-    | PARTITION ID STRING_LITERAL
+    | PARTITION ID stringLiteral
     ;
 
 // ATTACH statement
@@ -144,8 +134,8 @@ layoutClause: LAYOUT LPAREN identifier LPAREN dictionaryArgExpr* RPAREN RPAREN;
 rangeClause: RANGE LPAREN (MIN identifier MAX identifier | MAX identifier MIN identifier) RPAREN;
 dictionarySettingsClause: SETTINGS LPAREN settingExprList RPAREN;
 
-clusterClause: ON CLUSTER (identifier | STRING_LITERAL);
-uuidClause: UUID STRING_LITERAL;
+clusterClause: ON CLUSTER (identifier | stringLiteral);
+uuidClause: UUID stringLiteral;
 destinationClause: TO tableIdentifier;
 subqueryClause: AS selectUnionStmt;
 tableSchemaClause
@@ -177,15 +167,18 @@ tableElementExpr
     | PROJECTION tableProjectionDfnt                                               # TableElementExprProjection
     ;
 tableColumnDfnt
-    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? (COMMENT STRING_LITERAL)? codecExpr? (TTL columnExpr)?
-    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr (COMMENT STRING_LITERAL)? codecExpr? (TTL columnExpr)?
+    : nestedIdentifier columnTypeExpr tableColumnPropertyExpr? (COMMENT stringLiteral)? codecExpr? (TTL columnExpr)?
+    | nestedIdentifier columnTypeExpr? tableColumnPropertyExpr (COMMENT stringLiteral)? codecExpr? (TTL columnExpr)?
     ;
 tableColumnPropertyExpr: (DEFAULT | MATERIALIZED | ALIAS) columnExpr;
 tableIndexDfnt: nestedIdentifier columnExpr TYPE columnTypeExpr GRANULARITY DECIMAL_LITERAL;
 tableProjectionDfnt: nestedIdentifier projectionSelectStmt;
 codecExpr: CODEC LPAREN codecArgExpr (COMMA codecArgExpr)* RPAREN;
 codecArgExpr: identifier (LPAREN columnExprList? RPAREN)?;
-ttlExpr: columnExpr (DELETE | TO DISK STRING_LITERAL | TO VOLUME STRING_LITERAL)?;
+ttlExpr
+    : columnExpr (DELETE whereClause? | TO DISK stringLiteral | TO VOLUME stringLiteral)?
+    | columnExpr groupByClause SET ttlSetExpr (COMMA ttlSetExpr)*;
+ttlSetExpr: columnExpr EQ_SINGLE columnExpr;
 
 // DESCRIBE statement
 
@@ -208,8 +201,7 @@ existsStmt
 // EXPLAIN statement
 
 explainStmt
-    : EXPLAIN AST query     # ExplainASTStmt
-    | EXPLAIN SYNTAX query  # ExplainSyntaxStmt
+    : EXPLAIN (AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE)? settingExprList? selectUnionStmt
     ;
 
 // INSERT statement
@@ -258,7 +250,7 @@ projectionSelectStmt:
 
 // SELECT statement
 
-selectUnionStmt: selectStmtWithParens (UNION ALL selectStmtWithParens)*;
+selectUnionStmt: selectStmtWithParens (UNION (ALL | DISTINCT) selectStmtWithParens)*;
 selectStmtWithParens: selectStmt | LPAREN selectUnionStmt RPAREN;
 selectStmt:
     withClause?
@@ -271,21 +263,33 @@ selectStmt:
     groupByClause? (WITH (CUBE | ROLLUP))? (WITH TOTALS)?
     havingClause?
     orderByClause?
+    interpolateClause?
     limitByClause?
     limitClause?
     settingsClause?
     ;
 
-withClause: WITH columnExprList;
+withClause: WITH withExprList;
+withExprList: withExpr (COMMA withExpr)*;
+withExpr
+    : RECURSIVE? identifier AS LPAREN selectUnionStmt RPAREN  # WithExprSubquery
+    | columnExpr AS identifier                                # WithExprExpression
+    ;
 topClause: TOP DECIMAL_LITERAL (WITH TIES)?;
 fromClause: FROM joinExpr;
 arrayJoinClause: (LEFT | INNER)? ARRAY JOIN columnExprList;
 windowClause: WINDOW identifier AS LPAREN windowExpr RPAREN;
 prewhereClause: PREWHERE columnExpr;
 whereClause: WHERE columnExpr;
-groupByClause: GROUP BY ((CUBE | ROLLUP) LPAREN columnExprList RPAREN | columnExprList);
+groupByClause
+  : GROUP BY ALL                                           # GroupByClauseAll
+  | GROUP BY (CUBE | ROLLUP) LPAREN columnExprList RPAREN  # GroupByClauseCubeOrRollup
+  | GROUP BY GROUPING SETS LPAREN columnExprList RPAREN    # GroupByClauseGroupingSets
+  | GROUP BY columnExprList                                # GroupByClauseSimple
+  ;
 havingClause: HAVING columnExpr;
 orderByClause: ORDER BY orderExprList;
+interpolateClause: INTERPOLATE LPAREN columnExprList RPAREN;
 projectionOrderByClause: ORDER BY columnExprList;
 limitByClause: LIMIT limitExpr BY columnExprList;
 limitClause: LIMIT limitExpr (WITH TIES)?;
@@ -317,7 +321,7 @@ joinConstraintClause
 sampleClause: SAMPLE ratioExpr (OFFSET ratioExpr)?;
 limitExpr: columnExpr ((COMMA | OFFSET) columnExpr)?;
 orderExprList: orderExpr (COMMA orderExpr)*;
-orderExpr: columnExpr (ASCENDING | DESCENDING | DESC)? (NULLS (FIRST | LAST))? (COLLATE STRING_LITERAL)?;
+orderExpr: columnExpr (ASCENDING | DESCENDING | DESC)? (NULLS (FIRST | LAST))? (COLLATE stringLiteral)? (WITH FILL (FROM columnExpr)? (TO columnExpr)? (STEP columnExpr)?)?;
 ratioExpr: numberLiteral (SLASH numberLiteral)?;
 settingExprList: settingExpr (COMMA settingExpr)*;
 settingExpr: identifier EQ_SINGLE literal;
@@ -341,12 +345,38 @@ setStmt: SET settingExprList;
 // SHOW statements
 
 showStmt
-    : SHOW CREATE DATABASE databaseIdentifier                                                                     # showCreateDatabaseStmt
-    | SHOW CREATE DICTIONARY tableIdentifier                                                                      # showCreateDictionaryStmt
-    | SHOW CREATE TEMPORARY? TABLE? tableIdentifier                                                               # showCreateTableStmt
-    | SHOW DATABASES                                                                                              # showDatabasesStmt
-    | SHOW DICTIONARIES (FROM databaseIdentifier)?                                                                # showDictionariesStmt
-    | SHOW TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? (LIKE STRING_LITERAL | whereClause)? limitClause?  # showTablesStmt
+    : SHOW CREATE? DATABASE databaseIdentifier                                                                                                                                                        # showCreateDatabaseStmt
+    | SHOW CREATE DICTIONARY tableIdentifier                                                                                                                                                          # showCreateDictionaryStmt
+    | SHOW CREATE? VIEW tableIdentifier                                                                                                                                                               # showCreateViewStmt
+    | SHOW DATABASES ((NOT? (LIKE | ILIKE) stringLiteral) | WHERE columnExpr)? (LIMIT DECIMAL_LITERAL)?                                                                                               # showDatabasesStmt
+    | SHOW DICTIONARIES (FROM databaseIdentifier)? ((NOT? (LIKE | ILIKE) stringLiteral) | WHERE columnExpr)? (LIMIT DECIMAL_LITERAL)?                                                                 # showDictionariesStmt
+    | SHOW FULL? TEMPORARY? TABLES ((FROM | IN) databaseIdentifier)? ((NOT? (LIKE | ILIKE) stringLiteral) | WHERE columnExpr)? (LIMIT DECIMAL_LITERAL)?                                               # showTablesStmt
+    | SHOW EXTENDED? FULL? (COLUMNS | FIELDS) (FROM | IN) (tableIdentifier | (identifier (FROM | IN) identifier)) ((NOT? (LIKE | ILIKE) stringLiteral) | WHERE columnExpr)? (LIMIT DECIMAL_LITERAL)?  # showColumnsStmt
+    | SHOW EXTENDED? (INDEX | INDEXES | INDICES | KEYS) (FROM | IN) (tableIdentifier | (identifier (FROM | IN) identifier)) (WHERE columnExpr)?                                                       # showIndexStmt
+    | SHOW PROCESSLIST                                                                                                                                                                                # showProcessListStmt
+    | SHOW GRANTS (FOR identifier (COMMA identifier)*)? (WITH IMPLICIT)? (FINAL)?                                                                                                                     # showGrantsStmt
+    | SHOW CREATE USER ((identifier (COMMA identifier)*) | CURRENT_USER)?                                                                                                                             # showCreateUserStmt
+    | SHOW CREATE ROLE identifier (COMMA identifier)*                                                                                                                                                 # showCreateRoleStmt
+    | SHOW CREATE ROW? POLICY identifier ON tableIdentifier (COMMA tableIdentifier)*                                                                                                                  # showCreatePolicyStmt
+    | SHOW CREATE QUOTA ((identifier (COMMA identifier)*) | CURRENT)                                                                                                                                  # showCreateQuotaStmt
+    | SHOW CREATE SETTINGS? PROFILE identifier (COMMA identifier)*                                                                                                                                    # showCreateProfileStmt
+    | SHOW USERS                                                                                                                                                                                      # showUsersStmt
+    | SHOW (CURRENT | ENABLED)? ROLES                                                                                                                                                                 # showRolesStmt
+    | SHOW SETTINGS? PROFILES                                                                                                                                                                         # showProfilesStmt
+    | SHOW ROW? POLICIES (ON tableIdentifier)?                                                                                                                                                        # showPoliciesStmt
+    | SHOW QUOTAS                                                                                                                                                                                     # showQuotasStmt
+    | SHOW CURRENT? QUOTA                                                                                                                                                                             # showQuotaStmt
+    | SHOW ACCESS                                                                                                                                                                                     # showAccessStmt
+    | SHOW CLUSTER stringLiteral                                                                                                                                                                      # showClusterStmt
+    | SHOW CLUSTERS (NOT? (LIKE | ILIKE) stringLiteral)? (LIMIT DECIMAL_LITERAL)?                                                                                                                     # showClustersStmt
+    | SHOW CHANGED? SETTINGS (LIKE | ILIKE) stringLiteral                                                                                                                                             # showSettingsStmt
+    | SHOW SETTING stringLiteral                                                                                                                                                                      # showSettingStmt
+    | SHOW FILESYSTEM CACHES                                                                                                                                                                          # showFilesystemCaches
+    | SHOW ENGINES                                                                                                                                                                                    # showEnginesStmt
+    | SHOW FUNCTIONS ((LIKE | ILIKE) stringLiteral)?                                                                                                                                                  # showFunctionsStmt
+    | SHOW MERGES (NOT? (LIKE | ILIKE) stringLiteral)? (LIMIT DECIMAL_LITERAL)?                                                                                                                       # showMergesStmt
+    | SHOW PRIVILEGES                                                                                                                                                                                 # showPrivilegesStmt
+    | SHOW (TABLE | CREATE TEMPORARY? TABLE?)? tableIdentifier                                                                                                                                        # showCreateTableStmt
     ;
 
 // SYSTEM statements
@@ -386,20 +416,24 @@ columnTypeExpr
     ;
 columnExprList: columnsExpr (COMMA columnsExpr)*;
 columnsExpr
-    : (tableIdentifier DOT)? ASTERISK  # ColumnsExprAsterisk
-    | LPAREN selectUnionStmt RPAREN    # ColumnsExprSubquery
+    : (tableIdentifier DOT)? ASTERISK columnExceptExpr?                                 # ColumnsExprAsterisk
+    | LPAREN selectUnionStmt RPAREN                                                     # ColumnsExprSubquery
     // NOTE: asterisk and subquery goes before |columnExpr| so that we can mark them as multi-column expressions.
-    | columnExpr                       # ColumnsExprColumn
+    | columnExpr                                                                        # ColumnsExprColumn
     ;
 columnExpr
     : CASE columnExpr? (WHEN columnExpr THEN columnExpr)+ (ELSE columnExpr)? END          # ColumnExprCase
     | CAST LPAREN columnExpr AS columnTypeExpr RPAREN                                     # ColumnExprCast
-    | DATE STRING_LITERAL                                                                 # ColumnExprDate
+    | columnExpr DOUBLE_COLON columnTypeExpr                                              # ColumnExprCastSymbol
+    | DATE stringLiteral                                                                  # ColumnExprDate
     | EXTRACT LPAREN interval FROM columnExpr RPAREN                                      # ColumnExprExtract
     | INTERVAL columnExpr interval                                                        # ColumnExprInterval
     | SUBSTRING LPAREN columnExpr FROM columnExpr (FOR columnExpr)? RPAREN                # ColumnExprSubstring
-    | TIMESTAMP STRING_LITERAL                                                            # ColumnExprTimestamp
-    | TRIM LPAREN (BOTH | LEADING | TRAILING) STRING_LITERAL FROM columnExpr RPAREN       # ColumnExprTrim
+    | TIMESTAMP stringLiteral                                                             # ColumnExprTimestamp
+    | TRIM LPAREN (BOTH | LEADING | TRAILING) stringLiteral  FROM columnExpr RPAREN       # ColumnExprTrim
+    // TODO(ilezhankin): `BETWEEN a AND b AND c` is parsed in a wrong way: `BETWEEN (a AND b) AND c`
+    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                                   # ColumnExprBetween
+    | NOT columnExpr                                                                      # ColumnExprNot
     | identifier (LPAREN columnExprList? RPAREN) OVER LPAREN windowExpr RPAREN            # ColumnExprWinFunction
     | identifier (LPAREN columnExprList? RPAREN) OVER identifier                          # ColumnExprWinFunctionTarget
     | identifier (LPAREN columnExprList? RPAREN)? LPAREN DISTINCT? columnArgList? RPAREN  # ColumnExprFunction
@@ -407,7 +441,7 @@ columnExpr
 
     // FIXME(ilezhankin): this part looks very ugly, maybe there is another way to express it
     | columnExpr LBRACKET columnExpr RBRACKET                                             # ColumnExprArrayAccess
-    | columnExpr DOT DECIMAL_LITERAL                                                      # ColumnExprTupleAccess
+    | columnExpr DOT (DECIMAL_LITERAL | stringLiteral | identifier)                       # ColumnExprTupleAccess
     | DASH columnExpr                                                                     # ColumnExprNegate
     | columnExpr ( ASTERISK                                                               // multiply
                  | SLASH                                                                  // divide
@@ -428,18 +462,15 @@ columnExpr
                  | NOT? (LIKE | ILIKE)                                                    // like, notLike, ilike, notILike
                  ) columnExpr                                                             # ColumnExprPrecedence3
     | columnExpr IS NOT? NULL_SQL                                                         # ColumnExprIsNull
-    | NOT columnExpr                                                                      # ColumnExprNot
     | columnExpr AND columnExpr                                                           # ColumnExprAnd
     | columnExpr OR columnExpr                                                            # ColumnExprOr
-    // TODO(ilezhankin): `BETWEEN a AND b AND c` is parsed in a wrong way: `BETWEEN (a AND b) AND c`
-    | columnExpr NOT? BETWEEN columnExpr AND columnExpr                                   # ColumnExprBetween
     | <assoc=right> columnExpr QUERY columnExpr COLON columnExpr                          # ColumnExprTernaryOp
     | columnExpr (alias | AS identifier)                                                  # ColumnExprAlias
 
     | (tableIdentifier DOT)? ASTERISK                                                     # ColumnExprAsterisk  // single-column only
     | LPAREN selectUnionStmt RPAREN                                                       # ColumnExprSubquery  // single-column only
     | LPAREN columnExpr RPAREN                                                            # ColumnExprParens    // single-column only
-    | LPAREN columnExprList RPAREN                                                        # ColumnExprTuple
+    | LPAREN columnExprList? RPAREN                                                       # ColumnExprTuple
     | LBRACKET columnExprList? RBRACKET                                                   # ColumnExprArray
     | columnIdentifier                                                                    # ColumnExprIdentifier
     ;
@@ -452,7 +483,11 @@ columnLambdaExpr:
     ARROW columnExpr
     ;
 columnIdentifier: (tableIdentifier DOT)? nestedIdentifier;
-nestedIdentifier: identifier (DOT identifier)?;
+nestedIdentifier: identifier (DOT identifier)*;
+columnExceptExpr
+    : EXCEPT (stringLiteral | (LPAREN stringLiteral RPAREN))                # columnExceptExprRegexp
+    | EXCEPT (identifier | (LPAREN identifier (COMMA identifier)* RPAREN))  # columnExceptExprIdentifiers
+    ;
 
 // Tables
 
@@ -466,9 +501,9 @@ tableFunctionExpr: identifier LPAREN tableArgList? RPAREN;
 tableIdentifier: (databaseIdentifier DOT)? identifier;
 tableArgList: tableArgExpr (COMMA tableArgExpr)*;
 tableArgExpr
-    : nestedIdentifier
-    | tableFunctionExpr
+    : tableFunctionExpr
     | literal
+    | nestedIdentifier
     ;
 
 // Databases
@@ -482,41 +517,44 @@ floatingLiteral
     | DOT (DECIMAL_LITERAL | OCTAL_LITERAL)
     | DECIMAL_LITERAL DOT (DECIMAL_LITERAL | OCTAL_LITERAL)?  // can't move this to the lexer or it will break nested tuple access: t.1.2
     ;
-numberLiteral: (PLUS | DASH)? (floatingLiteral | OCTAL_LITERAL | DECIMAL_LITERAL | HEXADECIMAL_LITERAL | INF | NAN_SQL);
+numberLiteral: (PLUS | DASH)? (floatingLiteral | OCTAL_LITERAL | DECIMAL_LITERAL | HEXADECIMAL_NUMERIC_LITERAL | BINARY_NUMERIC_LITERAL | INF | NAN_SQL);
+stringLiteral: HEXADECIMAL_STRING_LITERAL | BINARY_STRING_LITERAL | STRING_LITERAL;
 literal
     : numberLiteral
-    | STRING_LITERAL
+    | JSON_FALSE
+    | JSON_TRUE
+    | stringLiteral
     | NULL_SQL
     ;
-interval: SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
+interval: NANOSECOND | MICROSECOND | MILLISECOND | SECOND | MINUTE | HOUR | DAY | WEEK | MONTH | QUARTER | YEAR;
 keyword
     // except NULL_SQL, INF, NAN_SQL
-    : AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | AST | ASYNC | ATTACH | BETWEEN | BOTH | BY | CASE
-    | CAST | CHECK | CLEAR | CLUSTER | CODEC | COLLATE | COLUMN | COMMENT | CONSTRAINT | CREATE | CROSS | CUBE | CURRENT | DATABASE
-    | DATABASES | DATE | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESCRIBE | DESC | DESCENDING | DETACH | DICTIONARIES | DICTIONARY | DISK
-    | DISTINCT | DISTRIBUTED | DROP | ELSE | END | ENGINE | EVENTS | EXISTS | EXPLAIN | EXPRESSION | EXTRACT | FETCHES | FINAL | FIRST
-    | FLUSH | FOR | FOLLOWING | FORMAT | FREEZE | FROM | FULL | FUNCTION | GLOBAL | GRANULARITY | GROUP | HAVING | HIERARCHICAL | ID
-    | IF | ILIKE | IN | INDEX | INJECTIVE | INNER | INSERT | INTERVAL | INTO | IS | IS_OBJECT_ID | JOIN | JSON_FALSE | JSON_TRUE | KEY
+    : ACCESS | ADD | AFTER | ALIAS | ALL | ALTER | AND | ANTI | ANY | ARRAY | AS | ASCENDING | ASOF | AST | ASYNC | ATTACH | BETWEEN | BOTH | BY | CACHES | CASE
+    | CAST | CHECK | CLEAR | CLUSTER | CLUSTERS | CODEC | COLLATE | COLUMN | COLUMNS | COMMENT | CONSTRAINT | CREATE | CROSS | CUBE | CURRENT | CURRENT_USER | CHANGED | DATABASE
+    | DATABASES | DATE | DAY | DEDUPLICATE | DEFAULT | DELAY | DELETE | DESC | DESCENDING | DESCRIBE | DETACH | DICTIONARIES | DICTIONARY | DISK
+    | DISTINCT | DISTRIBUTED | DROP | ELSE | ENABLED | END | ENGINE | ENGINES | ESTIMATE | EVENTS | EXCEPT | EXISTS | EXPLAIN | EXPRESSION | EXTENDED | EXTRACT | FETCHES | FIELDS | FILESYSTEM | FILL | FINAL | FIRST
+    | FLUSH | FOLLOWING | FOR | FORMAT | FREEZE | FROM | FULL | FUNCTION | FUNCTIONS | GLOBAL | GRANULARITY | GRANTS | GROUP | GROUPING | HAVING | HIERARCHICAL | HOUR | ID
+    | IF | ILIKE | IMPLICIT | IN | INDEX | INDEXES | INDICES | INJECTIVE | INNER | INSERT | INTERPOLATE | INTERVAL | INTO | IS | IS_OBJECT_ID | JOIN | JSON_FALSE | JSON_TRUE | KEY | KEYS
     | KILL | LAST | LAYOUT | LEADING | LEFT | LIFETIME | LIKE | LIMIT | LIVE | LOCAL | LOGS | MATERIALIZE | MATERIALIZED | MAX | MERGES
-    | MIN | MODIFY | MOVE | MUTATION | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | OVER | PARTITION
-    | POPULATE | PRECEDING | PREWHERE | PRIMARY | RANGE | RELOAD | REMOVE | RENAME | REPLACE | REPLICA | REPLICATED | RIGHT | ROLLUP | ROW
-    | ROWS | SAMPLE | SELECT | SEMI | SENDS | SET | SETTINGS | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE
-    | TABLES | TEMPORARY | TEST | THEN | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TOP | TTL | TYPE
-    | UNBOUNDED | UNION | UPDATE | USE | USING | UUID | VALUES | VIEW | VOLUME | WATCH | WHEN | WHERE | WINDOW | WITH
+    | MICROSECOND | MILLISECOND | MIN | MINUTE | MODIFY | MOVE | MUTATION | NO | NOT | NULLS | OFFSET | ON | OPTIMIZE | OR | ORDER | OUTER | OUTFILE | OVER | OVERRIDE | PARTITION | PIPELINE | PLAN
+    | POLICY | POLICIES | POPULATE | PRECEDING | PREWHERE | PRIMARY | PRIVILEGES | PROCESSLIST | PROFILE | PROFILES | PROJECTION | QUARTER | QUOTA | QUOTAS | RANGE | RECURSIVE | RELOAD | REMOVE | RENAME | REPLACE | REPLICA | REPLICATED | RIGHT | ROLE | ROLES | ROLLUP | ROW
+    | ROWS | SAMPLE | SECOND | SELECT | SEMI | SENDS | SET | SETTING | SETTINGS | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | STEP | TABLE
+    | TABLES | TEMPORARY | TEST | THEN | TIES | TIMEOUT | TIMESTAMP | TO | TOP | TOTALS | TRAILING | TREE | TRIM | TRUNCATE | TTL | TYPE
+    | UNBOUNDED | UNION | UPDATE | USE | USER | USERS | USING | UUID | VALUES | VIEW | VOLUME | WATCH | WEEK | WHEN | WHERE | WINDOW | WITH | YEAR
     ;
 keywordForAlias
-    : AFTER | ALIAS | ALTER | ASCENDING | AST | ASYNC | ATTACH | BOTH | BY | CASE | CAST | CHECK | CLEAR | CLUSTER | CODEC | COLLATE
-    | COLUMN | COMMENT | CONSTRAINT | CREATE | CUBE | CURRENT | DATABASE | DATABASES | DATE | DEDUPLICATE | DEFAULT | DELAY | DELETE
-    | DESCRIBE | DESC | DESCENDING | DETACH | DICTIONARIES | DICTIONARY | DISK | DISTRIBUTED | DROP | ELSE | END | ENGINE | EVENTS
-    | EXISTS | EXPLAIN | EXPRESSION | EXTRACT | FETCHES | FIRST | FLUSH | FOR | FOLLOWING | FREEZE | FUNCTION | GRANULARITY | HIERARCHICAL
-    | ID | IF | INDEX | INJECTIVE | INSERT | INTERVAL | IS_OBJECT_ID | KEY | KILL | LAST | LAYOUT | LEADING | LIFETIME | LIVE | LOCAL
-    | LOGS | MATERIALIZE | MATERIALIZED | MAX | MERGES | MIN | MODIFY | MOVE | MUTATION | NO | NULLS | OPTIMIZE | OUTER | OUTFILE | OVER
+    : AFTER | ALIAS | ALTER | AST | ASYNC | ATTACH | BOTH | CASE | CAST | CHECK | CLEAR | CLUSTER | CODEC
+    | COLUMN | COMMENT | CONSTRAINT | CREATE | CUBE | CURRENT | DATABASE | DATABASES | DATE | DEDUPLICATE | DEFAULT | DELAY
+    | DESCRIBE | DETACH | DICTIONARIES | DICTIONARY | DISK | DISTRIBUTED | DROP | ENGINE | EVENTS
+    | EXISTS | EXPLAIN | EXPRESSION | EXTRACT | FETCHES | FLUSH | FOLLOWING | FREEZE | FUNCTION | GRANULARITY | HIERARCHICAL
+    | ID | IF | INDEX | INJECTIVE | INSERT | IS_OBJECT_ID | KEY | KILL | LAYOUT | LEADING | LIFETIME | LIVE
+    | LOGS | MATERIALIZE | MATERIALIZED | MAX | MERGES | MIN | MODIFY | MOVE | MUTATION | NO | OPTIMIZE | OUTFILE | OVER
     | PARTITION | POPULATE | PRECEDING | PRIMARY | RANGE | RELOAD | REMOVE | RENAME | REPLACE | REPLICA | REPLICATED | ROLLUP | ROW
-    | ROWS | SELECT | SENDS | SET | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY
-    | TEST | THEN | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TO | TTL | TYPE | UNBOUNDED | UPDATE
-    | USE | UUID | VALUES | VIEW | VOLUME | WATCH | WHEN
+    | SELECT | SENDS | SET | SHOW | SOURCE | START | STOP | SUBSTRING | SYNC | SYNTAX | SYSTEM | TABLE | TABLES | TEMPORARY
+    | TEST | TIES | TIMEOUT | TIMESTAMP | TOTALS | TRAILING | TRIM | TRUNCATE | TTL | TYPE | UNBOUNDED | UPDATE
+    | USE | UUID | VALUES | VIEW | VOLUME | WATCH
     ;
 alias: IDENTIFIER | keywordForAlias;  // |interval| can't be an alias, otherwise 'INTERVAL 1 SOMETHING' becomes ambiguous.
 identifier: IDENTIFIER | interval | keyword;
 identifierOrNull: identifier | NULL_SQL;  // NULL_SQL can be only 'Null' here.
-enumValue: STRING_LITERAL EQ_SINGLE numberLiteral;
+enumValue: stringLiteral EQ_SINGLE numberLiteral;

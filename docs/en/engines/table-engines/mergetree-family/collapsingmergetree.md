@@ -1,13 +1,16 @@
 ---
-slug: /en/engines/table-engines/mergetree-family/collapsingmergetree
-sidebar_position: 70
-sidebar_label: CollapsingMergeTree
+description: 'Inherits from MergeTree but adds logic for collapsing rows during the
+  merge process.'
 keywords: ['updates', 'collapsing']
+sidebar_label: 'CollapsingMergeTree'
+sidebar_position: 70
+slug: /engines/table-engines/mergetree-family/collapsingmergetree
+title: 'CollapsingMergeTree'
 ---
 
 # CollapsingMergeTree
 
-## Description
+## Description {#description}
 
 The `CollapsingMergeTree` engine inherits from [MergeTree](../../../engines/table-engines/mergetree-family/mergetree.md)
 and adds logic for collapsing rows during the merge process.
@@ -23,12 +26,12 @@ This engine may significantly reduce the volume of storage,
 increasing the efficiency of `SELECT` queries as a consequence.
 :::
 
-## Parameters
+## Parameters {#parameters}
 
 All parameters of this table engine, with the exception of the `Sign` parameter,
-have the same meaning as in [`MergeTree`](/docs/en/engines/table-engines/mergetree-family/mergetree).
+have the same meaning as in [`MergeTree`](/engines/table-engines/mergetree-family/mergetree).
 
-- `Sign` — The name given to a column with the type of row where `1` is a “state” row and `-1` is a “cancel” row. Type: [Int8](/docs/en/sql-reference/data-types/int-uint).
+- `Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. Type: [Int8](/sql-reference/data-types/int-uint).
 
 ## Creating a Table {#creating-a-table}
 
@@ -65,7 +68,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE [=] CollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, Sign)
 ```
 
-`Sign` — The name given to a column with the type of row where `1` is a “state” row and `-1` is a “cancel” row. [Int8](/docs/en/sql-reference/data-types/int-uint).
+`Sign` — The name given to a column with the type of row where `1` is a "state" row and `-1` is a "cancel" row. [Int8](/sql-reference/data-types/int-uint).
 
 </details>
 
@@ -83,8 +86,8 @@ If we need to write data quickly, performing large numbers of updates is not an 
 but we can always write the changes of an object sequentially.
 To do so, we make use of the special column `Sign`.
 
-- If `Sign` = `1` it means that the row is a “state” row: _a row containing fields which represent a current valid state_. 
-- If `Sign` = `-1` it means that the row is a “cancel” row: _a row used for the cancellation of state of an object with the same attributes_.
+- If `Sign` = `1` it means that the row is a "state" row: _a row containing fields which represent a current valid state_. 
+- If `Sign` = `-1` it means that the row is a "cancel" row: _a row used for the cancellation of state of an object with the same attributes_.
 
 For example, we want to calculate how many pages users checked on some website and how long they visited them for. 
 At some given moment in time, we write the following row with the state of user activity:
@@ -128,28 +131,28 @@ is further discussed in the [Algorithm](#table_engine-collapsingmergetree-collap
 
 **The peculiarities of such an approach**
 
-1.  The program that writes the data should remember the state of an object to be able to cancel it. The “cancel” row should contain copies of sorting key fields of the “state” and the opposite `Sign`. This increases the initial size of storage but allows us to write the data quickly.
+1.  The program that writes the data should remember the state of an object to be able to cancel it. The "cancel" row should contain copies of sorting key fields of the "state" and the opposite `Sign`. This increases the initial size of storage but allows us to write the data quickly.
 2.  Long growing arrays in columns reduce the efficiency of the engine due to the increased load for writing. The more straightforward the data, the higher the efficiency.
 3.  The `SELECT` results depend strongly on the consistency of the object change history. Be accurate when preparing data for inserting. You can get unpredictable results with inconsistent data. For example, negative values for non-negative metrics such as session depth.
 
 ### Algorithm {#table_engine-collapsingmergetree-collapsing-algorithm}
 
-When ClickHouse merges data [parts](/docs/en/concepts/glossary#parts), 
+When ClickHouse merges data [parts](/concepts/glossary#parts), 
 each group of consecutive rows with the same sorting key (`ORDER BY`) is reduced to no more than two rows,
-the “state” row with `Sign` = `1` and the "cancel" row with `Sign` = `-1`. 
+the "state" row with `Sign` = `1` and the "cancel" row with `Sign` = `-1`. 
 In other words, in ClickHouse entries collapse.
 
 For each resulting data part ClickHouse saves:
 
 |  |                                                                                                                                     |
 |--|-------------------------------------------------------------------------------------------------------------------------------------|
-|1.| The first “cancel” and the last “state” rows, if the number of “state” and “cancel” rows matches and the last row is a “state” row. |
-|2.| The last “state” row, if there are more “state” rows than “cancel” rows.                                                            |
-|3.| The first “cancel” row, if there are more “cancel” rows than “state” rows.                                                          |
+|1.| The first "cancel" and the last "state" rows, if the number of "state" and "cancel" rows matches and the last row is a "state" row. |
+|2.| The last "state" row, if there are more "state" rows than "cancel" rows.                                                            |
+|3.| The first "cancel" row, if there are more "cancel" rows than "state" rows.                                                          |
 |4.| None of the rows, in all other cases.                                                                                               |
 
-Additionally, when there are at least two more “state” rows than “cancel” 
-rows, or at least two more “cancel” rows than “state” rows, the merge continues.
+Additionally, when there are at least two more "state" rows than "cancel" 
+rows, or at least two more "cancel" rows than "state" rows, the merge continues.
 ClickHouse, however, treats this situation as a logical error and records it in the server log. 
 This error can occur if the same data is inserted more than once. 
 Thus, collapsing should not change the results of calculating statistics.
@@ -159,7 +162,7 @@ The `Sign` column is required because the merging algorithm does not guarantee
 that all the rows with the same sorting key will be in the same resulting data part and even on the same physical server. 
 ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. 
 
-Aggregation is required if there is a need to get completely “collapsed” data from the `CollapsingMergeTree` table.
+Aggregation is required if there is a need to get completely "collapsed" data from the `CollapsingMergeTree` table.
 To finalize collapsing, write a query with the `GROUP BY` clause and aggregate functions that account for the sign. 
 For example, to calculate quantity, use `sum(Sign)` instead of `count()`. 
 To calculate the sum of something, use `sum(Sign * x)` together `HAVING sum(Sign) > 0` instead of `sum(x)`
@@ -177,7 +180,7 @@ you can use the [`FINAL`](../../../sql-reference/statements/select/from.md#final
 For CollapsingMergeTree, only the latest state row for each key is returned.
 :::
 
-## Examples
+## Examples {#examples}
 
 ### Example of Use {#example-of-use}
 
@@ -244,8 +247,8 @@ However, collapsing **did not occur** because there was no merge of the data par
 and ClickHouse merges data parts in the background at an unknown moment which we cannot predict.
 
 We therefore need an aggregation 
-which we perform with the [`sum`](/docs/en/sql-reference/aggregate-functions/reference/sum) 
-aggregate function and the [`HAVING`](/docs/en/sql-reference/statements/select/having) clause:
+which we perform with the [`sum`](/sql-reference/aggregate-functions/reference/sum) 
+aggregate function and the [`HAVING`](/sql-reference/statements/select/having) clause:
 
 ``` sql
 SELECT
@@ -281,7 +284,7 @@ This way of selecting the data is less inefficient and is not recommended for us
 ### Example of Another Approach {#example-of-another-approach}
 
 The idea with this approach is that merges take into account only key fields.
-In the “cancel” row, we can therefore specify negative values
+In the "cancel" row, we can therefore specify negative values
 that equalize the previous version of the row when summing without using the `Sign` column.
 
 For this example, we will make use of the sample data below:
@@ -310,7 +313,7 @@ ENGINE = CollapsingMergeTree(Sign)
 ORDER BY UserID
 ```
 
-Let’s test the approach by inserting data into our table. 
+Let's test the approach by inserting data into our table. 
 
 For examples or small tables, it is, however, acceptable:
 

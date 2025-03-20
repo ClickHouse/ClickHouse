@@ -1,8 +1,8 @@
 #include "ParquetBlockInputFormat.h"
-#include <boost/algorithm/string/case_conv.hpp>
 
 #if USE_PARQUET
 
+#include <Columns/ColumnNullable.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Formats/FormatFactory.h>
@@ -25,10 +25,12 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <Common/FieldVisitorsAccurateComparison.h>
+#include <Common/FieldAccurateComparison.h>
 #include <Processors/Formats/Impl/Parquet/ParquetRecordReader.h>
 #include <Processors/Formats/Impl/Parquet/parquetBloomFilterHash.h>
 #include <Interpreters/convertFieldToType.h>
+
+#include <boost/algorithm/string/case_conv.hpp>
 
 namespace ProfileEvents
 {
@@ -53,6 +55,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int CANNOT_PARSE_NUMBER;
     extern const int LOGICAL_ERROR;
@@ -477,9 +480,9 @@ static std::vector<Range> getHyperrectangleForRowGroup(const parquet::FileMetaDa
             if (null_as_default)
             {
                 /// Make sure the range contains the default value.
-                if (!min.isNull() && applyVisitor(FieldVisitorAccurateLess(), default_value, min))
+                if (!min.isNull() && accurateLess(default_value, min))
                     min = default_value;
-                if (!max.isNull() && applyVisitor(FieldVisitorAccurateLess(), max, default_value))
+                if (!max.isNull() && accurateLess(max, default_value))
                     max = default_value;
             }
             else
@@ -875,13 +878,9 @@ void ParquetBlockInputFormat::scheduleRowGroup(size_t row_group_batch_idx)
     pool->scheduleOrThrowOnError(
         [this, row_group_batch_idx, thread_group = CurrentThread::getGroup()]()
         {
-            if (thread_group)
-                CurrentThread::attachToGroupIfDetached(thread_group);
-            SCOPE_EXIT_SAFE(if (thread_group) CurrentThread::detachFromGroupIfNotDetached(););
-
             try
             {
-                setThreadName("ParquetDecoder");
+                ThreadGroupSwitcher switcher(thread_group, "ParquetDecoder");
 
                 threadFunction(row_group_batch_idx);
             }
@@ -1179,9 +1178,10 @@ NamesAndTypesList ParquetSchemaReader::readSchema()
         *schema,
         "Parquet",
         format_settings.parquet.skip_columns_with_unsupported_types_in_schema_inference,
-        format_settings.schema_inference_make_columns_nullable != 0);
+        format_settings.schema_inference_make_columns_nullable != 0,
+        format_settings.parquet.case_insensitive_column_matching);
     if (format_settings.schema_inference_make_columns_nullable == 1)
-        return getNamesAndRecursivelyNullableTypes(header);
+        return getNamesAndRecursivelyNullableTypes(header, format_settings);
     return header.getNamesAndTypesList();
 }
 

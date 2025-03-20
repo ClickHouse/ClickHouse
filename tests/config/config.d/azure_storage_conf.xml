@@ -21,9 +21,7 @@
         <policies>
             <azure_cache>
                 <volumes>
-                    <main>
-                        <disk>cached_azure</disk>
-                    </main>
+                    <main><disk>cached_azure</disk></main>
                 </volumes>
             </azure_cache>
         </policies>

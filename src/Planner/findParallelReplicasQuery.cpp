@@ -9,7 +9,6 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Parsers/ASTSubquery.h>
-#include <Parsers/queryToString.h>
 #include <Planner/PlannerJoinTree.h>
 #include <Planner/Utils.h>
 #include <Planner/findQueryForParallelReplicas.h>
@@ -119,7 +118,7 @@ std::vector<const QueryNode *> getSupportingParallelReplicasQuery(const IQueryTr
 
                 if (join_kind == JoinKind::Left || (join_kind == JoinKind::Inner && join_strictness == JoinStrictness::All))
                     query_tree_node = join_node.getLeftTableExpression().get();
-                else if (join_kind == JoinKind::Right)
+                else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny)
                     query_tree_node = join_node.getRightTableExpression().get();
                 else
                     return {};

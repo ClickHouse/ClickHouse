@@ -1,5 +1,5 @@
+#include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseFactory.h>
 #include <Storages/System/StorageSystemDatabaseEngines.h>
 

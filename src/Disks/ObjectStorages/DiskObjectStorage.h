@@ -126,6 +126,8 @@ public:
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override;
 
+    bool isDirectoryEmpty(const String & path) const override;
+
     void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
 
     Poco::Timestamp getLastModified(const String & path) const override;
@@ -137,6 +139,11 @@ public:
     void shutdown() override;
 
     void startupImpl(ContextPtr context) override;
+
+    void refresh() override
+    {
+        metadata_storage->refresh();
+    }
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -191,6 +198,8 @@ public:
     /// For example: WebObjectStorage is read only as it allows to read from a web server
     /// with static files, so only read-only operations are allowed for this storage.
     bool isReadOnly() const override;
+
+    bool isPlain() const;
 
     /// Is object write-once?
     /// For example: S3PlainObjectStorage is write once, this means that it

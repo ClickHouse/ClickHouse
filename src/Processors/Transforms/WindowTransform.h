@@ -1,11 +1,10 @@
 #pragma once
 
-#include <Interpreters/WindowDescription.h>
 #include <AggregateFunctions/WindowFunction.h>
-
+#include <Core/Block.h>
+#include <Interpreters/WindowDescription.h>
 #include <Processors/IProcessor.h>
-
-#include <Common/AlignedBuffer.h>
+#include <Processors/Port.h>
 
 #include <deque>
 
@@ -32,6 +31,15 @@ struct WindowTransformBlock
 
     size_t rows = 0;
 };
+
+struct RowNumber
+{
+    UInt64 block = 0;
+    UInt64 row = 0;
+
+    auto operator <=>(const RowNumber &) const = default;
+};
+
 
 /* Computes several window functions that share the same window. The input must
  * be sorted by PARTITION BY (in any order), then by ORDER BY.
@@ -94,7 +102,6 @@ public:
 
     void updateAggregationState();
     void writeOutCurrentRow();
-    void updateFirstRequiredRow();
 
     Columns & inputAt(const RowNumber & x)
     {
@@ -305,9 +312,6 @@ public:
     // state after we find the new frame.
     RowNumber prev_frame_start;
     RowNumber prev_frame_end;
-
-    /// Rows before this can be dropped safely.
-    RowNumber first_required_row;
 
     // Comparison function for RANGE OFFSET frames. We choose the appropriate
     // overload once, based on the type of the ORDER BY column. Choosing it for

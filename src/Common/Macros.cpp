@@ -118,7 +118,7 @@ String Macros::expand(const String & s,
             res += toString(info.table_id.uuid);
             info.expanded_uuid = true;
         }
-        else if (macro_name == "server_uuid")
+        else if (macro_name == "server_uuid" && !info.expand_special_macros_only)
         {
             auto uuid = ServerUUID::get();
             if (UUIDHelpers::Nil == uuid)

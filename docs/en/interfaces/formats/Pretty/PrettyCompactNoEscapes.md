@@ -1,10 +1,11 @@
 ---
-title : PrettyCompactNoEscapes
-slug : /en/interfaces/formats/PrettyCompactNoEscapes
-keywords : [PrettyCompactNoEscapes]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the PrettyCompactNoEscapes format'
+input_format: false
+keywords: ['PrettyCompactNoEscapes']
+output_format: true
+slug: /interfaces/formats/PrettyCompactNoEscapes
+title: 'PrettyCompactNoEscapes'
 ---
 
 import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
@@ -13,13 +14,13 @@ import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
 |-------|---------|-------|
 | ✗     | ✔       |       |
 
-## Description
+## Description {#description}
 
-Differs from the [`PrettyCompact`](./PrettyCompact.md) format in that [ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) aren’t used. 
-This is necessary for displaying the format in a browser, as well as for using the ‘watch’ command-line utility.
+Differs from the [`PrettyCompact`](./PrettyCompact.md) format in that [ANSI-escape sequences](http://en.wikipedia.org/wiki/ANSI_escape_code) aren't used. 
+This is necessary for displaying the format in a browser, as well as for using the 'watch' command-line utility.
 
-## Example Usage
+## Example Usage {#example-usage}
 
-## Format Settings
+## Format Settings {#format-settings}
 
 <PrettyFormatSettings/>
