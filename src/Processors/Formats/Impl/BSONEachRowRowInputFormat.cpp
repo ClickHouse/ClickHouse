@@ -7,7 +7,6 @@
 #include <Processors/Formats/Impl/BSONEachRowRowInputFormat.h>
 #include <IO/ReadHelpers.h>
 
-#include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>

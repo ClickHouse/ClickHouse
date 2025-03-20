@@ -12,7 +12,7 @@ Adds, modifies, or removes comment to the table, regardless if it was set before
 
 **Syntax**
 
-``` sql
+```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 ```
 
@@ -20,7 +20,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
 Creating a table with comment (for more information, see the [COMMENT](/sql-reference/statements/create/table#comment-clause) clause):
 
-``` sql
+```sql
 CREATE TABLE table_with_comment
 (
     `k` UInt64,
@@ -32,7 +32,7 @@ COMMENT 'The temporary table';
 
 Modifying the table comment:
 
-``` sql
+```sql
 ALTER TABLE table_with_comment MODIFY COMMENT 'new comment on a table';
 SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'table_with_comment';
 ```
@@ -47,7 +47,7 @@ Output of a new comment:
 
 Removing the table comment:
 
-``` sql
+```sql
 ALTER TABLE table_with_comment MODIFY COMMENT '';
 SELECT comment FROM system.tables WHERE database = currentDatabase() AND name = 'table_with_comment';
 ```

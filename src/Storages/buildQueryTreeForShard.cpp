@@ -16,7 +16,6 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
-#include <Planner/Utils.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -26,8 +25,10 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 
+
 namespace DB
 {
+
 namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;

@@ -136,7 +136,11 @@ bool CachedInMemoryReadBufferFromFile::nextImpl()
                     /// Use aligned groups of blocks (rather than sliding window) to work better
                     /// with distributed cache.
                     size_t lookahead_bytes = block_size * lookahead_blocks;
-                    size_t lookahead_block_end = std::min(file_size.value(), (cache_key.offset / lookahead_bytes + 1) * lookahead_bytes);
+                    size_t lookahead_block_end = std::min({
+                        file_size.value(),
+                        (cache_key.offset / lookahead_bytes + 1) * lookahead_bytes,
+                        (read_until_position + block_size - 1) / block_size * block_size});
+
                     if (inner_read_until_position < cache_key.offset + cache_key.size ||
                         inner_read_until_position > lookahead_block_end)
                     {

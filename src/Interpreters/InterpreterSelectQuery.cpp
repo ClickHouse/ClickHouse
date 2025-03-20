@@ -43,7 +43,6 @@
 #include <Interpreters/RewriteCountDistinctVisitor.h>
 #include <Interpreters/RewriteUniqToCountVisitor.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
-#include <Interpreters/ReplaceQueryParameterVisitor.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -95,7 +94,6 @@
 #include <Interpreters/IJoin.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <base/map.h>
-#include <base/find_symbols.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/NaNUtils.h>
@@ -427,7 +425,7 @@ ASTPtr parseAdditionalFilterConditionForTable(
             /// Try to parse expression
             ParserExpression parser;
             const auto & settings = context.getSettingsRef();
-            auto query_ast = parseQuery(
+            return parseQuery(
                 parser,
                 filter.data(),
                 filter.data() + filter.size(),
@@ -435,13 +433,6 @@ ASTPtr parseAdditionalFilterConditionForTable(
                 settings[Setting::max_query_size],
                 settings[Setting::max_parser_depth],
                 settings[Setting::max_parser_backtracks]);
-
-            if (find_first_symbols<'{'>(filter.data(), filter.data() + filter.size()) && !context.getQueryParameters().empty())
-            {
-                ReplaceQueryParameterVisitor visitor(context.getQueryParameters());
-                visitor.visit(query_ast);
-            }
-            return query_ast;
         }
     }
 
