@@ -1197,8 +1197,6 @@ class ScrambleSHA256Auth : public AuthenticationMethod
 {
     static size_t findPatternPosition(const String & key, const String & pattern)
     {
-        String result;
-
         size_t pos = key.size();
         for (size_t i = 0; i + 1 < key.size(); ++i)
         {
