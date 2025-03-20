@@ -17,7 +17,7 @@
 #include <boost/algorithm/hex.hpp>
 
 #include <Access/Common/SSLCertificateSubjects.h>
-#include "Access/Common/AuthenticationType.h"
+#include <Access/Common/AuthenticationType.h>
 #include "config.h"
 
 #if USE_SSL

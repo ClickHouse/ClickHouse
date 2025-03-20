@@ -5,8 +5,9 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Session.h>
-#include "Common/Exception.h"
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/Base64.h>
 #include <Poco/RegularExpression.h>
 #include <Poco/Net/StreamSocket.h>
 #include <Parsers/ParserPreparedStatement.h>
@@ -1194,44 +1195,12 @@ public:
 
 class ScrambleSHA256Auth : public AuthenticationMethod
 {
-    static constexpr int num_iterations = 4096;
-
-    static std::string base64Encode(const std::string &in)
-    {
-        static const char* lookup =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        std::string out;
-        out.reserve(in.size());
-
-        int val = 0;
-        int valb = -6;
-
-        for (uint8_t c : in)
-        {
-            val = (val << 8) + c;
-            valb += 8;
-            while (valb >= 0)
-            {
-                out.push_back(lookup[(val >> valb) & 0x3F]);
-                valb -= 6;
-            }
-        }
-
-        if (valb > -6)
-            out.push_back(lookup[((val << 8) >> (valb + 8)) & 0x3F]);
-
-        while (out.size() % 4)
-            out.push_back('=');
-
-        return out;
-    }
-
-    static String parseResponse(const String & key, const String & pattern)
+    static size_t findPatternPosition(const String & key, const String & pattern)
     {
         String result;
 
         size_t pos = key.size();
-        for (size_t i = 0; i + 1< key.size(); ++i)
+        for (size_t i = 0; i + 1 < key.size(); ++i)
         {
             if (key.substr(i, 2) == pattern)
             {
@@ -1241,6 +1210,14 @@ class ScrambleSHA256Auth : public AuthenticationMethod
         }
         if (pos == key.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Client response should contain nonce");
+
+        return pos;
+    }
+
+    static String parseResponse(const String & key, const String & pattern)
+    {
+        String result;
+        auto pos = findPatternPosition(key, pattern);
 
         while (pos < key.size() && key[pos] != ',')
         {
@@ -1260,12 +1237,21 @@ class ScrambleSHA256Auth : public AuthenticationMethod
         return parseResponse(key, "p=");
     }
 
+    static String parseUsername(const String & key)
+    {
+        return parseResponse(key, "n=");
+    }
+
+    static size_t findProofPosition(const String & key)
+    {
+        return findPatternPosition(key, "p=");
+    }
 
 public:
-    static constexpr size_t nonce_length = 16;
-
     static String generateNonce()
     {
+        static constexpr size_t nonce_length = 16;
+
         String scramble;
         scramble.resize(nonce_length + 1, 0);
         Poco::RandomInputStream generator;
@@ -1280,13 +1266,45 @@ public:
         return base64Encode(scramble);
     }
 
-
+    /**
+     * This function implements the client-side logic for the SCRAM-SHA-256
+     * authentication protocol. It exchanges messages with the server to
+     * establish a secure connection.
+     *
+     * The function constructs the authentication message (auth_message) by
+     * concatenating the client-first-message-bare, the server-first-message,
+     * and the client-final-message-without-proof.  The messages exchanged with the server are:
+     * - Messaging::AuthenticationSASL: Initial SASL authentication request.
+     * - Messaging::AuthenticationSASLContinue:  SASL continue message.
+     * - Messaging::SASLResponse: Generic SASL response from the server.
+     *
+     * **SCRAM-SHA-256 Message Formats:**
+     *
+     *  - **Client First Message:** n=<username>,r=<client_nonce>
+     *    - n: Attribute for the username.
+     *    - r: Attribute for the client-generated nonce.
+     *
+     *  - **Server First Message:** r=<client_nonce><server_nonce>,s=<salt>,i=<iterations>
+     *    - r: Attribute for the combined client and server nonces.
+     *    - s: Attribute for the salt.
+     *    - i: Attribute for the number of iterations.
+     *
+     *  - **Client Final Message:** c=<channel_binding>,r=<combined_nonce>,p=<client_proof>
+     *    - c: Attribute for channel binding data (often empty).
+     *    - r: Attribute for the combined client and server nonces.
+     *    - p: Attribute for the client's computed proof.
+     *
+     * The function retrieves the salt from the user's authentication methods.
+     * It then computes the client proof and uses it to authenticate the session.
+     */
     void authenticate(
         const String & user_name,
         Session & session,
         Messaging::MessageTransport & mt,
         const Poco::Net::SocketAddress & address) override
     {
+        static constexpr int num_iterations = 4096;
+
         String auth_message;
 
         mt.send(Messaging::AuthenticationSASL(), true);
@@ -1294,7 +1312,7 @@ public:
 
         auto server_nonce = generateNonce();
         auto client_nonce = parseClientNonce(rsp->sasl_mechanism);
-        auth_message += rsp->sasl_mechanism.substr(3);
+        auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
         auto nonce = client_nonce + server_nonce;
 
         String salt;
@@ -1314,7 +1332,8 @@ public:
         auth_message += "," + sasl_continue_message;
         auto rsp_continue = mt.receive<Messaging::SASLResponse>();
         auto proof = parseProof(rsp_continue->sasl_mechanism);
-        auth_message += ",c=" + parseResponse(rsp_continue->sasl_mechanism, "c=") + ",r=" + parseResponse(rsp_continue->sasl_mechanism, "r=");
+        auto proof_position = findProofPosition(rsp_continue->sasl_mechanism);
+        auth_message += "," + rsp_continue->sasl_mechanism.substr(0, proof_position - 3);
 
         auto credentials = ScramSHA256Credentials(user_name, proof, auth_message, num_iterations);
         session.authenticate(credentials, address);
