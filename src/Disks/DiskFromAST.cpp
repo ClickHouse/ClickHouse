@@ -4,7 +4,6 @@
 #include <Common/SipHash.h>
 #include <Disks/getDiskConfigurationFromAST.h>
 #include <Disks/DiskSelector.h>
-#include <Parsers/formatAST.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
@@ -114,7 +113,7 @@ public:
             const auto * function_args_expr = assert_cast<const ASTExpressionList *>(function->arguments.get());
             const auto & function_args = function_args_expr->children;
             auto config = getDiskConfigurationFromAST(function_args, data.context);
-            auto disk_setting_string = serializeAST(*function);
+            auto disk_setting_string = function->formatWithSecretsOneLine();
             auto disk_name = getOrCreateCustomDisk(config, disk_setting_string, data.context, data.attach);
             ast = std::make_shared<ASTLiteral>(disk_name);
         }

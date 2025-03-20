@@ -1,9 +1,9 @@
 ---
-slug: /engines/table-engines/integrations/rabbitmq
+description: 'This engine allows integrating ClickHouse with RabbitMQ.'
+sidebar_label: 'RabbitMQ'
 sidebar_position: 170
-sidebar_label: RabbitMQ
-title: "RabbitMQ Engine"
-description: "This engine allows integrating ClickHouse with RabbitMQ."
+slug: /engines/table-engines/integrations/rabbitmq
+title: 'RabbitMQ Engine'
 ---
 
 # RabbitMQ Engine
@@ -17,7 +17,7 @@ This engine allows integrating ClickHouse with [RabbitMQ](https://www.rabbitmq.c
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1],
@@ -68,7 +68,7 @@ Optional parameters:
 - `rabbitmq_persistent` - If set to 1 (true), in insert query delivery mode will be set to 2 (marks messages as 'persistent'). Default: `0`.
 - `rabbitmq_skip_broken_messages` – RabbitMQ message parser tolerance to schema-incompatible messages per block. If `rabbitmq_skip_broken_messages = N` then the engine skips *N* RabbitMQ messages that cannot be parsed (a message equals a row of data). Default: `0`.
 - `rabbitmq_max_block_size` - Number of row collected before flushing data from RabbitMQ. Default: [max_insert_block_size](../../../operations/settings/settings.md#max_insert_block_size).
-- `rabbitmq_flush_interval_ms` - Timeout for flushing data from RabbitMQ. Default: [stream_flush_interval_ms](../../../operations/settings/settings.md#stream-flush-interval-ms).
+- `rabbitmq_flush_interval_ms` - Timeout for flushing data from RabbitMQ. Default: [stream_flush_interval_ms](/operations/settings/settings#stream_flush_interval_ms).
 - `rabbitmq_queue_settings_list` - allows to set RabbitMQ settings when creating a queue. Available settings: `x-max-length`, `x-max-length-bytes`, `x-message-ttl`, `x-expires`, `x-priority`, `x-max-priority`, `x-overflow`, `x-dead-letter-exchange`, `x-queue-type`. The `durable` setting is enabled automatically for the queue.
 - `rabbitmq_address` - Address for connection. Use ether this setting or `rabbitmq_host_port`.
 - `rabbitmq_vhost` - RabbitMQ vhost. Default: `'\'`.
@@ -93,7 +93,7 @@ Also format settings can be added along with rabbitmq-related settings.
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64,
@@ -109,7 +109,7 @@ The RabbitMQ server configuration should be added using the ClickHouse config fi
 
 Required configuration:
 
-``` xml
+```xml
  <rabbitmq>
     <username>root</username>
     <password>clickhouse</password>
@@ -118,7 +118,7 @@ Required configuration:
 
 Additional configuration:
 
-``` xml
+```xml
  <rabbitmq>
     <vhost>clickhouse</vhost>
  </rabbitmq>
@@ -152,7 +152,7 @@ Setting `rabbitmq_queue_base` may be used for the following cases:
 - to be able to restore reading from certain durable queues when not all messages were successfully consumed. To resume consumption from one specific queue - set its name in `rabbitmq_queue_base` setting and do not specify `rabbitmq_num_consumers` and `rabbitmq_num_queues` (defaults to 1). To resume consumption from all queues, which were declared for a specific table - just specify the same settings: `rabbitmq_queue_base`, `rabbitmq_num_consumers`, `rabbitmq_num_queues`. By default, queue names will be unique to tables.
 - to reuse queues as they are declared durable and not auto-deleted. (Can be deleted via any of RabbitMQ CLI tools.)
 
-To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](../../../operations/server-configuration-parameters/settings.md#settings-max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
+To improve performance, received messages are grouped into blocks the size of [max_insert_block_size](/operations/settings/settings#max_insert_block_size). If the block wasn't formed within [stream_flush_interval_ms](../../../operations/server-configuration-parameters/settings.md) milliseconds, the data will be flushed to the table regardless of the completeness of the block.
 
 If `rabbitmq_num_consumers` and/or `rabbitmq_num_queues` settings are specified along with `rabbitmq_exchange_type`, then:
 
@@ -165,7 +165,7 @@ Do not use the same table for inserts and materialized views.
 
 Example:
 
-``` sql
+```sql
   CREATE TABLE queue (
     key UInt64,
     value UInt64
@@ -211,4 +211,4 @@ RabbitMQ engine supports all [formats](../../../interfaces/formats.md) supported
 The number of rows in one RabbitMQ message depends on whether the format is row-based or block-based:
 
 - For row-based formats the number of rows in one RabbitMQ message can be controlled by setting `rabbitmq_max_rows_per_message`.
-- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](../../../operations/settings/settings.md#setting-max_block_size).
+- For block-based formats we cannot divide block into smaller parts, but the number of rows in one block can be controlled by general setting [max_block_size](/operations/settings/settings#max_block_size).

@@ -58,6 +58,7 @@
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/inplaceBlockConversions.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTHelpers.h>
@@ -67,7 +68,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
@@ -88,8 +88,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
 
 #include <base/insertAtEnd.h>
@@ -294,6 +294,7 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -833,7 +834,7 @@ void MergeTreeData::checkProperties(
 
             const auto settings = getSettings();
             if (projections_names.size() >= (*settings)[MergeTreeSetting::max_projections])
-                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections]);
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Maximum limit of {} projection(s) exceeded", (*settings)[MergeTreeSetting::max_projections].value);
 
             /// We cannot alter a projection so far. So here we do not try to find a projection in old metadata.
             bool is_aggregate = projection.type == ProjectionDescription::Type::Aggregate;
@@ -2050,7 +2051,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 "(don't forget to return setting back to default value)",
                 suspicious_broken_parts,
                 formatReadableSizeWithBinarySuffix(suspicious_broken_parts_bytes),
-                (*settings)[MergeTreeSetting::max_suspicious_broken_parts]);
+                (*settings)[MergeTreeSetting::max_suspicious_broken_parts].value);
 
         if (suspicious_broken_parts_bytes > (*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes])
             throw Exception(
@@ -2244,7 +2245,7 @@ try
 
                 LOG_DEBUG(log,
                     "Stopped loading outdated data parts because task was canceled. "
-                    "Loaded {} parts, {} left unloaded", num_loaded_parts, outdated_unloaded_data_parts.size());
+                    "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
                 return;
             }
 
@@ -2280,7 +2281,7 @@ try
     runner.waitForAllToFinishAndRethrowFirstError();
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
-        num_loaded_parts, is_async ? "asynchronously" : "synchronously");
+        num_loaded_parts.load(), is_async ? "asynchronously" : "synchronously");
 
     {
         std::lock_guard lock(outdated_data_parts_mutex);
@@ -3514,7 +3515,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "The following alter commands: '{}' will modify data on disk, "
                             "but setting `allow_non_metadata_alters` is disabled",
-                            queryToString(mutation_commands.ast()));
+                            mutation_commands.ast()->formatForErrorMessage());
     }
 
     /// Block the case of alter table add projection for special merge trees.
@@ -5363,17 +5364,23 @@ void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const D
 void MergeTreeData::checkAlterPartitionIsPossible(
     const PartitionCommands & commands, const StorageMetadataPtr & /*metadata_snapshot*/, const Settings & settings, ContextPtr local_context) const
 {
-    for (const auto & disk : getDisks())
-        if (!disk->supportsHardLinks())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED, "ALTER TABLE PARTITION is not supported for immutable disk '{}'", disk->getName());
-
+    const auto disks = getDisks();
+    auto disk_without_hardlink_support_it
+        = std::find_if(disks.begin(), disks.end(), [](const auto & disk_ptr) { return !disk_ptr->supportsHardLinks(); });
     for (const auto & command : commands)
     {
         if (command.type == PartitionCommand::DROP_DETACHED_PARTITION && !settings[Setting::allow_drop_detached])
             throw DB::Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                 "Cannot execute query: DROP DETACHED PART "
                                 "is disabled (see allow_drop_detached setting)");
+
+        if (disk_without_hardlink_support_it != disks.end() && command.type != PartitionCommand::DROP_PARTITION
+            && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Partition operation ALTER TABLE {} is not supported for immutable disk '{}'",
+                command.typeToString(),
+                (*disk_without_hardlink_support_it)->getName());
 
         if (command.partition && command.type != PartitionCommand::DROP_DETACHED_PARTITION)
         {
@@ -6091,10 +6098,50 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         reservation->update(reservation->getSize() - file_size);
     }
 
-    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
-        restored_parts_holder->addPart(part);
-    else
-        restored_parts_holder->increaseNumBrokenParts();
+    try
+    {
+        if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
+            restored_parts_holder->addPart(part);
+        else
+            restored_parts_holder->increaseNumBrokenParts();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::TABLE_IS_READ_ONLY && is_dropped)
+        {
+            /// A hack to work around a race condition:
+            ///  1. RESTORE creates a refreshable materialized view and its target table.
+            ///  2. The view does a refresh and exchanges+drops the target table.
+            ///  3. RESTORE tries to restore target table's data from backup and fails because the table
+            ///     is dropped.
+            ///
+            /// (This can also happen without refreshable materialized view if the user just drops a
+            ///  table during RESTORE, so it may make sense to always ignore this error. But that
+            ///  feels sketchy as it may hide a bug.)
+            ///
+            /// For refreshable MV, this doesn't fully solve the problem. The initial refresh that
+            /// replaces the table usually happens early enough that the *source* table (from which
+            /// the refresh query reads) is still empty, not restored from backup yet. So the
+            /// refresh target table ends up empty until the next scheduled refresh.
+            /// TODO: Figure out a better way to deal with RMV backups. Maybe RESTORE should create
+            ///       RMVs after restoring all other tables (including RMVs' .inner_id.<uuid> tables,
+            ///       somehow).
+            StorageID storage_id = getStorageID();
+            if (storage_id.table_name.starts_with(".tmp") ||
+                getContext()->getRefreshSet().tryGetTaskForInnerTable(storage_id) != nullptr)
+            {
+                LOG_INFO(log, "Table was dropped during RESTORE, presumably by refreshable materialized view.");
+            }
+            else
+            {
+                throw;
+            }
+        }
+        else
+        {
+            throw;
+        }
+    }
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
@@ -7706,7 +7753,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     auto query_to_string = [] (const ASTPtr & ast)
     {
-        return ast ? queryToString(ast) : "";
+        return ast ? ast->formatWithSecretsOneLine() : "";
     };
 
     if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
@@ -7729,10 +7776,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(queryToString(description.definition_ast));
+            my_query_strings.insert(description.definition_ast->formatWithSecretsOneLine());
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(queryToString(src_description.definition_ast)))
+            if (!my_query_strings.contains(src_description.definition_ast->formatWithSecretsOneLine()))
                 return false;
 
         return true;
@@ -8597,7 +8644,7 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
                 " min_rows_for_wide_part = {}"
                 ", min_bytes_for_wide_part = {}"
                 ". Parts with non-adaptive granularity can be stored only in Wide (default) format.",
-                settings[MergeTreeSetting::min_rows_for_wide_part], settings[MergeTreeSetting::min_bytes_for_wide_part]);
+                settings[MergeTreeSetting::min_rows_for_wide_part].value, settings[MergeTreeSetting::min_bytes_for_wide_part].value);
         }
 
         return false;

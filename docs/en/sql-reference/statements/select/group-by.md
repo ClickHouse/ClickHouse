@@ -1,6 +1,8 @@
 ---
+description: 'Documentation for GROUP BY Clause'
+sidebar_label: 'GROUP BY'
 slug: /sql-reference/statements/select/group-by
-sidebar_label: GROUP BY
+title: 'GROUP BY Clause'
 ---
 
 # GROUP BY Clause
@@ -11,7 +13,7 @@ sidebar_label: GROUP BY
 - All the expressions in the [SELECT](/sql-reference/statements/select/index.md), [HAVING](/sql-reference/statements/select/having.md), and [ORDER BY](/sql-reference/statements/select/order-by.md) clauses **must** be calculated based on key expressions **or** on [aggregate functions](../../../sql-reference/aggregate-functions/index.md) over non-key expressions (including plain columns). In other words, each column selected from the table must be used either in a key expression or inside an aggregate function, but not both.
 - Result of aggregating `SELECT` query will contain as many rows as there were unique values of "grouping key" in source table. Usually, this significantly reduces the row count, often by orders of magnitude, but not necessarily: row count stays the same if all "grouping key" values were distinct.
 
-When you want to group data in the table by column numbers instead of column names, enable the setting [enable_positional_arguments](/operations/settings/settings.md#enable-positional-arguments).
+When you want to group data in the table by column numbers instead of column names, enable the setting [enable_positional_arguments](/operations/settings/settings#enable_positional_arguments).
 
 :::note
 There's an additional way to run aggregation over a table. If a query contains table columns only inside aggregate functions, the `GROUP BY clause` can be omitted, and aggregation by an empty set of keys is assumed. Such queries always return exactly one row.
@@ -19,13 +21,13 @@ There's an additional way to run aggregation over a table. If a query contains t
 
 ## NULL Processing {#null-processing}
 
-For grouping, ClickHouse interprets [NULL](/sql-reference/syntax.md#null-literal) as a value, and `NULL==NULL`. It differs from `NULL` processing in most other contexts.
+For grouping, ClickHouse interprets [NULL](/sql-reference/syntax#null) as a value, and `NULL==NULL`. It differs from `NULL` processing in most other contexts.
 
 Here's an example to show what this means.
 
 Assume you have this table:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │    2 │
 │ 2 │ ᴺᵁᴸᴸ │
@@ -37,7 +39,7 @@ Assume you have this table:
 
 The query `SELECT sum(x), y FROM t_null_big GROUP BY y` results in:
 
-``` text
+```text
 ┌─sum(x)─┬────y─┐
 │      4 │    2 │
 │      3 │    3 │
@@ -256,7 +258,7 @@ You can use `WITH TOTALS` in subqueries, including subqueries in the [JOIN](/sql
 
 For example:
 
-``` sql
+```sql
 SELECT
     a * 2,
     b,
@@ -267,7 +269,7 @@ GROUP BY ALL
 
 is the same as
 
-``` sql
+```sql
 SELECT
     a * 2,
     b,
@@ -280,7 +282,7 @@ For a special case that if there is a function having both aggregate functions a
 
 For example:
 
-``` sql
+```sql
 SELECT
     substring(a, 4, 2),
     substring(substring(a, 1, 2), 1, count(b))
@@ -290,7 +292,7 @@ GROUP BY ALL
 
 is the same as
 
-``` sql
+```sql
 SELECT
     substring(a, 4, 2),
     substring(substring(a, 1, 2), 1, count(b))
@@ -302,7 +304,7 @@ GROUP BY substring(a, 4, 2), substring(a, 1, 2)
 
 Example:
 
-``` sql
+```sql
 SELECT
     count(),
     median(FetchTiming > 60 ? 60 : FetchTiming),
@@ -314,7 +316,7 @@ As opposed to MySQL (and conforming to standard SQL), you can't get some value o
 
 Example:
 
-``` sql
+```sql
 SELECT
     domainWithoutWWW(URL) AS domain,
     count(),

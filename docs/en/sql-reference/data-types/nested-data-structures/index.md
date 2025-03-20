@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/nested-data-structures/nested
+description: 'Overview of nested data structures in ClickHouse'
+sidebar_label: 'Nested(Name1 Type1, Name2 Type2, ...)'
 sidebar_position: 57
-sidebar_label: Nested(Name1 Type1, Name2 Type2, ...)
+slug: /sql-reference/data-types/nested-data-structures/nested
+title: 'Nested'
 ---
 
 # Nested
@@ -12,7 +14,7 @@ A nested data structure is like a table inside a cell. The parameters of a neste
 
 Example:
 
-``` sql
+```sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -37,13 +39,13 @@ CREATE TABLE test.visits
 
 This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the 'visits' table can correspond to zero or any number of conversions.
 
-When [flatten_nested](../../../operations/settings/settings.md#flatten-nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
+When [flatten_nested](/operations/settings/settings#flatten_nested) is set to `0` (which is not by default), arbitrary levels of nesting are supported.
 
 In most cases, when working with a nested data structure, its columns are specified with column names separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 
 Example:
 
-``` sql
+```sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -52,7 +54,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-``` text
+```text
 ┌─Goals.ID───────────────────────┬─Goals.EventTime───────────────────────────────────────────────────────────────────────────┐
 │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
 │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
@@ -71,7 +73,7 @@ It is easiest to think of a nested data structure as a set of multiple column ar
 
 The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see "ARRAY JOIN clause". Example:
 
-``` sql
+```sql
 SELECT
     Goal.ID,
     Goal.EventTime
@@ -81,7 +83,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-``` text
+```text
 ┌─Goal.ID─┬──────Goal.EventTime─┐
 │ 1073752 │ 2014-03-17 16:38:10 │
 │  591325 │ 2014-03-17 16:38:48 │

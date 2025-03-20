@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/other-functions
+description: 'Documentation for Other Functions'
+sidebar_label: 'Other'
 sidebar_position: 140
-sidebar_label: Other
+slug: /sql-reference/functions/other-functions
+title: 'Other Functions'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -37,7 +39,7 @@ getMacro(name);
 
 **Arguments**
 
-- `name` — Macro name to retrieve from the `<macros>` section. [String](../data-types/string.md#string).
+- `name` — Macro name to retrieve from the `<macros>` section. [String](/sql-reference/data-types/string).
 
 **Returned value**
 
@@ -240,7 +242,7 @@ Result:
 
 ## blockSize {#blockSize}
 
-In ClickHouse, queries are processed in [blocks](../../development/architecture.md/#block-block) (chunks).
+In ClickHouse, queries are processed in [blocks](/development/architecture#block) (chunks).
 This function returns the size (row count) of the block the function is called on.
 
 **Syntax**
@@ -718,12 +720,12 @@ hasColumnInTable(\['hostname'\[, 'username'\[, 'password'\]\],\] 'database', 'ta
 
 **Parameters**
 
-- `database` : name of the database. [String literal](../syntax#syntax-string-literal)
-- `table` : name of the table. [String literal](../syntax#syntax-string-literal)
-- `column` : name of the column. [String literal](../syntax#syntax-string-literal)
-- `hostname` : remote server name to perform the check on. [String literal](../syntax#syntax-string-literal)
-- `username` : username for remote server. [String literal](../syntax#syntax-string-literal)
-- `password` : password for remote server. [String literal](../syntax#syntax-string-literal)
+- `database` : name of the database. [String literal](/sql-reference/syntax#string)
+- `table` : name of the table. [String literal](/sql-reference/syntax#string)
+- `column` : name of the column. [String literal](/sql-reference/syntax#string)
+- `hostname` : remote server name to perform the check on. [String literal](/sql-reference/syntax#string)
+- `username` : username for remote server. [String literal](/sql-reference/syntax#string)
+- `password` : password for remote server. [String literal](/sql-reference/syntax#string)
 
 **Returned value**
 
@@ -1238,7 +1240,7 @@ least(a, b)
 ```
 
 :::note
-Version [24.12](/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## greatest {#greatest}
@@ -1252,7 +1254,7 @@ greatest(a, b)
 ```
 
 :::note
-Version [24.12](/whats-new/changelog#-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
+Version [24.12](/whats-new/changelog/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduced a backwards-incompatible change such that `NULL` values are ignored, while previously it returned `NULL` if one of the arguments was `NULL`. To retain the previous behavior, set setting `least_greatest_legacy_null_behavior` (default: `false`) to `true`. 
 :::
 
 ## uptime {#uptime}
@@ -1262,7 +1264,7 @@ If executed in the context of a distributed table, this function generates a nor
 
 **Syntax**
 
-``` sql
+```sql
 uptime()
 ```
 
@@ -1274,13 +1276,13 @@ uptime()
 
 Query:
 
-``` sql
+```sql
 SELECT uptime() as Uptime;
 ```
 
 Result:
 
-``` response
+```response
 ┌─Uptime─┐
 │  55867 │
 └────────┘
@@ -1514,7 +1516,7 @@ Replaces literals, sequences of literals and complex aliases (containing whitesp
 
 **Syntax**
 
-``` sql
+```sql
 normalizeQuery(x)
 ```
 
@@ -1530,7 +1532,7 @@ normalizeQuery(x)
 
 Query:
 
-``` sql
+```sql
 SELECT normalizeQuery('[1, 2, 3, x]') AS query;
 ```
 
@@ -1549,7 +1551,7 @@ or at least 36 bytes long such as UUIDs). This helps better analyze complex quer
 
 **Syntax**
 
-``` sql
+```sql
 normalizeQueryKeepNames(x)
 ```
 
@@ -1565,7 +1567,7 @@ normalizeQueryKeepNames(x)
 
 Query:
 
-``` sql
+```sql
 SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('SELECT 1 AS aComplexName123');
 ```
 
@@ -1583,7 +1585,7 @@ Returns identical 64bit hash values without the values of literals for similar q
 
 **Syntax**
 
-``` sql
+```sql
 normalizedQueryHash(x)
 ```
 
@@ -1593,13 +1595,13 @@ normalizedQueryHash(x)
 
 **Returned value**
 
-- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
+- Hash value. [UInt64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
 Query:
 
-``` sql
+```sql
 SELECT normalizedQueryHash('SELECT 1 AS `xyz`') != normalizedQueryHash('SELECT 1 AS `abc`') AS res;
 ```
 
@@ -1618,7 +1620,7 @@ or at least 36 bytes long such as UUIDs) with a placeholder before hashing. Can 
 
 **Syntax**
 
-``` sql
+```sql
 normalizedQueryHashKeepNames(x)
 ```
 
@@ -1628,11 +1630,11 @@ normalizedQueryHashKeepNames(x)
 
 **Returned value**
 
-- Hash value. [UInt64](../data-types/int-uint.md#uint-ranges).
+- Hash value. [UInt64](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Example**
 
-``` sql
+```sql
 SELECT normalizedQueryHash('SELECT 1 AS `xyz123`') != normalizedQueryHash('SELECT 1 AS `abc123`') AS normalizedQueryHash;
 SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHashKeepNames('SELECT 1 AS `abc123`') AS normalizedQueryHashKeepNames;
 ```
@@ -1874,7 +1876,7 @@ Result:
 This function is DEPRECATED (see the note for `runningDifference`).
 :::
 
-Same as [runningDifference](./other-functions.md#other_functions-runningdifference), but returns the value of the first row as the value on the first row.
+Same as [runningDifference](/sql-reference/functions/other-functions#runningDifference), but returns the value of the first row as the value on the first row.
 
 ## runningConcurrency {#runningconcurrency}
 
@@ -2309,7 +2311,7 @@ Result:
 Creates an array with a single value.
 
 :::note
-This function is used for the internal implementation of [arrayJoin](../../sql-reference/functions/array-join.md#functions_arrayjoin).
+This function is used for the internal implementation of [arrayJoin](/sql-reference/functions/array-join).
 :::
 
 **Syntax**
@@ -2465,7 +2467,7 @@ Result:
 
 ## initializeAggregation {#initializeaggregation}
 
-Calculates the result of an aggregate function based on a single value. This function can be used to initialize aggregate functions with combinator [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](../data-types/aggregatefunction.md#data-type-aggregatefunction) or use initialized aggregates as default values.
+Calculates the result of an aggregate function based on a single value. This function can be used to initialize aggregate functions with combinator [-State](/sql-reference/aggregate-functions/combinators#-state). You can create states of aggregate functions and insert them to columns of type [AggregateFunction](/sql-reference/data-types/aggregatefunction) or use initialized aggregates as default values.
 
 **Syntax**
 
@@ -2540,7 +2542,7 @@ INSERT INTO metrics VALUES (0, initializeAggregation('sumState', toUInt64(42)))
 
 ## finalizeAggregation {#finalizeaggregation}
 
-Given a state of aggregate function, this function returns the result of aggregation (or finalized state when using a [-State](../../sql-reference/aggregate-functions/combinators.md#agg-functions-combinator-state) combinator).
+Given a state of aggregate function, this function returns the result of aggregation (or finalized state when using a [-State](/sql-reference/aggregate-functions/combinators#-state) combinator).
 
 **Syntax**
 
@@ -2550,7 +2552,7 @@ finalizeAggregation(state)
 
 **Arguments**
 
-- `state` — State of aggregation. [AggregateFunction](../data-types/aggregatefunction.md#data-type-aggregatefunction).
+- `state` — State of aggregation. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
 
 **Returned value(s)**
 
@@ -2658,7 +2660,7 @@ runningAccumulate(agg_state[, grouping]);
 
 **Arguments**
 
-- `agg_state` — State of the aggregate function. [AggregateFunction](../data-types/aggregatefunction.md#data-type-aggregatefunction).
+- `agg_state` — State of the aggregate function. [AggregateFunction](/sql-reference/data-types/aggregatefunction).
 - `grouping` — Grouping key. Optional. The state of the function is reset if the `grouping` value is changed. It can be any of the [supported data types](../data-types/index.md) for which the equality operator is defined.
 
 **Returned value**
@@ -2764,7 +2766,7 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed.
+- `join_storage_table_name` — an [identifier](/sql-reference/syntax#identifiers) indicating where the search is performed.
 - `value_column` — name of the column of the table that contains required data.
 - `join_keys` — list of keys.
 
@@ -2863,7 +2865,7 @@ joinGetOrNull(join_storage_table_name, `value_column`, join_keys)
 
 **Arguments**
 
-- `join_storage_table_name` — an [identifier](../../sql-reference/syntax.md#syntax-identifiers) indicating where the search is performed.
+- `join_storage_table_name` — an [identifier](/sql-reference/syntax#identifiers) indicating where the search is performed.
 - `value_column` — name of the column of the table that contains required data.
 - `join_keys` — list of keys.
 
@@ -3060,11 +3062,11 @@ Result:
 
 **See Also**
 
-- [Custom Settings](/operations/settings/overview#custom_settings)
+- [Custom Settings](/operations/settings/query-level#custom_settings)
 
 ## getSettingOrDefault {#getsettingordefault}
 
-Returns the current value of a [custom setting](/operations/settings/overview#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
+Returns the current value of a [custom setting](/operations/settings/query-level#custom_settings) or returns the default value specified in the 2nd argument if the custom setting is not set in the current profile.
 
 **Syntax**
 
@@ -3099,7 +3101,7 @@ NULL
 
 **See Also**
 
-- [Custom Settings](/operations/settings/overview#custom_settings)
+- [Custom Settings](/operations/settings/query-level#custom_settings)
 
 ## isDecimalOverflow {#isdecimaloverflow}
 
@@ -3114,7 +3116,7 @@ isDecimalOverflow(d, [p])
 **Arguments**
 
 - `d` — value. [Decimal](../data-types/decimal.md).
-- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. This parameter can be helpful to migrate data from/to another database or file. [UInt8](../data-types/int-uint.md#uint-ranges).
+- `p` — precision. Optional. If omitted, the initial precision of the first argument is used. This parameter can be helpful to migrate data from/to another database or file. [UInt8](/sql-reference/data-types/int-uint#integer-ranges).
 
 **Returned values**
 
@@ -3135,7 +3137,7 @@ SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
 Result:
 
 ```text
-1	1	1	1
+1    1    1    1
 ```
 
 ## countDigits {#countdigits}
@@ -3154,7 +3156,7 @@ countDigits(x)
 
 **Returned value**
 
-- Number of digits. [UInt8](../data-types/int-uint.md#uint-ranges).
+- Number of digits. [UInt8](/sql-reference/data-types/int-uint#integer-ranges).
 
 :::note
 For `Decimal` values takes into account their scales: calculates result over underlying integer type which is `(value * scale)`. For example: `countDigits(42) = 2`, `countDigits(42.000) = 5`, `countDigits(0.04200) = 4`. I.e. you may check decimal overflow for `Decimal64` with `countDecimal(x) > 18`. It's a slow variant of [isDecimalOverflow](#isdecimaloverflow).
@@ -3173,7 +3175,7 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 Result:
 
 ```text
-10	10	19	19	39	39
+10    10    19    19    39    39
 ```
 
 ## errorCodeToName {#errorcodetoname}
@@ -3235,7 +3237,7 @@ Result:
 
 Returns a list of the current [settings profiles](../../guides/sre/user-management/index.md#settings-profiles-management) for the current user.
 
-The command [SET PROFILE](../../sql-reference/statements/set.md#query-set) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement)).
+The command [SET PROFILE](/sql-reference/functions/other-functions#currentprofiles) could be used to change the current setting profile. If the command `SET PROFILE` was not used the function returns the profiles specified at the current user's definition (see [CREATE USER](/sql-reference/statements/create/user)).
 
 **Syntax**
 
@@ -3263,7 +3265,7 @@ enabledProfiles()
 
 ## defaultProfiles {#defaultprofiles}
 
-Returns all the profiles specified at the current user's definition (see [CREATE USER](../../sql-reference/statements/create/user.md#create-user-statement) statement).
+Returns all the profiles specified at the current user's definition (see [CREATE USER](/sql-reference/statements/create/user) statement).
 
 **Syntax**
 
@@ -3277,7 +3279,7 @@ defaultProfiles()
 
 ## currentRoles {#currentroles}
 
-Returns the roles assigned to the current user. The roles can be changed by the [SET ROLE](../../sql-reference/statements/set-role.md#set-role-statement) statement. If no `SET ROLE` statement was not, the function `currentRoles` returns the same as `defaultRoles`.
+Returns the roles assigned to the current user. The roles can be changed by the [SET ROLE](/sql-reference/statements/set-role) statement. If no `SET ROLE` statement was not, the function `currentRoles` returns the same as `defaultRoles`.
 
 **Syntax**
 
@@ -3305,7 +3307,7 @@ enabledRoles()
 
 ## defaultRoles {#defaultroles}
 
-Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#select)), but that can be changed with the [SET DEFAULT ROLE](../../sql-reference/statements/set-role.md#set-default-role-statement) statement.
+Returns the roles which are enabled by default for the current user when he logs in. Initially these are all roles granted to the current user (see [GRANT](../../sql-reference/statements/grant.md#select)), but that can be changed with the [SET DEFAULT ROLE](/sql-reference/statements/set-role#set-default-role) statement.
 
 **Syntax**
 
@@ -3329,7 +3331,7 @@ getServerPort(port_name)
 
 **Arguments**
 
-- `port_name` — The name of the server port. [String](../data-types/string.md#string). Possible values:
+- `port_name` — The name of the server port. [String](/sql-reference/data-types/string). Possible values:
 
   - 'tcp_port'
   - 'tcp_port_secure'
@@ -3400,7 +3402,7 @@ Result:
 
 Returns the ID of the initial current query. Other parameters of a query can be extracted from the [system.query_log](../../operations/system-tables/query_log.md) table via `initial_query_id`.
 
-In contrast to [queryID](#queryid) function, `initialQueryID` returns the same results on different shards (see example).
+In contrast to [queryID](/sql-reference/functions/other-functions#queryid) function, `initialQueryID` returns the same results on different shards (see example).
 
 **Syntax**
 
@@ -4331,7 +4333,7 @@ Result:
 
 ## displayName {#displayname}
 
-Returns the value of `display_name` from [config](../../operations/configuration-files.md/#configuration-files) or server Fully Qualified Domain Name (FQDN) if not set.
+Returns the value of `display_name` from [config](/operations/configuration-files) or server Fully Qualified Domain Name (FQDN) if not set.
 
 **Syntax**
 

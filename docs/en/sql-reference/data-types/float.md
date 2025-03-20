@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/data-types/float
+description: 'Documentation for floating-point data types in ClickHouse: Float32,
+  Float64, and BFloat16'
+sidebar_label: 'Float32 | Float64 | BFloat16'
 sidebar_position: 4
-sidebar_label: Float32 | Float64 | BFloat16
-title: Float32 | Float64 | BFloat16 Types
+slug: /sql-reference/data-types/float
+title: 'Float32 | Float64 | BFloat16 Types'
 ---
 
 :::note
@@ -55,7 +57,7 @@ When creating tables, numeric parameters for floating point numbers can be set (
 
 <!-- -->
 
-``` sql
+```sql
 SELECT 1 - 0.9
 
 ┌───────minus(1, 0.9)─┐
@@ -75,7 +77,7 @@ In contrast to standard SQL, ClickHouse supports the following categories of flo
 
 <!-- -->
 
-``` sql
+```sql
 SELECT 0.5 / 0
 
 ┌─divide(0.5, 0)─┐
@@ -87,7 +89,7 @@ SELECT 0.5 / 0
 
 <!-- -->
 
-``` sql
+```sql
 SELECT -0.5 / 0
 
 ┌─divide(-0.5, 0)─┐
@@ -99,7 +101,7 @@ SELECT -0.5 / 0
 
 <!-- -->
 
-``` sql
+```sql
 SELECT 0 / 0
 
 ┌─divide(0, 0)─┐

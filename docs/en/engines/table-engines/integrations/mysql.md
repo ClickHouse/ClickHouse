@@ -1,8 +1,10 @@
 ---
-slug: /engines/table-engines/integrations/mysql
+description: 'Documentation for MySQL Table Engine'
+sidebar_label: 'MySQL'
 sidebar_position: 138
-sidebar_label: MySQL
-title: "The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data that is stored on a remote MySQL server."
+slug: /engines/table-engines/integrations/mysql
+title: 'The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data
+  that is stored on a remote MySQL server.'
 ---
 
 # MySQL Table Engine
@@ -11,7 +13,7 @@ The MySQL engine allows you to perform `SELECT` and `INSERT` queries on data tha
 
 ## Creating a Table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -28,13 +30,13 @@ SETTINGS
 ;
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql-reference/statements/create/table.md#create-table-query) query.
+See a detailed description of the [CREATE TABLE](/sql-reference/statements/create/table) query.
 
 The table structure can differ from the original MySQL table structure:
 
 - Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
 - Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../../engines/database-engines/mysql.md#data_types-support) values to the ClickHouse data types.
-- The [external_table_functions_use_nulls](../../../operations/settings/settings.md#external-table-functions-use-nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
+- The [external_table_functions_use_nulls](/operations/settings/settings#external_table_functions_use_nulls) setting defines how to handle Nullable columns. Default value: 1. If 0, the table function does not make Nullable columns and inserts default values instead of nulls. This is also applicable for NULL values inside arrays.
 
 :::note
 The MySQL Table Engine is currently not available on the ClickHouse builds for MacOS ([issue](https://github.com/ClickHouse/ClickHouse/issues/21191))
@@ -68,7 +70,7 @@ CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) EN
 
 Create table in MySQL:
 
-``` text
+```text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -91,7 +93,7 @@ mysql> select * from test;
 
 Create table in ClickHouse using plain arguments:
 
-``` sql
+```sql
 CREATE TABLE mysql_table
 (
     `float_nullable` Nullable(Float32),
@@ -119,11 +121,11 @@ ENGINE = MySQL(creds, table='test')
 
 Retrieving data from MySQL table:
 
-``` sql
+```sql
 SELECT * FROM mysql_table
 ```
 
-``` text
+```text
 ┌─float_nullable─┬─int_id─┐
 │           ᴺᵁᴸᴸ │      1 │
 └────────────────┴────────┘
@@ -198,4 +200,4 @@ Default value: `300`.
 ## See Also {#see-also}
 
 - [The mysql table function](../../../sql-reference/table-functions/mysql.md)
-- [Using MySQL as a dictionary source](../../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-mysql)
+- [Using MySQL as a dictionary source](/sql-reference/dictionaries#mysql)

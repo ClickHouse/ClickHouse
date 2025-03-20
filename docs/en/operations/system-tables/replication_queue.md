@@ -1,9 +1,13 @@
 ---
-description: "System table containing information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family."
+description: 'System table containing information about tasks from replication queues
+  stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree`
+  family.'
+keywords: ['system table', 'replication_queue']
 slug: /operations/system-tables/replication_queue
-title: "system.replication_queue"
-keywords: ["system table", "replication_queue"]
+title: 'system.replication_queue'
 ---
+
+# system.replication_queue
 
 Contains information about tasks from replication queues stored in ClickHouse Keeper, or ZooKeeper, for tables in the `ReplicatedMergeTree` family.
 
@@ -61,11 +65,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
 SELECT * FROM system.replication_queue LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 database:               merge
@@ -91,4 +95,4 @@ last_postpone_time:     1970-01-01 03:00:00
 
 **See Also**
 
-- [Managing ReplicatedMergeTree Tables](../../sql-reference/statements/system.md#query-language-system-replicated)
+- [Managing ReplicatedMergeTree Tables](/sql-reference/statements/system#managing-replicatedmergetree-tables)

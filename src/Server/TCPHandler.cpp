@@ -7,6 +7,7 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/VersionNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -1072,7 +1073,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
     while (receivePacketsExpectDataConcurrentWithExecutor(state))
     {
         squashing.setHeader(state.block_for_insert.cloneEmpty());
-        auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}));
+        auto result_chunk = Squashing::squash(squashing.add({state.block_for_insert.getColumns(), state.block_for_insert.rows()}, /*flush_if_enough_size*/ true));
 
         sendLogs(state);
         sendInsertProfileEvents(state);

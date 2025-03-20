@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/special/time_series
+description: 'A table engine storing time series, i.e. a set of values associated
+  with timestamps and tags (or labels).'
+sidebar_label: 'TimeSeries'
 sidebar_position: 60
-sidebar_label: TimeSeries
-title: "TimeSeries Engine"
-description: "A table engine storing time series, i.e. a set of values associated with timestamps and tags (or labels)."
+slug: /engines/table-engines/special/time_series
+title: 'TimeSeries Engine'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -24,7 +25,7 @@ metric_name2[...] = ...
 :::info
 This is an experimental feature that may change in backwards-incompatible ways in the future releases.
 Enable usage of the TimeSeries table engine
-with [allow_experimental_time_series_table](../../../operations/settings/settings.md#allow-experimental-time-series-table) setting.
+with [allow_experimental_time_series_table](/operations/settings/settings#allow_experimental_time_series_table) setting.
 Input the command `set allow_experimental_time_series_table = 1`.
 :::
 
@@ -112,13 +113,13 @@ A `TimeSeries` table contains all those columns from the [data](#data-table), [t
 There are multiple ways to create a table with the `TimeSeries` table engine.
 The simplest statement
 
-``` sql
+```sql
 CREATE TABLE my_table ENGINE=TimeSeries
 ```
 
 will actually create the following table (you can see that by executing `SHOW CREATE TABLE my_table`):
 
-``` sql
+```sql
 CREATE TABLE my_table
 (
     `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
@@ -222,7 +223,7 @@ The `id` column contains identifiers, every identifier is calculated for a combi
 The DEFAULT expression for the `id` column is an expression which will be used to calculate such identifiers.
 Both the type of the `id` column and that expression can be adjusted by specifying them explicitly:
 
-``` sql
+```sql
 CREATE TABLE my_table
 (
     id UInt64 DEFAULT sipHash64(metric_name, all_tags)
@@ -250,7 +251,7 @@ for the `id` column.
 
 The types of columns can be adjusted by specifying them explicitly:
 
-``` sql
+```sql
 CREATE TABLE my_table (instance LowCardinality(String), job LowCardinality(Nullable(String)))
 ENGINE=TimeSeries SETTINGS = {'instance': 'instance', 'job': 'job'}
 ```

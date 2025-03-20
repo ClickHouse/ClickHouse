@@ -11,9 +11,22 @@ COPY --from=clickhouse/cctools:d9e3596e706b /cctools /cctools
 ENV RUSTUP_HOME=/rust/rustup
 ENV CARGO_HOME=/rust/cargo
 ENV PATH="/rust/cargo/bin:${PATH}"
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
+ENV RUSTUP_VERSION=1.28.1
+
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then \
+        RUSTUP_ARCH="x86_64-unknown-linux-gnu"; \
+    elif [ "$ARCH" = "aarch64" ]; then \
+        RUSTUP_ARCH="aarch64-unknown-linux-gnu"; \
+    else \
+        echo "Unsupported architecture: $ARCH"; exit 1; \
+    fi && \
+    curl -fsSL -o rustup-init "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${RUSTUP_ARCH}/rustup-init" && \
+    chmod +x rustup-init && \
+    ./rustup-init -y && \
+    rm rustup-init && \
     chmod 777 -R /rust && \
-    rustup toolchain install nightly-2024-12-01 && \
+    rustup toolchain install nightly-2024-12-01 --no-self-update && \
     rustup default nightly-2024-12-01 && \
     rustup toolchain remove stable && \
     rustup component add rust-src && \
@@ -28,7 +41,9 @@ RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
     rustup target add riscv64gc-unknown-linux-gnu
 
 # A cross-linker for RISC-V 64 (we need it, because LLVM's LLD does not work):
-RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
+RUN apt-get update \
+    && apt-get install software-properties-common --yes --no-install-recommends --verbose-versions \
+    && add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get update \
     && apt-get install --yes \
         binutils-riscv64-linux-gnu \
@@ -37,6 +52,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
         yasm \
         zstd \
         zip \
+        clang-tidy-${LLVM_VERSION} \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /var/cache/debconf /tmp/*
 

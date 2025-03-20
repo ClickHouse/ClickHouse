@@ -1,9 +1,10 @@
 ---
-slug: /engines/table-engines/mergetree-family/mergetree
+description: '`MergeTree`-family table engines are designed for high data ingest rates
+  and huge data volumes.'
+sidebar_label: 'MergeTree'
 sidebar_position: 11
-sidebar_label:  MergeTree
-title: "MergeTree"
-description: "`MergeTree`-family table engines are designed for high data ingest rates and huge data volumes."
+slug: /engines/table-engines/mergetree-family/mergetree
+title: 'MergeTree'
 ---
 
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
@@ -27,12 +28,12 @@ Main features of `MergeTree`-family table engines.
 - `MergeTree` table engines support various statistics kinds and sampling methods to help query optimization.
 
 :::note
-Despite a similar name, the [Merge](/engines/table-engines/special/merge.md/#merge) engine is different from `*MergeTree` engines.
+Despite a similar name, the [Merge](/engines/table-engines/special/merge) engine is different from `*MergeTree` engines.
 :::
 
 ## Creating Tables {#table_engine-mergetree-creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [[NOT] NULL] [DEFAULT|MATERIALIZED|ALIAS|EPHEMERAL expr1] [COMMENT ...] [CODEC(codec1)] [STATISTICS(stat1)] [TTL expr1] [PRIMARY KEY] [SETTINGS (name = value, ...)],
@@ -113,13 +114,13 @@ See [MergeTree Settings](../../../operations/settings/merge-tree-settings.md).
 
 **Example of Sections Setting**
 
-``` sql
+```sql
 ENGINE MergeTree() PARTITION BY toYYYYMM(EventDate) ORDER BY (CounterID, EventDate, intHash32(UserID)) SAMPLE BY intHash32(UserID) SETTINGS index_granularity=8192
 ```
 
 In the example, we set partitioning by month.
 
-We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](/sql-reference/statements/select/sample.md/#select-sample-clause) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
+We also set an expression for sampling as a hash by the user ID. This allows you to pseudorandomize the data in the table for each `CounterID` and `EventDate`. If you define a [SAMPLE](/sql-reference/statements/select/sample) clause when selecting the data, ClickHouse will return an evenly pseudorandom data sample for a subset of users.
 
 The `index_granularity` setting can be omitted because 8192 is the default value.
 
@@ -131,7 +132,7 @@ The `index_granularity` setting can be omitted because 8192 is the default value
 Do not use this method in new projects. If possible, switch old projects to the method described above.
 :::
 
-``` sql
+```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -149,7 +150,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Example**
 
-``` sql
+```sql
 MergeTree(EventDate, intHash32(UserID), (CounterID, EventDate, intHash32(UserID)), 8192)
 ```
 
@@ -216,13 +217,13 @@ The number of columns in the primary key is not explicitly limited. Depending on
 
     ClickHouse sorts data by primary key, so the higher the consistency, the better the compression.
 
-- Provide additional logic when merging data parts in the [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree.md/#table_engine-collapsingmergetree) and [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree.md) engines.
+- Provide additional logic when merging data parts in the [CollapsingMergeTree](/engines/table-engines/mergetree-family/collapsingmergetree) and [SummingMergeTree](/engines/table-engines/mergetree-family/summingmergetree.md) engines.
 
     In this case it makes sense to specify the *sorting key* that is different from the primary key.
 
 A long primary key will negatively affect the insert performance and memory consumption, but extra columns in the primary key do not affect ClickHouse performance during `SELECT` queries.
 
-You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](/operations/settings/settings.md/#max-insert-threads).
+You can create a table without a primary key using the `ORDER BY tuple()` syntax. In this case, ClickHouse stores data in the order of inserting. If you want to save data order when inserting data by `INSERT ... SELECT` queries, set [max_insert_threads = 1](/operations/settings/settings#max_insert_threads).
 
 To select data in the initial order, use [single-threaded](/operations/settings/settings.md/#max_threads) `SELECT` queries.
 
@@ -253,7 +254,7 @@ SETTINGS index_granularity=8192
 
 In this case, in queries:
 
-``` sql
+```sql
 SELECT count() FROM table
 WHERE EventDate = toDate(now())
 AND CounterID = 34
@@ -275,11 +276,11 @@ The queries above show that the index is used even for complex expressions. Read
 
 In the example below, the index can't be used.
 
-``` sql
+```sql
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](/operations/settings/settings.md/#force_index_by_date) and [force_primary_key](/operations/settings/settings.md/#force-primary-key).
+To check whether ClickHouse can use the index when running a query, use the settings [force_index_by_date](/operations/settings/settings.md/#force_index_by_date) and [force_primary_key](/operations/settings/settings#force_primary_key).
 
 The key for partitioning by month allows reading only those data blocks which contain dates from the proper range. In this case, the data block may contain data for many dates (up to an entire month). Within a block, data is sorted by primary key, which might not contain the date as the first column. Because of this, using a query with only a date condition that does not specify the primary key prefix will cause more data to be read than for a single date.
 
@@ -295,7 +296,7 @@ ClickHouse uses this logic not only for days of the month sequences, but for any
 
 The index declaration is in the columns section of the `CREATE` query.
 
-``` sql
+```sql
 INDEX index_name expr TYPE type(...) [GRANULARITY granularity_value]
 ```
 
@@ -307,7 +308,7 @@ The `GRANULARITY` clause can be omitted, the default value of `granularity_value
 
 **Example**
 
-``` sql
+```sql
 CREATE TABLE table_name
 (
     u64 UInt64,
@@ -323,7 +324,7 @@ CREATE TABLE table_name
 
 Indices from the example can be used by ClickHouse to reduce the amount of data to read from disk in the following queries:
 
-``` sql
+```sql
 SELECT count() FROM table WHERE u64 == 10;
 SELECT count() FROM table WHERE u64 * i32 >= 1234
 SELECT count() FROM table WHERE u64 * length(s) == 1234
@@ -455,9 +456,9 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterorequals)          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [empty](/sql-reference/functions/array-functions/#empty)                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
 | [notEmpty](/sql-reference/functions/array-functions/#notempty)                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         |
-| [has](/sql-reference/functions/array-functions/#has)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
-| [hasAny](/sql-reference/functions/array-functions/#hasany)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
-| [hasAll](/sql-reference/functions/array-functions/#hasall)                                         | ✗           | ✗      | ✗          | ✗          | ✔            | ✗         |
+| [has](/sql-reference/functions/array-functions#hasarr-elem)                                               | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         |
+| [hasAny](/sql-reference/functions/array-functions#hasany)                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✗         |
+| [hasAll](/sql-reference/functions/array-functions#hasall)                                         | ✗           | ✗      | ✗          | ✗          | ✔            | ✗         |
 | hasToken                                                                                                   | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
 | hasTokenOrNull                                                                                             | ✗           | ✗      | ✗          | ✔          | ✗            | ✔         |
 | hasTokenCaseInsensitive (*)                                                                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         |
@@ -488,13 +489,13 @@ For example:
 
 
 ## Projections {#projections}
-Projections are like [materialized views](/sql-reference/statements/create/view.md/#materialized) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
+Projections are like [materialized views](/sql-reference/statements/create/view) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
 :::note
-When you are implementing projections you should also consider the [force_optimize_projection](/operations/settings/settings.md/#force-optimize-projection) setting.
+When you are implementing projections you should also consider the [force_optimize_projection](/operations/settings/settings#force_optimize_projection) setting.
 :::
 
-Projections are not supported in the `SELECT` statements with the [FINAL](/sql-reference/statements/select/from.md/#select-from-final) modifier.
+Projections are not supported in the `SELECT` statements with the [FINAL](/sql-reference/statements/select/from#final-modifier) modifier.
 
 ### Projection Query {#projection-query}
 A projection query is what defines a projection. It implicitly selects data from the parent table.
@@ -532,14 +533,14 @@ Expressions must evaluate to [Date](/sql-reference/data-types/date.md) or [DateT
 
 Setting time-to-live for a column:
 
-``` sql
+```sql
 TTL time_column
 TTL time_column + interval
 ```
 
-To define `interval`, use [time interval](/sql-reference/operators/index.md#operators-datetime) operators, for example:
+To define `interval`, use [time interval](/sql-reference/operators#operators-for-working-with-dates-and-times) operators, for example:
 
-``` sql
+```sql
 TTL date_time + INTERVAL 1 MONTH
 TTL date_time + INTERVAL 15 HOUR
 ```
@@ -554,7 +555,7 @@ The `TTL` clause can't be used for key columns.
 
 #### Creating a table with `TTL`: {#creating-a-table-with-ttl}
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     d DateTime,
@@ -569,7 +570,7 @@ ORDER BY d;
 
 #### Adding TTL to a column of an existing table {#adding-ttl-to-a-column-of-an-existing-table}
 
-``` sql
+```sql
 ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 DAY;
@@ -577,7 +578,7 @@ ALTER TABLE tab
 
 #### Altering TTL of the column {#altering-ttl-of-the-column}
 
-``` sql
+```sql
 ALTER TABLE tab
     MODIFY COLUMN
     c String TTL d + INTERVAL 1 MONTH;
@@ -587,7 +588,7 @@ ALTER TABLE tab
 
 Table can have an expression for removal of expired rows, and multiple expressions for automatic move of parts between [disks or volumes](#table_engine-mergetree-multiple-volumes). When rows in the table expire, ClickHouse deletes all corresponding rows. For parts moving or recompressing, all rows of a part must satisfy the `TTL` expression criteria.
 
-``` sql
+```sql
 TTL expr
     [DELETE|RECOMPRESS codec_name1|TO DISK 'xxx'|TO VOLUME 'xxx'][, DELETE|RECOMPRESS codec_name2|TO DISK 'aaa'|TO VOLUME 'bbb'] ...
     [WHERE conditions]
@@ -603,7 +604,7 @@ Type of TTL rule may follow each TTL expression. It affects an action which is t
 - `GROUP BY` - aggregate expired rows.
 
 `DELETE` action can be used together with `WHERE` clause to delete only some of the expired rows based on a filtering condition:
-``` sql
+```sql
 TTL time_column + INTERVAL 1 MONTH DELETE WHERE column = 'value'
 ```
 
@@ -615,7 +616,7 @@ If a column is not part of the `GROUP BY` expression and is not set explicitly i
 
 #### Creating a table with `TTL`: {#creating-a-table-with-ttl-1}
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     d DateTime,
@@ -631,14 +632,14 @@ TTL d + INTERVAL 1 MONTH DELETE,
 
 #### Altering `TTL` of the table: {#altering-ttl-of-the-table}
 
-``` sql
+```sql
 ALTER TABLE tab
     MODIFY TTL d + INTERVAL 1 DAY;
 ```
 
 Creating a table, where the rows are expired after one month. The expired rows where dates are Mondays are deleted:
 
-``` sql
+```sql
 CREATE TABLE table_with_where
 (
     d DateTime,
@@ -667,7 +668,7 @@ SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 Creating a table, where expired rows are aggregated. In result rows `x` contains the maximum value across the grouped rows, `y` — the minimum value, and `d` — any occasional value from grouped rows.
 
-``` sql
+```sql
 CREATE TABLE table_for_aggregation
 (
     d DateTime,
@@ -698,7 +699,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 In addition to local block devices, ClickHouse supports these storage types:
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
 - [`gcs` for GCS](/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
-- [`blob_storage_disk` for Azure Blob Storage](/engines/table-engines/integrations/azureBlobStorage#table_engine-mergetree-azure-blob-storage)
+- [`blob_storage_disk` for Azure Blob Storage](/operations/storing-data#azure-blob-storage)
 - [`hdfs` for HDFS](/engines/table-engines/integrations/hdfs)
 - [`web` for read-only from web](/operations/storing-data#web-storage)
 - [`cache` for local caching](/operations/storing-data#using-local-cache)
@@ -711,7 +712,7 @@ In addition to local block devices, ClickHouse supports these storage types:
 
 `MergeTree` family table engines can store data on multiple block devices. For example, it can be useful when the data of a certain table are implicitly split into "hot" and "cold". The most recent data is regularly requested but requires only a small amount of space. On the contrary, the fat-tailed historical data is requested rarely. If several disks are available, the "hot" data may be located on fast disks (for example, NVMe SSDs or in memory), while the "cold" data - on relatively slow ones (for example, HDD).
 
-Data part is the minimum movable unit for `MergeTree`-engine tables. The data belonging to one part are stored on one disk. Data parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](/sql-reference/statements/alter/partition.md/#alter_move-partition) queries.
+Data part is the minimum movable unit for `MergeTree`-engine tables. The data belonging to one part are stored on one disk. Data parts can be moved between disks in the background (according to user settings) as well as by means of the [ALTER](/sql-reference/statements/alter/partition) queries.
 
 ### Terms {#terms}
 
@@ -720,7 +721,7 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 - Volume — Ordered set of equal disks (similar to [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures)).
 - Storage policy — Set of volumes and the rules for moving data between them.
 
-The names given to the described entities can be found in the system tables, [system.storage_policies](/operations/system-tables/storage_policies.md/#system_tables-storage_policies) and [system.disks](/operations/system-tables/disks.md/#system_tables-disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
+The names given to the described entities can be found in the system tables, [system.storage_policies](/operations/system-tables/storage_policies) and [system.disks](/operations/system-tables/disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
 ### Configuration {#table_engine-mergetree-multiple-volumes_configure}
 
@@ -734,7 +735,7 @@ See [dynamic storage](/operations/storing-data#dynamic-configuration) for more d
 
 Configuration structure:
 
-``` xml
+```xml
 <storage_configuration>
     <disks>
         <disk_name_1> <!-- disk name -->
@@ -766,7 +767,7 @@ The order of the disk definition is not important.
 
 Storage policies configuration markup:
 
-``` xml
+```xml
 <storage_configuration>
     ...
     <policies>
@@ -813,7 +814,7 @@ Tags:
 
 Configuration examples:
 
-``` xml
+```xml
 <storage_configuration>
     ...
     <policies>
@@ -864,7 +865,7 @@ Once a volume is overfilled, data are moved to the next one. The order of disk e
 
 When creating a table, one can apply one of the configured storage policies to it:
 
-``` sql
+```sql
 CREATE TABLE table_with_non_default_policy (
     EventDate Date,
     OrderID UInt64,
@@ -886,9 +887,9 @@ The number of threads performing background moves of data parts can be changed b
 In the case of `MergeTree` tables, data is getting to disk in different ways:
 
 - As a result of an insert (`INSERT` query).
-- During background merges and [mutations](/sql-reference/statements/alter/index.md#alter-mutations).
+- During background merges and [mutations](/sql-reference/statements/alter#mutations).
 - When downloading from another replica.
-- As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/sql-reference/statements/alter/partition.md/#alter_freeze-partition).
+- As a result of partition freezing [ALTER TABLE ... FREEZE PARTITION](/sql-reference/statements/alter/partition#freeze-partition).
 
 In all these cases except for mutations and partition freezing, a part is stored on a volume and a disk according to the given storage policy:
 
@@ -898,9 +899,9 @@ In all these cases except for mutations and partition freezing, a part is stored
 Under the hood, mutations and partition freezing make use of [hard links](https://en.wikipedia.org/wiki/Hard_link). Hard links between different disks are not supported, therefore in such cases the resulting parts are stored on the same disks as the initial ones.
 
 In the background, parts are moved between volumes on the basis of the amount of free space (`move_factor` parameter) according to the order the volumes are declared in the configuration file.
-Data is never transferred from the last one and into the first one. One may use system tables [system.part_log](/operations/system-tables/part_log.md/#system_tables-part-log) (field `type = MOVE_PART`) and [system.parts](/operations/system-tables/parts.md) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
+Data is never transferred from the last one and into the first one. One may use system tables [system.part_log](/operations/system-tables/part_log) (field `type = MOVE_PART`) and [system.parts](/operations/system-tables/parts.md) (fields `path` and `disk`) to monitor background moves. Also, the detailed information can be found in server logs.
 
-User can force moving a part or a partition from one volume to another using the query [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](/sql-reference/statements/alter/partition.md/#alter_move-partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
+User can force moving a part or a partition from one volume to another using the query [ALTER TABLE ... MOVE PART\|PARTITION ... TO VOLUME\|DISK ...](/sql-reference/statements/alter/partition), all the restrictions for background operations are taken into account. The query initiates a move on its own and does not wait for background operations to be completed. User will get an error message if not enough free space is available or if any of the required conditions are not met.
 
 Moving data does not interfere with data replication. Therefore, different storage policies can be specified for the same table on different replicas.
 
@@ -916,7 +917,7 @@ User can assign new big parts to different disks of a [JBOD](https://en.wikipedi
 Example for [S3](https://aws.amazon.com/s3/) as external storage using a disk with type `s3`.
 
 Configuration markup:
-``` xml
+```xml
 <storage_configuration>
     ...
     <disks>
@@ -978,7 +979,7 @@ ClickHouse versions 22.3 through 22.7 use a different cache configuration, see [
 
 The statistics declaration is in the columns section of the `CREATE` query for tables from the `*MergeTree*` Family when we enable `set allow_experimental_statistics = 1`.
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     a Int64 STATISTICS(TDigest, Uniq),

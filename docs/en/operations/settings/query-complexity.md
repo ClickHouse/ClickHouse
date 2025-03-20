@@ -1,9 +1,9 @@
 ---
-slug: /operations/settings/query-complexity
+description: 'Settings which restrict query complexity.'
+sidebar_label: 'Restrictions on Query Complexity'
 sidebar_position: 59
-sidebar_label: Restrictions on Query Complexity
-title: "Restrictions on Query Complexity"
-description: "Settings which restrict query complexity."
+slug: /operations/settings/query-complexity
+title: 'Restrictions on Query Complexity'
 ---
 
 # Restrictions on Query Complexity
@@ -53,7 +53,7 @@ See also the description of [max_memory_usage](#settings_max_memory_usage).
 
 For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
 
-``` sql
+```sql
 ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
 ```
 
@@ -113,11 +113,11 @@ Using the 'any' value lets you run an approximation of GROUP BY. The quality of 
 
 ## max_bytes_before_external_group_by {#settings-max_bytes_before_external_group_by}
 
-Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../sql-reference/statements/select/group-by.md#select-group-by-in-external-memory).
+Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](/sql-reference/statements/select/group-by#group-by-in-external-memory).
 
 Possible values:
 
-- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../sql-reference/statements/select/group-by.md#select-group-by-clause) operation.
+- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](/sql-reference/statements/select/group-by) operation.
 - 0 — `GROUP BY` in external memory disabled.
 
 Default value: `0`.
@@ -179,7 +179,7 @@ Limit on the number of bytes in the result. The same as the previous setting.
 
 What to do if the volume of the result exceeds one of the limits: 'throw' or 'break'.
 
-Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](../../operations/settings/settings.md#setting-max_block_size) and depends on [max_threads](../../operations/settings/settings.md#max_threads).
+Using 'break' is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max_result_rows](#setting-max_result_rows), multiple of [max_block_size](/operations/settings/settings#max_block_size) and depends on [max_threads](../../operations/settings/settings.md#max_threads).
 
 Default value: `throw`.
 
@@ -187,7 +187,7 @@ Cloud default value: `throw`.
 
 Example:
 
-``` sql
+```sql
 SET max_threads = 3, max_block_size = 3333;
 SET max_result_rows = 3334, result_overflow_mode = 'break';
 
@@ -198,7 +198,7 @@ FORMAT Null;
 
 Result:
 
-``` text
+```text
 6666 rows in set. ...
 ```
 
@@ -224,13 +224,13 @@ Similar semantic to `max_execution_time` but only apply on leaf node for distrib
 
 For example, if we want to limit execution time on leaf node to `10s` but no limit on the initial node, instead of having `max_execution_time` in the nested subquery settings:
 
-``` sql
+```sql
 SELECT count() FROM cluster(cluster, view(SELECT * FROM t SETTINGS max_execution_time = 10));
 ```
 
 We can use `max_execution_time_leaf` as the query settings:
 
-``` sql
+```sql
 SELECT count() FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
 ```
 
@@ -333,7 +333,7 @@ What to do when the amount of data exceeds one of the limits: 'throw' or 'break'
 
 Limits the number of rows in the hash table that is used when joining tables.
 
-This settings applies to [SELECT ... JOIN](../../sql-reference/statements/select/join.md#select-join) operations and the [Join](../../engines/table-engines/special/join.md) table engine.
+This settings applies to [SELECT ... JOIN](/sql-reference/statements/select/join) operations and the [Join](../../engines/table-engines/special/join.md) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
 
@@ -350,7 +350,7 @@ Default value: 0.
 
 Limits the size in bytes of the hash table used when joining tables.
 
-This setting applies to [SELECT ... JOIN](../../sql-reference/statements/select/join.md#select-join) operations and [Join table engine](../../engines/table-engines/special/join.md).
+This setting applies to [SELECT ... JOIN](/sql-reference/statements/select/join) operations and [Join table engine](../../engines/table-engines/special/join.md).
 
 If the query contains joins, ClickHouse checks this setting for every intermediate result.
 
@@ -379,7 +379,7 @@ Default value: `THROW`.
 
 **See Also**
 
-- [JOIN clause](../../sql-reference/statements/select/join.md#select-join)
+- [JOIN clause](/sql-reference/statements/select/join)
 - [Join table engine](../../engines/table-engines/special/join.md)
 
 ## max_partitions_per_insert_block {#settings-max_partitions_per_insert_block}
@@ -427,7 +427,7 @@ Maximum number of simultaneous sessions per authenticated user to the ClickHouse
 
 Example:
 
-``` xml
+```xml
 <profiles>
     <single_session_profile>
         <max_sessions_for_user>1</max_sessions_for_user>

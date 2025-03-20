@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/grouparrayintersect
+description: 'Return an intersection of given arrays (Return all items of arrays,
+  that are in all given arrays).'
 sidebar_position: 141
-title: "groupArrayIntersect"
-description: "Return an intersection of given arrays (Return all items of arrays, that are in all given arrays)."
+slug: /sql-reference/aggregate-functions/reference/grouparrayintersect
+title: 'groupArrayIntersect'
 ---
 
 # groupArrayIntersect
@@ -11,7 +12,7 @@ Return an intersection of given arrays (Return all items of arrays, that are in 
 
 **Syntax**
 
-``` sql
+```sql
 groupArrayIntersect(x)
 ```
 
@@ -29,7 +30,7 @@ Type: [Array](../../data-types/array.md).
 
 Consider table `numbers`:
 
-``` text
+```text
 ┌─a──────────────┐
 │ [1,2,4]        │
 │ [1,5,2,8,-1,0] │
@@ -39,7 +40,7 @@ Consider table `numbers`:
 
 Query with column name as argument:
 
-``` sql
+```sql
 SELECT groupArrayIntersect(a) as intersection FROM numbers;
 ```
 

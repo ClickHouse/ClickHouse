@@ -42,7 +42,7 @@ ffi::EngineError * KernelUtils::allocateError(ffi::KernelError etype, ffi::Kerne
     return error;
 }
 
-[[noreturn]] void KernelUtils::rethrow(ffi::EngineError * error, const std::string & from)
+[[noreturn]] void KernelUtils::throwError(ffi::EngineError * error, const std::string & from)
 {
     auto * kernel_error = static_cast<KernelError *>(error);
     auto error_message_copy = kernel_error->error_message;

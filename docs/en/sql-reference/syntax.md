@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/syntax
+description: 'Documentation for Syntax'
+displayed_sidebar: 'sqlreference'
+sidebar_label: 'Syntax'
 sidebar_position: 2
-sidebar_label: Syntax
-title: Syntax
-displayed_sidebar: sqlreference
+slug: /sql-reference/syntax
+title: 'Syntax'
 ---
 
 In this section, we will take a look at ClickHouse's SQL syntax. 
@@ -19,7 +20,7 @@ The full SQL parser is used in all cases except for the `INSERT` query, which us
 
 Let's examine the query below:
 
-``` sql
+```sql
 INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 ```
 
@@ -76,7 +77,7 @@ Keywords are **case-insensitive** when they correspond to:
 - Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
 
 :::note
-You can check whether a data type name is case-sensitive in the [system.data_type_families](../operations/system-tables/data_type_families.md#system_tables-data_type_families) table.
+You can check whether a data type name is case-sensitive in the [system.data_type_families](/operations/system-tables/data_type_families) table.
 :::
 
 In contrast to standard SQL, all other keywords (including functions names) are **case-sensitive**.
@@ -222,9 +223,9 @@ To store `NULL` in a table field, it must be of the [Nullable](../sql-reference/
 :::note
 The following should be noted for `NULL`:
 
-- Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](../interfaces/formats.md#formats).
+- Depending on the data format (input or output), `NULL` may have a different representation. For more information, see [data formats](/interfaces/formats).
 - `NULL` processing is nuanced. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. We recommend to read the documentation for each operation.
-- In queries, you can check `NULL` using the [`IS NULL`](../sql-reference/operators/index.md#is-null) and [`IS NOT NULL`](../sql-reference/operators/index.md#is-not-null) operators and the related functions `isNull` and `isNotNull`.
+- In queries, you can check `NULL` using the [`IS NULL`](/sql-reference/functions/functions-for-nulls#isnull) and [`IS NOT NULL`](/sql-reference/functions/functions-for-nulls#isnotnull) operators and the related functions `isNull` and `isNotNull`.
 :::
 
 ### Heredoc {#heredoc}
@@ -284,7 +285,7 @@ SELECT
    {c: DateTime},
    {d: Map(String, Array(UInt8))};
 
-13	str	2022-08-04 18:30:53	{'10':[11,12],'13':[14,15]}
+13    str    2022-08-04 18:30:53    {'10':[11,12],'13':[14,15]}
 ```
 </details>
 
@@ -351,7 +352,7 @@ For example, the expression
 
 is transformed to 
 
-```
+```text
 plus(plus(1, multiply(2, 3)), 4)`
 ```
 
@@ -385,7 +386,7 @@ Functions and operators, in turn, can have expressions as arguments.
 
 An alias is a user-defined name for an [expression](#expressions) in a query.
 
-``` sql
+```sql
 expr AS alias
 ```
 
@@ -393,7 +394,7 @@ The parts of the syntax above are explained below.
 
 | Part of syntax | Description                                                                                                                                      | Example                                                                 | Notes                                                                                                                                                |
 |----------------|--------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](./functions/type-conversion-functions.md#castx-t) function, the `AS` keyword has another meaning. See the description of the function. |
+| `AS`           | The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.| `SELECT table_name_alias.column_name FROM table_name table_name_alias`. | In the [CAST](/sql-reference/functions/type-conversion-functions#cast) function, the `AS` keyword has another meaning. See the description of the function. |
 | `expr`         | Any expression supported by ClickHouse.                                                                                                          | `SELECT column_name * 2 AS double FROM some_table`                      |                                                                                                                                                      |
 | `alias`        | Name for `expr`. Aliases should comply with the [identifiers](#identifiers) syntax.                                                                       | `SELECT "table t".column_name FROM table_name AS "table t"`.            |                                                                                                                                                      |
 
@@ -419,7 +420,7 @@ SELECT n + m FROM (SELECT 1 AS n, 2 AS m)`.
 
 - Be careful with aliases that are the same as column or table names. Let's consider the following example:
 
-``` sql
+```sql
 CREATE TABLE t
 (
     a Int,
@@ -443,7 +444,7 @@ ClickHouse substituted the literal `b` in the expression `argMax(a, b)` with the
 This substitution caused the exception.
 
 :::note
-You can change this default behavior by setting [prefer_column_name_to_alias](../operations/settings/settings.md#prefer-column-name-to-alias) to `1`.
+You can change this default behavior by setting [prefer_column_name_to_alias](/operations/settings/settings#prefer_column_name_to_alias) to `1`.
 :::
 
 ## Asterisk {#asterisk}

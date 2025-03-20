@@ -106,13 +106,13 @@ Possible issues:
 
 Command:
 
-``` bash
+```bash
 $ sudo service clickhouse-server status
 ```
 
 If the server is not running, start it with the command:
 
-``` bash
+```bash
 $ sudo service clickhouse-server start
 ```
 
@@ -127,19 +127,19 @@ If the server started successfully, you should see the strings:
 
 If `clickhouse-server` start failed with a configuration error, you should see the `<Error>` string with an error description. For example:
 
-``` text
+```text
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
 If you do not see an error at the end of the file, look through the entire file starting from the string:
 
-``` text
+```text
 <Information> Application: starting up.
 ```
 
 If you try to start a second instance of `clickhouse-server` on the server, you see the following log:
 
-``` text
+```text
 2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
 2019.01.11 15:25:11.154578 [ 1 ] {} <Information> Application: starting up
 2019.01.11 15:25:11.156361 [ 1 ] {} <Information> StatusFile: Status file ./status already exists - unclean restart. Contents:
@@ -157,13 +157,13 @@ Revision: 54413
 
 If you do not find any useful information in `clickhouse-server` logs or there aren't any logs, you can view `system.d` logs using the command:
 
-``` bash
+```bash
 $ sudo journalctl -u clickhouse-server
 ```
 
 **Start clickhouse-server in interactive mode**
 
-``` bash
+```bash
 $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
 ```
 
@@ -204,7 +204,7 @@ Check:
 
 If ClickHouse is not able to process the query, it sends an error description to the client. In the `clickhouse-client` you get a description of the error in the console. If you are using the HTTP interface, ClickHouse sends the error description in the response body. For example:
 
-``` bash
+```bash
 $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```

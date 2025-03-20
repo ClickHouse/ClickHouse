@@ -1,8 +1,9 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
+
 #include <Columns/ColumnSparse.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <IO/VarInt.h>
 #include <Core/Block.h>
 #include <base/EnumReflection.h>
 

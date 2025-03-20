@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-s3-storage
-# ^ no-s3-storage: too slow
+# Tags: no-fasttest, long, no-object-storage
+# ^ no-object-storage: too slow
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -12,7 +12,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ghdata (data Object('json')) ENGINE = Merg
 cat $CUR_DIR/data_json/ghdata_sample.json | ${CLICKHOUSE_CLIENT} \
   --max_memory_usage 10G --query "INSERT INTO ghdata FORMAT JSONAsObject"
 
-${CLICKHOUSE_CLIENT} -q "ALTER TABLE ghdata MODIFY column data JSON SETTINGS mutations_sync=1" --allow_experimental_json_type 1
+${CLICKHOUSE_CLIENT} -q "ALTER TABLE ghdata MODIFY column data JSON SETTINGS mutations_sync=1" --enable_json_type 1
 
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM ghdata WHERE NOT ignore(*)"
 

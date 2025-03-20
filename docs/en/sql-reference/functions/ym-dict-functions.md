@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/ym-dict-functions
+description: 'Documentation for Functions for Working with Embedded Dictionaries'
+sidebar_label: 'Embedded Dictionaries'
 sidebar_position: 60
-sidebar_label: Embedded Dictionaries
+slug: /sql-reference/functions/ym-dict-functions
+title: 'Functions for Working with Embedded Dictionaries'
 ---
 
 # Functions for Working with Embedded Dictionaries
@@ -25,13 +27,13 @@ The 'clickhouse-server' config specifies the file with the regional hierarchy:
 Besides this file, it also searches for files nearby that have the `_` symbol and any suffix appended to the name (before the file extension).
 For example, it will also find the file `/opt/geo/regions_hierarchy_ua.txt`, if present. Here `ua` is called the dictionary key. For a dictionary without a suffix, the key is an empty string.
 
-All the dictionaries are re-loaded during runtime (once every certain number of seconds, as defined in the [`builtin_dictionaries_reload_interval`](../../operations/server-configuration-parameters/settings#builtin-dictionaries-reload-interval) config parameter, or once an hour by default). However, the list of available dictionaries is defined once, when the server starts.
+All the dictionaries are re-loaded during runtime (once every certain number of seconds, as defined in the [`builtin_dictionaries_reload_interval`](/operations/server-configuration-parameters/settings#builtin_dictionaries_reload_interval) config parameter, or once an hour by default). However, the list of available dictionaries is defined once, when the server starts.
 
 All functions for working with regions have an optional argument at the end – the dictionary key. It is referred to as the geobase.
 
 Example:
 
-``` sql
+```sql
 regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
 regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
 regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
@@ -43,7 +45,7 @@ Accepts a region ID and geobase and returns a string of the name of the region i
 
 **Syntax**
 
-``` sql
+```sql
 regionToName(id\[, lang\])
 ```
 **Parameters**
@@ -60,13 +62,13 @@ regionToName(id\[, lang\])
 
 Query:
 
-``` sql
+```sql
 SELECT regionToName(number::UInt32,'en') FROM numbers(0,5);
 ```
 
 Result:
 
-``` text
+```text
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┐
 │                                            │
 │ World                                      │
@@ -148,7 +150,7 @@ regionToArea(id [, geobase])
 
 Query:
 
-``` sql
+```sql
 SELECT DISTINCT regionToName(regionToArea(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
@@ -156,7 +158,7 @@ LIMIT 15
 
 Result:
 
-``` text
+```text
 ┌─regionToName(regionToArea(toUInt32(number), \'ua\'))─┐
 │                                                      │
 │ Moscow and Moscow region                             │
@@ -200,7 +202,7 @@ regionToDistrict(id [, geobase])
 
 Query:
 
-``` sql
+```sql
 SELECT DISTINCT regionToName(regionToDistrict(toUInt32(number), 'ua'))
 FROM system.numbers
 LIMIT 15
@@ -208,7 +210,7 @@ LIMIT 15
 
 Result:
 
-``` text
+```text
 ┌─regionToName(regionToDistrict(toUInt32(number), \'ua\'))─┐
 │                                                          │
 │ Central federal district                                 │
@@ -252,13 +254,13 @@ regionToCountry(id [, geobase])
 
 Query:
 
-``` sql
+```sql
 SELECT regionToName(number::UInt32, 'en'), regionToCountry(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
 Result:
 
-``` text
+```text
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToCountry(CAST(number, 'UInt32')), 'en')─┐
 │                                            │  0 │                                                             │
 │ World                                      │  0 │                                                             │
@@ -300,13 +302,13 @@ regionToContinent(id [, geobase])
 
 Query:
 
-``` sql
+```sql
 SELECT regionToName(number::UInt32, 'en'), regionToContinent(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
 Result:
 
-``` text
+```text
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToContinent(CAST(number, 'UInt32')), 'en')─┐
 │                                            │  0 │                                                               │
 │ World                                      │  0 │                                                               │
@@ -330,7 +332,7 @@ Finds the highest continent in the hierarchy for the region.
 
 **Syntax**
 
-``` sql
+```sql
 regionToTopContinent(id[, geobase])
 ```
 
@@ -348,13 +350,13 @@ regionToTopContinent(id[, geobase])
 
 Query:
 
-``` sql
+```sql
 SELECT regionToName(number::UInt32, 'en'), regionToTopContinent(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
 Result:
 
-``` text
+```text
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─id─┬─regionToName(regionToTopContinent(CAST(number, 'UInt32')), 'en')─┐
 │                                            │  0 │                                                                  │
 │ World                                      │  0 │                                                                  │
@@ -378,7 +380,7 @@ Gets the population for a region. The population can be recorded in files with t
 
 **Syntax**
 
-``` sql
+```sql
 regionToPopulation(id[, geobase])
 ```
 
@@ -396,13 +398,13 @@ regionToPopulation(id[, geobase])
 
 Query:
 
-``` sql
+```sql
 SELECT regionToName(number::UInt32, 'en'), regionToPopulation(number::UInt32) AS id, regionToName(id, 'en') FROM numbers(13);
 ```
 
 Result:
 
-``` text
+```text
 ┌─regionToName(CAST(number, 'UInt32'), 'en')─┬─population─┐
 │                                            │          0 │
 │ World                                      │ 4294967295 │
@@ -426,7 +428,7 @@ Checks whether a `lhs` region belongs to a `rhs` region. Returns a UInt8 number 
 
 **Syntax**
 
-``` sql
+```sql
 regionIn(lhs, rhs\[, geobase\])
 ```
 
@@ -449,13 +451,13 @@ The relationship is reflexive – any region also belongs to itself.
 
 Query:
 
-``` sql
+```sql
 SELECT regionToName(n1.number::UInt32, 'en') || (regionIn(n1.number::UInt32, n2.number::UInt32) ? ' is in ' : ' is not in ') || regionToName(n2.number::UInt32, 'en') FROM numbers(1,2) AS n1 CROSS JOIN numbers(1,5) AS n2;
 ```
 
 Result:
 
-``` text
+```text
 World is in World
 World is not in USA
 World is not in Colorado
@@ -474,7 +476,7 @@ Accepts a UInt32 number – the region ID from the geobase. Returns an array of 
 
 **Syntax**
 
-``` sql
+```sql
 regionHierarchy(id\[, geobase\])
 ```
 
@@ -491,13 +493,13 @@ regionHierarchy(id\[, geobase\])
 
 Query:
 
-``` sql
+```sql
 SELECT regionHierarchy(number::UInt32) AS arr, arrayMap(id -> regionToName(id, 'en'), arr) FROM numbers(5);
 ```
 
 Result:
 
-``` text
+```text
 ┌─arr────────────┬─arrayMap(lambda(tuple(id), regionToName(id, 'en')), regionHierarchy(CAST(number, 'UInt32')))─┐
 │ []             │ []                                                                                           │
 │ [1]            │ ['World']                                                                                    │

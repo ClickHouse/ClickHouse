@@ -1,7 +1,9 @@
 ---
-slug: /development/continuous-integration
+description: 'Overview of the ClickHouse continuous integration system'
+sidebar_label: 'Continuous Integration (CI)'
 sidebar_position: 55
-sidebar_label: Continuous Integration (CI)
+slug: /development/continuous-integration
+title: 'Continuous Integration (CI)'
 ---
 
 # Continuous Integration (CI)
@@ -108,7 +110,7 @@ cd ./utils/check-style
 Normally this is the first check that is run for a PR.
 It builds ClickHouse and runs most of [stateless functional tests](tests.md#functional-tests), omitting some.
 If it fails, further checks are not started until it is fixed.
-Look at the report to see which tests fail, then reproduce the failure locally as described [here](tests.md#functional-test-locally).
+Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#running-a-test-locally).
 
 #### Running Fast Test locally: {#running-fast-test-locally}
 
@@ -181,9 +183,9 @@ mkdir build_tidy
 
 ## Functional Stateless Tests {#functional-stateless-tests}
 Runs [stateless functional tests](tests.md#functional-tests) for ClickHouse binaries built in various configurations -- release, debug, with sanitizers, etc.
-Look at the report to see which tests fail, then reproduce the failure locally as described [here](tests.md#functional-test-locally).
+Look at the report to see which tests fail, then reproduce the failure locally as described [here](/development/tests#functional-tests).
 Note that you have to use the correct build configuration to reproduce -- a test might fail under AddressSanitizer but pass in Debug.
-Download the binary from [CI build checks page](../development/build.md#you-dont-have-to-build-clickhouse), or build it locally.
+Download the binary from [CI build checks page](/install#install-a-ci-generated-binary), or build it locally.
 
 ## Functional Stateful Tests {#functional-stateful-tests}
 

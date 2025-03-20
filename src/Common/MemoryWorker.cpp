@@ -64,27 +64,48 @@ Metrics readAllMetricsFromStatFile(ReadBufferFromFile & buf)
     return metrics;
 }
 
-uint64_t readMetricFromStatFile(ReadBufferFromFile & buf, std::string_view key)
+uint64_t readMetricsFromStatFile(ReadBufferFromFile & buf, std::initializer_list<std::string_view> keys, bool * warnings_printed)
 {
+    uint64_t sum = 0;
+    uint64_t found_mask = 0;
+    bool print_warnings = !*warnings_printed;
     while (!buf.eof())
     {
         std::string current_key;
         readStringUntilWhitespace(current_key, buf);
-        if (current_key != key)
+
+        const auto * it = std::find(keys.begin(), keys.end(), current_key);
+        if (it == keys.end())
         {
             std::string dummy;
             readStringUntilNewlineInto(dummy, buf);
             buf.ignore();
             continue;
         }
+        if (print_warnings && (found_mask & (1l << (it - keys.begin()))))
+        {
+            *warnings_printed = true;
+            LOG_ERROR(getLogger("CgroupsReader"), "Duplicate key '{}' in '{}'", current_key, buf.getFileName());
+        }
+        found_mask |= 1ll << (it - keys.begin());
 
         assertChar(' ', buf);
         uint64_t value = 0;
         readIntText(value, buf);
-        return value;
+        sum += value;
     }
-    LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", key, buf.getFileName());
-    return 0;
+    if (found_mask != (1l << keys.size()) - 1)
+    {
+        for (const auto * it = keys.begin(); it != keys.end(); ++it)
+        {
+            if (print_warnings && (!(found_mask & (1l << (it - keys.begin())))))
+            {
+                *warnings_printed = true;
+                LOG_ERROR(getLogger("CgroupsReader"), "Cannot find '{}' in '{}'", *it, buf.getFileName());
+            }
+        }
+    }
+    return sum;
 }
 
 struct CgroupsV1Reader : ICgroupsReader
@@ -95,7 +116,7 @@ struct CgroupsV1Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         buf.rewind();
-        return readMetricFromStatFile(buf, "rss");
+        return readMetricsFromStatFile(buf, {"rss"}, &warnings_printed);
     }
 
     std::string dumpAllStats() override
@@ -108,6 +129,7 @@ struct CgroupsV1Reader : ICgroupsReader
 private:
     std::mutex mutex;
     ReadBufferFromFile buf TSA_GUARDED_BY(mutex);
+    bool warnings_printed TSA_GUARDED_BY(mutex) = false;
 };
 
 struct CgroupsV2Reader : ICgroupsReader
@@ -118,7 +140,7 @@ struct CgroupsV2Reader : ICgroupsReader
     {
         std::lock_guard lock(mutex);
         stat_buf.rewind();
-        return readMetricFromStatFile(stat_buf, "anon");
+        return readMetricsFromStatFile(stat_buf, {"anon", "sock", "kernel"}, &warnings_printed);
     }
 
     std::string dumpAllStats() override
@@ -131,6 +153,7 @@ struct CgroupsV2Reader : ICgroupsReader
 private:
     std::mutex mutex;
     ReadBufferFromFile stat_buf TSA_GUARDED_BY(mutex);
+    bool warnings_printed TSA_GUARDED_BY(mutex) = false;
 };
 
 /// Caveats:
@@ -196,35 +219,39 @@ std::string_view sourceToString(MemoryWorker::MemoryUsageSource source)
 /// - reading from cgroups' pseudo-files (fastest and most accurate)
 /// - reading jemalloc's resident stat (doesn't take into account allocations that didn't use jemalloc)
 /// Also, different tick rates are used because not all options are equally fast
-MemoryWorker::MemoryWorker(uint64_t period_ms_, bool correct_tracker_)
+MemoryWorker::MemoryWorker(uint64_t period_ms_, bool correct_tracker_, bool use_cgroup, std::shared_ptr<PageCache> page_cache_)
     : log(getLogger("MemoryWorker"))
     , period_ms(period_ms_)
     , correct_tracker(correct_tracker_)
+    , page_cache(page_cache_)
 {
+    if (use_cgroup)
+    {
 #if defined(OS_LINUX)
-    try
-    {
-        static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
+        try
+        {
+            static constexpr uint64_t cgroups_memory_usage_tick_ms{50};
 
-        const auto [cgroup_path, version] = getCgroupsPath();
-        LOG_INFO(
-            getLogger("CgroupsReader"),
-            "Will create cgroup reader from '{}' (cgroups version: {})",
-            cgroup_path,
-            (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
+            const auto [cgroup_path, version] = getCgroupsPath();
+            LOG_INFO(
+                getLogger("CgroupsReader"),
+                "Will create cgroup reader from '{}' (cgroups version: {})",
+                cgroup_path,
+                (version == ICgroupsReader::CgroupsVersion::V1) ? "v1" : "v2");
 
-        cgroups_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
-        source = MemoryUsageSource::Cgroups;
-        if (period_ms == 0)
-            period_ms = cgroups_memory_usage_tick_ms;
+            cgroups_reader = ICgroupsReader::createCgroupsReader(version, cgroup_path);
+            source = MemoryUsageSource::Cgroups;
+            if (period_ms == 0)
+                period_ms = cgroups_memory_usage_tick_ms;
 
-        return;
-    }
-    catch (...)
-    {
-        tryLogCurrentException(log, "Cannot use cgroups reader");
-    }
+            return;
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Cannot use cgroups reader");
+        }
 #endif
+    }
 
 #if USE_JEMALLOC
     static constexpr uint64_t jemalloc_memory_usage_tick_ms{100};
@@ -302,6 +329,9 @@ void MemoryWorker::backgroundThread()
 
         Int64 resident = getMemoryUsage();
         MemoryTracker::updateRSS(resident);
+
+        if (page_cache)
+            page_cache->autoResize(resident, total_memory_tracker.getHardLimit());
 
 #if USE_JEMALLOC
         if (resident > total_memory_tracker.getHardLimit())

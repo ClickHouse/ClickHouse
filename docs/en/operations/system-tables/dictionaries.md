@@ -1,9 +1,10 @@
 ---
-description: "System table containing information about dictionaries"
+description: 'System table containing information about dictionaries'
+keywords: ['system table', 'dictionaries']
 slug: /operations/system-tables/dictionaries
-title: "system.dictionaries"
-keywords: ["system table", "dictionaries"]
+title: 'system.dictionaries'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
 
 <SystemTableCloud/>
@@ -20,23 +21,23 @@ Columns:
     - `LOADED` — Dictionary loaded successfully.
     - `FAILED` — Unable to load the dictionary as a result of an error.
     - `LOADING` — Dictionary is loading now.
-    - `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](../../sql-reference/statements/system.md#query_language-system-reload-dictionary) query, timeout, dictionary config has changed).
+    - `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](/sql-reference/statements/system#reload-dictionaries) query, timeout, dictionary config has changed).
     - `FAILED_AND_RELOADING` — Could not load the dictionary as a result of an error and is loading now.
 - `origin` ([String](../../sql-reference/data-types/string.md)) — Path to the configuration file that describes the dictionary.
-- `type` ([String](../../sql-reference/data-types/string.md)) — Type of dictionary allocation. [Storing Dictionaries in Memory](../../sql-reference/dictionaries/index.md#storig-dictionaries-in-memory).
-- `key.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [key names](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-key) provided by the dictionary.
-- `key.types` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Corresponding array of [key types](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-key) provided by the dictionary.
-- `attribute.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [attribute names](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes) provided by the dictionary.
-- `attribute.types` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Corresponding array of [attribute types](../../sql-reference/dictionaries/index.md#dictionary-key-and-fields#ext_dict_structure-attributes) provided by the dictionary.
-- `bytes_allocated` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Amount of RAM allocated for the dictionary.
-- `query_count` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of queries since the dictionary was loaded or since the last successful reboot.
+- `type` ([String](../../sql-reference/data-types/string.md)) — Type of dictionary allocation. [Storing Dictionaries in Memory](/sql-reference/dictionaries#storing-dictionaries-in-memory).
+- `key.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [key names](/operations/system-tables/dictionaries) provided by the dictionary.
+- `key.types` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Corresponding array of [key types](/sql-reference/dictionaries#dictionary-key-and-fields) provided by the dictionary.
+- `attribute.names` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Array of [attribute names](/sql-reference/dictionaries#dictionary-key-and-fields) provided by the dictionary.
+- `attribute.types` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Corresponding array of [attribute types](/sql-reference/dictionaries#dictionary-key-and-fields) provided by the dictionary.
+- `bytes_allocated` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Amount of RAM allocated for the dictionary.
+- `query_count` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of queries since the dictionary was loaded or since the last successful reboot.
 - `hit_rate` ([Float64](../../sql-reference/data-types/float.md)) — For cache dictionaries, the percentage of uses for which the value was in the cache.
 - `found_rate` ([Float64](../../sql-reference/data-types/float.md)) — The percentage of uses for which the value was found.
-- `element_count` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Number of items stored in the dictionary.
+- `element_count` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Number of items stored in the dictionary.
 - `load_factor` ([Float64](../../sql-reference/data-types/float.md)) — Percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
 - `source` ([String](../../sql-reference/data-types/string.md)) — Text describing the [data source](../../sql-reference/dictionaries/index.md#dictionary-sources) for the dictionary.
-- `lifetime_min` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Minimum [lifetime](../../sql-reference/dictionaries/index.md#dictionary-updates) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
-- `lifetime_max` ([UInt64](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Maximum [lifetime](../../sql-reference/dictionaries/index.md#dictionary-updates) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
+- `lifetime_min` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Minimum [lifetime](/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
+- `lifetime_max` ([UInt64](/sql-reference/data-types/int-uint#integer-ranges)) — Maximum [lifetime](/sql-reference/dictionaries#refreshing-dictionary-data-using-lifetime) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
 - `loading_start_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — Start time for loading the dictionary.
 - `last_successful_update_time` ([DateTime](../../sql-reference/data-types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with dictionary sources and investigate the causes.
 - `loading_duration` ([Float32](../../sql-reference/data-types/float.md)) — Duration of a dictionary loading.
@@ -47,7 +48,7 @@ Columns:
 
 Configure the dictionary:
 
-``` sql
+```sql
 CREATE DICTIONARY dictionary_with_comment
 (
     id UInt64,
@@ -62,11 +63,11 @@ COMMENT 'The temporary dictionary';
 
 Make sure that the dictionary is loaded.
 
-``` sql
+```sql
 SELECT * FROM system.dictionaries LIMIT 1 FORMAT Vertical;
 ```
 
-``` text
+```text
 Row 1:
 ──────
 database:                    default

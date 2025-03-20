@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/postgresql
+description: 'Allows `SELECT` and `INSERT` queries to be performed on data that is
+  stored on a remote PostgreSQL server.'
+sidebar_label: 'postgresql'
 sidebar_position: 160
-sidebar_label: postgresql
-title: "postgresql"
-description: "Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a remote PostgreSQL server."
+slug: /sql-reference/table-functions/postgresql
+title: 'postgresql'
 ---
 
 # postgresql Table Function
@@ -12,7 +13,7 @@ Allows `SELECT` and `INSERT` queries to be performed on data that is stored on a
 
 **Syntax**
 
-``` sql
+```sql
 postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
 ```
 
@@ -70,7 +71,7 @@ Supports replicas priority for PostgreSQL dictionary source. The bigger the numb
 
 Table in PostgreSQL:
 
-``` text
+```text
 postgres=# CREATE TABLE "public"."test" (
 "int_id" SERIAL,
 "int_nullable" INT NULL DEFAULT NULL,
@@ -109,7 +110,7 @@ CREATE NAMED COLLECTION mypg AS
 SELECT * FROM postgresql(mypg, table='test') WHERE str IN ('test');
 ```
 
-``` text
+```text
 ┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
 │      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
 └────────┴──────────────┴───────┴──────┴────────────────┘
@@ -122,7 +123,7 @@ INSERT INTO TABLE FUNCTION postgresql('localhost:5432', 'test', 'test', 'postgrs
 SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password');
 ```
 
-``` text
+```text
 ┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
 │      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
 │      2 │         ᴺᵁᴸᴸ │     3 │      │           ᴺᵁᴸᴸ │
@@ -147,7 +148,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 **See Also**
 
 - [The PostgreSQL table engine](../../engines/table-engines/integrations/postgresql.md)
-- [Using PostgreSQL as a dictionary source](../../sql-reference/dictionaries/index.md#dictionary-sources#dicts-external_dicts_dict_sources-postgresql)
+- [Using PostgreSQL as a dictionary source](/sql-reference/dictionaries#postgresql)
 
 ## Related content {#related-content}
 

@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/combinators
+description: 'Documentation for Aggregate Function Combinators'
+sidebar_label: 'Combinators'
 sidebar_position: 37
-sidebar_label: Combinators
+slug: /sql-reference/aggregate-functions/combinators
+title: 'Aggregate Function Combinators'
 ---
 
 # Aggregate Function Combinators
@@ -65,7 +67,7 @@ If you apply this combinator, the aggregate function returns the same value but 
 
 **Syntax**
 
-``` sql
+```sql
 <aggFunction>SimpleState(x)
 ```
 
@@ -81,13 +83,13 @@ The value of an aggregate function with the `SimpleAggregateFunction(...)` type.
 
 Query:
 
-``` sql
+```sql
 WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 ```
 
 Result:
 
-``` text
+```text
 ┌─toTypeName(c)────────────────────────┬─c─┐
 │ SimpleAggregateFunction(any, UInt64) │ 0 │
 └──────────────────────────────────────┴───┘
@@ -95,7 +97,7 @@ Result:
 
 ## -State {#-state}
 
-If you apply this combinator, the aggregate function does not return the resulting value (such as the number of unique values for the [uniq](../../sql-reference/aggregate-functions/reference/uniq.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
+If you apply this combinator, the aggregate function does not return the resulting value (such as the number of unique values for the [uniq](/sql-reference/aggregate-functions/reference/uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
 
 :::note
 Please notice, that -MapState is not an invariant for the same data due to the fact that order of data in intermediate state can change, though it doesn't impact ingestion of this data.
@@ -104,7 +106,7 @@ Please notice, that -MapState is not an invariant for the same data due to the f
 To work with these states, use:
 
 - [AggregatingMergeTree](../../engines/table-engines/mergetree-family/aggregatingmergetree.md) table engine.
-- [finalizeAggregation](../../sql-reference/functions/other-functions.md#function-finalizeaggregation) function.
+- [finalizeAggregation](/sql-reference/functions/other-functions#finalizeaggregation) function.
 - [runningAccumulate](../../sql-reference/functions/other-functions.md#runningaccumulate) function.
 - [-Merge](#-merge) combinator.
 - [-MergeState](#-mergestate) combinator.
@@ -136,7 +138,7 @@ If an aggregate function does not have input values, with this combinator it ret
 
 **Syntax**
 
-``` sql
+```sql
 <aggFunction>OrDefault(x)
 ```
 
@@ -154,13 +156,13 @@ Type depends on the aggregate function used.
 
 Query:
 
-``` sql
+```sql
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 ```
 
 Result:
 
-``` text
+```text
 ┌─avg(number)─┬─avgOrDefault(number)─┐
 │         nan │                    0 │
 └─────────────┴──────────────────────┘
@@ -170,7 +172,7 @@ Also `-OrDefault` can be used with another combinators. It is useful when the ag
 
 Query:
 
-``` sql
+```sql
 SELECT avgOrDefaultIf(x, x > 10)
 FROM
 (
@@ -180,7 +182,7 @@ FROM
 
 Result:
 
-``` text
+```text
 ┌─avgOrDefaultIf(x, greater(x, 10))─┐
 │                              0.00 │
 └───────────────────────────────────┘
@@ -190,13 +192,13 @@ Result:
 
 Changes behavior of an aggregate function.
 
-This combinator converts a result of an aggregate function to the [Nullable](../../sql-reference/data-types/nullable.md) data type. If the aggregate function does not have values to calculate it returns [NULL](../../sql-reference/syntax.md#null-literal).
+This combinator converts a result of an aggregate function to the [Nullable](../../sql-reference/data-types/nullable.md) data type. If the aggregate function does not have values to calculate it returns [NULL](/operations/settings/formats#input_format_null_as_default).
 
 `-OrNull` can be used with other combinators.
 
 **Syntax**
 
-``` sql
+```sql
 <aggFunction>OrNull(x)
 ```
 
@@ -217,13 +219,13 @@ Add `-orNull` to the end of aggregate function.
 
 Query:
 
-``` sql
+```sql
 SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
 ```
 
 Result:
 
-``` text
+```text
 ┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
 │              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
 └───────────────────┴───────────────────────────────┘
@@ -233,7 +235,7 @@ Also `-OrNull` can be used with another combinators. It is useful when the aggre
 
 Query:
 
-``` sql
+```sql
 SELECT avgOrNullIf(x, x > 10)
 FROM
 (
@@ -243,7 +245,7 @@ FROM
 
 Result:
 
-``` text
+```text
 ┌─avgOrNullIf(x, greater(x, 10))─┐
 │                           ᴺᵁᴸᴸ │
 └────────────────────────────────┘
@@ -253,7 +255,7 @@ Result:
 
 Lets you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
 
-``` sql
+```sql
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
 ```
 
@@ -273,7 +275,7 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 
 Consider the `people` table with the following data:
 
-``` text
+```text
 ┌─name───┬─age─┬─wage─┐
 │ John   │  16 │   10 │
 │ Alice  │  30 │   15 │
@@ -286,13 +288,13 @@ Consider the `people` table with the following data:
 
 Let's get the names of the people whose age lies in the intervals of `[30,60)` and `[60,75)`. Since we use integer representation for age, we get ages in the `[30, 59]` and `[60,74]` intervals.
 
-To aggregate names in an array, we use the [groupArray](../../sql-reference/aggregate-functions/reference/grouparray.md#agg_function-grouparray) aggregate function. It takes one argument. In our case, it's the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
+To aggregate names in an array, we use the [groupArray](/sql-reference/aggregate-functions/reference/grouparray) aggregate function. It takes one argument. In our case, it's the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
 
-``` sql
+```sql
 SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
 ```
 
-``` text
+```text
 ┌─groupArrayResample(30, 75, 30)(name, age)─────┐
 │ [['Alice','Mary','Evelyn'],['David','Brian']] │
 └───────────────────────────────────────────────┘
@@ -304,14 +306,14 @@ Consider the results.
 
 Now let's count the total number of people and their average wage in the specified age intervals.
 
-``` sql
+```sql
 SELECT
     countResample(30, 75, 30)(name, age) AS amount,
     avgResample(30, 75, 30)(wage, age) AS avg_wage
 FROM people
 ```
 
-``` text
+```text
 ┌─amount─┬─avg_wage──────────────────┐
 │ [3,2]  │ [11.5,12.949999809265137] │
 └────────┴───────────────────────────┘

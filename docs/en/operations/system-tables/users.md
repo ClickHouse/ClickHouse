@@ -1,9 +1,11 @@
 ---
-description: "System table containing a list of user accounts configured on the server."
+description: 'System table containing a list of user accounts configured on the server.'
+keywords: ['system table', 'users']
 slug: /operations/system-tables/users
-title: "system.users"
-keywords: ["system table", "users"]
+title: 'system.users'
 ---
+
+# system.users
 
 Contains a list of [user accounts](../../guides/sre/user-management/index.md#user-account-management) configured on the server.
 
@@ -26,7 +28,7 @@ Columns:
 
 - `host_names_like` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — Names of hosts that are allowed to connect to the ClickHouse server, set using the LIKE predicate.
 
-- `default_roles_all` ([UInt8](../../sql-reference/data-types/int-uint.md#uint-ranges)) — Shows that all granted roles set for user by default.
+- `default_roles_all` ([UInt8](/sql-reference/data-types/int-uint#integer-ranges)) — Shows that all granted roles set for user by default.
 
 - `default_roles_list` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) — List of granted roles provided by default.
 
@@ -34,4 +36,4 @@ Columns:
 
 ## See Also {#see-also}
 
-- [SHOW USERS](../../sql-reference/statements/show.md#show-users-statement)
+- [SHOW USERS](/sql-reference/statements/show#show-users)

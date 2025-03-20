@@ -1,15 +1,16 @@
 ---
-slug: /sql-reference/statements/alter/column
+description: 'Documentation for Column'
+sidebar_label: 'COLUMN'
 sidebar_position: 37
-sidebar_label: COLUMN
-title: "Column Manipulations"
+slug: /sql-reference/statements/alter/column
+title: 'Column Manipulations'
 ---
 
 A set of queries that allow changing the table structure.
 
 Syntax:
 
-``` sql
+```sql
 ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 ```
 
@@ -32,11 +33,11 @@ These actions are described in detail below.
 
 ## ADD COLUMN {#add-column}
 
-``` sql
+```sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/sql-reference/statements/create/table.md/#create-default-values)).
+Adds a new column to the table with the specified `name`, `type`, [`codec`](../create/table.md/#column_compression_codec) and `default_expr` (see the section [Default expressions](/sql-reference/statements/create/table#default_values)).
 
 If the `IF NOT EXISTS` clause is included, the query won't return an error if the column already exists. If you specify `AFTER name_after` (the name of another column), the column is added after the specified one in the list of table columns. If you want to add a column to the beginning of the table use the `FIRST` clause. Otherwise, the column is added to the end of the table. For a chain of actions, `name_after` can be the name of a column that is added in one of the previous actions.
 
@@ -46,14 +47,14 @@ This approach allows us to complete the `ALTER` query instantly, without increas
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE alter_test ADD COLUMN Added1 UInt32 FIRST;
 ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;
 ALTER TABLE alter_test ADD COLUMN Added3 UInt32 AFTER ToDrop;
 DESC alter_test FORMAT TSV;
 ```
 
-``` text
+```text
 Added1  UInt32
 CounterID       UInt32
 StartDate       Date
@@ -68,7 +69,7 @@ Added3  UInt32
 
 ## DROP COLUMN {#drop-column}
 
-``` sql
+```sql
 DROP COLUMN [IF EXISTS] name
 ```
 
@@ -77,18 +78,18 @@ Deletes the column with the name `name`. If the `IF EXISTS` clause is specified,
 Deletes data from the file system. Since this deletes entire files, the query is completed almost instantly.
 
 :::tip
-You can't delete a column if it is referenced by [materialized view](/sql-reference/statements/create/view.md/#materialized). Otherwise, it returns an error.
+You can't delete a column if it is referenced by [materialized view](/sql-reference/statements/create/view). Otherwise, it returns an error.
 :::
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits DROP COLUMN browser
 ```
 
 ## RENAME COLUMN {#rename-column}
 
-``` sql
+```sql
 RENAME COLUMN [IF EXISTS] name to new_name
 ```
 
@@ -98,13 +99,13 @@ Renames the column `name` to `new_name`. If the `IF EXISTS` clause is specified,
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits RENAME COLUMN webBrowser TO browser
 ```
 
 ## CLEAR COLUMN {#clear-column}
 
-``` sql
+```sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ```
 
@@ -114,13 +115,13 @@ If the `IF EXISTS` clause is specified, the query won't return an error if the c
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
 ## COMMENT COLUMN {#comment-column}
 
-``` sql
+```sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ```
 
@@ -132,13 +133,13 @@ Comments are stored in the `comment_expression` column returned by the [DESCRIBE
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
 ```
 
 ## MODIFY COLUMN {#modify-column}
 
-``` sql
+```sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
 ALTER COLUMN [IF EXISTS] name TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
 ```
@@ -167,7 +168,7 @@ When changing the type, values are converted as if the [toType](/sql-reference/f
 
 Example:
 
-``` sql
+```sql
 ALTER TABLE visits MODIFY COLUMN browser Array(String)
 ```
 
@@ -326,7 +327,7 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 
 **See Also**
 
-- [MATERIALIZED](/sql-reference/statements/create/table.md/#materialized).
+- [MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
 
 ## Limitations {#limitations}
 

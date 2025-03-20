@@ -2,7 +2,6 @@
 #include <filesystem>
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
-#include <base/ask.h>
 
 #include <sys/stat.h>
 #include <pwd.h>
@@ -29,6 +28,7 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/copyData.h>
 #include <IO/Operators.h>
+#include <IO/Ask.h>
 #include <readpassphrase.h>
 
 #include <Poco/Util/XMLConfiguration.h>
