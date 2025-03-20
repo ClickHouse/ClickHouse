@@ -6,6 +6,9 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 #include <QueryPipeline/Pipe.h>
+#include "Common/Logger.h"
+#include "Common/logger_useful.h"
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -14,9 +17,9 @@ namespace DB
 StorageValues::StorageValues(
     const StorageID & table_id_,
     const ColumnsDescription & columns_,
-    const Block & res_block_,
+    Block res_block_,
     VirtualColumnsDescription virtuals_)
-    : IStorage(table_id_), res_block(res_block_)
+    : IStorage(table_id_), res_block(std::move(res_block_))
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -40,12 +43,14 @@ StorageValues::StorageValues(
 Pipe StorageValues::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
-    SelectQueryInfo & /*query_info*/,
+    SelectQueryInfo & query_info,
     ContextPtr /*context*/,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t /*max_block_size*/,
     size_t /*num_streams*/)
 {
+    LOG_DEBUG(getLogger("StorageValues"), "read by {}", query_info.query->formatForLogging());
+
     storage_snapshot->check(column_names);
 
     if (!prepared_pipe.empty())
@@ -72,7 +77,11 @@ Pipe StorageValues::read(
     for (const auto & name : column_names)
         block.insert(res_block.getColumnOrSubcolumnByName(name));
 
+    LOG_DEBUG(getLogger("StorageValues"), "read block rows {}", block.rows());
+
     Chunk chunk(block.getColumns(), block.rows());
+    LOG_DEBUG(getLogger("StorageValues"), "read chunk rows {}", chunk.getNumRows());
+
     return Pipe(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), std::move(chunk)));
 }
 
