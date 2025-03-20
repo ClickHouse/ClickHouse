@@ -900,11 +900,38 @@ public:
     static ColumnsDescription getConcreteObjectColumns(
         const DataPartsVector & parts, const ColumnsDescription & storage_columns);
 
+    UInt64 getIndexLengthFromFile() const override
+    {
+        auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        return primary_index_file_size;
+    }
+
+    UInt64 getMarksSize() const override
+    {
+        auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        return primary_index_marks_size;
+    }
+
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         auto lock = lockParts();
         calculateColumnAndSecondaryIndexSizesIfNeeded();
         return secondary_index_sizes;
+    }
+
+    std::optional<UInt64> getAllIndexesTotalCompressedSize() const override
+    {
+        auto lock = lockParts();
+        calculateColumnAndSecondaryIndexSizesIfNeeded();
+        UInt64 total_size = primary_index_file_size + primary_index_marks_size;
+        for (const auto & [name, size] : secondary_index_sizes)
+        {
+            total_size += size.data_compressed;
+            total_size += size.marks;
+        }
+        return total_size;
     }
 
     /// For ATTACH/DETACH/DROP/FORGET PARTITION.
@@ -1206,6 +1233,8 @@ private:
     mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
     mutable ColumnSizeByName column_sizes;
+    mutable UInt64 primary_index_file_size;
+    mutable UInt64 primary_index_marks_size;
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
 
