@@ -8,7 +8,7 @@
 #include <Poco/Net/Context.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/Net/Utility.h>
-#include <Server/ACMEClient.h>
+#include <Server/ACME/Client.h>
 
 
 namespace DB
@@ -135,20 +135,28 @@ std::list<CertificateReloader::MultiData>::iterator CertificateReloader::findOrI
     return it;
 }
 
-void CertificateReloader::tryLoadACMECertificate(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
+void CertificateReloader::tryLoadACMECertificate(SSL_CTX * ctx, const std::string & prefix)
 {
     try
     {
-        auto key_certificate_pair = ACMEClient::ACMEClient::instance().requestCertificate(config);
+        auto key_certificate_pair = ACME::Client::instance().requestCertificate();
         if (!key_certificate_pair)
         {
             LOG_WARNING(log, "ACME certificate is not ready yet.");
             return;
         }
 
-        auto [pkey, certificate] = key_certificate_pair.value();
+        auto [pkey, certificate, hash] = key_certificate_pair.value();
         auto it = findOrInsert(ctx, prefix);
-        it->data.set(std::make_unique<const Data>(pkey, certificate));
+
+        auto current_version = it->data.get();
+        if (current_version && current_version->hash == hash)
+            return;
+
+        LOG_DEBUG(log, "Reloading ACME certificate and key.");
+        it->data.set(std::make_unique<const Data>(pkey, certificate, hash));
+        LOG_INFO(log, "Reloaded ACME certificate and key.");
+
         if (!it->initialized)
             init(&*it);
     }
@@ -160,22 +168,23 @@ void CertificateReloader::tryLoadACMECertificate(const Poco::Util::AbstractConfi
 
 void CertificateReloader::tryLoadImpl(const Poco::Util::AbstractConfiguration & config, SSL_CTX * ctx, const std::string & prefix)
 {
-    /// fixme fail if both acme and certificateFile/privateKeyFile are set
-    if (config.has("acme"))
-    {
-        tryLoadACMECertificate(config, ctx, prefix);
-        return;
-    }
-
     /// If at least one of the files is modified - recreate
     std::string new_cert_path = config.getString(prefix + "certificateFile", "");
     std::string new_key_path = config.getString(prefix + "privateKeyFile", "");
+
+    if (config.has("acme") && prefix == Poco::Net::SSLManager::CFG_SERVER_PREFIX)
+    {
+        if (!new_cert_path.empty() || !new_key_path.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Static TLS keys and ACME provider are enabled at the same time.");
+
+        return tryLoadACMECertificate(ctx, prefix);
+    }
 
     /// For empty paths (that means, that user doesn't want to use certificates)
     /// no processing required
     if (new_cert_path.empty() || new_key_path.empty())
     {
-        LOG_WARNING(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again.");
+        LOG_INFO(log, "One of paths is empty. Cannot apply new configuration for certificates. Fill all paths and try again.");
         return;
     }
 
@@ -220,8 +229,8 @@ CertificateReloader::Data::Data(std::string cert_path, std::string key_path, std
 {
 }
 
-CertificateReloader::Data::Data(Poco::Crypto::EVPPKey _pkey, Poco::Crypto::X509Certificate _cert)
-    : certs_chain({_cert}), key(_pkey)
+CertificateReloader::Data::Data(Poco::Crypto::EVPPKey _pkey, Poco::Crypto::X509Certificate::List _certs_chain, std::string _hash)
+    : certs_chain(_certs_chain), key(_pkey), hash(_hash)
 {
 }
 

@@ -1,6 +1,6 @@
 #include <Server/HTTPHandlerFactory.h>
 
-#include <Server/ACMEClient.h>
+#include <Server/ACME/Client.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
 #include <Server/IServer.h>
 #include <Server/PrometheusMetricsWriter.h>
@@ -361,7 +361,7 @@ void addCommonDefaultHandlersFactory(HTTPRequestHandlerFactoryMain & factory, IS
     if (server.config().has("acme"))
     {
         auto acme_handler = std::make_shared<HandlingRuleHTTPHandlerFactory<ACMERequestHandler>>(server);
-        acme_handler->attachNonStrictPath(ACMEClient::ACME_CHALLENGE_HTTP_PATH);
+        acme_handler->attachNonStrictPath(ACME::CHALLENGE_HTTP_PATH);
         acme_handler->allowGetAndHeadRequest();
         factory.addHandler(acme_handler);
     }

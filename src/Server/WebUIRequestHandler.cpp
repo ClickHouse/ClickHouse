@@ -12,7 +12,7 @@
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
 
 #if USE_SSL
-#include <Server/ACMEClient.h>
+#include <Server/ACME/Client.h>
 #endif
 
 
@@ -96,7 +96,7 @@ void JavaScriptWebUIRequestHandler::handleRequest(HTTPServerRequest & request, H
 #if USE_SSL
 void ACMERequestHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event &)
 {
-    auto challenge = ACMEClient::ACMEClient::instance().requestChallenge(request.getURI());
+    auto challenge = ACME::Client::instance().requestChallenge(request.getURI());
 
     if (challenge.empty())
     {
