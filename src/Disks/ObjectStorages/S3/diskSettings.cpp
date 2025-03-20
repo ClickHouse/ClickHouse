@@ -51,6 +51,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString session_token;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString sts_endpoint_override;
     extern const S3AuthSettingsBool use_adaptive_timeouts;
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsBool use_insecure_imds_request;
@@ -173,6 +174,7 @@ std::unique_ptr<S3::Client> getClient(
         auth_settings[S3AuthSetting::no_sign_request],
         auth_settings[S3AuthSetting::role_arn],
         auth_settings[S3AuthSetting::role_session_name],
+        auth_settings[S3AuthSetting::sts_endpoint_override]
     };
 
     return S3::ClientFactory::instance().create(

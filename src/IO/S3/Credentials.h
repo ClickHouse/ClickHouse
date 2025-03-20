@@ -175,6 +175,7 @@ struct CredentialsConfiguration
     bool no_sign_request = false;
     String role_arn = ""; // NOLINT(*-redundant-string-init)
     String role_session_name = ""; // NOLINT(*-redundant-string-init)
+    String sts_endpoint_override = ""; // NOLINT(*-redundant-string-init)
 };
 
 class S3CredentialsProviderChain : public Aws::Auth::AWSCredentialsProviderChain
