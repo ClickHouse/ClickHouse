@@ -68,6 +68,18 @@ Client & Client::instance()
     return instance;
 }
 
+void Client::shutdown()
+{
+    if (refresh_certificates_task)
+        refresh_certificates_task->deactivate();
+
+    if (authentication_task)
+        authentication_task->deactivate();
+
+    if (refresh_key_task)
+        refresh_key_task->deactivate();
+}
+
 std::optional<VersionedCertificate> Client::requestCertificate() const
 {
     auto context = Context::getGlobalContextInstance();

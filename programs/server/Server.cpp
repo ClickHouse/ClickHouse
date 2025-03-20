@@ -2902,6 +2902,9 @@ try
             main_config_reloader.reset();
             access_control.stopPeriodicReloading();
 
+            /// Stop ACME tasks.
+            ACME::Client::instance().shutdown();
+
             is_cancelled = true;
 
             LOG_DEBUG(log, "Waiting for current connections to close.");

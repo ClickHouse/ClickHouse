@@ -47,6 +47,7 @@ class Client : private boost::noncopyable
 {
 public:
     static Client & instance();
+    void shutdown();
 
     void initialize(const Poco::Util::AbstractConfiguration & config);
     std::string requestChallenge(const std::string & uri);
