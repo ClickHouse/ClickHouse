@@ -22,6 +22,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileImpl.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PartitionPruning.h>
 
