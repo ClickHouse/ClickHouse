@@ -9,10 +9,7 @@ namespace Iceberg
 {
 
 using ManifestList = std::vector<ManifestFilePtr>;
-
-
 using ManifestListPtr = std::shared_ptr<const ManifestList>;
-using ManifestListsStorage = std::map<String, ManifestListPtr>;
 
 struct IcebergSnapshot
 {

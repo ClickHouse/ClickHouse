@@ -93,14 +93,16 @@ public:
 
 private:
     using ManifestEntryByDataFile = std::unordered_map<String, Iceberg::ManifestFilePtr>;
+    using ManifestFilesStorage = std::unordered_map<String, Iceberg::ManifestFilePtr>;
+    using ManifestListsStorage = std::unordered_map<String, Iceberg::ManifestListPtr>;
 
     const ObjectStoragePtr object_storage;
     const ConfigurationObserverPtr configuration;
     mutable IcebergSchemaProcessor schema_processor;
     LoggerPtr log;
 
-    mutable Iceberg::ManifestFilesStorage manifest_files_by_name;
-    mutable Iceberg::ManifestListsStorage manifest_lists_by_name;
+    mutable ManifestFilesStorage manifest_files_by_name;
+    mutable ManifestListsStorage manifest_lists_by_name;
     mutable ManifestEntryByDataFile manifest_file_by_data_file;
 
     std::tuple<Int64, Int32> getVersion() const { return std::make_tuple(relevant_snapshot_id, relevant_snapshot_schema_id); }
