@@ -120,7 +120,11 @@ std::optional<EvaluateConstantExpressionResult> evaluateConstantExpressionImpl(c
         collectSourceColumns(expression, planner_context, false /*keep_alias_columns*/);
         collectSets(expression, *planner_context);
 
-        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(expression, {}, planner_context);
+        auto [actions, correlated_subtrees] = buildActionsDAGFromExpressionNode(
+            expression,
+            /*input_columns=*/{},
+            planner_context,
+            /*correlated_columns_set=*/{});
         correlated_subtrees.assertEmpty("in constant expression without query context");
 
         if (actions.getOutputs().size() != 1)

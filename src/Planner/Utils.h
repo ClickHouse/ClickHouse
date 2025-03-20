@@ -21,6 +21,7 @@
 #include <Storages/SelectQueryInfo.h>
 
 #include <Interpreters/WindowDescription.h>
+#include "Analyzer/HashUtils.h"
 
 namespace DB
 {
@@ -53,7 +54,8 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
 std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context);
+    const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set);
 
 /// Returns true if prefix sort description is prefix of full sort descriptor, false otherwise
 bool sortDescriptionIsPrefix(const SortDescription & prefix, const SortDescription & full);

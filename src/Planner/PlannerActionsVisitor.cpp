@@ -589,13 +589,13 @@ private:
 class PlannerActionsVisitorImpl
 {
 public:
-    PlannerActionsVisitorImpl(ActionsDAG & actions_dag,
+    PlannerActionsVisitorImpl(
+        ActionsDAG & actions_dag,
         const PlannerContextPtr & planner_context_,
+        const ColumnNodePtrWithHashSet & correlated_columns_set_,
         bool use_column_identifier_as_action_node_name_);
 
     std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> visit(QueryTreeNodePtr expression_node);
-
-    ActionsDAG::NodeRawConstPtrs visitCorrelatedColumns(const ColumnNodes & correlated_columns);
 
 private:
 
@@ -656,14 +656,19 @@ private:
     std::unordered_map<QueryTreeNodePtr, std::string> node_to_node_name;
     CorrelatedSubtrees correlated_subtrees;
     const PlannerContextPtr planner_context;
+    const ColumnNodePtrWithHashSet & correlated_columns_set;
     ActionNodeNameHelper action_node_name_helper;
     bool use_column_identifier_as_action_node_name;
 };
 
-PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(ActionsDAG & actions_dag,
+PlannerActionsVisitorImpl::PlannerActionsVisitorImpl(
+    ActionsDAG & actions_dag,
     const PlannerContextPtr & planner_context_,
-    bool use_column_identifier_as_action_node_name_)
+    const ColumnNodePtrWithHashSet & correlated_columns_set_,
+    bool use_column_identifier_as_action_node_name_
+)
     : planner_context(planner_context_)
+    , correlated_columns_set(correlated_columns_set_)
     , action_node_name_helper(node_to_node_name, *planner_context, use_column_identifier_as_action_node_name_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {
@@ -691,20 +696,6 @@ std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisito
     return std::make_pair(result, correlated_subtrees);
 }
 
-ActionsDAG::NodeRawConstPtrs PlannerActionsVisitorImpl::visitCorrelatedColumns(const ColumnNodes & correlated_columns)
-{
-    ActionsDAG::NodeRawConstPtrs result;
-
-    for (const auto & column : correlated_columns)
-    {
-        auto [node_name, _] = visitCorrelatedColumn(column);
-        result.push_back(actions_stack.front().getNodeOrThrow(node_name));
-    }
-
-    return result;
-}
-
-
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitImpl(QueryTreeNodePtr node)
 {
     auto node_type = node->getNodeType();
@@ -723,10 +714,16 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::visitColumn(const QueryTreeNodePtr & node)
 {
-    auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
     const auto & column_node = node->as<ColumnNode &>();
     if (column_node.hasExpression() && !use_column_identifier_as_action_node_name)
         return visitImpl(column_node.getExpression());
+
+    const auto & column_node_ptr = static_pointer_cast<ColumnNode>(node);
+    if (correlated_columns_set.contains(column_node_ptr))
+        return visitCorrelatedColumn(column_node_ptr);
+
+    auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
+
     Int64 actions_stack_size = static_cast<Int64>(actions_stack.size() - 1);
     for (Int64 i = actions_stack_size; i >= 0; --i)
     {
@@ -1105,21 +1102,23 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
 }
 
-PlannerActionsVisitor::PlannerActionsVisitor(const PlannerContextPtr & planner_context_, bool use_column_identifier_as_action_node_name_)
+PlannerActionsVisitor::PlannerActionsVisitor(
+    const PlannerContextPtr & planner_context_,
+    const ColumnNodePtrWithHashSet & correlated_columns_set_,
+    bool use_column_identifier_as_action_node_name_)
     : planner_context(planner_context_)
+    , correlated_columns_set(correlated_columns_set_)
     , use_column_identifier_as_action_node_name(use_column_identifier_as_action_node_name_)
 {}
 
 std::pair<ActionsDAG::NodeRawConstPtrs, CorrelatedSubtrees> PlannerActionsVisitor::visit(ActionsDAG & actions_dag, QueryTreeNodePtr expression_node)
 {
-    PlannerActionsVisitorImpl actions_visitor_impl(actions_dag, planner_context, use_column_identifier_as_action_node_name);
+    PlannerActionsVisitorImpl actions_visitor_impl(
+        actions_dag,
+        planner_context,
+        correlated_columns_set,
+        use_column_identifier_as_action_node_name);
     return actions_visitor_impl.visit(expression_node);
-}
-
-ActionsDAG::NodeRawConstPtrs PlannerActionsVisitor::visitCorrelatedColumns(ActionsDAG & actions_dag, const ColumnNodes & correlated_columns)
-{
-    PlannerActionsVisitorImpl actions_visitor_impl(actions_dag, planner_context, use_column_identifier_as_action_node_name);
-    return actions_visitor_impl.visitCorrelatedColumns(correlated_columns);
 }
 
 String calculateActionNodeName(const QueryTreeNodePtr & node,

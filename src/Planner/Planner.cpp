@@ -1605,18 +1605,6 @@ void Planner::buildPlanForQueryNode()
 
     auto useful_sets = std::move(join_tree_query_plan.useful_sets);
 
-    if (expression_analysis_result.hasCorrelatedColumns())
-    {
-        auto add_correlated_columns_actions = std::make_shared<ActionsAndProjectInputsFlag>();
-        add_correlated_columns_actions->project_input = true;
-
-        addExpressionStep(
-            query_plan,
-            expression_analysis_result.getCorrelatedColumns().input_actions,
-            "Add correlated columns as inputs",
-            useful_sets);
-    }
-
     for (auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
     {
         if (table_expression_data.getPrewhereFilterActions())

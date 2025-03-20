@@ -246,10 +246,11 @@ StorageLimits buildStorageLimits(const Context & context, const SelectQueryOptio
 std::pair<ActionsDAG, CorrelatedSubtrees> buildActionsDAGFromExpressionNode(
     const QueryTreeNodePtr & expression_node,
     const ColumnsWithTypeAndName & input_columns,
-    const PlannerContextPtr & planner_context)
+    const PlannerContextPtr & planner_context,
+    const ColumnNodePtrWithHashSet & correlated_columns_set)
 {
     ActionsDAG action_dag(input_columns);
-    PlannerActionsVisitor actions_visitor(planner_context);
+    PlannerActionsVisitor actions_visitor(planner_context, correlated_columns_set);
     auto [expression_dag_index_nodes, correlated_subtrees] = actions_visitor.visit(action_dag, expression_node);
     action_dag.getOutputs() = std::move(expression_dag_index_nodes);
 
@@ -493,7 +494,7 @@ FilterDAGInfo buildFilterInfo(QueryTreeNodePtr filter_query_tree,
 
     ActionsDAG filter_actions_dag;
 
-    PlannerActionsVisitor actions_visitor(planner_context, false /*use_column_identifier_as_action_node_name*/);
+    PlannerActionsVisitor actions_visitor(planner_context, /*correlated_columns_set_=*/{}, false /*use_column_identifier_as_action_node_name*/);
     auto [expression_nodes, correlated_subtrees] = actions_visitor.visit(filter_actions_dag, filter_query_tree);
     correlated_subtrees.assertEmpty("in row-policy and additional table filters");
     if (expression_nodes.size() != 1)

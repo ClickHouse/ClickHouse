@@ -23,11 +23,6 @@ struct ProjectionAnalysisResult
     ActionsAndProjectInputsFlagPtr project_names_actions;
 };
 
-struct CorrelatedColumnsAnalysisResult
-{
-    ActionsAndProjectInputsFlagPtr input_actions;
-};
-
 struct FilterAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr filter_actions;
@@ -73,21 +68,6 @@ public:
     ProjectionAnalysisResult & getProjection()
     {
         return projection_analysis_result;
-    }
-
-    bool hasCorrelatedColumns() const noexcept
-    {
-        return correlated_columns_analysis_result.input_actions != nullptr;
-    }
-
-    CorrelatedColumnsAnalysisResult & getCorrelatedColumns()
-    {
-        return correlated_columns_analysis_result;
-    }
-
-    void addCorrelatedColumns(CorrelatedColumnsAnalysisResult correlated_columns_analysis_result_)
-    {
-        correlated_columns_analysis_result = std::move(correlated_columns_analysis_result_);
     }
 
     bool hasWhere() const
@@ -196,7 +176,6 @@ public:
     }
 
 private:
-    CorrelatedColumnsAnalysisResult correlated_columns_analysis_result;
     ProjectionAnalysisResult projection_analysis_result;
     FilterAnalysisResult where_analysis_result;
     AggregationAnalysisResult aggregation_analysis_result;

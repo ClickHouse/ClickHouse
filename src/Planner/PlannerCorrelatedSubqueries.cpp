@@ -35,16 +35,24 @@ void CorrelatedSubtrees::assertEmpty(std::string_view reason) const
 namespace
 {
 
-void decorrelatedQueryPlan(QueryPlan::Node * node)
+void decorrelateQueryPlan(QueryPlan & decorrelated_query_plan, QueryPlan::Node * node)
 {
     if ([[maybe_unused]] auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get()))
     {
-        decorrelatedQueryPlan(node->children.front());
+        decorrelateQueryPlan(decorrelated_query_plan, node->children.front());
+        decorrelated_query_plan.addStep(std::move(node->step));
+        return;
     }
     if ([[maybe_unused]] auto * filter_step = typeid_cast<FilterStep *>(node->step.get()))
     {
-
+        decorrelateQueryPlan(decorrelated_query_plan, node->children.front());
+        decorrelated_query_plan.addStep(std::move(node->step));
+        return;
     }
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Cannot decorrelate query, because '{}' step is not supported",
+        node->step->getStepDescription());
 }
 
 }
@@ -81,8 +89,10 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::make_shared<GlobalPlannerContext>(nullptr, nullptr, FiltersForTableExpressionMap{}));
 
             subquery_planner.buildQueryPlanIfNeeded();
-            decorrelatedQueryPlan(subquery_planner.getQueryPlan().getRootNode());
             LOG_DEBUG(getLogger(__func__), "Correlated subquery plan:\n{}", dumpQueryPlan(subquery_planner.getQueryPlan()));
+
+            QueryPlan decorrelated_query_plan;
+            decorrelateQueryPlan(decorrelated_query_plan, subquery_planner.getQueryPlan().getRootNode());
             break;
         }
     }
