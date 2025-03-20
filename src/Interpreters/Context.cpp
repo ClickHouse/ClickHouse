@@ -3345,7 +3345,7 @@ void Context::clearUncompressedCache() const
 void Context::setPageCache(
     size_t default_block_size, size_t default_lookahead_blocks, std::chrono::milliseconds history_window,
     const String & cache_policy, double size_ratio, size_t min_size_in_bytes, size_t max_size_in_bytes,
-    double free_memory_ratio)
+    double free_memory_ratio, size_t num_shards)
 {
     std::lock_guard lock(shared->mutex);
 
@@ -3354,7 +3354,7 @@ void Context::setPageCache(
 
     shared->page_cache = std::make_shared<PageCache>(
         default_block_size, default_lookahead_blocks, history_window, cache_policy, size_ratio,
-        min_size_in_bytes, max_size_in_bytes, free_memory_ratio);
+        min_size_in_bytes, max_size_in_bytes, free_memory_ratio, num_shards);
 }
 
 PageCachePtr Context::getPageCache() const
