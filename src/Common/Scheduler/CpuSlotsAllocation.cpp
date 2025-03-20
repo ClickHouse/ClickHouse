@@ -1,3 +1,7 @@
+#include <mutex>
+
+#include <base/scope_guard.h>
+
 #include <Common/Scheduler/CpuSlotsAllocation.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Exception.h>
@@ -52,32 +56,47 @@ AcquiredCpuSlot::~AcquiredCpuSlot()
         request->finish();
 }
 
-CpuSlotsAllocation::CpuSlotsAllocation(SlotCount min_, SlotCount max_, ResourceLink link_)
-    : min(min_)
-    , max(max_)
-    , link(link_)
-    , noncompeting(link ? min : max)
-    , requests(max - min)
-    , allocated(link ? min : max)
+CpuSlotsAllocation::CpuSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_)
+    : master_slots(master_slots_)
+    , total_slots(master_slots_ + worker_slots_)
+    , noncompeting_slots(!master_link_ * master_slots_ + !worker_link_ * worker_slots_)
+    , master_link(master_link_)
+    , worker_link(worker_link_)
+    , requests(total_slots - noncompeting_slots) // NOTE: it should not be reallocated after initialization because AcquiredCpuSlot holds raw pointer
+    , current_request(&requests.front())
 {
     for (CpuSlotRequest & request : requests)
         request.allocation = this;
-    schedule(false);
+
+    std::unique_lock lock{schedule_mutex};
+    while (allocated < total_slots)
+    {
+        if (ISchedulerQueue * queue = getCurrentQueue(lock)) // competing slot - use scheduler
+        {
+            queue->enqueueRequest(current_request);
+            break;
+        }
+        else // noncompeting slot - provide for free
+        {
+            allocated++;
+            noncompeting++;
+        }
+    }
 }
 
 CpuSlotsAllocation::~CpuSlotsAllocation()
 {
-    if (link)
+    if (master_link || worker_link)
     {
         std::unique_lock lock{schedule_mutex};
-        if (allocated < max)
+        if (allocated < total_slots)
         {
-            bool canceled = link.queue->cancelRequest(&requests[allocated - min]);
+            bool canceled = getCurrentQueue(lock)->cancelRequest(current_request);
             if (!canceled)
             {
                 // Request was not canceled, it means it is currently processed by the scheduler thread, we have to wait
-                allocated = max; // to prevent enqueueing of the next request - see schedule()
-                schedule_cv.wait(lock, [this] { return allocated == max + 1; });
+                allocated = total_slots; // to prevent enqueueing of the next request - see schedule()
+                schedule_cv.wait(lock, [this] { return allocated == total_slots + 1; });
             }
         }
     }
@@ -102,13 +121,21 @@ CpuSlotsAllocation::~CpuSlotsAllocation()
         }
     }
 
-    // If all non-competing slots are already acquired - try acquire granted (competing) slot
+    // If all non-competing slots are already acquired - try acquire granted competing slot
     value = granted.load();
     while (value)
     {
         if (granted.compare_exchange_strong(value, value - 1))
         {
-            chassert(link);
+            std::unique_lock lock{schedule_mutex};
+            // Grant noncompeting postponed slots if any, see grant()
+            while (allocated < total_slots && !getCurrentQueue(lock))
+            {
+                allocated++;
+                noncompeting++;
+            }
+
+            // Make and return acquired slot
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
             size_t index = last_acquire_index.fetch_add(1, std::memory_order_relaxed);
             return AcquiredSlotPtr(new AcquiredCpuSlot(shared_from_this(), &requests[index]));
@@ -118,10 +145,22 @@ CpuSlotsAllocation::~CpuSlotsAllocation()
     return {}; // avoid unnecessary locking
 }
 
-void CpuSlotsAllocation::grant()
+[[nodiscard]] AcquiredSlotPtr CpuSlotsAllocation::acquire()
 {
-    granted++;
-    schedule(true);
+    // lock-free shortcut
+    if (auto result = tryAcquire())
+        return result;
+
+    // TODO(serxa): this logic could be optimized with FUTEX_WAIT
+    std::unique_lock lock{schedule_mutex};
+    waiters++;
+    SCOPE_EXIT({ waiters--; });
+    while (true) {
+        schedule_cv.wait(lock, [this] { return granted > 0 || noncompeting > 0; });
+        if (auto result = tryAcquire())
+            return result;
+        // NOTE: We need retries because there are lock-free code paths that could acquire slot in another thread regardless of schedule_mutex
+    }
 }
 
 void CpuSlotsAllocation::failed(const std::exception_ptr & ptr)
@@ -129,22 +168,34 @@ void CpuSlotsAllocation::failed(const std::exception_ptr & ptr)
     std::scoped_lock lock{schedule_mutex};
     exception = ptr;
     noncompeting.store(exception_value);
-    allocated = max + 1;
-    schedule_cv.notify_one();
+    allocated = total_slots + 1;
+    schedule_cv.notify_all();
 }
 
-void CpuSlotsAllocation::schedule(bool next)
+void CpuSlotsAllocation::grant()
 {
-    std::scoped_lock lock{schedule_mutex};
-    if (next)
-        allocated++;
-    if (allocated < max)
+    std::unique_lock lock{schedule_mutex};
+
+    // Grant one request
+    granted++;
+    allocated++;
+    current_request++;
+    if (waiters > 0 || allocated > total_slots)
+        schedule_cv.notify_one(); // notify either waiting acquire() caller or destructor, both not possible simultaneously
+
+    // Enqueue another resource request if necessary
+    if (allocated < total_slots)
     {
-        chassert(link);
-        link.queue->enqueueRequest(&requests[allocated - min]);
+        // TODO(serxa): we should not request more slots if we already have at least 2 granted and not acquired slots to avoid holding unnecessary slots
+        if (ISchedulerQueue * queue = getCurrentQueue(lock)) // competing slot - use scheduler
+            queue->enqueueRequest(current_request);
+        // NOTE: if the next slot is noncompeting - postpone granting it to avoid it being acquired too early
     }
-    if (allocated > max)
-        schedule_cv.notify_one(); // notify waiting destructor
+}
+
+ISchedulerQueue * CpuSlotsAllocation::getCurrentQueue(const std::unique_lock<std::mutex> &)
+{
+    return allocated < master_slots ? master_link.queue : worker_link.queue;
 }
 
 }

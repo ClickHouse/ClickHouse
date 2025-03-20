@@ -398,27 +398,26 @@ bool WorkloadEntityStorageBase::storeEntity(
             }
 
             SchedulingSettings io_validator;
-            io_validator.updateFromChanges(SchedulingSettings::Type::Io, workload->changes);
+            io_validator.updateFromChanges(SchedulingSettings::Unit::IoByte, workload->changes);
 
             SchedulingSettings cpu_validator;
-            cpu_validator.updateFromChanges(SchedulingSettings::Type::Cpu, workload->changes);
+            cpu_validator.updateFromChanges(SchedulingSettings::Unit::CpuSlot, workload->changes);
         }
 
         // Validate resource
         if (resource)
         {
-            if (resource->operations.size() == 1 && resource->operations[0].mode == ASTCreateResourceQuery::AccessMode::Cpu)
+            for (const auto & operation : resource->operations)
             {
-                if (!cpu_name.empty() && cpu_name != resource->getResourceName())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second CPU resource is not allowed. Current CPU resource name: '{}'.", cpu_name);
-            }
-            else
-            {
-                // Check that CPU and IO are not mixed in one resource
-                for (const auto & operation : resource->operations)
+                if (operation.mode == ASTCreateResourceQuery::AccessMode::MasterThread)
                 {
-                    if (operation.mode == ASTCreateResourceQuery::AccessMode::Cpu)
-                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "It is not allowed to use CPU with READ or WRITE access in the same resource. Create different resources for IO and CPU.");
+                    if (!master_thread_resource.empty() && master_thread_resource != resource->getResourceName())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for MASTER THREAD is not allowed. Current resource name: '{}'.", master_thread_resource);
+                }
+                if (operation.mode == ASTCreateResourceQuery::AccessMode::WorkerThread)
+                {
+                    if (!worker_thread_resource.empty() && worker_thread_resource != resource->getResourceName())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second resource for WORKER THREAD is not allowed. Current resource name: '{}'.", worker_thread_resource);
                 }
             }
         }
@@ -439,20 +438,13 @@ bool WorkloadEntityStorageBase::storeEntity(
                     }
                     case ReferenceType::ForResource:
                     {
-                        if (typeid_cast<ASTCreateResourceQuery *>(entities[target].get()) == nullptr)
+                        auto * target_resource = typeid_cast<ASTCreateResourceQuery *>(entities[target].get());
+                        if (target_resource == nullptr)
                             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Workload settings should reference resource in FOR clause, not '{}'.", target);
 
                         // Validate that we could parse the settings for specific resource
-                        if (target == cpu_name)
-                        {
-                            SchedulingSettings cpu_validator;
-                            cpu_validator.updateFromChanges(SchedulingSettings::Type::Cpu, workload->changes, target);
-                        }
-                        else
-                        {
-                            SchedulingSettings io_validator;
-                            io_validator.updateFromChanges(SchedulingSettings::Type::Io, workload->changes, target);
-                        }
+                        SchedulingSettings validator;
+                        validator.updateFromChanges(target_resource->unit, workload->changes, target);
                         break;
                     }
                 }
@@ -558,10 +550,16 @@ scope_guard WorkloadEntityStorageBase::getAllEntitiesAndSubscribe(const OnChange
     return result;
 }
 
-String WorkloadEntityStorageBase::getCpuResourceName()
+String WorkloadEntityStorageBase::getMasterThreadResourceName()
 {
     std::lock_guard lock{mutex};
-    return cpu_name;
+    return master_thread_resource;
+}
+
+String WorkloadEntityStorageBase::getWorkerThreadResourceName()
+{
+    std::lock_guard lock{mutex};
+    return worker_thread_resource;
 }
 
 void WorkloadEntityStorageBase::unlockAndNotify(
@@ -666,8 +664,16 @@ void WorkloadEntityStorageBase::applyEvent(
             root_name = workload->getWorkloadName();
 
         // Update cpu resource
-        if (resource && resource->operations.size() == 1 && resource->operations[0].mode == ASTCreateResourceQuery::AccessMode::Cpu)
-            cpu_name = resource->getResourceName();
+        if (resource)
+        {
+            for (const auto & operation : resource->operations)
+            {
+                if (operation.mode == ASTCreateResourceQuery::AccessMode::MasterThread)
+                    master_thread_resource = resource->getResourceName();
+                if (operation.mode == ASTCreateResourceQuery::AccessMode::WorkerThread)
+                    worker_thread_resource = resource->getResourceName();
+            }
+        }
 
         // Remove references of a replaced entity (only for CREATE OR REPLACE)
         if (auto it = entities.find(event.name); it != entities.end())
@@ -689,8 +695,11 @@ void WorkloadEntityStorageBase::applyEvent(
         if (event.name == root_name)
             root_name.clear();
 
-        if (event.name == cpu_name)
-            cpu_name.clear();
+        if (event.name == master_thread_resource)
+            master_thread_resource.clear();
+
+        if (event.name == worker_thread_resource)
+            worker_thread_resource.clear();
 
         // Clean up references
         removeReferences(it->second);

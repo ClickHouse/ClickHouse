@@ -50,42 +50,46 @@ private:
 class CpuSlotsAllocation final : public ISlotAllocation
 {
 public:
-    CpuSlotsAllocation(SlotCount min_, SlotCount max_, ResourceLink link);
+    CpuSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_);
     ~CpuSlotsAllocation() override;
 
     // Take one already granted slot if available. Lock-free iff there is no granted slot.
     [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
 
-private:
-    friend class CpuSlotRequest; // for grant() and failed()
+    // Blocks until there is a granted slot to acquire
+    [[nodiscard]] AcquiredSlotPtr acquire() override;
 
-    // Grant single slot to allocation
-    void grant();
+private:
+    friend class CpuSlotRequest; // for schedule() and failed()
 
     // Resource request failed
     void failed(const std::exception_ptr & ptr);
 
     // Enqueue resource request if necessary
-    void schedule(bool next);
+    void grant();
 
-    const SlotCount min; // Count first `min` slots as NOT taking part in competition
-    const SlotCount max;
-    const ResourceLink link;
+    // Returns the queue for the current request
+    ISchedulerQueue * getCurrentQueue(const std::unique_lock<std::mutex> &);
+
+    const SlotCount master_slots; // Max number of slots to allocate using master link
+    const SlotCount total_slots; // Total number of slots to allocate using both links
+    const SlotCount noncompeting_slots; // Number of slots granted without links
+    const ResourceLink master_link;
+    const ResourceLink worker_link;
 
     static constexpr SlotCount exception_value = SlotCount(-1);
-    std::atomic<SlotCount> noncompeting; // allocated noncompeting slots, but not yet acquired
-    std::atomic<SlotCount> granted{0}; // allocated competing slots, but not yet acquired
+    std::atomic<SlotCount> noncompeting{0}; // allocated noncompeting slots left to acquire
+    std::atomic<SlotCount> granted{0}; // allocated competing slots left to acquire
     std::atomic<size_t> last_acquire_index{0};
-
-    // Requests per every slot
-    // NOTE: it should not be reallocated after initialization because AcquiredCpuSlot holds raw pointer
-    std::vector<CpuSlotRequest> requests;
 
     // Field that require sync with the scheduler thread
     std::mutex schedule_mutex;
     std::condition_variable schedule_cv;
     std::exception_ptr exception;
-    SlotCount allocated; // total allocated slots including already released
+    SlotCount allocated = 0; // Total allocated slots including already released
+    size_t waiters = 0; // Number of threads waiting on acquire() call
+    std::vector<CpuSlotRequest> requests; // Requests per every slot
+    CpuSlotRequest * current_request;
 };
 
 }

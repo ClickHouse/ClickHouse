@@ -123,8 +123,8 @@ DiskObjectStorage::DiskObjectStorage(
                             {
                                 switch (mode)
                                 {
-                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql_any.insert(resource_name); break;
-                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::DiskRead: new_read_resource_name_from_sql_any.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::DiskWrite: new_write_resource_name_from_sql_any.insert(resource_name); break;
                                     default: break;
                                 }
                             }
@@ -132,8 +132,8 @@ DiskObjectStorage::DiskObjectStorage(
                             {
                                 switch (mode)
                                 {
-                                    case ASTCreateResourceQuery::AccessMode::Read: new_read_resource_name_from_sql.insert(resource_name); break;
-                                    case ASTCreateResourceQuery::AccessMode::Write: new_write_resource_name_from_sql.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::DiskRead: new_read_resource_name_from_sql.insert(resource_name); break;
+                                    case ASTCreateResourceQuery::AccessMode::DiskWrite: new_write_resource_name_from_sql.insert(resource_name); break;
                                     default: break;
                                 }
                             }

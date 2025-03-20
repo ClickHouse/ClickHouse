@@ -372,8 +372,6 @@ struct TestQuery {
     std::mutex threads_mutex;
     std::vector<ThreadFromGlobalPool *> threads;
 
-    // Number of threads that should be granted to every query no matter how many threads are already running in other queries
-    static constexpr size_t min_threads = 1uz;
     static constexpr int us_per_work = 10;
 
     explicit TestQuery(ResourceTest & t_)
@@ -493,15 +491,15 @@ struct TestQuery {
         }
     }
 
-    void start(String workload, size_t max_threads_, UInt64 runtime_us = UInt64(-1))
+    void start(String workload, SlotCount max_threads_, UInt64 runtime_us = UInt64(-1))
     {
         std::scoped_lock lock{mutex};
         max_threads = max_threads_;
         if (runtime_us != UInt64(-1))
             work_left = runtime_us / us_per_work;
-        t.async(workload, t.storage.getCpuResourceName(), [&] (ResourceLink link)
+        t.async(workload, t.storage.getWorkerThreadResourceName(), [&] (ResourceLink link)
         {
-            slots = std::make_shared<CpuSlotsAllocation>(min_threads, max_threads, link);
+            slots = std::make_shared<CpuSlotsAllocation>(1, max_threads, ResourceLink{}, link);
             threadFunc(slots->tryAcquire());
         });
     }
@@ -513,8 +511,8 @@ TEST(SchedulerWorkloadResourceManager, CpuSlotsAllocationRoundRobin)
 {
     ResourceTest t;
 
-    t.query("CREATE RESOURCE cpu (CPU)");
-    t.query("CREATE WORKLOAD all SETTINGS max_additional_threads = 4");
+    t.query("CREATE RESOURCE cpu (WORKER THREAD)");
+    t.query("CREATE WORKLOAD all SETTINGS max_concurrent_threads = 4");
 
     std::vector<TestQueryPtr> queries;
     for (int query = 0; query < 2; query++)

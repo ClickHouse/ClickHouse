@@ -205,7 +205,7 @@ To customize workload the following settings could be used:
 * `max_bytes_inflight` - the limit on the total inflight bytes for concurrent requests in this workload.
 * `max_bytes_per_second` - the limit on byte read or write rate of this workload.
 * `max_burst_bytes` - maximum number of bytes that could be processed by the workload without being throttled (for every resource independently).
-* `max_additional_threads` - the limit on the number of additional threads for queries in this workload. The first thread of a query is not counted towards this limit.
+* `max_concurrent_threads` - the limit on the number of additional threads for queries in this workload. The first thread of a query is not counted towards this limit.
 
 All limit specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = 10485760` will have 10 MBps bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
 
@@ -222,26 +222,52 @@ Workload settings are translated into a proper set of scheduling nodes. For lowe
 :::
 
 ## CPU scheduling {#cpu_scheduling}
-To enable CPU scheduling for workloads create CPU resource and set limit for the number of additional concurrent threads:
+
+To enable CPU scheduling for workloads create CPU resource and set a limit for the number of concurrent threads:
 
 ```sql
-CREATE RESOURCE cpu (CPU)
-CREATE WORKLOAD all SETTINGS max_additional_threads = 100
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100
 ```
 
-:::note
-Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead workload setting `max_additional_threads` is used to limit number of CPUs allocated for specific workload. To achieve previous behaviour set `max_additional_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting.
+When the ClickHouse server executes many concurrent queries with [multiple threads](/operations/settings/settings.md/#max_threads) and all CPU slots are in use the overload state is reached. In the overload state every released CPU slot is rescheduled to proper workload according to scheduling policies. For queries sharing the same workload slots are allocated using round robin. For queries in separate workloads, slots are allocated according to weights, priorities, and limits specified for workloads.
+
+CPU time is consumed by threads when they are not blocked and work on CPU-intensive tasks. For scheduling purpose, two kinds of threads are distinguished:
+* Master thread — the first thread that starts working on a query or background activity like a merge or a mutation.
+* Worker thread — the additional threads that master can spawn to work on CPU-intensive tasks.
+
+It may be desirable to use separate resources for master and worker threads to achive better responsiveness. A high number of worker threads can easily monopolize CPU resource when high `max_thread` query setting values are used. Then incoming queries should block and wait a CPU slot for its master thread to start execution. To avoid this the following configuration could be used:
+
+```sql
+CREATE RESOURCE worker_cpu (WORKER THREAD)
+CREATE RESOURCE master_cpu (MASTER THREAD)
+CREATE WORKLOAD all SETTINGS max_concurrent_threads = 100 FOR worker_cpu, max_concurrent_threads = 1000 FOR master_cpu
+```
+
+It will create separate limits on master and worker threads. Even if all 100 worker CPU slots are busy, new queries will not be blocked until there are available master CPU slots. They will start execution with one thread. Later if worker CPU slots became available, such queries could upscale and spawn their worker threads. On the other hand, such an approach does not bind the total number of slots to the number of CPU processors, and running too many concurrent threads will affect performance.
+
+Limiting the concurrency of master threads will not limit the number of concurrent queries. CPU slots could be released in the middle of the query execution and reacquired by other threads. For example, 4 concurrent queries with 2 concurrent master thread limit could all be executed in parallel. In this case, every query will receive 50% of a CPU processor. A separate logic should be used to limit the number of concurrent queries and it is not currently supported for workloads.
+
+Separate thread concurrency limits could be used for workloads:
+
+```sql
+CREATE RESOURCE cpu (MASTER THREAD, WORKER THREAD)
+CREATE WORKLOAD all
+CREATE WORKLOAD admin IN all SETTINGS max_concurrent_threads = 10
+CREATE WORKLOAD production IN all SETTINGS max_concurrent_threads = 100
+CREATE WORKLOAD analytics IN production SETTINGS max_concurrent_threads = 60, weight = 9
+CREATE WORKLOAD ingestion IN production
+```
+
+This configuration example provides independent CPU slot pools for admin and production. The production pool is shared between analytics and ingestion. Furthermore, if the production pool is overloaded, 9 of 10 released slots will be rescheduled to analytical queries if necessary. The ingestion queries would only receive 1 of 10 slots during overload periods. This might improve the latency of user-facing queries. Analytics has its own limit of 60 concurrent thread, always leaving at least 40 threads to support ingestion. When there is no overload, ingestion could use all 100 threads.
+
+:::warning
+Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md/#max_threads) but does not guarantee fair CPU time allocation yet. This requires further development of CPU slot preemption and will be supported later.
 :::
 
-CPU scheduling controls the number of CPU slots that queries receive. Every CPU slot allows query to run one additional thread. The first thread for a query does not use a CPU slot. To limit the number of queries a separate logic should be used and it is not currently supported for workloads.
-
 :::note
-This logic corresponds to [`concurrent_threads_scheduler`](server-configuration-parameters/settings.md#concurrent_threads_scheduler) setting set "fair_round_robin" value.
+Declaring CPU resource disables effect of [`concurrent_threads_soft_limit_num`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_num) and [`concurrent_threads_soft_limit_ratio_to_cores`](server-configuration-parameters/settings.md#concurrent_threads_soft_limit_ratio_to_cores) settings. Instead, workload setting `max_concurrent_threads` is used to limit the number of CPUs allocated for a specific workload. To achieve the previous behavior create only WORKER THREAD resource, set `max_concurrent_threads` for the workload `all` to the same value as `concurrent_threads_soft_limit_num` and use `workload = "all"` query setting. This configuration corresponds to [`concurrent_threads_scheduler`](server-configuration-parameters/settings.md#concurrent_threads_scheduler) setting set "fair_round_robin" value.
 :::
-
-When clickhouse server executes many concurrent queries with [multiple threads](/operations/settings/settings.md/#max_threads) and all CPU slots are in use the overload state is reached. In the overload state every released CPU slot is rescheduled to proper workload according to scheduling policies. For queries sharing the same workload slots are allocated using round robin. For queries in separate workloads slots are allocated according to weights, priorities and limits specified for workloads.
-
-Slot scheduling provides a way to control [query concurrency](/operations/settings/settings.md/#max_threads) and does NOT guarantee fair CPU time allocation because only additional threads are scheduled. For example, when all queries use only one thread, scheduling policies are not applied. Fair CPU time allocation is not support at the moment and requires futher development.
 
 ## Workloads and resources storage {#workload_entity_storage}
 Definitions of all workloads and resources in the form of `CREATE WORKLOAD` and `CREATE RESOURCE` queries are stored persistently either on disk at `workload_path` or in ZooKeeper at `workload_zookeeper_path`. ZooKeeper storage is recommended to achieve consistency between nodes. Alternatively `ON CLUSTER` clause could be used along with disk storage.

@@ -4,6 +4,7 @@
 
 #include <Common/Priority.h>
 #include <Parsers/ASTCreateWorkloadQuery.h>
+#include <Parsers/ASTCreateResourceQuery.h>
 
 #include <limits>
 
@@ -30,11 +31,11 @@ struct SchedulingSettings
     Int64 max_bytes_inflight = unlimited;
 
     /// Limits total number of additional query threads (the first main thread is not counted)
-    Int64 max_additional_threads = unlimited;
+    Int64 max_concurrent_threads = unlimited;
 
-    /// Different type of resources may rely on different settings
-    enum class Type { Io, Cpu };
-    Type type = Type::Io;
+    /// Settings that are applied depend on cost unit
+    using Unit = ASTCreateResourceQuery::CostUnit;
+    Unit unit = Unit::IoByte;
 
     // Throttler
     bool hasThrottler() const;
@@ -46,7 +47,7 @@ struct SchedulingSettings
     Int64 getSemaphoreMaxRequests() const;
     Int64 getSemaphoreMaxCost() const;
 
-    void updateFromChanges(Type type_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {});
+    void updateFromChanges(Unit unit_, const ASTCreateWorkloadQuery::SettingsChanges & changes, const String & resource_name = {});
 };
 
 }

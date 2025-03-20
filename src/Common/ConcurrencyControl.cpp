@@ -85,6 +85,13 @@ ConcurrencyControlRoundRobinScheduler::Allocation::~Allocation()
     return {}; // avoid unnecessary locking
 }
 
+[[nodiscard]] AcquiredSlotPtr ConcurrencyControlRoundRobinScheduler::Allocation::acquire()
+{
+    auto result = tryAcquire();
+    chassert(result);
+    return result;
+}
+
 // Grant single slot to allocation returns true iff more slot(s) are required
 bool ConcurrencyControlRoundRobinScheduler::Allocation::grant()
 {
@@ -242,6 +249,13 @@ ConcurrencyControlFairRoundRobinScheduler::Allocation::~Allocation()
     }
 
     return {}; // avoid unnecessary locking
+}
+
+[[nodiscard]] AcquiredSlotPtr ConcurrencyControlFairRoundRobinScheduler::Allocation::acquire()
+{
+    auto result = tryAcquire();
+    chassert(result);
+    return result;
 }
 
 // Grant single slot to allocation returns true iff more slot(s) are required
