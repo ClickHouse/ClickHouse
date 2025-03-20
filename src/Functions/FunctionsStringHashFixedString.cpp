@@ -14,19 +14,11 @@
 #endif
 
 #if USE_SSL
-#    include <openssl/evp.h>
 #    include <openssl/md4.h>
 #    include <openssl/md5.h>
-#    include <openssl/ripemd.h>
 #    include <openssl/sha.h>
+#    include <openssl/evp.h>
 #endif
-
-#if USE_SHA3IUF
-extern "C" {
-    #include <sha3.h>
-}
-#endif
-
 
 /// Instatiating only the functions that require FunctionStringHashFixedString in a separate file
 /// to better parallelize the build procedure and avoid MSan build failure
@@ -183,23 +175,6 @@ struct SHA512Impl256
         EVP_MD_CTX_destroy(md_ctx);
     }
 };
-
-struct RIPEMD160Impl
-{
-    static constexpr auto name = "RIPEMD160";
-    enum
-    {
-        length = RIPEMD160_DIGEST_LENGTH
-    };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        RIPEMD160_CTX ctx;
-        RIPEMD160_Init(&ctx);
-        RIPEMD160_Update(&ctx, reinterpret_cast<const unsigned char *>(begin), size);
-        RIPEMD160_Final(out_char_data, &ctx);
-    }
-};
 #endif
 
 #if USE_BLAKE3
@@ -223,22 +198,6 @@ struct ImplBLAKE3
     }
 };
 
-#endif
-
-#if USE_SHA3IUF
-struct Keccak256Impl
-{
-    static constexpr auto name = "keccak256";
-    enum
-    {
-        length = 32
-    };
-
-    static void apply(const char * begin, const size_t size, unsigned char * out_char_data)
-    {
-        sha3_HashBuffer(256, SHA3_FLAGS_KECCAK, begin, size, out_char_data, Keccak256Impl::length);
-    }
-};
 #endif
 
 template <typename Impl>
@@ -289,7 +248,7 @@ public:
 
             return col_to;
         }
-        if (const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
+        else if (const ColumnFixedString * col_from_fix = checkAndGetColumn<ColumnFixedString>(arguments[0].column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
             const typename ColumnFixedString::Chars & data = col_from_fix->getChars();
@@ -303,7 +262,7 @@ public:
             }
             return col_to;
         }
-        if (const ColumnIPv6 * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
+        else if (const ColumnIPv6 * col_from_ip = checkAndGetColumn<ColumnIPv6>(arguments[0].column.get()))
         {
             auto col_to = ColumnFixedString::create(Impl::length);
             const typename ColumnIPv6::Container & data = col_from_ip->getData();
@@ -312,16 +271,21 @@ public:
             chars_to.resize(input_rows_count * Impl::length);
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                Impl::apply(reinterpret_cast<const char *>(&data[i]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
+                Impl::apply(
+                    reinterpret_cast<const char *>(&data[i]), length, reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
             }
             return col_to;
         }
-        throw Exception(
-            ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
+        else
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Illegal column {} of first argument of function {}",
+                arguments[0].column->getName(),
+                getName());
     }
 };
 
-#if USE_SSL || USE_BLAKE3 || USE_SHA3IUF
+#if USE_SSL || USE_BLAKE3
 REGISTER_FUNCTION(HashFixedStrings)
 {
 #    if USE_SSL
@@ -333,22 +297,7 @@ REGISTER_FUNCTION(HashFixedStrings)
     using FunctionSHA384 = FunctionStringHashFixedString<SHA384Impl>;
     using FunctionSHA512 = FunctionStringHashFixedString<SHA512Impl>;
     using FunctionSHA512_256 = FunctionStringHashFixedString<SHA512Impl256>;
-    using FunctionRIPEMD160 = FunctionStringHashFixedString<RIPEMD160Impl>;
 
-    factory.registerFunction<FunctionRIPEMD160>(FunctionDocumentation{
-        .description = R"(Calculates the RIPEMD-160 hash of the given string.)",
-        .syntax = "SELECT RIPEMD160(s);",
-        .arguments = {{"s", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = "The RIPEMD160 hash of the given input string returned as a [FixedString(20)](../../sql-reference/data-types/fixedstring.md).",
-        .examples
-        = {{"",
-            "SELECT HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'));",
-            R"(
-┌─HEX(RIPEMD160('The quick brown fox jumps over the lazy dog'))─┐
-│ 37F332F68DB77BD9D7EDD4969571AD671CF9DD3B                      │
-└───────────────────────────────────────────────────────────────┘
-         )"}}});
     factory.registerFunction<FunctionMD4>(FunctionDocumentation{
         .description = R"(Calculates the MD4 hash of the given string.)",
         .syntax = "SELECT MD4(s);",
@@ -467,34 +416,16 @@ REGISTER_FUNCTION(HashFixedStrings)
 
 #    if USE_BLAKE3
     using FunctionBLAKE3 = FunctionStringHashFixedString<ImplBLAKE3>;
-    factory.registerFunction<FunctionBLAKE3>(FunctionDocumentation{
-        .description = R"(
+    factory.registerFunction<FunctionBLAKE3>(
+        FunctionDocumentation{
+            .description = R"(
     Calculates BLAKE3 hash string and returns the resulting set of bytes as FixedString.
     This cryptographic hash-function is integrated into ClickHouse with BLAKE3 Rust library.
     The function is rather fast and shows approximately two times faster performance compared to SHA-2, while generating hashes of the same length as SHA-256.
     It returns a BLAKE3 hash as a byte array with type FixedString(32).
     )",
-        .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
-        .category{"Hash"}});
-#    endif
-
-#   if USE_SHA3IUF
-    using FunctionKeccak256 = FunctionStringHashFixedString<Keccak256Impl>;
-    factory.registerFunction<FunctionKeccak256>(FunctionDocumentation{
-        .description = R"(Calculates the Keccak-256 cryptographic hash of the given string.
-        This hash function is widely used in blockchain applications, particularly Ethereum.)",
-        .syntax = "SELECT keccak256(message)",
-        .arguments = {{"message", "The input [String](../../sql-reference/data-types/string.md)."}},
-        .returned_value
-        = "A [FixedString(32)](../../sql-reference/data-types/fixedstring.md) containing the 32-byte Keccak-256 hash of the input string.",
-        .examples
-        = {{"",
-            "SELECT hex(keccak256('hello'))",
-            R"(
-┌─hex(keccak256('hello'))──────────────────────────────────────────┐
-│ 1C8AFF950685C2ED4BC3174F3472287B56D9517B9C948127319A09A7A36DEAC8 │
-└──────────────────────────────────────────────────────────────────┘
-        )"}}});
+            .examples{{"hash", "SELECT hex(BLAKE3('ABC'))", ""}},
+            .categories{"Hash"}});
 #    endif
 }
 #endif

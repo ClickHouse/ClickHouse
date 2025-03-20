@@ -14,7 +14,6 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/Serializations/SerializationLowCardinality.h>
 #include <Parsers/IAST.h>
 
@@ -76,23 +75,23 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
 
     if (which.isString())
         return creator(static_cast<ColumnString *>(nullptr));
-    if (which.isFixedString())
+    else if (which.isFixedString())
         return creator(static_cast<ColumnFixedString *>(nullptr));
-    if (which.isDate())
+    else if (which.isDate())
         return creator(static_cast<ColumnVector<UInt16> *>(nullptr));
-    if (which.isDate32())
+    else if (which.isDate32())
         return creator(static_cast<ColumnVector<Int32> *>(nullptr));
-    if (which.isDateTime())
+    else if (which.isDateTime())
         return creator(static_cast<ColumnVector<UInt32> *>(nullptr));
-    if (which.isUUID())
+    else if (which.isUUID())
         return creator(static_cast<ColumnVector<UUID> *>(nullptr));
-    if (which.isIPv4())
+    else if (which.isIPv4())
         return creator(static_cast<ColumnVector<IPv4> *>(nullptr));
-    if (which.isIPv6())
+    else if (which.isIPv6())
         return creator(static_cast<ColumnVector<IPv6> *>(nullptr));
-    if (which.isInterval())
+    else if (which.isInterval())
         return creator(static_cast<DataTypeInterval::ColumnType *>(nullptr));
-    if (which.isInt() || which.isUInt() || which.isFloat())
+    else if (which.isInt() || which.isUInt() || which.isFloat())
     {
         MutableColumnUniquePtr column;
         TypeListUtils::forEach(TypeListIntAndFloat{}, CreateColumnVector(column, *type, creator));
@@ -102,16 +101,6 @@ MutableColumnUniquePtr DataTypeLowCardinality::createColumnUniqueImpl(const IDat
 
         return column;
     }
-    if (which.isDateTime64())
-        return creator(static_cast<ColumnDateTime64 *>(nullptr));
-    if (which.isDecimal32())
-        return creator(static_cast<ColumnDecimal<Decimal32> *>(nullptr));
-    if (which.isDecimal64())
-        return creator(static_cast<ColumnDecimal<Decimal64> *>(nullptr));
-    if (which.isDecimal128())
-        return creator(static_cast<ColumnDecimal<Decimal128> *>(nullptr));
-    if (which.isDecimal256())
-        return creator(static_cast<ColumnDecimal<Decimal256> *>(nullptr));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected dictionary type for DataTypeLowCardinality: {}",
                     type->getName());

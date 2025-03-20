@@ -9,9 +9,8 @@ from get_robot_token import get_best_robot_token
 from git_helper import commit as commit_arg
 from github_helper import GitHub
 from pr_info import PRInfo
+from release import RELEASE_READY_STATUS
 from report import SUCCESS
-
-RELEASE_READY_STATUS = "Ready for release"
 
 
 def main():

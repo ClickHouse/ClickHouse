@@ -6,15 +6,20 @@ GIT_BRANCH=$(git branch --show-current)
 
 if [ "$GIT_DOCS_BRANCH" ] && ! [ "$GIT_DOCS_BRANCH" == "$GIT_BRANCH" ]; then
   git fetch origin --depth=1 -- "$GIT_DOCS_BRANCH:$GIT_DOCS_BRANCH"
-  git checkout -f "$GIT_DOCS_BRANCH"
+  git checkout "$GIT_DOCS_BRANCH"
 else
   # Update docs repo
   git pull
 fi
 
-# install latest packages
-yarn install
-yarn prep-from-local /ClickHouse
+# The repo is usually mounted to /ClickHouse
+
+for lang in en ru zh
+do
+  if [ -d "/ClickHouse/docs/${lang}" ]; then
+    cp -rf "/ClickHouse/docs/${lang}" "/opt/clickhouse-docs/docs/"
+  fi
+done
 
 # Force build error on wrong symlinks
 sed -i '/onBrokenMarkdownLinks:/ s/ignore/error/g' docusaurus.config.js

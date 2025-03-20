@@ -2,21 +2,13 @@
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
-#include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
 
 
 namespace DB
 {
-namespace MergeTreeSetting
-{
-    extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
-    extern const MergeTreeSettingsUInt64 zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock;
-    extern const MergeTreeSettingsUInt64 zero_copy_merge_mutation_min_parts_size_sleep_before_lock;
-}
 
 namespace ErrorCodes
 {
@@ -45,7 +37,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
 
     std::exception_ptr saved_exception;
 
-    bool need_to_save_exception = true;
+    bool retryable_error = false;
     try
     {
         /// We don't have any backoff for failed entries
@@ -61,21 +53,19 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
             {
                 /// If no one has the right part, probably not all replicas work; We will not write to log with Error level.
                 LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-                print_exception = false;
+                retryable_error = true;
             }
             else if (e.code() == ErrorCodes::ABORTED)
             {
                 /// Interrupted merge or downloading a part is not an error.
                 LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-                print_exception = false;
-                need_to_save_exception = false;
+                retryable_error = true;
             }
             else if (e.code() == ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
             {
                 /// Part cannot be added temporarily
                 LOG_INFO(log, getExceptionMessageAndPattern(e, /* with_stacktrace */ false));
-                print_exception = false;
-                need_to_save_exception = false;
+                retryable_error = true;
                 storage.cleanup_thread.wakeup();
             }
             else
@@ -98,7 +88,7 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
         saved_exception = std::current_exception();
     }
 
-    if (need_to_save_exception && saved_exception)
+    if (!retryable_error && saved_exception)
     {
         std::lock_guard lock(storage.queue.state_mutex);
 
@@ -128,13 +118,15 @@ bool ReplicatedMergeMutateTaskBase::executeStep()
                     status.latest_failed_part_info = source_part_info;
                     status.latest_fail_time = time(nullptr);
                     status.latest_fail_reason = getExceptionMessage(saved_exception, false);
-                    status.latest_fail_error_code_name = ErrorCodes::getName(getExceptionErrorCode(saved_exception));
                     if (result_data_version == it->first)
-                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, (*storage.getSettings())[MergeTreeSetting::max_postpone_time_for_failed_mutations_ms]);
+                        storage.mutation_backoff_policy.addPartMutationFailure(src_part, storage.getSettings()->max_postpone_time_for_failed_mutations_ms);
                 }
             }
         }
     }
+
+    if (retryable_error)
+        print_exception = false;
 
     if (saved_exception)
         std::rethrow_exception(saved_exception);
@@ -147,7 +139,7 @@ bool ReplicatedMergeMutateTaskBase::executeImpl()
 {
     std::optional<ThreadGroupSwitcher> switcher;
     if (merge_mutate_entry)
-        switcher.emplace((*merge_mutate_entry)->thread_group, "", /*allow_existing_group*/ true);
+        switcher.emplace((*merge_mutate_entry)->thread_group);
 
     auto remove_processed_entry = [&] () -> bool
     {
@@ -265,55 +257,6 @@ ReplicatedMergeMutateTaskBase::CheckExistingPartResult ReplicatedMergeMutateTask
 
 
     return CheckExistingPartResult::OK;
-}
-
-
-void ReplicatedMergeMutateTaskBase::maybeSleepBeforeZeroCopyLock(uint64_t estimated_space_for_result)
-{
-    const auto storage_settings_ptr = storage.getSettings();
-    uint64_t min_parts_size_sleep_no_scale = (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock].value;
-    uint64_t min_parts_size_sleep_log_scale = (*storage_settings_ptr)[MergeTreeSetting::zero_copy_merge_mutation_min_parts_size_sleep_before_lock].value;
-    uint64_t min_parts_size_sleep = 0;
-    bool log_scale = false;
-    String task_for_log = (entry.type == ReplicatedMergeTreeLogEntryData::MERGE_PARTS) ? "merge" : "mutation";
-
-    if (min_parts_size_sleep_no_scale != 0 && estimated_space_for_result >= min_parts_size_sleep_no_scale)
-        min_parts_size_sleep = min_parts_size_sleep_no_scale;
-
-    if (min_parts_size_sleep_log_scale != 0 && estimated_space_for_result >= min_parts_size_sleep_log_scale)
-    {
-        min_parts_size_sleep = min_parts_size_sleep_log_scale;
-        log_scale = true;
-    }
-
-    if (min_parts_size_sleep != 0)
-    {
-        /// In zero copy replication only one replica execute merge/mutation, others just download merged parts metadata.
-        /// Here we are trying to mitigate the skew of merges execution because of faster/slower replicas.
-        /// Replicas can be slow because of different reasons like bigger latency for ZooKeeper or just slight step behind because of bigger queue.
-        /// In this case faster replica can pick up all merges execution, especially large merges while other replicas can just idle. And even in this case
-        /// the fast replica is not overloaded because amount of executing merges doesn't affect the ability to acquire locks for new merges.
-        ///
-        /// So here we trying to solve it with the simplest solution -- sleep random time up to 500ms if there's no scale.
-        /// If log scale is used, then we will sleep depending on the part size. E.g. up to 500ms for 1GB part and up to 7 seconds for 300GB part.
-        /// It can sound too much, but we are trying to acquire these locks in background tasks which can be scheduled each 5 seconds or so.
-        /// Using no scale helps in a situation when we have a lot of merges small in size (e.g. 256KB), and we still want to balance the merges load by adding some sleep.
-        /// But at the same time we don't want to ruin really big parts merges by introducing long sleeps.
-        uint64_t right_border_to_sleep_ms = 500;
-
-        if (log_scale)
-        {
-            double start_to_sleep_seconds = std::logf(min_parts_size_sleep);
-            right_border_to_sleep_ms = static_cast<uint64_t>((std::log(estimated_space_for_result) - start_to_sleep_seconds + 0.5) * 1000);
-        }
-
-        uint64_t time_to_sleep_milliseconds = std::min<uint64_t>(10000UL, std::uniform_int_distribution<uint64_t>(1, 1 + right_border_to_sleep_ms)(rng));
-
-        LOG_INFO(log, "Size of {} is {} bytes (it's more than sleep threshold {} for {} scale) so will intentionally sleep for {} ms to allow other replicas to take this big {}",
-            task_for_log, estimated_space_for_result, min_parts_size_sleep, (log_scale ? "log" : "no"), time_to_sleep_milliseconds, task_for_log);
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(time_to_sleep_milliseconds));
-    }
 }
 
 

@@ -20,7 +20,6 @@
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <boost/algorithm/string.hpp>
 
 
 namespace DB
@@ -134,14 +133,6 @@ std::string DataTypeTuple::doGetPrettyName(size_t indent) const
     return s.str();
 }
 
-DataTypePtr DataTypeTuple::getNormalizedType() const
-{
-    DataTypes normalized_elems;
-    normalized_elems.reserve(elems.size());
-    for (const auto & elem : elems)
-        normalized_elems.emplace_back(elem->getNormalizedType());
-    return std::make_shared<DataTypeTuple>(normalized_elems);
-}
 
 static inline IColumn & extractElementColumn(IColumn & column, size_t idx)
 {
@@ -265,37 +256,23 @@ bool DataTypeTuple::equals(const IDataType & rhs) const
 }
 
 
-size_t DataTypeTuple::getPositionByName(const String & name, bool case_insensitive) const
+size_t DataTypeTuple::getPositionByName(const String & name) const
 {
-    for (size_t i = 0; i < elems.size(); ++i)
-    {
-        if (case_insensitive)
-        {
-            if (boost::iequals(names[i], name))
-                return i;
-        }
-        else
-        {
-            if (boost::equals(names[i], name))
-                return i;
-        }
-    }
+    size_t size = elems.size();
+    for (size_t i = 0; i < size; ++i)
+        if (names[i] == name)
+            return i;
     throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "Tuple doesn't have element with name '{}'", name);
 }
 
-std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name, bool case_insensitive) const
+std::optional<size_t> DataTypeTuple::tryGetPositionByName(const String & name) const
 {
-    for (size_t i = 0; i < elems.size(); ++i)
+    size_t size = elems.size();
+    for (size_t i = 0; i < size; ++i)
     {
-        if (case_insensitive)
+        if (names[i] == name)
         {
-            if (boost::iequals(names[i], name))
-                return i;
-        }
-        else
-        {
-            if (boost::equals(names[i], name))
-                return i;
+            return std::optional<size_t>(i);
         }
     }
     return std::nullopt;
@@ -382,7 +359,7 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     for (const auto & elem : elems)
         infos.push_back(elem->createSerializationInfo(settings));
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, settings);
 }
 
 SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const
@@ -402,7 +379,7 @@ SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column)
         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
     }
 
-    return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
+    return std::make_shared<SerializationInfoTuple>(std::move(infos), names, SerializationInfo::Settings{});
 }
 
 void DataTypeTuple::forEachChild(const ChildCallback & callback) const
@@ -438,9 +415,10 @@ static DataTypePtr create(const ASTPtr & arguments)
 
     if (names.empty())
         return std::make_shared<DataTypeTuple>(nested_types);
-    if (names.size() != nested_types.size())
+    else if (names.size() != nested_types.size())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Names are specified not for all elements of Tuple type");
-    return std::make_shared<DataTypeTuple>(nested_types, names);
+    else
+        return std::make_shared<DataTypeTuple>(nested_types, names);
 }
 
 

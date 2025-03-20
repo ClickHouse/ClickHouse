@@ -2,6 +2,8 @@ import logging
 from time import sleep
 
 import pytest
+from helpers.cluster import ClickHouseCluster
+
 
 from helpers.cluster import ClickHouseCluster
 

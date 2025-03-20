@@ -5,6 +5,7 @@ IMAGES_ENV = {
     "clickhouse/integration-helper": "DOCKER_HELPER_TAG",
     "clickhouse/integration-test": "DOCKER_BASE_TAG",
     "clickhouse/integration-tests-runner": "",
+    "clickhouse/kerberized-hadoop": "DOCKER_KERBERIZED_HADOOP_TAG",
     "clickhouse/kerberos-kdc": "DOCKER_KERBEROS_KDC_TAG",
     "clickhouse/mysql-golang-client": "DOCKER_MYSQL_GOLANG_CLIENT_TAG",
     "clickhouse/mysql-java-client": "DOCKER_MYSQL_JAVA_CLIENT_TAG",
@@ -13,7 +14,6 @@ IMAGES_ENV = {
     "clickhouse/nginx-dav": "DOCKER_NGINX_DAV_TAG",
     "clickhouse/postgresql-java-client": "DOCKER_POSTGRESQL_JAVA_CLIENT_TAG",
     "clickhouse/python-bottle": "DOCKER_PYTHON_BOTTLE_TAG",
-    "clickhouse/integration-test-with-unity-catalog": "DOCKER_BASE_WITH_UNITY_CATALOG_TAG",
 }
 
 IMAGES = list(IMAGES_ENV.keys())

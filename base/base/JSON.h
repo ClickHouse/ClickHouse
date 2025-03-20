@@ -203,7 +203,9 @@ T JSON::getWithDefault(const std::string & key, const T & default_) const
 
         if (key_json.isType<T>())
             return key_json.get<T>();
-        return default_;
+        else
+            return default_;
     }
-    return default_;
+    else
+        return default_;
 }

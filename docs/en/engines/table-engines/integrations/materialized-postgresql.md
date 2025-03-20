@@ -1,25 +1,12 @@
 ---
-description: 'Creates a ClickHouse table with an initial data dump of a PostgreSQL
-  table and starts the replication process.'
-sidebar_label: 'MaterializedPostgreSQL'
+slug: /en/engines/table-engines/integrations/materialized-postgresql
 sidebar_position: 130
-slug: /engines/table-engines/integrations/materialized-postgresql
-title: 'MaterializedPostgreSQL'
+sidebar_label: MaterializedPostgreSQL
 ---
 
-import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+# [experimental] MaterializedPostgreSQL
 
-# MaterializedPostgreSQL
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
-
-:::note
-ClickHouse Cloud users are recommended to use [ClickPipes](/integrations/clickpipes) for PostgreSQL replication to ClickHouse. This natively supports high-performance Change Data Capture (CDC) for PostgreSQL.
-:::
-
-Creates ClickHouse table with an initial data dump of PostgreSQL table and starts the replication process, i.e. it executes a background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
+Creates ClickHouse table with an initial data dump of PostgreSQL table and starts replication process, i.e. executes background job to apply new changes as they happen on PostgreSQL table in the remote PostgreSQL database.
 
 :::note
 This table engine is experimental. To use it, set `allow_experimental_materialized_postgresql_table` to 1 in your configuration files or by using the `SET` command:
@@ -33,7 +20,7 @@ If more than one table is required, it is highly recommended to use the [Materia
 
 ## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;
@@ -68,7 +55,7 @@ PRIMARY KEY key;
 These columns do not need to be added when a table is created. They are always accessible in `SELECT` query.
 `_version` column equals `LSN` position in `WAL`, so it might be used to check how up-to-date replication is.
 
-```sql
+``` sql
 CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
 ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
 PRIMARY KEY key;

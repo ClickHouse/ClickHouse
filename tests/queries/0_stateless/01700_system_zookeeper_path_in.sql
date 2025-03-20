@@ -1,5 +1,4 @@
--- Tags: zookeeper, no-shared-merge-tree
--- no-shared-merge-tree: depend on replicated merge tree zookeeper structure
+-- Tags: zookeeper
 
 DROP TABLE IF EXISTS sample_table;
 

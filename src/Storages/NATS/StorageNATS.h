@@ -3,11 +3,9 @@
 #include <atomic>
 #include <mutex>
 #include <uv.h>
-#include <Core/BackgroundSchedulePoolTaskHolder.h>
-#include <Core/StreamingHandleErrorMode.h>
+#include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/NATS/NATSConnection.h>
-#include <Storages/NATS/NATSHandler.h>
 #include <Storages/NATS/NATSSettings.h>
 #include <Poco/Semaphore.h>
 #include <Common/thread_local_rng.h>
@@ -17,7 +15,6 @@ namespace DB
 
 class NATSConsumer;
 using NATSConsumerPtr = std::shared_ptr<NATSConsumer>;
-struct NATSSettings;
 
 class StorageNATS final : public IStorage, WithContext
 {
@@ -29,8 +26,6 @@ public:
         const String & comment,
         std::unique_ptr<NATSSettings> nats_settings_,
         LoadingStrictnessLevel mode);
-
-    ~StorageNATS() override;
 
     std::string getName() const override { return "NATS"; }
 
@@ -71,6 +66,8 @@ public:
     void incrementReader();
     void decrementReader();
 
+    void startStreaming() { if (!mv_attached) { streaming_task->activateAndSchedule(); } }
+
 private:
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
@@ -83,10 +80,7 @@ private:
 
     LoggerPtr log;
 
-    NATSHandler event_handler;
-    std::unique_ptr<ThreadFromGlobalPool> event_loop_thread;
-
-    NATSConnectionPtr consumers_connection; /// Connection for all consumers
+    NATSConnectionManagerPtr connection; /// Connection for all consumers
     NATSConfiguration configuration;
 
     size_t num_created_consumers = 0;
@@ -100,8 +94,9 @@ private:
 
     std::once_flag flag; /// remove exchange only once
     std::mutex task_mutex;
-    BackgroundSchedulePoolTaskHolder streaming_task;
-    BackgroundSchedulePoolTaskHolder subscribe_consumers_task;
+    BackgroundSchedulePool::TaskHolder streaming_task;
+    BackgroundSchedulePool::TaskHolder looping_task;
+    BackgroundSchedulePool::TaskHolder connection_task;
 
     /// True if consumers have subscribed to all subjects
     std::atomic<bool> consumers_ready{false};
@@ -113,6 +108,14 @@ private:
     std::atomic<size_t> readers_count = 0;
     std::atomic<bool> mv_attached = false;
 
+    /// In select query we start event loop, but do not stop it
+    /// after that select is finished. Then in a thread, which
+    /// checks for MV we also check if we have select readers.
+    /// If not - we turn off the loop. The checks are done under
+    /// mutex to avoid having a turned off loop when select was
+    /// started.
+    std::mutex loop_mutex;
+
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
 
@@ -120,14 +123,17 @@ private:
 
     bool isSubjectInSubscriptions(const std::string & subject);
 
+
     /// Functions working in the background
     void streamingToViewsFunc();
-    void subscribeConsumersFunc();
+    void loopingFunc();
+    void connectionFunc();
 
-    void createConsumers();
-    bool subscribeConsumers();
+    bool initBuffers();
 
-    void stopEventLoop();
+    void startLoop();
+    void stopLoop();
+    void stopLoopIfNoReaders();
 
     static Names parseList(const String & list, char delim);
     static String getTableBasedName(String name, const StorageID & table_id);
@@ -135,7 +141,7 @@ private:
 
     ContextMutablePtr addSettings(ContextPtr context) const;
     size_t getMaxBlockSize() const;
-    void deactivateTask(BackgroundSchedulePoolTaskHolder & task);
+    void deactivateTask(BackgroundSchedulePool::TaskHolder & task, bool stop_loop);
 
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);

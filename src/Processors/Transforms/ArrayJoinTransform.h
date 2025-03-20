@@ -22,7 +22,7 @@ public:
 
     String getName() const override { return "ArrayJoinTransform"; }
 
-    static Block transformHeader(Block header, const Names & array_join_columns);
+    static Block transformHeader(Block header, const ArrayJoinActionPtr & array_join);
 
 protected:
     void consume(Chunk chunk) override;

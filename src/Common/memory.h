@@ -46,8 +46,10 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
                 ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
                 return ptr;
             }
-
-            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+            }
         }
         else
         {
@@ -56,8 +58,11 @@ inline ALWAYS_INLINE void * newImpl(std::size_t size, TAlign... align)
                 ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
                 return ptr;
             }
+            else
+            {
+                ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+            }
 
-            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
         }
     }
 #endif
@@ -85,8 +90,10 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size) noexcept
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
         }
-
-        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        }
     }
 #endif
     return malloc(size);
@@ -102,8 +109,10 @@ inline ALWAYS_INLINE void * newNoExcept(std::size_t size, std::align_val_t align
             ProfileEvents::increment(ProfileEvents::GWPAsanAllocateSuccess);
             return ptr;
         }
-
-        ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        else
+        {
+            ProfileEvents::increment(ProfileEvents::GWPAsanAllocateFailed);
+        }
     }
 #endif
     return aligned_alloc(static_cast<size_t>(align), size);

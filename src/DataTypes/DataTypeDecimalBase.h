@@ -3,10 +3,11 @@
 #include <cmath>
 #include <type_traits>
 
-#include <Columns/ColumnDecimal.h>
 #include <Core/TypeId.h>
-#include <DataTypes/DataTypesNumber.h>
+#include <Core/DecimalFunctions.h>
+#include <Columns/ColumnDecimal.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -63,7 +64,7 @@ public:
 
     static constexpr bool is_parametric = true;
 
-    static constexpr size_t maxPrecision();
+    static constexpr size_t maxPrecision() { return DecimalUtils::max_precision<T>; }
 
     DataTypeDecimalBase(UInt32 precision_, UInt32 scale_)
     :   precision(precision_),
@@ -103,8 +104,15 @@ public:
     UInt32 getScale() const { return scale; }
     T getScaleMultiplier() const { return getScaleMultiplier(scale); }
 
-    T wholePart(T x) const;
-    T fractionalPart(T x) const;
+    T wholePart(T x) const
+    {
+        return DecimalUtils::getWholePart(x, scale);
+    }
+
+    T fractionalPart(T x) const
+    {
+        return DecimalUtils::getFractionalPart(x, scale);
+    }
 
     T maxWholeValue() const { return getScaleMultiplier(precision - scale) - T(1); }
 
@@ -139,7 +147,10 @@ public:
 
     static T getScaleMultiplier(UInt32 scale);
 
-    bool canBeInsideLowCardinality() const override { return true; }
+    DecimalUtils::DataTypeDecimalTrait<T> getTrait() const
+    {
+        return {precision, scale};
+    }
 
 protected:
     const UInt32 precision;
@@ -156,35 +167,50 @@ inline const DataTypeDecimalBase<T> * checkDecimalBase(const IDataType & data_ty
     return nullptr;
 }
 
-template <> constexpr size_t DataTypeDecimalBase<Decimal32>::maxPrecision() { return 9; };
-template <> constexpr size_t DataTypeDecimalBase<Decimal64>::maxPrecision() { return 18; };
-template <> constexpr size_t DataTypeDecimalBase<DateTime64>::maxPrecision() { return 18; };
-template <> constexpr size_t DataTypeDecimalBase<Decimal128>::maxPrecision() { return 38; };
-template <> constexpr size_t DataTypeDecimalBase<Decimal256>::maxPrecision() { return 76; };
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline auto decimalResultType(const DecimalType<T> & tx, const DecimalType<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
 
-extern template class DataTypeDecimalBase<Decimal32>;
-extern template class DataTypeDecimalBase<Decimal64>;
-extern template class DataTypeDecimalBase<DateTime64>;
-extern template class DataTypeDecimalBase<Decimal128>;
-extern template class DataTypeDecimalBase<Decimal256>;
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline DecimalType<T> decimalResultType(const DecimalType<T> & tx, const DataTypeNumber<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
+
+template <bool is_multiply, bool is_division, typename T, typename U, template <typename> typename DecimalType>
+inline DecimalType<U> decimalResultType(const DataTypeNumber<T> & tx, const DecimalType<U> & ty)
+{
+    const auto result_trait = DecimalUtils::binaryOpResult<is_multiply, is_division>(tx, ty);
+    return DecimalType<typename decltype(result_trait)::FieldType>(result_trait.precision, result_trait.scale);
+}
 
 template <template <typename> typename DecimalType>
 inline DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value)
 {
-    if (precision_value < 1 || precision_value > DataTypeDecimalBase<Decimal256>::maxPrecision())
+    if (precision_value < DecimalUtils::min_precision || precision_value > DecimalUtils::max_precision<Decimal256>)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Wrong precision: it must be between {} and {}, got {}",
-                        1, DataTypeDecimalBase<Decimal256>::maxPrecision(), precision_value);
+                        DecimalUtils::min_precision, DecimalUtils::max_precision<Decimal256>, precision_value);
 
     if (scale_value > precision_value)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Negative scales and scales larger than precision are not supported");
 
-    if (precision_value <= DataTypeDecimalBase<Decimal32>::maxPrecision())
+    if (precision_value <= DecimalUtils::max_precision<Decimal32>)
         return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value);
-    if (precision_value <= DataTypeDecimalBase<Decimal64>::maxPrecision())
+    else if (precision_value <= DecimalUtils::max_precision<Decimal64>)
         return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value);
-    if (precision_value <= DataTypeDecimalBase<Decimal128>::maxPrecision())
-        return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
+    else if (precision_value <= DecimalUtils::max_precision<Decimal128>)
+       return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value);
     return std::make_shared<DecimalType<Decimal256>>(precision_value, scale_value);
 }
+
+extern template class DataTypeDecimalBase<Decimal32>;
+extern template class DataTypeDecimalBase<Decimal64>;
+extern template class DataTypeDecimalBase<Decimal128>;
+extern template class DataTypeDecimalBase<Decimal256>;
+extern template class DataTypeDecimalBase<DateTime64>;
 
 }

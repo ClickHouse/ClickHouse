@@ -2,6 +2,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/queryToString.h>
 #include <Common/checkStackSize.h>
 #include <IO/Operators.h>
 
@@ -240,7 +241,7 @@ CNFQuery TreeCNFConverter::toCNF(
         throw Exception(ErrorCodes::TOO_MANY_TEMPORARY_COLUMNS,
             "Cannot convert expression '{}' to CNF, because it produces to many clauses."
             "Size of boolean formula in CNF can be exponential of size of source formula.",
-            query->formatForErrorMessage());
+            queryToString(query));
 
     return *cnf;
 }
@@ -371,7 +372,8 @@ CNFQuery & CNFQuery::reduce()
             statements = filterCNFSubsets(statements);
             return *this;
         }
-        statements = new_statements;
+        else
+            statements = new_statements;
     }
 }
 

@@ -1,6 +1,4 @@
--- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-object-storage, no-random-merge-tree-settings, no-random-settings
-
-SET max_rows_to_read = '101M';
+-- Tags: long, no-tsan, no-msan, no-asan, no-ubsan, no-debug, no-object-storage
 
 DROP TABLE IF EXISTS t_2354_dist_with_external_aggr;
 
@@ -9,7 +7,6 @@ create table t_2354_dist_with_external_aggr(a UInt64, b String, c FixedString(10
 insert into t_2354_dist_with_external_aggr select number, toString(number) as s, toFixedString(s, 100) from numbers_mt(5e7);
 
 set max_bytes_before_external_group_by = '2G',
-    max_bytes_ratio_before_external_group_by = 0,
     max_threads = 16,
     aggregation_memory_efficient_merge_threads = 16,
     distributed_aggregation_memory_efficient = 1,
@@ -26,6 +23,6 @@ select a, b, c, sum(a) as s
 from remote('127.0.0.{2,3}', currentDatabase(), t_2354_dist_with_external_aggr)
 group by a, b, c
 format Null
-settings max_memory_usage = '5Gi', max_result_rows = 0, max_result_bytes = 0;
+settings max_memory_usage = '5Gi';
 
 DROP TABLE t_2354_dist_with_external_aggr;

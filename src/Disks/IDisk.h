@@ -1,27 +1,24 @@
 #pragma once
 
-#include <Disks/ObjectStorages/StoredObject.h>
 #include <Interpreters/Context_fwd.h>
 #include <Core/Defines.h>
 #include <Core/Names.h>
 #include <base/types.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Disks/DiskType.h>
 #include <IO/ReadSettings.h>
 #include <IO/WriteSettings.h>
+#include <Disks/ObjectStorages/IObjectStorage.h>
 #include <Disks/WriteMode.h>
 #include <Disks/DirectoryIterator.h>
 
 #include <memory>
+#include <utility>
 #include <boost/noncopyable.hpp>
 #include <Poco/Timestamp.h>
 #include <filesystem>
-#include <optional>
 #include <sys/stat.h>
-
-#include "config.h"
 
 
 namespace fs = std::filesystem;
@@ -35,15 +32,15 @@ namespace Poco
     }
 }
 
+namespace CurrentMetrics
+{
+    extern const Metric IDiskCopierThreads;
+    extern const Metric IDiskCopierThreadsActive;
+    extern const Metric IDiskCopierThreadsScheduled;
+}
+
 namespace DB
 {
-
-#if USE_AWS_S3
-namespace S3
-{
-class Client;
-}
-#endif
 
 namespace ErrorCodes
 {
@@ -69,8 +66,6 @@ using RemoveBatchRequest = std::vector<RemoveRequest>;
 
 class DiskObjectStorage;
 using DiskObjectStoragePtr = std::shared_ptr<DiskObjectStorage>;
-
-using ObjectAttributes = std::map<std::string, std::string>;
 
 /**
  * Provide interface for reservation.
@@ -117,9 +112,23 @@ using SyncGuardPtr = std::unique_ptr<ISyncGuard>;
 class IDisk : public Space
 {
 public:
-    IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix);
-    explicit IDisk(const String & name_);
-    ~IDisk() override;
+    /// Default constructor.
+    IDisk(const String & name_, const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+        : name(name_)
+        , copying_thread_pool(
+              CurrentMetrics::IDiskCopierThreads,
+              CurrentMetrics::IDiskCopierThreadsActive,
+              CurrentMetrics::IDiskCopierThreadsScheduled,
+              config.getUInt(config_prefix + ".thread_pool_size", 16))
+    {
+    }
+
+    explicit IDisk(const String & name_)
+        : name(name_)
+        , copying_thread_pool(
+              CurrentMetrics::IDiskCopierThreads, CurrentMetrics::IDiskCopierThreadsActive, CurrentMetrics::IDiskCopierThreadsScheduled, 16)
+    {
+    }
 
     /// This is a disk.
     bool isDisk() const override { return true; }
@@ -145,12 +154,14 @@ public:
     /// Amount of bytes which should be kept free on the disk.
     virtual UInt64 getKeepingFreeSpace() const { return 0; }
 
-    /// Return `true` if the specified file/directory exists.
-    virtual bool existsFile(const String & path) const = 0;
-    virtual bool existsDirectory(const String & path) const = 0;
+    /// Return `true` if the specified file exists.
+    virtual bool exists(const String & path) const = 0;
 
-    /// This method can be less efficient than the above.
-    virtual bool existsFileOrDirectory(const String & path) const = 0;
+    /// Return `true` if the specified file exists and it's a regular file (not a directory or special file type).
+    virtual bool isFile(const String & path) const = 0;
+
+    /// Return `true` if the specified file exists and it's a directory.
+    virtual bool isDirectory(const String & path) const = 0;
 
     /// Return size of the specified file.
     virtual size_t getFileSize(const String & path) const = 0;
@@ -171,7 +182,7 @@ public:
     virtual DirectoryIteratorPtr iterateDirectory(const String & path) const = 0;
 
     /// Return `true` if the specified directory is empty.
-    virtual bool isDirectoryEmpty(const String & path) const;
+    bool isDirectoryEmpty(const String & path) const;
 
     /// Create empty file at `path`.
     virtual void createFile(const String & path) = 0;
@@ -183,20 +194,6 @@ public:
     /// Move the file from `from_path` to `to_path`.
     /// If a file with `to_path` path already exists, it will be replaced.
     virtual void replaceFile(const String & from_path, const String & to_path) = 0;
-
-    virtual void renameExchange(const std::string &, const std::string &)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method `renameExchange()` not implemented for disk: {}", getDataSourceDescription().toString());
-    }
-
-    virtual bool renameExchangeIfSupported(const std::string &, const std::string &)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method `renameExchangeIfSupported()` not implemented for disk: {}",
-            getDataSourceDescription().toString());
-    }
 
     /// Recursively copy files from from_dir to to_dir. Create to_dir if not exists.
     virtual void copyDirectoryContent(
@@ -212,7 +209,7 @@ public:
         const String & from_file_path,
         IDisk & to_disk,
         const String & to_file_path,
-        const ReadSettings & read_settings,
+        const ReadSettings & read_settings = {},
         const WriteSettings & write_settings = {},
         const std::function<void()> & cancellation_hook = {});
 
@@ -222,17 +219,9 @@ public:
     /// Open the file for read and return ReadBufferFromFileBase object.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile( /// NOLINT
         const String & path,
-        const ReadSettings & settings,
-        std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const = 0;
-
-    /// Returns nullptr if the file does not exist, otherwise opens it for reading.
-    /// This method can save a request. The default implementation will do a separate `exists` call.
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFileIfExists( /// NOLINT
-        const String & path,
         const ReadSettings & settings = ReadSettings{},
         std::optional<size_t> read_hint = {},
-        std::optional<size_t> file_size = {}) const;
+        std::optional<size_t> file_size = {}) const = 0;
 
     /// Open the file for write and return WriteBufferFromFileBase object.
     virtual std::unique_ptr<WriteBufferFromFileBase> writeFile( /// NOLINT
@@ -251,21 +240,8 @@ public:
     /// Remove directory. Throws exception if it's not a directory or if directory is not empty.
     virtual void removeDirectory(const String & path) = 0;
 
-    virtual void removeDirectoryIfExists(const String &)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method `removeDirectoryIfExists()` is not implemented for disk: {}",
-            getDataSourceDescription().toString());
-    }
-
     /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
     virtual void removeRecursive(const String & path) = 0;
-
-    /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
-    /// Differs from removeRecursive for S3/HDFS disks
-    /// Limits the number of removing files in batches to prevent high memory consumption.
-    virtual void removeRecursiveWithLimit(const String & path) { removeRecursive(path); }
 
     /// Remove file. Throws exception if file doesn't exists or if directory is not empty.
     /// Differs from removeFile for S3/HDFS disks
@@ -288,9 +264,6 @@ public:
     /// E.g. for DiskLocal it's the absolute path to the file and for DiskObjectStorage it's
     /// StoredObject::remote_path for each stored object combined with the name of the objects' namespace.
     virtual Strings getBlobPath(const String & path) const = 0;
-
-    /// Returns whether the blob paths this disk uses are randomly generated.
-    virtual bool areBlobPathsRandom() const = 0;
 
     using WriteBlobFunction = std::function<size_t(const Strings & blob_path, WriteMode mode, const std::optional<ObjectAttributes> & object_attributes)>;
 
@@ -335,13 +308,6 @@ public:
             getDataSourceDescription().toString());
     }
 
-    virtual std::optional<StoredObjects> getStorageObjectsIfExist(const String & path) const
-    {
-        if (existsFile(path))
-            return getStorageObjects(path);
-        return std::nullopt;
-    }
-
     /// For one local path there might be multiple remote paths in case of Log family engines.
     struct LocalPathWithObjectStoragePaths
     {
@@ -378,49 +344,6 @@ public:
     /// Create hardlink from `src_path` to `dst_path`.
     virtual void createHardLink(const String & src_path, const String & dst_path) = 0;
 
-    virtual bool isSymlinkSupported() const { return false; }
-    virtual bool isSymlink(const String &) const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method isSymlink() is not implemented for disk type: {}", getDataSourceDescription().toString());
-    }
-
-    virtual bool isSymlinkNoThrow(const String &) const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method isSymlinkNothrow() is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
-
-    virtual void createDirectoriesSymlink(const String &, const String &)
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method createDirectoriesSymlink() is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
-
-    virtual String readSymlink(const fs::path &) const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Method readSymlink() is not implemented for disk type: {}",
-            getDataSourceDescription().toString());
-    }
-
-    virtual bool equivalent(const String &, const String &) const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent() is not implemented for disk type: {}", getDataSourceDescription().toString());
-    }
-
-    virtual bool equivalentNoThrow(const String &, const String &) const
-    {
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED, "Method equivalent() is not implemented for disk type: {}", getDataSourceDescription().toString());
-    }
-
     /// Truncate file to specified size.
     virtual void truncateFile(const String & path, size_t size);
 
@@ -456,25 +379,17 @@ public:
     /// Performs custom action on disk startup.
     virtual void startupImpl(ContextPtr) {}
 
-    /// If the state can be changed under the hood and become outdated in memory, perform a reload if necessary.
-    /// Note: for performance reasons, it's allowed to assume that only some subset of changes are possible
-    /// (those that MergeTree tables can make).
-    virtual void refresh()
-    {
-        /// The default no-op implementation when the state in memory cannot be out of sync of the actual state.
-    }
-
     /// Return some uniq string for file, overrode for IDiskRemote
     /// Required for distinguish different copies of the same part on remote disk
     virtual String getUniqueId(const String & path) const { return path; }
 
     /// Check file exists and ClickHouse has an access to it
     /// Overrode in remote FS disks (s3/hdfs)
-    /// Required for remote disk to ensure that the replica has access to data written by other node
-    virtual bool checkUniqueId(const String & id) const { return existsFile(id); }
+    /// Required for remote disk to ensure that replica has access to data written by other node
+    virtual bool checkUniqueId(const String & id) const { return exists(id); }
 
     /// Invoked on partitions freeze query.
-    virtual void onFreeze(const String &) {}
+    virtual void onFreeze(const String &) { }
 
     /// Returns guard, that insures synchronization of directory metadata with storage device.
     virtual SyncGuardPtr getDirectorySyncGuard(const String & path) const;
@@ -569,7 +484,7 @@ public:
 
 
 protected:
-    friend class DiskReadOnlyWrapper;
+    friend class DiskDecorator;
 
     const String name;
 
@@ -580,6 +495,7 @@ protected:
         const String & from_path,
         const std::shared_ptr<IDisk> & to_disk,
         const String & to_path,
+        bool copy_root_dir,
         const ReadSettings & read_settings,
         WriteSettings write_settings,
         const std::function<void()> & cancellation_hook);
@@ -587,7 +503,7 @@ protected:
     virtual void checkAccessImpl(const String & path);
 
 private:
-    std::unique_ptr<ThreadPool> copying_thread_pool;
+    ThreadPool copying_thread_pool;
     // 0 means the disk is not custom, the disk is predefined in the config
     UInt128 custom_disk_settings_hash = 0;
 
@@ -650,7 +566,6 @@ inline String directoryPath(const String & path)
 {
     return fs::path(path).parent_path() / "";
 }
-
 
 }
 

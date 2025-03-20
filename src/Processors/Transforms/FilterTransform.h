@@ -1,7 +1,6 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
-#include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
 {
@@ -10,7 +9,6 @@ class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
-class QueryConditionCache;
 
 /** Implements WHERE, HAVING operations.
   * Takes an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions.
@@ -22,8 +20,7 @@ class FilterTransform : public ISimpleTransform
 public:
     FilterTransform(
         const Block & header_, ExpressionActionsPtr expression_, String filter_column_name_,
-        bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr,
-        std::optional<size_t> condition_hash_ = std::nullopt);
+        bool remove_filter_column_, bool on_totals_ = false, std::shared_ptr<std::atomic<size_t>> rows_filtered_ = nullptr);
 
     static Block
     transformHeader(const Block & header, const ActionsDAG * expression, const String & filter_column_name, bool remove_filter_column);
@@ -33,8 +30,6 @@ public:
     Status prepare() override;
 
     void transform(Chunk & chunk) override;
-
-    static bool canUseType(const DataTypePtr & type);
 
 private:
     ExpressionActionsPtr expression;
@@ -47,20 +42,13 @@ private:
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
 
-    std::optional<size_t> condition_hash; /// If set, we need to update the query condition cache at runtime for every processed chunk
-    std::shared_ptr<QueryConditionCache> query_condition_cache;
-    MarkRangesInfoPtr buffered_mark_ranges_info; /// Buffers mark info for chunks from the same table and part.
-                                                 /// The goal is to write less often into the query condition cache (reduce lock contention).
-
     /// Header after expression, but before removing filter column.
     Block transformed_header;
 
     bool are_prepared_sets_initialized = false;
 
     void doTransform(Chunk & chunk);
-    void removeFilterIfNeed(Columns & columns) const;
-
-    void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
+    void removeFilterIfNeed(Chunk & chunk) const;
 };
 
 }

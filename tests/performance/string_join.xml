@@ -9,8 +9,7 @@
         <max_threads>1</max_threads>
     </settings>
 
-    <query>SELECT 1 FROM hits_10m_words AS l ANY LEFT JOIN hits_10m_words AS r USING (word) FORMAT Null settings join_algorithm='hash'</query>
-    <query>SELECT 1 FROM hits_10m_words AS l ANY LEFT JOIN hits_10m_words AS r USING (word) FORMAT Null settings join_algorithm='parallel_hash'</query>
+    <query>SELECT 1 FROM hits_10m_words AS l ANY LEFT JOIN hits_10m_words AS r USING (word) FORMAT Null</query>
     <query>SELECT 1 FROM strings AS l ANY LEFT JOIN strings AS r USING (short) FORMAT Null</query>
     <query>SELECT 1 FROM strings AS l ANY LEFT JOIN strings AS r USING (long) FORMAT Null</query>
 

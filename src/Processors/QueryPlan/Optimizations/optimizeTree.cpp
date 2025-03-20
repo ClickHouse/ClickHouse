@@ -20,9 +20,9 @@ namespace ErrorCodes
 namespace QueryPlanOptimizations
 {
 
-void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
+void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
 {
-    if (!optimization_settings.optimize_plan)
+    if (!settings.optimize_plan)
         return;
 
     const auto & optimizations = getOptimizations();
@@ -42,7 +42,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
     std::stack<Frame> stack;
     stack.push({.node = &root});
 
-    const size_t max_optimizations_to_apply = optimization_settings.max_optimizations_to_apply;
+    const size_t max_optimizations_to_apply = settings.max_optimizations_to_apply;
     size_t total_applied_optimizations = 0;
 
     while (!stack.empty())
@@ -72,7 +72,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
         /// Apply all optimizations.
         for (const auto & optimization : optimizations)
         {
-            if (!(optimization_settings.*(optimization.is_enabled)))
+            if (!(settings.*(optimization.is_enabled)))
                 continue;
 
             /// Just in case, skip optimization if it is not initialized.
@@ -80,19 +80,12 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
                 continue;
 
             if (max_optimizations_to_apply && max_optimizations_to_apply < total_applied_optimizations)
-            {
-                if (optimization_settings.is_explain)
-                    return;
-
                 throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
                                 "Too many optimizations applied to query plan. Current limit {}",
                                 max_optimizations_to_apply);
-            }
-
 
             /// Try to apply optimization.
-            Optimization::ExtraSettings extra_settings= { optimization_settings.max_limit_for_ann_queries };
-            auto update_depth = optimization.apply(frame.node, nodes, extra_settings);
+            auto update_depth = optimization.apply(frame.node, nodes);
             if (update_depth)
                 ++total_applied_optimizations;
             max_update_depth = std::max<size_t>(max_update_depth, update_depth);
@@ -124,8 +117,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
     {
         optimizePrimaryKeyConditionAndLimit(stack);
 
-        updateQueryConditionCache(stack, optimization_settings);
-
         /// NOTE: optimizePrewhere can modify the stack.
         /// Prewhere optimization relies on PK optimization (getConditionSelectivityEstimatorByPredicate)
         if (optimization_settings.optimize_prewhere)
@@ -133,37 +124,14 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
 
         auto & frame = stack.back();
 
-        /// Traverse all children first.
-        if (frame.next_child < frame.node->children.size())
-        {
-            auto next_frame = Frame{.node = frame.node->children[frame.next_child]};
-            ++frame.next_child;
-            stack.push_back(next_frame);
-            continue;
-        }
-
-        stack.pop_back();
-    }
-
-    calculateHashTableCacheKeys(root);
-
-    stack.push_back({.node = &root});
-    while (!stack.empty())
-    {
-        auto & frame = stack.back();
-
         if (frame.next_child == 0)
         {
-            optimizeJoinLogical(*frame.node, nodes, optimization_settings);
-            bool has_join_logical = convertLogicalJoinToPhysical(*frame.node, nodes, optimization_settings);
-            if (!has_join_logical)
-                optimizeJoinLegacy(*frame.node, nodes, optimization_settings);
 
             if (optimization_settings.read_in_order)
                 optimizeReadInOrder(*frame.node, nodes);
 
             if (optimization_settings.distinct_in_order)
-                optimizeDistinctInOrder(*frame.node, nodes);
+                tryDistinctReadInOrder(frame.node);
         }
 
         /// Traverse all children first.
@@ -220,13 +188,9 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 applied_projection_names.insert(*applied_projection);
 
                 if (max_optimizations_to_apply && max_optimizations_to_apply < applied_projection_names.size())
-                {
-                    /// Limit only first pass in EXPLAIN mode.
-                    if (!optimization_settings.is_explain)
-                        throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
-                                        "Too many projection optimizations applied to query plan. Current limit {}",
-                                        max_optimizations_to_apply);
-                }
+                    throw Exception(ErrorCodes::TOO_MANY_QUERY_PLAN_OPTIMIZATIONS,
+                                    "Too many projection optimizations applied to query plan. Current limit {}",
+                                    max_optimizations_to_apply);
 
                 /// Stack is updated after this optimization and frame is not valid anymore.
                 /// Try to apply optimizations again to newly added plan steps.
@@ -234,6 +198,8 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
                 continue;
             }
         }
+
+        enableMemoryBoundMerging(*stack.back().node, nodes);
 
         stack.pop_back();
     }
@@ -248,9 +214,6 @@ void optimizeTreeSecondPass(const QueryPlanOptimizationSettings & optimization_s
             ErrorCodes::INCORRECT_DATA,
             "Projection {} is specified in setting force_optimize_projection_name but not used",
              optimization_settings.force_projection_name);
-
-    /// Trying to reuse sorting property for other steps.
-    applyOrder(optimization_settings, root);
 }
 
 void addStepsToBuildSets(QueryPlan & plan, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
