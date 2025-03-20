@@ -143,7 +143,8 @@ void Client::initialize(const Poco::Util::AbstractConfiguration & config)
     chassert(!served_domains.empty());
 
     domains = served_domains;
-    refresh_certificates_task_interval = config.getInt("acme.refresh_certificates_interval", 1000 * 60 * 60);
+    refresh_certificates_task_interval = config.getInt("acme.refresh_certificates_task_interval", /* one hour */ 1000 * 60 * 60);
+    refresh_certificates_before = config.getInt("acme.refresh_certificates_before", /* one month */ 60 * 60 * 24 * 30);
 
     acme_hostname = Poco::URI(directory_url).getHost();
     LOG_DEBUG(log, "ACME server hostname: {}", acme_hostname);

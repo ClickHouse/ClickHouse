@@ -7,7 +7,7 @@
         <domains>
             <domain>integration-tests.clickhouse.com</domain>
         </domains>
-        <directory_url>https://node_acme:8443/directory</directory_url>
+        <directory_url>https://node1:8443/directory</directory_url>
         <refresh_certificates_task_interval>1000</refresh_certificates_task_interval>
     </acme>
     <openSSL>
