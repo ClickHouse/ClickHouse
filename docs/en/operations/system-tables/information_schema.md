@@ -209,6 +209,7 @@ Columns:
   number of rows. NULL if it could not be determined.
 - `data_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The size of
   the data on-disk. NULL if it could not be determined.
+- `index_length` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) — The total size of the primary key, secondary indexes, and all marks. This value is derived from the [system.parts](../../operations/system-tables/parts.md) table.
 - `table_collation` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The table default collation. Always `utf8mb4_0900_ai_ci`.
 - `table_comment` ([Nullable](../../sql-reference/data-types/nullable.md)([String](../../sql-reference/data-types/string.md))) — The comment used when creating the table.
 
