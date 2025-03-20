@@ -84,6 +84,8 @@ Columns:
 
 - `loading_dependent_table` ([Array](../../sql-reference/data-types/array.md)([String](../../sql-reference/data-types/string.md))) - Dependent loading table.
 
+- `index_size` ([Nullable](../../sql-reference/data-types/nullable.md)([UInt64](../../sql-reference/data-types/int-uint.md))) - Total size of all indexes in the table.
+
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
 **Example**
@@ -123,6 +125,7 @@ loading_dependencies_database: []
 loading_dependencies_table:    []
 loading_dependent_database:    []
 loading_dependent_table:       []
+index_size:                 90
 
 Row 2:
 ──────
@@ -154,4 +157,5 @@ loading_dependencies_database: []
 loading_dependencies_table:    []
 loading_dependent_database:    []
 loading_dependent_table:       []
+index_size:                 110
 ```

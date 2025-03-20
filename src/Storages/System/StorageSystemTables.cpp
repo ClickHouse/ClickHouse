@@ -213,6 +213,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"loading_dependent_table", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
             "Dependent loading table."
         },
+        {"index_length", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()), "Length of the index."},
     };
 
     description.setAliases({
@@ -799,6 +800,17 @@ protected:
                     if (columns_mask[src_index++])
                         res_columns[res_index++]->insert(dependents_tables);
 
+                }
+                else
+                    src_index += 4;
+
+                if (columns_mask[src_index++])
+                {
+                    auto length = table->getAllIndexesTotalCompressedSize();
+                    if (length)
+                        res_columns[res_index++]->insert(*length);
+                    else
+                        res_columns[res_index++]->insertDefault();
                 }
             }
         }
