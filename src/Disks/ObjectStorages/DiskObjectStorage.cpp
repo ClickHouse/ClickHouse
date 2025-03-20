@@ -723,7 +723,8 @@ std::unique_ptr<ReadBufferFromFileBase> DiskObjectStorage::readFile(
         return object_storage->readObject(object_, read_settings, read_hint, file_size);
     };
 
-    /// Avoid cache fragmentation by choosing bigger buffer size.
+    /// Avoid cache fragmentation by choosing a bigger buffer size.
+    /// But don't use it if the cache is used passively (only for reading if data is already cached, such as during merges).
     bool prefer_bigger_buffer_size = read_settings.filesystem_cache_prefer_bigger_buffer_size
         && !read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
         && object_storage->supportsCache()
