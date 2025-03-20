@@ -5,6 +5,7 @@
 #include <Access/LDAPClient.h>
 #include <Access/GSSAcceptor.h>
 #include <Poco/SHA1Engine.h>
+#include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <Common/SSHWrapper.h>
 #include <Common/typeid_cast.h>
@@ -136,24 +137,6 @@ namespace
         return hash;
     }
 
-    std::string base64Encode(const std::vector<uint8_t>& data)
-    {
-        BIO *bio;
-        BIO *b64;
-        BUF_MEM *buffer_ptr;
-
-        b64 = BIO_new(BIO_f_base64());
-        bio = BIO_new(BIO_s_mem());
-        bio = BIO_push(b64, bio);
-        BIO_set_flags(bio, BIO_FLAGS_BASE64_NO_NL);
-        BIO_write(bio, data.data(), static_cast<Int32>(data.size()));
-        BIO_flush(bio);
-        BIO_get_mem_ptr(bio, &buffer_ptr);
-
-        std::string encoded(buffer_ptr->data, buffer_ptr->length);
-        BIO_free_all(bio);
-        return encoded;
-    }
 #endif
 
     std::string computeScramSHA256ClientProof(const std::vector<uint8_t> & salted_password [[maybe_unused]], const std::string& auth_message [[maybe_unused]])
@@ -163,7 +146,7 @@ namespace
         auto stored_key = sha256(client_key);
         auto client_signature = hmacSHA256(stored_key, auth_message);
 
-        std::vector<uint8_t> client_proof(client_key.size());
+        String client_proof(client_key.size(), 0);
         for (size_t i = 0; i < client_key.size(); ++i)
             client_proof[i] = client_key[i] ^ client_signature[i];
 
