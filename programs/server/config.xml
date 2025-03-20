@@ -397,7 +397,6 @@
         <domains>
             <domain>example.com</domain>
         </domains>
-        <refresh_certificates_interval>60000</refresh_certificates_interval>
     </acme>
     -->
 
