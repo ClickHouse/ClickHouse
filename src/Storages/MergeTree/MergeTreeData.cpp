@@ -6811,7 +6811,7 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
         {
             MergeTreePartInfo info_a = MergeTreePartInfo::fromPartName(active_parts.getContainingPart(a), format_version);
             MergeTreePartInfo info_b = MergeTreePartInfo::fromPartName(active_parts.getContainingPart(b), format_version);
-            return a < b;
+            return info_a < info_b;
         });
 
         /// Inactive parts are renamed so they can not be attached in case of repeated ATTACH.
