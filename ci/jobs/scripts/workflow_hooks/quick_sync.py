@@ -14,8 +14,6 @@ def check():
         return
     if not Shell.check(
         f"gh workflow run private_quick_sync.yml --repo ClickHouse/clickhouse-private --ref master --field pr_number={info.pr_number} --field branch_name={info.git_branch} --field title='{info.pr_title}' --field sha={info.sha}",
-        verbose=True,
-        strict=True,
     ):
         GH.post_commit_status(
             name=SYNC, status="error", description="failed to start the sync", url=""
