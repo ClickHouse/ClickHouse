@@ -7,7 +7,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 
-#include <Common/Scheduler/CpuSlotsAllocation.h>
+#include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/Nodes/tests/ResourceTest.h>
 #include <Common/Scheduler/Workload/WorkloadEntityStorageBase.h>
 #include <Common/Scheduler/Nodes/WorkloadResourceManager.h>
@@ -381,7 +381,8 @@ struct TestQuery {
     ~TestQuery()
     {
         finish();
-        while (true) {
+        while (true)
+        {
             std::vector<ThreadFromGlobalPool *> threads_to_join;
             {
                 std::scoped_lock lock{threads_mutex};
@@ -499,7 +500,7 @@ struct TestQuery {
             work_left = runtime_us / us_per_work;
         t.async(workload, t.storage.getWorkerThreadResourceName(), [&] (ResourceLink link)
         {
-            slots = std::make_shared<CpuSlotsAllocation>(1, max_threads, ResourceLink{}, link);
+            slots = std::make_shared<CPUSlotsAllocation>(1, max_threads, ResourceLink{}, link);
             threadFunc(slots->tryAcquire());
         });
     }
@@ -507,7 +508,7 @@ struct TestQuery {
 
 using TestQueryPtr = std::shared_ptr<TestQuery>;
 
-TEST(SchedulerWorkloadResourceManager, CpuSlotsAllocationRoundRobin)
+TEST(SchedulerWorkloadResourceManager, CPUSlotsAllocationRoundRobin)
 {
     ResourceTest t;
 

@@ -35,7 +35,7 @@ struct SchedulingSettings
 
     /// Settings that are applied depend on cost unit
     using Unit = ASTCreateResourceQuery::CostUnit;
-    Unit unit = Unit::IoByte;
+    Unit unit = Unit::IOByte;
 
     // Throttler
     bool hasThrottler() const;

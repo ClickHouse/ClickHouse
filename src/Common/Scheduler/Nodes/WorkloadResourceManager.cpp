@@ -43,7 +43,7 @@ namespace
         // CPU resource must have exactly one access mode specified
         if (auto * create = typeid_cast<ASTCreateResourceQuery *>(ast.get()))
             return create->unit;
-        return SchedulingSettings::Unit::IoByte;
+        return SchedulingSettings::Unit::IOByte;
     }
 }
 

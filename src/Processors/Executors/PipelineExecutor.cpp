@@ -4,7 +4,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ConcurrencyControl.h>
-#include <Common/Scheduler/CpuSlotsAllocation.h>
+#include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Common/setThreadName.h>
@@ -365,7 +365,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, std::atomic_bool * yie
 // 4) If we have no cpu-related resources:
 //    the ConcurrencyControl class is used instead of resource scheduler
 // NOTE: With enabled workload CPU scheduling, both links could be empty in case of unknown workload.
-static SlotAllocationPtr allocateCpuSlots(size_t num_threads, bool concurrency_control)
+static SlotAllocationPtr allocateCPUSlots(size_t num_threads, bool concurrency_control)
 {
     if (concurrency_control)
     {
@@ -389,7 +389,7 @@ static SlotAllocationPtr allocateCpuSlots(size_t num_threads, bool concurrency_c
         {
             /// Allocate CPU slots through resource scheduler
             constexpr size_t master_threads = 1uz;
-            return std::make_shared<CpuSlotsAllocation>(master_threads, num_threads - master_threads, master_thread_link, worker_thread_link);
+            return std::make_shared<CPUSlotsAllocation>(master_threads, num_threads - master_threads, master_thread_link, worker_thread_link);
         }
         else
         {
@@ -411,7 +411,7 @@ void PipelineExecutor::initializeExecution(size_t num_threads, bool concurrency_
     is_execution_initialized = true;
     tryUpdateExecutionStatus(ExecutionStatus::NotStarted, ExecutionStatus::Executing);
 
-    cpu_slots = allocateCpuSlots(num_threads, concurrency_control);
+    cpu_slots = allocateCPUSlots(num_threads, concurrency_control);
 
     Queue queue;
     Queue async_queue;

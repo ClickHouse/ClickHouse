@@ -15,14 +15,14 @@
 namespace DB
 {
 
-class CpuSlotsAllocation;
+class CPUSlotsAllocation;
 
 // Represents a resource request for a cpu slot for a single thread
-class CpuSlotRequest final : public ResourceRequest
+class CPUSlotRequest final : public ResourceRequest
 {
 public:
-    CpuSlotRequest() = default;
-    ~CpuSlotRequest() override = default;
+    CPUSlotRequest() = default;
+    ~CPUSlotRequest() override = default;
 
     /// Callback to trigger resource consumption.
     void execute() override;
@@ -30,28 +30,28 @@ public:
     /// Callback to trigger an error in case if resource is unavailable.
     void failed(const std::exception_ptr & ptr) override;
 
-    CpuSlotsAllocation * allocation = nullptr;
+    CPUSlotsAllocation * allocation = nullptr;
 };
 
 // Scoped guard for acquired cpu slot
-class AcquiredCpuSlot final : public IAcquiredSlot
+class AcquiredCPUSlot final : public IAcquiredSlot
 {
 public:
-    explicit AcquiredCpuSlot(SlotAllocationPtr && allocation_, CpuSlotRequest * request_);
-    ~AcquiredCpuSlot() override;
+    explicit AcquiredCPUSlot(SlotAllocationPtr && allocation_, CPUSlotRequest * request_);
+    ~AcquiredCPUSlot() override;
 
 private:
     SlotAllocationPtr allocation; // Hold allocation to ensure request is not destructed
-    CpuSlotRequest * request; // Resource request to finalize in destructor or nullptr for non-competing slot
+    CPUSlotRequest * request; // Resource request to finalize in destructor or nullptr for non-competing slot
     CurrentMetrics::Increment acquired_slot_increment;
 };
 
 // Manages group of cpu slots and slot requests for a single thread group (query)
-class CpuSlotsAllocation final : public ISlotAllocation
+class CPUSlotsAllocation final : public ISlotAllocation
 {
 public:
-    CpuSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_);
-    ~CpuSlotsAllocation() override;
+    CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_);
+    ~CPUSlotsAllocation() override;
 
     // Take one already granted slot if available. Lock-free iff there is no granted slot.
     [[nodiscard]] AcquiredSlotPtr tryAcquire() override;
@@ -60,7 +60,7 @@ public:
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
 private:
-    friend class CpuSlotRequest; // for schedule() and failed()
+    friend class CPUSlotRequest; // for schedule() and failed()
 
     // Resource request failed
     void failed(const std::exception_ptr & ptr);
@@ -88,8 +88,8 @@ private:
     std::exception_ptr exception;
     SlotCount allocated = 0; // Total allocated slots including already released
     size_t waiters = 0; // Number of threads waiting on acquire() call
-    std::vector<CpuSlotRequest> requests; // Requests per every slot
-    CpuSlotRequest * current_request;
+    std::vector<CPUSlotRequest> requests; // Requests per every slot
+    CPUSlotRequest * current_request;
 };
 
 }

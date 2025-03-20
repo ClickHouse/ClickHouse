@@ -2,25 +2,21 @@
 
 #include <base/scope_guard.h>
 
-#include <Common/Scheduler/CpuSlotsAllocation.h>
+#include <Common/Scheduler/CPUSlotsAllocation.h>
 #include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {
-    extern const Event ConcurrencyControlSlotsGranted;
-    extern const Event ConcurrencyControlSlotsDelayed;
     extern const Event ConcurrencyControlSlotsAcquired;
     extern const Event ConcurrencyControlSlotsAcquiredNonCompeting;
-    extern const Event ConcurrencyControlQueriesDelayed;
 }
 
 namespace CurrentMetrics
 {
     extern const Metric ConcurrencyControlAcquired;
     extern const Metric ConcurrencyControlAcquiredNonCompeting;
-    extern const Metric ConcurrencyControlSoftLimit;
 }
 
 namespace DB
@@ -32,40 +28,40 @@ namespace ErrorCodes
     extern const int RESOURCE_ACCESS_DENIED;
 }
 
-void CpuSlotRequest::execute()
+void CPUSlotRequest::execute()
 {
     chassert(allocation);
     allocation->grant();
 }
 
-void CpuSlotRequest::failed(const std::exception_ptr & ptr)
+void CPUSlotRequest::failed(const std::exception_ptr & ptr)
 {
     chassert(allocation);
     allocation->failed(ptr);
 }
 
-AcquiredCpuSlot::AcquiredCpuSlot(SlotAllocationPtr && allocation_, CpuSlotRequest * request_)
+AcquiredCPUSlot::AcquiredCPUSlot(SlotAllocationPtr && allocation_, CPUSlotRequest * request_)
     : allocation(std::move(allocation_))
     , request(request_)
     , acquired_slot_increment(request ? CurrentMetrics::ConcurrencyControlAcquired : CurrentMetrics::ConcurrencyControlAcquiredNonCompeting)
 {}
 
-AcquiredCpuSlot::~AcquiredCpuSlot()
+AcquiredCPUSlot::~AcquiredCPUSlot()
 {
     if (request)
         request->finish();
 }
 
-CpuSlotsAllocation::CpuSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_)
+CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_)
     : master_slots(master_slots_)
     , total_slots(master_slots_ + worker_slots_)
     , noncompeting_slots(!master_link_ * master_slots_ + !worker_link_ * worker_slots_)
     , master_link(master_link_)
     , worker_link(worker_link_)
-    , requests(total_slots - noncompeting_slots) // NOTE: it should not be reallocated after initialization because AcquiredCpuSlot holds raw pointer
+    , requests(total_slots - noncompeting_slots) // NOTE: it should not be reallocated after initialization because AcquiredCPUSlot holds raw pointer
     , current_request(&requests.front())
 {
-    for (CpuSlotRequest & request : requests)
+    for (CPUSlotRequest & request : requests)
         request.allocation = this;
 
     std::unique_lock lock{schedule_mutex};
@@ -84,7 +80,7 @@ CpuSlotsAllocation::CpuSlotsAllocation(SlotCount master_slots_, SlotCount worker
     }
 }
 
-CpuSlotsAllocation::~CpuSlotsAllocation()
+CPUSlotsAllocation::~CPUSlotsAllocation()
 {
     if (master_link || worker_link)
     {
@@ -102,7 +98,7 @@ CpuSlotsAllocation::~CpuSlotsAllocation()
     }
 }
 
-[[nodiscard]] AcquiredSlotPtr CpuSlotsAllocation::tryAcquire()
+[[nodiscard]] AcquiredSlotPtr CPUSlotsAllocation::tryAcquire()
 {
     // First try acquire non-competing slot (if any)
     SlotCount value = noncompeting.load();
@@ -117,7 +113,7 @@ CpuSlotsAllocation::~CpuSlotsAllocation()
         if (noncompeting.compare_exchange_strong(value, value - 1))
         {
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquiredNonCompeting, 1);
-            return AcquiredSlotPtr(new AcquiredCpuSlot({}, nullptr));
+            return AcquiredSlotPtr(new AcquiredCPUSlot({}, nullptr));
         }
     }
 
@@ -138,14 +134,14 @@ CpuSlotsAllocation::~CpuSlotsAllocation()
             // Make and return acquired slot
             ProfileEvents::increment(ProfileEvents::ConcurrencyControlSlotsAcquired, 1);
             size_t index = last_acquire_index.fetch_add(1, std::memory_order_relaxed);
-            return AcquiredSlotPtr(new AcquiredCpuSlot(shared_from_this(), &requests[index]));
+            return AcquiredSlotPtr(new AcquiredCPUSlot(shared_from_this(), &requests[index]));
         }
     }
 
     return {}; // avoid unnecessary locking
 }
 
-[[nodiscard]] AcquiredSlotPtr CpuSlotsAllocation::acquire()
+[[nodiscard]] AcquiredSlotPtr CPUSlotsAllocation::acquire()
 {
     // lock-free shortcut
     if (auto result = tryAcquire())
@@ -155,7 +151,8 @@ CpuSlotsAllocation::~CpuSlotsAllocation()
     std::unique_lock lock{schedule_mutex};
     waiters++;
     SCOPE_EXIT({ waiters--; });
-    while (true) {
+    while (true)
+    {
         schedule_cv.wait(lock, [this] { return granted > 0 || noncompeting > 0; });
         if (auto result = tryAcquire())
             return result;
@@ -163,7 +160,7 @@ CpuSlotsAllocation::~CpuSlotsAllocation()
     }
 }
 
-void CpuSlotsAllocation::failed(const std::exception_ptr & ptr)
+void CPUSlotsAllocation::failed(const std::exception_ptr & ptr)
 {
     std::scoped_lock lock{schedule_mutex};
     exception = ptr;
@@ -172,7 +169,7 @@ void CpuSlotsAllocation::failed(const std::exception_ptr & ptr)
     schedule_cv.notify_all();
 }
 
-void CpuSlotsAllocation::grant()
+void CPUSlotsAllocation::grant()
 {
     std::unique_lock lock{schedule_mutex};
 
@@ -193,7 +190,7 @@ void CpuSlotsAllocation::grant()
     }
 }
 
-ISchedulerQueue * CpuSlotsAllocation::getCurrentQueue(const std::unique_lock<std::mutex> &)
+ISchedulerQueue * CPUSlotsAllocation::getCurrentQueue(const std::unique_lock<std::mutex> &)
 {
     return allocated < master_slots ? master_link.queue : worker_link.queue;
 }
