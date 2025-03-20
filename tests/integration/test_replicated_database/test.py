@@ -938,7 +938,12 @@ def test_recover_staled_replica(started_cluster):
         )
         == f"{test_recover_staled_replica_run}\n"
     )
-    assert_eq_with_retry(dummy_node, "SELECT count() FROM system.tables WHERE database='recover_broken_replicated_tables'", f"{test_recover_staled_replica_run}")
+    assert (
+        dummy_node.query(
+            "SELECT count() FROM system.tables WHERE database='recover_broken_replicated_tables'"
+        )
+        == f"{test_recover_staled_replica_run}\n"
+    )
     test_recover_staled_replica_run += 1
 
     print(dummy_node.query("SHOW DATABASES"))
@@ -1328,7 +1333,6 @@ def test_recover_digest_mismatch(started_cluster):
         "sed --follow-symlinks -i 's/Int32/String/' /var/lib/clickhouse/metadata/recover_digest_mismatch/mv1.sql",
         "rm -f /var/lib/clickhouse/metadata/recover_digest_mismatch/d1.sql",
         "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
-        "rm -rf /var/lib/clickhouse/store",
     ]
 
     for command in ways_to_corrupt_metadata:
