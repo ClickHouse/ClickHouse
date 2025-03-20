@@ -13,6 +13,13 @@ namespace DB
 /// match the predicate and which marks may match the predicate. This allows to skip the scan if the
 /// same predicate is evaluated on the same data again. Note that this doesn't work the other way
 /// round: we can't tell if _all_ rows in the mark match the predicate.
+///
+/// Note: The cache may store more than the minimal number of matching marks.
+/// For example, assume a very selective predicate that matches just a single row in a single mark.
+/// One would expect that the cache records just the single mark as potentially matching:
+///     000000010000000000000000000
+/// But it is equally correct for the cache to store this: (it is just less efficient for pruning)
+///     000001111111110000000000000
 class QueryConditionCache
 {
 public:
@@ -78,6 +85,8 @@ public:
 private:
     Cache cache;
     LoggerPtr logger;
+
+    friend class StorageSystemQueryConditionCache;
 };
 
 using QueryConditionCachePtr = std::shared_ptr<QueryConditionCache>;

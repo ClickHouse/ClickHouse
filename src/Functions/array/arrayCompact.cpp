@@ -3,7 +3,6 @@
 
 #include <Common/HashTable/HashTable.h>
 
-#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Functions/FunctionFactory.h>

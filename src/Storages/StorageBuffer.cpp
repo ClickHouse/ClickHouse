@@ -36,7 +36,6 @@
 #include <Storages/IStorage.h>
 #include <base/getThreadId.h>
 #include <base/range.h>
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <Common/CurrentMetrics.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MemoryTrackerBlockerInThread.h>

@@ -34,6 +34,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SET_SIGNAL_HANDLER;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 static ClientInfo::QueryKind parseQueryKind(const String & query_kind)
@@ -78,6 +79,11 @@ ClientApplicationBase::ClientApplicationBase() : ClientBase(STDIN_FILENO, STDOUT
 ClientApplicationBase & ClientApplicationBase::getInstance()
 {
     return dynamic_cast<ClientApplicationBase&>(Poco::Util::Application::instance());
+}
+
+bool ClientApplicationBase::isEmbeeddedClient() const
+{
+    return false;
 }
 
 void ClientApplicationBase::setupSignalHandler()
@@ -247,7 +253,12 @@ void ClientApplicationBase::init(int argc, char ** argv)
     client_sinks.push_back(
         quill::Frontend::create_or_get_sink<quill::ConsoleSink>("ClientFatalSink", console_config));
     if (options.count("client_logs_file"))
+    {
+        if (isEmbeeddedClient())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Writing logs to a file is disabled in an embedded mode.");
+
         client_sinks.push_back(quill::Frontend::create_or_get_sink<quill::FileSink>(options["client_logs_file"].as<std::string>()));
+    }
 
     fatal_log = createLogger("ClientBase", std::move(client_sinks));
     fatal_log->setLogLevel(quill::LogLevel::Critical);

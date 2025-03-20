@@ -62,13 +62,13 @@ Data types of ClickHouse table columns can differ from the corresponding fields 
 
 You can insert Parquet data from a file into ClickHouse table using the following command:
 
-``` bash
+```bash
 $ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT Parquet"
 ```
 
 You can select data from a ClickHouse table and save it into some file in the Parquet format using the following command:
 
-``` bash
+```bash
 $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_file.pq}
 ```
 

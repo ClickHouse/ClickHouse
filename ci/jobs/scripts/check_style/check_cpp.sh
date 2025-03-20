@@ -222,6 +222,7 @@ std_cerr_cout_excludes=(
     src/Common/GWPAsan.cpp
     src/Common/ProgressIndication.h
     src/Common/QuillLogger.cpp
+    src/IO/Ask.cpp
 )
 sources_with_std_cerr_cout=( $(
     find $ROOT_PATH/{src,base} -name '*.h' -or -name '*.cpp' | \

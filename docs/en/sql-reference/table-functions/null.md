@@ -13,7 +13,7 @@ Creates a temporary table of the specified structure with the [Null](../../engin
 
 **Syntax**
 
-``` sql
+```sql
 null('structure')
 ```
 
@@ -29,7 +29,7 @@ A temporary `Null`-engine table with the specified structure.
 
 Query with the `null` function:
 
-``` sql
+```sql
 INSERT INTO function null('x UInt64') SELECT * FROM numbers_mt(1000000000);
 ```
 can replace three queries:
