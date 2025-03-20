@@ -24,7 +24,16 @@ def pdb_history(request):
     """
     if request.config.getoption("--pdb"):
         import pdb  # pylint:disable=import-outside-toplevel
-        import readline  # pylint:disable=import-outside-toplevel
+
+        try:
+            import readline  # pylint:disable=import-outside-toplevel
+        except ModuleNotFoundError:
+            logging.warning(
+                "No module named 'readline'. "
+                "Install it if you want to preserve pdb history between runs."
+            )
+            yield
+            return
 
         def save_history():
             readline.write_history_file(".pdb_history")
