@@ -142,6 +142,7 @@ class MergeTreeIndexConditionVectorSimilarity final : public IMergeTreeIndexCond
 public:
     explicit MergeTreeIndexConditionVectorSimilarity(
         const std::optional<VectorSearchParameters> & parameters_,
+        const String & index_column_name_,
         unum::usearch::metric_kind_t metric_kind_,
         ContextPtr context);
 
@@ -153,6 +154,7 @@ public:
 
 private:
     std::optional<VectorSearchParameters> parameters;
+    const String index_column_name;
     const unum::usearch::metric_kind_t metric_kind;
     const size_t expansion_search;
 };
@@ -176,6 +178,7 @@ public:
     bool isVectorSimilarityIndex() const override { return true; }
 
 private:
+    const String index_column_name;
     const unum::usearch::metric_kind_t metric_kind;
     const unum::usearch::scalar_kind_t scalar_kind;
     const UsearchHnswParams usearch_hnsw_params;

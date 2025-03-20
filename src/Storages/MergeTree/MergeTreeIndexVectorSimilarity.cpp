@@ -143,7 +143,8 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
         /// See the comment in MergeTreeIndexGranuleVectorSimilarity::deserializeBinary why we throw here
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not load vector similarity index. Please drop the index and create it again. Error: {}", String(result.error.release()));
 
-    try_reserve(limits());
+    /// Indicate the number of concurrent threads that will potentially search this specific usearch index
+    try_reserve(unum::usearch::index_limits_t(limits().members, getNumberOfCPUCoresToUse()));
 }
 
 USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStatistics() const
@@ -396,9 +397,11 @@ void MergeTreeIndexAggregatorVectorSimilarity::update(const Block & block, size_
 
 MergeTreeIndexConditionVectorSimilarity::MergeTreeIndexConditionVectorSimilarity(
     const std::optional<VectorSearchParameters> & parameters_,
+    const String & index_column_name_,
     unum::usearch::metric_kind_t metric_kind_,
     ContextPtr context)
     : parameters(parameters_)
+    , index_column_name(index_column_name_)
     , metric_kind(metric_kind_)
     , expansion_search(context->getSettingsRef()[Setting::hnsw_candidate_list_size_for_search])
 {
@@ -416,6 +419,7 @@ bool MergeTreeIndexConditionVectorSimilarity::alwaysUnknownOrTrue() const
     /// The vector similarity index was build for a specific distance function ("metric_kind").
     /// We can use it for vector search only if the distance function used in the SELECT query is the same.
     bool distance_function_in_query_and_distance_function_in_index_match = parameters &&
+        (parameters->search_column_name == index_column_name) &&
         ((parameters->distance_function == "L2Distance" && metric_kind == unum::usearch::metric_kind_t::l2sq_k)
         || (parameters->distance_function == "cosineDistance" && metric_kind == unum::usearch::metric_kind_t::cos_k));
 
@@ -473,6 +477,7 @@ MergeTreeIndexVectorSimilarity::MergeTreeIndexVectorSimilarity(
     unum::usearch::scalar_kind_t scalar_kind_,
     UsearchHnswParams usearch_hnsw_params_)
     : IMergeTreeIndex(index_)
+    , index_column_name(index_.column_names[0])
     , metric_kind(metric_kind_)
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
@@ -496,7 +501,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(
 
 MergeTreeIndexConditionPtr MergeTreeIndexVectorSimilarity::createIndexCondition(const ActionsDAG * /*filter_actions_dag*/, ContextPtr context, const std::optional<VectorSearchParameters> & parameters) const
 {
-    return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, metric_kind, context);
+    return std::make_shared<MergeTreeIndexConditionVectorSimilarity>(parameters, index_column_name, metric_kind, context);
 }
 
 MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index)
