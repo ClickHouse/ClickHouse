@@ -38,7 +38,8 @@ namespace ErrorCodes
     DECLARE(String, region, "", "", 0) \
     DECLARE(String, server_side_encryption_customer_key_base64, "", "", 0) \
     DECLARE(String, role_arn, "", "", 0) \
-    DECLARE(String, role_session_name, "", "", 0)
+    DECLARE(String, role_session_name, "", "", 0) \
+    DECLARE(String, sts_endpoint_override, "", "", 0)
 
 #define CLIENT_SETTINGS_LIST(M, ALIAS) \
     CLIENT_SETTINGS(M, ALIAS) \

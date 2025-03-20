@@ -696,12 +696,31 @@ S3CredentialsProviderChain::S3CredentialsProviderChain(
             AddProvider(std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(credentials));
         else
         {
+            auto sts_client_config = Aws::STS::STSClientConfiguration();
+
+            if (!credentials_configuration.sts_endpoint_override.empty())
+            {
+                const String & new_endpoint = Poco::toLower(credentials_configuration.sts_endpoint_override);
+                if (new_endpoint.starts_with("https"))
+                {
+                    sts_client_config.scheme = Aws::Http::Scheme::HTTPS;
+                    sts_client_config.endpointOverride = new_endpoint.substr(8);
+                }
+                else
+                {
+                    sts_client_config.scheme = Aws::Http::Scheme::HTTP;
+                    sts_client_config.endpointOverride = new_endpoint.substr(7);
+                }
+            }
+
             AddProvider(std::make_shared<Aws::Auth::STSAssumeRoleCredentialsProvider>(
                 credentials_configuration.role_arn,
                 /* sessionName */ credentials_configuration.role_session_name,
                 /* externalId */ Aws::String(),
                 /* loadFrequency */ Aws::Auth::DEFAULT_CREDS_LOAD_FREQ_SECONDS,
-                std::make_shared<Aws::STS::STSClient>(credentials)
+                std::make_shared<Aws::STS::STSClient>(credentials,
+                                                      /* endpointProvider */ Aws::MakeShared<Aws::STS::STSEndpointProvider>(Aws::STS::STSClient::ALLOCATION_TAG),
+                                                      /* clientConfiguration */ sts_client_config)
                 )
             );
         }

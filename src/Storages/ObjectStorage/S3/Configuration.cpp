@@ -49,6 +49,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsBool use_environment_credentials;
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString sts_endpoint_override;
 }
 
 namespace ErrorCodes
@@ -454,16 +455,19 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
 
     if (!extra_credentials_from_ast.empty())
     {
-        auto role_arn_it = std::find_if(extra_credentials_from_ast.begin(), extra_credentials_from_ast.end(),
-                                        [](const HTTPHeaderEntry & entry) { return entry.name == "role_arn"; });
-        if (role_arn_it != extra_credentials_from_ast.end())
-            auth_settings[S3AuthSetting::role_arn] = role_arn_it->value;
+        auto extract_extra_cred_value = [&extra_creds = this->extra_credentials_from_ast](const String & cred_name) -> String
+        {
+            auto role_arn_it = std::find_if(extra_creds.begin(), extra_creds.end(),
+                                            [&cred_name](const HTTPHeaderEntry & entry) { return entry.name == cred_name; });
+            if (role_arn_it != extra_creds.end())
+                return role_arn_it->value;
 
-        auto role_session_name_it = std::find_if(extra_credentials_from_ast.begin(), extra_credentials_from_ast.end(),
-                                        [](const HTTPHeaderEntry & entry) { return entry.name == "role_session_name"; });
-        if (role_session_name_it != extra_credentials_from_ast.end())
-            auth_settings[S3AuthSetting::role_session_name] = role_session_name_it->value;
+            return {};
+        };
 
+        auth_settings[S3AuthSetting::role_arn] = extract_extra_cred_value("role_arn");
+        auth_settings[S3AuthSetting::role_session_name] = extract_extra_cred_value("role_session_name");
+        auth_settings[S3AuthSetting::sts_endpoint_override] = extract_extra_cred_value("sts_endpoint_override");
     }
 
     static_configuration = !auth_settings[S3AuthSetting::access_key_id].value.empty() || auth_settings[S3AuthSetting::no_sign_request].changed;
