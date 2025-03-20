@@ -1,10 +1,14 @@
 ---
-description: "System table containing information about async inserts. Each entry represents an insert query buffered into an async insert query."
+description: 'System table containing information about async inserts. Each entry
+  represents an insert query buffered into an async insert query.'
+keywords: ['system table', 'asynchronous_insert_log']
 slug: /operations/system-tables/asynchronous_insert_log
-title: "system.asynchronous_insert_log"
-keywords: ["system table", "asynchronous_insert_log"]
+title: 'system.asynchronous_insert_log'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.asynchronous_insert_log
 
 <SystemTableCloud/>
 
@@ -41,13 +45,13 @@ Columns:
 
 Query:
 
-``` sql
+```sql
 SELECT * FROM system.asynchronous_insert_log LIMIT 1 \G;
 ```
 
 Result:
 
-``` text
+```text
 hostname:                clickhouse.eu-central1.internal
 event_date:              2023-06-08
 event_time:              2023-06-08 10:08:53

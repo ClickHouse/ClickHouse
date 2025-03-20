@@ -7,6 +7,7 @@
 #include <vector>
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
+#include <Common/DateLUTImpl.h>
 #include <Common/VersionNumber.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>

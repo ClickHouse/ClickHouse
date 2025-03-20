@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/statements/alter/projection
+description: 'Documentation for Manipulating Projections'
+sidebar_label: 'PROJECTION'
 sidebar_position: 49
-sidebar_label: PROJECTION
-title: "Projections"
+slug: /sql-reference/statements/alter/projection
+title: 'Projections'
 ---
 
 Projections store data in a format that optimizes query execution, this feature is useful for:

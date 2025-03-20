@@ -1,15 +1,15 @@
 ---
-description: "A terabyte of Click Logs from Criteo"
+description: 'A terabyte of Click Logs from Criteo'
+sidebar_label: 'Terabyte Click Logs from Criteo'
 slug: /getting-started/example-datasets/criteo
-sidebar_label: Terabyte Click Logs from Criteo
-title: "Terabyte Click Logs from Criteo"
+title: 'Terabyte Click Logs from Criteo'
 ---
 
 Download the data from http://labs.criteo.com/downloads/download-terabyte-click-logs/
 
 Create a table to import the log to:
 
-``` sql
+```sql
 CREATE TABLE criteo_log (
     date Date,
     clicked UInt8,
@@ -57,13 +57,13 @@ CREATE TABLE criteo_log (
 
 Insert the data:
 
-``` bash
+```bash
 $ for i in {00..23}; do echo $i; zcat datasets/criteo/day_${i#0}.gz | sed -r 's/^/2000-01-'${i/00/24}'\t/' | clickhouse-client --host=example-perftest01j --query="INSERT INTO criteo_log FORMAT TabSeparated"; done
 ```
 
 Create a table for the converted data:
 
-``` sql
+```sql
 CREATE TABLE criteo
 (
     date Date,
@@ -114,7 +114,7 @@ ORDER BY (date, icat1)
 
 Transform data from the raw log and put it in the second table:
 
-``` sql
+```sql
 INSERT INTO
     criteo
 SELECT

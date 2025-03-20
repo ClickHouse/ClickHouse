@@ -1,8 +1,8 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/rankCorr
+description: 'Computes a rank correlation coefficient.'
 sidebar_position: 182
-title: "rankCorr"
-description: "Computes a rank correlation coefficient."
+slug: /sql-reference/aggregate-functions/reference/rankCorr
+title: 'rankCorr'
 ---
 
 # rankCorr
@@ -11,7 +11,7 @@ Computes a rank correlation coefficient.
 
 **Syntax**
 
-``` sql
+```sql
 rankCorr(x, y)
 ```
 
@@ -30,13 +30,13 @@ Type: [Float64](/sql-reference/data-types/float).
 
 Query:
 
-``` sql
+```sql
 SELECT rankCorr(number, number) FROM numbers(100);
 ```
 
 Result:
 
-``` text
+```text
 ┌─rankCorr(number, number)─┐
 │                        1 │
 └──────────────────────────┘
@@ -44,13 +44,13 @@ Result:
 
 Query:
 
-``` sql
+```sql
 SELECT roundBankers(rankCorr(exp(number), sin(number)), 3) FROM numbers(100);
 ```
 
 Result:
 
-``` text
+```text
 ┌─roundBankers(rankCorr(exp(number), sin(number)), 3)─┐
 │                                              -0.037 │
 └─────────────────────────────────────────────────────┘

@@ -178,6 +178,11 @@ void Chunk::append(const Chunk & chunk, size_t from, size_t length)
     setColumns(std::move(mutable_columns), rows);
 }
 
+void MarkRangesInfo::appendMarkRanges(const MarkRanges & mark_ranges_)
+{
+    mark_ranges.insert(mark_ranges.end(), mark_ranges_.begin(), mark_ranges_.end());
+}
+
 void convertToFullIfConst(Chunk & chunk)
 {
     size_t num_rows = chunk.getNumRows();

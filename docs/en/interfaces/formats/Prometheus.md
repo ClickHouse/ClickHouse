@@ -1,10 +1,11 @@
 ---
-title: Prometheus
-slug: /interfaces/formats/Prometheus
-keywords: [Prometheus]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the Prometheus format'
+input_format: false
+keywords: ['Prometheus']
+output_format: true
+slug: /interfaces/formats/Prometheus
+title: 'Prometheus'
 ---
 
 | Input | Output | Alias |

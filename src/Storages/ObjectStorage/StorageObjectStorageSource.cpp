@@ -217,6 +217,7 @@ void StorageObjectStorageSource::lazyInitialize()
 
 Chunk StorageObjectStorageSource::generate()
 {
+
     lazyInitialize();
 
     while (true)
@@ -242,6 +243,11 @@ Chunk StorageObjectStorageSource::generate()
 
             const auto & object_info = reader.getObjectInfo();
             const auto & filename = object_info->getFileName();
+            std::string full_path = object_info->getPath();
+
+            if (!full_path.starts_with(configuration->getPath()))
+                full_path = fs::path(configuration->getPath()) / object_info->getPath();
+
             chassert(object_info->metadata);
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
@@ -287,38 +293,44 @@ Chunk StorageObjectStorageSource::generate()
                     /// because the code will be removed ASAP anyway)
                     if (configuration->isDataLakeConfiguration())
                     {
-                        /// Delta lake supports only s3.
                         /// A terrible crutch, but it this code will be removed next month.
-                        if (auto * delta_conf = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
+                        DeltaLakePartitionColumns partition_columns;
+                        if (auto * delta_conf_s3 = dynamic_cast<StorageS3DeltaLakeConfiguration *>(configuration.get()))
                         {
-                            auto partition_columns = delta_conf->getDeltaLakePartitionColumns();
-                            if (!partition_columns.empty())
+                            partition_columns = delta_conf_s3->getDeltaLakePartitionColumns();
+                        }
+                        else if (auto * delta_conf_local = dynamic_cast<StorageLocalDeltaLakeConfiguration *>(configuration.get()))
+                        {
+                            partition_columns = delta_conf_local->getDeltaLakePartitionColumns();
+                        }
+                        if (!partition_columns.empty())
+                        {
+                            auto partition_values = partition_columns.find(full_path);
+                            if (partition_values != partition_columns.end())
                             {
-                                auto partition_values = partition_columns.find(filename);
-                                if (partition_values != partition_columns.end())
+                                for (const auto & [name_and_type, value] : partition_values->second)
                                 {
-                                    for (const auto & [name_and_type, value] : partition_values->second)
-                                    {
-                                        if (!read_from_format_info.source_header.has(name_and_type.name))
-                                            continue;
+                                    if (!read_from_format_info.source_header.has(name_and_type.name))
+                                        continue;
 
-                                        const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
-                                        auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
-                                        /// This column is filled with default value now, remove it.
-                                        chunk.erase(column_pos);
-                                        /// Add correct values.
-                                        if (column_pos < chunk.getNumColumns())
-                                            chunk.addColumn(column_pos, std::move(partition_column));
-                                        else
-                                            chunk.addColumn(std::move(partition_column));
-                                    }
+                                    const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
+                                    auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                                    /// This column is filled with default value now, remove it.
+                                    chunk.erase(column_pos);
+                                    /// Add correct values.
+                                    if (column_pos < chunk.getNumColumns())
+                                        chunk.addColumn(column_pos, std::move(partition_column));
+                                    else
+                                        chunk.addColumn(std::move(partition_column));
                                 }
                             }
                         }
+
                     }
 #endif
                 }
             }
+
             return chunk;
         }
 

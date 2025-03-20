@@ -1,9 +1,10 @@
 ---
-slug: /engines/database-engines/mysql
+description: 'Allows connecting to databases on a remote MySQL server and perform
+  `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL.'
+sidebar_label: 'MySQL'
 sidebar_position: 50
-sidebar_label: MySQL
-title: "MySQL"
-description: "Allows connecting to databases on a remote MySQL server and perform `INSERT` and `SELECT` queries to exchange data between ClickHouse and MySQL."
+slug: /engines/database-engines/mysql
+title: 'MySQL'
 ---
 
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -24,7 +25,7 @@ You cannot perform the following queries:
 
 ## Creating a Database {#creating-a-database}
 
-``` sql
+```sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 ```
@@ -72,7 +73,7 @@ By now these variables are stubs and don't correspond to anything.
 
 Example:
 
-``` sql
+```sql
 SELECT @@version;
 ```
 
@@ -80,7 +81,7 @@ SELECT @@version;
 
 Table in MySQL:
 
-``` text
+```text
 mysql> USE test;
 Database changed
 
@@ -104,15 +105,15 @@ mysql> select * from mysql_table;
 
 Database in ClickHouse, exchanging data with the MySQL server:
 
-``` sql
+```sql
 CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
 ```
 
-``` sql
+```sql
 SHOW DATABASES
 ```
 
-``` text
+```text
 ┌─name─────┐
 │ default  │
 │ mysql_db │
@@ -120,35 +121,35 @@ SHOW DATABASES
 └──────────┘
 ```
 
-``` sql
+```sql
 SHOW TABLES FROM mysql_db
 ```
 
-``` text
+```text
 ┌─name─────────┐
 │  mysql_table │
 └──────────────┘
 ```
 
-``` sql
+```sql
 SELECT * FROM mysql_db.mysql_table
 ```
 
-``` text
+```text
 ┌─int_id─┬─value─┐
 │      1 │     2 │
 └────────┴───────┘
 ```
 
-``` sql
+```sql
 INSERT INTO mysql_db.mysql_table VALUES (3,4)
 ```
 
-``` sql
+```sql
 SELECT * FROM mysql_db.mysql_table
 ```
 
-``` text
+```text
 ┌─int_id─┬─value─┐
 │      1 │     2 │
 │      3 │     4 │

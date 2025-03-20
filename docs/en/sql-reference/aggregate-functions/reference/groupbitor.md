@@ -1,15 +1,15 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/groupbitor
+description: 'Applies bit-wise `OR` to a series of numbers.'
 sidebar_position: 152
-title: "groupBitOr"
-description: "Applies bit-wise `OR` to a series of numbers."
+slug: /sql-reference/aggregate-functions/reference/groupbitor
+title: 'groupBitOr'
 ---
 
 # groupBitOr
 
 Applies bit-wise `OR` to a series of numbers.
 
-``` sql
+```sql
 groupBitOr(expr)
 ```
 
@@ -25,7 +25,7 @@ Value of the `UInt*` or `Int*` type.
 
 Test data:
 
-``` text
+```text
 binary     decimal
 00101100 = 44
 00011100 = 28
@@ -35,7 +35,7 @@ binary     decimal
 
 Query:
 
-``` sql
+```sql
 SELECT groupBitOr(num) FROM t
 ```
 
@@ -43,7 +43,7 @@ Where `num` is the column with the test data.
 
 Result:
 
-``` text
+```text
 binary     decimal
 01111101 = 125
 ```

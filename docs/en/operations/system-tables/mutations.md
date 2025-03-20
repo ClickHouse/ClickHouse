@@ -1,9 +1,12 @@
 ---
-description: "System table containing information about mutations of MergeTree tables and their progress. Each mutation command is represented by a single row."
+description: 'System table containing information about mutations of MergeTree tables
+  and their progress. Each mutation command is represented by a single row.'
+keywords: ['system table', 'mutations']
 slug: /operations/system-tables/mutations
-title: "system.mutations"
-keywords: ["system table", "mutations"]
+title: 'system.mutations'
 ---
+
+# system.mutations
 
 The table contains information about [mutations](/sql-reference/statements/alter/index.md#mutations) of [MergeTree](/engines/table-engines/mergetree-family/mergetree.md) tables and their progress. Each mutation command is represented by a single row.
 
@@ -55,7 +58,7 @@ If there were problems with mutating some data parts, the following columns cont
 
 To track the progress on the system.mutations table, use a query like the following - this requires read permissions on the system.* tables:
 
-``` sql
+```sql
 SELECT * FROM clusterAllReplicas('cluster_name', 'db', system.mutations)
 WHERE is_done=0 AND table='tmp';
 ```

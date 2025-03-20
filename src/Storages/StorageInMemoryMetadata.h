@@ -16,6 +16,7 @@
 namespace DB
 {
 
+class ClientInfo;
 class ASTSQLSecurity;
 
 /// Common metadata for all storages. Contains all possible parts of CREATE
@@ -122,7 +123,7 @@ struct StorageInMemoryMetadata
     /// Returns a copy of the context with the correct user from SQL security options.
     /// If the SQL security wasn't set, this is equivalent to `Context::createCopy(context)`.
     /// The context from this function must be used every time whenever views execute any read/write operations or subqueries.
-    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context) const;
+    ContextMutablePtr getSQLSecurityOverriddenContext(ContextPtr context, const ClientInfo * client_info = nullptr) const;
 
     /// Returns combined set of columns
     const ColumnsDescription & getColumns() const;

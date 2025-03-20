@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/statements/select/
+description: 'Documentation for SELECT Query'
+sidebar_label: 'SELECT'
 sidebar_position: 32
-sidebar_label: SELECT
+slug: /sql-reference/statements/select/
+title: 'SELECT Query'
 ---
 
 # SELECT Query
@@ -10,7 +12,7 @@ sidebar_label: SELECT
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 [WITH expr_list(subquery)]
 SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FROM [db.]table | (subquery) | table_function] [FINAL]
@@ -68,23 +70,23 @@ If you want to include all columns in the result, use the asterisk (`*`) symbol.
 
 Dynamic column selection (also known as a COLUMNS expression) allows you to match some columns in a result with a [re2](https://en.wikipedia.org/wiki/RE2_(software)) regular expression.
 
-``` sql
+```sql
 COLUMNS('regexp')
 ```
 
 For example, consider the table:
 
-``` sql
+```sql
 CREATE TABLE default.col_names (aa Int8, ab Int8, bc Int8) ENGINE = TinyLog
 ```
 
 The following query selects data from all the columns containing the `a` symbol in their name.
 
-``` sql
+```sql
 SELECT COLUMNS('a') FROM col_names
 ```
 
-``` text
+```text
 ┌─aa─┬─ab─┐
 │  1 │  1 │
 └────┴────┘
@@ -96,11 +98,11 @@ You can use multiple `COLUMNS` expressions in a query and apply functions to the
 
 For example:
 
-``` sql
+```sql
 SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
 ```
 
-``` text
+```text
 ┌─aa─┬─ab─┬─bc─┬─toTypeName(bc)─┐
 │  1 │  1 │  1 │ Int8           │
 └────┴────┴────┴────────────────┘
@@ -110,11 +112,11 @@ Each column returned by the `COLUMNS` expression is passed to the function as a 
 
 For example:
 
-``` sql
+```sql
 SELECT COLUMNS('a') + COLUMNS('c') FROM col_names
 ```
 
-``` text
+```text
 Received exception from server (version 19.14.1):
 Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus does not match: passed 3, should be 2.
 ```
@@ -205,7 +207,7 @@ Specifies the names of one or more columns to exclude from the result. All match
 
 **Syntax:**
 
-``` sql
+```sql
 SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
 ```
 
@@ -230,7 +232,7 @@ This modifier does not change the names or order of columns. However, it can cha
 
 **Syntax:**
 
-``` sql
+```sql
 SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
 ```
 

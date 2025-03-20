@@ -1,15 +1,15 @@
 ---
-description: "Dataset containing the on-time performance of airline flights"
+description: 'Dataset containing the on-time performance of airline flights'
+sidebar_label: 'OnTime Airline Flight Data'
 slug: /getting-started/example-datasets/ontime
-sidebar_label: OnTime Airline Flight Data
-title: "OnTime"
+title: 'OnTime'
 ---
 
 This dataset contains data from Bureau of Transportation Statistics.
 
 ## Creating a table {#creating-a-table}
 
-``` sql
+```sql
 CREATE TABLE `ontime`
 (
     `Year`                            UInt16,
@@ -129,13 +129,13 @@ CREATE TABLE `ontime`
 
 Downloading data:
 
-``` bash
+```bash
 wget --no-check-certificate --continue https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_{1987..2022}_{1..12}.zip
 ```
 
 Loading data with multiple threads:
 
-``` bash
+```bash
 ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | sed 's/\.00//g' | clickhouse-client --input_format_csv_empty_as_default 1 --query='INSERT INTO ontime FORMAT CSVWithNames'"
 ```
 
@@ -155,7 +155,7 @@ The snapshot was created on 2022-05-29.
 
 Q0.
 
-``` sql
+```sql
 SELECT avg(c1)
 FROM
 (
@@ -167,7 +167,7 @@ FROM
 
 Q1. The number of flights per day from the year 2000 to 2008
 
-``` sql
+```sql
 SELECT DayOfWeek, count(*) AS c
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
@@ -177,7 +177,7 @@ ORDER BY c DESC;
 
 Q2. The number of flights delayed by more than 10 minutes, grouped by the day of the week, for 2000-2008
 
-``` sql
+```sql
 SELECT DayOfWeek, count(*) AS c
 FROM ontime
 WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
@@ -187,7 +187,7 @@ ORDER BY c DESC;
 
 Q3. The number of delays by the airport for 2000-2008
 
-``` sql
+```sql
 SELECT Origin, count(*) AS c
 FROM ontime
 WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
@@ -198,7 +198,7 @@ LIMIT 10;
 
 Q4. The number of delays by carrier for 2007
 
-``` sql
+```sql
 SELECT IATA_CODE_Reporting_Airline AS Carrier, count(*)
 FROM ontime
 WHERE DepDelay>10 AND Year=2007
@@ -208,7 +208,7 @@ ORDER BY count(*) DESC;
 
 Q5. The percentage of delays by carrier for 2007
 
-``` sql
+```sql
 SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
@@ -234,7 +234,7 @@ ORDER BY c3 DESC;
 
 Better version of the same query:
 
-``` sql
+```sql
 SELECT IATA_CODE_Reporting_Airline AS Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year=2007
@@ -244,7 +244,7 @@ ORDER BY c3 DESC
 
 Q6. The previous request for a broader range of years, 2000-2008
 
-``` sql
+```sql
 SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
@@ -270,7 +270,7 @@ ORDER BY c3 DESC;
 
 Better version of the same query:
 
-``` sql
+```sql
 SELECT IATA_CODE_Reporting_Airline AS Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
@@ -280,7 +280,7 @@ ORDER BY c3 DESC;
 
 Q7. Percentage of flights delayed for more than 10 minutes, by year
 
-``` sql
+```sql
 SELECT Year, c1/c2
 FROM
 (
@@ -304,7 +304,7 @@ ORDER BY Year;
 
 Better version of the same query:
 
-``` sql
+```sql
 SELECT Year, avg(DepDelay>10)*100
 FROM ontime
 GROUP BY Year
@@ -313,7 +313,7 @@ ORDER BY Year;
 
 Q8. The most popular destinations by the number of directly connected cities for various year ranges
 
-``` sql
+```sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u
 FROM ontime
 WHERE Year >= 2000 and Year <= 2010
@@ -323,7 +323,7 @@ ORDER BY u DESC LIMIT 10;
 
 Q9.
 
-``` sql
+```sql
 SELECT Year, count(*) AS c1
 FROM ontime
 GROUP BY Year;
@@ -331,7 +331,7 @@ GROUP BY Year;
 
 Q10.
 
-``` sql
+```sql
 SELECT
    min(Year), max(Year), IATA_CODE_Reporting_Airline AS Carrier, count(*) AS cnt,
    sum(ArrDelayMinutes>30) AS flights_delayed,
@@ -349,7 +349,7 @@ LIMIT 1000;
 
 Bonus:
 
-``` sql
+```sql
 SELECT avg(cnt)
 FROM
 (

@@ -97,6 +97,7 @@ class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
+class VectorSimilarityIndexCache;
 class ProcessList;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
@@ -994,15 +995,20 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
+    size_t getMaxTableNumToWarn() const;
+    size_t getMaxViewNumToWarn() const;
+    size_t getMaxDictionaryNumToWarn() const;
+    size_t getMaxDatabaseNumToWarn() const;
+    size_t getMaxPartNumToWarn() const;
+    size_t getMaxPendingMutationsToWarn() const;
+
     void setMaxTableNumToWarn(size_t max_table_to_warn);
     void setMaxViewNumToWarn(size_t max_view_to_warn);
     void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
     void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
     void setMaxPartNumToWarn(size_t max_part_to_warn);
-
-    // Following are based on asynchronous metrics
+    // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
-    size_t getMaxPendingMutationsToWarn() const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1133,7 +1139,8 @@ public:
     void setPageCache(
         size_t default_block_size, size_t default_lookahead_blocks,
         std::chrono::milliseconds history_window, const String & cache_policy, double size_ratio,
-        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio);
+        size_t min_size_in_bytes, size_t max_size_in_bytes, double free_memory_ratio,
+        size_t num_shards);
     std::shared_ptr<PageCache> getPageCache() const;
     void clearPageCache() const;
 
@@ -1157,6 +1164,11 @@ public:
     void updateIndexMarkCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
     std::shared_ptr<MarkCache> getIndexMarkCache() const;
     void clearIndexMarkCache() const;
+
+    void setVectorSimilarityIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_entries, double size_ratio);
+    void updateVectorSimilarityIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
+    std::shared_ptr<VectorSimilarityIndexCache> getVectorSimilarityIndexCache() const;
+    void clearVectorSimilarityIndexCache() const;
 
     void setMMappedFileCache(size_t max_cache_size_in_num_entries);
     void updateMMappedFileCacheConfiguration(const Poco::Util::AbstractConfiguration & config);
@@ -1336,7 +1348,6 @@ public:
     {
         SERVER,         /// The program is run as clickhouse-server daemon (default behavior)
         CLIENT,         /// clickhouse-client
-        EMBEDDED_CLIENT,/// clickhouse-client being run over SSH tunnel
         LOCAL,          /// clickhouse-local
         KEEPER,         /// clickhouse-keeper (also daemon)
         DISKS,          /// clickhouse-disks

@@ -162,7 +162,7 @@ if (TARGET ch_contrib::hdfs)
     add_headers_and_sources(dbms Disks/ObjectStorages/HDFS)
 endif()
 
-add_headers_and_sources(dbms Databases/Iceberg)
+add_headers_and_sources(dbms Databases/DataLake)
 
 add_headers_and_sources(dbms Disks/ObjectStorages/Cached)
 add_headers_and_sources(dbms Disks/ObjectStorages/Local)
@@ -456,10 +456,6 @@ dbms_target_link_libraries (
         clickhouse_common_io
         Poco::Redis
 )
-
-if (USE_MONGODB)
-    dbms_target_link_libraries (PUBLIC Poco::MongoDB)
-endif()
 
 if (TARGET ch_contrib::mongocxx)
     dbms_target_link_libraries(
