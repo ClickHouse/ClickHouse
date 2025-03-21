@@ -60,7 +60,7 @@ See [`max_rows_to_read`](/operations/settings/settings#max_rows_to_read)
 
 ## max_bytes_to_read {#max-bytes-to-read}
 
-A maximum number of bytes (uncompressed data) that can be read from a table when running a query.
+See [`max_bytes_to_read`](/operations/settings/settings#max_bytes_to_read)
 
 ## read_overflow_mode {#read-overflow-mode}
 
