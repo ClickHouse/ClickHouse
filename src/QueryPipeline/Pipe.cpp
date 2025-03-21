@@ -730,7 +730,7 @@ void Pipe::addSplitResizeTransform(size_t num_streams, size_t groups, bool stric
     max_parallel_streams = std::max<size_t>(max_parallel_streams, output_ports.size());
 }
 
-void Pipe::resize(size_t num_streams, bool strict)
+void Pipe::resize(size_t num_streams, bool strict, UInt64 min_outstreams_per_resize_after_split)
 {
     if (output_ports.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot resize an empty Pipe");
@@ -756,10 +756,9 @@ void Pipe::resize(size_t num_streams, bool strict)
     /// 1. Mitigates lock contention.
     /// 2. Maintains ResizeProcessor's benefit of balancing data flow among multiple streams.
     {
-        constexpr size_t RESIZE_SPLIT_THRESHOLD = 24;
         size_t groups = 2;
 
-        while (!(num_streams % groups) && !(numOutputPorts() % groups) && num_streams / groups >= RESIZE_SPLIT_THRESHOLD)
+        while (!(num_streams % groups) && !(numOutputPorts() % groups) && num_streams / groups >= min_outstreams_per_resize_after_split)
             groups <<= 1;
         groups >>= 1;
 
