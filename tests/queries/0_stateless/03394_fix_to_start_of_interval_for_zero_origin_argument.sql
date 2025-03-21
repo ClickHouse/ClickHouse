@@ -1,4 +1,4 @@
-SET session_timezone = 'Europe/Amsterdam';
+SET session_timezone = 'UTC';
 
 SELECT toStartOfInterval(
     toDateTime64('2024-03-13 11:29:01.000000', 6, 'Europe/Rome'),
