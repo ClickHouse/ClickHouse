@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/data-types/lowcardinality
+description: 'Documentation for the LowCardinality optimization for string columns'
+sidebar_label: 'LowCardinality(T)'
 sidebar_position: 42
-sidebar_label: LowCardinality(T)
+slug: /sql-reference/data-types/lowcardinality
+title: 'LowCardinality(T)'
 ---
 
 # LowCardinality(T)
@@ -10,13 +12,13 @@ Changes the internal representation of other data types to be dictionary-encoded
 
 ## Syntax {#syntax}
 
-``` sql
+```sql
 LowCardinality(data_type)
 ```
 
 **Parameters**
 
-- `data_type` — [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), and numbers excepting [Decimal](../../sql-reference/data-types/decimal.md). `LowCardinality` is not efficient for some data types, see the [allow_suspicious_low_cardinality_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types) setting description.
+- `data_type` — [String](../../sql-reference/data-types/string.md), [FixedString](../../sql-reference/data-types/fixedstring.md), [Date](../../sql-reference/data-types/date.md), [DateTime](../../sql-reference/data-types/datetime.md), and numbers including [Decimal](../../sql-reference/data-types/decimal.md). `LowCardinality` is not efficient for some data types, see the [allow_suspicious_low_cardinality_types](../../operations/settings/settings.md#allow_suspicious_low_cardinality_types) setting description.
 
 ## Description {#description}
 
@@ -30,7 +32,7 @@ Consider using `LowCardinality` instead of [Enum](../../sql-reference/data-types
 
 Create a table with a `LowCardinality`-column:
 
-``` sql
+```sql
 CREATE TABLE lc_t
 (
     `id` UInt16,

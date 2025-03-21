@@ -1,8 +1,8 @@
 ---
-title: Distributed DDL Queries (ON CLUSTER Clause)
+description: 'Documentation for Distributed Ddl'
+sidebar_label: 'Distributed DDL'
 slug: /sql-reference/other/distributed-ddl
-description: Page for Distributed DDL
-sidebar_label: Distributed DDL
+title: 'Page for Distributed DDL'
 ---
 
 import Content from '@site/docs/sql-reference/distributed-ddl.md';

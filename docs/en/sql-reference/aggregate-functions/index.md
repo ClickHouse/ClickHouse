@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/
-sidebar_label: Aggregate Functions
+description: 'Documentation for Aggregate Functions'
+sidebar_label: 'Aggregate Functions'
 sidebar_position: 33
+slug: /sql-reference/aggregate-functions/
+title: 'Aggregate Functions'
 ---
 
 # Aggregate Functions
@@ -24,7 +26,7 @@ There is an exception to this rule, which are the functions [`first_value`](../.
 
 Consider this table:
 
-``` text
+```text
 ┌─x─┬────y─┐
 │ 1 │    2 │
 │ 2 │ ᴺᵁᴸᴸ │
@@ -36,7 +38,7 @@ Consider this table:
 
 Let's say you need to total the values in the `y` column:
 
-``` sql
+```sql
 SELECT sum(y) FROM t_null_big
 ```
 
@@ -48,11 +50,11 @@ SELECT sum(y) FROM t_null_big
 
 Now you can use the `groupArray` function to create an array from the `y` column:
 
-``` sql
+```sql
 SELECT groupArray(y) FROM t_null_big
 ```
 
-``` text
+```text
 ┌─groupArray(y)─┐
 │ [2,2,3]       │
 └───────────────┘
@@ -62,14 +64,14 @@ SELECT groupArray(y) FROM t_null_big
 
 You can use [COALESCE](../../sql-reference/functions/functions-for-nulls.md#coalesce) to change NULL into a value that makes sense in your use case. For example: `avg(COALESCE(column, 0))` with use the column value in the aggregation or zero if NULL:
 
-``` sql
+```sql
 SELECT
     avg(y),
     avg(coalesce(y, 0))
 FROM t_null_big
 ```
 
-``` text
+```text
 ┌─────────────avg(y)─┬─avg(coalesce(y, 0))─┐
 │ 2.3333333333333335 │                 1.4 │
 └────────────────────┴─────────────────────┘

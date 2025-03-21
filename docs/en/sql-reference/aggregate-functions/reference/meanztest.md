@@ -1,9 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/meanztest
+description: 'Applies mean z-test to samples from two populations.'
+sidebar_label: 'meanZTest'
 sidebar_position: 166
-sidebar_label: meanZTest
-title: "meanZTest"
-description: "Applies mean z-test to samples from two populations."
+slug: /sql-reference/aggregate-functions/reference/meanztest
+title: 'meanZTest'
 ---
 
 # meanZTest
@@ -12,7 +12,7 @@ Applies mean z-test to samples from two populations.
 
 **Syntax**
 
-``` sql
+```sql
 meanZTest(population_variance_x, population_variance_y, confidence_level)(sample_data, sample_index)
 ```
 
@@ -44,7 +44,7 @@ The null hypothesis is that means of populations are equal. Normal distribution 
 
 Input table:
 
-``` text
+```text
 ┌─sample_data─┬─sample_index─┐
 │        20.3 │            0 │
 │        21.9 │            0 │
@@ -57,13 +57,13 @@ Input table:
 
 Query:
 
-``` sql
+```sql
 SELECT meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index) FROM mean_ztest
 ```
 
 Result:
 
-``` text
+```text
 ┌─meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index)────────────────────────────┐
 │ (3.2841296025548123,0.0010229786769086013,0.8198428246768334,3.2468238419898365) │
 └──────────────────────────────────────────────────────────────────────────────────┘

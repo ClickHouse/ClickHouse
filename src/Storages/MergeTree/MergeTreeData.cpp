@@ -49,6 +49,7 @@
 #include <Interpreters/Aggregator.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
@@ -68,7 +69,6 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/parseQuery.h>
-#include <Parsers/queryToString.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/QueryPlan/QueryIdHolder.h>
@@ -89,8 +89,8 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularityAdaptive.h>
+#include <Storages/MaterializedView/RefreshSet.h>
 
-#include <boost/range/algorithm_ext/erase.hpp>
 #include <boost/algorithm/string/join.hpp>
 
 #include <base/insertAtEnd.h>
@@ -295,6 +295,7 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
+    extern const int TABLE_IS_READ_ONLY;
 }
 
 static void checkSuspiciousIndices(const ASTFunction * index_function)
@@ -302,7 +303,7 @@ static void checkSuspiciousIndices(const ASTFunction * index_function)
     std::unordered_set<UInt64> unique_index_expression_hashes;
     for (const auto & child : index_function->arguments->children)
     {
-        const IAST::Hash hash = child->getTreeHash(/*ignore_aliases=*/ true);
+        const IASTHash hash = child->getTreeHash(/*ignore_aliases=*/ true);
         const auto & first_half_of_hash = hash.low64;
 
         if (!unique_index_expression_hashes.emplace(first_half_of_hash).second)
@@ -3515,7 +3516,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                             "The following alter commands: '{}' will modify data on disk, "
                             "but setting `allow_non_metadata_alters` is disabled",
-                            queryToString(mutation_commands.ast()));
+                            mutation_commands.ast()->formatForErrorMessage());
     }
 
     /// Block the case of alter table add projection for special merge trees.
@@ -6098,10 +6099,50 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         reservation->update(reservation->getSize() - file_size);
     }
 
-    if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
-        restored_parts_holder->addPart(part);
-    else
-        restored_parts_holder->increaseNumBrokenParts();
+    try
+    {
+        if (auto part = loadPartRestoredFromBackup(part_name, disk, temp_part_dir, detach_if_broken))
+            restored_parts_holder->addPart(part);
+        else
+            restored_parts_holder->increaseNumBrokenParts();
+    }
+    catch (Exception & e)
+    {
+        if (e.code() == ErrorCodes::TABLE_IS_READ_ONLY && is_dropped)
+        {
+            /// A hack to work around a race condition:
+            ///  1. RESTORE creates a refreshable materialized view and its target table.
+            ///  2. The view does a refresh and exchanges+drops the target table.
+            ///  3. RESTORE tries to restore target table's data from backup and fails because the table
+            ///     is dropped.
+            ///
+            /// (This can also happen without refreshable materialized view if the user just drops a
+            ///  table during RESTORE, so it may make sense to always ignore this error. But that
+            ///  feels sketchy as it may hide a bug.)
+            ///
+            /// For refreshable MV, this doesn't fully solve the problem. The initial refresh that
+            /// replaces the table usually happens early enough that the *source* table (from which
+            /// the refresh query reads) is still empty, not restored from backup yet. So the
+            /// refresh target table ends up empty until the next scheduled refresh.
+            /// TODO: Figure out a better way to deal with RMV backups. Maybe RESTORE should create
+            ///       RMVs after restoring all other tables (including RMVs' .inner_id.<uuid> tables,
+            ///       somehow).
+            StorageID storage_id = getStorageID();
+            if (storage_id.table_name.starts_with(".tmp") ||
+                getContext()->getRefreshSet().tryGetTaskForInnerTable(storage_id) != nullptr)
+            {
+                LOG_INFO(log, "Table was dropped during RESTORE, presumably by refreshable materialized view.");
+            }
+            else
+            {
+                throw;
+            }
+        }
+        else
+        {
+            throw;
+        }
+    }
 }
 
 MergeTreeData::MutableDataPartPtr MergeTreeData::loadPartRestoredFromBackup(const String & part_name, const DiskPtr & disk, const String & temp_part_dir, bool detach_if_broken) const
@@ -7713,7 +7754,7 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     auto query_to_string = [] (const ASTPtr & ast)
     {
-        return ast ? queryToString(ast) : "";
+        return ast ? ast->formatWithSecretsOneLine() : "";
     };
 
     if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
@@ -7736,10 +7777,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
         std::unordered_set<std::string> my_query_strings;
         for (const auto & description : my_descriptions)
-            my_query_strings.insert(queryToString(description.definition_ast));
+            my_query_strings.insert(description.definition_ast->formatWithSecretsOneLine());
 
         for (const auto & src_description : src_descriptions)
-            if (!my_query_strings.contains(queryToString(src_description.definition_ast)))
+            if (!my_query_strings.contains(src_description.definition_ast->formatWithSecretsOneLine()))
                 return false;
 
         return true;

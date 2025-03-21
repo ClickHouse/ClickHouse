@@ -1,8 +1,8 @@
 ---
-description: "The RecipeNLG dataset, containing 2.2 million recipes"
+description: 'The RecipeNLG dataset, containing 2.2 million recipes'
+sidebar_label: 'Recipes Dataset'
 slug: /getting-started/example-datasets/recipes
-sidebar_label: Recipes Dataset
-title: "Recipes Dataset"
+title: 'Recipes Dataset'
 ---
 
 The RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.poznan.pl/dataset). It contains 2.2 million recipes. The size is slightly less than 1 GB.
@@ -18,7 +18,7 @@ The RecipeNLG dataset is available for download [here](https://recipenlg.cs.put.
 
 Run clickhouse-client and execute the following CREATE query:
 
-``` sql
+```sql
 CREATE TABLE recipes
 (
     title String,
@@ -34,7 +34,7 @@ CREATE TABLE recipes
 
 Run the following command:
 
-``` bash
+```bash
 clickhouse-client --query "
     INSERT INTO recipes
     SELECT
@@ -66,13 +66,13 @@ By checking the row count:
 
 Query:
 
-``` sql
+```sql
 SELECT count() FROM recipes;
 ```
 
 Result:
 
-``` text
+```text
 ┌─count()─┐
 │ 2231142 │
 └─────────┘
@@ -86,7 +86,7 @@ In this example we learn how to use [arrayJoin](../../sql-reference/functions/ar
 
 Query:
 
-``` sql
+```sql
 SELECT
     arrayJoin(NER) AS k,
     count() AS c
@@ -98,7 +98,7 @@ LIMIT 50
 
 Result:
 
-``` text
+```text
 ┌─k────────────────────┬──────c─┐
 │ salt                 │ 890741 │
 │ sugar                │ 620027 │
@@ -157,7 +157,7 @@ Result:
 
 ### The Most Complex Recipes with Strawberry {#the-most-complex-recipes-with-strawberry}
 
-``` sql
+```sql
 SELECT
     title,
     length(NER),
@@ -170,7 +170,7 @@ LIMIT 10
 
 Result:
 
-``` text
+```text
 ┌─title────────────────────────────────────────────────────────────┬─length(NER)─┬─length(directions)─┐
 │ Chocolate-Strawberry-Orange Wedding Cake                         │          24 │                126 │
 │ Strawberry Cream Cheese Crumble Tart                             │          19 │                 47 │
@@ -193,7 +193,7 @@ There is a wedding cake that requires the whole 126 steps to produce! Show that 
 
 Query:
 
-``` sql
+```sql
 SELECT arrayJoin(directions)
 FROM recipes
 WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake'
@@ -201,7 +201,7 @@ WHERE title = 'Chocolate-Strawberry-Orange Wedding Cake'
 
 Result:
 
-``` text
+```text
 ┌─arrayJoin(directions)───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Position 1 rack in center and 1 rack in bottom third of oven and preheat to 350F.                                                                                           │
 │ Butter one 5-inch-diameter cake pan with 2-inch-high sides, one 8-inch-diameter cake pan with 2-inch-high sides and one 12-inch-diameter cake pan with 2-inch-high sides.   │

@@ -1,10 +1,14 @@
 ---
-description: "System table containing information about threads that execute queries, for example, thread name, thread start time, duration of query processing."
+description: 'System table containing information about threads that execute queries,
+  for example, thread name, thread start time, duration of query processing.'
+keywords: ['system table', 'query_thread_log']
 slug: /operations/system-tables/query_thread_log
-title: "system.query_thread_log"
-keywords: ["system table", "query_thread_log"]
+title: 'system.query_thread_log'
 ---
+
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';
+
+# system.query_thread_log
 
 <SystemTableCloud/>
 
@@ -72,11 +76,11 @@ Columns:
 
 **Example**
 
-``` sql
+```sql
  SELECT * FROM system.query_thread_log LIMIT 1 \G
 ```
 
-``` text
+```text
 Row 1:
 ──────
 hostname:                      clickhouse.eu-central1.internal

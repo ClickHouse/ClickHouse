@@ -1,10 +1,12 @@
 ---
-slug: /interfaces/cli
+description: 'Documentation for the ClickHouse command-line client interface'
+sidebar_label: 'ClickHouse Client'
 sidebar_position: 17
-sidebar_label: ClickHouse Client
-title: ClickHouse Client
+slug: /interfaces/cli
+title: 'ClickHouse Client'
 ---
 
+import Image from '@theme/IdealImage';
 import cloud_connect_button from '@site/static/images/_snippets/cloud-connect-button.png';
 import connection_details_native from '@site/static/images/_snippets/connection-details-native.png'
 
@@ -70,19 +72,19 @@ For a complete list of command-line options, see [Command Line Options](#command
 
 The details for your ClickHouse Cloud service are available in the ClickHouse Cloud console. Select the service that you want to connect to and click **Connect**:
 
-<img src={cloud_connect_button}
-  class="image"
+<Image img={cloud_connect_button}
+  size="md"
   alt="ClickHouse Cloud service connect button"
-  style={{width: '30em'}} />
+/>
 
 <br/><br/>
 
 Choose **Native**, and the details are shown with an example `clickhouse-client` command:
 
-<img src={connection_details_native}
-  class="image"
+<Image img={connection_details_native}
+  size="md"
   alt="ClickHouse Cloud Native TCP connection details"
-  style={{width: '40em'}} />
+/>
 
 
 ### Storing connections in a configuration file {#connection-credentials}
@@ -108,7 +110,6 @@ See the [section on configuration files](#configuration_files) for more informat
 :::note
 To concentrate on the query syntax, the rest of the examples leave off the connection details (`--host`, `--port`, etc.). Remember to add them when you use the commands.
 :::
-
 
 ## Batch mode {#batch-mode}
 
@@ -158,7 +159,7 @@ clickhouse-client --host HOSTNAME.clickhouse.cloud \
 
 **More examples of inserting data**
 
-``` bash
+```bash
 echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | \
   clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
@@ -205,12 +206,12 @@ ClickHouse Client allows passing external data (external temporary tables) for q
 
 You can specify parameters in a query and pass values to it with command-line options. This avoids formatting a query with specific dynamic values on the client side. For example:
 
-``` bash
+```bash
 $ clickhouse-client --param_parName="[1, 2]" --query "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
 It is also possible to set parameters from within an interactive session:
-``` bash
+```bash
 $ clickhouse-client --query "SET param_parName='[1, 2]'; SELECT {parName:Array(UInt16)}"
 ```
 
@@ -218,7 +219,7 @@ $ clickhouse-client --query "SET param_parName='[1, 2]'; SELECT {parName:Array(U
 
 In the query, place the values that you want to fill using command-line parameters in braces in the following format:
 
-``` sql
+```sql
 {<name>:<data type>}
 ```
 
@@ -227,7 +228,7 @@ In the query, place the values that you want to fill using command-line paramete
 
 ### Examples {#cli-queries-with-parameters-examples}
 
-``` bash
+```bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
     --query "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
 
@@ -299,31 +300,31 @@ Non-US ASCII, spaces and special characters in the `user`, `password`, `hosts`, 
 
 Connect to `localhost` on port 9000 and execute the query `SELECT 1`.
 
-``` bash
+```bash
 clickhouse-client clickhouse://localhost:9000 --query "SELECT 1"
 ```
 
 Connect to `localhost` as user `john` with password `secret`, host `127.0.0.1` and port `9000`
 
-``` bash
+```bash
 clickhouse-client clickhouse://john:secret@127.0.0.1:9000
 ```
 
 Connect to `localhost` as the `default` user, host with IPV6 address `[::1]` and port `9000`.
 
-``` bash
+```bash
 clickhouse-client clickhouse://[::1]:9000
 ```
 
 Connect to `localhost` on port 9000 in multiline mode.
 
-``` bash
+```bash
 clickhouse-client clickhouse://localhost:9000 '-m'
 ```
 
 Connect to `localhost` using port 9000 as the user `default`.
 
-``` bash
+```bash
 clickhouse-client clickhouse://default@localhost:9000
 
 # equivalent to:
@@ -332,7 +333,7 @@ clickhouse-client clickhouse://localhost:9000 --user default
 
 Connect to `localhost` on port 9000 and default to the `my_database` database.
 
-``` bash
+```bash
 clickhouse-client clickhouse://localhost:9000/my_database
 
 # equivalent to:
@@ -350,13 +351,13 @@ clickhouse-client clickhouse://localhost/my_database -s
 
 Connect to the default host using the default port, the default user, and the default database.
 
-``` bash
+```bash
 clickhouse-client clickhouse:
 ```
 
 Connect to the default host using the default port, as the user `my_user` and no password.
 
-``` bash
+```bash
 clickhouse-client clickhouse://my_user@
 
 # Using a blank password between : and @ means to asking the user to enter the password before starting the connection.
@@ -365,13 +366,13 @@ clickhouse-client clickhouse://my_user:@
 
 Connect to `localhost` using the email as the user name. `@` symbol is percent encoded to `%40`.
 
-``` bash
+```bash
 clickhouse-client clickhouse://some_user%40some_mail.com@localhost:9000
 ```
 
 Connect to one of two hosts: `192.168.1.15`, `192.168.1.25`.
 
-``` bash
+```bash
 clickhouse-client clickhouse://192.168.1.15,192.168.1.25
 ```
 

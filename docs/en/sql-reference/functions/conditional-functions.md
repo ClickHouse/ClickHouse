@@ -1,7 +1,9 @@
 ---
-slug: /sql-reference/functions/conditional-functions
+description: 'Documentation for Conditional Functions'
+sidebar_label: 'Conditional'
 sidebar_position: 40
-sidebar_label: Conditional
+slug: /sql-reference/functions/conditional-functions
+title: 'Conditional Functions'
 ---
 
 # Conditional Functions
@@ -18,7 +20,7 @@ Setting [short_circuit_function_evaluation](/operations/settings/settings#short_
 
 **Syntax**
 
-``` sql
+```sql
 if(cond, then, else)
 ```
 Alias: `cond ? then : else` (ternary operator)
@@ -35,13 +37,13 @@ The result of either the `then` and `else` expressions, depending on condition `
 
 **Example**
 
-``` sql
+```sql
 SELECT if(1, plus(2, 2), plus(2, 6));
 ```
 
 Result:
 
-``` text
+```text
 ┌─plus(2, 2)─┐
 │          4 │
 └────────────┘
@@ -53,7 +55,7 @@ Allows to write the [CASE](../../sql-reference/operators/index.md#conditional-ex
 
 **Syntax**
 
-``` sql
+```sql
 multiIf(cond_1, then_1, cond_2, then_2, ..., else)
 ```
 
@@ -74,7 +76,7 @@ The result of either any of the `then_N` or `else` expressions, depending on the
 
 Assuming this table:
 
-``` text
+```text
 ┌─left─┬─right─┐
 │ ᴺᵁᴸᴸ │     4 │
 │    1 │     3 │
@@ -84,7 +86,7 @@ Assuming this table:
 └──────┴───────┘
 ```
 
-``` sql
+```sql
 SELECT
     left,
     right,
@@ -104,7 +106,7 @@ FROM LEFT_RIGHT
 
 Conditionals always result to `0`, `1` or `NULL`. So you can use conditional results directly like this:
 
-``` sql
+```sql
 SELECT left < right AS is_small
 FROM LEFT_RIGHT
 
@@ -121,7 +123,7 @@ FROM LEFT_RIGHT
 
 When `NULL` values are involved in conditionals, the result will also be `NULL`.
 
-``` sql
+```sql
 SELECT
     NULL < 1,
     2 < NULL,
@@ -137,7 +139,7 @@ So you should construct your queries carefully if the types are `Nullable`.
 
 The following example demonstrates this by failing to add equals condition to `multiIf`.
 
-``` sql
+```sql
 SELECT
     left,
     right,
@@ -241,7 +243,7 @@ Constrain the return value between A and B.
 
 **Syntax**
 
-``` sql
+```sql
 clamp(value, min, max)
 ```
 

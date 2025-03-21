@@ -1,9 +1,10 @@
 ---
-slug: /sql-reference/table-functions/mongodb
+description: 'Allows `SELECT` queries to be performed on data that is stored on a
+  remote MongoDB server.'
+sidebar_label: 'mongodb'
 sidebar_position: 135
-sidebar_label: mongodb
-title: "mongodb"
-description: "Allows `SELECT` queries to be performed on data that is stored on a remote MongoDB server."
+slug: /sql-reference/table-functions/mongodb
+title: 'mongodb'
 ---
 
 # mongodb Table Function
@@ -12,7 +13,7 @@ Allows `SELECT` queries to be performed on data that is stored on a remote Mongo
 
 **Syntax**
 
-``` sql
+```sql
 mongodb(host:port, database, collection, user, password, structure[, options[, oid_columns]])
 ```
 
@@ -44,7 +45,7 @@ If you are using the MongoDB Atlas cloud offering please add these options:
 
 You can also connect by URI:
 
-``` sql
+```sql
 mongodb(uri, collection, structure[, oid_columns])
 ```
 

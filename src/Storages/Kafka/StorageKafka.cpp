@@ -2,6 +2,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -287,6 +288,10 @@ void StorageKafka::startup()
 
 void StorageKafka::shutdown(bool)
 {
+    // Interrupt streaming, inform consumers to stop
+    for (auto & task : tasks)
+        task->stream_cancelled = true;
+
     shutdown_called = true;
     cleanup_cv.notify_one();
 
@@ -306,9 +311,6 @@ void StorageKafka::shutdown(bool)
         Stopwatch watch;
         for (auto & task : tasks)
         {
-            // Interrupt streaming thread
-            task->stream_cancelled = true;
-
             LOG_TEST(log, "Waiting for cleanup of a task");
             task->holder->deactivate();
         }

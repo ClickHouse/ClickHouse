@@ -25,7 +25,7 @@ SELECT count(*) FROM file('$CURDIR/data_hive/partitioning/number=42/date=2020-01
 $CLICKHOUSE_LOCAL -q """
 set use_hive_partitioning = 1;
 
-SELECT identifier FROM file('$CURDIR/data_hive/partitioning/identifier=*/email.csv') LIMIT 2;
+SELECT identifier FROM file('$CURDIR/data_hive/partitioning/identifier=*/email.csv') ORDER BY identifier DESC LIMIT 2;
 SELECT a FROM file('$CURDIR/data_hive/partitioning/a=b/a=b/sample.parquet') LIMIT 1;
 """
 

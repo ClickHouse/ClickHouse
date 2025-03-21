@@ -9,13 +9,13 @@
 #include <Common/typeid_cast.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Processors/Chunk.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Interpreters/Cache/QueryConditionCache.h>
 #include <city.h>
 
 namespace
@@ -165,21 +165,24 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         {
             if (!task || algorithm->needNewTask(*task))
             {
-                if (task && prewhere_info && reader_settings.use_query_condition_cache)
+                /// Update the query condition cache for filters in PREWHERE stage
+                if (reader_settings.use_query_condition_cache && task && prewhere_info)
                 {
-                    for (const auto * dag : prewhere_info->prewhere_actions.getOutputs())
+                    for (const auto * outputs : prewhere_info->prewhere_actions.getOutputs())
                     {
-                        if (dag->result_name == prewhere_info->prewhere_column_name)
+                        if (outputs->result_name == prewhere_info->prewhere_column_name)
                         {
-                            auto data_part = task->getInfo().data_part;
-                            auto storage_id = data_part->storage.getStorageID();
                             auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
-                            query_condition_cache->write(storage_id.uuid,
+                            auto data_part = task->getInfo().data_part;
+
+                            query_condition_cache->write(
+                                data_part->storage.getStorageID().uuid,
                                 data_part->name,
-                                dag->getHash(),
-                                task->getPreWhereUnmatchedMarks(),
+                                outputs->getHash(),
+                                task->getPrewhereUnmatchedMarks(),
                                 data_part->index_granularity->getMarksCount(),
                                 data_part->index_granularity->hasFinalMark());
+
                             break;
                         }
                     }
@@ -221,13 +224,11 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
 
             if (reader_settings.use_query_condition_cache)
             {
-                chunk.getChunkInfos().add(std::make_shared<MarkRangesInfo>(data_part, res.read_mark_ranges));
-                LOG_DEBUG(
-                    log,
-                    "Chunk mark ranges info, part_name: {}, num_read_rows: {}, ranges: {}",
-                    data_part->name,
-                    res.num_read_rows,
-                    toString(res.read_mark_ranges));
+                chunk.getChunkInfos().add(
+                    std::make_shared<MarkRangesInfo>(
+                        data_part->storage.getStorageID().uuid, data_part->name,
+                        data_part->index_granularity->getMarksCount(), data_part->index_granularity->hasFinalMark(),
+                        res.read_mark_ranges));
             }
 
             return ChunkAndProgress{
@@ -236,8 +237,9 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 .num_read_bytes = res.num_read_bytes,
                 .is_finished = false};
         }
+
         if (reader_settings.use_query_condition_cache && prewhere_info)
-            task->addPreWhereUnmatchedMarks(res.read_mark_ranges);
+            task->addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
         return {Chunk(), res.num_read_rows, res.num_read_bytes, false};
     }

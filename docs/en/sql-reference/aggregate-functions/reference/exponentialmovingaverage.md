@@ -1,8 +1,9 @@
 ---
-slug: /sql-reference/aggregate-functions/reference/exponentialMovingAverage
+description: 'Calculates the exponential moving average of values for the determined
+  time.'
 sidebar_position: 132
-title: "exponentialMovingAverage"
-description: "Calculates the exponential moving average of values for the determined time."
+slug: /sql-reference/aggregate-functions/reference/exponentialMovingAverage
+title: 'exponentialMovingAverage'
 ---
 
 ## exponentialMovingAverage {#exponentialmovingaverage}
@@ -36,7 +37,7 @@ Type: [Float64](/sql-reference/data-types/float).
 
 Input table:
 
-``` text
+```text
 ┌──temperature─┬─timestamp──┐
 │          95  │         1  │
 │          95  │         2  │
@@ -69,7 +70,7 @@ SELECT exponentialMovingAverage(5)(temperature, timestamp);
 
 Result:
 
-``` text
+```text
 ┌──exponentialMovingAverage(5)(temperature, timestamp)──┐
 │                                    92.25779635374204  │
 └───────────────────────────────────────────────────────┘
@@ -95,7 +96,7 @@ FROM
 
 Result:
 
-``` text
+```text
 ┌─value─┬─time─┬─round(exp_smooth, 3)─┬─bar────────────────────────────────────────┐
 │     1 │    0 │                0.067 │ ███▎                                       │
 │     0 │    1 │                0.062 │ ███                                        │

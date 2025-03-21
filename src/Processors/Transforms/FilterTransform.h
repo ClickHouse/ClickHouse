@@ -1,6 +1,7 @@
 #pragma once
 #include <Processors/ISimpleTransform.h>
 #include <Columns/FilterDescription.h>
+#include <Storages/MergeTree/MarkRange.h>
 
 namespace DB
 {
@@ -46,9 +47,10 @@ private:
 
     std::shared_ptr<std::atomic<size_t>> rows_filtered;
 
-    /// If `condition_hash` is not null, the query condition cache needs to be updated at runtime.
-    std::optional<size_t> condition_hash;
+    std::optional<size_t> condition_hash; /// If set, we need to update the query condition cache at runtime for every processed chunk
     std::shared_ptr<QueryConditionCache> query_condition_cache;
+    MarkRangesInfoPtr buffered_mark_ranges_info; /// Buffers mark info for chunks from the same table and part.
+                                                 /// The goal is to write less often into the query condition cache (reduce lock contention).
 
     /// Header after expression, but before removing filter column.
     Block transformed_header;
@@ -57,6 +59,8 @@ private:
 
     void doTransform(Chunk & chunk);
     void removeFilterIfNeed(Columns & columns) const;
+
+    void writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info);
 };
 
 }

@@ -11,6 +11,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -860,7 +861,6 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         = settings[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability];
     std::bernoulli_distribution fault(read_split_ranges_into_intersecting_and_non_intersecting_injection_probability);
 
-    /// When query condition cache is enabled, split ranges into intersecting will cause incorrect results and intersecting needs to be avoided.
     if (read_type != ReadType::ParallelReplicas &&
         num_streams > 1 &&
         read_split_ranges_into_intersecting_and_non_intersecting_injection_probability > 0.0 &&
@@ -868,7 +868,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_
         !isQueryWithFinal() &&
         data.merging_params.is_deleted_column.empty() &&
         !prewhere_info &&
-        !reader_settings.use_query_condition_cache)
+        !reader_settings.use_query_condition_cache) /// the query condition cache produces incorrect results with intersecting ranges
     {
         NameSet column_names_set(column_names.begin(), column_names.end());
         Names in_order_column_names_to_read(column_names);
@@ -2128,7 +2128,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
 
     auto query_id_holder = MergeTreeDataSelectExecutor::checkLimits(data, result, context);
 
-    /// When the query condition cache is enabled, the complete Mark needs to be read every time. When both where and prewhere are null, it is disabled.
+    /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
     if (reader_settings.use_query_condition_cache && !query_info.prewhere_info && !query_info.filter_actions_dag)
         reader_settings.use_query_condition_cache = false;
 
