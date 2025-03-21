@@ -25,7 +25,7 @@ It differs from the filesystem cache in the following ways:
 | Filesystem Cache                                        | Userspace page cache                  |
 |---------------------------------------------------------|---------------------------------------|
 | Writes data to the local filesystem                     | Present only in memory                |
-| Takes up disk space (configurable on tmpfs)             | Independent of filesystem             |
+| Takes up disk space (also configurable on tmpfs)        | Independent of filesystem             |
 | Survives server restarts                                | Does not survive server restarts      |
 | Does not show up in the server's memory usage           | Shows up in the server's memory usage |
 | Suitable for both on-disk and in-memory (OS page cache) | **Good for disk-less servers**        |
