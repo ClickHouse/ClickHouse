@@ -36,7 +36,7 @@ private:
         std::promise<Block> promise;
     };
 
-    const size_t max_queue_size;
+    size_t max_queue_size;
     Job job;
     std::unique_ptr<ThreadPool> thread_pool;
 

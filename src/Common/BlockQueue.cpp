@@ -36,6 +36,7 @@ BlockQueue::BlockQueue(size_t max_queue_size_, Job job_)
                     work();
                 });
         }
+        max_queue_size = 1e18;
     }
     catch (...)
     {
