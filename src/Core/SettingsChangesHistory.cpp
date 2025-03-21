@@ -68,7 +68,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "25.4",
         {
-            {"use_page_cache_local_disks", false, false, "New setting"},
+            {"use_page_cache_for_local_disks", false, false, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
