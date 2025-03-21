@@ -704,7 +704,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     {
         if (!origin.has_value())
             return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
-        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin.value());
+        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, weeks * 7, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -729,7 +729,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
         if (!origin.has_value())
             return time_zone.toStartOfMonthInterval(time_zone.toDayNum(scaled_time), months);
 
-        const Int64 scaled_origin = origin.value() / scale_multiplier;
+        const Int64 scaled_origin = origin / scale_multiplier;
         const Int64 days = time_zone.toDayOfMonth(scaled_time + scaled_origin) - time_zone.toDayOfMonth(scaled_origin);
         Int64 months_to_add = time_zone.toMonth(scaled_time + scaled_origin) - time_zone.toMonth(scaled_origin);
         const Int64 years = time_zone.toYear(scaled_time + scaled_origin) - time_zone.toYear(scaled_origin);
@@ -760,7 +760,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     {
         if (!origin.has_value())
             return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin.value());
+        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, quarters * 3, time_zone, scale_multiplier, origin);
     }
 };
 
@@ -783,7 +783,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     {
         if (!origin.has_value())
             return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
-        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin.value());
+        return ToStartOfInterval<IntervalKind::Kind::Month>::execute(t, years * 12, time_zone, scale_multiplier, origin);
     }
 };
 
