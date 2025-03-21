@@ -378,7 +378,7 @@ ClickHouse determines the result type of a CASE expression (or its internal equi
 
 - The result type is selected based on the largest compatible type among all branches.
 - Once this type is selected, all other branches are implicitly cast to it—even if their logic would never be executed at runtime.
-- For types like DateTime64, where the timezone is part of the type signature, this can lead to surprising behavior: the first encountered timezone may be used for all branches, even when other branches specify different timezones.
+- For types like [DateTime64](/sql-reference/data-types/datetime64), where the timezone is part of the type signature, this can lead to surprising behavior: the first encountered timezone may be used for all branches, even when other branches specify different timezones.
 
 For example, below all rows return the timestamp in the timezone of the first matched branch i.e. `Asia/Kolkata`
 
