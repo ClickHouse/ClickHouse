@@ -140,7 +140,7 @@ See [`max_execution_time_leaf`](/operations/settings/settings#max_execution_time
 
 ## timeout_overflow_mode_leaf {#timeout_overflow_mode_leaf}
 
-What to do when the query in leaf node run longer than `max_execution_time_leaf`: `throw` or `break`. By default, `throw`.
+See [`timeout_overflow_mode_leaf`](/operations/settings/settings#timeout_overflow_mode_leaf)
 
 ## min_execution_speed {#min-execution-speed}
 

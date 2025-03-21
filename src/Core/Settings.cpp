@@ -2657,7 +2657,12 @@ FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 
 ```
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode_leaf, OverflowMode::THROW, R"(
-What to do when the leaf limit is exceeded.
+What to do when the query in leaf node run longer than `max_execution_time_leaf`.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, min_execution_speed, 0, R"(
