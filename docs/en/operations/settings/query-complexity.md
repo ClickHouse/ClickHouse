@@ -136,19 +136,7 @@ See [`timeout_overflow_mode`](/operations/settings/settings#timeout_overflow_mod
 
 ## max_execution_time_leaf {#max_execution_time_leaf}
 
-Similar semantic to `max_execution_time` but only apply on leaf node for distributed or remote queries.
-
-For example, if we want to limit execution time on leaf node to `10s` but no limit on the initial node, instead of having `max_execution_time` in the nested subquery settings:
-
-```sql
-SELECT count() FROM cluster(cluster, view(SELECT * FROM t SETTINGS max_execution_time = 10));
-```
-
-We can use `max_execution_time_leaf` as the query settings:
-
-```sql
-SELECT count() FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
-```
+See [`max_execution_time_leaf`](/operations/settings/settings#max_execution_time_leaf)
 
 ## timeout_overflow_mode_leaf {#timeout_overflow_mode_leaf}
 

@@ -2637,7 +2637,24 @@ Possible values:
 source data ran out.
 )", 0) \
     DECLARE(Seconds, max_execution_time_leaf, 0, R"(
-Similar semantic to max_execution_time but only apply on leaf node for distributed queries, the time out behavior will be determined by 'timeout_overflow_mode_leaf' which by default is - throw an exception
+Similar semantically to [`max_execution_time`](#max_execution_time) but only
+applied on leaf nodes for distributed or remote queries.
+
+For example, if we want to limit the execution time on a leaf node to `10s` but
+have no limit on the initial node, instead of having `max_execution_time` in the
+nested subquery settings:
+
+```sql
+SELECT count()
+FROM cluster(cluster, view(SELECT * FROM t SETTINGS max_execution_time = 10));
+```
+
+We can use `max_execution_time_leaf` as the query settings:
+
+```sql
+SELECT count()
+FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 10;
+```
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode_leaf, OverflowMode::THROW, R"(
 What to do when the leaf limit is exceeded.
