@@ -139,7 +139,7 @@ def main():
         res = results[-1].is_ok()
 
     if res and JobStages.CMAKE in stages:
-        CHVersion.set_build_version()
+        CHVersion.set_binary_version()
         if "darwin" in build_type:
             Shell.check(
                 f"rm -rf {current_directory}/cmake/toolchain/darwin-x86_64 {current_directory}/cmake/toolchain/darwin-aarch64"
