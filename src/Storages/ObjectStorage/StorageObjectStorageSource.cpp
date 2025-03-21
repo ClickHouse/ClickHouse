@@ -9,6 +9,7 @@
 #include <Formats/ReadSchemaUtils.h>
 #include <IO/Archives/createArchiveReader.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/CachedInMemoryReadBufferFromFile.h>
 #include <Interpreters/Cache/FileCacheFactory.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -551,17 +552,20 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     const auto & read_settings = context_->getReadSettings();
 
     const auto filesystem_cache_name = settings[Setting::filesystem_cache_name].value;
-    bool use_cache = read_settings.enable_filesystem_cache
+    bool use_page_cache = read_settings.page_cache && read_settings.use_page_cache_for_object_storage;
+    bool use_fs_cache = read_settings.enable_filesystem_cache
         && !filesystem_cache_name.empty()
         && (object_storage->getType() == ObjectStorageType::Azure
             || object_storage->getType() == ObjectStorageType::S3);
 
-    if (!object_info.metadata)
-    {
-        if (!use_cache)
-            return object_storage->readObject(StoredObject(object_info.getPath()), read_settings);
-
+    if (!object_info.metadata && (use_page_cache || use_fs_cache))
         object_info.metadata = object_storage->getObjectMetadata(object_info.getPath());
+
+    if ((use_page_cache || use_fs_cache) && object_info.metadata->etag.empty())
+    {
+        LOG_WARNING(log, "Cannot use filesystem or page cache, no etag specified");
+        use_page_cache = false;
+        use_fs_cache = false;
     }
 
     const auto & object_size = object_info.metadata->size_bytes;
@@ -569,8 +573,6 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
     auto modified_read_settings = read_settings.adjustBufferSize(object_size);
     /// FIXME: Changing this setting to default value breaks something around parquet reading
     modified_read_settings.remote_read_min_bytes_for_seek = modified_read_settings.remote_fs_buffer_size;
-    /// User's object may change, don't cache it.
-    modified_read_settings.use_page_cache_for_disks_without_file_cache = false;
 
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
@@ -580,63 +582,59 @@ std::unique_ptr<ReadBufferFromFileBase> StorageObjectStorageSource::createReadBu
         && modified_read_settings.remote_fs_method == RemoteFSReadMethod::threadpool
         && modified_read_settings.remote_fs_prefetch;
 
-    /// FIXME: Use async buffer if use_cache,
-    /// because CachedOnDiskReadBufferFromFile does not work as an independent buffer currently.
-    const bool use_async_buffer = use_prefetch || use_cache;
+    const bool use_async_buffer = use_prefetch;
 
-    if (use_async_buffer)
+    if (use_async_buffer || use_page_cache)
         modified_read_settings.remote_read_buffer_use_external_buffer = true;
 
     std::unique_ptr<ReadBufferFromFileBase> impl;
-    if (use_cache)
+    if (use_fs_cache)
     {
-        chassert(object_info.metadata.has_value());
-        if (object_info.metadata->etag.empty())
+        SipHash hash;
+        hash.update(object_info.getPath());
+        hash.update(object_info.metadata->etag);
+
+        const auto cache_key = FileCacheKey::fromKey(hash.get128());
+        auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
+
+        auto read_buffer_creator = [path = object_info.getPath(), object_size, modified_read_settings, object_storage]()
         {
-            LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
-        }
-        else
-        {
-            SipHash hash;
-            hash.update(object_info.getPath());
-            hash.update(object_info.metadata->etag);
+            return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings);
+        };
 
-            const auto cache_key = FileCacheKey::fromKey(hash.get128());
-            auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
+        modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
 
-            auto read_buffer_creator = [path = object_info.getPath(), object_size, modified_read_settings, object_storage]()
-            {
-                return object_storage->readObject(StoredObject(path, "", object_size), modified_read_settings);
-            };
+        impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
+            object_info.getPath(),
+            cache_key,
+            cache,
+            FileCache::getCommonUser(),
+            read_buffer_creator,
+            modified_read_settings,
+            std::string(CurrentThread::getQueryId()),
+            object_size,
+            /* allow_seeks */true,
+            modified_read_settings.remote_read_buffer_use_external_buffer,
+            /* read_until_position */std::nullopt,
+            context_->getFilesystemCacheLog());
 
-            modified_read_settings.filesystem_cache_boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
-
-            impl = std::make_unique<CachedOnDiskReadBufferFromFile>(
-                object_info.getPath(),
-                cache_key,
-                cache,
-                FileCache::getCommonUser(),
-                read_buffer_creator,
-                modified_read_settings,
-                std::string(CurrentThread::getQueryId()),
-                object_size,
-                /* allow_seeks */true,
-                /* use_external_buffer */true,
-                /* read_until_position */std::nullopt,
-                context_->getFilesystemCacheLog());
-
-            LOG_TEST(
-                log,
-                "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
-                filesystem_cache_name,
-                object_info.getPath(),
-                object_info.metadata->etag,
-                toString(hash.get128()));
-        }
+        LOG_TEST(
+            log,
+            "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
+            filesystem_cache_name,
+            object_info.getPath(),
+            object_info.metadata->etag,
+            toString(hash.get128()));
     }
 
     if (!impl)
         impl = object_storage->readObject(StoredObject(object_info.getPath(), "", object_size), modified_read_settings);
+
+    if (use_page_cache)
+    {
+        PageCacheKey key = {.path = "s3:" + object_info.getPath(), .file_version = "etag:" + object_info.metadata->etag};
+        impl = std::make_unique<CachedInMemoryReadBufferFromFile>(key, read_settings.page_cache, std::move(impl), modified_read_settings);
+    }
 
     if (!use_async_buffer)
         return impl;
