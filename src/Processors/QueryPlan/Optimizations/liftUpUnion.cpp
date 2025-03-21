@@ -32,7 +32,7 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         /// Expression - Union - Something
         ///                    - Something
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads());
+        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->parallelReplicas());
 
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);
@@ -72,6 +72,8 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
         std::swap(parent, child);
         std::swap(parent_node->children, child_node->children);
         std::swap(parent_node->children.front(), child_node->children.front());
+        if (union_step->parallelReplicas())
+            distinct->disallowInOrderOptimization() = true;
 
         ///       - Distinct - Something
         /// Union - Something
@@ -83,12 +85,17 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
             distinct_node.children.push_back(parent_node->children[i]);
             parent_node->children[i] = &distinct_node;
 
-            distinct_node.step = std::make_unique<DistinctStep>(
+            auto new_distinct = std::make_unique<DistinctStep>(
                 distinct_node.children.front()->step->getOutputHeader(),
                 distinct->getSetSizeLimits(),
                 distinct->getLimitHint(),
                 distinct->getColumnNames(),
                 distinct->isPreliminary());
+            new_distinct->setStepDescription(distinct->getStepDescription());
+            if (union_step->parallelReplicas())
+                new_distinct->disallowInOrderOptimization() = true;
+
+            distinct_node.step = std::move(new_distinct);
         }
 
         ///       - Distinct - Something
