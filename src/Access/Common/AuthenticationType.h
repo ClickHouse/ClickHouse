@@ -45,6 +45,9 @@ enum class AuthenticationType : uint8_t
     JWT,
 
     MAX,
+
+    /// Password is encrypted in SCRAM-SHA256 hash.
+    SCRAM_SHA256_PASSWORD,
 };
 
 struct AuthenticationTypeInfo
