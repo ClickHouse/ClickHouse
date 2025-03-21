@@ -3877,7 +3877,7 @@ def test_rabbitmq_reject_broken_messages(rabbitmq_cluster):
 def test_rabbitmq_json_type(rabbitmq_cluster):
     instance.query(
         """
-        SET allow_experimental_json_type=1;
+        SET enable_json_type=1;
         CREATE TABLE test.rabbitmq (data JSON)
             ENGINE = RabbitMQ
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
