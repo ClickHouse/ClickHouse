@@ -1606,7 +1606,7 @@ void StatementGenerator::generateOffset(RandomGenerator & rg, const bool has_ord
         generateLimitExpr(rg, fst->mutable_row_count());
         fst->set_rows(rg.nextBool());
         fst->set_first(rg.nextBool());
-        fst->set_only(!this->allow_not_deterministic || rg.nextBool());
+        fst->set_only(this->allow_not_deterministic && rg.nextBool());
     }
 }
 
@@ -1756,13 +1756,13 @@ void StatementGenerator::generateSelect(
         this->width -= ncols;
 
         if ((allowed_clauses & allow_orderby) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && (!this->allow_not_deterministic || force_order_by || rg.nextSmallNumber() < 4))
+            && (force_order_by || rg.nextSmallNumber() < 4))
         {
             this->depth++;
             generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), true, ssc->mutable_orderby());
             this->depth--;
         }
-        if ((allowed_clauses & allow_limit) && (this->allow_not_deterministic || ssc->has_orderby()) && rg.nextSmallNumber() < 4)
+        if ((allowed_clauses & allow_limit) && rg.nextSmallNumber() < 4)
         {
             if (rg.nextBool())
             {
