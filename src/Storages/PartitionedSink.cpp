@@ -3,11 +3,11 @@
 #include "PartitionedSink.h"
 
 #include <Common/ArenaUtils.h>
+#include <Core/Settings.h>
+#include <Parsers/ASTIdentifier.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
 
 #include <Parsers/ASTFunction.h>
 
@@ -24,19 +24,17 @@ namespace ErrorCodes
 }
 
 PartitionedSink::PartitionedSink(
-    const ASTPtr & partition_by,
+    std::shared_ptr<PartitionStrategy> partition_strategy_,
     ContextPtr context_,
     const Block & sample_block_)
     : SinkToStorage(sample_block_)
+    , partition_strategy(partition_strategy_)
     , context(context_)
     , sample_block(sample_block_)
 {
-    ASTs arguments(1, partition_by);
-    ASTPtr partition_by_string = makeASTFunction("toString", std::move(arguments));
-
-    auto syntax_result = TreeRewriter(context).analyze(partition_by_string, sample_block.getNamesAndTypesList());
-    partition_by_expr = ExpressionAnalyzer(partition_by_string, syntax_result, context).getActions(false);
-    partition_by_column_name = partition_by_string->getColumnName();
+    auto actions_with_column_name = partition_strategy->getExpression();
+    partition_by_expr = actions_with_column_name.actions;
+    partition_by_column_name = actions_with_column_name.column_name;
 }
 
 
@@ -107,6 +105,11 @@ void PartitionedSink::consume(Chunk & chunk)
         auto sink = getSinkForPartitionKey(partition_key);
         sink->consume(partition_index_to_chunk[partition_index]);
     }
+}
+
+std::shared_ptr<PartitionStrategy> PartitionedSink::getPartitionStrategy()
+{
+    return partition_strategy;
 }
 
 void PartitionedSink::onException(std::exception_ptr exception)
