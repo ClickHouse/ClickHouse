@@ -144,11 +144,11 @@ See [`timeout_overflow_mode_leaf`](/operations/settings/settings#timeout_overflo
 
 ## min_execution_speed {#min-execution-speed}
 
-Minimal execution speed in rows per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is lower, an exception is thrown.
+See [`min_execution_speed`](/operations/settings/settings#min_execution_speed)
 
 ## min_execution_speed_bytes {#min-execution-speed-bytes}
 
-A minimum number of execution bytes per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is lower, an exception is thrown.
+See [`min_execution_speed_bytes`](/operations/settings/settings#min_execution_speed_bytes)
 
 ## max_execution_speed {#max-execution-speed}
 

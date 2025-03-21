@@ -2666,13 +2666,17 @@ source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, min_execution_speed, 0, R"(
-Minimum number of execution rows per second.
+Minimal execution speed in rows per second. Checked on every data block when
+`timeout_before_checking_execution_speed` expires. If the execution speed is lower,
+an exception is thrown.
 )", 0) \
     DECLARE(UInt64, max_execution_speed, 0, R"(
 Maximum number of execution rows per second.
 )", 0) \
     DECLARE(UInt64, min_execution_speed_bytes, 0, R"(
-Minimum number of execution bytes per second.
+A minimum number of execution bytes per second. Checked on every data block when
+`timeout_before_checking_execution_speed` expires. If the execution speed is lower,
+an exception is thrown.
 )", 0) \
     DECLARE(UInt64, max_execution_speed_bytes, 0, R"(
 Maximum number of execution bytes per second.
