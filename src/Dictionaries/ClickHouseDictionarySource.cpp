@@ -62,7 +62,8 @@ namespace
             "", /* cluster_secret */
             "ClickHouseDictionarySource",
             Protocol::Compression::Enable,
-            configuration.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable));
+            configuration.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable,
+            "" /* bind_host */));
 
         return std::make_shared<ConnectionPoolWithFailover>(pools, LoadBalancing::RANDOM);
     }
