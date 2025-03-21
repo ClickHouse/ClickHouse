@@ -1338,9 +1338,16 @@ def test_recover_digest_mismatch(started_cluster):
     ).strip()
 
     print(f"db_data_path {db_data_path}")
+
+    mv1_metadata = dummy_node.exec_in_container(
+        ["bash", "-c", f"{disk_cmd_prefix} 'read --path-from {db_data_path}mv1.sql' "]
+    )
+    corrupted_mv1_metadata = (
+        mv1_metadata.replace("Int32", "String").replace("`", r"\`").replace('"', r"\"")
+    )
     ways_to_corrupt_metadata = [
         f"{disk_cmd_prefix} 'move --path-from {db_data_path}t1.sql --path-to {db_data_path}m1.sql'",
-        f"{disk_cmd_prefix} 'read --path-from {db_data_path}mv1.sql' | sed 's/Int32/String/' | {disk_cmd_prefix} 'write --path-to {db_data_path}mv1.sql'",
+        f"""printf "%s" "{corrupted_mv1_metadata}" | {disk_cmd_prefix} 'write --path-to {db_data_path}mv1.sql'""",
         f"{disk_cmd_prefix} 'remove {db_data_path}d1.sql'",
         "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
         f"{disk_cmd_prefix} 'remove -r {db_disk_path}store/' && rm -rf /var/lib/clickhouse/store",  # Remove both metadata and data
