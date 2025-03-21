@@ -2938,7 +2938,12 @@ The maximum number of bytes (uncompressed data) that can be passed to a remote
 server or saved in a temporary table when the GLOBAL IN/JOIN section is executed.
 )", 0) \
     DECLARE(OverflowMode, transfer_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+What to do when the amount of data exceeds one of the limits.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_in_distinct, 0, R"(

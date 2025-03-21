@@ -234,7 +234,7 @@ See [`max_bytes_to_transfer`](/operations/settings/settings#max_bytes_to_transfe
 
 ## transfer_overflow_mode {#transfer-overflow-mode}
 
-What to do when the amount of data exceeds one of the limits: 'throw' or 'break'. By default, throw.
+See [`transfer_overflow_mode`](/operations/settings/settings#transfer_overflow_mode)
 
 ## max_rows_in_join {#settings-max_rows_in_join}
 
