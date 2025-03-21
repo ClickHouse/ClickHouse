@@ -66,12 +66,15 @@ struct SelectQueryOptions
 
     SelectQueryOptions( /// NOLINT(google-explicit-constructor)
         QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,
-        size_t depth = 0,
+        size_t subquery_depth_ = 0,
         bool is_subquery_ = false,
         bool settings_limit_offset_done_ = false)
-        : to_stage(stage), subquery_depth(depth), is_subquery(is_subquery_),
-        settings_limit_offset_done(settings_limit_offset_done_)
-    {}
+        : to_stage(stage)
+        , subquery_depth(subquery_depth_)
+        , is_subquery(is_subquery_)
+        , settings_limit_offset_done(settings_limit_offset_done_)
+    {
+    }
 
     SelectQueryOptions copy() const { return *this; }
 
