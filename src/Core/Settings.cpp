@@ -2719,7 +2719,14 @@ This setting is useful for preventing overly complex queries.
 `0` value means unlimited.
 )", 0) \
     DECLARE(UInt64, max_temporary_non_const_columns, 0, R"(
-Similar to the 'max_temporary_columns' setting but applies only to non-constant columns. This makes sense because constant columns are cheap and it is reasonable to allow more of them.
+Like `max_temporary_columns`, the maximum number of temporary columns that must
+be kept in RAM simultaneously when running a query, but without counting constant
+columns.
+
+:::note
+Constant columns are formed fairly often when running a query, but they require
+approximately zero computing resources.
+:::
 )", 0) \
     \
     DECLARE(UInt64, max_sessions_for_user, 0, R"(
@@ -2727,7 +2734,13 @@ Maximum number of simultaneous sessions for a user.
 )", 0) \
     \
     DECLARE(UInt64, max_subquery_depth, 100, R"(
-If a query has more than the specified number of nested subqueries, throw an exception. This allows you to have a sanity check to protect the users of your cluster from going insane with their queries.
+If a query has more than the specified number of nested subqueries, throws an
+exception.
+
+:::tip
+This allows you to have a sanity check to protect against the users of your
+cluster from writing overly complex queries.
+:::
 )", 0) \
     DECLARE(UInt64, max_analyze_depth, 5000, R"(
 Maximum number of analyses performed by interpreter.

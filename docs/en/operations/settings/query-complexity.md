@@ -176,12 +176,11 @@ See [`max_temporary_columns`](/operations/settings/settings#max_temporary_column
 
 ## max_temporary_non_const_columns {#max-temporary-non-const-columns}
 
-The same thing as 'max_temporary_columns', but without counting constant columns.
-Note that constant columns are formed fairly often when running a query, but they require approximately zero computing resources.
+See [`max_temporary_non_const_columns`](/operations/settings/settings#max_temporary_non_const_columns)
 
 ## max_subquery_depth {#max-subquery-depth}
 
-Maximum nesting depth of subqueries. If subqueries are deeper, an exception is thrown. By default, 100.
+See [`max_subquery_depth`](/operations/settings/settings#max_subquery_depth)
 
 ## max_pipeline_depth {#max-pipeline-depth}
 
