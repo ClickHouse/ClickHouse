@@ -24,7 +24,7 @@ import add_clickhouse_as_superset_datasource from '@site/docs/getting-started/ex
 import add_cell_towers_table_as_dataset from '@site/docs/getting-started/example-datasets/images/superset-add-dataset.png'
 import create_a_map_in_superset from '@site/docs/getting-started/example-datasets/images/superset-create-map.png'
 import specify_long_and_lat from '@site/docs/getting-started/example-datasets/images/superset-lon-lat.png'
-import superset_mcc_204 from '@site/docs/getting-started/example-datasets/images/superset-mcc-204.png'
+import superset_mcc_2024 from '@site/docs/getting-started/example-datasets/images/superset-mcc-204.png'
 import superset_radio_umts from '@site/docs/getting-started/example-datasets/images/superset-radio-umts.png'
 import superset_umts_netherlands from '@site/docs/getting-started/example-datasets/images/superset-umts-netherlands.png'
 import superset_cell_tower_dashboard from '@site/docs/getting-started/example-datasets/images/superset-cell-tower-dashboard.png'

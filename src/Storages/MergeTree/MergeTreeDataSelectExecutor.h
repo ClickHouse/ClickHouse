@@ -94,6 +94,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
     static MarkRanges filterMarksUsingMergedIndex(
@@ -105,6 +106,7 @@ private:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
+        VectorSimilarityIndexCache * vector_similarity_index_cache,
         LoggerPtr log);
 
     struct PartFilterCounters

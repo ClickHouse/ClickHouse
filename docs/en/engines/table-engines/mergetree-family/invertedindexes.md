@@ -49,7 +49,7 @@ SET allow_experimental_full_text_index = true;
 
 An full-text index can be defined on a string column using the following syntax
 
-``` sql
+```sql
 CREATE TABLE tab
 (
     `key` UInt64,
@@ -77,7 +77,7 @@ The maximum rows per postings list can be specified as the second parameter. Thi
 
 Being a type of skipping index, full-text indexes can be dropped or added to a column after table creation:
 
-``` sql
+```sql
 ALTER TABLE tab DROP INDEX inv_idx;
 ALTER TABLE tab ADD INDEX inv_idx(s) TYPE full_text(2);
 ```

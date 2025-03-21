@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeMutationEntry.h>
 #include <Common/Exception.h>
-#include <base/hex.h>
 
 #include <boost/range/adaptor/map.hpp>
 

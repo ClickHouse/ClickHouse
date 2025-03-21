@@ -2,7 +2,6 @@
 
 #include <Parsers/ASTFunction.h>
 
-#include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/KnownObjectNames.h>
