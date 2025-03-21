@@ -2667,19 +2667,23 @@ source data ran out.
     \
     DECLARE(UInt64, min_execution_speed, 0, R"(
 Minimal execution speed in rows per second. Checked on every data block when
-`timeout_before_checking_execution_speed` expires. If the execution speed is lower,
-an exception is thrown.
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is lower, an exception is thrown.
 )", 0) \
     DECLARE(UInt64, max_execution_speed, 0, R"(
-Maximum number of execution rows per second.
+The maximum number of execution rows per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is high, the execution speed will be reduced.
 )", 0) \
     DECLARE(UInt64, min_execution_speed_bytes, 0, R"(
-A minimum number of execution bytes per second. Checked on every data block when
-`timeout_before_checking_execution_speed` expires. If the execution speed is lower,
-an exception is thrown.
+The minimum number of execution bytes per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is lower, an exception is thrown.
 )", 0) \
     DECLARE(UInt64, max_execution_speed_bytes, 0, R"(
-Maximum number of execution bytes per second.
+The maximum number of execution bytes per second. Checked on every data block when
+[`timeout_before_checking_execution_speed`](/operations/settings/settings#timeout_before_checking_execution_speed)
+expires. If the execution speed is high, the execution speed will be reduced.
 )", 0) \
     DECLARE(Seconds, timeout_before_checking_execution_speed, 10, R"(
 Check that the speed is not too low after the specified time has elapsed.

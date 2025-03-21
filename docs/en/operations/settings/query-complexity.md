@@ -152,11 +152,11 @@ See [`min_execution_speed_bytes`](/operations/settings/settings#min_execution_sp
 
 ## max_execution_speed {#max-execution-speed}
 
-A maximum number of execution rows per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is high, the execution speed will be reduced.
+See [`max_execution_speed`](/operations/settings/settings#max_execution_speed)
 
 ## max_execution_speed_bytes {#max-execution-speed-bytes}
 
-A maximum number of execution bytes per second. Checked on every data block when 'timeout_before_checking_execution_speed' expires. If the execution speed is high, the execution speed will be reduced.
+See [`max_execution_speed_bytes`](/operations/settings/settings#max_execution_speed_bytes)
 
 ## timeout_before_checking_execution_speed {#timeout-before-checking-execution-speed}
 
