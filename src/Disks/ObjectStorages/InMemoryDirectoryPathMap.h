@@ -35,12 +35,12 @@ public:
         }
     };
 
-    using FileNames = std::set<std::string>;
+    using Files = std::map<std::string, size_t /* file size */>;
     struct RemotePathInfo
     {
         std::string path;
         time_t last_modified = 0;
-        FileNames files;
+        Files files;
     };
 
     size_t directoriesCount() const
@@ -79,17 +79,21 @@ public:
         return res;
     }
 
-    bool addFile(const std::string & local_path)
+    bool addFile(const std::string & local_path, size_t size)
     {
         auto path = std::filesystem::path(local_path);
-        auto dir = path.parent_path();
+        auto dir = path.has_parent_path() ? path.parent_path() : "";
         auto file = path.filename();
 
         std::lock_guard lock(mutex);
         auto it = map.find(dir);
         if (it == map.end())
+        {
+            if (map[""].files.emplace(file, size).second)
+                metric_files.add(1);
             return false;
-        if (it->second.files.emplace(file).second)
+        }
+        if (it->second.files.emplace(file, size).second)
             metric_files.add(1);
         return true;
     }
@@ -97,7 +101,7 @@ public:
     bool removeFile(const std::string & local_path)
     {
         auto path = std::filesystem::path(local_path);
-        auto dir = path.parent_path();
+        auto dir = path.has_parent_path() ? path.parent_path() : "";
         auto file = path.filename();
 
         std::lock_guard lock(mutex);
@@ -169,7 +173,7 @@ public:
         auto it = map.find(base_path);
         if (it != map.end())
             for (const auto & file : it->second.files)
-                callback(file);
+                callback(file.first);
     }
 
     void iterateSubdirectories(const std::string & path, std::function<void(const std::string &)> callback) const
@@ -209,7 +213,7 @@ private:
     Map TSA_GUARDED_BY(mutex) map;
 
     /// A set of known storage paths (randomly-assigned names).
-    FileNames TSA_GUARDED_BY(mutex) remote_directories;
+    std::set<std::string> TSA_GUARDED_BY(mutex) remote_directories;
 
     CurrentMetrics::Increment metric_directories;
     CurrentMetrics::Increment metric_files;
