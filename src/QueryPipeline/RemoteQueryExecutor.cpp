@@ -341,7 +341,9 @@ static Block adaptBlockStructure(const Block & block, const Block & header)
                 /// TODO: check that column contains the same value.
                 /// TODO: serialize const columns.
                 auto col = block.getByName(elem.name);
-                col.column = block.getByName(elem.name).column->cut(0, 1);
+                if (const auto * blob = typeid_cast<const ColumnBlob *>(col.column.get()))
+                    col.column = blob->convertFrom();
+                col.column = col.column->cut(0, 1);
 
                 column = castColumn(col, elem.type);
 
