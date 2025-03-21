@@ -2497,10 +2497,14 @@ start using external aggregation.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_sort, 0, R"(
-If more than the specified amount of records have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception
+The maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
+If more than the specified amount of records have to be processed for the ORDER BY operation,
+the behavior will be determined by the `sort_overflow_mode` which by default is set to `throw`.
 )", 0) \
     DECLARE(UInt64, max_bytes_to_sort, 0, R"(
-If more than the specified amount of (uncompressed) bytes have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception
+The maximum number of bytes before sorting. If more than the specified amount of
+uncompressed bytes have to be processed for ORDER BY operation, the behavior will
+be determined by the `sort_overflow_mode` which by default is set to `throw`.
 )", 0) \
     DECLARE(OverflowMode, sort_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.

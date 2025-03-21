@@ -104,11 +104,11 @@ See [`max_bytes_ratio_before_external_sort`](/operations/settings/settings#max_b
 
 ## max_rows_to_sort {#max-rows-to-sort}
 
-A maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
+See [`max_rows_to_sort`](/operations/settings/settings#max_rows_to_sort)
 
 ## max_bytes_to_sort {#max-bytes-to-sort}
 
-A maximum number of bytes before sorting.
+See [`max_bytes_to_sort`](/operations/settings/settings#max_rows_to_sort)
 
 ## sort_overflow_mode {#sort-overflow-mode}
 
