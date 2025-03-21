@@ -41,6 +41,7 @@ namespace Setting
     extern const SettingsString force_optimize_projection_name;
     extern const SettingsUInt64 max_limit_for_ann_queries;
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
+    extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -95,6 +96,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     force_projection_name = optimize_projection ? from[Setting::force_optimize_projection_name].value : "";
 
     max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
+    query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 
     network_transfer_limits = SizeLimits(from[Setting::max_rows_to_transfer], from[Setting::max_bytes_to_transfer], from[Setting::transfer_overflow_mode]);
     use_index_for_in_with_subqueries_max_values = from[Setting::use_index_for_in_with_subqueries_max_values];
