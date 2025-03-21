@@ -2628,7 +2628,13 @@ and the actual run time will be higher than the value of this setting.
 :::
 )", 0) \
     DECLARE(OverflowMode, timeout_overflow_mode, OverflowMode::THROW, R"(
-What to do when the limit is exceeded.
+Sets what to do if the query is run longer than the `max_execution_time` or the
+estimated running time is longer than `max_estimated_execution_time`.
+
+Possible values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the
+source data ran out.
 )", 0) \
     DECLARE(Seconds, max_execution_time_leaf, 0, R"(
 Similar semantic to max_execution_time but only apply on leaf node for distributed queries, the time out behavior will be determined by 'timeout_overflow_mode_leaf' which by default is - throw an exception

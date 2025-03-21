@@ -128,11 +128,11 @@ See [`result_overflow_mode`](/operations/settings/settings#result_overflow_mode)
 
 ## max_execution_time {#max-execution-time}
 
-[`max_execution_time`](/operations/settings/settings#max_execution_time)
+See [`max_execution_time`](/operations/settings/settings#max_execution_time)
 
 ## timeout_overflow_mode {#timeout-overflow-mode}
 
-What to do if the query is run longer than `max_execution_time` or the estimated running time is longer than `max_estimated_execution_time`: `throw` or `break`. By default, `throw`.
+See [`timeout_overflow_mode`](/operations/settings/settings#timeout_overflow_mode)
 
 ## max_execution_time_leaf {#max_execution_time_leaf}
 
