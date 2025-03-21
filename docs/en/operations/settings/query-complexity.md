@@ -96,14 +96,7 @@ See [`max_bytes_ratio_before_external_group_by`](/operations/settings/settings#m
 
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
-Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
-
-- Maximum volume of RAM (in bytes) that can be used by the single [ORDER BY](../../sql-reference/statements/select/order-by.md) operation. Recommended value is half of available system memory
-- 0 — `ORDER BY` in external memory disabled.
-
-Default value: 0.
-
-Cloud default value: half the memory amount per replica.
+See [`max_bytes_before_external_sort`](/operations/settings/settings#max_bytes_before_external_sort)
 
 ## max_bytes_ratio_before_external_sort {#settings-max_bytes_ratio_before_external_sort}
 

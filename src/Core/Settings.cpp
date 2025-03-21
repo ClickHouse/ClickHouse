@@ -2512,7 +2512,16 @@ Prefer maximum block bytes for external sort, reduce the memory usage during mer
 Minimal block size in bytes for external sort that will be dumped to disk, to avoid too many files.
 )", 0) \
     DECLARE(UInt64, max_bytes_before_external_sort, 0, R"(
-If memory usage during ORDER BY operation is exceeding this threshold in bytes, activate the 'external sorting' mode (spill data to disk). Recommended value is half of the available system memory.
+Cloud default value: half the memory amount per replica.
+
+Enables or disables execution of `ORDER BY` clauses in external memory. See [ORDER BY Implementation Details](../../sql-reference/statements/select/order-by.md#implementation-details)
+If memory usage during ORDER BY operation exceeds this threshold in bytes, the 'external sorting' mode (spill data to disk) is activated.
+
+Possible values:
+
+- Maximum volume of RAM (in bytes) that can be used by the single [ORDER BY](../../sql-reference/statements/select/order-by.md) operation.
+  The recommended value is half of available system memory
+- `0` — `ORDER BY` in external memory disabled.
 )", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_sort, 0.5, R"(
 Ratio of used memory before enabling external ORDER BY. If you set it to 0.6 the external ORDER BY will be used once the memory usage will reach 60% of allowed memory for query.
