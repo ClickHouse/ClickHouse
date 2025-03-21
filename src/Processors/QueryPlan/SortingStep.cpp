@@ -468,6 +468,15 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         return;
     }
 
+    if (type == Type::PartitionedFinishSorting)
+    {
+        bool need_finish_sorting = (prefix_description.size() < result_description.size());
+        if (need_finish_sorting)
+            finishSorting(pipeline, prefix_description, result_description, limit);
+
+        return;
+    }
+
     fullSort(pipeline, result_description, limit);
 }
 

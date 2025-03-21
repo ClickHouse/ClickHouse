@@ -51,7 +51,7 @@ query_id="03269_explain_unique_ids_$RANDOM$RANDOM"
 $CLICKHOUSE_CLIENT "${opts[@]}" --log_processors_profiles=1 --query_id="$query_id" --format Null -q "$query"
 
 $CLICKHOUSE_CLIENT -q "
-  SYSTEM FLUSH LOGS;
+  SYSTEM FLUSH LOGS processors_profile_log;
 
   SELECT DISTINCT (replaceRegexpAll(processor_uniq_id, '(\w+)\(.*\)', '\\1'), step_uniq_id)
   FROM system.processors_profile_log

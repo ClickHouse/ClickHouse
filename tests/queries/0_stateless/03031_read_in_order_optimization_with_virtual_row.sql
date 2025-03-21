@@ -44,7 +44,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'preliminary merge, no filter';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
@@ -68,7 +68,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'preliminary merge with filter';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
@@ -91,7 +91,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'no preliminary merge, no filter';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log
@@ -115,7 +115,7 @@ max_threads = 1,
 optimize_read_in_order = 1,
 log_comment = 'no preliminary merge, with filter';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT read_rows
 FROM system.query_log

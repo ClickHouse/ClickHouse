@@ -11,6 +11,7 @@
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -813,6 +814,97 @@ struct PartRangesReadInfo
     }
 };
 
+}
+
+Pipe ReadFromMergeTree::readByLayers(const RangesInDataParts & parts_with_ranges, SplitPartsByRanges split_parts, const Names & column_names, const InputOrderInfoPtr & input_order_info)
+{
+    const auto & settings = context->getSettingsRef();
+    const auto data_settings = data.getSettings();
+
+    LOG_TRACE(log, "Spreading mark ranges among streams (reading by layers)");
+
+    PartRangesReadInfo info(parts_with_ranges, settings, *data_settings);
+    if (0 == info.sum_marks)
+        return {};
+
+    ReadingInOrderStepGetter reading_step_getter;
+    Names in_order_column_names_to_read;
+    SortDescription sort_description;
+
+    if (reader_settings.read_in_order)
+    {
+        NameSet column_names_set(column_names.begin(), column_names.end());
+        in_order_column_names_to_read = column_names;
+
+        /// Add columns needed to calculate the sorting expression
+        for (const auto & column_name : storage_snapshot->metadata->getColumnsRequiredForSortingKey())
+        {
+            if (column_names_set.contains(column_name))
+                continue;
+
+            in_order_column_names_to_read.push_back(column_name);
+            column_names_set.insert(column_name);
+        }
+        auto sorting_expr = storage_snapshot->metadata->getSortingKey().expression;
+        const auto & sorting_columns = storage_snapshot->metadata->getSortingKey().column_names;
+
+        sort_description.compile_sort_description = settings[Setting::compile_sort_description];
+        sort_description.min_count_to_compile_sort_description = settings[Setting::min_count_to_compile_sort_description];
+
+        for (size_t j = 0; j < input_order_info->used_prefix_of_sorting_key_size; ++j)
+            sort_description.emplace_back(sorting_columns[j], input_order_info->direction);
+
+        reading_step_getter = [this, &in_order_column_names_to_read, &info, sorting_expr, &sort_description](auto parts)
+        {
+            auto pipe = this->read(
+                std::move(parts),
+                in_order_column_names_to_read,
+                ReadType::InOrder,
+                1 /* num_streams */,
+                0 /* min_marks_for_concurrent_read */,
+                info.use_uncompressed_cache);
+
+            if (pipe.empty())
+            {
+                auto header = MergeTreeSelectProcessor::transformHeader(
+                    storage_snapshot->getSampleBlockForColumns(in_order_column_names_to_read),
+                    query_info.prewhere_info);
+                pipe = Pipe(std::make_shared<NullSource>(header));
+            }
+
+            pipe.addSimpleTransform([sorting_expr](const Block & header)
+            {
+                return std::make_shared<ExpressionTransform>(header, sorting_expr);
+            });
+
+            if (pipe.numOutputPorts() != 1)
+            {
+                auto transform = std::make_shared<MergingSortedTransform>(
+                    pipe.getHeader(), pipe.numOutputPorts(), sort_description, block_size.max_block_size_rows, /*max_block_size_bytes=*/0, SortingQueueStrategy::Batch,
+                    0, false, nullptr, false, /*apply_virtual_row_conversions*/ false);
+
+                pipe.addTransform(std::move(transform));
+            }
+
+            return pipe;
+        };
+    }
+    else
+    {
+        reading_step_getter = [this, &column_names, &info](auto parts)
+        {
+            return this->read(
+                std::move(parts),
+                column_names,
+                ReadType::Default,
+                1 /* num_streams */,
+                info.min_marks_for_concurrent_read,
+                info.use_uncompressed_cache);
+        };
+    }
+
+    auto pipes = ::readByLayers(std::move(split_parts), storage_snapshot->metadata->getPrimaryKey(), std::move(reading_step_getter), false, context);
+    return Pipe::unitePipes(std::move(pipes));
 }
 
 Pipe ReadFromMergeTree::spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names)
@@ -2075,6 +2167,9 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 
         return spreadMarkRangesAmongStreamsFinal(std::move(parts_with_ranges), num_streams, original_column_names, column_names_to_read, result_projection);
     }
+
+    if (!result.split_parts.layers.empty())
+        return readByLayers(result.parts_with_ranges, std::move(result.split_parts), column_names_to_read, query_info.input_order_info);
 
     if (query_info.input_order_info)
     {

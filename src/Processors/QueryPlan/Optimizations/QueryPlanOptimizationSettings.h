@@ -65,6 +65,7 @@ struct QueryPlanOptimizationSettings
 
     /// --- Third-pass optimizations (Processors/QueryPlan/QueryPlan.cpp)
     bool build_sets = true; /// this one doesn't have a corresponding setting
+    bool query_plan_join_shard_by_pk_ranges;
 
     /// ------------------------------------------------------
 

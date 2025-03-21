@@ -42,6 +42,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_optimizations_to_apply;
     extern const SettingsBool query_plan_optimize_lazy_materialization;
     extern const SettingsUInt64 query_plan_max_limit_for_lazy_materialization;
+    extern const SettingsBool query_plan_join_shard_by_pk_ranges;
 }
 
 namespace ServerSetting
@@ -93,6 +94,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
     max_limit_for_ann_queries = from[Setting::max_limit_for_ann_queries].value;
+    query_plan_join_shard_by_pk_ranges = from[Setting::query_plan_join_shard_by_pk_ranges].value;
 
     /// These settings comes from EXPLAIN settings not query settings and outside of the scope of this class
     keep_logical_steps = false;

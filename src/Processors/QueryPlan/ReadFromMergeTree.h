@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/SelectQueryInfo.h>
@@ -91,6 +92,7 @@ public:
     struct AnalysisResult
     {
         RangesInDataParts parts_with_ranges;
+        SplitPartsByRanges split_parts;
         MergeTreeDataSelectSamplingData sampling;
         IndexStats index_stats;
         Names column_names_to_read;
@@ -264,6 +266,8 @@ private:
     Pipe spreadMarkRanges(RangesInDataParts && parts_with_ranges, size_t num_streams, AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
 
     Pipe groupStreamsByPartition(AnalysisResult & result, std::optional<ActionsDAG> & result_projection);
+
+    Pipe readByLayers(const RangesInDataParts & parts_with_ranges, SplitPartsByRanges split_parts, const Names & column_names, const InputOrderInfoPtr & input_order_info);
 
     Pipe spreadMarkRangesAmongStreams(RangesInDataParts && parts_with_ranges, size_t num_streams, const Names & column_names);
 
