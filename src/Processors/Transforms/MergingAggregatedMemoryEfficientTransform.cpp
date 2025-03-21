@@ -69,17 +69,10 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
     {
         for (const auto delayed_bucket : delayed_buckets)
         {
-            if (delayed_bucket > current_bucket)
-                continue;
-            // throw Exception(
-            //     ErrorCodes::LOGICAL_ERROR,
-            //     "Delayed bucket number is greatre than current bucket number. curent_bucket: {}, delayed_bucket: {}",
-            //     current_bucket,
-            //     delayed_bucket);
-
             /// The bucket is no longer delayed for all inputs. Either we received it from all sources (where it was not empty),
             /// or we received buckets with higher id-s and no delayed bucket information.
-            if (!std::ranges::contains(delayed_bucket_number, delayed_bucket))
+            if (!std::ranges::contains(delayed_bucket_number, delayed_bucket)
+                && std::ranges::all_of(last_bucket_number, [delayed_bucket](auto last_bucket) { return last_bucket > delayed_bucket; }))
             {
                 if (try_push_by_iter(chunks_map.find(delayed_bucket)))
                 {
