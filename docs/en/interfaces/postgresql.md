@@ -70,7 +70,7 @@ psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certif
 
 ## Configuring ClickHouse User Authentication with SCRAM-SHA-256 {#using-scram-sha256}
 
-To ensure secure user authentication in ClickHouse, it is recommended to use the SCRAM-SHA-256 protocol. Configure the user by specifying the <password_scram_sha256_hex> element in the users.xml file. The password hash must be generated with num_iterations=4096.
+To ensure secure user authentication in ClickHouse, it is recommended to use the SCRAM-SHA-256 protocol. Configure the user by specifying the `password_scram_sha256_hex` element in the users.xml file. The password hash must be generated with num_iterations=4096.
 
 Ensure that the psql client supports and negotiates SCRAM-SHA-256 during connection.
 
