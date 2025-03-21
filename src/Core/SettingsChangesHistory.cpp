@@ -147,6 +147,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"parallel_replicas_insert_select_local_pipeline", false, false, "Use local pipeline during distributed INSERT SELECT with parallel replicas. Currently disabled due to performance issues"},
             {"parallel_hash_join_threshold", 0, 0, "New setting"},
             /// Release closed. Please use 25.5
+            {"min_outstreams_per_resize_after_split", 24, 24, "New setting."},
         });
         addSettingsChanges(settings_changes_history, "25.3",
         {
