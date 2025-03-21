@@ -17,7 +17,7 @@ from .hook_cache import CacheRunnerHooks
 from .hook_html import HtmlRunnerHooks
 from .result import Result, ResultInfo
 from .runtime import RunConfig
-from .s3 import S3
+from .s3 import S3, StorageUsage
 from .settings import Settings
 from .utils import Shell, TeePopen, Utils
 
@@ -352,10 +352,13 @@ class Runner:
             print(info)
             result.set_info(info).set_status(Result.Status.ERROR).dump()
 
-        result.update_duration().dump()
-
+        result.update_duration()
         # if result.is_error():
         result.set_files([Settings.RUN_LOG])
+        if StorageUsage.exist():
+            StorageUsage.add_uploaded(result.file_name())  # add Result file beforehand to upload actual storage usage data
+            print("Storage usage data found - add to Result")
+            result.ext["storage"] = StorageUsage.from_fs()
 
         if run_exit_code == 0:
             providing_artifacts = []

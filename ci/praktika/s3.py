@@ -2,12 +2,66 @@ import dataclasses
 import json
 import os
 from pathlib import Path
-from typing import Dict
+from typing import Any, Dict
 from urllib.parse import quote
 
 from ._environment import _Environment
 from .settings import Settings
-from .utils import Shell
+from .utils import MetaClasses, Shell
+
+
+@dataclasses.dataclass
+class StorageUsage(MetaClasses.SerializableSingleton):
+    downloaded: int
+    uploaded: int
+    downloaded_details: Dict[str, int]
+    uploaded_details: Dict[str, int]
+    ext: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    name: str = "storage_usage"
+
+    @classmethod
+    def file_name_static(cls):
+        return f"{Settings.TEMP_DIR}/storage_usage.json"
+
+    @classmethod
+    def _init(cls):
+        if not StorageUsage.exist():
+            print("NOTE: UsageStorage data will be initialized")
+            StorageUsage(
+                downloaded=0, uploaded=0, downloaded_details={}, uploaded_details={}
+            ).dump()
+
+    @classmethod
+    def add_downloaded(cls, file_path):
+        cls._init()
+        if not Path(file_path).exists():
+            return
+        file_name = str(file_path).split("/")[-1]
+        usage = cls.from_fs()
+        file_zize = cls.get_size_bytes(file_path)
+        usage.downloaded += file_zize
+        if file_name in usage.downloaded_details:
+            print(f"WARNING: Duplicated download for filename [{file_name}]")
+        usage.downloaded_details[file_name] = file_zize
+        usage.dump()
+
+    @classmethod
+    def add_uploaded(cls, file_path):
+        cls._init()
+        if not Path(file_path).exists():
+            return
+        file_name = str(file_path).split("/")[-1]
+        usage = cls.from_fs()
+        file_zize = cls.get_size_bytes(file_path)
+        usage.uploaded += file_zize
+        if file_name in usage.uploaded_details:
+            print(f"WARNING: Duplicated upload for filename [{file_name}]")
+        usage.uploaded_details[file_name] = file_zize
+        usage.dump()
+
+    @classmethod
+    def get_size_bytes(cls, file_path):
+        return os.path.getsize(file_path)
 
 
 class S3:
@@ -56,6 +110,7 @@ class S3:
         res = cls.run_command_with_retries(cmd)
         if not res:
             raise RuntimeError()
+        StorageUsage.add_uploaded(local_path)
         bucket = s3_path.split("/")[0]
         endpoint = Settings.S3_BUCKET_TO_HTTP_ENDPOINT[bucket]
         assert endpoint
@@ -87,6 +142,8 @@ class S3:
         if text:
             command += " --content-type text/plain"
         res = cls.run_command_with_retries(command)
+        if res:
+            StorageUsage.add_uploaded(local_path)
         return res
 
     @classmethod
@@ -136,6 +193,11 @@ class S3:
         if include_pattern:
             cmd += f' --exclude "*" --include "{include_pattern}"'
         res = cls.run_command_with_retries(cmd)
+        if res:
+            if not Path(local_path).parent.is_dir():
+                StorageUsage.add_downloaded(local_path)
+            else:
+                print("TODO: implement for multiple files")
         return res
 
     @classmethod
@@ -149,6 +211,11 @@ class S3:
         assert s3_path.endswith("/"), f"s3 path is invalid [{s3_path}]"
         cmd = f'aws s3 cp s3://{s3_path}  {local_path} --exclude "{exclude}" --include "{include}" --recursive'
         res = cls.run_command_with_retries(cmd)
+        if res:
+            if not Path(local_path).parent.is_dir():
+                StorageUsage.add_downloaded(local_path)
+            else:
+                print("TODO: implement for multiple files")
         return res
 
     @classmethod
