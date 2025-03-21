@@ -161,7 +161,7 @@ DataTypePtr DataTypeFactory::getCustom(const String & base_name, DataTypeCustomD
     return type;
 }
 
-void DataTypeFactory::setCustom(DataTypePtr & type, DataTypeCustomDescPtr customization) const
+void DataTypeFactory::setCustom(DataTypePtr & type, DataTypeCustomDescPtr customization)
 {
     type->setCustomization(std::move(customization));
 }

@@ -275,7 +275,7 @@ static void changeSerializationForPostgreSQLFixedString(const ColumnPtr & column
     {
         auto n = assert_cast<const DataTypeFixedString &>(*non_nullable_type).getN();
         auto custom_desc = std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>(fmt::format("FixedString({})", n)), std::make_shared<SerializationPostgreSQLFixedString>(n));
-        DataTypeFactory::instance().setCustom(data_type, std::move(custom_desc));
+        DataTypeFactory::setCustom(data_type, std::move(custom_desc));
     }
 }
 
