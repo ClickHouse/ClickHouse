@@ -123,6 +123,7 @@ public:
     void undo(std::unique_lock<SharedMutex> & metadata_lock) override;
 };
 
+/// Throws an exception if path_to_ already exists.
 class MetadataStorageFromPlainObjectStorageCopyFileOperation final : public IMetadataOperation
 {
 private:

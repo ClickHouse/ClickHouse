@@ -125,6 +125,7 @@ public:
         /// Noop
     }
 
+    /// Required for MergeTree backups.
     void setReadOnly(const std::string & /*path*/) override
     {
         /// Noop
