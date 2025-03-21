@@ -41,7 +41,8 @@ struct QuillFrontendOptions
     static constexpr quill::HugePagesPolicy huge_pages_policy = quill::HugePagesPolicy::Never;
 };
 
-using QuillLoggerPtr = quill::LoggerImpl<QuillFrontendOptions> *;
+using QuillLogger = quill::LoggerImpl<QuillFrontendOptions>;
+using QuillLoggerPtr = QuillLogger *;
 
 void startQuillBackend();
 

@@ -20,7 +20,8 @@ namespace DB
 {
 struct QuillFrontendOptions;
 
-using QuillLoggerPtr = quill::LoggerImpl<QuillFrontendOptions> *;
+using QuillLogger = quill::LoggerImpl<QuillFrontendOptions>;
+using QuillLoggerPtr = QuillLogger *;
 
 using QuillFrontend = quill::FrontendImpl<QuillFrontendOptions>;
 }
