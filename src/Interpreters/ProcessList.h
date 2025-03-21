@@ -237,8 +237,10 @@ public:
         progress_in.incrementPiecewiseAtomically(value);
 
         if (priority_handle){
-            UInt64 wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_wait_time_ms].totalMilliseconds();
-            LOG_INFO(getLogger("ProcessList"), "Update the progress with current wait time value{}", wait_time);
+            // Search Poco::Timespan::TimeDiff totalMilliseconds() const { return value.totalMilliseconds(); }
+            Poco::Timespan::TimeDiff wait_time = getContext()->getSettingsRef()[Setting::low_priority_query_wait_time_ms].totalMilliseconds();
+            LOG_INFO(getLogger("ProcessList"), "Update the progress with current wait time value {}", wait_time);
+            // 这是一个运算符重载 operator std::chrono::duration<Rep, Period>() const
             priority_handle->waitIfNeed(std::chrono::milliseconds(wait_time));
         }
 
@@ -495,7 +497,6 @@ public:
     size_t getMaxInsertQueriesAmount() const
     {
         Lock lock(mutex);
-        LOG_WARNING(getLogger("ProcessList"), "Getting the low priority query wait time  {}", low_priority_query_wait_time_ms);
         return max_insert_queries_amount;
     }
 
@@ -509,6 +510,7 @@ public:
     size_t getLowPriorityQueryWaitTimeMs() const
     {
         Lock lock(mutex);
+        LOG_WARNING(getLogger("ProcessList"), "Getting the low priority query wait time to {}", low_priority_query_wait_time_ms);
         return low_priority_query_wait_time_ms;
     }
 
