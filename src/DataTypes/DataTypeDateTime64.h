@@ -39,8 +39,6 @@ public:
 
     bool isSummable() const override { return false; }
 
-    bool canBeInsideLowCardinality() const override { return true; }
-
 protected:
     SerializationPtr doGetDefaultSerialization() const override;
 };
