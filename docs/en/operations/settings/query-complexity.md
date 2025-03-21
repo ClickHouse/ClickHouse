@@ -116,15 +116,11 @@ See [`sort_overflow_mode`](/operations/settings/settings#sort_overflow_mode)
 
 ## max_result_rows {#setting-max_result_rows}
 
-Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query. No limit is applied when value is `0`.
-
-Default value: `0`.
-
-Cloud default value: `0`.
+See [`max_result_rows`](/operations/settings/settings#max_result_rows)
 
 ## max_result_bytes {#max-result-bytes}
 
-Limit on the number of bytes in the result. The same as the previous setting.
+See [`max_result_bytes`](/operations/settings/settings#max_result_bytes)
 
 ## result_overflow_mode {#result-overflow-mode}
 

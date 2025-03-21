@@ -2547,10 +2547,29 @@ If memory usage after remerge does not reduced by this ratio, remerge will be di
 )", 0) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
-Limit on result size in rows. The query will stop after processing a block of data if the threshold is met, but it will not cut the last block of the result, therefore the result size can be larger than the threshold.
+Cloud default value: `0`.
+
+Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
+No limit is applied when the value is `0`.
+
+The query will stop after processing a block of data if the threshold is met, but
+it will not cut the last block of the result, therefore the result size can be
+larger than the threshold.
 )", 0) \
     DECLARE(UInt64, max_result_bytes, 0, R"(
-Limit on result size in bytes (uncompressed).  The query will stop after processing a block of data if the threshold is met, but it will not cut the last block of the result, therefore the result size can be larger than the threshold. Caveats: the result size in memory is taken into account for this threshold. Even if the result size is small, it can reference larger data structures in memory, representing dictionaries of LowCardinality columns, and Arenas of AggregateFunction columns, so the threshold can be exceeded despite the small result size. The setting is fairly low level and should be used with caution.
+Limit on result size in bytes (uncompressed). The query will stop after processing a block of data if the threshold is met,
+but it will not cut the last block of the result, therefore the result size can be larger than the threshold.
+
+**Caveats**
+
+The result size in memory is taken into account for this threshold.
+Even if the result size is small, it can reference larger data structures in memory,
+representing dictionaries of LowCardinality columns, and Arenas of AggregateFunction columns,
+so the threshold can be exceeded despite the small result size.
+
+:::warning
+The setting is fairly low level and should be used with caution
+:::
 )", 0) \
     DECLARE(OverflowMode, result_overflow_mode, OverflowMode::THROW, R"(
 What to do when the limit is exceeded.
