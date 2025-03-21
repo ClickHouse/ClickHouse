@@ -74,7 +74,7 @@ To ensure secure user authentication in ClickHouse, it is recommended to use the
 
 Ensure that the psql client supports and negotiates SCRAM-SHA-256 during connection.
 
-Example configuration for user user_with_sha256 with the password abacaba:
+Example configuration for user `user_with_sha256` with the password `abacaba`:
 
 ```
 <user_with_sha256>
