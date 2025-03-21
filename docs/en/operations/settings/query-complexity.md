@@ -92,11 +92,7 @@ See [`max_bytes_before_external_group_by`](/operations/settings/settings#max_byt
 
 ## max_bytes_ratio_before_external_group_by {#settings-max_bytes_ratio_before_external_group_by}
 
-The ratio of available memory that is allowed for `GROUP BY`, once reached, uses external memory for aggregation.
-
-For example, if set to `0.6`, `GROUP BY` will allow to use `60%` of available memory (to server/user/merges) at the beginning of the execution, after that, it will start using external aggregation.
-
-Default value: `0.5`.
+See [`max_bytes_ratio_before_external_group_by`](/operations/settings/settings#max_bytes_ratio_before_external_group_by)
 
 ## max_bytes_before_external_sort {#settings-max_bytes_before_external_sort}
 
