@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+
 -- { echo }
 
 SET max_block_size = 10;
