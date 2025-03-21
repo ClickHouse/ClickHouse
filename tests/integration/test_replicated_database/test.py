@@ -1125,6 +1125,10 @@ def test_recover_staled_replica_many_mvs(started_cluster):
     dummy_node.query("DROP DATABASE IF EXISTS recover_mvs SYNC")
 
 
+@pytest.mark.skip(
+    reason="Since we create a hidden distributed table inside Replicated database it cannot start without zookeeper\
+    because it has to retrieve data from it to form a cluster."
+)
 def test_startup_without_zk(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(main_node)
@@ -1325,7 +1329,7 @@ def test_recover_digest_mismatch(started_cluster):
 
     db_disk_name = get_database_disk_name(dummy_node)
     db_data_path = dummy_node.query(
-        f"SELECT data_path FROM system.databases WHERE database='recover_digest_mismatch'"
+        f"SELECT metadata_path FROM system.databases WHERE database='recover_digest_mismatch'"
     ).strip()
 
     disk_cmd_prefix = f"/usr/bin/clickhouse disks -C /etc/clickhouse-server/config.xml --disk {db_disk_name} --save-logs --query "
@@ -1338,7 +1342,7 @@ def test_recover_digest_mismatch(started_cluster):
         f"{disk_cmd_prefix} 'move --path-from {db_data_path}t1.sql --path-to {db_data_path}m1.sql'",
         f"{disk_cmd_prefix} 'read --path-from {db_data_path}mv1.sql' | sed 's/Int32/String/' | {disk_cmd_prefix} 'write --path-to {db_data_path}mv1.sql'",
         f"{disk_cmd_prefix} 'remove {db_data_path}d1.sql'",
-        f"{disk_cmd_prefix} 'remove -r {db_data_path}'",  # Will trigger "Directory already exists"
+        "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
         f"{disk_cmd_prefix} 'remove -r {db_disk_path}store/' && rm -rf /var/lib/clickhouse/store",  # Remove both metadata and data
     ]
 
