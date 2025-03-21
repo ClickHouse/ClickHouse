@@ -144,7 +144,7 @@ void USearchIndexWithSerialization::deserialize(ReadBuffer & istr)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Could not load vector similarity index. Please drop the index and create it again. Error: {}", String(result.error.release()));
 
     /// Indicate the number of concurrent threads that will potentially search this specific usearch index
-    try_reserve(unum::usearch::index_limits_t(limits().members, getNumberOfCPUCoresToUse()));
+    try_reserve(limits());
 }
 
 USearchIndexWithSerialization::Statistics USearchIndexWithSerialization::getStatistics() const
