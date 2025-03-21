@@ -729,7 +729,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
         if (!origin.has_value())
             return time_zone.toStartOfMonthInterval(time_zone.toDayNum(scaled_time), months);
 
-        const Int64 scaled_origin = origin / scale_multiplier;
+        const Int64 scaled_origin = origin.value() / scale_multiplier;
         const Int64 days = time_zone.toDayOfMonth(scaled_time + scaled_origin) - time_zone.toDayOfMonth(scaled_origin);
         Int64 months_to_add = time_zone.toMonth(scaled_time + scaled_origin) - time_zone.toMonth(scaled_origin);
         const Int64 years = time_zone.toYear(scaled_time + scaled_origin) - time_zone.toYear(scaled_origin);
