@@ -56,7 +56,6 @@
 
 #include <base/range.h>
 
-
 namespace DB
 {
 namespace Setting
@@ -251,15 +250,22 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't serialize type {} as a FixedString", nested_column->getName());
 
         /// Write only the amount of UTF-8 characters actually used. PostgreSQL complains if we pass
-        /// any \0 because it doesn't interpret them as valid UTF-8.
-        auto write_size = size;
-        for (size_t i = 0; i < size; ++i)
+        /// any \0 because it doesn't interpret them as valid UTF-8. We assume that any ending \0 is
+        /// padding and replace any intermediate \0 with a whitespace. This is a trade-off we have
+        /// to make since PostgreSQL doesn't accept intermediate \0's.
+        std::string_view str(data, size);
+        const auto end_pos = str.find_last_not_of('\0');
+        auto write_size = end_pos != std::string::npos ? end_pos + 1 : size;
+        str = std::string_view(data, write_size);
+
+        /// Replace any intermediate \0 with a whitespace, allocating a new buffer only if needed.
+        /// Because of SSO, new_buffer will only allocate heap memory in case the size is not small.
+        std::string new_buffer;
+        if (str.find('\0') != std::string::npos)
         {
-            if (data[i] == 0)
-            {
-                write_size = i;
-                break;
-            }
+            new_buffer = str;
+            std::replace(new_buffer.begin(), new_buffer.end(), '\0', ' ');
+            data = new_buffer.data();
         }
         writeString(data, write_size, ostr);
     }

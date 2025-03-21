@@ -870,9 +870,9 @@ def test_fixed_string_type_conversions(started_cluster):
     result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions', 'postgres', 'mysecretpassword') FORMAT TSV")
     assert result == "123       \n456       \n"
 
-    node1.query("INSERT INTO test_fixed_string_type_conversions VALUES ('789')")
+    node1.query("INSERT INTO test_fixed_string_type_conversions VALUES ('7\09')")
     result = node1.query("SELECT * FROM test_fixed_string_type_conversions FORMAT TSV")
-    assert result == "123       \n456       \n789       \n"
+    assert result == "123       \n456       \n7 9       \n"
 
     node1.query("DROP TABLE test_fixed_string_type_conversions")
 
@@ -880,27 +880,27 @@ def test_fixed_string_type_conversions(started_cluster):
     cursor.execute(
         "CREATE TABLE test_fixed_string_type_conversions_array (str CHAR(10)[])"
     )
-    cursor.execute("INSERT INTO test_fixed_string_type_conversions_array VALUES (ARRAY['123'])")
+    cursor.execute("INSERT INTO test_fixed_string_type_conversions_array VALUES (ARRAY['123', '123'])")
 
     # Reading PostgreSQL fixed-sized strings
     result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV")
-    assert result.strip() == "['123       ']"
+    assert result.strip() == "['123       ','123       ']"
 
     node1.query("DROP TABLE IF EXISTS test_fixed_string_type_conversions_array")
     node1.query(
         "CREATE TABLE test_fixed_string_type_conversions_array(str Array(FixedString(10))) Engine = PostgreSQL('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV"
     )
     result = node1.query("SELECT * FROM test_fixed_string_type_conversions_array")
-    assert result.strip() == "['123       ']"
+    assert result.strip() == "['123       ','123       ']"
 
     # Inserting into PostgreSQL fixed-sized strings
-    node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') VALUES (['456'])")
+    node1.query("INSERT INTO TABLE FUNCTION postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') VALUES (['456', '456'])")
     result = node1.query("SELECT * FROM postgresql('postgres1:5432', 'postgres', 'test_fixed_string_type_conversions_array', 'postgres', 'mysecretpassword') FORMAT TSV")
-    assert result.strip() == "['123       ']\n['456       ']"
+    assert result.strip() == "['123       ','123       ']\n['456       ','456       ']"
 
-    node1.query("INSERT INTO test_fixed_string_type_conversions_array VALUES (['789'])")
+    node1.query("INSERT INTO test_fixed_string_type_conversions_array VALUES (['7 9', '7 9'])")
     result = node1.query("SELECT * FROM test_fixed_string_type_conversions_array FORMAT TSV")
-    assert result.strip() == "['123       ']\n['456       ']\n['789       ']"
+    assert result.strip() == "['123       ','123       ']\n['456       ','456       ']\n['7 9       ','7 9       ']"
 
     node1.query("DROP TABLE test_fixed_string_type_conversions_array")
 
