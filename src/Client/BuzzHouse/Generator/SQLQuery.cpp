@@ -449,7 +449,7 @@ bool StatementGenerator::joinedTableOrFunction(
                 /// 2 args
                 if (rg.nextBool())
                 {
-                    gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
+                    gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(rg.nextRandomUInt16()));
                 }
                 else
                 {
@@ -461,7 +461,8 @@ bool StatementGenerator::joinedTableOrFunction(
                     /// 3 args
                     if (rg.nextBool())
                     {
-                        gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
+                        gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(
+                            static_cast<uint64_t>(rg.nextRandomUInt16()));
                     }
                     else
                     {
@@ -475,7 +476,7 @@ bool StatementGenerator::joinedTableOrFunction(
             //2 args
             if (rg.nextBool())
             {
-                gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
+                gsf->mutable_expr1()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(rg.nextRandomUInt16()));
             }
             else
             {
@@ -487,7 +488,7 @@ bool StatementGenerator::joinedTableOrFunction(
                 //3 args
                 if (rg.nextBool())
                 {
-                    gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
+                    gsf->mutable_expr3()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(rg.nextRandomUInt16()));
                 }
                 else
                 {
@@ -495,7 +496,7 @@ bool StatementGenerator::joinedTableOrFunction(
                 }
             }
         }
-        limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.nextRandomUInt64() % 10000);
+        limit->mutable_lit_val()->mutable_int_lit()->set_uint_lit(static_cast<uint64_t>(rg.nextRandomUInt16()));
         this->levels.erase(this->current_level);
         this->ctes.erase(this->current_level);
         this->current_level--;
