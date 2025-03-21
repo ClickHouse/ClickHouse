@@ -101,7 +101,7 @@ class GH:
         res = []
         if output:
             res = output.splitlines()
-        return res
+        return list(set(res))
 
     @classmethod
     def get_pr_label_assigner(cls, label, pr=None, repo=None):
@@ -110,7 +110,7 @@ class GH:
         if not pr:
             pr = _Environment.get().PR_NUMBER
 
-        cmd = f'gh api repos/{repo}/issues/{pr}/events --jq \'.[] | select(.event=="labeled" and .label.name=="{label}") | .actor.login'
+        cmd = f'gh api repos/{repo}/issues/{pr}/events --jq \'.[] | select(.event=="labeled" and .label.name=="{label}") | .actor.login\''
         return Shell.get_output(cmd, verbose=True)
 
     @classmethod
