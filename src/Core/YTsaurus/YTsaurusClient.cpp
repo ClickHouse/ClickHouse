@@ -7,6 +7,8 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/JSON/Parser.h>
 
@@ -19,13 +21,14 @@ namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
 }
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_http_get_redirects;
 }
 
-namespace ytsaurus
-{
-
-YTsaurusClient::YTsaurusClient(const ConnectionInfo & connection_info_, size_t num_tries_)
-    : connection_info(connection_info_), num_tries(num_tries_), log(getLogger("YTsaurusClient"))
+YTsaurusClient::YTsaurusClient(ContextPtr context_, const ConnectionInfo & connection_info_)
+    : context(context_), connection_info(connection_info_), log(getLogger("YTsaurusClient"))
 {
 }
 
@@ -70,6 +73,13 @@ YTsaurusNodeType YTsaurusClient::getNodeTypeFromAttributes(const Poco::JSON::Obj
     }
 }
 
+DB::ReadBufferPtr YTsaurusClient::selectRows(const String & path)
+{
+    YTsaurusQueryPtr select_rows_query(new YTsaurusSelectRowsQuery(path));
+    return execQuery(select_rows_query);
+}
+
+
 DB::ReadBufferPtr YTsaurusClient::execQuery(const YTsaurusQueryPtr query)
 {
     Poco::URI uri(connection_info.base_uri.c_str());
@@ -85,18 +95,17 @@ DB::ReadBufferPtr YTsaurusClient::execQuery(const YTsaurusQueryPtr query)
         {"Authorization", fmt::format("OAuth {}", connection_info.auth_token)},
     };
 
-    /// RN i don't know how to not keep whole table in memory in general case.
-    /// For yt dynamic tables we can make smth like paginator, but what about static tables?
-    /// Does any one using big static tables?
-    ///
-
     LOG_TRACE(log, "URI {} , query type {}", uri.toString(), query->getQueryName());
     Poco::Net::HTTPBasicCredentials creds;
     auto buf = DB::BuilderRWBufferFromHTTP(uri)
-                   .withConnectionGroup(DB::HTTPConnectionGroupType::STORAGE)
-                   .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
-                   .withHeaders(http_headers)
-                   .create(creds);
+                .withConnectionGroup(DB::HTTPConnectionGroupType::STORAGE)
+                .withMethod(Poco::Net::HTTPRequest::HTTP_GET)
+                .withSettings(context->getReadSettings())
+                .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
+                .withHostFilter(&context->getRemoteHostFilter())
+                .withRedirects(context->getSettingsRef()[Setting::max_http_get_redirects])
+                .withHeaders(http_headers)
+                .create(creds);
 
     return DB::ReadBufferPtr(std::move(buf));
 }

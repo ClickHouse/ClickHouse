@@ -138,6 +138,10 @@ protected:
         {
             findURLSecretArguments();
         }
+        else if (function->name() == "ytsaurus")
+        {
+            findYTsaurusStorageTableEngineSecretArguments();
+        }
     }
 
     void findMySQLFunctionSecretArguments()
@@ -524,6 +528,10 @@ protected:
         {
             findRedisSecretArguments();
         }
+        else if (engine_name == "YTsaurus")
+        {
+            findYTsaurusStorageTableEngineSecretArguments();
+        }
     }
 
     void findExternalDistributedTableEngineSecretArguments()
@@ -610,6 +618,12 @@ protected:
         /// We're going to replace 'account_key' with '[HIDDEN]' if account_key is used in the signature
         if (url_arg_idx + 4 < count)
             markSecretArgument(url_arg_idx + 4);
+    }
+
+    void findYTsaurusStorageTableEngineSecretArguments()
+    {
+        // YTsaurus('base_uri', 'yt_path', 'auth_token')
+        markSecretArgument(2);
     }
 
     void findDatabaseEngineSecretArguments()

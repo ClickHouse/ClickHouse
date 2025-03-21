@@ -49,7 +49,7 @@ Pipe StorageYTsaurus::read(
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & /*query_info*/,
-    ContextPtr /*context*/,
+    ContextPtr context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
     size_t /*num_streams*/)
@@ -63,8 +63,8 @@ Pipe StorageYTsaurus::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    ytsaurus::YTsaurusClient::ConnectionInfo connection_info{.base_uri = configuration.base_uri, .auth_token = configuration.auth_token};
-    ytsaurus::YTsaurusClientPtr client = std::make_unique<ytsaurus::YTsaurusClient>(connection_info);
+    YTsaurusClient::ConnectionInfo connection_info{.base_uri = configuration.base_uri, .auth_token = configuration.auth_token};
+    YTsaurusClientPtr client = std::make_unique<YTsaurusClient>(context, connection_info);
 
     auto ptr = YTsaurusSourceFactory::createSource(std::move(client), configuration.path, sample_block, max_block_size);
 
@@ -93,7 +93,7 @@ void registerStorageYTsaurus(StorageFactory & factory)
     factory.registerStorage("YTsaurus", [](const StorageFactory::Arguments & args)
     {
         if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_ytsaurus_table_engine])
-            throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine YTsaurus is experimental."
+            throw Exception(ErrorCodes::UNKNOWN_STORAGE, "Table engine YTsaurus is experimental. "
                 "Set `allow_experimental_ytsaurus_table_engine` setting to enable it");
         return std::make_shared<StorageYTsaurus>(
             args.table_id,
