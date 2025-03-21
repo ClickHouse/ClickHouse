@@ -23,6 +23,8 @@ struct IcebergSnapshot
 {
     ManifestListIterator manifest_list_iterator;
     Int64 snapshot_id;
+    std::optional<size_t> total_rows;
+    std::optional<size_t> total_bytes;
 };
 }
 
