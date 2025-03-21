@@ -184,7 +184,13 @@ See [`max_subquery_depth`](/operations/settings/settings#max_subquery_depth)
 
 ## max_pipeline_depth {#max-pipeline-depth}
 
-Maximum pipeline depth. Corresponds to the number of transformations that each data block goes through during query processing. Counted within the limits of a single server. If the pipeline depth is greater, an exception is thrown. By default, 1000.
+Maximum pipeline depth. It Corresponds to the number of transformations that each 
+data block goes through during query processing. Counted within the limits of a 
+single server. If the pipeline depth is greater, an exception is thrown.
+
+:::note
+This is an obsolete setting
+:::
 
 ## max_ast_depth {#max-ast-depth}
 
