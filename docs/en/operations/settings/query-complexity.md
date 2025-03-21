@@ -8,60 +8,48 @@ title: 'Restrictions on Query Complexity'
 
 # Restrictions on Query Complexity
 
-Restrictions on query complexity are part of the settings.
-They are used to provide safer execution from the user interface.
-Almost all the restrictions only apply to `SELECT`. For distributed query processing, restrictions are applied on each server separately.
+## Overview {#overview}
 
-ClickHouse checks the restrictions for data parts, not for each row. It means that you can exceed the value of restriction with the size of the data part.
+As part of the [settings](/operations/settings/overview), ClickHouse offers
+the ability to place restrictions on query complexity. This helps protect against
+potentially resource-intensive queries, ensuring safer and more predictable 
+execution, particularly when using the user interface.
 
-Restrictions on the "maximum amount of something" can take the value 0, which means "unrestricted".
-Most restrictions also have an 'overflow_mode' setting, meaning what to do when the limit is exceeded.
-It can take one of two values: `throw` or `break`. Restrictions on aggregation (group_by_overflow_mode) also have the value `any`.
+Almost all the restrictions only apply to `SELECT` queries, and for distributed 
+query processing, restrictions are applied on each server separately.
 
-`throw` – Throw an exception (default).
+ClickHouse checks the restrictions by data parts, and not by row. This means 
+that it is possible to exceed the value of a restriction with the size of a
+data part.
 
-`break` – Stop executing the query and return the partial result, as if the source data ran out.
+Restrictions on the "maximum amount of something" can take a value of `0`, 
+meaning "unrestricted".
 
-`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but do not add new keys to the set.
+Most restrictions also have an 'overflow_mode' setting, which defines what happens
+when the limit is exceeded, and take one of two values:
+- `throw`: throw an exception (default).
+- `break`: stop executing the query and return the partial result, as if the 
+           source data ran out.
+
+Restrictions on aggregation (group_by_overflow_mode) also have the value `any`:
+- `any` : continue aggregation for the keys that got into the set, but do not 
+          add new keys to the set.
+
+## Relevant settings {#relevant-settings}
+
+The following settings apply to query complexity.
+
+| Setting | Description |
+|---------|-------------|
+|`max_memory_usage`||
 
 ## max_memory_usage {#settings_max_memory_usage}
 
-The maximum amount of RAM to use for running a query on a single server.
-
-The default setting is unlimited (set to `0`).
-
-Cloud default value: depends on the amount of RAM on the replica.
-
-The setting does not consider the volume of available memory or the total volume of memory on the machine.
-The restriction applies to a single query within a single server.
-You can use `SHOW PROCESSLIST` to see the current memory consumption for each query.
-Besides, the peak memory consumption is tracked for each query and written to the log.
-
-Memory usage is not monitored for the states of certain aggregate functions.
-
-Memory usage is not fully tracked for states of the aggregate functions `min`, `max`, `any`, `anyLast`, `argMin`, `argMax` from `String` and `Array` arguments.
-
-Memory consumption is also restricted by the parameters `max_memory_usage_for_user` and [max_server_memory_usage](../../operations/server-configuration-parameters/settings.md#max_server_memory_usage).
+See [`max_memory_usage`](/operations/settings/settings#max_memory_usage)
 
 ## max_memory_usage_for_user {#max-memory-usage-for-user}
 
-The maximum amount of RAM to use for running a user's queries on a single server.
-
-Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
-
-See also the description of [max_memory_usage](#settings_max_memory_usage).
-
-For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
-
-```sql
-ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
-```
-
-You can verify it worked by logging out of your client, logging back in, then use the `getSetting` function:
-
-```sql
-SELECT getSetting('max_memory_usage_for_user');
-```
+See [`max_memory_usage_for_user`](/operations/settings/settings#max_memory_usage_for_user)
 
 ## max_rows_to_read {#max-rows-to-read}
 
@@ -75,7 +63,7 @@ A maximum number of bytes (uncompressed data) that can be read from a table when
 
 ## read_overflow_mode {#read-overflow-mode}
 
-What to do when the volume of data read exceeds one of the limits: 'throw' or 'break'. By default, throw.
+See [`read_overflow_mode_leaf`](/operations/settings/settings#read_overflow_mode_leaf)
 
 ## max_rows_to_read_leaf {#max-rows-to-read-leaf}
 

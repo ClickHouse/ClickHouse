@@ -2408,7 +2408,7 @@ Limit on read rows on the leaf nodes for distributed queries. Limit is applied f
 Limit on read bytes (after decompression) on the leaf nodes for distributed queries. Limit is applied for local reads only, excluding the final merge stage on the root node. Note, the setting is unstable with prefer_localhost_replica=1.
 )", 0) \
     DECLARE(OverflowMode, read_overflow_mode_leaf, OverflowMode::THROW, R"(
-What to do when the leaf limit is exceeded.
+What to do when the volume of data read exceeds one of the limits: `throw` or `break`.
 )", 0) \
     \
     DECLARE(UInt64, max_rows_to_group_by, 0, R"(
@@ -2702,7 +2702,29 @@ What to do when the limit is exceeded.
 )", 0) \
     \
     DECLARE(UInt64, max_memory_usage, 0, R"(
-Maximum memory usage for processing of single query. Zero means unlimited.
+Cloud default value: depends on the amount of RAM on the replica.
+
+The maximum amount of RAM to use for running a query on a single server.
+A value of `0` means unlimited.
+
+This setting does not consider the volume of available memory or the total volume
+of memory on the machine. The restriction applies to a single query within a
+single server.
+
+You can use `SHOW PROCESSLIST` to see the current memory consumption for each query.
+Peak memory consumption is tracked for each query and written to the log.
+
+Memory usage is not fully tracked for states of the following aggregate functions
+from `String` and `Array` arguments:
+- `min`
+- `max`
+- `any`
+- `anyLast`
+- `argMin`
+- `argMax`
+
+Memory consumption is also restricted by the parameters [`max_memory_usage_for_user`](/operations/settings/settings#max_memory_usage_for_user)
+and [`max_server_memory_usage`](/operations/server-configuration-parameters/settings#max_server_memory_usage).
 )", 0) \
     DECLARE(UInt64, memory_overcommit_ratio_denominator, 1_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the global level.
@@ -2711,7 +2733,23 @@ Zero means skip the query.
 Read more about [memory overcommit](memory-overcommit.md).
 )", 0) \
     DECLARE(UInt64, max_memory_usage_for_user, 0, R"(
-Maximum memory usage for processing all concurrently running queries for the user. Zero means unlimited.
+The maximum amount of RAM to use for running a user's queries on a single server. Zero means unlimited.
+
+By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
+
+See also the description of [`max_memory_usage`](#settings_max_memory_usage).
+
+For example if you want to set `max_memory_usage_for_user` to 1000 bytes for a user named `clickhouse_read`, you can use the statement
+
+```sql
+ALTER USER clickhouse_read SETTINGS max_memory_usage_for_user = 1000;
+```
+
+You can verify it worked by logging out of your client, logging back in, then use the `getSetting` function:
+
+```sql
+SELECT getSetting('max_memory_usage_for_user');
+```
 )", 0) \
     DECLARE(UInt64, memory_overcommit_ratio_denominator_for_user, 1_GiB, R"(
 It represents the soft memory limit when the hard limit is reached on the user level.
